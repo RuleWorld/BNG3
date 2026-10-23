@@ -280,6 +280,81 @@ def test_fork_isolation_reports_a_timeout_like_the_process_mode(tmp_path, monkey
     assert records[0]["error"] == "per-case timeout after 1s"
 
 
+def test_process_timeout_record_keeps_last_completed_and_active_phase(
+    tmp_path, monkeypatch
+):
+    """A killed worker retains the stage that it entered before the timeout."""
+
+    def _timeout(*_args, **_kwargs):
+        raise subprocess.TimeoutExpired(
+            cmd=[sys.executable],
+            timeout=1,
+            output=b"",
+            stderr=(
+                b"@@SBML_CASE_PHASE@@ completed source-parse\n"
+                b"@@SBML_CASE_PHASE@@ started network-generation\n"
+            ),
+        )
+
+    monkeypatch.setattr(runner.subprocess, "run", _timeout)
+    case = {
+        "category": "semantic",
+        "id": "00001",
+        "version": "l3v2",
+        "path": str(tmp_path / "source.xml"),
+    }
+    args = _namespace(tmp_path, case_timeout=1)
+    args.artifacts_dir = tmp_path / "artifacts"
+
+    record = runner._run_isolated_case(case, args, {})
+
+    assert record["status"] == "timeout"
+    assert record["core_passed"] is False
+    assert record["phase_progress"] == {
+        "last_completed_phase": "source-parse",
+        "active_phase": "network-generation",
+    }
+    assert "@@SBML_CASE_PHASE@@ started network-generation" in (
+        args.artifacts_dir / "semantic" / "00001" / "stderr.log"
+    ).read_text(encoding="utf-8")
+
+
+def test_phase_progress_restores_outer_phase_after_nested_completion():
+    progress = runner._phase_progress(
+        "\n".join(
+            (
+                "@@SBML_CASE_PHASE@@ started official-reference-comparison",
+                "@@SBML_CASE_PHASE@@ started official-bng3-cvode",
+                "@@SBML_CASE_PHASE@@ completed official-bng3-cvode",
+            )
+        )
+    )
+
+    assert progress == {
+        "last_completed_phase": "official-bng3-cvode",
+        "active_phase": "official-reference-comparison",
+    }
+
+
+def test_phase_progress_ignores_partial_or_unknown_breadcrumbs():
+    progress = runner._phase_progress(
+        "\n".join(
+            (
+                "@@SBML_CASE_PHASE@@",
+                "@@SBML_CASE_PHASE@@ started",
+                "@@SBML_CASE_PHASE@@ started ",
+                "@@SBML_CASE_PHASE@@ unknown ignored",
+                "@@SBML_CASE_PHASE@@ started atomizer-translation",
+            )
+        )
+    )
+
+    assert progress == {
+        "last_completed_phase": None,
+        "active_phase": "atomizer-translation",
+    }
+
+
 @pytest.mark.skipif(
     not hasattr(os, "fork"), reason="fork isolation requires POSIX fork"
 )

@@ -98,6 +98,7 @@ RECORD_STATUSES = ("passed", "unsupported", "failed", "timeout", "invalid-source
 DEFAULT_VERIFICATION_LOCK = (
     Path(tempfile.gettempdir()) / "bng3-sbml-suite-verification.lock"
 )
+CASE_PHASE_PREFIX = "@@SBML_CASE_PHASE@@"
 
 
 class SuiteLockError(ValueError):
@@ -110,6 +111,56 @@ class IncompleteSuiteTreeError(SuiteLockError):
 
 class OfficialReferenceUnsupported(ValueError):
     """Raised when a locked case has no deterministic time-course reference."""
+
+
+def _case_phase(phase: str, state: str) -> None:
+    """Write a flushed phase breadcrumb that survives an isolated timeout."""
+
+    print(f"{CASE_PHASE_PREFIX} {state} {phase}", file=sys.stderr, flush=True)
+
+
+@contextlib.contextmanager
+def _case_phase_scope(phase: str) -> Iterable[None]:
+    """Record one case stage's start and successful completion in worker logs."""
+
+    _case_phase(phase, "started")
+    try:
+        yield
+    except BaseException:
+        _case_phase(phase, "failed")
+        raise
+    else:
+        _case_phase(phase, "completed")
+
+
+def _phase_progress(log: str | bytes) -> dict[str, str | None]:
+    """Recover the active and last completed phases from captured worker logs."""
+
+    if isinstance(log, bytes):
+        log = log.decode("utf-8", errors="replace")
+    last_completed = None
+    active = []
+    for line in log.splitlines():
+        if not line.startswith(CASE_PHASE_PREFIX + " "):
+            continue
+        parts = line.split(" ", 2)
+        if len(parts) != 3:
+            continue
+        _, state, phase = parts
+        if not phase or state not in {"started", "completed", "failed"}:
+            continue
+        if state == "started":
+            active.append(phase)
+        elif state == "completed":
+            last_completed = phase
+            if phase in active:
+                del active[active.index(phase) :]
+        elif state == "failed":
+            active.append(phase)
+    return {
+        "last_completed_phase": last_completed,
+        "active_phase": active[-1] if active else None,
+    }
 
 
 def _suite_lock_entry(lock_path: Path = DEFAULT_SUITE_LOCK) -> dict[str, str]:
@@ -1039,14 +1090,15 @@ def _simulate_and_compare(
         raise RuntimeError(
             "libRoadRunner is required for direct numerical comparison"
         ) from exc
-    bng_result = BioNetGenModel(cpp_model).simulate(
-        method="ode",
-        t_start=0.0,
-        t_end=t_end,
-        n_steps=n_steps,
-        rtol=rtol,
-        atol=atol,
-    )
+    with _case_phase_scope("independent-bng3-cvode"):
+        bng_result = BioNetGenModel(cpp_model).simulate(
+            method="ode",
+            t_start=0.0,
+            t_end=t_end,
+            n_steps=n_steps,
+            rtol=rtol,
+            atol=atol,
+        )
     series = dict(bng_result.observables)
     function_values = getattr(bng_result, "functions", {}) or {}
     if function_names is None:
@@ -1062,7 +1114,8 @@ def _simulate_and_compare(
     names = list(series)
     bng_time = np.asarray(bng_result.time, dtype=float)
     bng_values = {name: np.asarray(series[name], dtype=float) for name in names}
-    rr = roadrunner.RoadRunner(str(output_path))
+    with _case_phase_scope("independent-libroadrunner-load"):
+        rr = roadrunner.RoadRunner(str(output_path))
     integrator = rr.integrator
     if integrator.hasValue("relative_tolerance"):
         integrator.setValue("relative_tolerance", rtol)
@@ -1101,7 +1154,8 @@ def _simulate_and_compare(
             + ", ".join(missing[:10])
         )
     rr.timeCourseSelections = ["time", *selected_names]
-    rr_values = np.asarray(rr.simulate(0.0, t_end, n_steps + 1), dtype=float)
+    with _case_phase_scope("independent-libroadrunner-cvode"):
+        rr_values = np.asarray(rr.simulate(0.0, t_end, n_steps + 1), dtype=float)
     expected_shape = (len(bng_time), len(names) + 1)
     if rr_values.ndim != 2 or rr_values.shape != expected_shape:
         raise RuntimeError(
@@ -1702,15 +1756,16 @@ def _compare_case_to_reference(
             )
         from bionetgen import BioNetGenModel
 
-        result = BioNetGenModel(output_model).simulate(
-            method="ode",
-            t_start=reference["start"],
-            t_end=reference["start"] + reference["duration"],
-            n_steps=0,
-            sample_times=reference["times"].tolist(),
-            rtol=1e-9,
-            atol=1e-14,
-        )
+        with _case_phase_scope("official-bng3-cvode"):
+            result = BioNetGenModel(output_model).simulate(
+                method="ode",
+                t_start=reference["start"],
+                t_end=reference["start"] + reference["duration"],
+                n_steps=0,
+                sample_times=reference["times"].tolist(),
+                rtol=1e-9,
+                atol=1e-14,
+            )
         if not np.array_equal(np.asarray(result.time, dtype=float), reference["times"]):
             return {
                 "status": "failed",
@@ -2017,6 +2072,33 @@ ACTION_MAX_PHASES = 2000
 #: spread of the ensemble standard deviation between independent ensembles of
 #: 10,000 trajectories is about 1.5 % of the estimate, so the ensemble standard
 #: deviation test would otherwise produce occasional false violations.
+#:
+#: The guide's two acceptance statistics are defined *in terms of* the
+#: repetition count: the standardised mean ``Z = sqrt(n) * (mean - mu) / sigma``
+#: and the standardised variance ``Y = sqrt(n/2) * (S^2 / sigma^2 - 1)`` use
+#: the guide's approximate-normal null.  The guide states fixed acceptance
+#: ranges on those statistics ((-3, 3) for the mean and (-5, 5) for the
+#: standard deviation; the suite's own ``-settings.txt`` files carry the same
+#: two ranges).  The harness computes those statistics with the n it actually
+#: ran and does not widen the acceptance bands when an ensemble is smaller.
+#: This preserves the guide's criterion; it does not establish that its
+#: approximate-normal null fits every source model or that the chance rate is
+#: identical at every n for every source distribution.
+#:
+#: What is *not* n-correct is the verdict.  A verdict is a property of the
+#: realised ensemble, not of its distribution: the batched samplers derive one
+#: engine seed per trajectory from the base seed, so the ensemble of n
+#: trajectories is a prefix of the ensemble of 40,000 trajectories, and a
+#: different n is a different draw from the same null.  Measured on
+#: ``stochastic/00023`` with the campaign's base seed, the largest standardised
+#: mean statistic of the ensemble was 4.51 at n = 1,000, 4.15 at n = 2,000,
+#: 2.83 at n = 4,000, 2.78 at n = 8,000, 1.75 at n = 16,000 and 1.63 at
+#: n = 32,000, so the case-level criterion (three violated acceptance tests)
+#: failed that case below n = 3,000 and passed it above.  A reduction that
+#: depends on the runner's speed therefore lands the verdict in either window
+#: at random, which is why the harness never reduces the ensemble to what the
+#: runner can afford: it uses the documented budget, reduced only when the
+#: deterministic CPU probe projects event work above the threshold below.
 STOCHASTIC_DEFAULT_RUNS = 40_000
 #: Documented budget for the action-dispatcher ensemble.  That path rebuilds
 #: and regenerates the network for every repetition, so it uses the DSMTS
@@ -2026,6 +2108,28 @@ STOCHASTIC_ACTION_RUNS = 1_000
 #: derive one engine seed per trajectory from this base seed, so the whole
 #: ensemble is reproducible.
 STOCHASTIC_SEED_BASE = 1_000_000
+STOCHASTIC_SEED_MAX = (1 << 64) - 1
+
+
+def _validate_stochastic_seed_base(seed: int) -> int:
+    """Validate the unsigned 64-bit seed accepted by native SSA bindings."""
+
+    value = int(seed)
+    if value < 0 or value > STOCHASTIC_SEED_MAX:
+        raise ValueError("--stochastic-seed-base must fit an unsigned 64-bit integer")
+    return value
+
+
+def _validate_stochastic_seed_span(seed: int, max_offset: int) -> None:
+    """Reject seed derivations that would exceed the native uint64 seed type."""
+
+    if max_offset < 0 or seed + max_offset > STOCHASTIC_SEED_MAX:
+        raise ValueError(
+            "stochastic seed base plus the ensemble seed offset must fit an "
+            "unsigned 64-bit integer"
+        )
+
+
 #: Per-case false-positive budget for the stochastic violation count.  Under
 #: the null hypothesis a correct simulator violates the official acceptance
 #: ranges with the probability implied by those ranges; a case is only failed
@@ -2054,14 +2158,35 @@ STOCHASTIC_GPU_PROBE_TRAJECTORIES = 64
 #: trajectories for the same seed, so a conformance verdict has to stay
 #: reproducible.
 STOCHASTIC_CPU_THREADS = 1
-#: Per-case wall-clock budget for one CPU batched ensemble.  When the
-#: measured projection exceeds it, the trajectory count is reduced to the
-#: largest affordable value (never below the DSMTS minimum) and the report
-#: records the budget that was actually used.  The budget keeps a stochastic
-#: case comfortably inside the conformance gate's per-case timeout.
-STOCHASTIC_CPU_TIME_BUDGET_SECONDS = 30.0
+#: Estimated reaction-event work threshold for a stochastic ensemble.  The
+#: harness extrapolates this from a deterministic, fixed-seed CPU probe; it is
+#: not an enforced cap on the full ensemble.  Using projected work rather
+#: than elapsed probe time keeps the planned trajectory count independent of
+#: runner speed for the same model, seed, and implementation.
+#:
+#: On the reference runner, the CPU batched sampler measured about 1.4e7 to
+#: 2.6e7 reaction events per second, making this threshold project to about
+#: 15 to 30 seconds of CPU against the gate's 60-second per-case timeout.
+#: This is an estimate, not a runtime guarantee: the full ensemble's actual
+#: event count and elapsed time can exceed the probe projection.  The threshold
+#: binds only on the two heaviest cases of the pinned suite, whose documented
+#: 40,000-trajectory ensembles project to about 3.3e9 and 3.6e9 events; every
+#: other case projects to at most 2.3e8 events and keeps the documented
+#: trajectory budget.
+STOCHASTIC_MAX_EVENTS = 400_000_000
 #: Smallest trajectory count the harness will use for a stochastic ensemble.
+#: This is the DSMTS user guide's absolute minimum number of independent
+#: repetitions.
 STOCHASTIC_MIN_RUNS = 1_000
+#: Smallest trajectory count at which the harness will *compare* a stochastic
+#: case.  The DSMTS user guide, section 3, requires at least 1,000
+#: independent repetitions and recommends 10,000 "for the statistical tests
+#: to have reasonable power to detect problems"; section 3.4 calls 10,000 the
+#: size that is "needed to have any chance of picking up minor issues".  A
+#: case whose documented ensemble projects above the configured event-work
+#: threshold before that size is not comparable at a documented budget: it is
+#: reported as not comparable, never as a pass and never as a failure.
+STOCHASTIC_MIN_POWER_RUNS = 10_000
 
 
 def _standard_normal_outside(bounds: tuple[float, float]) -> float:
@@ -2115,9 +2240,9 @@ def _stochastic_statistics(
 
     The DSMTS user guide defines the standardised mean statistic
     ``Z = sqrt(n) * (mean - mu) / sigma`` and the standardised variance
-    statistic ``Y = sqrt(n/2) * (S^2 / sigma^2 - 1)``; both are approximately
-    standard normal under a correct simulator.  A value outside the official
-    acceptance range is a violation.  Only the requested statistic is tested:
+    statistic ``Y = sqrt(n/2) * (S^2 / sigma^2 - 1)``; the guide uses an
+    approximate-normal null when its assumptions fit the source law.  A value
+    outside the official acceptance range is a violation.  Only the requested statistic is tested:
     the suite may ask for the mean, the standard deviation, or both.
 
     ``mean_values`` and ``sd_values`` are the *sample* mean and standard
@@ -2329,6 +2454,7 @@ def _stochastic_batch_ensemble(
     CPU batched sampler.
     """
 
+    _validate_stochastic_seed_span(int(seed), max(0, int(runs) - 1))
     start = reference["start"]
     duration = reference["duration"]
     steps = reference["steps"]
@@ -2414,6 +2540,8 @@ def _stochastic_action_ensemble(
     same action block through the native dispatcher with its own seed.
     """
 
+    max_seed_offset = max(0, int(runs) - 1) * 1000 + max(0, phase_count - 1)
+    _validate_stochastic_seed_span(int(seed), max_seed_offset)
     samples: dict[str, list[list[float]]] = {name: [] for name in aliases}
     for run_index in range(runs):
         seeds = [
@@ -2446,27 +2574,40 @@ def _stochastic_ensemble_plan(
     network: Any,
     reference: dict[str, Any],
     runs: int,
+    seed: int = STOCHASTIC_SEED_BASE,
 ) -> dict[str, Any]:
-    """Choose the ensemble engine and an affordable trajectory budget.
+    """Choose the ensemble engine and the trajectory budget of the ensemble.
+
+    The trajectory count starts at the documented budget and is reduced when
+    the deterministic fixed-seed CPU probe projects event work above the
+    configured threshold.  This makes the planned count independent of probe
+    elapsed time for a given model, seed, and implementation.  Projected work
+    is an estimate, not an enforced event cap or runtime bound: the full
+    ensemble can perform more events or take longer than the probe predicts.
+    A wall-clock budget would also make the planned count depend directly on
+    runner speed, changing the prefix of the documented ensemble being
+    sampled.
 
     The GPU batched sampler pays a per-call model preparation and a
     host/device transfer, so it only pays off when the batch does enough
     reaction work to amortise them (``docs/GPU_BATCH_SSA_EVALUATION.md``
     measures the crossover).  The harness therefore probes the CPU sampler
     with a small batch, measures the reaction work of that batch, and selects
-    the GPU when the projected work of the full batch is large enough.  When
-    the CPU batched sampler is used and the projected CPU cost would exceed
-    the per-case ensemble time budget, the trajectory count is reduced to the
-    largest affordable value; the report records the budget that was used.
+    the GPU when the projected work of the ensemble is large enough.
     """
 
     plan: dict[str, Any] = {
         "backend": None,
         "runs": int(runs),
+        "documented_runs": int(runs),
         "projected_cpu_seconds": None,
         "projected_events": None,
+        "ensemble_events": None,
         "probe_trajectories": None,
-        "cpu_budget_reduced": False,
+        "work_budget": STOCHASTIC_MAX_EVENTS,
+        "work_budget_reduced": False,
+        "not_comparable": False,
+        "reason": "",
     }
     backends = _gpu_backend_names(cpp)
     probe = min(int(runs), STOCHASTIC_GPU_PROBE_TRAJECTORIES)
@@ -2480,7 +2621,7 @@ def _stochastic_ensemble_plan(
             t_end=reference["start"] + reference["duration"],
             n_steps=reference["steps"],
             t_start=reference["start"],
-            base_seed=STOCHASTIC_SEED_BASE,
+            base_seed=seed,
             threads=STOCHASTIC_CPU_THREADS,
             max_sim_steps=0,
         )
@@ -2491,24 +2632,47 @@ def _stochastic_ensemble_plan(
         return plan
     probe_seconds = max(time.monotonic() - start, 1e-6)
     per_trajectory = probe_seconds / float(probe)
-    projected = per_trajectory * float(runs)
-    plan["projected_cpu_seconds"] = projected
+    plan["projected_cpu_seconds"] = per_trajectory * float(runs)
     plan["probe_trajectories"] = probe
     probe_events = float(probe_metrics.get("total_events") or 0.0)
-    plan["projected_events"] = probe_events * float(runs) / float(probe)
+    events_per_trajectory = probe_events / float(probe)
+    plan["projected_events"] = events_per_trajectory * float(runs)
+
+    # The fixed-seed probe's projected event work, not its elapsed time,
+    # decides the count. This projection is not a cap on the full ensemble.
+    affordable = int(runs)
+    if events_per_trajectory > 0.0:
+        affordable = int(float(STOCHASTIC_MAX_EVENTS) / events_per_trajectory)
+    if affordable < STOCHASTIC_MIN_POWER_RUNS:
+        # Even the probe projection places the documented ensemble below the
+        # repetitions the DSMTS guide recommends for reasonable power at the
+        # configured event-work threshold. The case is not comparable at a
+        # documented budget; no truncated ensemble is run. Actual work may
+        # differ from this estimate.
+        plan["not_comparable"] = True
+        plan["reason"] = (
+            f"the deterministic CPU probe projects about "
+            f"{float(plan['projected_events']):.0f} reaction events for the "
+            f"documented ensemble of {int(runs)} trajectories, above the "
+            f"estimated ensemble work budget threshold of "
+            f"{STOCHASTIC_MAX_EVENTS}; "
+            f"using this projection, the ensemble would hold {affordable} "
+            f"trajectories, fewer than the "
+            f"{STOCHASTIC_MIN_POWER_RUNS} independent repetitions the DSMTS "
+            f"user guide requires for the acceptance tests to have reasonable "
+            f"power, so the case is not comparable at a documented budget"
+        )
+        return plan
+    budget = min(int(runs), max(STOCHASTIC_MIN_RUNS, affordable))
+    plan["runs"] = budget
+    plan["work_budget_reduced"] = budget < int(runs)
+    plan["ensemble_events"] = events_per_trajectory * float(budget)
     if (
         backends
-        and int(runs) >= STOCHASTIC_GPU_MIN_RUNS
-        and plan["projected_events"] >= STOCHASTIC_GPU_MIN_EVENTS
+        and budget >= STOCHASTIC_GPU_MIN_RUNS
+        and float(plan["ensemble_events"]) >= STOCHASTIC_GPU_MIN_EVENTS
     ):
         plan["backend"] = backends[0]
-        return plan
-    if projected > STOCHASTIC_CPU_TIME_BUDGET_SECONDS:
-        affordable = int(
-            float(runs) * STOCHASTIC_CPU_TIME_BUDGET_SECONDS / max(projected, 1e-9)
-        )
-        plan["runs"] = max(STOCHASTIC_MIN_RUNS, min(int(runs), affordable))
-        plan["cpu_budget_reduced"] = plan["runs"] < int(runs)
     return plan
 
 
@@ -2523,6 +2687,7 @@ def _compare_stochastic_case_to_reference(
     runs: int,
     cpp_model: Any,
     network: Any,
+    seed_base: int = STOCHASTIC_SEED_BASE,
 ) -> dict[str, Any]:
     """Compare an official stochastic reference against a BNG3 ensemble.
 
@@ -2619,7 +2784,15 @@ def _compare_stochastic_case_to_reference(
         metrics: dict[str, Any] = {}
         plan: dict[str, Any] = {}
         if _stochastic_batch_applicable(block, targets, observables):
-            plan = _stochastic_ensemble_plan(cpp, cpp_model, network, reference, runs)
+            plan = _stochastic_ensemble_plan(
+                cpp, cpp_model, network, reference, runs, seed=seed_base
+            )
+            if plan.get("not_comparable"):
+                # The documented ensemble budget does not fit the gate's work
+                # budget even at the guide's minimum number of repetitions.
+                # The case is not comparable, which is neither a pass nor a
+                # failure.
+                return {"status": "unsupported", "reason": plan["reason"]}
             budget = int(plan["runs"])
             engine = plan["backend"]
             try:
@@ -2630,7 +2803,7 @@ def _compare_stochastic_case_to_reference(
                     reference,
                     targets,
                     runs=budget,
-                    seed=STOCHASTIC_SEED_BASE,
+                    seed=seed_base,
                     backend=engine,
                 )
             except Exception as exc:
@@ -2638,24 +2811,9 @@ def _compare_stochastic_case_to_reference(
                     raise
                 # The GPU path fails closed on rate laws it cannot flatten;
                 # the CPU batched sampler is the documented fallback.  The
-                # fallback keeps the trajectory budget affordable.
-                projected = plan.get("projected_cpu_seconds")
-                if (
-                    projected is not None
-                    and projected > STOCHASTIC_CPU_TIME_BUDGET_SECONDS
-                ):
-                    budget = max(
-                        STOCHASTIC_MIN_RUNS,
-                        min(
-                            budget,
-                            int(
-                                float(budget)
-                                * STOCHASTIC_CPU_TIME_BUDGET_SECONDS
-                                / max(float(projected), 1e-9)
-                            ),
-                        ),
-                    )
-                    plan["cpu_budget_reduced"] = True
+                # fallback runs the same planned trajectory count. That count
+                # uses the CPU probe's projected event work, not an enforced
+                # cap; actual work and runtime may differ by backend.
                 fallback = _stochastic_batch_ensemble(
                     cpp,
                     cpp_model,
@@ -2663,7 +2821,7 @@ def _compare_stochastic_case_to_reference(
                     reference,
                     targets,
                     runs=budget,
-                    seed=STOCHASTIC_SEED_BASE,
+                    seed=seed_base,
                     backend=None,
                 )
                 fallback["metrics"] = {
@@ -2683,7 +2841,7 @@ def _compare_stochastic_case_to_reference(
                 times,
                 output_aliases,
                 runs=budget,
-                seed=STOCHASTIC_SEED_BASE,
+                seed=seed_base,
                 phase_count=len(block.phases),
                 work_dir=work_dir,
             )["values"]
@@ -2821,8 +2979,10 @@ def _compare_stochastic_case_to_reference(
         "statistic": "DSMTS standardised mean and variance statistics",
         "engine": engine_used,
         "runs": budget,
+        "documented_runs": int(runs),
+        "work_budget": STOCHASTIC_MAX_EVENTS,
         "seeds": {
-            "base": STOCHASTIC_SEED_BASE,
+            "base": seed_base,
             "rule": (
                 "the batched samplers derive one engine seed per trajectory "
                 "from base; the action-Dispatcher ensemble uses "
@@ -2884,6 +3044,10 @@ def _unsupported_causes(reason: str) -> list[str]:
     """Normalize an unsupported reason into auditable semantic cause labels."""
 
     lower = str(reason or "").lower()
+    if "ensemble work budget" in lower or "ensemble budget" in lower:
+        # The reason is exclusively about the ensemble's work budget.  The
+        # word "events" in it names reaction events, not SBML events.
+        return ["ensemble_budget"]
     causes: list[str] = []
     for package in (
         "comp",
@@ -3294,6 +3458,7 @@ def _validate_case(
     simulation_atol: float,
     artifacts_dir: Path | None = None,
     stochastic_runs: int = STOCHASTIC_DEFAULT_RUNS,
+    stochastic_seed_base: int = STOCHASTIC_SEED_BASE,
 ) -> dict[str, Any]:
     from bionetgen.atomizer.modern import (
         Atomizer,
@@ -3364,9 +3529,11 @@ def _validate_case(
                     (work_dir / reference_path.name).write_bytes(
                         reference_path.read_bytes()
                     )
-        record["source_xml"] = _validate_xml(sbml, "source SBML")
+        with _case_phase_scope("source-xml-validation"):
+            record["source_xml"] = _validate_xml(sbml, "source SBML")
         source_xml_valid = True
-        parsed = SBMLParser().parse(sbml, source_path=source_path)
+        with _case_phase_scope("source-parse"):
+            parsed = SBMLParser().parse(sbml, source_path=source_path)
         record["source_model"] = {
             "species": len(parsed.species),
             "reactions": len(parsed.reactions),
@@ -3389,7 +3556,8 @@ def _validate_case(
             t_end=atomizer_t_end,
             n_steps=atomizer_n_steps,
         )
-        atomized = atomizer.atomize(sbml, source_path=source_path)
+        with _case_phase_scope("atomizer-translation"):
+            atomized = atomizer.atomize(sbml, source_path=source_path)
         if not atomized.success:
             raise RuntimeError(atomized.error or "modern Atomizer returned failure")
         if artifacts_dir is not None:
@@ -3421,49 +3589,57 @@ def _validate_case(
             }
             record["core_passed"] = False
             return record
-        cpp_model = cpp.parse_string(atomized.bngl)
-        network = cpp.generate_network(cpp_model, max_iter=100)
+        with _case_phase_scope("bng3-model-parse"):
+            cpp_model = cpp.parse_string(atomized.bngl)
+        with _case_phase_scope("network-generation"):
+            network = cpp.generate_network(cpp_model, max_iter=100)
         record["generated_network"] = {
             "species": network.num_species,
             "reactions": network.num_reactions,
         }
         if record["official_conformance"]["status"] == "pending":
-            if case["category"] == "stochastic":
-                record["official_conformance"] = _compare_stochastic_case_to_reference(
-                    case,
-                    atomized.bngl,
-                    parsed,
-                    atomized,
-                    reference,
-                    cpp,
-                    work_dir,
-                    stochastic_runs,
-                    cpp_model,
-                    network,
-                )
-            else:
-                record["official_conformance"] = _compare_case_to_reference(
-                    case,
-                    cpp_model,
-                    atomized.bngl,
-                    parsed,
-                    atomized,
-                    reference,
-                    cpp,
-                    work_dir,
-                    network,
-                )
+            with _case_phase_scope("official-reference-comparison"):
+                if case["category"] == "stochastic":
+                    record["official_conformance"] = (
+                        _compare_stochastic_case_to_reference(
+                            case,
+                            atomized.bngl,
+                            parsed,
+                            atomized,
+                            reference,
+                            cpp,
+                            work_dir,
+                            stochastic_runs,
+                            cpp_model,
+                            network,
+                            stochastic_seed_base,
+                        )
+                    )
+                else:
+                    record["official_conformance"] = _compare_case_to_reference(
+                        case,
+                        cpp_model,
+                        atomized.bngl,
+                        parsed,
+                        atomized,
+                        reference,
+                        cpp,
+                        work_dir,
+                        network,
+                    )
 
         output_path = work_dir / f"{case['category']}_{case['id']}.xml"
-        cpp.io.write_sbml(
-            cpp_model,
-            network,
-            str(output_path),
-            source_metadata=source_metadata,
-        )
-        output_text = output_path.read_text(encoding="utf-8")
-        record["written_xml"] = _validate_xml(output_text, "written SBML")
-        reimport_model = SBMLParser().parse(output_text)
+        with _case_phase_scope("sbml-export-and-validation"):
+            cpp.io.write_sbml(
+                cpp_model,
+                network,
+                str(output_path),
+                source_metadata=source_metadata,
+            )
+            output_text = output_path.read_text(encoding="utf-8")
+            record["written_xml"] = _validate_xml(output_text, "written SBML")
+        with _case_phase_scope("roundtrip-source-parse"):
+            reimport_model = SBMLParser().parse(output_text)
         record["reimport_model"] = {
             "species": len(reimport_model.species),
             "reactions": len(reimport_model.reactions),
@@ -3488,24 +3664,27 @@ def _validate_case(
                 and reimport_model.source_metadata_payload == source_metadata
             ),
         }
-        reimport = Atomizer(
-            atomize=False,
-            quiet_mode=True,
-            t_end=simulation_t_end,
-            n_steps=simulation_n_steps,
-        ).atomize(output_text)
+        with _case_phase_scope("roundtrip-atomizer-translation"):
+            reimport = Atomizer(
+                atomize=False,
+                quiet_mode=True,
+                t_end=simulation_t_end,
+                n_steps=simulation_n_steps,
+            ).atomize(output_text)
         if not reimport.success:
             raise RuntimeError(reimport.error or "round-trip Atomizer returned failure")
         if artifacts_dir is not None:
             (work_dir / "reimported.bngl").write_text(reimport.bngl, encoding="utf-8")
-        reimport_network = cpp.generate_network(
-            cpp.parse_string(reimport.bngl), max_iter=100
-        )
+        with _case_phase_scope("roundtrip-network-generation"):
+            reimport_network = cpp.generate_network(
+                cpp.parse_string(reimport.bngl), max_iter=100
+            )
         record["reimport_network"] = {
             "species": reimport_network.num_species,
             "reactions": reimport_network.num_reactions,
         }
-        native = dict(cpp.io.read_sbml(str(output_path), False))
+        with _case_phase_scope("native-sbml-readback"):
+            native = dict(cpp.io.read_sbml(str(output_path), False))
         record["native_reader"] = native
         if not native.get("success"):
             raise RuntimeError(
@@ -3531,24 +3710,25 @@ def _validate_case(
             record["unsupported_reason"] = " ".join(limitations)
         else:
             record["status"] = "passed"
-        comparison = _simulate_and_compare(
-            cpp_model,
-            output_path,
-            t_end=simulation_t_end,
-            n_steps=simulation_n_steps,
-            rtol=simulation_rtol,
-            atol=simulation_atol,
-            function_names={
-                standardize_name(str(rule.variable))
-                for rule in parsed.rules
-                if rule.type == "assignment" and rule.variable
-            }
-            | {
-                standardize_name(str(assignment.symbol))
-                for assignment in parsed.initial_assignments
-                if assignment.symbol
-            },
-        )
+        with _case_phase_scope("independent-simulation-comparison"):
+            comparison = _simulate_and_compare(
+                cpp_model,
+                output_path,
+                t_end=simulation_t_end,
+                n_steps=simulation_n_steps,
+                rtol=simulation_rtol,
+                atol=simulation_atol,
+                function_names={
+                    standardize_name(str(rule.variable))
+                    for rule in parsed.rules
+                    if rule.type == "assignment" and rule.variable
+                }
+                | {
+                    standardize_name(str(assignment.symbol))
+                    for assignment in parsed.initial_assignments
+                    if assignment.symbol
+                },
+            )
         record["simulation_comparison"] = comparison
         if not comparison.get("passed", False):
             record["status"] = "failed"
@@ -3624,6 +3804,8 @@ def _run_isolated_case(
         str(args.simulation_atol),
         "--stochastic-runs",
         str(getattr(args, "stochastic_runs", STOCHASTIC_DEFAULT_RUNS)),
+        "--stochastic-seed-base",
+        str(getattr(args, "stochastic_seed_base", STOCHASTIC_SEED_BASE)),
     ]
     if artifacts_dir is not None:
         command.extend(["--artifacts-dir", str(artifacts_dir.resolve())])
@@ -3672,7 +3854,7 @@ def _run_isolated_case(
     except subprocess.TimeoutExpired as exc:
         stdout = exc.stdout or ""
         stderr = exc.stderr or ""
-        return {
+        record = {
             "category": case["category"],
             "id": case["id"],
             "version": case["version"],
@@ -3685,6 +3867,10 @@ def _run_isolated_case(
                 "reason": f"per-case timeout after {args.case_timeout}s",
             },
         }
+        progress = _phase_progress(stderr)
+        if progress["active_phase"] is not None or progress["last_completed_phase"]:
+            record["phase_progress"] = progress
+        return record
     except Exception as exc:
         return {
             "category": case["category"],
@@ -3806,6 +3992,7 @@ def _forked_case_child(
             args.simulation_atol,
             args.artifacts_dir,
             args.stochastic_runs,
+            getattr(args, "stochastic_seed_base", STOCHASTIC_SEED_BASE),
         )
     except BaseException as exc:  # pragma: no cover - defensive child guard
         message = f"{type(exc).__name__}: {exc}"
@@ -3851,11 +4038,13 @@ def _forked_case_child(
         os._exit(0)
 
 
-def _forked_timeout_record(case: dict[str, Any], case_timeout: int) -> dict[str, Any]:
+def _forked_timeout_record(
+    case: dict[str, Any], case_timeout: int, stderr_path: Path | None = None
+) -> dict[str, Any]:
     """Return the timeout verdict used by every isolation mode."""
 
     reason = f"per-case timeout after {case_timeout}s"
-    return {
+    record = {
         "category": case["category"],
         "id": case["id"],
         "version": case["version"],
@@ -3865,6 +4054,11 @@ def _forked_timeout_record(case: dict[str, Any], case_timeout: int) -> dict[str,
         "error": reason,
         "official_conformance": {"status": "timed-out", "reason": reason},
     }
+    if stderr_path is not None and stderr_path.is_file():
+        progress = _phase_progress(stderr_path.read_bytes())
+        if progress["active_phase"] is not None or progress["last_completed_phase"]:
+            record["phase_progress"] = progress
+    return record
 
 
 def _forked_failure_record(case: dict[str, Any], message: str) -> dict[str, Any]:
@@ -3977,6 +4171,7 @@ def _run_forked_cases(
                 active[pid] = {
                     "case": case,
                     "record_path": record_path,
+                    "stderr_path": stderr_path,
                     "read_fd": read_fd,
                     "deadline": time.monotonic() + args.case_timeout,
                 }
@@ -4034,7 +4229,7 @@ def _run_forked_cases(
                     pass
                 case = state["case"]
                 results[(case["category"], case["id"])] = _forked_timeout_record(
-                    case, args.case_timeout
+                    case, args.case_timeout, state.get("stderr_path")
                 )
                 print(
                     f"{case['category']}/{case['id']}: TIMEOUT",
@@ -4304,11 +4499,23 @@ def main() -> int:
             "conformance comparison (DSMTS minimum: 1000)"
         ),
     )
+    parser.add_argument(
+        "--stochastic-seed-base",
+        type=int,
+        default=STOCHASTIC_SEED_BASE,
+        help="base seed for the reproducible official stochastic ensemble",
+    )
     args = parser.parse_args()
     if args.jobs < 1:
         raise SystemExit("--jobs must be at least one")
     if args.stochastic_runs < 1:
         raise SystemExit("--stochastic-runs must be at least one")
+    try:
+        args.stochastic_seed_base = _validate_stochastic_seed_base(
+            args.stochastic_seed_base
+        )
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
 
     try:
         suite_info = _validate_suite_checkout(args.suite_dir, args.lock)
@@ -4480,6 +4687,7 @@ def main() -> int:
                         args.simulation_atol,
                         args.artifacts_dir,
                         args.stochastic_runs,
+                        args.stochastic_seed_base,
                     )
                     records.append(record)
                     print(
@@ -4544,6 +4752,7 @@ def main() -> int:
         "runtime_provenance": runtime_info,
         "writer_sbml_version": "L3V2",
         "categories": args.categories,
+        "stochastic_seed_base": args.stochastic_seed_base,
         "canonical_version_priority": list(VERSION_PRIORITY),
         "case_isolation": {
             "mode": isolation_mode,
@@ -4586,6 +4795,7 @@ def main() -> int:
                 "meanRange/sdRange acceptance ranges"
             ),
             "stochastic_runs": args.stochastic_runs,
+            "stochastic_seed_base": args.stochastic_seed_base,
             "counts": official_counts,
             "by_category": official_by_category,
             "summary": official_summary,

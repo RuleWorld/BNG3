@@ -138,7 +138,7 @@ campaign's coverage:
 
 | Side | n | What it is |
 | --- | --- | --- |
-| harness | 12 | a **measurement** limitation: the model converts and runs, but the gate cannot evaluate it (12 cases whose official reference is one draw of a random event-execution order) |
+| harness | 14 | a **measurement** limitation: the model converts and runs, but the gate cannot evaluate it (12 cases whose official reference is one draw of a random event-execution order, and 2 whose official stochastic ensemble does not fit the gate's work budget) |
 | Atomizer | 218 | a **representational** limitation: the model uses a construct BNGL cannot say (93 at the official-reference stage and 125 at the conversion stage) |
 | not applicable | 34 | the case defines no official time-course reference |
 
@@ -151,8 +151,8 @@ its remaining coverage work, and they need different fixes.
 
 _Source: the expectation manifest's gap taxonomy
 (`provenance/sbml-campaign/expectations.json`), as of the measurement the
-generated current tables below record: 264 gaps in all — 125 at the
-conversion stage and 139 at the official-reference stage._
+generated current tables below record: 266 gaps in all — 125 at the
+conversion stage and 141 at the official-reference stage._
 
 The Atomizer-side gaps are the constructs the scope record describes one by
 one, each with the cases it covers and whether the boundary is reducible:
@@ -165,7 +165,11 @@ narrower than it was: the two large harness limits of the baseline — a
 reference runner that could not execute a model with scheduled actions, and an
 official stochastic reference that needed an ensemble the harness did not
 run — were closed by PR #337, and the reference that names a reaction's
-extent rate was closed by PR #378.
+extent rate was closed by PR #378. One harness-side limit is new: the two
+heaviest stochastic cases of the suite need an ensemble larger than the
+gate's per-case work budget allows at the number of repetitions the DSMTS
+user guide requires, so they are reported as *not comparable* rather than
+judged on an ensemble the runner's speed had truncated.
 
 The baseline official-reference failures are also grouped by each case's own
 official `componentTags` metadata, read from the pinned suite's own
@@ -506,8 +510,8 @@ and not part of the generated region.
 One row is not an improvement, and it is marked as such: **#379 is a
 revert**. It removes what #315 did, and the reason is in
 [The ODE regression and the revert that closed it](#the-ode-regression-and-the-revert-that-closed-it).
-The table lists the campaign's *merged* pull requests, so the one that is
-still open — #381 — is not in it.
+The table lists the campaign's *merged* pull requests, so the pull requests
+that are still open are not in it.
 
 The generated tables below give the measured before/after state of every
 stage, the exact cases that changed verdict, and the cases that regressed.
@@ -575,8 +579,8 @@ this document does not use them as one.
 | Conversion (SBML → BNGL) | 1798 | 125 | 0 | 0 |
 | Round-trip structure | 1798 | 0 | 0 | 125 |
 | Independent libRoadRunner comparison | 1798 | 0 | 0 | 125 |
-| Official reference comparison | 1784 | 139 | 0 | 0 |
-_Source: `/tmp/bng3-campaign/coordinator/main2.json` (SHA-256 `a10906ca96decd233fde41855bd6141563d9e3b95d792a616422371877c5a0c4`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `2cb9f2c3bc013307414379a22e655e3e3a0b6b18`; a timed-out case is recorded as failed and an unevaluated stage as not tested._
+| Official reference comparison | 1782 | 141 | 0 | 0 |
+_Source: `/tmp/bng3-campaign/n2/measurement.json` (SHA-256 `a2ad60a2108f6e9a894515e73f4c57217e554b2834a86e5f321d78f2b85522f5`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `c6da742f2a49cf993ff22ee00a15c7331311cd9b`; a timed-out case is recorded as failed and an unevaluated stage as not tested._
 
 #### Official-reference unsupported verdicts, by owner
 
@@ -589,9 +593,10 @@ _Source: `/tmp/bng3-campaign/coordinator/main2.json` (SHA-256 `a10906ca96decd233
 | 6 | Atomizer diagnostic | Reaction "…" is marked fast (fast="true") |
 | 3 | Atomizer | <infinity>/<notanumber> constant encountered in math |
 | 2 | Atomizer | a compartment declares unsupported spatialDimensions |
+| 2 | harness | the documented ensemble budget does not fit the gate's per-case ensemble work budget |
 
-Total official-reference unsupported verdicts: 139.
-_Source: `/tmp/bng3-campaign/coordinator/main2.json` (SHA-256 `a10906ca96decd233fde41855bd6141563d9e3b95d792a616422371877c5a0c4`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `2cb9f2c3bc013307414379a22e655e3e3a0b6b18`._
+Total official-reference unsupported verdicts: 141.
+_Source: `/tmp/bng3-campaign/n2/measurement.json` (SHA-256 `a2ad60a2108f6e9a894515e73f4c57217e554b2834a86e5f321d78f2b85522f5`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `c6da742f2a49cf993ff22ee00a15c7331311cd9b`._
 
 #### Remaining official-reference failures, by official feature
 
@@ -599,7 +604,7 @@ _Source: `/tmp/bng3-campaign/coordinator/main2.json` (SHA-256 `a10906ca96decd233
 | --- | --- | --- |
 
 Total official-reference failures: 0.
-_Source: `/tmp/bng3-campaign/coordinator/main2.json` (SHA-256 `a10906ca96decd233fde41855bd6141563d9e3b95d792a616422371877c5a0c4`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `2cb9f2c3bc013307414379a22e655e3e3a0b6b18`; clusters read from `/tmp/bng3-ssts-20261016` case notes._
+_Source: `/tmp/bng3-campaign/n2/measurement.json` (SHA-256 `a2ad60a2108f6e9a894515e73f4c57217e554b2834a86e5f321d78f2b85522f5`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `c6da742f2a49cf993ff22ee00a15c7331311cd9b`; clusters read from `/tmp/bng3-ssts-20261016` case notes._
 
 #### Curated BioModels — current
 
@@ -621,11 +626,11 @@ _Source: `/tmp/bng3-campaign/biomodels-main-flat.json` (SHA-256 `0e0583d1f568892
 | official_reference | failed | passed | 105 |
 | official_reference | failed | unsupported | 2 |
 | official_reference | passed | unsupported | 1 |
-| official_reference | unsupported | passed | 565 |
+| official_reference | unsupported | passed | 563 |
 | roundtrip_structure | not_tested | passed | 90 |
 | roundtrip_structure | passed | not_tested | 4 |
 
-Cases with at least one stage change: 674.
+Cases with at least one stage change: 672.
 
 Regressions (a stage that was `passed` and no longer is):
 
@@ -645,7 +650,7 @@ Regressions (a stage that was `passed` and no longer is):
 
 A stage that becomes `passed` is accepted only when the expectation manifest is explicitly updated.
 
-Baseline source: `/tmp/bng3-campaign/baseline-ssts.json` (SHA-256 `1743bbd77513679e675a4a748acd0d15911e9e1bb648e4ba0f8deb15787c16c7`); current source: `/tmp/bng3-campaign/coordinator/main2.json` (SHA-256 `a10906ca96decd233fde41855bd6141563d9e3b95d792a616422371877c5a0c4`).
+Baseline source: `/tmp/bng3-campaign/baseline-ssts.json` (SHA-256 `1743bbd77513679e675a4a748acd0d15911e9e1bb648e4ba0f8deb15787c16c7`); current source: `/tmp/bng3-campaign/n2/measurement.json` (SHA-256 `a2ad60a2108f6e9a894515e73f4c57217e554b2834a86e5f321d78f2b85522f5`).
 
 <!-- END GENERATED: sbml-campaign-current -->
 
@@ -687,9 +692,9 @@ triaged separately (PR #381).
 
 | Suite | Passed | Skipped | Xfailed | Failed |
 | --- | --- | --- | --- | --- |
-| tests/python | 1951 | 28 | 2 | 47 |
+| tests/python | 1978 | 28 | 2 | 50 |
 
-Source: `/tmp/bng3-campaign/pytest-main2.xml` (SHA-256 `2716fefda0dcfeb5ea13df2d756b9f8f276bf454e5053d4b4783299ac2e002f4`).
+Source: `/tmp/bng3-campaign/n2/pytest-n2.xml` (SHA-256 `9a89f8a11ff03f697f18dd9461813c7fa39f9db0024560841e70be9b4d2105fa`).
 
 <!-- END GENERATED: sbml-campaign-python -->
 

@@ -148,6 +148,10 @@ REASON_SIGNATURES: tuple[tuple[str, str], ...] = (
     ),
     ("repeated-run mean", "harness:stochastic-ensemble-not-evaluated"),
     (
+        "ensemble work budget",
+        "harness:stochastic-ensemble-budget",
+    ),
+    (
         "executed in a random order",
         "harness:random-event-execution",
     ),

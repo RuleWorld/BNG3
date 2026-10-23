@@ -3249,9 +3249,17 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                 flag = CVode(cvode_mem, target, y, &t, CV_NORMAL);
 
                 if (flag == CV_ROOT_RETURN) {
-                    int rootInfo = 0;
-                    CVodeGetRootInfo(cvode_mem, &rootInfo);
-                    if (rootInfo > 0) {
+                    // CVodeGetRootInfo writes one entry per registered root
+                    // function, not a single root index. Keep the buffer sized
+                    // to the groups passed to CVodeRootInit above.
+                    std::vector<int> rootsFound(nativeEventGroups_.size());
+                    if (CVodeGetRootInfo(cvode_mem, rootsFound.data()) != CV_SUCCESS) {
+                        throw std::runtime_error("bng3_events CVodeGetRootInfo failed");
+                    }
+                    const auto root = std::find_if(
+                        rootsFound.begin(), rootsFound.end(),
+                        [](int rootDirection) { return rootDirection > 0; });
+                    if (root != rootsFound.end()) {
                         std::vector<double> state(nSpecies_);
                         for (std::size_t i = 0; i < nSpecies_; ++i) state[i] = NV_Ith_S(y, i) * cvodeStateScale_[i];
                         // The session owns the SUNDIALS handles: an
@@ -3259,7 +3267,8 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                         // session releases the linear solver, the matrix,
                         // the solver memory, the vector and the context
                         // exactly once.
-                        const auto group = static_cast<std::size_t>(rootInfo - 1);
+                        const auto group = static_cast<std::size_t>(
+                            root - rootsFound.begin());
                         // The events of the group share the trigger, so they
                         // are triggered together.
                         queueTriggeredGroup(group, t, state);

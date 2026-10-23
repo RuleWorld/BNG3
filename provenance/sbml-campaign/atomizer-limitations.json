@@ -182,6 +182,15 @@
       "status": "not-exercised",
       "last_exercised": "2026-10-20",
       "resolved_note": "The refusal still exists in the Atomizer; the official suite no longer reaches it, because the campaign resolved the suite's cases by carrying the assigned value through the parameter's state (PR #366, 2026-10-21). A symbol that still cannot be resolved at initialization remains refused."
+    },
+    "harness:stochastic-ensemble-budget": {
+      "title": "The documented ensemble budget does not fit the gate's work budget",
+      "sbml_requires": "Nothing: this is a limit of the measurement, not of the model. The SBML discrete stochastic model test suite (DSMTS) user guide, section 3, asks for at least 1,000 independent repetitions and recommends 10,000 so that the statistical tests have reasonable power, and section 3.4 calls 10,000 the size that is needed to have any chance of picking up minor issues.",
+      "citation": "the SBML discrete stochastic model test suite (DSMTS) user guide, sections 3 and 3.4",
+      "bng3_does": "Nothing is refused. The model converts and the engine simulates it; the harness cannot compare the case, because the documented 40,000-trajectory ensemble of this model performs about 3.3e9 to 3.6e9 reaction events, which is more work than the gate's per-case ensemble budget allows, and the ensemble that would fit is smaller than the 10,000 independent repetitions the guide requires for the acceptance tests to have power. The harness says so: \"the documented ensemble budget of 40000 trajectories would perform about 3,605,337,500 reaction events, which exceeds the ensemble work budget of 400,000,000 reaction events; at the work budget the ensemble would hold 4437 trajectories, fewer than the 10000 independent repetitions the DSMTS user guide requires for the acceptance tests to have reasonable power, so the case is not comparable at a documented budget\".",
+      "reducible": "Yes, on the measurement side: the case becomes comparable when the gate can afford the documented ensemble, either by a larger work budget or by a batched sampler that can afford the model's rate laws. The limit is a measurement limit, not a limitation of the Atomizer.",
+      "first_recorded": "2026-10-21",
+      "status": "open"
     }
   },
   "changelog": [
@@ -212,6 +221,10 @@
     {
       "date": "2026-10-21",
       "change": "Closed: a reference that names a reaction's rate is now compared, because the Atomizer states the rate as a zero-argument function and the harness maps the reference's quantity onto it (PR #378); and a boundary species is now honoured by the direct SSA path, so the reference's value for it is compared rather than skipped (PR #380). The event limit 'an event the Atomizer cannot lower, or cannot order' shrinks by one case: an event group whose priority is read from the model state is now ordered by the priority it has at the execution instant (PR #376)."
+    },
+    {
+      "date": "2026-10-21",
+      "change": "Opened: the harness-side limit 'the documented ensemble budget does not fit the gate's work budget' is named. The ensemble size no longer depends on the runner's speed - it is decided by the ensemble's work, which is a property of the model and the seed - so a conformance verdict no longer moves with the machine's load, and a case whose documented ensemble is too heavy to be compared at the guide's power floor is reported as not comparable instead of being judged on a truncated ensemble."
     }
   ]
 }
