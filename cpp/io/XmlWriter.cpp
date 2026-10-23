@@ -1,6 +1,7 @@
 #include "compile/CompiledModel.hpp"
 #include "compile/TotalRate.hpp"
 #include "XmlWriter.hpp"
+#include "engine/DelayedSemanticsGuard.hpp"
 
 #include "compile/energy/BarrierCompiler.hpp"
 #include "compile/CompiledRule.hpp"
@@ -1463,6 +1464,7 @@ bool needsTotalRateFunctionWrapper(const ast::Model& model,
 } // anonymous namespace
 
 std::string XmlWriter::write(const ast::Model& model, const engine::GeneratedNetwork* network) {
+    engine::requireNoDelayedRuleSemantics(model, "BNG-XML export");
     compile::requireNoNativeEvents(model, "BNG-XML export");
     std::ostringstream xml;
 

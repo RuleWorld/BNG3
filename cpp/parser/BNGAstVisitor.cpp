@@ -1869,6 +1869,65 @@ std::any BNGAstVisitor::visitReaction_rule_def(BNGParser::Reaction_rule_defConte
         throw std::runtime_error("Unidirection reaction may have only one rate law");
     }
 
+    std::optional<ast::Expression> delayExpression;
+    bool nonConsuming = false;
+    bool sawNonConsuming = false;
+    for (auto* modifier : ctx->rule_modifiers()) {
+        if (modifier->DELAY() != nullptr) {
+            if (delayExpression) throw std::runtime_error("A reaction rule may have only one delay modifier");
+            delayExpression = buildExpression(modifier->expression());
+        }
+        if (modifier->NONCONSUMING() != nullptr) {
+            if (sawNonConsuming) throw std::runtime_error("A reaction rule may have only one NonConsuming modifier");
+            sawNonConsuming = true;
+            nonConsuming = true;
+        }
+    }
+    if (nonConsuming && !delayExpression) {
+        throw std::runtime_error("NonConsuming is valid only with delay=<expr>");
+    }
+    if (delayExpression) {
+        if (bidirectional) {
+            throw std::runtime_error("Delayed reversible rules are unsupported; write two unidirectional rules");
+        }
+        const auto& parameters = currentModel_->getParameters();
+        const auto isStaticParameterExpression = [&](const auto& self,
+                                                       const ast::Expression& expression) -> bool {
+            using K = ast::ExpressionKind;
+            if (expression.kind() == K::Number) return true;
+            if (expression.kind() == K::Identifier) {
+                return parameters.contains(expression.name());
+            }
+            if (expression.kind() == K::Unary || expression.kind() == K::Binary) {
+                return std::all_of(expression.args().begin(), expression.args().end(),
+                    [&](const auto& child) { return self(self, child); });
+            }
+            if (expression.kind() == K::Function) {
+                static const std::unordered_set<std::string> staticFunctions = {
+                    "exp", "ln", "log", "log2", "log10", "sqrt", "abs",
+                    "sin", "cos", "tan", "asin", "acos", "atan", "sinh",
+                    "cosh", "tanh", "asinh", "acosh", "atanh", "min", "max"};
+                return staticFunctions.count(expression.name()) != 0 &&
+                    std::all_of(expression.args().begin(), expression.args().end(),
+                        [&](const auto& child) { return self(self, child); });
+            }
+            return false;
+        };
+        if (!isStaticParameterExpression(isStaticParameterExpression, *delayExpression)) {
+            throw std::runtime_error("Reaction delay must be a parameter expression (no state, observable, or delayed-function dependencies)");
+        }
+        for (const auto& dependency : delayExpression->getDependencies()) {
+            if (parameters.expressionIsTimeDependent(ast::Expression::identifier(dependency))) {
+                throw std::runtime_error("Reaction delay must be constant during a run and cannot depend on time");
+            }
+        }
+        const double delay = delayExpression->evaluate(
+            [&](const std::string& name) { return parameters.evaluate(name); });
+        if (!std::isfinite(delay) || delay < 0.0) {
+            throw std::runtime_error("Reaction delay must evaluate to a finite nonnegative value");
+        }
+    }
+
     // Check if any molecule in reactant/product patterns has a scope prefix (%x::)
     bool hasScopePrefix = false;
     for (auto* speciesDef : ctx->reactant_patterns()->species_def()) {
@@ -1892,7 +1951,7 @@ std::any BNGAstVisitor::visitReaction_rule_def(BNGParser::Reaction_rule_defConte
         }
     }
 
-    currentModel_->addReactionRule(ast::ReactionRule(
+    ast::ReactionRule rule(
         "R" + std::to_string(currentModel_->getReactionRules().size() + 1),
         ctx->label_def() != nullptr ? ctx->label_def()->getText() : std::string(),
         std::move(reactants),
@@ -1921,7 +1980,9 @@ std::any BNGAstVisitor::visitReaction_rule_def(BNGParser::Reaction_rule_defConte
                 patterns.emplace_back(sg);
             }
             return patterns;
-        }()));
+        }());
+    if (delayExpression) rule.setDelay(*delayExpression, nonConsuming);
+    currentModel_->addReactionRule(std::move(rule));
     if (hasScopePrefix) {
         auto& rules = currentModel_->getReactionRules();
         if (!rules.empty()) {
@@ -2031,6 +2092,32 @@ void BNGAstVisitor::finalizeThermodynamicMetadata() {
     (void)rewritten;
     pendingBarrierLabels_.clear();
     pendingDrivingWork_.clear();
+
+    // Rule modifiers are parsed before the event block may be visited. A
+    // parameter referenced by a delay must remain constant during the run,
+    // including through aliases that an event can assign later.
+    std::unordered_set<std::string> eventTargets;
+    for (const auto& event : currentModel_->getEvents()) {
+        for (const auto& assignment : event.assignments) eventTargets.insert(assignment.target);
+    }
+    const auto& parameters = currentModel_->getParameters();
+    for (const auto& rule : currentModel_->getReactionRules()) {
+        if (!rule.getDelayExpression()) continue;
+        const auto directDependencies = rule.getDelayExpression()->getDependencies();
+        std::unordered_set<std::string> dependencies(directDependencies.begin(),
+                                                     directDependencies.end());
+        std::vector<std::string> pending(dependencies.begin(), dependencies.end());
+        for (std::size_t i = 0; i < pending.size(); ++i) {
+            const auto& name = pending[i];
+            if (eventTargets.count(name) != 0) {
+                throw std::runtime_error("Reaction delay depends on event-assigned parameter '" + name + "'");
+            }
+            if (!parameters.contains(name)) continue;
+            for (const auto& dependency : parameters.get(name).getExpression().getDependencies()) {
+                if (dependencies.insert(dependency).second) pending.push_back(dependency);
+            }
+        }
+    }
 }
 
 namespace {

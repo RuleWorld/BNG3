@@ -2507,6 +2507,14 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
     out << "begin reactions\n";
     std::size_t reactionIndex = 1;
     for (const auto& reaction : network.reactions.all()) {
+        const auto writeDelayMetadata = [&]() {
+            if (!reaction.getDelayExpression()) return;
+            std::string expression = reaction.getDelayExpression()->toBnglString();
+            expression.erase(std::remove_if(expression.begin(), expression.end(),
+                [](unsigned char c) { return std::isspace(c) != 0; }), expression.end());
+            out << " delay=" << expression;
+            if (reaction.isNonConsuming()) out << " NonConsuming";
+        };
         const bool totalRate =
             hasTotalRateModifier(model, reaction.getOriginRuleName());
         // Perl BNG2 (Rxn.pm::stringID) sorts reactant/product indices for
@@ -2593,6 +2601,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                           std::string("_reverse__").size()) +
                           "r"
                     : reaction.getOriginRuleName();
+      writeDelayMetadata();
       out << " #" << ruleComment;
       if (!totalRate && unitExpr.has_value()) {
         out << " unit_conversion=" << *unitExpr;
@@ -2617,6 +2626,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             std::string ruleComment = isReverse
                 ? reaction.getOriginRuleName().substr(std::string("_reverse__").size()) + "r"
                 : reaction.getOriginRuleName();
+            writeDelayMetadata();
             out << " #" << ruleComment;
             if (!totalRate && unitExpr.has_value()) {
                 out << " unit_conversion=" << *unitExpr;
@@ -2639,6 +2649,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             }
             out << rateParamName;
             // Perl writes rule name comment like #Rule1
+            writeDelayMetadata();
             out << " #" << reaction.getOriginRuleName();
         } else if (derivedFound != derivedRateParams.end()) {
             const auto unitFactor = unitConversionFactor(reaction, model, network);
@@ -2653,6 +2664,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                 wrotePrefix = true;
             }
             out << derivedFound->second.paramName;
+            writeDelayMetadata();
             out << " #" << (reaction.getOriginRuleName().rfind("_", 0) == 0 ? reaction.getOriginRuleName() : "_" + reaction.getOriginRuleName());
             if (!totalRate && unitExpr.has_value()) {
                 out << " unit_conversion=" << *unitExpr;
@@ -2734,6 +2746,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             } else {
                 out << reaction.getRateLaw();
             }
+            writeDelayMetadata();
             // Append rule name comment for non-derived reactions
             if (!reaction.getOriginRuleName().empty()) {
                 out << " #" << reaction.getOriginRuleName();

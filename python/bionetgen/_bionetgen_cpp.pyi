@@ -582,6 +582,7 @@ class io:
         network: GeneratedNetwork,
         path: str,
         source_metadata: str = "",
+        start_time: float = 0.0,
     ) -> None:
         """Write model to SBML format."""
         ...

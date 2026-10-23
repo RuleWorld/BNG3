@@ -367,6 +367,27 @@ engine::GeneratedNetwork networkFromNetData(
         if (comment != std::string::npos) rate = rate.substr(0, comment);
         while (!rate.empty() && std::isspace(rate.back())) rate.pop_back();
 
+        std::optional<ast::Expression> delayExpression;
+        bool nonConsuming = false;
+        const auto delayStart = rate.find(" delay=");
+        if (delayStart != std::string::npos) {
+            auto metadata = rate.substr(delayStart + 1);
+            rate.erase(delayStart);
+            const auto nonConsumingAt = metadata.find(" NonConsuming");
+            if (nonConsumingAt != std::string::npos) {
+                nonConsuming = true;
+                metadata.erase(nonConsumingAt);
+            }
+            if (metadata.rfind("delay=", 0) != 0 || metadata.size() == 6) {
+                throw std::runtime_error("Invalid delayed reaction metadata in .net reaction: " + line);
+            }
+            delayExpression = parser::parseExpression(metadata.substr(6));
+        }
+        if (rate.find("NonConsuming") != std::string::npos ||
+            (nonConsuming && !delayExpression)) {
+            throw std::runtime_error("NonConsuming requires delay=<expr> in .net reaction: " + line);
+        }
+
         const auto parseSpeciesIndices = [](const std::string& text) {
             std::vector<std::size_t> indices;
             if (text != "0") {
@@ -380,7 +401,8 @@ engine::GeneratedNetwork networkFromNetData(
         };
         network.reactions.add(ast::Rxn(
             index, parseSpeciesIndices(reactantsText),
-            parseSpeciesIndices(productsText), rate));
+            parseSpeciesIndices(productsText), rate, 1.0, {}, std::nullopt,
+            std::move(delayExpression), nonConsuming));
     }
 
     addNetObservables(netData, model);
@@ -4045,6 +4067,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     options.level = 2;
                     options.version = 3;
                     options.networksExport = true;
+                    options.startTime = parseScalarValue(
+                        readArgument(action, "t_start", "0"), model);
                     content = io::SbmlWriter::write(model, &(*network), options);
                 } else if (format == "bngl") {
                     io::BnglWriter::Options options;
@@ -4111,6 +4135,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             sbmlOpts.level = 2;
             sbmlOpts.version = 3;  // Perl default: L2V3
             sbmlOpts.networksExport = true;
+            sbmlOpts.startTime = parseScalarValue(
+                readArgument(action, "t_start", "0"), model);
 
             const auto suffix = stripQuotes(readArgument(action, "suffix", "sbml"));
             const auto sbmlContent = io::SbmlWriter::write(model, &(*network), sbmlOpts);

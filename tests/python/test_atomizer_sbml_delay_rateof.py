@@ -224,6 +224,72 @@ end model
     assert libsbml.AST_FUNCTION_RATE_OF in operators
 
 
+def test_delayed_reaction_sbml_has_valid_split_gated_and_zero_delay_forms(tmp_path):
+    def export(rule: str, filename: str, start_time: float = 0.0):
+        source = f"""
+begin model
+begin parameters
+  k 0.5
+  tau 2
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin reaction rules
+  {rule}
+end reaction rules
+end model
+"""
+        model = _cpp.parse_string(source)
+        network = _cpp.generate_network(model, max_iter=100)
+        destination = tmp_path / filename
+        _cpp.io.write_sbml(model, network, str(destination), start_time=start_time)
+        document = libsbml.readSBML(str(destination))
+        assert document.getNumErrors() == 0, [
+            str(error) for error in document.getErrors()
+        ]
+        return document.getModel()
+
+    def delay_nodes(node):
+        if node.getType() == libsbml.AST_FUNCTION_DELAY:
+            yield node
+        for index in range(node.getNumChildren()):
+            yield from delay_nodes(node.getChild(index))
+
+    consuming = export("A() + A() -> B() k delay=tau", "consuming.xml", 5.0)
+    assert consuming.getNumReactions() == 2
+    initiation = consuming.getReaction(0)
+    completion = consuming.getReaction(1)
+    assert initiation.getNumReactants() == 1
+    assert initiation.getReactant(0).getStoichiometry() == 2
+    assert initiation.getNumProducts() == 0
+    assert completion.getNumReactants() == 0
+    assert completion.getNumProducts() == 1
+    initiation_formula = libsbml.formulaToL3String(initiation.getKineticLaw().getMath())
+    completion_delays = list(delay_nodes(completion.getKineticLaw().getMath()))
+    assert len(completion_delays) == 1
+    assert libsbml.formulaToL3String(completion_delays[0].getChild(0)) == initiation_formula
+    assert "5" in libsbml.formulaToL3String(completion.getKineticLaw().getMath())
+
+    non_consuming = export(
+        "A() -> A() + B() 0.5 delay=tau NonConsuming", "nonconsuming.xml"
+    )
+    assert non_consuming.getNumReactions() == 1
+    delayed = non_consuming.getReaction(0)
+    assert delayed.getNumReactants() == delayed.getNumProducts() == 2
+    assert len(list(delay_nodes(delayed.getKineticLaw().getMath()))) == 1
+
+    zero_delay = export("A() -> B() k delay=0", "zero.xml")
+    assert zero_delay.getNumReactions() == 1
+    assert zero_delay.getReaction(0).getNumReactants() == 1
+    assert zero_delay.getReaction(0).getNumProducts() == 1
+    assert not list(delay_nodes(zero_delay.getReaction(0).getKineticLaw().getMath()))
+
+
 def test_delay_with_a_reproducible_history_is_not_reported_as_unsupported():
     """An exactly foldable delay must not be refused."""
 

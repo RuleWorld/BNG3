@@ -371,6 +371,11 @@ std::string BnglWriter::writeReactionRules(const ast::Model& model) {
             bngl << " driven_by(" << rule.drivingWorkExpression().toBnglString() << ")";
         }
 
+        if (rule.getDelayExpression()) {
+            bngl << " delay=" << rule.getDelayExpression()->toBnglString();
+            if (rule.isNonConsuming()) bngl << " NonConsuming";
+        }
+
         bngl << "\n";
     }
 

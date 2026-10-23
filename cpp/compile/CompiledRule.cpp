@@ -28,6 +28,8 @@ ModifierKind translateModifier(const std::string& rawModifier) {
     if (modifier == "moveconnected") return ModifierKind::MoveConnected;
     if (modifier == "matchonce") return ModifierKind::MatchOnce;
     if (modifier == "totalrate") return ModifierKind::TotalRate;
+    if (modifier.rfind("delay=", 0) == 0) return ModifierKind::Delay;
+    if (modifier == "nonconsuming") return ModifierKind::NonConsuming;
     if (modifier.rfind("include_reactants(", 0) == 0) return ModifierKind::IncludeReactants;
     if (modifier.rfind("exclude_reactants(", 0) == 0) return ModifierKind::ExcludeReactants;
     if (modifier.rfind("include_products(", 0) == 0) return ModifierKind::IncludeProducts;
@@ -340,6 +342,8 @@ public:
         compiled.label_ = rule.getLabel();
         compiled.conservativeInvalidation_ = rule.getOperations().empty();
         compiled.bidirectional_ = rule.isBidirectional();
+        compiled.delayExpression_ = rule.getDelayExpression();
+        compiled.nonConsuming_ = rule.isNonConsuming();
 
         // Reservoir work must be statically evaluable: a time- or
         // observable-dependent drive would change the cycle affinity during a

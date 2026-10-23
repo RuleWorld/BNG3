@@ -51,6 +51,8 @@ MOLECULAR: 'molecular';
 MATCHONCE: 'MatchOnce';
 DELETEMOLECULES: 'DeleteMolecules';
 MOVECONNECTED: 'MoveConnected';
+DELAY: 'delay';
+NONCONSUMING: 'NonConsuming';
 INCLUDE_REACTANTS: 'include_reactants';
 INCLUDE_PRODUCTS: 'include_products';
 EXCLUDE_REACTANTS: 'exclude_reactants';

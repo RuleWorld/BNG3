@@ -2,6 +2,7 @@
 #include "PythonExportWriter.hpp"
 
 #include "EnergyExportGuard.hpp"
+#include "engine/DelayedSemanticsGuard.hpp"
 
 #include <sstream>
 #include <iomanip>
@@ -26,6 +27,7 @@ std::string PythonExportWriter::write(const ast::Model& model, const engine::Gen
 }
 
 std::string PythonExportWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network, const Options& opts) {
+    engine::requireNoDelayedRuleSemantics(model, "Python export");
     requireNoEnergySemantics(model, "Python export");
     compile::requireNoNativeEvents(model, "Python export");
     std::ostringstream py;
