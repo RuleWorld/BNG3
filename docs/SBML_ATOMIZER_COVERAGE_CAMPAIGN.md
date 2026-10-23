@@ -555,11 +555,22 @@ _Source: `/tmp/bng3-campaign/run39878668497/ssts-31ae76c19fdd03c9d4af788f58dd518
 recorded 40,000-run ensemble violates 5 of 100 DSMTS mean/standard-deviation
 tests; the report estimates a `3.04e-7` tail probability under the guide's
 approximate-normal null assumptions. A separate exact linear birth-death
-source-law calibration is retained in
-[`stochastic-00003-heldout-source-law-calibration.json`](../provenance/sbml-campaign/stochastic-00003-heldout-source-law-calibration.json).
-That calibration covers a distinct held-out ensemble and predates PR #389;
-its receipt-scoped diagnostic does not revise the current raw failure or
-qualify the integrated product. The current manifest therefore keeps
+source-law calibration of the registered 40,000-run seed-2,000,000 ensemble
+is retained in
+[`stochastic-00003-heldout-run-39881927354.json`](../provenance/sbml-campaign/stochastic-00003-heldout-run-39881927354.json)
+and
+[`stochastic-00003-heldout-source-law-calibration-39881927354.json`](../provenance/sbml-campaign/stochastic-00003-heldout-source-law-calibration-39881927354.json).
+The run executed on product revision `f9a9880f`, where the exact source-law
+diagnostic was registered before execution. It passes the official comparison
+with 2 of 100 DSMTS tests outside the reference bounds; the calibrated
+source-law maximum-statistic tail estimate is 0.665 (95% Wilson interval
+0.635–0.694) at diagnostic alpha 0.01. The official run's estimated tail under
+the guide's approximate-normal null is 0.00827 at case error rate 0.001. The
+diagnostic reconstructs its statistic from the report's rounded summary
+arrays, and its PASS is scoped to this one ensemble. Its seed and result hash
+match an earlier replay, so it is not an independent second engine ensemble
+or general simulator qualification. The default-seed full report still
+records the original official failure; the expectation manifest keeps
 `stochastic/00003` failed.
 
 The generated comparison above lists every case whose verdict changed, the

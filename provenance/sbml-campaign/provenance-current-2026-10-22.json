@@ -2,11 +2,14 @@
   "base_commit": "31ae76c19fdd03c9d4af788f58dd5187726e14a1",
   "measurement_date": "2026-10-22",
   "measurement_host": "GitHub Actions hosted Ubuntu 22.04, CPython 3.12.15, libSBML 5.21.2, libRoadRunner 2.10.0",
-  "note": "Full 1923-case SBML Test Suite workflow_dispatch run 39878668497, artifact 12470477011, job 120170461068. The exact executed tree was 31ae76c19fdd03c9d4af788f58dd5187726e14a1; its report records one official stochastic failure (stochastic/00003), no conversion failures, and no timeouts. Its C++ and Python product source files are identical to current main d1263f7f (empty diff over cpp and python); native extension SHA-256 aa947dc7da940bf24605eda8f22914e16ccfc4efbe7cf04026468843dea78246 and Python package source SHA-256 f1ba3d52313273bf29df1c7828565607b118b7e764d3400a3469ee44e584476a. The fixed-budget planner now records stochastic/00023 as not comparable at the official-reference stage because the projected work cannot meet its documented ensemble size. stochastic/00003 retains its raw official failure. This artifact covers the SBML Test Suite; curated BioModels have a separate source-acquisition and qualification lane.",
+  "note": "Full 1923-case SBML Test Suite workflow_dispatch run 39878668497, artifact 12470477011, job 120170461068. The exact executed tree was 31ae76c19fdd03c9d4af788f58dd5187726e14a1; its report records one official stochastic failure (stochastic/00003), no conversion failures, and no timeouts. Its C++ and Python product source files are identical to current main 03be7f530d7bc889e27e0a7dc3b17d36290319c6 (empty diff over cpp and python); native extension SHA-256 aa947dc7da940bf24605eda8f22914e16ccfc4efbe7cf04026468843dea78246 and Python package source SHA-256 f1ba3d52313273bf29df1c7828565607b118b7e764d3400a3469ee44e584476a. The fixed-budget planner now records stochastic/00023 as not comparable at the official-reference stage because the projected work cannot meet its documented ensemble size. stochastic/00003 retains its raw official failure. This artifact covers the SBML Test Suite; curated BioModels have a separate source-acquisition and qualification lane. A registered seed-2000000 replay on product revision f9a9880f is recorded separately at stochastic-00003-heldout-run-39881927354.json; its engine result hashes match run 39877752652, so it is not an independent second ensemble and does not revise the default-seed expected failure.",
   "sbml_test_suite": {
     "artifact_id": 12470477011,
     "case_timeout_seconds": 60,
-    "categories": ["semantic", "stochastic"],
+    "categories": [
+      "semantic",
+      "stochastic"
+    ],
     "report_sha256": "49601d78bac943c536e111d575765e3823a808a1af11a66d9f88e83977a8833f",
     "repository": "https://github.com/sbmlteam/sbml-test-suite.git",
     "revision": "cf38585fac5de8e0e90112febb62851ee2181816",
