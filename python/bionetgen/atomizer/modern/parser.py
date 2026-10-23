@@ -15,7 +15,7 @@ import copy
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set
 from urllib.parse import unquote, urlsplit
 
 from .types import (
@@ -3070,6 +3070,48 @@ class SBMLParser:
             root = ET.fromstring(sbml_string)
         except ET.ParseError as exc:
             raise ValueError(f"Invalid SBML XML: {exc}") from exc
+        element_parents = {child: parent for parent in root.iter() for child in parent}
+        core_namespace = re.compile(
+            r"^https?://www\.sbml\.org/sbml/level3/version\d+/core$",
+            re.IGNORECASE,
+        )
+        req_uri = "http://www.sbml.org/sbml/level3/version1/req/version1"
+        req_changed_math = []
+        for element in root.iter():
+            tag = str(getattr(element, "tag", ""))
+            if not (tag.startswith("{") and "}" in tag):
+                continue
+            namespace, _, local_name = tag[1:].partition("}")
+            if namespace != req_uri or local_name != "listOfChangedMaths":
+                continue
+            parent = element_parents.get(element)
+            parent_tag = str(getattr(parent, "tag", ""))
+            if not (parent_tag.startswith("{") and "}" in parent_tag):
+                continue
+            parent_namespace, _, _ = parent_tag[1:].partition("}")
+            if not core_namespace.match(parent_namespace):
+                continue
+            # req records are optional children of an SBase carrying a
+            # mathematical expression.  Annotation payloads may contain
+            # arbitrary XML with the same names, so namespace and parent
+            # alone do not make that markup an active req record.
+            has_core_math = any(
+                str(getattr(child, "tag", ""))
+                == "{http://www.w3.org/1998/Math/MathML}math"
+                for child in parent
+            )
+            if not has_core_math:
+                continue
+            if any(
+                str(getattr(child, "tag", "")) == f"{{{req_uri}}}changedMath"
+                for child in element
+            ):
+                req_changed_math.append(element)
+        if req_changed_math:
+            raise ValueError(
+                "Unsupported SBML req changedMath record: package changes to "
+                "mathematical semantics are not resolved by the Atomizer."
+            )
         model_element = next(
             (element for element in root.iter() if _local_name(element.tag) == "model"),
             None,
@@ -3678,7 +3720,7 @@ class SBMLParser:
             "layout": "diagram layout",
             "render": "diagram rendering",
             "groups": "element grouping",
-            "req": "requirements metadata (retired package)",
+            "req": "requirements metadata without changed-math records",
         }
         package_reasons = {
             "fbc": " This is a constraint-based flux-balance model, not a kinetic time-course model.",

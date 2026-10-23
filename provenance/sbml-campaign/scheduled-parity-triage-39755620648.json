@@ -1,0 +1,2561 @@
+{
+  "artifact_kind": "historical-scheduled-parity-nonpass-triage",
+  "included_nonpass_count": 165,
+  "qualification": "Historical only; these records do not qualify current main or Atomizer support. Original statuses are retained, including FAIL. Current-main exact replay is separately required where marked pending.",
+  "record_counts": {
+    "FAIL": 28,
+    "HARNESS_ERROR": 21,
+    "NOT_TESTED": 116,
+    "PASS": 2906
+  },
+  "records": [
+    {
+      "blocked_by": [],
+      "cause_class": "reference NET writer rejects zero-reaction model",
+      "detail": "ABORT: writeFile() was asked to write the network, but no reactions were found.\nDid you remember to call generate_network() or to define seed species before writing network output?\n\n  at line 209\n",
+      "evidence_note": "ABORT: writeFile() was asked to write the network, but no reactions were found.\nDid you remember to call generate_network() or to define seed species before writing network output?\n\n  at line 209\n",
+      "id": "AN:network",
+      "next_action": "Verify the model’s BNG2 semantics and allow a valid empty network or return a named no-reaction/not-applicable result; do not infer BNG3 product failure.",
+      "owner": "reference-network harness",
+      "root_cause_status": "pinned-BNG2-reference-writer-refuses-zero-reaction-NET",
+      "stage": "reference-network",
+      "status": "HARNESS_ERROR",
+      "triage_status": "reference-limit-no-trajectory-contract"
+    },
+    {
+      "blocked_by": [
+        "AN:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "AN:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "AN:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "AN:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "AN:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "AN:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "AN:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "AN:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "reference NET writer rejects zero-reaction model",
+      "detail": "ABORT: writeFile() was asked to write the network, but no reactions were found.\nDid you remember to call generate_network() or to define seed species before writing network output?\n\n  at line 210\n",
+      "evidence_note": "ABORT: writeFile() was asked to write the network, but no reactions were found.\nDid you remember to call generate_network() or to define seed species before writing network output?\n\n  at line 210\n",
+      "id": "ANx:network",
+      "next_action": "Verify the model’s BNG2 semantics and allow a valid empty network or return a named no-reaction/not-applicable result; do not infer BNG3 product failure.",
+      "owner": "reference-network harness",
+      "root_cause_status": "pinned-BNG2-reference-writer-refuses-zero-reaction-NET",
+      "stage": "reference-network",
+      "status": "HARNESS_ERROR",
+      "triage_status": "reference-limit-no-trajectory-contract"
+    },
+    {
+      "blocked_by": [
+        "ANx:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "ANx:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "ANx:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "ANx:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "ANx:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "ANx:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "ANx:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "ANx:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "invalid source; pinned BNG2 --check rejects dangling-edge observable Actin_ADF at line 181 before BNG3 diagnostic",
+      "detail": "line 217:10 no viable alternative at input 'Barbed end'\nline 227:11 no viable alternative at input 'Pointed end'\n/home/runner/work/_temp/bng3-conformance/models/actin_branch/original/actin_branch.bngl: semantic parse failed: Cannot build model from source with syntax errors\n",
+      "evidence_note": "Exact source SHA and pinned BNG2 9601746 --check rejection; the source has a dangling-edge observable.",
+      "id": "actin_branch:parse",
+      "next_action": "Retain as invalid source: pinned canonical BNG2 rejects the exact source before the BNG3 failure point; do not score as a valid-source parser defect.",
+      "owner": "source model",
+      "root_cause_status": "source-invalid-confirmed-by-pinned-BNG2",
+      "source_path": "models/actin/actin_branch.bngl",
+      "source_sha256": "41d6b60867d4acc27fe17a1fef01cc264d09bc7bea75672aacbc57748a38faba",
+      "stage": "parse",
+      "status": "FAIL",
+      "triage_status": "invalid-source-not-product-failure"
+    },
+    {
+      "blocked_by": [
+        "actin_branch:parse"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "actin_branch:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "actin_branch:parse"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "actin_branch:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "actin_branch:parse"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "actin_branch:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "actin_branch:parse"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "actin_branch:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "invalid source; pinned BNG2 rejects whitespace in reaction-rule label at line 243",
+      "detail": "line 242:10 no viable alternative at input 'Barbed end'\nline 252:11 no viable alternative at input 'Pointed end'\n/home/runner/work/_temp/bng3-conformance/models/actin_branch_forFitToData/original/actin_branch_forFitToData.bngl: semantic parse failed: Cannot build model from source with syntax errors\n",
+      "evidence_note": "Exact source SHA and pinned BNG2 9601746 rejection: reaction-rule label Barbed end elongation contains whitespace.",
+      "id": "actin_branch_forFitToData:parse",
+      "next_action": "Retain as invalid source: pinned canonical BNG2 rejects the exact source before the BNG3 failure point; do not score as a valid-source parser defect.",
+      "owner": "source model",
+      "root_cause_status": "source-invalid-confirmed-by-pinned-BNG2",
+      "source_path": "models/actin/actin_branch_forFitToData.bngl",
+      "source_sha256": "8ffd5f2efbecc225fc72d7bb3e23a8ab828be47c21ec915b289885fc40fdb8f4",
+      "stage": "parse",
+      "status": "FAIL",
+      "triage_status": "invalid-source-not-product-failure"
+    },
+    {
+      "blocked_by": [
+        "actin_branch_forFitToData:parse"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "actin_branch_forFitToData:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "actin_branch_forFitToData:parse"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "actin_branch_forFitToData:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "actin_branch_forFitToData:parse"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "actin_branch_forFitToData:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "actin_branch_forFitToData:parse"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "actin_branch_forFitToData:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "observable graph contains dangling edge",
+      "detail": "ABORT: While reading observable Actin_ADF: SpeciesGraph::updateEdges(): dangling edge not allowed in species graph!\n  at line 103\n",
+      "evidence_note": "Exact historical source SHA-256 5fa73a90b32106ee15339cc186eb31575349b42690a989196f7e59e45494b34a was independently checked with pinned canonical BNG2 2.9.3; --check rejects observable Actin_ADF at line 103 for a dangling edge. This is invalid source, not a BNG3 defect.",
+      "id": "actin_simple:network",
+      "next_action": "Keep this source out of valid-source parity scoring; no BNG3 product defect is established.",
+      "owner": "historical source fixture",
+      "root_cause_status": "source-invalid-canonical-BNG2-rejects-dangling-edge-observable",
+      "stage": "reference-network",
+      "status": "HARNESS_ERROR",
+      "triage_status": "invalid-source-confirmed-canonical-BNG2",
+      "source_sha256": "5fa73a90b32106ee15339cc186eb31575349b42690a989196f7e59e45494b34a",
+      "source_validation": {
+        "oracle": "RuleWorld/bionetgen BNG2 2.9.3 at pinned commit 9601746f8884ed19ab2acea49fe87fc4660ace46",
+        "command": "perl bng2/BNG2.pl --check models/actin/actin_simple.bngl",
+        "result": "rejected at observable Actin_ADF, line 103: dangling edge not allowed in species graph",
+        "source_revision": "e53e16e84ae490e82acbfacf1a06f6370424dd3f"
+      }
+    },
+    {
+      "blocked_by": [
+        "actin_simple:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "actin_simple:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "actin_simple:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "actin_simple:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "actin_simple:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "actin_simple:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "actin_simple:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "actin_simple:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "source model declares no observable groups",
+      "detail": "no declared observable groups; cdat still required",
+      "evidence": [
+        "models/blbr/original/blbr.bngl"
+      ],
+      "evidence_note": "Exact historical source fixture has no begin observables section; therefore there is no gdat observable target to compare. This is explicit not-applicable, not a harness failure or an untested product claim; cdat checks remain required.",
+      "evidence_sha256": [
+        "8fe594ef0de3e7ceb4a8aeba9a49f163ca58232b6cbc9a2162459e395b98a959"
+      ],
+      "id": "blbr:simulation-bngl:gdat",
+      "next_action": "Record this as not applicable to current observable set or add declared observable; retain cdat evidence independently.",
+      "owner": "validation selector/model fixture",
+      "root_cause_status": "no-gdat-observable-target-in-source;cdat-remains-required",
+      "source_has_observables": false,
+      "stage": "observable-trajectory",
+      "status": "NOT_TESTED",
+      "triage_status": "structurally-not-applicable-source-validated"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "source model declares no observable groups",
+      "detail": "no declared observable groups; cdat still required",
+      "evidence": [
+        "models/blbr/original/blbr.bngl"
+      ],
+      "evidence_note": "Exact historical source fixture has no begin observables section; therefore there is no gdat observable target to compare. This is explicit not-applicable, not a harness failure or an untested product claim; cdat checks remain required.",
+      "evidence_sha256": [
+        "8fe594ef0de3e7ceb4a8aeba9a49f163ca58232b6cbc9a2162459e395b98a959"
+      ],
+      "id": "blbr:simulation-net-reload:gdat",
+      "next_action": "Record this as not applicable to current observable set or add declared observable; retain cdat evidence independently.",
+      "owner": "validation selector/model fixture",
+      "root_cause_status": "no-gdat-observable-target-in-source;cdat-remains-required",
+      "source_has_observables": false,
+      "stage": "observable-trajectory",
+      "status": "NOT_TESTED",
+      "triage_status": "structurally-not-applicable-source-validated"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "source model declares no observable groups",
+      "detail": "no declared observable groups; cdat still required",
+      "evidence": [
+        "models/deleteMolecules/original/deleteMolecules.bngl"
+      ],
+      "evidence_note": "Exact historical source fixture has no begin observables section; therefore there is no gdat observable target to compare. This is explicit not-applicable, not a harness failure or an untested product claim; cdat checks remain required.",
+      "evidence_sha256": [
+        "c5e51d0ee1667ed15183155a63e56c3fb5c3f25ac3b288b54311959629e12297"
+      ],
+      "id": "deleteMolecules:simulation-bngl:gdat",
+      "next_action": "Record this as not applicable to current observable set or add declared observable; retain cdat evidence independently.",
+      "owner": "validation selector/model fixture",
+      "root_cause_status": "no-gdat-observable-target-in-source;cdat-remains-required",
+      "source_has_observables": false,
+      "stage": "observable-trajectory",
+      "status": "NOT_TESTED",
+      "triage_status": "structurally-not-applicable-source-validated"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "source model declares no observable groups",
+      "detail": "no declared observable groups; cdat still required",
+      "evidence": [
+        "models/deleteMolecules/original/deleteMolecules.bngl"
+      ],
+      "evidence_note": "Exact historical source fixture has no begin observables section; therefore there is no gdat observable target to compare. This is explicit not-applicable, not a harness failure or an untested product claim; cdat checks remain required.",
+      "evidence_sha256": [
+        "c5e51d0ee1667ed15183155a63e56c3fb5c3f25ac3b288b54311959629e12297"
+      ],
+      "id": "deleteMolecules:simulation-net-reload:gdat",
+      "next_action": "Record this as not applicable to current observable set or add declared observable; retain cdat evidence independently.",
+      "owner": "validation selector/model fixture",
+      "root_cause_status": "no-gdat-observable-target-in-source;cdat-remains-required",
+      "source_has_observables": false,
+      "stage": "observable-trajectory",
+      "status": "NOT_TESTED",
+      "triage_status": "structurally-not-applicable-source-validated"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "source model declares no observable groups",
+      "detail": "no declared observable groups; cdat still required",
+      "evidence": [
+        "models/empty_compartments_block/original/empty_compartments_block.bngl"
+      ],
+      "evidence_note": "Exact historical source fixture has no begin observables section; therefore there is no gdat observable target to compare. This is explicit not-applicable, not a harness failure or an untested product claim; cdat checks remain required.",
+      "evidence_sha256": [
+        "bcb353e5f47708c82fa406c5cb3e16cc1999301e073cfc16427704267943783a"
+      ],
+      "id": "empty_compartments_block:simulation-bngl:gdat",
+      "next_action": "Record this as not applicable to current observable set or add declared observable; retain cdat evidence independently.",
+      "owner": "validation selector/model fixture",
+      "root_cause_status": "no-gdat-observable-target-in-source;cdat-remains-required",
+      "source_has_observables": false,
+      "stage": "observable-trajectory",
+      "status": "NOT_TESTED",
+      "triage_status": "structurally-not-applicable-source-validated"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "source model declares no observable groups",
+      "detail": "no declared observable groups; cdat still required",
+      "evidence": [
+        "models/empty_compartments_block/original/empty_compartments_block.bngl"
+      ],
+      "evidence_note": "Exact historical source fixture has no begin observables section; therefore there is no gdat observable target to compare. This is explicit not-applicable, not a harness failure or an untested product claim; cdat checks remain required.",
+      "evidence_sha256": [
+        "bcb353e5f47708c82fa406c5cb3e16cc1999301e073cfc16427704267943783a"
+      ],
+      "id": "empty_compartments_block:simulation-net-reload:gdat",
+      "next_action": "Record this as not applicable to current observable set or add declared observable; retain cdat evidence independently.",
+      "owner": "validation selector/model fixture",
+      "root_cause_status": "no-gdat-observable-target-in-source;cdat-remains-required",
+      "source_has_observables": false,
+      "stage": "observable-trajectory",
+      "status": "NOT_TESTED",
+      "triage_status": "structurally-not-applicable-source-validated"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "undefined parameter Hill",
+      "detail": "ABORT: Parameter 'Hill' is referenced but not defined\n  at line 58\n",
+      "evidence_note": "Exact historical source SHA-256 374cc22529dfb9eb1f546574a2141478237488ecda28055e897d605be865a23f was independently run with pinned canonical BNG2 2.9.3: syntax check passes, but full execution aborts at line 59 because Hill is undefined. This is invalid source for execution.",
+      "id": "exhaustion_switch:network",
+      "next_action": "Keep this source out of valid-source parity scoring; restore or define Hill before using it as an execution case.",
+      "owner": "historical source fixture",
+      "root_cause_status": "source-invalid-canonical-BNG2-undefined-Hill-symbol",
+      "stage": "reference-network",
+      "status": "HARNESS_ERROR",
+      "triage_status": "invalid-source-confirmed-canonical-BNG2-full-run",
+      "source_sha256": "374cc22529dfb9eb1f546574a2141478237488ecda28055e897d605be865a23f",
+      "source_validation": {
+        "oracle": "RuleWorld/bionetgen BNG2 2.9.3 at pinned commit 9601746f8884ed19ab2acea49fe87fc4660ace46",
+        "command": "perl bng2/BNG2.pl model.bngl (full run, after --check accepted syntax)",
+        "result": "aborted at reaction rule line 59: Parameter Hill is referenced but not defined",
+        "source_revision": "e53e16e84ae490e82acbfacf1a06f6370424dd3f"
+      }
+    },
+    {
+      "blocked_by": [
+        "exhaustion_switch:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "exhaustion_switch:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "exhaustion_switch:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "exhaustion_switch:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "exhaustion_switch:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "exhaustion_switch:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "exhaustion_switch:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "exhaustion_switch:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "oracle rejects reaction_rules block",
+      "detail": "ABORT: Could not process block type 'reaction_rules'\n  at line 121\n",
+      "evidence_note": "ABORT: Could not process block type 'reaction_rules'\n  at line 121\n The failure occurs in the pinned BNG2 reference-network stage before comparison; downstream contract rows are blocked by this prerequisite.",
+      "id": "fceri_fyn:network",
+      "next_action": "Confirm dialect and pinned oracle support; use supported route or explicitly mark reference syntax unsupported.",
+      "owner": "pinned BNG2 reference parser",
+      "root_cause_status": "pinned-BNG2-reference-does-not-accept-reaction_rules-block",
+      "stage": "reference-network",
+      "status": "HARNESS_ERROR",
+      "triage_status": "reference-dialect-capability-limitation"
+    },
+    {
+      "blocked_by": [
+        "fceri_fyn:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_fyn:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_fyn:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_fyn:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_fyn:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_fyn:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_fyn:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_fyn:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "oracle rejects reaction_rules block",
+      "detail": "ABORT: Could not process block type 'reaction_rules'\n  at line 126\n",
+      "evidence_note": "ABORT: Could not process block type 'reaction_rules'\n  at line 126\n The failure occurs in the pinned BNG2 reference-network stage before comparison; downstream contract rows are blocked by this prerequisite.",
+      "id": "fceri_fyn_lig:network",
+      "next_action": "Confirm dialect and pinned oracle support; use supported route or explicitly mark reference syntax unsupported.",
+      "owner": "pinned BNG2 reference parser",
+      "root_cause_status": "pinned-BNG2-reference-does-not-accept-reaction_rules-block",
+      "stage": "reference-network",
+      "status": "HARNESS_ERROR",
+      "triage_status": "reference-dialect-capability-limitation"
+    },
+    {
+      "blocked_by": [
+        "fceri_fyn_lig:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_fyn_lig:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_fyn_lig:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_fyn_lig:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_fyn_lig:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_fyn_lig:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_fyn_lig:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_fyn_lig:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "oracle rejects reaction_rules block",
+      "detail": "ABORT: Could not process block type 'reaction_rules'\n  at line 121\n",
+      "evidence_note": "ABORT: Could not process block type 'reaction_rules'\n  at line 121\n The failure occurs in the pinned BNG2 reference-network stage before comparison; downstream contract rows are blocked by this prerequisite.",
+      "id": "fceri_fyn_trimer:network",
+      "next_action": "Confirm dialect and pinned oracle support; use supported route or explicitly mark reference syntax unsupported.",
+      "owner": "pinned BNG2 reference parser",
+      "root_cause_status": "pinned-BNG2-reference-does-not-accept-reaction_rules-block",
+      "stage": "reference-network",
+      "status": "HARNESS_ERROR",
+      "triage_status": "reference-dialect-capability-limitation"
+    },
+    {
+      "blocked_by": [
+        "fceri_fyn_trimer:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_fyn_trimer:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_fyn_trimer:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_fyn_trimer:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_fyn_trimer:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_fyn_trimer:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_fyn_trimer:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_fyn_trimer:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "oracle rejects reaction_rules block",
+      "detail": "ABORT: Could not process block type 'reaction_rules'\n  at line 108\n",
+      "evidence_note": "ABORT: Could not process block type 'reaction_rules'\n  at line 108\n The failure occurs in the pinned BNG2 reference-network stage before comparison; downstream contract rows are blocked by this prerequisite.",
+      "id": "fceri_gamma2:network",
+      "next_action": "Confirm dialect and pinned oracle support; use supported route or explicitly mark reference syntax unsupported.",
+      "owner": "pinned BNG2 reference parser",
+      "root_cause_status": "pinned-BNG2-reference-does-not-accept-reaction_rules-block",
+      "stage": "reference-network",
+      "status": "HARNESS_ERROR",
+      "triage_status": "reference-dialect-capability-limitation"
+    },
+    {
+      "blocked_by": [
+        "fceri_gamma2:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_gamma2:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_gamma2:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_gamma2:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_gamma2:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_gamma2:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_gamma2:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_gamma2:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "oracle rejects reaction_rules block",
+      "detail": "ABORT: Could not process block type 'reaction_rules'\n  at line 97\n",
+      "evidence_note": "ABORT: Could not process block type 'reaction_rules'\n  at line 97\n The failure occurs in the pinned BNG2 reference-network stage before comparison; downstream contract rows are blocked by this prerequisite.",
+      "id": "fceri_ji:network",
+      "next_action": "Confirm dialect and pinned oracle support; use supported route or explicitly mark reference syntax unsupported.",
+      "owner": "pinned BNG2 reference parser",
+      "root_cause_status": "pinned-BNG2-reference-does-not-accept-reaction_rules-block",
+      "stage": "reference-network",
+      "status": "HARNESS_ERROR",
+      "triage_status": "reference-dialect-capability-limitation"
+    },
+    {
+      "blocked_by": [
+        "fceri_ji:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_ji:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_ji:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_ji:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_ji:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_ji:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_ji:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_ji:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "oracle rejects reaction_rules block",
+      "detail": "ABORT: Could not process block type 'reaction_rules'\n  at line 97\n",
+      "evidence_note": "ABORT: Could not process block type 'reaction_rules'\n  at line 97\n The failure occurs in the pinned BNG2 reference-network stage before comparison; downstream contract rows are blocked by this prerequisite.",
+      "id": "fceri_ji_red:network",
+      "next_action": "Confirm dialect and pinned oracle support; use supported route or explicitly mark reference syntax unsupported.",
+      "owner": "pinned BNG2 reference parser",
+      "root_cause_status": "pinned-BNG2-reference-does-not-accept-reaction_rules-block",
+      "stage": "reference-network",
+      "status": "HARNESS_ERROR",
+      "triage_status": "reference-dialect-capability-limitation"
+    },
+    {
+      "blocked_by": [
+        "fceri_ji_red:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_ji_red:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_ji_red:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_ji_red:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_ji_red:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_ji_red:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_ji_red:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_ji_red:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "oracle rejects reaction_rules block",
+      "detail": "ABORT: Could not process block type 'reaction_rules'\n  at line 104\n",
+      "evidence_note": "ABORT: Could not process block type 'reaction_rules'\n  at line 104\n The failure occurs in the pinned BNG2 reference-network stage before comparison; downstream contract rows are blocked by this prerequisite.",
+      "id": "fceri_lyn_745:network",
+      "next_action": "Confirm dialect and pinned oracle support; use supported route or explicitly mark reference syntax unsupported.",
+      "owner": "pinned BNG2 reference parser",
+      "root_cause_status": "pinned-BNG2-reference-does-not-accept-reaction_rules-block",
+      "stage": "reference-network",
+      "status": "HARNESS_ERROR",
+      "triage_status": "reference-dialect-capability-limitation"
+    },
+    {
+      "blocked_by": [
+        "fceri_lyn_745:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_lyn_745:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_lyn_745:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_lyn_745:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_lyn_745:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_lyn_745:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_lyn_745:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_lyn_745:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "oracle rejects reaction_rules block",
+      "detail": "ABORT: Could not process block type 'reaction_rules'\n  at line 97\n",
+      "evidence_note": "ABORT: Could not process block type 'reaction_rules'\n  at line 97\n The failure occurs in the pinned BNG2 reference-network stage before comparison; downstream contract rows are blocked by this prerequisite.",
+      "id": "fceri_trimer:network",
+      "next_action": "Confirm dialect and pinned oracle support; use supported route or explicitly mark reference syntax unsupported.",
+      "owner": "pinned BNG2 reference parser",
+      "root_cause_status": "pinned-BNG2-reference-does-not-accept-reaction_rules-block",
+      "stage": "reference-network",
+      "status": "HARNESS_ERROR",
+      "triage_status": "reference-dialect-capability-limitation"
+    },
+    {
+      "blocked_by": [
+        "fceri_trimer:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_trimer:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_trimer:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_trimer:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_trimer:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_trimer:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "fceri_trimer:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "fceri_trimer:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "confirmed BNG3 parser compatibility defect on BNG2-valid observable R()==2",
+      "detail": "line 30:16 mismatched input '==' expecting LB\nline 31:2 extraneous input 'Species' expecting {<EOF>, LB, 'begin', GENERATENETWORK, 'generate_hybrid_model', 'simulate', 'simulate_ode', 'simulate_ssa', 'simulate_pla', 'simulate_nf', 'simulate_rm', 'parameter_scan', 'bifurcate', 'LinearParameterSensitivity', 'readFile', 'visualize', 'writeSSC', 'writeSSCcfg', 'writeFile', 'writeModel', 'writeXML', 'writeNetwork', 'writeSBML', 'writeSBMLMulti', 'writeMDL', 'writeLatex', 'include_model', 'include_network', 'writeMfile', 'writeMexfile', 'writeCPPfile', 'writeCPYfile', 'setConcentration', 'addConcentration', 'saveConcentrations', 'resetConcentrations', 'setParameter', 'saveParameters', 'resetParameters', 'setVolume', 'simulate_psa', 'simulate_protocol', 'quit'}\nline 32:2 extraneous input 'Species' expecting {<EOF>, LB, 'begin', GENERATENETWORK, 'generate_hybrid_model', 'simulate', 'simulate_ode', 'simulate_ssa', 'simulate_pla', 'simulate_nf', 'simulate_rm', 'parameter_scan', 'bifurcate', 'LinearParameterSensitivity', 'readFile', 'visualize', 'writeSSC', 'writeSSCcfg', 'writeFile', 'writeModel', 'writeXML', 'writeNetwork', 'writeSBML', 'writeSBMLMulti', 'writeMDL', 'writeLatex', 'include_model', 'include_network', 'writeMfile', 'writeMexfile', 'writeCPPfile', 'writeCPYfile', 'setConcentration', 'addConcentration', 'saveConcentrations', 'resetConcentrations', 'setParameter', 'saveParameters', 'resetParameters', 'setVolume', 'simulate_psa', 'simulate_protocol', 'quit'}\nline 33:2 extraneous input 'Species' expecting {<EOF>, LB, 'begin', GENERATENETWORK, 'generate_hybrid_model', 'simulate', 'simulate_ode', 'simulate_ssa', 'simulate_pla', 'simulate_nf', 'simulate_rm', 'parameter_scan', 'bifurcate', 'LinearParameterSensitivity', 'readFile', 'visualize', 'writeSSC', 'writeSSCcfg', 'writeFile', 'writeModel', 'writeXML', 'writeNetwork', 'writeSBML', 'writeSBMLMulti', 'writeMDL', 'writeLatex', 'include_model', 'include_network', 'writeMfile', 'writeMexfile', 'writeCPPfile', 'writeCPYfile', 'setConcentration', 'addConcentration', 'saveConcentrations', 'resetConcentrations', 'setParameter', 'saveParameters', 'resetParameters', 'setVolume', 'simulate_psa', 'simulate_protocol', 'quit'}\nline 34:0 extraneous input 'end' expecting {<EOF>, LB, 'begin', GENERATENETWORK, 'generate_hybrid_model', 'simulate', 'simulate_ode', 'simulate_ssa', 'simulate_pla', 'simulate_nf', 'simulate_rm', 'parameter_scan', 'bifurcate', 'LinearParameterSensitivity', 'readFile', 'visualize', 'writeSSC', 'writeSSCcfg', 'writeFile', 'writeModel', 'writeXML', 'writeNetwork', 'writeSBML', 'writeSBMLMulti', 'writeMDL', 'writeLatex', 'include_model', 'include_network', 'writeMfile', 'writeMexfile', 'writeCPPfile', 'writeCPYfile', 'setConcentration', 'addConcentration', 'saveConcentrations', 'resetConcentrations', 'setParameter', 'saveParameters', 'resetParameters', 'setVolume', 'simulate_psa', 'simulate_protocol', 'quit'}\nline 35:6 mismatched input 'species' expecting 'actions'\n/home/runner/work/_temp/bng3-conformance/models/hybrid_test_hpp/original/hybrid_test_hpp.bngl: semantic parse failed: Cannot build model from source with syntax errors\n",
+      "evidence_note": "Pinned BNG2 accepts the exact source. Fresh replay with CLI SHA-256 34eaa1377901ac9a9d186738b5ab1d6d90f53983ed4deeabfee3581eeef983e6 built from bec22ae14f8e5fc9fb9cbf7feb40cd9266f48e2f fails at line 30:16: mismatched input == expecting LB. The entire cpp source tree matches current main 6b77c78c; this is current-source equivalence evidence, not an exact-main hosted binary receipt.",
+      "id": "hybrid_test_hpp:parse",
+      "next_action": "Repair or explicitly refuse the legacy call-like observable syntax R()==2; pinned BNG2 accepts the exact source and current-source-equivalent BNG3 replay still fails at line 30.",
+      "owner": "BNG3 parser",
+      "root_cause_status": "confirmed-current-main-cpp-source-and-equivalent-binary-replay",
+      "source_path": "tests/validation/Validate/DAT_validate/hybrid_test_hpp.bngl",
+      "source_sha256": "5ee0d81f81aa9ead0b12b1d72c6f0fd20ebafd02be46377dcb102f9f678e8422",
+      "stage": "parse",
+      "status": "FAIL",
+      "triage_status": "confirmed-product-defect-replay-source-equivalent-to-current-main"
+    },
+    {
+      "blocked_by": [
+        "hybrid_test_hpp:parse"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "hybrid_test_hpp:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "hybrid_test_hpp:parse"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "hybrid_test_hpp:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "hybrid_test_hpp:parse"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "hybrid_test_hpp:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "hybrid_test_hpp:parse"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "hybrid_test_hpp:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "reference NET writer rejects zero-reaction model",
+      "detail": "ABORT: writeFile() was asked to write the network, but no reactions were found.\nDid you remember to call generate_network() or to define seed species before writing network output?\n\n  at line 50\n",
+      "evidence_note": "ABORT: writeFile() was asked to write the network, but no reactions were found.\nDid you remember to call generate_network() or to define seed species before writing network output?\n\n  at line 50\n",
+      "id": "isingspin_energy:network",
+      "next_action": "Verify the model’s BNG2 semantics and allow a valid empty network or return a named no-reaction/not-applicable result; do not infer BNG3 product failure.",
+      "owner": "reference-network harness",
+      "root_cause_status": "pinned-BNG2-reference-writer-refuses-zero-reaction-NET",
+      "stage": "reference-network",
+      "status": "HARNESS_ERROR",
+      "triage_status": "reference-limit-no-trajectory-contract"
+    },
+    {
+      "blocked_by": [
+        "isingspin_energy:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "isingspin_energy:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "isingspin_energy:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "isingspin_energy:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "isingspin_energy:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "isingspin_energy:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "isingspin_energy:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "isingspin_energy:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "reference NET writer rejects zero-reaction model",
+      "detail": "ABORT: writeFile() was asked to write the network, but no reactions were found.\nDid you remember to call generate_network() or to define seed species before writing network output?\n\n  at line 59\n",
+      "evidence_note": "ABORT: writeFile() was asked to write the network, but no reactions were found.\nDid you remember to call generate_network() or to define seed species before writing network output?\n\n  at line 59\n",
+      "id": "isingspin_localfcn:network",
+      "next_action": "Verify the model’s BNG2 semantics and allow a valid empty network or return a named no-reaction/not-applicable result; do not infer BNG3 product failure.",
+      "owner": "reference-network harness",
+      "root_cause_status": "pinned-BNG2-reference-writer-refuses-zero-reaction-NET",
+      "stage": "reference-network",
+      "status": "HARNESS_ERROR",
+      "triage_status": "reference-limit-no-trajectory-contract"
+    },
+    {
+      "blocked_by": [
+        "isingspin_localfcn:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "isingspin_localfcn:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "isingspin_localfcn:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "isingspin_localfcn:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "isingspin_localfcn:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "isingspin_localfcn:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "isingspin_localfcn:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "isingspin_localfcn:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "expected reference NET file absent",
+      "detail": "ABORT: Couldn't read from file /home/runner/work/_temp/bng3-conformance/models/michment_cont/reference/michment_cont.net: No such file or directory\n  at line 10\n",
+      "evidence_note": "The required fixture is present at the historical source revision e53e16e84ae490e82acbfacf1a06f6370424dd3f with SHA-256 257d43d5d6a825644743b9023b998acda4b24272aff5d979d400e7a546054f15 (tests/validation/Validate/DAT_validate/michment_cont.net); the report's error shows it was absent from the isolated per-case reference directory. This is a runner staging failure, not missing repository input or an Atomizer semantic result.",
+      "id": "michment_cont:network",
+      "next_action": "Fix/verify corpus-to-case fixture staging and rerun this exact case on current main; retain the historical HARNESS_ERROR until a current receipt exists.",
+      "owner": "scheduled parity runner fixture staging",
+      "root_cause_status": "tracked-source-fixture-not-staged-into-isolated-reference-case-directory",
+      "stage": "reference-network",
+      "status": "HARNESS_ERROR",
+      "triage_status": "reference-harness-fixture-staging-defect-historical-replay-pending",
+      "source_sha256": "257d43d5d6a825644743b9023b998acda4b24272aff5d979d400e7a546054f15"
+    },
+    {
+      "blocked_by": [
+        "michment_cont:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "michment_cont:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "michment_cont:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "michment_cont:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "michment_cont:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "michment_cont:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "michment_cont:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "michment_cont:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "oracle rejects molecule type block",
+      "detail": "ABORT: Could not process block type 'molecule type'\n  at line 40\n",
+      "evidence_note": "ABORT: Could not process block type 'molecule type'\n  at line 40\n The failure occurs in pinned BNG2 reference-network parsing before subject comparison.",
+      "id": "motor:network",
+      "next_action": "Confirm dialect and pinned oracle support; use supported route or explicitly mark reference syntax unsupported.",
+      "owner": "pinned BNG2 reference parser",
+      "root_cause_status": "pinned-BNG2-reference-does-not-accept-molecule-type-block",
+      "stage": "reference-network",
+      "status": "HARNESS_ERROR",
+      "triage_status": "reference-dialect-capability-limitation"
+    },
+    {
+      "blocked_by": [
+        "motor:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "motor:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "motor:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "motor:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "motor:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "motor:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "motor:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "motor:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "case_group": "nfkb_illustrating_protocols",
+      "cause_class": "BNG3 NET-reload does not preserve symbolic seed expression values",
+      "detail": "see named child contracts",
+      "evidence": [
+        "models/nfkb_illustrating_protocols/original/nfkb_illustrating_protocols.bngl",
+        "models/nfkb_illustrating_protocols/simulation-net-reload/reference",
+        "models/nfkb_illustrating_protocols/simulation-net-reload/subject"
+      ],
+      "evidence_note": "Confirmed root cause: native NetReader/ActionDispatch lost or failed to evaluate symbolic initial amounts from NET. PR #392 fixes the NET parser/evaluator and is merged in main 55b0ebe80d05ffd49df811b52398325c84764999. Fresh replay used a CLI built from commit 2c0d0fb71819b68ad6d1b8021f2d2d7e357b96ea; `git diff --name-only 2c0d0fb 55b0ebe -- cpp` is empty and CLI SHA-256 is d932cf9ccfc275b7902f09650dc2bf57acd995b64ffb89a8c71e5e92dd25deea. The exact retained source, context, input NET and protocol were replayed; all 51-row CDAT/GDAT comparisons passed against pinned BNG2 with unchanged rtol=1e-6, atol=1e-9 (grid atol=1e-9). Partial scaling starts RAS GDP at 60000; NFkB symbolic seeds start at 50000. Historical FAIL status is retained; this is focused source-equivalent replay, not broad hosted parity.",
+      "id": "nfkb_illustrating_protocols:simulation-net-reload:cdat",
+      "next_action": "No further product fix is indicated by the current-content-equivalent replay; keep the original historical FAIL and link this bounded receipt. Full scheduled parity/current-main campaign remains the qualification gate.",
+      "owner": "BNG3 NetReader/readFile network reconstruction",
+      "root_cause_status": "native-NET-initial-symbolic-amount-read-as-zero;fixed-in-PR392-merged-main-55b0ebe8;current-content-equivalent-replay-passed",
+      "stage": "simulation-summary",
+      "status": "FAIL",
+      "triage_status": "historical-product-defect-fixed-current-content-equivalent-replay"
+    },
+    {
+      "blocked_by": [],
+      "case_group": "nfkb_illustrating_protocols",
+      "cause_class": "BNG3 NET-reload does not preserve symbolic seed expression values",
+      "detail": "{'column': 'S3', 'time': 0.0, 'reference': 50000.0, 'subject': 0.0, 'absolute_error': 50000.0}",
+      "evidence": [
+        "models/nfkb_illustrating_protocols/original/nfkb_illustrating_protocols.bngl",
+        "models/nfkb_illustrating_protocols/simulation-net-reload/reference",
+        "models/nfkb_illustrating_protocols/simulation-net-reload/subject"
+      ],
+      "evidence_note": "Confirmed root cause: native NetReader/ActionDispatch lost or failed to evaluate symbolic initial amounts from NET. PR #392 fixes the NET parser/evaluator and is merged in main 55b0ebe80d05ffd49df811b52398325c84764999. Fresh replay used a CLI built from commit 2c0d0fb71819b68ad6d1b8021f2d2d7e357b96ea; `git diff --name-only 2c0d0fb 55b0ebe -- cpp` is empty and CLI SHA-256 is d932cf9ccfc275b7902f09650dc2bf57acd995b64ffb89a8c71e5e92dd25deea. The exact retained source, context, input NET and protocol were replayed; all 51-row CDAT/GDAT comparisons passed against pinned BNG2 with unchanged rtol=1e-6, atol=1e-9 (grid atol=1e-9). Partial scaling starts RAS GDP at 60000; NFkB symbolic seeds start at 50000. Historical FAIL status is retained; this is focused source-equivalent replay, not broad hosted parity.",
+      "id": "nfkb_illustrating_protocols:simulation-net-reload:cdat.values",
+      "next_action": "No further product fix is indicated by the current-content-equivalent replay; keep the original historical FAIL and link this bounded receipt. Full scheduled parity/current-main campaign remains the qualification gate.",
+      "owner": "BNG3 NetReader/readFile network reconstruction",
+      "root_cause_status": "native-NET-initial-symbolic-amount-read-as-zero;fixed-in-PR392-merged-main-55b0ebe8;current-content-equivalent-replay-passed",
+      "stage": "species-trajectory",
+      "status": "FAIL",
+      "triage_status": "historical-product-defect-fixed-current-content-equivalent-replay"
+    },
+    {
+      "blocked_by": [],
+      "case_group": "nfkb_illustrating_protocols",
+      "cause_class": "BNG3 NET-reload does not preserve symbolic seed expression values",
+      "detail": "see named child contracts",
+      "evidence": [
+        "models/nfkb_illustrating_protocols/original/nfkb_illustrating_protocols.bngl",
+        "models/nfkb_illustrating_protocols/simulation-net-reload/reference",
+        "models/nfkb_illustrating_protocols/simulation-net-reload/subject"
+      ],
+      "evidence_note": "Confirmed root cause: native NetReader/ActionDispatch lost or failed to evaluate symbolic initial amounts from NET. PR #392 fixes the NET parser/evaluator and is merged in main 55b0ebe80d05ffd49df811b52398325c84764999. Fresh replay used a CLI built from commit 2c0d0fb71819b68ad6d1b8021f2d2d7e357b96ea; `git diff --name-only 2c0d0fb 55b0ebe -- cpp` is empty and CLI SHA-256 is d932cf9ccfc275b7902f09650dc2bf57acd995b64ffb89a8c71e5e92dd25deea. The exact retained source, context, input NET and protocol were replayed; all 51-row CDAT/GDAT comparisons passed against pinned BNG2 with unchanged rtol=1e-6, atol=1e-9 (grid atol=1e-9). Partial scaling starts RAS GDP at 60000; NFkB symbolic seeds start at 50000. Historical FAIL status is retained; this is focused source-equivalent replay, not broad hosted parity.",
+      "id": "nfkb_illustrating_protocols:simulation-net-reload:gdat",
+      "next_action": "No further product fix is indicated by the current-content-equivalent replay; keep the original historical FAIL and link this bounded receipt. Full scheduled parity/current-main campaign remains the qualification gate.",
+      "owner": "BNG3 NetReader/readFile network reconstruction",
+      "root_cause_status": "native-NET-initial-symbolic-amount-read-as-zero;fixed-in-PR392-merged-main-55b0ebe8;current-content-equivalent-replay-passed",
+      "stage": "simulation-summary",
+      "status": "FAIL",
+      "triage_status": "historical-product-defect-fixed-current-content-equivalent-replay"
+    },
+    {
+      "blocked_by": [],
+      "case_group": "nfkb_illustrating_protocols",
+      "cause_class": "BNG3 NET-reload does not preserve symbolic seed expression values",
+      "detail": "{'column': 'Ccomplex', 'time': 0.0, 'reference': 50000.0, 'subject': 0.0, 'absolute_error': 50000.0}",
+      "evidence": [
+        "models/nfkb_illustrating_protocols/original/nfkb_illustrating_protocols.bngl",
+        "models/nfkb_illustrating_protocols/simulation-net-reload/reference",
+        "models/nfkb_illustrating_protocols/simulation-net-reload/subject"
+      ],
+      "evidence_note": "Confirmed root cause: native NetReader/ActionDispatch lost or failed to evaluate symbolic initial amounts from NET. PR #392 fixes the NET parser/evaluator and is merged in main 55b0ebe80d05ffd49df811b52398325c84764999. Fresh replay used a CLI built from commit 2c0d0fb71819b68ad6d1b8021f2d2d7e357b96ea; `git diff --name-only 2c0d0fb 55b0ebe -- cpp` is empty and CLI SHA-256 is d932cf9ccfc275b7902f09650dc2bf57acd995b64ffb89a8c71e5e92dd25deea. The exact retained source, context, input NET and protocol were replayed; all 51-row CDAT/GDAT comparisons passed against pinned BNG2 with unchanged rtol=1e-6, atol=1e-9 (grid atol=1e-9). Partial scaling starts RAS GDP at 60000; NFkB symbolic seeds start at 50000. Historical FAIL status is retained; this is focused source-equivalent replay, not broad hosted parity.",
+      "id": "nfkb_illustrating_protocols:simulation-net-reload:gdat.values",
+      "next_action": "No further product fix is indicated by the current-content-equivalent replay; keep the original historical FAIL and link this bounded receipt. Full scheduled parity/current-main campaign remains the qualification gate.",
+      "owner": "BNG3 NetReader/readFile network reconstruction",
+      "root_cause_status": "native-NET-initial-symbolic-amount-read-as-zero;fixed-in-PR392-merged-main-55b0ebe8;current-content-equivalent-replay-passed",
+      "stage": "observable-trajectory",
+      "status": "FAIL",
+      "triage_status": "historical-product-defect-fixed-current-content-equivalent-replay"
+    },
+    {
+      "blocked_by": [],
+      "case_group": "oscSystem",
+      "cause_class": "canonical BNG2.9.3 does not implement TotalRate for network simulations; BNG3 honors full-flux contract",
+      "detail": "see named child contracts",
+      "evidence": [
+        "models/oscSystem/original/oscSystem.bngl",
+        "models/oscSystem/simulation-bngl/reference",
+        "models/oscSystem/simulation-bngl/subject",
+        "legacy/perl/Perl2/RxnRule.pm:27",
+        "legacy/perl/Perl2/RateLaw.pm:25",
+        "cpp/engine/OdeIntegrator.cpp:896"
+      ],
+      "evidence_note": "Pinned canonical source legacy/perl/Perl2/RxnRule.pm:27 says TotalRate is only implemented for XML network-free output, not network simulations. RateLaw.pm defines TotalRate as specifying the total reaction rate. The source has two DNA copies, but for the declared TotalRate expression kTranscription*BooleanFunction() (10,000 at t=0), the full-flux ODE dm/dt=10000-10.2m with m(0)=0 independently integrates to 180.919243934 at 0.02, matching BNG3 180.919243929. Multiplication by two DNA yields 361.838487868, matching pinned BNG2 361.838487736. The historical trajectory disagreement is therefore a BNG2 network-simulation capability gap, not a BNG3 product defect or Atomizer issue. Exact source law and initial DNA copies are in models/oscillatory_system/oscSystem.bngl:72,91,105 (source SHA-256 recorded); no Atomizer transformation occurs in this BNGL compatibility check.",
+      "id": "oscSystem:simulation-bngl:cdat",
+      "next_action": "Keep the pinned-oracle capability limitation explicit; require current-head replay only to refresh the verdict receipt, without changing BNG3 semantics.",
+      "owner": "BNG2 compatibility semantics / TotalRate rule integration",
+      "root_cause_status": "canonical-BNG2-network-TotalRate-support-gap;BNG3-full-flux-matches-declared-law;current-replay-pending",
+      "source_sha256": "a86ce0ba68c0d4ccfda65d5b03bc29ed4ac1694dcc25028f2042a31a8698bb67",
+      "stage": "simulation-summary",
+      "status": "FAIL",
+      "triage_status": "historical-parity-delta-explained-by-pinned-oracle-limit"
+    },
+    {
+      "blocked_by": [],
+      "case_group": "oscSystem",
+      "cause_class": "canonical BNG2.9.3 does not implement TotalRate for network simulations; BNG3 honors full-flux contract",
+      "detail": "{'column': 'S2', 'time': 0.02, 'reference': 361.8384877365, 'subject': 180.919243929, 'absolute_error': 180.91924380749998}",
+      "evidence": [
+        "models/oscSystem/original/oscSystem.bngl",
+        "models/oscSystem/simulation-bngl/reference",
+        "models/oscSystem/simulation-bngl/subject",
+        "legacy/perl/Perl2/RxnRule.pm:27",
+        "legacy/perl/Perl2/RateLaw.pm:25",
+        "cpp/engine/OdeIntegrator.cpp:896"
+      ],
+      "evidence_note": "Pinned canonical source legacy/perl/Perl2/RxnRule.pm:27 says TotalRate is only implemented for XML network-free output, not network simulations. RateLaw.pm defines TotalRate as specifying the total reaction rate. The source has two DNA copies, but for the declared TotalRate expression kTranscription*BooleanFunction() (10,000 at t=0), the full-flux ODE dm/dt=10000-10.2m with m(0)=0 independently integrates to 180.919243934 at 0.02, matching BNG3 180.919243929. Multiplication by two DNA yields 361.838487868, matching pinned BNG2 361.838487736. The historical trajectory disagreement is therefore a BNG2 network-simulation capability gap, not a BNG3 product defect or Atomizer issue. Exact source law and initial DNA copies are in models/oscillatory_system/oscSystem.bngl:72,91,105 (source SHA-256 recorded); no Atomizer transformation occurs in this BNGL compatibility check.",
+      "id": "oscSystem:simulation-bngl:cdat.values",
+      "next_action": "Keep the pinned-oracle capability limitation explicit; require current-head replay only to refresh the verdict receipt, without changing BNG3 semantics.",
+      "owner": "BNG2 compatibility semantics / TotalRate rule integration",
+      "root_cause_status": "canonical-BNG2-network-TotalRate-support-gap;BNG3-full-flux-matches-declared-law;current-replay-pending",
+      "source_sha256": "a86ce0ba68c0d4ccfda65d5b03bc29ed4ac1694dcc25028f2042a31a8698bb67",
+      "stage": "species-trajectory",
+      "status": "FAIL",
+      "triage_status": "historical-parity-delta-explained-by-pinned-oracle-limit"
+    },
+    {
+      "blocked_by": [],
+      "case_group": "oscSystem",
+      "cause_class": "canonical BNG2.9.3 does not implement TotalRate for network simulations; BNG3 honors full-flux contract",
+      "detail": "see named child contracts",
+      "evidence": [
+        "models/oscSystem/original/oscSystem.bngl",
+        "models/oscSystem/simulation-bngl/reference",
+        "models/oscSystem/simulation-bngl/subject",
+        "legacy/perl/Perl2/RxnRule.pm:27",
+        "legacy/perl/Perl2/RateLaw.pm:25",
+        "cpp/engine/OdeIntegrator.cpp:896"
+      ],
+      "evidence_note": "Pinned canonical source legacy/perl/Perl2/RxnRule.pm:27 says TotalRate is only implemented for XML network-free output, not network simulations. RateLaw.pm defines TotalRate as specifying the total reaction rate. The source has two DNA copies, but for the declared TotalRate expression kTranscription*BooleanFunction() (10,000 at t=0), the full-flux ODE dm/dt=10000-10.2m with m(0)=0 independently integrates to 180.919243934 at 0.02, matching BNG3 180.919243929. Multiplication by two DNA yields 361.838487868, matching pinned BNG2 361.838487736. The historical trajectory disagreement is therefore a BNG2 network-simulation capability gap, not a BNG3 product defect or Atomizer issue. Exact source law and initial DNA copies are in models/oscillatory_system/oscSystem.bngl:72,91,105 (source SHA-256 recorded); no Atomizer transformation occurs in this BNGL compatibility check.",
+      "id": "oscSystem:simulation-bngl:gdat",
+      "next_action": "Keep the pinned-oracle capability limitation explicit; require current-head replay only to refresh the verdict receipt, without changing BNG3 semantics.",
+      "owner": "BNG2 compatibility semantics / TotalRate rule integration",
+      "root_cause_status": "canonical-BNG2-network-TotalRate-support-gap;BNG3-full-flux-matches-declared-law;current-replay-pending",
+      "source_sha256": "a86ce0ba68c0d4ccfda65d5b03bc29ed4ac1694dcc25028f2042a31a8698bb67",
+      "stage": "simulation-summary",
+      "status": "FAIL",
+      "triage_status": "historical-parity-delta-explained-by-pinned-oracle-limit"
+    },
+    {
+      "blocked_by": [],
+      "case_group": "oscSystem",
+      "cause_class": "canonical BNG2.9.3 does not implement TotalRate for network simulations; BNG3 honors full-flux contract",
+      "detail": "{'column': 'NucProt', 'time': 0.02, 'reference': 2.55734173023e-07, 'subject': 1.278669754571e-07, 'absolute_error': 1.2786719756589998e-07}",
+      "evidence": [
+        "models/oscSystem/original/oscSystem.bngl",
+        "models/oscSystem/simulation-bngl/reference",
+        "models/oscSystem/simulation-bngl/subject",
+        "legacy/perl/Perl2/RxnRule.pm:27",
+        "legacy/perl/Perl2/RateLaw.pm:25",
+        "cpp/engine/OdeIntegrator.cpp:896"
+      ],
+      "evidence_note": "Pinned canonical source legacy/perl/Perl2/RxnRule.pm:27 says TotalRate is only implemented for XML network-free output, not network simulations. RateLaw.pm defines TotalRate as specifying the total reaction rate. The source has two DNA copies, but for the declared TotalRate expression kTranscription*BooleanFunction() (10,000 at t=0), the full-flux ODE dm/dt=10000-10.2m with m(0)=0 independently integrates to 180.919243934 at 0.02, matching BNG3 180.919243929. Multiplication by two DNA yields 361.838487868, matching pinned BNG2 361.838487736. The historical trajectory disagreement is therefore a BNG2 network-simulation capability gap, not a BNG3 product defect or Atomizer issue. Exact source law and initial DNA copies are in models/oscillatory_system/oscSystem.bngl:72,91,105 (source SHA-256 recorded); no Atomizer transformation occurs in this BNGL compatibility check.",
+      "id": "oscSystem:simulation-bngl:gdat.values",
+      "next_action": "Keep the pinned-oracle capability limitation explicit; require current-head replay only to refresh the verdict receipt, without changing BNG3 semantics.",
+      "owner": "BNG2 compatibility semantics / TotalRate rule integration",
+      "root_cause_status": "canonical-BNG2-network-TotalRate-support-gap;BNG3-full-flux-matches-declared-law;current-replay-pending",
+      "source_sha256": "a86ce0ba68c0d4ccfda65d5b03bc29ed4ac1694dcc25028f2042a31a8698bb67",
+      "stage": "observable-trajectory",
+      "status": "FAIL",
+      "triage_status": "historical-parity-delta-explained-by-pinned-oracle-limit"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "invalid runnable source action; BNG2 --check accepts syntax but full run aborts on unsupported simulate_ps",
+      "detail": "line 56:0 extraneous input 'simulate_ps' expecting {<EOF>, 'begin', 'setOption', GENERATENETWORK, 'generate_hybrid_model', 'simulate', 'simulate_ode', 'simulate_ssa', 'simulate_pla', 'simulate_nf', 'simulate_rm', 'parameter_scan', 'bifurcate', 'LinearParameterSensitivity', 'readFile', 'visualize', 'writeSSC', 'writeSSCcfg', 'writeFile', 'writeModel', 'writeXML', 'writeNetwork', 'writeSBML', 'writeSBMLMulti', 'writeMDL', 'writeLatex', 'include_model', 'include_network', 'writeMfile', 'writeMexfile', 'writeCPPfile', 'writeCPYfile', 'setConcentration', 'addConcentration', 'saveConcentrations', 'resetConcentrations', 'setParameter', 'saveParameters', 'resetParameters', 'setVolume', 'simulate_psa', 'simulate_protocol', 'quit'}\n/home/runner/work/_temp/bng3-conformance/models/push_pull/original/push_pull.bngl: semantic parse failed: Cannot build model from source with syntax errors\n",
+      "evidence_note": "Pinned BNG2 has simulate_psa, not simulate_ps; exact full source run aborts at line 56. BNG3 also rejects this action.",
+      "id": "push_pull:parse",
+      "next_action": "Retain as invalid runnable source for this parity lane: pinned BNG2 full run rejects unsupported action simulate_ps; do not score the BNG3 parse refusal as a parser defect.",
+      "owner": "source model / action compatibility",
+      "root_cause_status": "invalid-source-action-confirmed-by-pinned-BNG2-full-run",
+      "source_path": "models/performance_test_models/push_pull.bngl",
+      "source_sha256": "62627ab2ec734e0c81a91f6e59f49914812beeab3d7db15082c1e86ddf16f27d",
+      "stage": "parse",
+      "status": "FAIL",
+      "triage_status": "invalid-source-action-not-parser-failure"
+    },
+    {
+      "blocked_by": [
+        "push_pull:parse"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "push_pull:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "push_pull:parse"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "push_pull:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "push_pull:parse"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "push_pull:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "push_pull:parse"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "push_pull:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "source model declares no observable groups",
+      "detail": "no declared observable groups; cdat still required",
+      "evidence": [
+        "models/statfactor/original/statfactor.bngl"
+      ],
+      "evidence_note": "Exact historical source fixture has no begin observables section; therefore there is no gdat observable target to compare. This is explicit not-applicable, not a harness failure or an untested product claim; cdat checks remain required.",
+      "evidence_sha256": [
+        "cbba03bac6b309bf973109b8880dce5f9b5ef4d4a7953e4f95d0e6eed20dcc6b"
+      ],
+      "id": "statfactor:simulation-bngl:gdat",
+      "next_action": "Record this as not applicable to current observable set or add declared observable; retain cdat evidence independently.",
+      "owner": "validation selector/model fixture",
+      "root_cause_status": "no-gdat-observable-target-in-source;cdat-remains-required",
+      "source_has_observables": false,
+      "stage": "observable-trajectory",
+      "status": "NOT_TESTED",
+      "triage_status": "structurally-not-applicable-source-validated"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "source model declares no observable groups",
+      "detail": "no declared observable groups; cdat still required",
+      "evidence": [
+        "models/statfactor/original/statfactor.bngl"
+      ],
+      "evidence_note": "Exact historical source fixture has no begin observables section; therefore there is no gdat observable target to compare. This is explicit not-applicable, not a harness failure or an untested product claim; cdat checks remain required.",
+      "evidence_sha256": [
+        "cbba03bac6b309bf973109b8880dce5f9b5ef4d4a7953e4f95d0e6eed20dcc6b"
+      ],
+      "id": "statfactor:simulation-net-reload:gdat",
+      "next_action": "Record this as not applicable to current observable set or add declared observable; retain cdat evidence independently.",
+      "owner": "validation selector/model fixture",
+      "root_cause_status": "no-gdat-observable-target-in-source;cdat-remains-required",
+      "source_has_observables": false,
+      "stage": "observable-trajectory",
+      "status": "NOT_TESTED",
+      "triage_status": "structurally-not-applicable-source-validated"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "source model declares no observable groups",
+      "detail": "no declared observable groups; cdat still required",
+      "evidence": [
+        "models/test_compartment_XML/original/test_compartment_XML.bngl"
+      ],
+      "evidence_note": "Exact historical source fixture has no begin observables section; therefore there is no gdat observable target to compare. This is explicit not-applicable, not a harness failure or an untested product claim; cdat checks remain required.",
+      "evidence_sha256": [
+        "675ed00b87337c8506c44030abdad4173760f11e54fe861a6cf16bcb043e0543"
+      ],
+      "id": "test_compartment_XML:simulation-bngl:gdat",
+      "next_action": "Record this as not applicable to current observable set or add declared observable; retain cdat evidence independently.",
+      "owner": "validation selector/model fixture",
+      "root_cause_status": "no-gdat-observable-target-in-source;cdat-remains-required",
+      "source_has_observables": false,
+      "stage": "observable-trajectory",
+      "status": "NOT_TESTED",
+      "triage_status": "structurally-not-applicable-source-validated"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "source model declares no observable groups",
+      "detail": "no declared observable groups; cdat still required",
+      "evidence": [
+        "models/test_compartment_XML/original/test_compartment_XML.bngl"
+      ],
+      "evidence_note": "Exact historical source fixture has no begin observables section; therefore there is no gdat observable target to compare. This is explicit not-applicable, not a harness failure or an untested product claim; cdat checks remain required.",
+      "evidence_sha256": [
+        "675ed00b87337c8506c44030abdad4173760f11e54fe861a6cf16bcb043e0543"
+      ],
+      "id": "test_compartment_XML:simulation-net-reload:gdat",
+      "next_action": "Record this as not applicable to current observable set or add declared observable; retain cdat evidence independently.",
+      "owner": "validation selector/model fixture",
+      "root_cause_status": "no-gdat-observable-target-in-source;cdat-remains-required",
+      "source_has_observables": false,
+      "stage": "observable-trajectory",
+      "status": "NOT_TESTED",
+      "triage_status": "structurally-not-applicable-source-validated"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "source model declares no observable groups",
+      "detail": "no declared observable groups; cdat still required",
+      "evidence": [
+        "models/test_paramname/original/test_paramname.bngl"
+      ],
+      "evidence_note": "Exact historical source fixture has no begin observables section; therefore there is no gdat observable target to compare. This is explicit not-applicable, not a harness failure or an untested product claim; cdat checks remain required.",
+      "evidence_sha256": [
+        "c5f4646a394ef718fcc4f4378001d6766b3944469a4349def78b5934f8337ef6"
+      ],
+      "id": "test_paramname:simulation-bngl:gdat",
+      "next_action": "Record this as not applicable to current observable set or add declared observable; retain cdat evidence independently.",
+      "owner": "validation selector/model fixture",
+      "root_cause_status": "no-gdat-observable-target-in-source;cdat-remains-required",
+      "source_has_observables": false,
+      "stage": "observable-trajectory",
+      "status": "NOT_TESTED",
+      "triage_status": "structurally-not-applicable-source-validated"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "source model declares no observable groups",
+      "detail": "no declared observable groups; cdat still required",
+      "evidence": [
+        "models/test_paramname/original/test_paramname.bngl"
+      ],
+      "evidence_note": "Exact historical source fixture has no begin observables section; therefore there is no gdat observable target to compare. This is explicit not-applicable, not a harness failure or an untested product claim; cdat checks remain required.",
+      "evidence_sha256": [
+        "c5f4646a394ef718fcc4f4378001d6766b3944469a4349def78b5934f8337ef6"
+      ],
+      "id": "test_paramname:simulation-net-reload:gdat",
+      "next_action": "Record this as not applicable to current observable set or add declared observable; retain cdat evidence independently.",
+      "owner": "validation selector/model fixture",
+      "root_cause_status": "no-gdat-observable-target-in-source;cdat-remains-required",
+      "source_has_observables": false,
+      "stage": "observable-trajectory",
+      "status": "NOT_TESTED",
+      "triage_status": "structurally-not-applicable-source-validated"
+    },
+    {
+      "blocked_by": [],
+      "case_group": "test_partial_dynamical_scaling",
+      "cause_class": "BNG3 NET-reload does not preserve compound symbolic seed expression values",
+      "detail": "see named child contracts",
+      "evidence": [
+        "models/test_partial_dynamical_scaling/original/test_partial_dynamical_scaling.bngl",
+        "models/test_partial_dynamical_scaling/simulation-net-reload/reference",
+        "models/test_partial_dynamical_scaling/simulation-net-reload/subject"
+      ],
+      "evidence_note": "Confirmed root cause: native NetReader/ActionDispatch lost or failed to evaluate symbolic initial amounts from NET. PR #392 fixes the NET parser/evaluator and is merged in main 55b0ebe80d05ffd49df811b52398325c84764999. Fresh replay used a CLI built from commit 2c0d0fb71819b68ad6d1b8021f2d2d7e357b96ea; `git diff --name-only 2c0d0fb 55b0ebe -- cpp` is empty and CLI SHA-256 is d932cf9ccfc275b7902f09650dc2bf57acd995b64ffb89a8c71e5e92dd25deea. The exact retained source, context, input NET and protocol were replayed; all 51-row CDAT/GDAT comparisons passed against pinned BNG2 with unchanged rtol=1e-6, atol=1e-9 (grid atol=1e-9). Partial scaling starts RAS GDP at 60000; NFkB symbolic seeds start at 50000. Historical FAIL status is retained; this is focused source-equivalent replay, not broad hosted parity.",
+      "id": "test_partial_dynamical_scaling:simulation-net-reload:cdat",
+      "next_action": "No further product fix is indicated by the current-content-equivalent replay; keep the original historical FAIL and link this bounded receipt. Full scheduled parity/current-main campaign remains the qualification gate.",
+      "owner": "BNG3 NetReader/readFile network reconstruction",
+      "root_cause_status": "native-NET-initial-symbolic-amount-read-as-zero;fixed-in-PR392-merged-main-55b0ebe8;current-content-equivalent-replay-passed",
+      "stage": "simulation-summary",
+      "status": "FAIL",
+      "triage_status": "historical-product-defect-fixed-current-content-equivalent-replay"
+    },
+    {
+      "blocked_by": [],
+      "case_group": "test_partial_dynamical_scaling",
+      "cause_class": "BNG3 NET-reload does not preserve compound symbolic seed expression values",
+      "detail": "{'column': 'S2', 'time': 0.0, 'reference': 60000.0, 'subject': 0.0, 'absolute_error': 60000.0}",
+      "evidence": [
+        "models/test_partial_dynamical_scaling/original/test_partial_dynamical_scaling.bngl",
+        "models/test_partial_dynamical_scaling/simulation-net-reload/reference",
+        "models/test_partial_dynamical_scaling/simulation-net-reload/subject"
+      ],
+      "evidence_note": "Confirmed root cause: native NetReader/ActionDispatch lost or failed to evaluate symbolic initial amounts from NET. PR #392 fixes the NET parser/evaluator and is merged in main 55b0ebe80d05ffd49df811b52398325c84764999. Fresh replay used a CLI built from commit 2c0d0fb71819b68ad6d1b8021f2d2d7e357b96ea; `git diff --name-only 2c0d0fb 55b0ebe -- cpp` is empty and CLI SHA-256 is d932cf9ccfc275b7902f09650dc2bf57acd995b64ffb89a8c71e5e92dd25deea. The exact retained source, context, input NET and protocol were replayed; all 51-row CDAT/GDAT comparisons passed against pinned BNG2 with unchanged rtol=1e-6, atol=1e-9 (grid atol=1e-9). Partial scaling starts RAS GDP at 60000; NFkB symbolic seeds start at 50000. Historical FAIL status is retained; this is focused source-equivalent replay, not broad hosted parity.",
+      "id": "test_partial_dynamical_scaling:simulation-net-reload:cdat.values",
+      "next_action": "No further product fix is indicated by the current-content-equivalent replay; keep the original historical FAIL and link this bounded receipt. Full scheduled parity/current-main campaign remains the qualification gate.",
+      "owner": "BNG3 NetReader/readFile network reconstruction",
+      "root_cause_status": "native-NET-initial-symbolic-amount-read-as-zero;fixed-in-PR392-merged-main-55b0ebe8;current-content-equivalent-replay-passed",
+      "stage": "species-trajectory",
+      "status": "FAIL",
+      "triage_status": "historical-product-defect-fixed-current-content-equivalent-replay"
+    },
+    {
+      "blocked_by": [],
+      "case_group": "test_partial_dynamical_scaling",
+      "cause_class": "BNG3 NET-reload does not preserve compound symbolic seed expression values",
+      "detail": "see named child contracts",
+      "evidence": [
+        "models/test_partial_dynamical_scaling/original/test_partial_dynamical_scaling.bngl",
+        "models/test_partial_dynamical_scaling/simulation-net-reload/reference",
+        "models/test_partial_dynamical_scaling/simulation-net-reload/subject"
+      ],
+      "evidence_note": "Confirmed root cause: native NetReader/ActionDispatch lost or failed to evaluate symbolic initial amounts from NET. PR #392 fixes the NET parser/evaluator and is merged in main 55b0ebe80d05ffd49df811b52398325c84764999. Fresh replay used a CLI built from commit 2c0d0fb71819b68ad6d1b8021f2d2d7e357b96ea; `git diff --name-only 2c0d0fb 55b0ebe -- cpp` is empty and CLI SHA-256 is d932cf9ccfc275b7902f09650dc2bf57acd995b64ffb89a8c71e5e92dd25deea. The exact retained source, context, input NET and protocol were replayed; all 51-row CDAT/GDAT comparisons passed against pinned BNG2 with unchanged rtol=1e-6, atol=1e-9 (grid atol=1e-9). Partial scaling starts RAS GDP at 60000; NFkB symbolic seeds start at 50000. Historical FAIL status is retained; this is focused source-equivalent replay, not broad hosted parity.",
+      "id": "test_partial_dynamical_scaling:simulation-net-reload:gdat",
+      "next_action": "No further product fix is indicated by the current-content-equivalent replay; keep the original historical FAIL and link this bounded receipt. Full scheduled parity/current-main campaign remains the qualification gate.",
+      "owner": "BNG3 NetReader/readFile network reconstruction",
+      "root_cause_status": "native-NET-initial-symbolic-amount-read-as-zero;fixed-in-PR392-merged-main-55b0ebe8;current-content-equivalent-replay-passed",
+      "stage": "simulation-summary",
+      "status": "FAIL",
+      "triage_status": "historical-product-defect-fixed-current-content-equivalent-replay"
+    },
+    {
+      "blocked_by": [],
+      "case_group": "test_partial_dynamical_scaling",
+      "cause_class": "BNG3 NET-reload does not preserve compound symbolic seed expression values",
+      "detail": "{'column': 'S1', 'time': 0.0, 'reference': 60000.0, 'subject': 0.0, 'absolute_error': 60000.0}",
+      "evidence": [
+        "models/test_partial_dynamical_scaling/original/test_partial_dynamical_scaling.bngl",
+        "models/test_partial_dynamical_scaling/simulation-net-reload/reference",
+        "models/test_partial_dynamical_scaling/simulation-net-reload/subject"
+      ],
+      "evidence_note": "Confirmed root cause: native NetReader/ActionDispatch lost or failed to evaluate symbolic initial amounts from NET. PR #392 fixes the NET parser/evaluator and is merged in main 55b0ebe80d05ffd49df811b52398325c84764999. Fresh replay used a CLI built from commit 2c0d0fb71819b68ad6d1b8021f2d2d7e357b96ea; `git diff --name-only 2c0d0fb 55b0ebe -- cpp` is empty and CLI SHA-256 is d932cf9ccfc275b7902f09650dc2bf57acd995b64ffb89a8c71e5e92dd25deea. The exact retained source, context, input NET and protocol were replayed; all 51-row CDAT/GDAT comparisons passed against pinned BNG2 with unchanged rtol=1e-6, atol=1e-9 (grid atol=1e-9). Partial scaling starts RAS GDP at 60000; NFkB symbolic seeds start at 50000. Historical FAIL status is retained; this is focused source-equivalent replay, not broad hosted parity.",
+      "id": "test_partial_dynamical_scaling:simulation-net-reload:gdat.values",
+      "next_action": "No further product fix is indicated by the current-content-equivalent replay; keep the original historical FAIL and link this bounded receipt. Full scheduled parity/current-main campaign remains the qualification gate.",
+      "owner": "BNG3 NetReader/readFile network reconstruction",
+      "root_cause_status": "native-NET-initial-symbolic-amount-read-as-zero;fixed-in-PR392-merged-main-55b0ebe8;current-content-equivalent-replay-passed",
+      "stage": "observable-trajectory",
+      "status": "FAIL",
+      "triage_status": "historical-product-defect-fixed-current-content-equivalent-replay"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "expected reference NET file absent",
+      "detail": "ABORT: Couldn't read from file /home/runner/work/_temp/bng3-conformance/models/test_sat_cont/reference/test_sat_cont.net: No such file or directory\n  at line 5\n",
+      "evidence_note": "The required fixture is present at the historical source revision e53e16e84ae490e82acbfacf1a06f6370424dd3f with SHA-256 c46bff0ed7e2c934ac66972e5a2e0f481c212fef2583f086847c353ac4c01990 (tests/validation/Validate/DAT_validate/test_sat_cont.net); the report's error shows it was absent from the isolated per-case reference directory. This is a runner staging failure, not missing repository input or an Atomizer semantic result.",
+      "id": "test_sat_cont:network",
+      "next_action": "Fix/verify corpus-to-case fixture staging and rerun this exact case on current main; retain the historical HARNESS_ERROR until a current receipt exists.",
+      "owner": "scheduled parity runner fixture staging",
+      "root_cause_status": "tracked-source-fixture-not-staged-into-isolated-reference-case-directory",
+      "stage": "reference-network",
+      "status": "HARNESS_ERROR",
+      "triage_status": "reference-harness-fixture-staging-defect-historical-replay-pending",
+      "source_sha256": "c46bff0ed7e2c934ac66972e5a2e0f481c212fef2583f086847c353ac4c01990"
+    },
+    {
+      "blocked_by": [
+        "test_sat_cont:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "test_sat_cont:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "test_sat_cont:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "test_sat_cont:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "test_sat_cont:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "test_sat_cont:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "test_sat_cont:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "test_sat_cont:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "expected INPUT_FILES SBML file absent",
+      "detail": "ABORT: Could not find 'INPUT_FILES/test_sbml_flat_SBML.xml'\n  at line 5\n",
+      "evidence_note": "The required fixture is present at the historical source revision e53e16e84ae490e82acbfacf1a06f6370424dd3f with SHA-256 4236c61a6cb87fec21ed7dc6d326dcaa0988761224e38e90ef8cd34637796224 (tests/validation/Validate/INPUT_FILES/test_sbml_flat_SBML.xml); the report's error shows it was absent from the isolated per-case reference directory. This is a runner staging failure, not missing repository input or an Atomizer semantic result.",
+      "id": "test_sbml_flat:network",
+      "next_action": "Fix/verify corpus-to-case fixture staging and rerun this exact case on current main; retain the historical HARNESS_ERROR until a current receipt exists.",
+      "owner": "scheduled parity runner fixture staging",
+      "root_cause_status": "tracked-source-fixture-not-staged-into-isolated-reference-case-directory",
+      "stage": "reference-network",
+      "status": "HARNESS_ERROR",
+      "triage_status": "reference-harness-fixture-staging-defect-historical-replay-pending",
+      "source_sha256": "4236c61a6cb87fec21ed7dc6d326dcaa0988761224e38e90ef8cd34637796224"
+    },
+    {
+      "blocked_by": [
+        "test_sbml_flat:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "test_sbml_flat:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "test_sbml_flat:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "test_sbml_flat:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "test_sbml_flat:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "test_sbml_flat:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "test_sbml_flat:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "test_sbml_flat:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "expected INPUT_FILES SBML file absent",
+      "detail": "ABORT: Could not find 'INPUT_FILES/test_sbml_structured_SBML.xml'\n  at line 5\n",
+      "evidence_note": "The required fixture is present at the historical source revision e53e16e84ae490e82acbfacf1a06f6370424dd3f with SHA-256 416fd0da70c72a46d9f714e82a47ad0fcdbfb0b24eaf3368ffc559ea26398d41 (tests/validation/Validate/INPUT_FILES/test_sbml_structured_SBML.xml); the report's error shows it was absent from the isolated per-case reference directory. This is a runner staging failure, not missing repository input or an Atomizer semantic result.",
+      "id": "test_sbml_structured:network",
+      "next_action": "Fix/verify corpus-to-case fixture staging and rerun this exact case on current main; retain the historical HARNESS_ERROR until a current receipt exists.",
+      "owner": "scheduled parity runner fixture staging",
+      "root_cause_status": "tracked-source-fixture-not-staged-into-isolated-reference-case-directory",
+      "stage": "reference-network",
+      "status": "HARNESS_ERROR",
+      "triage_status": "reference-harness-fixture-staging-defect-historical-replay-pending",
+      "source_sha256": "416fd0da70c72a46d9f714e82a47ad0fcdbfb0b24eaf3368ffc559ea26398d41"
+    },
+    {
+      "blocked_by": [
+        "test_sbml_structured:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "test_sbml_structured:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "test_sbml_structured:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "test_sbml_structured:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "test_sbml_structured:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "test_sbml_structured:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "test_sbml_structured:network"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "test_sbml_structured:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "pinned BNG2 oracle inconsistency for symbolic setConcentration followed by add; BNG3 agrees across symbolic and numeric controls",
+      "detail": "species:   ref=3 test=3\nreactions: ref=2 test=2 (delta=+0)\n  initial species amounts changed: L(r)",
+      "evidence_note": "Pinned BNG2 symbolic 2e-9*NA*V set + add yields 1204420, while numerically equivalent set 1204420 + add yields 1806630. BNG3 yields 1806630 for both. BNGModel.pm:2247-2253 falls back to original concentration when stored value is nonnumeric. Current descendant exact-input replay completed; cpp source fingerprint matches current main for relevant files.",
+      "id": "test_setconc:network",
+      "next_action": "Keep the oracle inconsistency explicit: pinned BNG2 gives different results for symbolic versus numeric-equivalent setConcentration; BNG3 produces the consistent numeric result. Do not change BNG3 semantics to reproduce this legacy discrepancy.",
+      "owner": "canonical BNG2 compatibility semantics",
+      "root_cause_status": "oracle-inconsistency-confirmed-by-metamorphic-control",
+      "source_path": "models/test_setconc.bngl",
+      "source_sha256": "3198659df4ef1161639dfe0876c7a7339248beb806e53eec994be26633c60001",
+      "stage": "bounded-network",
+      "status": "FAIL",
+      "triage_status": "oracle-inconsistency-not-product-defect"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "same pinned BNG2 symbolic setConcentration oracle inconsistency as test_setconc:network",
+      "detail": "changed=['L(r)']",
+      "evidence_note": "Same underlying comparison as test_setconc:network; failing species L(r). Do not count as an independent defect.",
+      "id": "test_setconc:network:initial-amounts",
+      "next_action": "Keep the oracle inconsistency explicit: pinned BNG2 gives different results for symbolic versus numeric-equivalent setConcentration; BNG3 produces the consistent numeric result. Do not change BNG3 semantics to reproduce this legacy discrepancy.",
+      "owner": "canonical BNG2 compatibility semantics",
+      "root_cause_status": "oracle-inconsistency-confirmed-by-metamorphic-control",
+      "source_path": "models/test_setconc.bngl",
+      "source_sha256": "3198659df4ef1161639dfe0876c7a7339248beb806e53eec994be26633c60001",
+      "stage": "network.initial-amounts",
+      "status": "FAIL",
+      "triage_status": "linked-to-test_setconc-network-oracle-inconsistency"
+    },
+    {
+      "blocked_by": [
+        "test_setconc:network:initial-amounts"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "test_setconc:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "test_setconc:network:initial-amounts"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "test_setconc:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "test_setconc:network:initial-amounts"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "test_setconc:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "test_setconc:network:initial-amounts"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "test_setconc:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "known canonical BNG2 uppercase TFUN network-export stub; strict rate parity is not a supported oracle contract",
+      "detail": "species:   ref=5 test=5\nreactions: ref=5 test=5 (delta=+0)\n  reactions only in test (4) — candidates for the over-count / failed merge:\n    A() ->   [expr:tfun('DAT_validate/test.dat',dum/'__rational_10000_1__')]\n    B() ->   [expr:tfun('DAT_validate/test.dat',dum/'__rational_10000_1__')/'__rational_10_1__']\n    C() ->   [expr:tfun('DAT_validate/test.dat',dum/'__rational_10000_1__')/'__rational_2_1__']\n    D() ->   [expr:tfun('DAT_validate/test.dat',dum/'__rational_10000_1__')/(dum/'__rational_10000_1__')]\n  reactions only in ref (4):\n    A() ->   [expr:TFUN(dum/'__rational_10000_1__','DAT_validate/test.dat')]\n    B() ->   [expr:TFUN(dum/'__rational_10000_1__','DAT_validate/test.dat')]\n    C() ->   [expr:TFUN(dum/'__rational_10000_1__','DAT_validate/test.dat')]\n    D() ->   [expr:TFUN(dum/'__rational_10000_1__','DAT_validate/test.dat')]",
+      "evidence_note": "Pinned Perl2/Expression.pm:96-108 treats uppercase TFUN outside NFsim as a stub returning its first argument. Descendant exact replay failed only reaction-rate contract while other network contracts passed; current-main exact replay receipt still required.",
+      "id": "test_tfun:network",
+      "next_action": "Replay exact case on current main and retain the known BNG2 uppercase-TFUN network-export limitation; do not weaken the rate comparator or score a BNG3 defect without an independent source law.",
+      "owner": "canonical BNG2 compatibility semantics / source-oracle contract",
+      "root_cause_status": "pinned-BNG2-TFUN-network-export-limitation;current-replay-receipt-needed",
+      "source_path": "models/test_tfun.bngl",
+      "source_sha256": "1ddb6866600b4526e36498beaed4f2010771e1115100ba5b32890b98ff13f7bc",
+      "stage": "bounded-network",
+      "status": "FAIL",
+      "triage_status": "known-oracle-capability-limitation-not-green"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "same canonical BNG2 uppercase TFUN network-export stub as test_tfun:network",
+      "detail": "species:   ref=5 test=5\nreactions: ref=5 test=5 (delta=+0)\n  reactions only in test (4) — candidates for the over-count / failed merge:\n    A() ->   [expr:tfun('DAT_validate/test.dat',dum/'__rational_10000_1__')]\n    B() ->   [expr:tfun('DAT_validate/test.dat',dum/'__rational_10000_1__')/'__rational_10_1__']\n    C() ->   [expr:tfun('DAT_validate/test.dat',dum/'__rational_10000_1__')/'__rational_2_1__']\n    D() ->   [expr:tfun('DAT_validate/test.dat',dum/'__rational_10000_1__')/(dum/'__rational_10000_1__')]\n  reactions only in ref (4):\n    A() ->   [expr:TFUN(dum/'__rational_10000_1__','DAT_validate/test.dat')]\n    B() ->   [expr:TFUN(dum/'__rational_10000_1__','DAT_validate/test.dat')]\n    C() ->   [expr:TFUN(dum/'__rational_10000_1__','DAT_validate/test.dat')]\n    D() ->   [expr:TFUN(dum/'__rational_10000_1__','DAT_validate/test.dat')]",
+      "evidence_note": "Same underlying network comparison as test_tfun:network; rate-only failure. Do not count as an independent defect.",
+      "id": "test_tfun:network:reaction-rates",
+      "next_action": "Replay exact case on current main and retain the known BNG2 uppercase-TFUN network-export limitation; do not weaken the rate comparator or score a BNG3 defect without an independent source law.",
+      "owner": "canonical BNG2 compatibility semantics / source-oracle contract",
+      "root_cause_status": "pinned-BNG2-TFUN-network-export-limitation;current-replay-receipt-needed",
+      "source_path": "models/test_tfun.bngl",
+      "source_sha256": "1ddb6866600b4526e36498beaed4f2010771e1115100ba5b32890b98ff13f7bc",
+      "stage": "network.reaction-rates",
+      "status": "FAIL",
+      "triage_status": "linked-to-test_tfun-network-oracle-capability-limitation"
+    },
+    {
+      "blocked_by": [
+        "test_tfun:network:reaction-rates"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "test_tfun:simulation-bngl:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "test_tfun:network:reaction-rates"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "test_tfun:simulation-bngl:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "test_tfun:network:reaction-rates"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "test_tfun:simulation-net-reload:cdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [
+        "test_tfun:network:reaction-rates"
+      ],
+      "cause_class": "not run because linked prerequisite failed",
+      "detail": "network prerequisites did not pass; downstream values cannot qualify",
+      "id": "test_tfun:simulation-net-reload:gdat",
+      "next_action": "Resolve blocked_by prerequisite first; retain this check as NOT_TESTED and do not count it as an independent semantic failure.",
+      "owner": "dependent validation check",
+      "root_cause_status": "blocked-by-explicit-prerequisite",
+      "stage": "simulation-preflight",
+      "status": "NOT_TESTED",
+      "triage_status": "blocked-by-upstream-evidence"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "oracle cannot open test_data.tfun",
+      "detail": "ABORT: Command execution failed:\n/home/runner/work/_temp/oracle-bionetgen/bng2/bin/run_network -o /home/runner/work/_temp/bng3-conformance/models/test_tfun_file/simulation-bngl/reference/trajectory -p cvode -a 1e-12 -r 1e-08 --cdat 1 --fdat 0 -g /home/runner/work/_temp/bng3-conformance/models/test_tfun_file/simulation-bngl/reference/trajectory.net /home/runner/work/_temp/bng3-conformance/models/test_tfun_file/simulation-bngl/reference/trajectory.net 0.02 50\nExit status: 1, Signal: 0\nStderr output:\nERROR reading tfun file for function 'f_time()': Cannot open tfun file 'test_data.tfun'\n\n  at line 35\n",
+      "evidence_note": "ABORT: Command execution failed:\n/home/runner/work/_temp/oracle-bionetgen/bng2/bin/run_network -o /home/runner/work/_temp/bng3-conformance/models/test_tfun_file/simulation-bngl/reference/trajectory -p cvode -a 1e-12 -r 1e-08 --cdat 1 --fdat 0 -g /home/runner/work/_temp/bng3-conformance/models/test_tfun_file/simulation-bngl/reference/trajectory.net /home/runner/work/_temp/bng3-conformance/models/test_tfun_file/simulation-bngl/reference/trajectory.net 0.02 50\nExit status: 1, Signal: 0\nStderr output:\nERROR reading tfun file for function 'f_time()': Cannot open tfun file 'test_data.tfun'\n\n  at line 35\n The test_data.tfun fixture exists at the historical source revision (SHA-256 4b8ca57ce93c6f00f9787d123012f7a1afa5b63b19a707f77b9014cdb2a5af05); the run failed because it was not staged into the BNG2 simulation directory. PR #390 stages the fixture; current exact replay is still required.",
+      "id": "test_tfun_file:simulation-bngl:reference",
+      "next_action": "Replay both reference simulation modes on current main after PR #390 staging fix; retain historical HARNESS_ERROR until a current receipt exists.",
+      "owner": "pinned BNG2 oracle fixture staging",
+      "root_cause_status": "pinned-BNG2-reference-TFUN-input-fixture-not-staged;staging-fix-merged-in-390",
+      "stage": "reference-simulation",
+      "status": "HARNESS_ERROR",
+      "triage_status": "reference-fixture-staging-defect-historical-replay-pending",
+      "source_sha256": "4b8ca57ce93c6f00f9787d123012f7a1afa5b63b19a707f77b9014cdb2a5af05"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "oracle cannot open test_data.tfun",
+      "detail": "ABORT: Command execution failed:\n/home/runner/work/_temp/oracle-bionetgen/bng2/bin/run_network -o /home/runner/work/_temp/bng3-conformance/models/test_tfun_file/simulation-net-reload/reference/trajectory -p cvode -a 1e-12 -r 1e-08 --cdat 1 --fdat 0 -g input.net input.net 0.02 50\nExit status: 1, Signal: 0\nStderr output:\nERROR reading tfun file for function 'f_time()': Cannot open tfun file 'test_data.tfun'\n\n  at line 4\n",
+      "evidence_note": "ABORT: Command execution failed:\n/home/runner/work/_temp/oracle-bionetgen/bng2/bin/run_network -o /home/runner/work/_temp/bng3-conformance/models/test_tfun_file/simulation-net-reload/reference/trajectory -p cvode -a 1e-12 -r 1e-08 --cdat 1 --fdat 0 -g input.net input.net 0.02 50\nExit status: 1, Signal: 0\nStderr output:\nERROR reading tfun file for function 'f_time()': Cannot open tfun file 'test_data.tfun'\n\n  at line 4\n The test_data.tfun fixture exists at the historical source revision (SHA-256 4b8ca57ce93c6f00f9787d123012f7a1afa5b63b19a707f77b9014cdb2a5af05); the run failed because it was not staged into the BNG2 simulation directory. PR #390 stages the fixture; current exact replay is still required.",
+      "id": "test_tfun_file:simulation-net-reload:reference",
+      "next_action": "Replay both reference simulation modes on current main after PR #390 staging fix; retain historical HARNESS_ERROR until a current receipt exists.",
+      "owner": "pinned BNG2 oracle fixture staging",
+      "root_cause_status": "pinned-BNG2-reference-TFUN-input-fixture-not-staged;staging-fix-merged-in-390",
+      "stage": "reference-simulation",
+      "status": "HARNESS_ERROR",
+      "triage_status": "reference-fixture-staging-defect-historical-replay-pending",
+      "source_sha256": "4b8ca57ce93c6f00f9787d123012f7a1afa5b63b19a707f77b9014cdb2a5af05"
+    },
+    {
+      "blocked_by": [],
+      "case_group": "test_time",
+      "cause_class": "BNG2/BNG3 legacy-parity discrepancy in time() during ODE internal evaluations",
+      "detail": "see named child contracts",
+      "evidence": [
+        "models/test_time/original/test_time.bngl",
+        "models/test_time/simulation-bngl/reference",
+        "models/test_time/simulation-bngl/subject"
+      ],
+      "evidence_note": "The fixture text states that time() must be accurate inside ODE rate evaluation; its `f_correct()=t` and `f_builtin()=time()` rates should agree. BNG3 cdat gives matching A/B trajectories; BNG2 2.9.3 leaves built-in B at 0.02 where the integrated-time A is 0.0002. BNG3 has a maintained Python regression requiring final f_builtin=10 and f_diff=0. The same discrepancy appears in both bngl and net-reload routes and in cdat/gdat, so the eight rows are one case-level compatibility delta, not eight independent defects or an Atomizer issue.",
+      "id": "test_time:simulation-bngl:cdat",
+      "next_action": "Use current exact-head parity result; retain the independent BNG3 time() regression and classify the BNG2 difference explicitly rather than treating it as an Atomizer semantic failure.",
+      "owner": "BNG2 compatibility behavior for built-in simulation clock",
+      "root_cause_status": "source-contract-discrepancy-established-current-replay-pending",
+      "stage": "simulation-summary",
+      "status": "FAIL",
+      "triage_status": "historical-mechanism-accounted-current-qualified-result-pending"
+    },
+    {
+      "blocked_by": [],
+      "case_group": "test_time",
+      "cause_class": "BNG2/BNG3 legacy-parity discrepancy in time() during ODE internal evaluations",
+      "detail": "{'column': 'S3', 'time': 0.02, 'reference': 0.0, 'subject': 0.0002000000006587, 'absolute_error': 0.0002000000006587}",
+      "evidence": [
+        "models/test_time/original/test_time.bngl",
+        "models/test_time/simulation-bngl/reference",
+        "models/test_time/simulation-bngl/subject"
+      ],
+      "evidence_note": "The fixture text states that time() must be accurate inside ODE rate evaluation; its `f_correct()=t` and `f_builtin()=time()` rates should agree. BNG3 cdat gives matching A/B trajectories; BNG2 2.9.3 leaves built-in B at 0.02 where the integrated-time A is 0.0002. BNG3 has a maintained Python regression requiring final f_builtin=10 and f_diff=0. The same discrepancy appears in both bngl and net-reload routes and in cdat/gdat, so the eight rows are one case-level compatibility delta, not eight independent defects or an Atomizer issue.",
+      "id": "test_time:simulation-bngl:cdat.values",
+      "next_action": "Use current exact-head parity result; retain the independent BNG3 time() regression and classify the BNG2 difference explicitly rather than treating it as an Atomizer semantic failure.",
+      "owner": "BNG2 compatibility behavior for built-in simulation clock",
+      "root_cause_status": "source-contract-discrepancy-established-current-replay-pending",
+      "stage": "species-trajectory",
+      "status": "FAIL",
+      "triage_status": "historical-mechanism-accounted-current-qualified-result-pending"
+    },
+    {
+      "blocked_by": [],
+      "case_group": "test_time",
+      "cause_class": "BNG2/BNG3 legacy-parity discrepancy in time() during ODE internal evaluations",
+      "detail": "see named child contracts",
+      "evidence": [
+        "models/test_time/original/test_time.bngl",
+        "models/test_time/simulation-bngl/reference",
+        "models/test_time/simulation-bngl/subject"
+      ],
+      "evidence_note": "The fixture text states that time() must be accurate inside ODE rate evaluation; its `f_correct()=t` and `f_builtin()=time()` rates should agree. BNG3 cdat gives matching A/B trajectories; BNG2 2.9.3 leaves built-in B at 0.02 where the integrated-time A is 0.0002. BNG3 has a maintained Python regression requiring final f_builtin=10 and f_diff=0. The same discrepancy appears in both bngl and net-reload routes and in cdat/gdat, so the eight rows are one case-level compatibility delta, not eight independent defects or an Atomizer issue.",
+      "id": "test_time:simulation-bngl:gdat",
+      "next_action": "Use current exact-head parity result; retain the independent BNG3 time() regression and classify the BNG2 difference explicitly rather than treating it as an Atomizer semantic failure.",
+      "owner": "BNG2 compatibility behavior for built-in simulation clock",
+      "root_cause_status": "source-contract-discrepancy-established-current-replay-pending",
+      "stage": "simulation-summary",
+      "status": "FAIL",
+      "triage_status": "historical-mechanism-accounted-current-qualified-result-pending"
+    },
+    {
+      "blocked_by": [],
+      "case_group": "test_time",
+      "cause_class": "BNG2/BNG3 legacy-parity discrepancy in time() during ODE internal evaluations",
+      "detail": "{'column': 'x_builtin', 'time': 0.02, 'reference': 0.0, 'subject': 0.0002000000006587, 'absolute_error': 0.0002000000006587}",
+      "evidence": [
+        "models/test_time/original/test_time.bngl",
+        "models/test_time/simulation-bngl/reference",
+        "models/test_time/simulation-bngl/subject"
+      ],
+      "evidence_note": "The fixture text states that time() must be accurate inside ODE rate evaluation; its `f_correct()=t` and `f_builtin()=time()` rates should agree. BNG3 cdat gives matching A/B trajectories; BNG2 2.9.3 leaves built-in B at 0.02 where the integrated-time A is 0.0002. BNG3 has a maintained Python regression requiring final f_builtin=10 and f_diff=0. The same discrepancy appears in both bngl and net-reload routes and in cdat/gdat, so the eight rows are one case-level compatibility delta, not eight independent defects or an Atomizer issue.",
+      "id": "test_time:simulation-bngl:gdat.values",
+      "next_action": "Use current exact-head parity result; retain the independent BNG3 time() regression and classify the BNG2 difference explicitly rather than treating it as an Atomizer semantic failure.",
+      "owner": "BNG2 compatibility behavior for built-in simulation clock",
+      "root_cause_status": "source-contract-discrepancy-established-current-replay-pending",
+      "stage": "observable-trajectory",
+      "status": "FAIL",
+      "triage_status": "historical-mechanism-accounted-current-qualified-result-pending"
+    },
+    {
+      "blocked_by": [],
+      "case_group": "test_time",
+      "cause_class": "BNG2/BNG3 legacy-parity discrepancy in time() during ODE internal evaluations",
+      "detail": "see named child contracts",
+      "evidence": [
+        "models/test_time/original/test_time.bngl",
+        "models/test_time/simulation-bngl/reference",
+        "models/test_time/simulation-bngl/subject"
+      ],
+      "evidence_note": "The fixture text states that time() must be accurate inside ODE rate evaluation; its `f_correct()=t` and `f_builtin()=time()` rates should agree. BNG3 cdat gives matching A/B trajectories; BNG2 2.9.3 leaves built-in B at 0.02 where the integrated-time A is 0.0002. BNG3 has a maintained Python regression requiring final f_builtin=10 and f_diff=0. The same discrepancy appears in both bngl and net-reload routes and in cdat/gdat, so the eight rows are one case-level compatibility delta, not eight independent defects or an Atomizer issue.",
+      "id": "test_time:simulation-net-reload:cdat",
+      "next_action": "Use current exact-head parity result; retain the independent BNG3 time() regression and classify the BNG2 difference explicitly rather than treating it as an Atomizer semantic failure.",
+      "owner": "BNG2 compatibility behavior for built-in simulation clock",
+      "root_cause_status": "source-contract-discrepancy-established-current-replay-pending",
+      "stage": "simulation-summary",
+      "status": "FAIL",
+      "triage_status": "historical-mechanism-accounted-current-qualified-result-pending"
+    },
+    {
+      "blocked_by": [],
+      "case_group": "test_time",
+      "cause_class": "BNG2/BNG3 legacy-parity discrepancy in time() during ODE internal evaluations",
+      "detail": "{'column': 'S3', 'time': 0.02, 'reference': 0.0, 'subject': 0.0002000000006587, 'absolute_error': 0.0002000000006587}",
+      "evidence": [
+        "models/test_time/original/test_time.bngl",
+        "models/test_time/simulation-bngl/reference",
+        "models/test_time/simulation-bngl/subject"
+      ],
+      "evidence_note": "The fixture text states that time() must be accurate inside ODE rate evaluation; its `f_correct()=t` and `f_builtin()=time()` rates should agree. BNG3 cdat gives matching A/B trajectories; BNG2 2.9.3 leaves built-in B at 0.02 where the integrated-time A is 0.0002. BNG3 has a maintained Python regression requiring final f_builtin=10 and f_diff=0. The same discrepancy appears in both bngl and net-reload routes and in cdat/gdat, so the eight rows are one case-level compatibility delta, not eight independent defects or an Atomizer issue.",
+      "id": "test_time:simulation-net-reload:cdat.values",
+      "next_action": "Use current exact-head parity result; retain the independent BNG3 time() regression and classify the BNG2 difference explicitly rather than treating it as an Atomizer semantic failure.",
+      "owner": "BNG2 compatibility behavior for built-in simulation clock",
+      "root_cause_status": "source-contract-discrepancy-established-current-replay-pending",
+      "stage": "species-trajectory",
+      "status": "FAIL",
+      "triage_status": "historical-mechanism-accounted-current-qualified-result-pending"
+    },
+    {
+      "blocked_by": [],
+      "case_group": "test_time",
+      "cause_class": "BNG2/BNG3 legacy-parity discrepancy in time() during ODE internal evaluations",
+      "detail": "see named child contracts",
+      "evidence": [
+        "models/test_time/original/test_time.bngl",
+        "models/test_time/simulation-bngl/reference",
+        "models/test_time/simulation-bngl/subject"
+      ],
+      "evidence_note": "The fixture text states that time() must be accurate inside ODE rate evaluation; its `f_correct()=t` and `f_builtin()=time()` rates should agree. BNG3 cdat gives matching A/B trajectories; BNG2 2.9.3 leaves built-in B at 0.02 where the integrated-time A is 0.0002. BNG3 has a maintained Python regression requiring final f_builtin=10 and f_diff=0. The same discrepancy appears in both bngl and net-reload routes and in cdat/gdat, so the eight rows are one case-level compatibility delta, not eight independent defects or an Atomizer issue.",
+      "id": "test_time:simulation-net-reload:gdat",
+      "next_action": "Use current exact-head parity result; retain the independent BNG3 time() regression and classify the BNG2 difference explicitly rather than treating it as an Atomizer semantic failure.",
+      "owner": "BNG2 compatibility behavior for built-in simulation clock",
+      "root_cause_status": "source-contract-discrepancy-established-current-replay-pending",
+      "stage": "simulation-summary",
+      "status": "FAIL",
+      "triage_status": "historical-mechanism-accounted-current-qualified-result-pending"
+    },
+    {
+      "blocked_by": [],
+      "case_group": "test_time",
+      "cause_class": "BNG2/BNG3 legacy-parity discrepancy in time() during ODE internal evaluations",
+      "detail": "{'column': 'x_builtin', 'time': 0.02, 'reference': 0.0, 'subject': 0.0002000000006587, 'absolute_error': 0.0002000000006587}",
+      "evidence": [
+        "models/test_time/original/test_time.bngl",
+        "models/test_time/simulation-bngl/reference",
+        "models/test_time/simulation-bngl/subject"
+      ],
+      "evidence_note": "The fixture text states that time() must be accurate inside ODE rate evaluation; its `f_correct()=t` and `f_builtin()=time()` rates should agree. BNG3 cdat gives matching A/B trajectories; BNG2 2.9.3 leaves built-in B at 0.02 where the integrated-time A is 0.0002. BNG3 has a maintained Python regression requiring final f_builtin=10 and f_diff=0. The same discrepancy appears in both bngl and net-reload routes and in cdat/gdat, so the eight rows are one case-level compatibility delta, not eight independent defects or an Atomizer issue.",
+      "id": "test_time:simulation-net-reload:gdat.values",
+      "next_action": "Use current exact-head parity result; retain the independent BNG3 time() regression and classify the BNG2 difference explicitly rather than treating it as an Atomizer semantic failure.",
+      "owner": "BNG2 compatibility behavior for built-in simulation clock",
+      "root_cause_status": "source-contract-discrepancy-established-current-replay-pending",
+      "stage": "observable-trajectory",
+      "status": "FAIL",
+      "triage_status": "historical-mechanism-accounted-current-qualified-result-pending"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "source model declares no observable groups",
+      "detail": "no declared observable groups; cdat still required",
+      "evidence": [
+        "models/tlmr/original/tlmr.bngl"
+      ],
+      "evidence_note": "Exact historical source fixture has no begin observables section; therefore there is no gdat observable target to compare. This is explicit not-applicable, not a harness failure or an untested product claim; cdat checks remain required.",
+      "evidence_sha256": [
+        "c444441d2ef187ee3511ae35fc1949b9143691e5a981da73a5532197b5bc51a2"
+      ],
+      "id": "tlmr:simulation-bngl:gdat",
+      "next_action": "Record this as not applicable to current observable set or add declared observable; retain cdat evidence independently.",
+      "owner": "validation selector/model fixture",
+      "root_cause_status": "no-gdat-observable-target-in-source;cdat-remains-required",
+      "source_has_observables": false,
+      "stage": "observable-trajectory",
+      "status": "NOT_TESTED",
+      "triage_status": "structurally-not-applicable-source-validated"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "source model declares no observable groups",
+      "detail": "no declared observable groups; cdat still required",
+      "evidence": [
+        "models/tlmr/original/tlmr.bngl"
+      ],
+      "evidence_note": "Exact historical source fixture has no begin observables section; therefore there is no gdat observable target to compare. This is explicit not-applicable, not a harness failure or an untested product claim; cdat checks remain required.",
+      "evidence_sha256": [
+        "c444441d2ef187ee3511ae35fc1949b9143691e5a981da73a5532197b5bc51a2"
+      ],
+      "id": "tlmr:simulation-net-reload:gdat",
+      "next_action": "Record this as not applicable to current observable set or add declared observable; retain cdat evidence independently.",
+      "owner": "validation selector/model fixture",
+      "root_cause_status": "no-gdat-observable-target-in-source;cdat-remains-required",
+      "source_has_observables": false,
+      "stage": "observable-trajectory",
+      "status": "NOT_TESTED",
+      "triage_status": "structurally-not-applicable-source-validated"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "source model declares no observable groups",
+      "detail": "no declared observable groups; cdat still required",
+      "evidence": [
+        "models/visualize/original/visualize.bngl"
+      ],
+      "evidence_note": "Exact historical source fixture has no begin observables section; therefore there is no gdat observable target to compare. This is explicit not-applicable, not a harness failure or an untested product claim; cdat checks remain required.",
+      "evidence_sha256": [
+        "e7d0754b22016ec3ad6009047842844f160bc27c2e208e13d8a760a2ab3fde8e"
+      ],
+      "id": "visualize:simulation-bngl:gdat",
+      "next_action": "Record this as not applicable to current observable set or add declared observable; retain cdat evidence independently.",
+      "owner": "validation selector/model fixture",
+      "root_cause_status": "no-gdat-observable-target-in-source;cdat-remains-required",
+      "source_has_observables": false,
+      "stage": "observable-trajectory",
+      "status": "NOT_TESTED",
+      "triage_status": "structurally-not-applicable-source-validated"
+    },
+    {
+      "blocked_by": [],
+      "cause_class": "source model declares no observable groups",
+      "detail": "no declared observable groups; cdat still required",
+      "evidence": [
+        "models/visualize/original/visualize.bngl"
+      ],
+      "evidence_note": "Exact historical source fixture has no begin observables section; therefore there is no gdat observable target to compare. This is explicit not-applicable, not a harness failure or an untested product claim; cdat checks remain required.",
+      "evidence_sha256": [
+        "e7d0754b22016ec3ad6009047842844f160bc27c2e208e13d8a760a2ab3fde8e"
+      ],
+      "id": "visualize:simulation-net-reload:gdat",
+      "next_action": "Record this as not applicable to current observable set or add declared observable; retain cdat evidence independently.",
+      "owner": "validation selector/model fixture",
+      "root_cause_status": "no-gdat-observable-target-in-source;cdat-remains-required",
+      "source_has_observables": false,
+      "stage": "observable-trajectory",
+      "status": "NOT_TESTED",
+      "triage_status": "structurally-not-applicable-source-validated"
+    }
+  ],
+  "schema_version": 1,
+  "source_report": {
+    "oracle_revision": "9601746f8884ed19ab2acea49fe87fc4660ace46",
+    "platform": "Linux x86_64, CPython 3.12.15",
+    "revision": "e53e16e84ae490e82acbfacf1a06f6370424dd3f",
+    "run_id": "39755620648",
+    "sha256": "5d84ca2981b1eb6d42585828ccfdbadd943a0b1a9cb148d9b3c90f753d6aea69",
+    "source_tree_clean": true
+  },
+  "current_qualification_receipt": {
+    "workflow": "Official SBML conformance subset",
+    "run_id": 39793193013,
+    "event": "workflow_dispatch",
+    "ref": "main",
+    "head_sha": "55b0ebe80d05ffd49df811b52398325c84764999",
+    "input": "bounded=false",
+    "status": "queued",
+    "qualification": "full official suite; no result yet"
+  }
+}

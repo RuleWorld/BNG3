@@ -10,8 +10,11 @@ them changes a verdict.
 | `expectations.json` | the expected verdict of every official SBML Test Suite case at every stage of the gate | `scripts/ci/sbml_campaign_inventory.py --expectations-out` |
 | `baseline-2026-10-19.json` | the measured inventory at campaign base commit `219c76da` | `scripts/ci/sbml_campaign_inventory.py --out` |
 | `integrated-2026-10-20.json` | the measured inventory after the campaign's integrated changes | `scripts/ci/sbml_campaign_inventory.py --out` |
-| `current-2026-10-20.json` | the measured inventory of the current merged tree | `scripts/ci/sbml_campaign_inventory.py --out` |
+| `historical-2026-10-21.json` | the previous inventory, retained as a historical measurement | `scripts/ci/sbml_campaign_inventory.py --out` |
+| `current-2026-10-22.json` | exact-main full SSTS inventory from workflow 39827300127 at `cf93ba7c` | `scripts/ci/sbml_campaign_inventory.py --suite-report <report> --out` |
 | `provenance-<label>.json` | the measurement metadata merged into the matching inventory | hand-maintained; reviewed with the inventory it describes |
+| `provenance-historical-2026-10-21.json` | metadata for the superseded inventory | historical |
+| `provenance-current-2026-10-22.json` | exact run, report, and environment identity for the current inventory | hand-maintained; reviewed with the inventory it describes |
 | `atomizer-limitations.json` | the narrative behind [`docs/ATOMIZER_LIMITATIONS.md`](../../docs/ATOMIZER_LIMITATIONS.md): what each construct is, what the specification requires, what BNG3 does instead, whether the boundary is reducible, and when it was recorded | hand-maintained; the generator checks it against the manifest |
 
 The baseline and the integrated inventories are **historical facts** and are
@@ -123,7 +126,7 @@ python scripts/ci/sbml_campaign_inventory.py \
   --expectations-out provenance/sbml-campaign/expectations.json \
   --measurement-date "$(date -u +%Y-%m-%d)" \
   --measured-commit "$(git rev-parse HEAD)" \
-  --expectations-provenance provenance/sbml-campaign/provenance-current-2026-10-20.json
+  --expectations-provenance provenance/sbml-campaign/provenance-current-2026-10-22.json
 ```
 
 `--measured-commit` is the commit the manifest *describes*; the report's own
@@ -168,7 +171,7 @@ python scripts/ci/sbml_campaign_inventory.py \
   --expectations-out provenance/sbml-campaign/expectations.json \
   --measurement-date "$(date -u +%Y-%m-%d)" \
   --measured-commit "$(git rev-parse HEAD)" \
-  --expectations-provenance provenance/sbml-campaign/provenance-current-2026-10-20.json
+  --expectations-provenance provenance/sbml-campaign/provenance-current-2026-10-22.json
 
 # verify the regenerated manifest against the report it came from
 python scripts/ci/sbml_campaign_inventory.py \

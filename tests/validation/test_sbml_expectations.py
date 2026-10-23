@@ -24,7 +24,7 @@ from scripts.ci import sbml_campaign_inventory as inventory
 
 REPO = Path(__file__).resolve().parents[2]
 MANIFEST = REPO / "provenance" / "sbml-campaign" / "expectations.json"
-INVENTORY = REPO / "provenance" / "sbml-campaign" / "current-2026-10-20.json"
+INVENTORY = REPO / "provenance" / "sbml-campaign" / "current-2026-10-22.json"
 LOCK = REPO / "provenance" / "upstreams.lock.yml"
 TOOL = REPO / "scripts" / "ci" / "sbml_campaign_inventory.py"
 GATE = REPO / "scripts" / "ci" / "validate_sbml_test_suite.py"
@@ -155,6 +155,77 @@ def test_an_unsupported_expectation_names_the_construct_it_waits_for():
         if entry["conversion"] == "unsupported":
             assert "conversion" in gaps.get(case, {}), case
             assert gaps[case]["conversion"]["construct"], case
+
+
+@pytest.mark.smoke
+def test_generic_nonfinite_and_scheduled_boundary_refusals_are_classified():
+    """Fresh report records must not fall into the generic ``other`` bucket."""
+
+    from scripts.ci import validate_sbml_test_suite as suite
+
+    parameter_approximation = (
+        'Parameter "P" has an infinite value; emitted 1e20 as a finite BNGL '
+        "approximation."
+    )
+    assert suite._unsupported_causes(parameter_approximation) == ["mathml"]
+    assert inventory.reason_signature(parameter_approximation) == (
+        "mathml:non-finite-parameter-approximation"
+    )
+    conversion_record = {
+        "category": "semantic",
+        "id": "99998",
+        "status": "unsupported",
+        "unsupported_reason": parameter_approximation,
+        "unsupported_causes": ["other"],
+    }
+    suite._unsupported_summary([conversion_record])
+    assert conversion_record["unsupported_causes"] == ["mathml"]
+    assert inventory._stage_gap(conversion_record, "conversion") == {
+        "construct": "mathml:non-finite-parameter-approximation",
+        "causes": ["mathml"],
+        "side": "atomizer",
+    }
+
+    scheduled_boundary = (
+        "the official output grid contains the boundary of the generated "
+        "scheduled actions at t=25.0, where the reference convention and "
+        "native action dispatcher differ"
+    )
+    record = {
+        "category": "semantic",
+        "id": "99999",
+        "status": "passed",
+        "official_conformance": {
+            "status": "unsupported",
+            "reason": scheduled_boundary,
+        },
+    }
+    gap = inventory._stage_gap(record, "official_reference")
+    assert gap == {
+        "construct": "harness:scheduled-action-phase-boundary",
+        "causes": ["events"],
+        "side": "harness",
+    }
+
+
+def test_inventory_refines_recorded_other_without_losing_source_report_label():
+    record = {
+        "category": "semantic",
+        "id": "99997",
+        "status": "unsupported",
+        "unsupported_reason": (
+            'Compartment "C" has spatialDimensions 7; BNG3 does not support '
+            "spatialDimensions values greater than 3."
+        ),
+        "unsupported_causes": ["other"],
+        "official_conformance": {"status": "unsupported"},
+    }
+
+    reduced = inventory.suite_inventory({"records": [record]})
+
+    assert reduced["cases"][0]["causes"] == ["compartments"]
+    assert reduced["cases"][0]["reported_causes"] == ["other"]
+    assert reduced["cause_counts"] == {"compartments": 1}
 
 
 @pytest.mark.smoke

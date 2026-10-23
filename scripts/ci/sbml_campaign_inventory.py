@@ -85,6 +85,9 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+if not __package__:
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 SCHEMA_VERSION = 1
 EXPECTATIONS_SCHEMA_VERSION = 1
 
@@ -146,6 +149,14 @@ REASON_SIGNATURES: tuple[tuple[str, str], ...] = (
         "generated bngl contains scheduled actions",
         "harness:scheduled-actions-not-executed",
     ),
+    (
+        "official output grid contains the boundary of the generated scheduled actions",
+        "harness:scheduled-action-phase-boundary",
+    ),
+    ("<infinity> constant encountered in math", "mathml:infinity"),
+    ("<notanumber> constant encountered in math", "mathml:not-a-number"),
+    ("has an infinite value; emitted", "mathml:non-finite-parameter-approximation"),
+    ("has nan value; emitted", "mathml:non-finite-parameter-approximation"),
     ("repeated-run mean", "harness:stochastic-ensemble-not-evaluated"),
     (
         "ensemble work budget",
@@ -251,15 +262,19 @@ def suite_inventory(report: dict[str, Any]) -> dict[str, Any]:
         if status != "passed" and not signature:
             signature = "other"
 
-        causes = sorted(
+        reported_causes = sorted(
             set(str(cause) for cause in (record.get("unsupported_causes") or []))
         )
-        if not causes and status == "unsupported":
-            # The harness normally records the taxonomy labels itself.  When a
-            # report omits them, derive the same labels from the reason.
-            causes = sorted(
+        causes = list(reported_causes)
+        if status == "unsupported" and (not causes or "other" in causes):
+            # Older reports may contain the generic fallback label. Refine it
+            # with the current reusable harness taxonomy while retaining the
+            # exact report labels separately on the row when they differ.
+            derived = sorted(
                 set(_harness_causes("scripts.ci.validate_sbml_test_suite", reason))
             )
+            if derived and derived != ["other"]:
+                causes = derived
         if status != "passed":
             for cause in causes:
                 cause_counts[cause] += 1
@@ -288,6 +303,8 @@ def suite_inventory(report: dict[str, Any]) -> dict[str, Any]:
             "reason_signature": signature,
             "causes": causes,
         }
+        if reported_causes != causes:
+            row["reported_causes"] = reported_causes
         rows.append(row)
 
         conversion_bucket = stage_counts.setdefault("conversion", Counter())
@@ -887,10 +904,16 @@ def _stage_gap(record: dict[str, Any], stage: str) -> dict[str, Any] | None:
         causes = sorted(
             set(str(cause) for cause in (record.get("unsupported_causes") or []))
         )
-        if not causes:
-            causes = sorted(
+        # A report written by an older harness may carry ``other`` even
+        # though this inventory revision can now identify the underlying
+        # refusal.  Prefer the shared current taxonomy for that unclassified
+        # bucket; retain the recorded labels otherwise.
+        if not causes or "other" in causes:
+            derived = sorted(
                 set(_harness_causes("scripts.ci.validate_sbml_test_suite", reason))
             )
+            if derived and derived != ["other"]:
+                causes = derived
         construct = reason_signature(reason)
         return {
             "construct": construct,
