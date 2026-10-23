@@ -98,7 +98,7 @@
       "title": "The official reference is one draw of a random execution order"
     },
     "harness:reference-does-not-track-variable": {
-      "bng3_does": "Nothing was refused: the model converted, but the direct SSA path decremented and incremented a boundary species like any other, so the species' value drifted away from the value the reference reports. The direct SSA path now skips a constant species in its state update \u2014 the propensity is untouched, so a boundary species still contributes its amount to the rate law it appears in \u2014 and the batched accelerator path does the same, so every engine agrees.",
+      "bng3_does": "Nothing was refused: the model converted, but the direct SSA path decremented and incremented a boundary species like any other, so the species' value drifted away from the value the reference reports. The direct SSA path now skips a constant species in its state update — the propensity is untouched, so a boundary species still contributes its amount to the rate law it appears in — and the batched accelerator path does the same, so every engine agrees.",
       "citation": "SBML Level 3 Version 2 Core Sec. 4.6.6",
       "closed": "2026-10-21",
       "closed_by": "PR #380, validated 2026-10-21, first measured as closed on 2026-10-21",
@@ -231,6 +231,15 @@
       "sbml_requires": "SBML Level 3 Version 2 Core Sec. 4.11.3 lets a speciesReference carry any stoichiometry, including a negative or fractional one.",
       "status": "not-exercised",
       "title": "A reaction with a stoichiometry BNGL cannot express"
+    },
+    "harness:stochastic-ensemble-budget-not-comparable": {
+      "title": "Projected stochastic work exceeds the comparison-planning threshold",
+      "first_recorded": "2026-10-22",
+      "status": "open",
+      "sbml_requires": "The official stochastic reference specifies an ensemble size and reports an ensemble outcome; comparison requires the harness to execute that ensemble and evaluate its statistics.",
+      "citation": "DSMTS user guide and the pinned official test case settings",
+      "bng3_does": "The SBML model converts. A fixed-seed CPU probe projects ensemble work above the configured planning threshold, so the harness marks the official comparison not comparable. The projection is an estimate; it is not an enforced cap or a runtime guarantee.",
+      "reducible": "Yes, on the harness side: improve planning or execution so the specified ensemble can be evaluated, then compare it without changing the official statistics or thresholds."
     }
   },
   "kind": "atomizer-limitations-narrative",

@@ -2807,10 +2807,10 @@ def _compare_stochastic_case_to_reference(
                 cpp, cpp_model, network, reference, runs, seed=seed_base
             )
             if plan.get("not_comparable"):
-                # The documented ensemble budget does not fit the gate's work
-                # budget even at the guide's minimum number of repetitions.
-                # The case is not comparable, which is neither a pass nor a
-                # failure.
+                # The fixed-seed CPU probe projects work above the planning
+                # threshold even at the guide's minimum repetitions. The
+                # estimate is not a runtime guarantee; the case is marked not
+                # comparable, which is neither a pass nor a failure.
                 return {"status": "unsupported", "reason": plan["reason"]}
             budget = int(plan["runs"])
             engine = plan["backend"]

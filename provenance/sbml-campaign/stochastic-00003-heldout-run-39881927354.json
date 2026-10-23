@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "case": "stochastic/00003",
+  "qualification_scope": "one recorded stochastic ensemble on the integrated product source; receipt-scoped source-law diagnostic only",
+  "workflow": {
+    "name": "Official SBML conformance subset",
+    "event": "workflow_dispatch",
+    "run_id": 39881927354,
+    "job_id": 120184406869,
+    "artifact_id": 12472219623,
+    "url": "https://github.com/RuleWorld/BNG3/actions/runs/39881927354",
+    "artifact_url": "https://github.com/RuleWorld/BNG3/actions/runs/39881927354/artifacts/12472219623",
+    "head_sha": "f9a9880f7f12e6100296740302fc18ba9ee6903d",
+    "event_inputs": {
+      "only_case": "stochastic/00003",
+      "stochastic_seed_base": 2000000,
+      "bounded": false
+    },
+    "partial_run": true
+  },
+  "product_identity": {
+    "source_revision": "f9a9880f7f12e6100296740302fc18ba9ee6903d",
+    "source_tree_clean": true,
+    "python_package_source_sha256": "f1ba3d52313273bf29df1c7828565607b118b7e764d3400a3469ee44e584476a",
+    "native_extension_sha256": "aa861781a54bfc5e6de78d79be7703c4b62df669e7539806a9d5da84de70f18a",
+    "python_version": "3.12.15",
+    "libsbml_version": "5.21.2",
+    "roadrunner_version": "2.10.0",
+    "suite_commit": "cf38585fac5de8e0e90112febb62851ee2181816",
+    "suite_source_lock_sha256": "01ef836f4d8af178916b0f27b6a5f3963b2f25005e211a5f770ed4d79065bd30"
+  },
+  "engine_ensemble": {
+    "engine": "cpu:batch",
+    "runs": 40000,
+    "seed_base": 2000000,
+    "observation_start": 0.0,
+    "observation_duration": 50.0,
+    "observation_steps": 50,
+    "case_error_rate": 0.001,
+    "official_tests": 100,
+    "official_violations": 2,
+    "official_tail_probability_under_guide_approximate_normal_null": 0.008265610138168943,
+    "official_status": "passed",
+    "expected_default_seed_status": "failed",
+    "settings_sha256": "9472de7498a16b035f60764a99512d2ee3e3e06968f0d37774cbcb51b6e1471d",
+    "results_sha256": "dc73fa905b0e4dbfa963d8a86e581529591464a580e20c5bd52cd5954e57ab5d",
+    "source_model_sha256": "c58a50dd86f981150b533dd9af25c38f9ef3aeeedad2f679400e022add77f50e"
+  },
+  "run_report": {
+    "path": "GitHub Actions artifact report.json",
+    "sha256": "28881191c48df1bd0ed51f742f138e5c994158aff58071caeb84e48efcb7a132"
+  },
+  "source_law_calibration": {
+    "path": "stochastic-00003-heldout-source-law-calibration-39881927354.json",
+    "sha256": "97339eeadb5ccfa38ccaef4b7d81b520d0588d3752240eff87b065525a75a60b",
+    "script": "scripts/calibrate_linear_birth_death.py",
+    "script_sha256": "dd7b6b98139b95bd7b5ddaffb59bcabfbabef20da3bbe13bf4a3e57a3c32192e",
+    "preregistration": "provenance/sbml-campaign/stochastic-linear-birth-death-preregistration.json",
+    "preregistration_sha256": "7950ae79dc71bc5bf4ce0b2394fbffa8dbc0e9450b56cae4cb7ffefa170b1fe1",
+    "analysis_design": "held-out source-law diagnostic scored after the engine report was generated; the statistic, seeds, budget, and decision rule were registered before that report",
+    "source_law_replicates": 1000,
+    "source_law_seed": 20261024,
+    "diagnostic_alpha": 0.01,
+    "observed_max_statistic_reconstructed_from_rounded_report_summaries": 1.340942260616552,
+    "monte_carlo_p_value_plus_one": 0.6653346653346653,
+    "wilson_95_percent_interval": [
+      0.6351640508403955,
+      0.6935731188593715
+    ],
+    "diagnostic_status": "PASS",
+    "interpretation": "Source-law calibration only; the observed harness verdict is not changed and this does not establish simulator correctness."
+  },
+  "replay_relation": {
+    "earlier_run_id": 39877752652,
+    "identical_settings_sha256": "9472de7498a16b035f60764a99512d2ee3e3e06968f0d37774cbcb51b6e1471d",
+    "identical_results_sha256": "dc73fa905b0e4dbfa963d8a86e581529591464a580e20c5bd52cd5954e57ab5d",
+    "independent_engine_ensemble": false,
+    "meaning": "This is an exact-seed replay on the newer product source, not a second independent engine ensemble."
+  },
+  "verdict_policy": "The official result for this partial run is PASS. The default-seed full-suite result remains FAIL in the expectation manifest; neither this PASS nor the source-law diagnostic overwrites it or establishes general stochastic correctness."
+}

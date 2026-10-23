@@ -338,9 +338,9 @@ def render(
                 lines.append(f"### `{construct}`")
                 lines.append("")
                 lines.append(
-                    "**No narrative is recorded for this construct.** The "
-                    "narrative file must gain an entry for it; the generator "
-                    "refuses to render a limitation it cannot explain."
+                    "**No narrative is recorded for this construct.** Add an "
+                    "evidence-backed entry to the narrative file before using "
+                    "this row to describe the support boundary."
                 )
                 lines.append("")
                 continue

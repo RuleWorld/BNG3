@@ -1,27 +1,44 @@
 {
   "generator": "scripts/ci/sbml_campaign_inventory.py",
   "kind": "sbml-test-suite-expectations",
-  "note": "Each entry records the verdict the tree named by source_report.bng3_commit produced for that case. 'passed' is a result. 'failed' is a result too: the stage ran and disagreed with the reference, which is a finding to investigate. 'unsupported' is the only gap: the case's 'gap' entry names the construct that is not representable today together with the harness's cause labels for it. No entry claims that a currently unsupported construct should become supported, and an 'unsupported' entry is never counted as support.",
+  "note": "Each entry records the verdict the tree named by source_report.bng3_commit produced for that case. 'passed' is a result. 'failed' is a result too: the stage ran and disagreed with the reference, which is a finding to investigate. 'unsupported' records a gap: the case's 'gap' entry names either a construct that is not representable today or a harness-side comparability limit, with its side and cause labels. No entry claims that a currently unsupported construct should become supported, and an 'unsupported' entry is never counted as support.",
   "provenance": {
-    "measured_at_commit": "cf93ba7c2b59fdec71a6c54ebb4314afa0cb528a",
-    "measured_commit": "cf93ba7c2b59fdec71a6c54ebb4314afa0cb528a",
+    "base_commit": "31ae76c19fdd03c9d4af788f58dd5187726e14a1",
+    "measured_at_commit": "31ae76c19fdd03c9d4af788f58dd5187726e14a1",
+    "measured_commit": "31ae76c19fdd03c9d4af788f58dd5187726e14a1",
+    "measurement_date": "2026-10-22",
     "measurement_environment": {
       "libsbml_version": "5.21.2",
-      "native_extension_sha256": "0f3b9a6821d9e14e93684a95b33675d9c770508a0a0aeca388ec9549c78503bc",
-      "platform": "Linux-6.8.0-1070-azure-x86_64-with-glibc2.35",
-      "python_package_source_sha256": "5f098189c48b6d7ebd39db42c2d20b503cd5d386f2207629a4dcc0a8b3961872",
+      "native_extension_sha256": "aa947dc7da940bf24605eda8f22914e16ccfc4efbe7cf04026468843dea78246",
+      "platform": "Linux-6.8.0-1064-azure-x86_64-with-glibc2.35",
+      "python_package_source_sha256": "f1ba3d52313273bf29df1c7828565607b118b7e764d3400a3469ee44e584476a",
       "python_version": "3.12.15",
       "roadrunner_version": "2.10.0",
       "source_tree": "/home/runner/work/_temp/ssts-venv/lib/python3.12/site-packages/bionetgen/__init__.py"
+    },
+    "measurement_host": "GitHub Actions hosted Ubuntu 22.04, CPython 3.12.15, libSBML 5.21.2, libRoadRunner 2.10.0",
+    "note": "Full 1923-case SBML Test Suite workflow_dispatch run 39878668497, artifact 12470477011, job 120170461068. The exact executed tree was 31ae76c19fdd03c9d4af788f58dd5187726e14a1; its report records one official stochastic failure (stochastic/00003), no conversion failures, and no timeouts. Its C++ and Python product source files are identical to current main d1263f7f (empty diff over cpp and python); native extension SHA-256 aa947dc7da940bf24605eda8f22914e16ccfc4efbe7cf04026468843dea78246 and Python package source SHA-256 f1ba3d52313273bf29df1c7828565607b118b7e764d3400a3469ee44e584476a. The fixed-budget planner now records stochastic/00023 as not comparable at the official-reference stage because projected work exceeds its configured threshold based on a fixed-seed CPU probe; this is not a runtime guarantee or enforced cap. stochastic/00003 retains its raw official failure. This artifact covers the SBML Test Suite; curated BioModels have a separate source-acquisition and qualification lane.",
+    "sbml_test_suite": {
+      "artifact_id": 12470477011,
+      "case_timeout_seconds": 60,
+      "categories": [
+        "semantic",
+        "stochastic"
+      ],
+      "report_sha256": "49601d78bac943c536e111d575765e3823a808a1af11a66d9f88e83977a8833f",
+      "repository": "https://github.com/sbmlteam/sbml-test-suite.git",
+      "revision": "cf38585fac5de8e0e90112febb62851ee2181816",
+      "workflow_job": 120170461068,
+      "workflow_run": 39878668497
     }
   },
   "schema_version": 1,
   "source_report": {
-    "bng3_commit": "cf93ba7c2b59fdec71a6c54ebb4314afa0cb528a",
-    "measured_at_commit": "cf93ba7c2b59fdec71a6c54ebb4314afa0cb528a",
+    "bng3_commit": "31ae76c19fdd03c9d4af788f58dd5187726e14a1",
+    "measured_at_commit": "31ae76c19fdd03c9d4af788f58dd5187726e14a1",
     "measurement_date": "2026-10-22",
     "python_version": "3.12.15",
-    "sha256": "68b70b10086360aea132c9dd9652707ec5a97c61a53ab4bb843a96a94636e0a3"
+    "sha256": "49601d78bac943c536e111d575765e3823a808a1af11a66d9f88e83977a8833f"
   },
   "stage_counts": {
     "conversion": {
@@ -34,8 +51,8 @@
     },
     "official_reference": {
       "failed": 1,
-      "passed": 1783,
-      "unsupported": 139
+      "passed": 1781,
+      "unsupported": 141
     },
     "roundtrip_structure": {
       "not_tested": 125,
@@ -1202,7 +1219,7 @@
     "semantic/01130": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01131": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01132": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "semantic/01133": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["other"], "construct": "compartment:unsupported-spatial-dimensions", "side": "atomizer"}, "official_reference": {"causes": ["other"], "construct": "compartment:unsupported-spatial-dimensions", "side": "atomizer"}}},
+    "semantic/01133": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["compartments"], "construct": "compartment:unsupported-spatial-dimensions", "side": "atomizer"}, "official_reference": {"causes": ["compartments"], "construct": "compartment:unsupported-spatial-dimensions", "side": "atomizer"}}},
     "semantic/01134": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01135": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01136": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
@@ -1266,7 +1283,7 @@
     "semantic/01194": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["constraints", "events", "mathml", "package:fbc", "stoichiometry"], "construct": "package:fbc", "side": "atomizer"}, "official_reference": {"causes": ["other"], "construct": "reference:not-applicable", "side": "not-applicable"}}},
     "semantic/01195": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["constraints", "events", "mathml", "package:fbc", "stoichiometry"], "construct": "package:fbc", "side": "atomizer"}, "official_reference": {"causes": ["other"], "construct": "reference:not-applicable", "side": "not-applicable"}}},
     "semantic/01196": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["constraints", "events", "mathml", "package:fbc", "stoichiometry"], "construct": "package:fbc", "side": "atomizer"}, "official_reference": {"causes": ["other"], "construct": "reference:not-applicable", "side": "not-applicable"}}},
-    "semantic/01197": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["other"], "construct": "compartment:unsupported-spatial-dimensions", "side": "atomizer"}, "official_reference": {"causes": ["other"], "construct": "compartment:unsupported-spatial-dimensions", "side": "atomizer"}}},
+    "semantic/01197": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["compartments"], "construct": "compartment:unsupported-spatial-dimensions", "side": "atomizer"}, "official_reference": {"causes": ["compartments"], "construct": "compartment:unsupported-spatial-dimensions", "side": "atomizer"}}},
     "semantic/01198": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01199": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "semantic/01200": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
@@ -1897,7 +1914,7 @@
     "stochastic/00002": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "stochastic/00003": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "failed"},
     "stochastic/00004": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "stochastic/00005": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "stochastic/00005": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": ["ensemble_budget"], "construct": "harness:stochastic-ensemble-budget-not-comparable", "side": "harness"}}},
     "stochastic/00006": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "stochastic/00007": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "stochastic/00008": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
@@ -1915,7 +1932,7 @@
     "stochastic/00020": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "stochastic/00021": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "stochastic/00022": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
-    "stochastic/00023": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
+    "stochastic/00023": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "unsupported", "gap": {"official_reference": {"causes": ["ensemble_budget"], "construct": "harness:stochastic-ensemble-budget-not-comparable", "side": "harness"}}},
     "stochastic/00024": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "stochastic/00025": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
     "stochastic/00026": {"conversion": "passed", "roundtrip_structure": "passed", "independent_comparison": "passed", "official_reference": "passed"},
@@ -1961,16 +1978,16 @@
     "stochastic/00066": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}, "official_reference": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}}},
     "stochastic/00067": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}, "official_reference": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}}},
     "stochastic/00068": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}, "official_reference": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}}},
-    "stochastic/00069": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}, "official_reference": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}}},
-    "stochastic/00070": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}, "official_reference": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}}},
-    "stochastic/00071": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}, "official_reference": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}}},
-    "stochastic/00072": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}, "official_reference": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}}},
+    "stochastic/00069": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}, "official_reference": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}}},
+    "stochastic/00070": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}, "official_reference": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}}},
+    "stochastic/00071": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}, "official_reference": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}}},
+    "stochastic/00072": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}, "official_reference": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}}},
     "stochastic/00073": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}, "official_reference": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}}},
     "stochastic/00074": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}, "official_reference": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}}},
     "stochastic/00075": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}, "official_reference": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}}},
     "stochastic/00076": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}, "official_reference": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}}},
-    "stochastic/00077": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}, "official_reference": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}}},
-    "stochastic/00078": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}, "official_reference": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}}},
+    "stochastic/00077": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}, "official_reference": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}}},
+    "stochastic/00078": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}, "official_reference": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:infinity", "side": "atomizer"}}},
     "stochastic/00079": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}, "official_reference": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}}},
     "stochastic/00080": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}, "official_reference": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}}},
     "stochastic/00081": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}, "official_reference": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}}},
@@ -1988,10 +2005,10 @@
     "stochastic/00093": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}, "official_reference": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}}},
     "stochastic/00094": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}, "official_reference": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}}},
     "stochastic/00095": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}, "official_reference": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}}},
-    "stochastic/00096": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "mathml:non-finite-parameter-approximation", "side": "atomizer"}, "official_reference": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:non-finite-parameter-approximation", "side": "atomizer"}}},
-    "stochastic/00097": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "mathml:non-finite-parameter-approximation", "side": "atomizer"}, "official_reference": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:non-finite-parameter-approximation", "side": "atomizer"}}},
-    "stochastic/00098": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "mathml:non-finite-parameter-approximation", "side": "atomizer"}, "official_reference": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:non-finite-parameter-approximation", "side": "atomizer"}}},
-    "stochastic/00099": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "mathml:non-finite-parameter-approximation", "side": "atomizer"}, "official_reference": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:non-finite-parameter-approximation", "side": "atomizer"}}},
+    "stochastic/00096": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:non-finite-parameter-approximation", "side": "atomizer"}, "official_reference": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:non-finite-parameter-approximation", "side": "atomizer"}}},
+    "stochastic/00097": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:non-finite-parameter-approximation", "side": "atomizer"}, "official_reference": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:non-finite-parameter-approximation", "side": "atomizer"}}},
+    "stochastic/00098": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:non-finite-parameter-approximation", "side": "atomizer"}, "official_reference": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:non-finite-parameter-approximation", "side": "atomizer"}}},
+    "stochastic/00099": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:non-finite-parameter-approximation", "side": "atomizer"}, "official_reference": {"causes": ["events", "mathml", "package:distrib"], "construct": "mathml:non-finite-parameter-approximation", "side": "atomizer"}}},
     "stochastic/00100": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}, "official_reference": {"causes": ["events", "package:distrib"], "construct": "events:untranslated", "side": "atomizer"}}}
   }
 }
