@@ -10,6 +10,7 @@ import math
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Optional
 
 import numpy as np
 import pytest
@@ -339,7 +340,9 @@ class _StubSampler:
         return {"total_events": float(self.events)}
 
 
-def _plan_for(validator, events: int, seconds: float, seed: int | None = None) -> dict:
+def _plan_for(
+    validator, events: int, seconds: float, seed: Optional[int] = None
+) -> dict:
     """Plan an ensemble for a model whose probe performs ``events`` firings."""
 
     reference = {"start": 0.0, "duration": 10.0, "steps": 10}
@@ -1008,7 +1011,7 @@ def _boundary_sink_verdict(
     case: dict,
     model: str,
     seed_base: int = 1_000_000,
-    observed_seed: dict[str, int] | None = None,
+    observed_seed: Optional[dict[str, int]] = None,
 ) -> dict:
     """Run the stochastic gate against a case with an untracked boundary species.
 
