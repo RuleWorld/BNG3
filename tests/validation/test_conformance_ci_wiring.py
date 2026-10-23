@@ -84,6 +84,11 @@ def test_curated_biomodels_lane_is_manual_and_uses_the_pinned_full_inventory():
     )
     assert '--only-id "$BIOMODELS_ONLY_ID"' in smoke["run"]
     assert "source_artifact" in smoke["run"]
+    assert (
+        '{mode.get("mode") for mode in record["modes"]} != {"flat", "atomized"}'
+        in smoke["run"]
+    )
+    assert 'mode.get("core_passed") is not True' in smoke["run"]
     full = next(
         step
         for step in corpus["steps"]

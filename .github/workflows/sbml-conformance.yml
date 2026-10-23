@@ -544,7 +544,9 @@ jobs:
           record = records[0]
           if record.get("status") != "passed" or len(record.get("modes", [])) != 2:
               raise SystemExit(f"source/execution smoke did not pass: {record}")
-          if any(mode.get("status") != "passed" for mode in record["modes"]):
+          if {mode.get("mode") for mode in record["modes"]} != {"flat", "atomized"}:
+              raise SystemExit(f"unexpected smoke modes: {record['modes']}")
+          if any(mode.get("core_passed") is not True for mode in record["modes"]):
               raise SystemExit(f"both modes did not pass: {record['modes']}")
           if not record.get("source_artifact", {}).get("sha256"):
               raise SystemExit("smoke did not retain the downloaded source SHA-256")
