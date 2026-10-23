@@ -88,7 +88,17 @@ TEST_CASE("delayed reaction metadata parses, survives network generation, and ro
     CHECK_THAT(parsedNet.reactions.front(),
                Catch::Matchers::ContainsSubstring("delay=__delay_1 NonConsuming"));
 
-    auto reloaded = parse("G() -> G() + M() 0.5 delay=tau+1 NonConsuming");
+    auto reloaded = parser::parseModel(R"(
+begin model
+begin molecule types
+  G()
+  M()
+end molecule types
+begin seed species
+  G() 2
+end seed species
+end model
+)");
     reloaded->addAction(ast::Action{
         "readFile", {{"file", output.filename().string()}}});
     reloaded->addAction(ast::Action{
@@ -182,6 +192,6 @@ TEST_CASE("native ODE validates delayed parameter values at execution time") {
     const auto network = generator.generateNative();
     model->getParameters().all().front().setValue(-1.0);
     CHECK_THROWS_WITH(engine::OdeIntegrator(*model, network),
-                      Catch::Matchers::ContainsSubstring("Invalid delayed reaction time"));
+                      Catch::Matchers::ContainsSubstring("finite and nonnegative"));
 }
 

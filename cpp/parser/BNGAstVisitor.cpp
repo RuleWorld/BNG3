@@ -1891,6 +1891,13 @@ std::any BNGAstVisitor::visitReaction_rule_def(BNGParser::Reaction_rule_defConte
             throw std::runtime_error("Delayed reversible rules are unsupported; write two unidirectional rules");
         }
         const auto& parameters = currentModel_->getParameters();
+        const auto delayDependencies = delayExpression->getDependencies();
+        if (std::any_of(delayDependencies.begin(), delayDependencies.end(),
+                        [](const std::string& name) {
+                            return name == "time" || name == "t";
+                        })) {
+            throw std::runtime_error("Reaction delay must be constant during a run and cannot depend on time");
+        }
         const auto isStaticParameterExpression = [&](const auto& self,
                                                        const ast::Expression& expression) -> bool {
             using K = ast::ExpressionKind;
@@ -1916,7 +1923,7 @@ std::any BNGAstVisitor::visitReaction_rule_def(BNGParser::Reaction_rule_defConte
         if (!isStaticParameterExpression(isStaticParameterExpression, *delayExpression)) {
             throw std::runtime_error("Reaction delay must be a parameter expression (no state, observable, or delayed-function dependencies)");
         }
-        for (const auto& dependency : delayExpression->getDependencies()) {
+        for (const auto& dependency : delayDependencies) {
             if (parameters.expressionIsTimeDependent(ast::Expression::identifier(dependency))) {
                 throw std::runtime_error("Reaction delay must be constant during a run and cannot depend on time");
             }
