@@ -1,0 +1,76 @@
+{
+  "source_law": "subcritical linear birth-death process",
+  "initial_count": 100,
+  "birth_rate": 1.0,
+  "death_rate": 1.1,
+  "runs_per_ensemble": 40000,
+  "observation_start": 0.0,
+  "observation_duration": 50.0,
+  "observation_steps": 50,
+  "mean_statistic_limit": 3.0,
+  "variance_statistic_limit": 5.0,
+  "familywise_statistic": "max over 100 tests of |Z|/mean_limit and |Y|/sd_limit",
+  "familywise_statistic_alpha": 0.01,
+  "observed_max_familywise_statistic": 1.7133620670124032,
+  "source_law_replicates_at_least_observed_max": 391,
+  "source_law_max_statistic_tail_probability": 0.391,
+  "source_law_max_statistic_tail_wilson_95_percent_interval": [
+    0.36122774950463854,
+    0.4216064838452125
+  ],
+  "source_law_max_statistic_monte_carlo_p_value": 0.3916083916083916,
+  "source_law_compatibility_status_for_this_receipt": "PASS",
+  "observed_familywise_violations": 5,
+  "source_law_replicates": 1000,
+  "source_law_seed": 20261022,
+  "ensemble_variance_estimator": "population variance with denominator n (1/n)",
+  "replicates_with_at_least_observed_violations": 446,
+  "estimated_familywise_probability": 0.446,
+  "wilson_95_percent_interval": [
+    0.4154564661655095,
+    0.47695682375093046
+  ],
+  "observed_sd_thresholds": {
+    "41": 7.6549368286289585,
+    "43": 8.5666239360658,
+    "44": 8.554369861195115,
+    "45": 6.881395125889811,
+    "46": 5.7567379629624815
+  },
+  "replicates_exceeding_all_observed_sd_thresholds": 13,
+  "estimated_probability_exceeding_all_observed_sd_thresholds": 0.013,
+  "joint_threshold_wilson_95_percent_interval": [
+    0.0076128203893510256,
+    0.022114442375579666
+  ],
+  "maximum_violations_by_replicate": 31,
+  "observed_max_abs_mean_statistic": 2.8460224322963947,
+  "observed_max_abs_variance_statistic": 8.566810335062016,
+  "interpretation": "Source-law calibration only; the observed harness verdict is not changed and this does not establish simulator correctness.",
+  "wall_runtime_seconds": 209.330824167002,
+  "case": "stochastic/00003",
+  "analysis_design": "retrospective compatibility diagnostic against one previously recorded engine ensemble; the statistic was selected after reviewing that report",
+  "recorded_verdict": "failed",
+  "official_case_error_rate": 0.001,
+  "diagnostic_alpha_is_not_official_case_error_rate": true,
+  "diagnostic_status_scope": "receipt-scoped only; does not establish general simulator correctness",
+  "source_report_sha256": "68b70b10086360aea132c9dd9652707ec5a97c61a53ab4bb843a96a94636e0a3",
+  "source_model_sha256": "c58a50dd86f981150b533dd9af25c38f9ef3aeeedad2f679400e022add77f50e",
+  "source_report_commit": "cf93ba7c2b59fdec71a6c54ebb4314afa0cb528a",
+  "engine_ensemble": {
+    "engine": "cpu:batch",
+    "runs": 40000,
+    "seeds": {
+      "base": 1000000,
+      "rule": "the batched samplers derive one engine seed per trajectory from base; the action-Dispatcher ensemble uses base + run_index * 1000 + phase_index"
+    },
+    "settings_sha256": "9472de7498a16b035f60764a99512d2ee3e3e06968f0d37774cbcb51b6e1471d",
+    "results_sha256": "dc73fa905b0e4dbfa963d8a86e581529591464a580e20c5bd52cd5954e57ab5d"
+  },
+  "analysis_script_sha256": "6058c4b218550dc61932d121c345257e8954600cf4b0617215ccdfcc41d07c52",
+  "analysis_runtime": {
+    "python_version": "3.14.6",
+    "numpy_version": "2.5.2"
+  },
+  "sampling_method": "exact equally spaced subcritical linear birth-death Markov transition: binomial surviving ancestors plus a negative-binomial number of additional descendants"
+}

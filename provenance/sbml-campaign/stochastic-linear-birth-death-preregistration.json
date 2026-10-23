@@ -1,0 +1,44 @@
+{
+  "title": "Prospective BNG3 source-law compatibility check for a linear birth-death SBML model",
+  "status": "registered-before-held-out-engine-run",
+  "scope": "One held-out BNG3 ensemble for the exact linear birth-death source class; this is not a general simulator correctness claim.",
+  "source_validation": {
+    "sbml_test_suite_case": "stochastic/00003",
+    "source_model_sha256": "c58a50dd86f981150b533dd9af25c38f9ef3aeeedad2f679400e022add77f50e",
+    "validated_source_law": "X(0)=100; independent particles have birth propensity X and death propensity 1.1*X; no events, rules, time-varying parameters, or packages alter these propensities.",
+    "applicability_boundary": "Exact subcritical linear birth-death transition only; b=1.0 < d=1.1; initial time is zero. Other propensities and nonzero start distributions are out of scope."
+  },
+  "engine_run": {
+    "git_ref_requirement": "Dispatch on integrated main only, record its full commit SHA before scoring, and use the same SHA for package/native provenance.",
+    "seed_base": 2000000,
+    "runs": 40000,
+    "start": 0.0,
+    "duration": 50.0,
+    "steps": 50,
+    "observable": "X",
+    "engine": "BNG3 CPU batched SSA",
+    "variance_estimator": "population variance with denominator n (1/n)"
+  },
+  "independent_source_law": {
+    "method": "Exact equally spaced subcritical linear birth-death transition: binomial surviving ancestors plus a negative-binomial count of additional descendants.",
+    "replicates": 1000,
+    "seed": 20261024,
+    "runs_per_replicate": 40000,
+    "observations": 51,
+    "dependence": "Each replicate preserves serial dependence across the complete trajectory."
+  },
+  "decision": {
+    "statistic": "T = max over t=1..50 of abs(Z_t)/3 and abs(Y_t)/5, where Z=sqrt(n)*(sample_mean-exact_mean)/sqrt(exact_variance), Y=sqrt(n/2)*(S2/exact_variance-1), and S2 uses denominator n.",
+    "multiplicity_control": "One maximum statistic covers all 100 official mean/variance tests and their within-trajectory dependence.",
+    "familywise_alpha": 0.01,
+    "monte_carlo_p_value": "(1 + number of independent source-law replicates with T >= held-out engine T)/(1000 + 1).",
+    "uncertainty": "Two-sided Wilson 95% interval for the source-law exceedance probability; report replicate count and every seed.",
+    "labels": {
+      "PASS": "Wilson interval lower bound exceeds alpha: this receipt is not rejected by this source-law diagnostic.",
+      "FAIL": "Wilson interval upper bound is below alpha: this receipt is inconsistent with the exact source law under this diagnostic.",
+      "INCONCLUSIVE": "Wilson interval overlaps alpha."
+    },
+    "claim_boundary": "These labels apply only to this held-out ensemble and this source-law statistic. They do not override official SBML Test Suite conformance or establish general simulator correctness."
+  },
+  "historical_analysis_boundary": "The cf93ba7c run used to develop this statistic is retrospective and must not be described as prospective qualification."
+}

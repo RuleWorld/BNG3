@@ -1,0 +1,15 @@
+{
+  "base_commit": "2cb9f2c3bc013307414379a22e655e3e3a0b6b18",
+  "measurement_date": "2026-10-21",
+  "measurement_host": "darwin, CPython 3.14.6, libsbml 5.21.1, roadrunner 2.10.0",
+  "note": "Historical measurement of the merged tree, and the measurement the committed expectation manifest was generated from. The run executed the tree at commit 2cb9f2c3 (the squash merge of the reaction-rate outputs) with the native extension built from it; the only commit merged after that measurement, the mass-action hash-seed determinism fix, changes no verdict, so the measurement still describes the tree. The curated-BioModels figures are not part of this record; the corpus has not been re-measured since the campaign's flat-mode run.",
+  "sbml_test_suite": {
+    "case_timeout_seconds": 300,
+    "categories": [
+      "semantic",
+      "stochastic"
+    ],
+    "repository": "https://github.com/sbmlteam/sbml-test-suite.git",
+    "revision": "cf38585fac5de8e0e90112febb62851ee2181816"
+  }
+}

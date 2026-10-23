@@ -11,13 +11,13 @@ A limitation is **not** a defect. It is a case the Atomizer refuses, and a refus
 | Field | Value |
 | --- | --- |
 | Generated on | 2026-10-22 |
-| Tree described | `c6da742f2a49cf993ff22ee00a15c7331311cd9b` |
-| Measured at commit | `c6da742f2a49cf993ff22ee00a15c7331311cd9b` |
+| Tree described | `cf93ba7c2b59fdec71a6c54ebb4314afa0cb528a` |
+| Measured at commit | `cf93ba7c2b59fdec71a6c54ebb4314afa0cb528a` |
 | Official suite revision | `cf38585fac5de8e0e90112febb62851ee2181816` (https://github.com/sbmlteam/sbml-test-suite.git) |
-| Report SHA-256 | `a2ad60a2108f6e9a894515e73f4c57217e554b2834a86e5f321d78f2b85522f5` |
+| Report SHA-256 | `68b70b10086360aea132c9dd9652707ec5a97c61a53ab4bb843a96a94636e0a3` |
 | BNG3 version | 3.0.0a1 |
-| Native extension SHA-256 | `22a7a99aeac857a8f80e205f61d707e41f43990665caac5fc7887dea5a76ddcf` |
-| Source tree of the measurement | `/private/tmp/bng3-campaign/wt-n2/python/bionetgen/__init__.py` |
+| Native extension SHA-256 | `0f3b9a6821d9e14e93684a95b33675d9c770508a0a0aeca388ec9549c78503bc` |
+| Source tree of the measurement | `/home/runner/work/_temp/ssts-venv/lib/python3.12/site-packages/bionetgen/__init__.py` |
 
 The measurement is a full run of the pinned official SBML Test Suite; its per-case verdicts are recorded in the expectation manifest, which the campaign regenerates whenever a merge changes a verdict.
 
@@ -45,20 +45,20 @@ Every limitation below carries the date it was recorded. A limitation that is cl
 
 | Construct | Side | Cases | What it is | First recorded |
 | --- | --- | --- | --- | --- |
-| `events:untranslated` | atomizer | 67 | An event the Atomizer cannot lower, or cannot order | 2026-10-20 |
+| `events:untranslated` | atomizer | 57 | An event the Atomizer cannot lower, or cannot order | 2026-10-20 |
 | `package:fbc` | atomizer | 34 | The fbc package: a flux-balance model, not a time course | 2026-10-20 |
 | `sbml-writer:unrepresentable-function` | atomizer | 9 | A math function the engine cannot execute | 2026-10-20 |
+| `mathml:infinity` | atomizer | 8 | An infinite constant | 2026-10-20 |
 | `fast-reaction:no-fast-equilibrium-solve` | atomizer | 5 | A fast reaction whose pseudo steady state cannot be used | 2026-10-20 |
+| `mathml:non-finite-parameter-approximation` | atomizer | 5 | A non-finite parameter value is replaced by a finite diagnostic placeholder | 2026-10-22 |
 | `events:state-trigger-not-schedulable` | atomizer | 4 | A state trigger the runtime cannot schedule | 2026-10-20 |
-| `other` | atomizer | 3 | Refusals the cause taxonomy does not yet name | 2026-10-20 |
 | `compartment:unsupported-spatial-dimensions` | atomizer | 2 | A compartment with more than three spatial dimensions | 2026-10-20 |
-| `mathml:infinity` | atomizer | 2 | An infinite constant | 2026-10-20 |
 | `mathml:not-a-number` | atomizer | 1 | A not-a-number constant | 2026-10-20 |
 | `harness:random-event-execution` | harness | 12 | The official reference is one draw of a random execution order | 2026-10-21 |
-| `harness:stochastic-ensemble-budget` | harness | 2 | The documented ensemble budget does not fit the gate's work budget | 2026-10-21 |
+| `harness:scheduled-action-phase-boundary` | harness | 2 | The official reference samples a scheduled-action phase boundary | 2026-10-22 |
 | `reference:not-applicable` | not-applicable | 34 | The suite says the case has no official time-course reference | 2026-10-20 |
 
-Cases with a recorded gap: 127 atomizer-side, 14 harness-side, 34 not-applicable-side. A case may carry a gap at more than one stage, so the counts above count distinct cases per construct.
+Cases with a recorded gap: 125 atomizer-side, 14 harness-side, 34 not-applicable-side. A case may carry a gap at more than one stage, so the counts above count distinct cases per construct.
 
 ## The Atomizer's limitations
 
@@ -67,7 +67,7 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 ### An event the Atomizer cannot lower, or cannot order
 
 - **Construct**: `events:untranslated`
-- **Cases**: 67 — semantic/00761 semantic/00965 semantic/00966 semantic/01000 semantic/01590 stochastic/00033 stochastic/00040 stochastic/00041 stochastic/00042 stochastic/00043 stochastic/00044 stochastic/00045 stochastic/00046 stochastic/00047 stochastic/00048 stochastic/00049 stochastic/00050 stochastic/00051 stochastic/00052 stochastic/00053 stochastic/00054 stochastic/00055 stochastic/00056 stochastic/00057 … (43 more)
+- **Cases**: 57 — semantic/00761 semantic/00965 semantic/00966 semantic/01000 semantic/01590 stochastic/00033 stochastic/00040 stochastic/00041 stochastic/00042 stochastic/00043 stochastic/00044 stochastic/00045 stochastic/00046 stochastic/00047 stochastic/00048 stochastic/00049 stochastic/00050 stochastic/00051 stochastic/00052 stochastic/00053 stochastic/00054 stochastic/00055 stochastic/00056 stochastic/00057 … (33 more)
 - **First recorded**: 2026-10-20
 - **What SBML requires**: SBML Level 3 Version 2 Core Sec. 4.12 defines an Event as a two-phase operation: a Trigger (Sec. 4.12.2) decides when the event may fire, and the execution phase applies the EventAssignments (Sec. 4.12.5). Sec. 4.12.7 says the order in which events occur is resolved, that this order can be significant for a simulation's outcome, and that an event may carry a special priority through a Priority subobject (Sec. 4.12.3).
 - **Citation**: SBML Level 3 Version 2 Core Sec. 4.12, Sec. 4.12.2, Sec. 4.12.3, Sec. 4.12.7
@@ -94,6 +94,16 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 - **What BNG3 does instead**: The C++ SBML writer serializes the call back out, but the engine cannot execute it: it reports "SBML math function \"delay\" is not losslessly representable in the BNG3 engine/libRoadRunner path: the C++ SBML writer serializes the call, but neither the BNG3 engine nor libRoadRunner can evaluate SBML delay semantics".
 - **Reducible?**: No, not in the engine. BNG3 has no delayed-history semantics and libRoadRunner rejects a model that uses delay at all, so a model that needs them cannot be executed by either engine; the writer boundary itself was already removed.
 
+### An infinite constant
+
+- **Construct**: `mathml:infinity`
+- **Cases**: 8 — semantic/00950 semantic/01811 stochastic/00069 stochastic/00070 stochastic/00071 stochastic/00072 stochastic/00077 stochastic/00078
+- **First recorded**: 2026-10-20
+- **What SBML requires**: SBML Level 3 Version 2 Core Sec. 3.4.1 permits the MathML infinity constant in a model's formulas, and Sec. 3.1.5 makes positive infinity a value of the double type.
+- **Citation**: SBML Level 3 Version 2 Core Sec. 3.1.5, Sec. 3.4.1
+- **What BNG3 does instead**: The Atomizer reports "<infinity> constant encountered in math; the source is valid SBML (validation rule 10202 permits <infinity>), but an infinite value cannot be represented in BNG3's finite-double model, so it is emitted as a large finite value and the model is not claimed to be supported".
+- **Reducible?**: Only by changing what BNG3's value domain is. The source is valid SBML and the boundary is BNG3's finite-double model, not a conversion defect; a large finite stand-in is an approximation, so the case is refused rather than claimed.
+
 ### A fast reaction whose pseudo steady state cannot be used
 
 - **Construct**: `fast-reaction:no-fast-equilibrium-solve`
@@ -103,6 +113,16 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 - **Citation**: SBML Level 3 Version 1 Core Sec. 4.11; SBML Level 3 Version 2 Core Sec. 4.11
 - **What BNG3 does instead**: The Atomizer reduces a fast reaction to its pseudo steady state where it can (PR #370, 2026-10-21) and refuses the remainder, saying that it treats such a reaction as an ordinary reaction and that this changes the trajectory.
 - **Reducible?**: Largely reduced already: the reduction closed most of these cases. The remainder needs a fast reaction whose pseudo steady state cannot be written as a BNGL rule.
+
+### A non-finite parameter value is replaced by a finite diagnostic placeholder
+
+- **Construct**: `mathml:non-finite-parameter-approximation`
+- **Cases**: 5 — semantic/00951 stochastic/00096 stochastic/00097 stochastic/00098 stochastic/00099
+- **First recorded**: 2026-10-22
+- **What SBML requires**: The source values use non-finite numeric values, which are distinct from any finite value. A finite-double target cannot preserve them by substituting an arbitrary finite parameter.
+- **Citation**: SBML Level 3 Version 2 Core Sec. 3.1.4; MathML 2 Sec. 4.2.3
+- **What BNG3 does instead**: The case source validates with libSBML, but parameter values include infinity and NaN. The writer emits finite placeholder numbers to produce a diagnostic artifact and marks the conversion unsupported; these placeholders do not preserve the source values.
+- **Reducible?**: No within BNG3's finite numeric state; conversion must keep refusing rather than treating the emitted finite placeholder as equivalent.
 
 ### A state trigger the runtime cannot schedule
 
@@ -114,16 +134,6 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 - **What BNG3 does instead**: The Atomizer refuses the event and says why: "trigger is not a simple time threshold (state-dependent triggers cannot be scheduled)", or, when the trigger names an identifier that is not a legal SBML SId, that the identifier "contains a character outside the SBML SId class and cannot be matched".
 - **Reducible?**: Yes, in two directions. A trigger the native event runtime can evaluate is lowered rather than refused (PR #328, 2026-10-21); an identifier that is not a legal SId is a source defect the user can fix by renaming it, and the diagnostic says so.
 
-### Refusals the cause taxonomy does not yet name
-
-- **Construct**: `other`
-- **Cases**: 3 — semantic/00951 stochastic/00028 stochastic/00032
-- **First recorded**: 2026-10-20
-- **What SBML requires**: No single construct: each case is refused for a reason the campaign's cause taxonomy has no label for yet.
-- **Citation**: SBML Level 3 Version 2 Core, the section the case's own reason names
-- **What BNG3 does instead**: The Atomizer refuses the case and reports the reason; the campaign's classification records it as "other" because no known construct class matches.
-- **Reducible?**: Unknown until each reason is read. This bucket is a request to extend the taxonomy, not a claim that the cases are alike.
-
 ### A compartment with more than three spatial dimensions
 
 - **Construct**: `compartment:unsupported-spatial-dimensions`
@@ -133,16 +143,6 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 - **Citation**: SBML Level 3 Version 2 Core Sec. 4.5.2, Sec. 4.5.4
 - **What BNG3 does instead**: The Atomizer refuses the compartment and says why: "Compartment \"C\" has spatialDimensions 7; BNG3 does not support spatialDimensions values greater than 3." It also refuses a negative dimension and, for a Level 2 model, any value outside 0 through 3.
 - **Reducible?**: No, not as a compartment. BNGL compartments carry a volume; a compartment with a fractal or higher dimension has no BNGL counterpart, and the unit selection Sec. 4.5.4 describes cannot be expressed.
-
-### An infinite constant
-
-- **Construct**: `mathml:infinity`
-- **Cases**: 2 — semantic/00950 semantic/01811
-- **First recorded**: 2026-10-20
-- **What SBML requires**: SBML Level 3 Version 2 Core Sec. 3.4.1 permits the MathML infinity constant in a model's formulas, and Sec. 3.1.5 makes positive infinity a value of the double type.
-- **Citation**: SBML Level 3 Version 2 Core Sec. 3.1.5, Sec. 3.4.1
-- **What BNG3 does instead**: The Atomizer reports "<infinity> constant encountered in math; the source is valid SBML (validation rule 10202 permits <infinity>), but an infinite value cannot be represented in BNG3's finite-double model, so it is emitted as a large finite value and the model is not claimed to be supported".
-- **Reducible?**: Only by changing what BNG3's value domain is. The source is valid SBML and the boundary is BNG3's finite-double model, not a conversion defect; a large finite stand-in is an approximation, so the case is refused rather than claimed.
 
 ### A not-a-number constant
 
@@ -168,15 +168,15 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 - **What BNG3 does instead**: Nothing is refused: the model converts and the engine executes the events in the order the specification defines. The harness cannot compare point-wise, because the reference is one draw of a random order and no deterministic simulator reproduces it point-wise.
 - **Reducible?**: Yes, on the measurement side: the comparison has to be distributional rather than point-wise, or the reference has to pin the order. It is a measurement limit, not a limitation of the Atomizer.
 
-### The documented ensemble budget does not fit the gate's work budget
+### The official reference samples a scheduled-action phase boundary
 
-- **Construct**: `harness:stochastic-ensemble-budget`
-- **Cases**: 2 — stochastic/00005 stochastic/00023
-- **First recorded**: 2026-10-21
-- **What SBML requires**: Nothing: this is a limit of the measurement, not of the model. The SBML discrete stochastic model test suite (DSMTS) user guide, section 3, asks for at least 1,000 independent repetitions and recommends 10,000 so that the statistical tests have reasonable power, and section 3.4 calls 10,000 the size that is needed to have any chance of picking up minor issues.
-- **Citation**: the SBML discrete stochastic model test suite (DSMTS) user guide, sections 3 and 3.4
-- **What BNG3 does instead**: Nothing is refused. The model converts and the engine simulates it; the harness cannot compare the case, because the documented 40,000-trajectory ensemble of this model performs about 3.3e9 to 3.6e9 reaction events, which is more work than the gate's per-case ensemble budget allows, and the ensemble that would fit is smaller than the 10,000 independent repetitions the guide requires for the acceptance tests to have power. The harness says so: "the documented ensemble budget of 40000 trajectories would perform about 3,605,337,500 reaction events, which exceeds the ensemble work budget of 400,000,000 reaction events; at the work budget the ensemble would hold 4437 trajectories, fewer than the 10000 independent repetitions the DSMTS user guide requires for the acceptance tests to have reasonable power, so the case is not comparable at a documented budget".
-- **Reducible?**: Yes, on the measurement side: the case becomes comparable when the gate can afford the documented ensemble, either by a larger work budget or by a batched sampler that can afford the model's rate laws. The limit is a measurement limit, not a limitation of the Atomizer.
+- **Construct**: `harness:scheduled-action-phase-boundary`
+- **Cases**: 2 — stochastic/00028 stochastic/00032
+- **First recorded**: 2026-10-22
+- **What SBML requires**: SBML event execution applies EventAssignments when the event fires; the reporting convention at an event time must distinguish pre-event from post-event state.
+- **Citation**: SBML Level 3 Version 2 Core Sec. 4.12.5, Sec. 4.12.7; campaign reference-comparison contract
+- **What BNG3 does instead**: The source model converts, round-trips, and passes the independent trajectory comparison. The official reference grid includes the exact scheduled-action boundary, where the official convention reports the assignment as already applied while the native action dispatcher exposes the pre-assignment phase value. The point-wise reference comparison therefore remains unsupported.
+- **Reducible?**: Yes, in the comparison contract: sample the post-event value at the defined boundary, or compare according to the event execution phase. This is a harness/runtime observation-boundary issue, not an Atomizer refusal.
 
 ## Cases the official suite says do not apply
 
@@ -217,7 +217,7 @@ The expectation manifest records one measurement, not a history, so this log is 
 - **2026-10-21** — Opened: two harness-side classes were named, so the measurement limits 'random event execution' and 'reference does not track variable' are now visible as such instead of being counted as Atomizer limitations (PR #359).
 - **2026-10-21** — Reduced: a fast reaction is lowered to its pseudo steady state instead of being refused (PR #370), and several simultaneous events execute in the order the specification defines (PR #371). The official-reference failure count is zero.
 - **2026-10-21** — Closed: a reference that names a reaction's rate is now compared, because the Atomizer states the rate as a zero-argument function and the harness maps the reference's quantity onto it (PR #378); and a boundary species is now honoured by the direct SSA path, so the reference's value for it is compared rather than skipped (PR #380). The event limit 'an event the Atomizer cannot lower, or cannot order' shrinks by one case: an event group whose priority is read from the model state is now ordered by the priority it has at the execution instant (PR #376).
-- **2026-10-21** — Opened: the harness-side limit 'the documented ensemble budget does not fit the gate's work budget' is named. The ensemble size no longer depends on the runner's speed - it is decided by the ensemble's work, which is a property of the model and the seed - so a conformance verdict no longer moves with the machine's load, and a case whose documented ensemble is too heavy to be compared at the guide's power floor is reported as not comparable instead of being judged on a truncated ensemble.
+- **2026-10-22** — Corrected three previously unclassified cause/owner labels without changing verdicts or stage counts: semantic/00950 is MathML infinity, semantic/00951 is a non-finite parameter approximation, and stochastic/00028 and stochastic/00032 are scheduled-action phase-boundary comparison limits owned by the harness.
 
 ## How to regenerate
 

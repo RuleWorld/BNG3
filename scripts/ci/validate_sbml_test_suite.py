@@ -3061,7 +3061,7 @@ def _unsupported_causes(reason: str) -> list[str]:
     ):
         if f'"{package}" package' in lower or f"package:{package}" in lower:
             causes.append(f"package:{package}")
-    if "event" in lower:
+    if "event" in lower or "scheduled action" in lower:
         causes.append("events")
     if "algebraic rule" in lower:
         causes.append("algebraic_rules")
@@ -3075,6 +3075,8 @@ def _unsupported_causes(reason: str) -> list[str]:
         causes.append("conversion_factors")
     if "reaction-local" in lower or "no bngl-wide scope" in lower:
         causes.append("local_scope")
+    if "spatialdimensions" in lower:
+        causes.append("compartments")
     if any(
         marker in lower
         for marker in (
@@ -3084,6 +3086,10 @@ def _unsupported_causes(reason: str) -> list[str]:
             "lcm(",
             "rateof",
             "delay",
+            "infinity",
+            "notanumber",
+            "nan value; emitted",
+            "infinite value; emitted",
         )
     ):
         causes.append("mathml")
@@ -3256,6 +3262,10 @@ _EVENT_REFUSAL_SUBCAUSES: tuple[tuple[str, str], ...] = (
     (
         "simultaneous_unordered_event",
         "simultaneous event without a priority has an undefined execution order",
+    ),
+    (
+        "scheduled_action_phase_boundary",
+        "official output grid contains the boundary of the generated scheduled actions",
     ),
     ("time_window_empty", "time-window bounds do not form a nonempty interval"),
     (

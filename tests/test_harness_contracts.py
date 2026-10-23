@@ -78,7 +78,7 @@ GATE = REPO / "scripts" / "ci" / "validate_sbml_test_suite.py"
 COMPARATOR = REPO / "scripts" / "ci" / "compare_sbml_suite_reports.py"
 FLOOR_CHECKER = REPO / "scripts" / "ci" / "check_python_floor.py"
 MANIFEST = REPO / "provenance" / "sbml-campaign" / "expectations.json"
-INVENTORY = REPO / "provenance" / "sbml-campaign" / "current-2026-10-20.json"
+INVENTORY = REPO / "provenance" / "sbml-campaign" / "current-2026-10-22.json"
 
 
 # --------------------------------------------------------------------------
@@ -578,7 +578,7 @@ def test_the_verification_slot_fails_open_and_never_deadlocks(tmp_path):
 def test_the_jobs_guard_caps_the_worker_count(tmp_path):
     """A run never forks more workers than the machine has CPUs."""
 
-    pytest.importorskip("bionetgen._bionetgen_cpp")
+    native_extension = pytest.importorskip("bionetgen._bionetgen_cpp")
     suite, _lock = isolation_contracts._locked_ssts_checkout(tmp_path)
     cpu_count = os.cpu_count() or 1
 
@@ -611,10 +611,20 @@ def test_the_jobs_guard_caps_the_worker_count(tmp_path):
     # refuses to measure a package it cannot trace to the tree that owns it,
     # and it would refuse before it ever reached the behaviour the test
     # breaks on purpose.
-    for name in ("python", "build"):
-        target = REPO / name
-        if target.exists():
-            os.symlink(target, broken_root / name, target_is_directory=True)
+    # Copy the Python package rather than symlinking it so this temporary
+    # installed-layout fixture can contain the same already-loaded extension.
+    # That makes the subprocess exercise the same package/extension identity
+    # guard as an installed CI build, even when this checkout has no build/cpp.
+    shutil.copytree(
+        REPO / "python",
+        broken_root / "python",
+        ignore=shutil.ignore_patterns("__pycache__", "*.pyc"),
+    )
+    copied_extension = (
+        broken_root / "python" / "bionetgen" / Path(native_extension.__file__).name
+    )
+    shutil.copy2(native_extension.__file__, copied_extension)
+    assert copied_extension.read_bytes() == Path(native_extension.__file__).read_bytes()
     # The broken copy has to be able to import the modules the gate imports,
     # or it fails before it ever reaches the behaviour the test breaks on
     # purpose.
@@ -628,15 +638,24 @@ def test_the_jobs_guard_caps_the_worker_count(tmp_path):
 
     broken_report = tmp_path / "broken.json"
     broken_environment = dict(os.environ)
-    build_cpp = REPO / "build" / "cpp"
-    if any(build_cpp.glob("_bionetgen_cpp*")):
-        # The checkout's own build is the one the gate has to measure, so the
-        # broken copy gets the same package and extension the real gate uses.
-        entries = [str(REPO / "python"), str(build_cpp)]
-        existing = broken_environment.get("PYTHONPATH")
-        if existing:
-            entries.append(existing)
-        broken_environment["PYTHONPATH"] = os.pathsep.join(entries)
+    # An editable install may register ScikitBuildRedirectingFinder ahead of
+    # PathFinder and route ``bionetgen`` back to the primary checkout even
+    # when PYTHONPATH names this synthetic checkout. Remove that environment
+    # redirect only in this subprocess so the test exercises the broken copy
+    # after the normal checkout-identity guard has verified its source.
+    bootstrap = tmp_path / "synthetic_import_bootstrap"
+    bootstrap.mkdir()
+    (bootstrap / "sitecustomize.py").write_text(
+        "import sys\n"
+        "sys.meta_path[:] = [finder for finder in sys.meta_path "
+        "if type(finder).__name__ != 'ScikitBuildRedirectingFinder']\n",
+        encoding="utf-8",
+    )
+    entries = [str(bootstrap), str(broken_root / "python")]
+    existing = broken_environment.get("PYTHONPATH")
+    if existing:
+        entries.append(existing)
+    broken_environment["PYTHONPATH"] = os.pathsep.join(entries)
     broken_result = subprocess.run(
         [
             sys.executable,

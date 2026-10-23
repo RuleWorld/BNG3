@@ -131,6 +131,58 @@ def test_the_harness_limits_are_kept_apart_from_the_atomizer_limitations():
 
 
 @pytest.mark.smoke
+def test_historical_unknown_causes_have_specific_owners_without_verdict_changes():
+    """Known MathML and comparator limits are not generic Atomizer gaps."""
+
+    manifest = _manifest()
+    infinity = manifest["cases"]["semantic/00950"]
+    assert infinity["conversion"] == "unsupported"
+    assert infinity["official_reference"] == "unsupported"
+    assert infinity["gap"]["conversion"] == {
+        "causes": ["mathml"],
+        "construct": "mathml:infinity",
+        "side": "atomizer",
+    }
+
+    nonfinite_parameter = manifest["cases"]["semantic/00951"]
+    assert nonfinite_parameter["conversion"] == "unsupported"
+    assert nonfinite_parameter["official_reference"] == "unsupported"
+    assert nonfinite_parameter["gap"]["conversion"] == {
+        "causes": ["mathml"],
+        "construct": "mathml:non-finite-parameter-approximation",
+        "side": "atomizer",
+    }
+    assert nonfinite_parameter["gap"]["official_reference"] == {
+        "causes": ["mathml"],
+        "construct": "mathml:non-finite-parameter-approximation",
+        "side": "atomizer",
+    }
+
+    for identity in ("stochastic/00028", "stochastic/00032"):
+        entry = manifest["cases"][identity]
+        assert entry["conversion"] == "passed"
+        assert entry["roundtrip_structure"] == "passed"
+        assert entry["independent_comparison"] == "passed"
+        assert entry["official_reference"] == "unsupported"
+        assert entry["gap"]["official_reference"] == {
+            "causes": ["events"],
+            "construct": "harness:scheduled-action-phase-boundary",
+            "side": "harness",
+        }
+
+    for identity in (
+        "semantic/00950",
+        "semantic/00951",
+        "stochastic/00028",
+        "stochastic/00032",
+    ):
+        assert all(
+            "other" not in gap["causes"]
+            for gap in manifest["cases"][identity].get("gap", {}).values()
+        )
+
+
+@pytest.mark.smoke
 def test_a_closed_limitation_keeps_its_record():
     """A closed limitation moves to the resolved section; it does not vanish."""
 
