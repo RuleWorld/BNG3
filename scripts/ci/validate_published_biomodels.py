@@ -130,6 +130,18 @@ class SourceAcquisitionError(RuntimeError):
         self.attempts = attempts
 
 
+class SourceIntegrityError(RuntimeError):
+    """Downloaded source bytes did not match their pinned digest."""
+
+    def __init__(self, path: Path, expected_sha256: str, actual_sha256: str):
+        super().__init__(
+            f"sha256 mismatch for {path.name}: expected {expected_sha256}, "
+            f"got {actual_sha256}"
+        )
+        self.expected_sha256 = expected_sha256
+        self.actual_sha256 = actual_sha256
+
+
 def _acquisition_attempt(url: str, exc: Exception) -> dict[str, Any]:
     status = getattr(exc, "code", None)
     return {
@@ -144,7 +156,7 @@ def _model_exception_status(exc: Exception) -> str:
     message = f"{type(exc).__name__}: {exc}"
     if _known_unsupported_error(message):
         return "unsupported"
-    if isinstance(exc, SourceAcquisitionError):
+    if isinstance(exc, (SourceAcquisitionError, SourceIntegrityError)):
         return "harness_error"
     return "failed"
 
@@ -420,9 +432,7 @@ def _download_if_needed(path: Path, entry: dict[str, Any]) -> str:
     expected = entry.get("sha256")
     actual = _sha256(path)
     if expected and actual != expected:
-        raise RuntimeError(
-            f"sha256 mismatch for {path.name}: expected {expected}, got {actual}"
-        )
+        raise SourceIntegrityError(path, str(expected), actual)
     return actual
 
 
@@ -1889,6 +1899,11 @@ def main() -> int:
             record["error"] = message
             if isinstance(exc, SourceAcquisitionError):
                 record["source_acquisition_attempts"] = exc.attempts
+            if isinstance(exc, SourceIntegrityError):
+                record["source_integrity"] = {
+                    "expected_sha256": exc.expected_sha256,
+                    "actual_sha256": exc.actual_sha256,
+                }
             if record["status"] == "unsupported":
                 record["unsupported_reason"] = message
         if model_artifacts is not None:
