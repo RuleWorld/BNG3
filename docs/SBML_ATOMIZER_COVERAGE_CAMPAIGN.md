@@ -110,9 +110,10 @@ constant, a compartment with more than three spatial dimensions, and a small
 bucket of refusals the taxonomy does not yet name. Earlier action-runner and
 reaction-extent measurement limits were closed by PR #337 and PR #378. The
 current 16 harness gaps include 12 random-event order comparisons, 2
-ensemble-budget cases that cannot meet the documented run count within the
-fixed work budget, and 2 scheduled-action phase-boundary comparisons. The
-budget cases are not Atomizer refusals.
+ensemble-budget cases whose projected work exceeds the configured planning
+threshold, and 2 scheduled-action phase-boundary comparisons. The planner
+marks those comparisons not comparable; the threshold is not an enforced cap
+or runtime guarantee. The budget cases are not Atomizer refusals.
 
 The baseline official-reference failures are also grouped by each case's own
 official `componentTags` metadata, read from the pinned suite's own
@@ -343,10 +344,12 @@ present it as finished. The open work is:
   taxonomy does not yet name.
 * **The harness-side measurement limits**, which are not Atomizer refusals:
   12 official references for equal-priority events provide only one draw of
-  a random execution order; 2 stochastic cases cannot fit the documented
-  ensemble count within the fixed event-work budget; and 2 scheduled-action
-  cases stop at a phase boundary the native dispatcher reports before the
-  phase assignment is applied.
+  a random execution order; 2 stochastic cases have projected work above the
+  configured planning threshold and are marked not comparable; and 2
+  scheduled-action cases stop at a phase boundary the native dispatcher
+  reports before the phase assignment is applied. The projected threshold is
+  based on a fixed-seed CPU probe and does not guarantee actual ensemble
+  runtime or impose a hard cap.
 * **The cases the campaign could not make comparable**: the official suite
   itself records that 34 of its cases define no time-course reference, so
   there is nothing to compare against and nobody should go looking for a
@@ -535,7 +538,7 @@ _Source: `/tmp/bng3-campaign/run39878668497/ssts-31ae76c19fdd03c9d4af788f58dd518
 | 6 | Atomizer diagnostic | Reaction "…" is marked fast (fast="true") |
 | 3 | Atomizer | <infinity>/<notanumber> constant encountered in math |
 | 2 | Atomizer | a compartment declares unsupported spatialDimensions |
-| 2 | harness | the documented ensemble budget does not fit the gate's per-case ensemble work budget |
+| 2 | harness | projected ensemble work exceeds the configured planning threshold; actual work and runtime may differ |
 
 Total official-reference unsupported verdicts: 141.
 _Source: `/tmp/bng3-campaign/run39878668497/ssts-31ae76c19fdd03c9d4af788f58dd5187726e14a1-1/report.json` (SHA-256 `49601d78bac943c536e111d575765e3823a808a1af11a66d9f88e83977a8833f`); SBML Test Suite revision `cf38585fac5de8e0e90112febb62851ee2181816`; BNG3 commit the run executed `31ae76c19fdd03c9d4af788f58dd5187726e14a1`._

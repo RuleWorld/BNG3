@@ -85,8 +85,8 @@ UNSUPPORTED_OWNER_RULES: tuple[tuple[str, str, str], ...] = (
     (
         "ensemble work budget",
         "harness",
-        "the documented ensemble budget does not fit the gate's per-case "
-        "ensemble work budget",
+        "projected ensemble work exceeds the configured planning threshold; "
+        "actual work and runtime may differ",
     ),
     (
         "does not define an official time-course reference",

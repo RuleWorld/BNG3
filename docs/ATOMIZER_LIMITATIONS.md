@@ -56,7 +56,7 @@ Every limitation below carries the date it was recorded. A limitation that is cl
 | `mathml:not-a-number` | atomizer | 1 | A not-a-number constant | 2026-10-20 |
 | `harness:random-event-execution` | harness | 12 | The official reference is one draw of a random execution order | 2026-10-21 |
 | `harness:scheduled-action-phase-boundary` | harness | 2 | The official reference samples a scheduled-action phase boundary | 2026-10-22 |
-| `harness:stochastic-ensemble-budget-not-comparable` | harness | 2 | **no narrative recorded** | — |
+| `harness:stochastic-ensemble-budget-not-comparable` | harness | 2 | Projected stochastic work exceeds the comparison-planning threshold | 2026-10-22 |
 | `reference:not-applicable` | not-applicable | 34 | The suite says the case has no official time-course reference | 2026-10-20 |
 
 Cases with a recorded gap: 125 atomizer-side, 16 harness-side, 34 not-applicable-side. A case may carry a gap at more than one stage, so the counts above count distinct cases per construct.
@@ -179,9 +179,15 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 - **What BNG3 does instead**: The source model converts, round-trips, and passes the independent trajectory comparison. The official reference grid includes the exact scheduled-action boundary, where the official convention reports the assignment as already applied while the native action dispatcher exposes the pre-assignment phase value. The point-wise reference comparison therefore remains unsupported.
 - **Reducible?**: Yes, in the comparison contract: sample the post-event value at the defined boundary, or compare according to the event execution phase. This is a harness/runtime observation-boundary issue, not an Atomizer refusal.
 
-### `harness:stochastic-ensemble-budget-not-comparable`
+### Projected stochastic work exceeds the comparison-planning threshold
 
-**No narrative is recorded for this construct.** The narrative file must gain an entry for it; the generator refuses to render a limitation it cannot explain.
+- **Construct**: `harness:stochastic-ensemble-budget-not-comparable`
+- **Cases**: 2 — stochastic/00005 stochastic/00023
+- **First recorded**: 2026-10-22
+- **What SBML requires**: The official stochastic reference specifies an ensemble size and reports an ensemble outcome; comparison requires the harness to execute that ensemble and evaluate its statistics.
+- **Citation**: DSMTS user guide and the pinned official test case settings
+- **What BNG3 does instead**: The SBML model converts. A fixed-seed CPU probe projects ensemble work above the configured planning threshold, so the harness marks the official comparison not comparable. The projection is an estimate; it is not an enforced cap or a runtime guarantee.
+- **Reducible?**: Yes, on the harness side: improve planning or execution so the specified ensemble can be evaluated, then compare it without changing the official statistics or thresholds.
 
 ## Cases the official suite says do not apply
 

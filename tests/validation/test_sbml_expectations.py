@@ -25,6 +25,7 @@ from scripts.ci import sbml_campaign_inventory as inventory
 REPO = Path(__file__).resolve().parents[2]
 MANIFEST = REPO / "provenance" / "sbml-campaign" / "expectations.json"
 INVENTORY = REPO / "provenance" / "sbml-campaign" / "current-2026-10-22.json"
+LIMITATIONS = REPO / "provenance" / "sbml-campaign" / "atomizer-limitations.json"
 LOCK = REPO / "provenance" / "upstreams.lock.yml"
 TOOL = REPO / "scripts" / "ci" / "sbml_campaign_inventory.py"
 GATE = REPO / "scripts" / "ci" / "validate_sbml_test_suite.py"
@@ -275,6 +276,19 @@ def test_committed_manifest_agrees_with_the_committed_inventory():
     assert comparison["differences"] == [], "\n".join(
         inventory.format_difference(diff) for diff in comparison["differences"]
     )
+
+
+@pytest.mark.smoke
+def test_every_current_gap_has_a_documented_construct_narrative():
+    manifest = _manifest()
+    narrative = json.loads(LIMITATIONS.read_text(encoding="utf-8"))
+    constructs = {
+        gap["construct"]
+        for case in manifest["cases"].values()
+        for gap in case.get("gap", {}).values()
+    }
+
+    assert constructs <= set(narrative["constructs"])
 
 
 @pytest.mark.smoke
