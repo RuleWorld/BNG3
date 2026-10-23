@@ -1,0 +1,113 @@
+{
+  "schema_version": 1,
+  "classification": "held-out single-case stochastic receipt; not full-suite qualification",
+  "official_expectation_at_recorded_main": "failed",
+  "official_observed_status": "passed",
+  "manifest_comparison": "expected failed, observed passed (improvement); historical expectation intentionally unchanged",
+  "held_out_run": {
+    "workflow_run_id": 39877752652,
+    "workflow_job_id": 120167409439,
+    "artifact_id": 12468994483,
+    "event": "workflow_dispatch",
+    "ref": "main",
+    "bng3_commit": "d387947f69ac4f7b3a5f1a714301566fe825991f",
+    "clean_worktree": true,
+    "suite_revision": "cf38585fac5de8e0e90112febb62851ee2181816",
+    "case": "stochastic/00003",
+    "partial_run": true,
+    "selected_surface_passed": true,
+    "core_passed": false,
+    "source_report_sha256": "36b1ad0e87e6b6cf2bfc859f48508ff5c78c53414108e3e7b8167b32711ac50d",
+    "source_model_sha256": "c58a50dd86f981150b533dd9af25c38f9ef3aeeedad2f679400e022add77f50e",
+    "settings_sha256": "9472de7498a16b035f60764a99512d2ee3e3e06968f0d37774cbcb51b6e1471d",
+    "results_sha256": "dc73fa905b0e4dbfa963d8a86e581529591464a580e20c5bd52cd5954e57ab5d",
+    "engine": "cpu:batch",
+    "runs": 40000,
+    "documented_runs": 40000,
+    "work_budget": 400000000,
+    "seed_base": 2000000,
+    "grid": {
+      "start": 0.0,
+      "duration": 50.0,
+      "steps": 50,
+      "observations": 51
+    },
+    "acceptance_thresholds": {
+      "mean_range": [
+        -3.0,
+        3.0
+      ],
+      "sd_range": [
+        -5.0,
+        5.0
+      ],
+      "case_error_rate": 0.001
+    },
+    "official_violations": 2,
+    "max_abs_mean_statistic": 1.676815585929354,
+    "max_abs_sd_statistic": 6.704494121596893,
+    "runtime_provenance": {
+      "python_executable": "/home/runner/work/_temp/ssts-venv/bin/python",
+      "python_version": "3.12.15",
+      "platform": "Linux-6.8.0-1064-azure-x86_64-with-glibc2.35",
+      "bionetgen_version": "3.0.0a1",
+      "bionetgen_package_path": "/home/runner/work/_temp/ssts-venv/lib/python3.12/site-packages/bionetgen/__init__.py",
+      "python_package_source_sha256": "c04750c1a5837b667cbe62455d9a9427c84d1c8d2ef6f85e6e2c41ec986a2db5",
+      "native_extension_path": "/home/runner/work/_temp/ssts-venv/lib/python3.12/site-packages/bionetgen/_bionetgen_cpp.cpython-312-x86_64-linux-gnu.so",
+      "native_extension_resolved_path": "/home/runner/work/_temp/ssts-venv/lib/python3.12/site-packages/bionetgen/_bionetgen_cpp.cpython-312-x86_64-linux-gnu.so",
+      "native_extension_sha256": "49d02b140aa6df1f9ee2deb3ba0d89134917216304ac6b70d2396393ccf30a4c",
+      "numpy_version": "2.5.3",
+      "libsbml_version": "5.21.2",
+      "roadrunner_version": "2.10.0",
+      "imported_package_trace": {
+        "rule": "same-source",
+        "package_file": "/home/runner/work/_temp/ssts-venv/lib/python3.12/site-packages/bionetgen/__init__.py",
+        "expected_package_dir": "/home/runner/work/BNG3/BNG3/python/bionetgen",
+        "source_sha256": "c04750c1a5837b667cbe62455d9a9427c84d1c8d2ef6f85e6e2c41ec986a2db5"
+      },
+      "imported_extension_trace": {
+        "extension_file": "/home/runner/work/_temp/ssts-venv/lib/python3.12/site-packages/bionetgen/_bionetgen_cpp.cpython-312-x86_64-linux-gnu.so",
+        "extension_dir": "/home/runner/work/_temp/ssts-venv/lib/python3.12/site-packages/bionetgen",
+        "expected_extension_dir": "/home/runner/work/BNG3/BNG3/build/cpp",
+        "rule": "installed-distribution"
+      },
+      "python_hash_seed": "0"
+    }
+  },
+  "prospective_source_law_diagnostic": {
+    "preregistration_sha256": "7950ae79dc71bc5bf4ce0b2394fbffa8dbc0e9450b56cae4cb7ffefa170b1fe1",
+    "receipt_sha256": "66fd1b671b444af460d814a4f44a34feea8b3873e38f0cf3b0225122c7c0a207",
+    "analysis_script_sha256": "dd7b6b98139b95bd7b5ddaffb59bcabfbabef20da3bbe13bf4a3e57a3c32192e",
+    "source_report_sha256": "36b1ad0e87e6b6cf2bfc859f48508ff5c78c53414108e3e7b8167b32711ac50d",
+    "source_model_sha256": "c58a50dd86f981150b533dd9af25c38f9ef3aeeedad2f679400e022add77f50e",
+    "source_law_seed": 20261024,
+    "replicates": 1000,
+    "runs_per_replicate": 40000,
+    "statistic": "max over 100 tests of |Z|/mean_limit and |Y|/sd_limit",
+    "alpha": 0.01,
+    "observed_T": 1.340942260616552,
+    "exceedances": 665,
+    "tail_estimate": 0.665,
+    "wilson_95_interval": [
+      0.6351640508403955,
+      0.6935731188593715
+    ],
+    "diagnostic_label": "PASS",
+    "runtime_seconds": 144.73796358285472,
+    "diagnostic_runtime": {
+      "python_version": "3.14.6",
+      "numpy_version": "2.5.2"
+    },
+    "interpretation": "Source-law calibration only; the observed harness verdict is not changed and this does not establish simulator correctness.",
+    "receipt_path": "provenance/sbml-campaign/stochastic-00003-heldout-source-law-calibration.json",
+    "observed_statistic_precision": {
+      "reported_T": 1.340942260616552,
+      "source": "Reconstructed from the stored sample_mean and sample_sd arrays in the report.",
+      "official_report_max_abs_sd_statistic": 6.704494121596893,
+      "official_T_from_reported_max_sd_statistic": 1.3408988243193787,
+      "absolute_difference": 4.34362971734e-05,
+      "effect": "Rounding does not change the two official threshold violations or diagnostic result."
+    }
+  },
+  "claim_boundary": "This is one held-out engine ensemble for the exact validated linear birth-death source class. The source-law label does not change the official verdict, validate another seed/model, or establish general simulator correctness. The campaign expectation remains failed until a new full current-main report provides basis to revise it."
+}
