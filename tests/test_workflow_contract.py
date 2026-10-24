@@ -76,6 +76,28 @@ def test_workflow_parses_and_declares_jobs(path: Path):
     assert doc.get("jobs"), f"{path.name} defines no jobs"
 
 
+def test_biomodels_workflow_consumes_verified_no_sbml_as_negative_control():
+    workflow = parse_workflow(REPO / ".github" / "workflows" / "sbml-conformance.yml")
+    job = workflow["jobs"]["curated-biomodels"]
+    steps = job["steps"]
+    step = next(
+        item
+        for item in steps
+        if item.get("name")
+        == "Consume verified no-SBML archive evidence as a negative control"
+    )
+
+    assert step["if"] == "inputs.biomodels_only_id == ''"
+    assert "verified_non_sbml_archive_ids" in step["run"]
+    assert "--source-bundle-receipt" in step["run"]
+    assert "--offline" in step["run"]
+    assert 'get("status") != "unsupported"' in step["run"]
+    assert 'get("core_passed") is not False' in step["run"]
+    assert 'get("modes")' in step["run"]
+    assert 'get("harness_error_records") != 0' in step["run"]
+    assert "BIOMD0000001075" not in step["run"]
+
+
 # --------------------------------------------------------------------------
 # 2. Vacuous pytest selectors
 # --------------------------------------------------------------------------
