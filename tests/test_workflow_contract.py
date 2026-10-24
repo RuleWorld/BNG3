@@ -87,7 +87,9 @@ def test_biomodels_workflow_consumes_verified_no_sbml_as_negative_control():
         == "Consume verified no-SBML archive evidence as a negative control"
     )
 
-    assert step["if"] == "inputs.biomodels_only_id == ''"
+    assert (
+        step["if"] == "inputs.biomodels_only_id == '' || inputs.biomodels_stage_replay"
+    )
     assert "verified_non_sbml_archive_ids" in step["run"]
     assert "--source-bundle-receipt" in step["run"]
     assert "--offline" in step["run"]
@@ -95,7 +97,56 @@ def test_biomodels_workflow_consumes_verified_no_sbml_as_negative_control():
     assert 'get("core_passed") is not False' in step["run"]
     assert 'get("modes")' in step["run"]
     assert 'get("harness_error_records") != 0' in step["run"]
-    assert "BIOMD0000001075" not in step["run"]
+    assert '"BIOMODELS_STAGE_REPLAY"' in step["run"]
+    assert "BIOMD0000001075" in step["run"]
+
+
+def test_biomodels_stage_replay_is_separate_from_positive_smoke():
+    workflow = parse_workflow(REPO / ".github" / "workflows" / "sbml-conformance.yml")
+    triggers = workflow.get("on", workflow.get(True))
+    inputs = triggers["workflow_dispatch"]["inputs"]
+    assert inputs["biomodels_stage_replay"]["type"] == "boolean"
+    assert inputs["biomodels_stage_replay"]["default"] is False
+    steps = workflow["jobs"]["curated-biomodels"]["steps"]
+    input_guard = next(
+        index
+        for index, item in enumerate(steps)
+        if item.get("name") == "Validate curated BioModels lane inputs"
+    )
+    source_install = next(
+        index
+        for index, item in enumerate(steps)
+        if item.get("name") == "Install the pinned runtime and exact-source package"
+    )
+    assert input_guard < source_install
+    assert "BIOMODELS_STAGE_REPLAY" in steps[input_guard]["env"]
+    assert "BIOMODELS_ONLY_ID" in steps[input_guard]["env"]
+    assert "exit 2" in steps[input_guard]["run"]
+    replay = next(
+        item
+        for item in steps
+        if item.get("name") == "Replay bounded BioModels stage-timeout cohort"
+    )
+    assert "--replay-cohort" in replay["run"]
+    assert "--model-timeout 180" in replay["run"]
+    assert "--jobs 3" in replay["run"]
+    assert "partial_run" in replay["run"]
+    assert 'report.get("core_passed") is not False' in replay["run"]
+    assert 'report.get("supported_surface_passed") is not False' in replay["run"]
+    assert 'status_counts["timeout"]' in replay["run"]
+    assert 'status_counts["failed"]' in replay["run"]
+    smoke = next(
+        item
+        for item in steps
+        if item.get("name") == "Run one-model flat and atomized BioModels smoke"
+    )
+    assert "biomodels_stage_replay" in smoke["if"]
+    full = next(
+        item
+        for item in steps
+        if item.get("name") == "Run full flat and atomized BioModels corpus"
+    )
+    assert "biomodels_stage_replay" in full["if"]
 
 
 # --------------------------------------------------------------------------

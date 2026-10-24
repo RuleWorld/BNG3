@@ -19,6 +19,7 @@ on:
       - 'provenance/curated-biomodels-query-inventory.json'
       - 'provenance/curated-biomodels-query-inventory.provenance.json'
       - 'provenance/curated-biomodels-source-bundle.json'
+      - 'provenance/biomodels-stage-timeout-cohort-40003233859.json'
       - 'tests/fixtures/curated_biomodels/**'
       - 'tests/test_ci_contract.py'
       - 'tests/test_harness_contracts.py'
@@ -64,6 +65,11 @@ on:
         required: false
         type: string
         default: ''
+      biomodels_stage_replay:
+        description: Replay the bounded historical per-stage timeout cohort
+        required: false
+        type: boolean
+        default: false
       stochastic_seed_base:
         description: Base seed for reproducible stochastic ensemble comparisons
         required: false
@@ -360,6 +366,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate curated BioModels lane inputs
+        shell: bash
+        env:
+          BIOMODELS_ONLY_ID: ${{ inputs.biomodels_only_id }}
+          BIOMODELS_STAGE_REPLAY: ${{ inputs.biomodels_stage_replay }}
+        run: |
+          set -euo pipefail
+          if [[ "${BIOMODELS_STAGE_REPLAY:-false}" == "true" && -n "${BIOMODELS_ONLY_ID:-}" ]]; then
+            echo "::error::biomodels_stage_replay cannot be combined with biomodels_only_id"
+            exit 2
+          fi
+
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -430,11 +448,12 @@ jobs:
         shell: bash
         env:
           BIOMODELS_ONLY_ID: ${{ inputs.biomodels_only_id }}
+          BIOMODELS_STAGE_REPLAY: ${{ inputs.biomodels_stage_replay }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/biomodels-artifacts"
           args=()
-          if [[ -n "${BIOMODELS_ONLY_ID:-}" ]]; then
+          if [[ -n "${BIOMODELS_ONLY_ID:-}" && "${BIOMODELS_STAGE_REPLAY:-false}" != "true" ]]; then
             args+=(--only-id "$BIOMODELS_ONLY_ID")
           fi
           python scripts/ci/install_biomodels_source_bundle.py \
@@ -448,8 +467,10 @@ jobs:
             "${args[@]}"
 
       - name: Consume verified no-SBML archive evidence as a negative control
-        if: inputs.biomodels_only_id == ''
+        if: inputs.biomodels_only_id == '' || inputs.biomodels_stage_replay
         shell: bash
+        env:
+          BIOMODELS_STAGE_REPLAY: ${{ inputs.biomodels_stage_replay }}
         run: |
           set -euo pipefail
           python - <<'PY'
@@ -468,6 +489,8 @@ jobs:
           model_ids = receipt.get("verified_non_sbml_archive_ids")
           if not isinstance(model_ids, list) or not model_ids:
               raise SystemExit("verified no-SBML archive IDs are absent from receipt")
+          if os.environ.get("BIOMODELS_STAGE_REPLAY") == "true" and "BIOMD0000001075" not in model_ids:
+              raise SystemExit("stage replay receipt does not cover negative control BIOMD0000001075")
           inventory = json.loads(
               Path("provenance/curated-biomodels-query-inventory.json").read_text()
           )
@@ -611,7 +634,7 @@ jobs:
           PY
 
       - name: Run one-model flat and atomized BioModels smoke
-        if: inputs.biomodels_only_id != ''
+        if: inputs.biomodels_only_id != '' && !inputs.biomodels_stage_replay
         shell: bash
         env:
           BIOMODELS_ONLY_ID: ${{ inputs.biomodels_only_id }}
@@ -662,8 +685,87 @@ jobs:
           )
           PY
 
+      - name: Replay bounded BioModels stage-timeout cohort
+        if: inputs.biomodels_stage_replay
+        shell: bash
+        run: |
+          set -euo pipefail
+          cache="$RUNNER_TEMP/biomodels-cache"
+          artifacts="$RUNNER_TEMP/biomodels-artifacts"
+          cohort=provenance/biomodels-stage-timeout-cohort-40003233859.json
+          mkdir -p "$artifacts"
+          for mode in flat atomized; do
+            set +e
+            python scripts/ci/validate_published_biomodels.py \
+              --manifest provenance/published-biomodels.json \
+              --cache-dir "$cache" \
+              --json "$artifacts/$mode-replay-report.json" \
+              --source-bundle-receipt "$artifacts/source-bundle-receipt.json" \
+              --source-bundle-manifest provenance/curated-biomodels-source-bundle.json \
+              --artifacts-dir "$artifacts/$mode-replay-records" \
+              --mode "$mode" --replay-cohort "$cohort" \
+              --offline --isolate-models --jobs 3 --model-timeout 180 \
+              2>&1 | tee "$artifacts/$mode-replay-execution.log"
+            validator_status=${PIPESTATUS[0]}
+            set -e
+            python - "$artifacts/$mode-replay-report.json" "$cohort" "$mode" "$validator_status" <<'PY'
+          import json
+          import sys
+          from pathlib import Path
+
+          report = json.loads(Path(sys.argv[1]).read_text())
+          cohort = json.loads(Path(sys.argv[2]).read_text())
+          mode = sys.argv[3]
+          status = int(sys.argv[4])
+          expected = sorted(
+              model_id for model_id, modes in cohort["models"].items()
+              if mode in modes
+          )
+          records = report.get("records", [])
+          actual = sorted(record.get("id") for record in records)
+          summary = report.get("summary", {})
+          status_counts = {
+              status: sum(record.get("status") == status for record in records)
+              for status in ("timeout", "failed", "harness_error", "not_comparable")
+          }
+          replay = report.get("replay_cohort") or {}
+          expected_prior_statuses = {
+              model_id: {mode: "timeout"} for model_id in expected
+          }
+          if (
+              status != 1
+              or report.get("mode") != mode
+              or report.get("completeness", {}).get("partial_run") is not True
+              or report.get("core_passed") is not False
+              or report.get("supported_surface_passed") is not False
+              or actual != expected
+              or replay.get("source_run_id") != cohort["source_run_id"]
+              or replay.get("source_run_commit") != cohort["source_run_commit"]
+              or replay.get("source_reports_sha256") != cohort["source_reports_sha256"]
+              or replay.get("model_timeout_seconds") != 180
+              or replay.get("models", {}) != {
+                  model_id: [mode] for model_id in expected
+              }
+              or replay.get("prior_statuses", {}) != expected_prior_statuses
+              or summary.get("timeout_records") != status_counts["timeout"]
+              or summary.get("failed_records") != status_counts["failed"]
+              or summary.get("harness_error_records") != status_counts["harness_error"]
+              or summary.get("not_comparable_records") != status_counts["not_comparable"]
+          ):
+              raise SystemExit(
+                  f"{mode}: cohort scope/partial status mismatch; "
+                  f"exit={status}, expected={expected}, actual={actual}, "
+                  f"replay={replay}, summary={summary}, status_counts={status_counts}"
+              )
+          print(
+              f"{mode}: replayed {len(records)} bounded prior-timeout records; "
+              "partial results retained without corpus qualification"
+          )
+          PY
+          done
+
       - name: Run full flat and atomized BioModels corpus
-        if: inputs.biomodels_only_id == ''
+        if: inputs.biomodels_only_id == '' && !inputs.biomodels_stage_replay
         shell: bash
         run: |
           set -euo pipefail
@@ -747,7 +849,7 @@ jobs:
             exit 1
           fi
       - name: Build per-record corpus inventory and compare flat expectations
-        if: always() && inputs.biomodels_only_id == ''
+        if: always() && inputs.biomodels_only_id == '' && !inputs.biomodels_stage_replay
         run: |
           set -euo pipefail
           artifacts="$RUNNER_TEMP/biomodels-artifacts"
