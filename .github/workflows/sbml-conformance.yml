@@ -447,6 +447,105 @@ jobs:
             --receipt "$RUNNER_TEMP/biomodels-artifacts/source-bundle-receipt.json" \
             "${args[@]}"
 
+      - name: Consume verified no-SBML archive evidence as a negative control
+        if: inputs.biomodels_only_id == ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import json
+          import os
+          import subprocess
+          import sys
+          from pathlib import Path
+
+          runner_temp = Path(os.environ["RUNNER_TEMP"])
+          artifacts = runner_temp / "biomodels-artifacts"
+          cache = runner_temp / "biomodels-cache"
+          receipt = json.loads(
+              (artifacts / "source-bundle-receipt.json").read_text()
+          )
+          model_ids = receipt.get("verified_non_sbml_archive_ids")
+          if not isinstance(model_ids, list) or not model_ids:
+              raise SystemExit("verified no-SBML archive IDs are absent from receipt")
+          inventory = json.loads(
+              Path("provenance/curated-biomodels-query-inventory.json").read_text()
+          )
+          inventory_by_id = {row["id"]: row for row in inventory["models"]}
+          bundle = json.loads(
+              Path("provenance/curated-biomodels-source-bundle.json").read_text()
+          )
+          bundle_by_id = {row["id"]: row for row in bundle["records"]}
+
+          for model_id in sorted(set(model_ids)):
+              report_path = artifacts / f"no-sbml-consumer-{model_id}.json"
+              command = [
+                  sys.executable,
+                  "scripts/ci/validate_published_biomodels.py",
+                  "--manifest",
+                  "provenance/published-biomodels.json",
+                  "--cache-dir",
+                  str(cache),
+                  "--json",
+                  str(report_path),
+                  "--source-bundle-receipt",
+                  str(artifacts / "source-bundle-receipt.json"),
+                  "--source-bundle-manifest",
+                  "provenance/curated-biomodels-source-bundle.json",
+                  "--mode",
+                  "both",
+                  "--only-id",
+                  model_id,
+                  "--offline",
+              ]
+              completed = subprocess.run(command, capture_output=True, text=True)
+              (artifacts / f"no-sbml-consumer-{model_id}.log").write_text(
+                  completed.stdout + completed.stderr
+              )
+              if completed.returncode != 1 or not report_path.is_file():
+                  raise SystemExit(
+                      f"{model_id}: expected explicit partial unsupported result, "
+                      f"exit={completed.returncode}; {completed.stderr[-1000:]}"
+                  )
+              report = json.loads(report_path.read_text())
+              records = report.get("records", [])
+              if (
+                  len(records) != 1
+                  or records[0].get("id") != model_id
+                  or records[0].get("status") != "unsupported"
+                  or records[0].get("core_passed") is not False
+                  or records[0].get("modes")
+                  or report.get("completeness", {}).get("partial_run") is not True
+                  or report.get("summary", {}).get("harness_error_records") != 0
+                  or report.get("summary", {}).get("passed_sbml_records") != 0
+              ):
+                  raise SystemExit(
+                      f"{model_id}: negative control executed or misclassified "
+                      f"the record: {records}"
+                  )
+              record = records[0]
+              source = inventory_by_id[model_id]
+              expected_inspection = bundle_by_id[model_id]["archive_inspection"]
+              artifact = record.get("source_artifact", {})
+              inspection = artifact.get("archive_inspection", {})
+              if (
+                  artifact.get("sha256") != source.get("sha256")
+                  or inspection != expected_inspection
+                  or inspection.get("source_archive_sha256") != source.get("sha256")
+                  or inspection.get("sbml_root_candidate_count") != 0
+                  or inspection.get("xml_or_sbml_suffix_member_count") != 0
+                  or "no SBML" not in inspection.get("validator_result", "")
+              ):
+                  raise SystemExit(
+                      f"{model_id}: source hash/archive inspection differs from "
+                      "pinned evidence"
+                  )
+              print(
+                  f"{model_id}: verified unsupported/no-SBML negative control; "
+                  f"source_sha256={artifact['sha256']}; no scientific modes executed"
+              )
+          PY
+
       - name: Check current BioModels membership against the pinned snapshot
         shell: bash
         run: |
