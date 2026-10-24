@@ -178,6 +178,51 @@ end model
     CHECK(model->getParameters().evaluate("NonConsuming") == 1.0);
 }
 
+TEST_CASE("NET reload preserves a rate parameter named NonConsuming") {
+    auto model = parser::parseModel(R"(
+begin model
+begin parameters
+  NonConsuming 0.5
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin reaction rules
+  A() -> B() NonConsuming
+end reaction rules
+end model
+)");
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    const auto output = std::filesystem::temp_directory_path() /
+                        "bng3-net-nonconsuming-rate-parameter.net";
+    io::NetWriter::write(output, *model, network);
+    CHECK_THAT(readFile(output), Catch::Matchers::ContainsSubstring(
+                                   "1 1 2 NonConsuming"));
+
+    auto reloaded = parser::parseModel(R"(
+begin model
+begin molecule types
+  A()
+  B()
+end molecule types
+end model
+)");
+    reloaded->addAction(ast::Action{
+        "readFile", {{"file", output.filename().string()}}});
+    reloaded->addAction(ast::Action{
+        "simulate", {{"method", "ode"}, {"t_end", "1"}, {"n_steps", "1"}}});
+    CHECK_NOTHROW(actions::ActionDispatch::execute(
+        *reloaded, output.parent_path() / "nonconsuming_parameter_read.bngl"));
+
+    std::filesystem::remove(output);
+    std::filesystem::remove(output.parent_path() / "nonconsuming_parameter_read.gdat");
+}
+
 TEST_CASE("static mathematical functions are permitted in delay parameters") {
     auto model = parse("A() -> B() 1 delay=sqrt(tau)");
     REQUIRE(model->getReactionRules().front().getDelayExpression());

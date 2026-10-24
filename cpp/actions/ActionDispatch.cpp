@@ -383,8 +383,7 @@ engine::GeneratedNetwork networkFromNetData(
             }
             delayExpression = parser::parseExpression(metadata.substr(6));
         }
-        if (rate.find("NonConsuming") != std::string::npos ||
-            (nonConsuming && !delayExpression)) {
+        if (nonConsuming && !delayExpression) {
             throw std::runtime_error("NonConsuming requires delay=<expr> in .net reaction: " + line);
         }
 
