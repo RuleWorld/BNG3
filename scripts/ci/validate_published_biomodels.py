@@ -1311,11 +1311,11 @@ def _simulate_and_compare(
                 scale = max(_finite_max_abs(left), _finite_max_abs(right))
                 max_abs = float(np.max(difference)) if difference.size else 0.0
         # Cross-engine CVODE paths have small dense-output/RHS differences;
-        # retain a global floor for low-magnitude parity checks.
+        # scale that floor to this observable so unrelated large series do
+        # not make a small series mismatch appear acceptable.
         tolerance = max(
             atol + rtol * scale,
-            NUMERICAL_COMPARISON_ATOL_FLOOR
-            + NUMERICAL_COMPARISON_RTOL_FLOOR * comparison_scale,
+            NUMERICAL_COMPARISON_ATOL_FLOOR + NUMERICAL_COMPARISON_RTOL_FLOOR * scale,
         )
         scaled_error = max_abs / tolerance if tolerance else math.inf
         if undefined:
@@ -1339,6 +1339,7 @@ def _simulate_and_compare(
             "finite": finite,
             "undefined": undefined,
             "undefined_at": undefined_at,
+            "comparison_scale": scale,
             "max_abs_difference": max_abs,
             "tolerance": tolerance,
             "max_scaled_error": scaled_error,
