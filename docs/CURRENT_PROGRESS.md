@@ -29,14 +29,15 @@ source-acquisition harness error. The report's 1,083 SBML records include
 eight SBML files extracted from COMBINE archives. The trajectory comparator
 ran libRoadRunner on BNG3-written SBML, not the original source SBML. Thus
 the 946 / 945 passes measure written-export cross-engine consistency; they
-do not establish Atomizer source fidelity. Original-source trajectory
-comparison remains an acceptance gap. These are historical raw counts: the
-comparer also used a global magnitude floor that can mask a smaller series'
-mismatch when another observable is much larger. Per-observable scaling
-requires its own regression and requalification.
+do not establish Atomizer source fidelity. These are historical raw counts:
+the comparer also used a global magnitude floor that can mask a smaller
+series' mismatch when another observable is much larger. Per-observable
+scaling and its regression were added in merged [PR #424](https://github.com/RuleWorld/BNG3/pull/424).
+The historical corpus counts still need requalification with that comparator.
 
-`BIOMD0000000638` is the only product execution/numerical `failed` record in
-both modes; that report alone does not establish an SBML semantic mismatch.
+In the historical report, `BIOMD0000000638` is the only product
+execution/numerical `failed` record in both modes; that report alone does not
+establish an SBML semantic mismatch.
 Its exact 203,221-byte source payload (SHA256
 `1f62b7e92938b686d29039bc4aaa2a6fa024d6b6fc927ed773dd82d48a9c7657`) matches
 the offline snapshot. The failed report record does not retain a libSBML source
@@ -68,41 +69,53 @@ assert values.shape[0] == 11 and np.isfinite(values).all()
 PY
 ```
 
-The source SHA-256 above is for `BIOMD0000000638`. A subsequent local
-one-reaction reproducer establishes a source-fidelity defect in unit
-normalization: for a custom `1e-15 litre` volume unit, `cell=2`, concentration
-`A=1`, undeclared-unit `k=0.1`, and flux `cell*k*A*A`, normalization changes
-the initial numerical flux from `0.2` to `2e14`. The original-source
-libRoadRunner trajectory and translated native trajectory disagree. This
-isolates a transformation defect; it does not establish that repairing it
-will resolve the full model's integration failure. A committed regression,
-principled repair, and hosted replay remain pending.
+The unit-normalization defect from the reduced `cell*k*A*A` reproducer was
+fixed in merged [PR #426](https://github.com/RuleWorld/BNG3/pull/426). Its
+libSBML-validated custom-unit regression agrees with libRoadRunner over all 11
+points in both flat and atomized modes. The source-oracle infrastructure gap
+was fixed separately in [PR #425](https://github.com/RuleWorld/BNG3/pull/425).
+Neither change re-ran or requalified the full 1,096-record corpus; the counts
+above remain historical written-export-only results.
 
-The report's 21 flat / 23 atomized timeouts all hit the per-record 180-second
-budget. The current report and execution logs do not record the stage reached
-by any of these timeouts. Twelve-record timeout cohorts in older inventory
-expectations are historical triage hints only; they do not establish stages in
-this run. These remain unresolved performance outcomes, not product semantic
-failures. Twenty-eight unique source payloads spanning the failure, timeout,
-and not-comparable cohorts were independently checked with libSBML 5.21.1
-against the snapshot hashes and byte lengths; each parses as SBML with a model
-and zero errors.
+A bounded local source-oracle replay on merged main
+`a87d54a5b43665701641041c2543e75b0e2709aa` used the exact source payloads,
+libRoadRunner 2.10.0, and `t=0..1`, 10 intervals, `rtol=1e-7`, `atol=1e-12`.
+The imported Python package source SHA-256 was
+`3f405795d5bc70fb1c8a0c034768124c0f093fb566469669c86cfdc61a660aee`; the
+native extension SHA-256 was
+`a9da9c119b9f9764b7236b3392835ae24d5c3574842c31ff0838e342f169fa27`.
+For `BIOMD0000000638` (source SHA-256
+`1f62b7e92938b686d29039bc4aaa2a6fa024d6b6fc927ed773dd82d48a9c7657`), flat
+mode matched all 21 source species and atomized mode matched 9/21 (12
+mismatches); both modes passed 78/78 written-export comparisons. For
+`BIOMD0000000451` (source SHA-256
+`ba8e4a50a0e477906f96a66cc49494c825eaab0a489083f7bcdec5adf25b79c5`), flat
+mode matched all 94 source species, but the independent oracle could not
+integrate its written SBML; atomized mode matched 70/94 (24 mismatches) and
+passed 190/190 written-export comparisons. These two bounded observations do
+not qualify the full corpus or close issue #162; atomized source-fidelity and
+written-export numerical gaps remain open.
+
+The historical report's 21 flat / 23 atomized timeouts all hit the per-record
+180-second budget. Its execution logs do not record the stage reached by any of
+these timeouts. Twelve-record timeout cohorts in older inventory expectations
+are triage hints only; they do not establish stages in that run. These were
+unresolved performance outcomes, not product semantic failures. Twenty-eight
+unique source payloads spanning the historical failure, timeout, and
+not-comparable cohorts were independently checked with libSBML 5.21.1 against
+the snapshot hashes and byte lengths; each parses as SBML with a model and zero
+errors.
 
 Three shared not-comparable records (`BIOMD0000000803`, `0731`, and `0973`)
 have a translated/written observable undefined at `t=0`; BNG3 and
 libRoadRunner reading BNG3-written SBML report the same undefined value, so
 that pointwise comparison is not measurable. Undefinedness in the original
-source has not been established. Flat-mode
-`BIOMD0000000451` is a distinct concern: the report records that BNG3
-simulation and written-SBML validation completed, but libRoadRunner CVODE
-could not integrate the BNG3-written SBML. A separate source-side control, with
-libSBML 5.21.1 and libRoadRunner 2.10.0, validates the exact source payload and
-produces 11 finite time rows with time plus all floating species selected
-(shape 11 by 60) on the same grid and tolerances; its SHA-256 is
-`ba8e4a50a0e477906f96a66cc49494c825eaab0a489083f7bcdec5adf25b79c5`. The
-reproduction command above applies with `SOURCE` set to this payload. Retain
-the report's `not_comparable` classification, but treat this as unresolved
-writer/output numerical risk rather than an unavailable-source oracle.
+source has not been established. For `BIOMD0000000451`, the historical
+flat-mode `not_comparable` classification remains accurate for its
+written-SBML comparison: libRoadRunner could not integrate the BNG3-written
+SBML. The bounded replay above separately shows that the original source
+trajectory is available and flat-mode source comparison passes; atomized mode
+still has source-species mismatches.
 
 The run did not close issue #162: it exercised the modern Atomizer's flat and
 atomized modes with BNG3 CVODE and libRoadRunner 2.10.0, but did not run the
