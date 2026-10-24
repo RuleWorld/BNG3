@@ -224,11 +224,16 @@ end model
 }
 
 TEST_CASE("static mathematical functions are permitted in delay parameters") {
-    auto model = parse("A() -> B() 1 delay=sqrt(tau)");
+    auto model = parse("A() -> B() 1 delay=sqrt(tau)+1");
     REQUIRE(model->getReactionRules().front().getDelayExpression());
     CHECK(model->getReactionRules().front().getDelayExpression()->evaluate(
               [&](const std::string& name) { return model->getParameters().evaluate(name); })
-          == Catch::Approx(std::sqrt(2.0)));
+          == Catch::Approx(std::sqrt(2.0) + 1.0));
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    REQUIRE(network.reactions.size() == 1);
+    CHECK(network.reactions.all().front().getDelayExpression());
 }
 
 TEST_CASE("NonConsuming delayed rules require nonnegative net species stoichiometry") {

@@ -1855,7 +1855,12 @@ std::any BNGAstVisitor::visitReaction_rule_def(BNGParser::Reaction_rule_defConte
         rates.push_back(buildRateLawExpression(rateExpr));
     }
     for (auto* modifier : ctx->rule_modifiers()) {
-        modifiers.push_back(modifier->getText());
+        // Delay metadata has dedicated fields; keeping it in the generic
+        // modifier list makes filter parsing treat expressions such as
+        // `sqrt(tau)+1` as malformed reaction filters.
+        if (modifier->DELAY() == nullptr && modifier->NONCONSUMING() == nullptr) {
+            modifiers.push_back(modifier->getText());
+        }
     }
 
     // A unidirectional arrow carries one rate law.  A second law on `->` was
