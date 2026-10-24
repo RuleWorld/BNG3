@@ -2425,6 +2425,10 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
             throw std::runtime_error(
                 "isolatedTrajectory is reserved for independent SSA samples");
         }
+        if (options.continueSimulation) {
+            throw std::runtime_error(
+                "continue_simulation is not supported for isolated trajectories");
+        }
         if (hasPositiveExpressionDelay_) {
             throw std::runtime_error(
                 "delay(expr, tau) is not supported by batch SSA");
@@ -2454,6 +2458,10 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
         }
     }
     if (options.batchSize > 0) {
+        if (options.continueSimulation) {
+            throw std::runtime_error(
+                "continue_simulation is not supported for batch SSA");
+        }
         if (hasPositiveExpressionDelay_) {
             throw std::runtime_error(
                 "delay(expr, tau) is not supported by batch SSA");

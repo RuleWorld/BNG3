@@ -1023,3 +1023,26 @@ TEST_CASE("CPU SSA batches isolate delayed completion queues across workers") {
         CHECK(batch.eventCount == repeatedBatch.eventCount);
     }
 }
+
+TEST_CASE("delayed SSA continuation is restricted to one trajectory") {
+    auto model = parse("A() -> B() 0.5 delay=tau");
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+
+    engine::OdeOptions batch;
+    batch.method = "ssa";
+    batch.batchSize = 2;
+    batch.continueSimulation = true;
+    CHECK_THROWS_WITH(integrator.integrate(batch),
+                      Catch::Matchers::ContainsSubstring(
+                          "continue_simulation is not supported for batch SSA"));
+
+    engine::OdeOptions isolated;
+    isolated.method = "ssa";
+    isolated.isolatedTrajectory = true;
+    isolated.continueSimulation = true;
+    CHECK_THROWS_WITH(integrator.integrate(isolated),
+                      Catch::Matchers::ContainsSubstring(
+                          "continue_simulation is not supported for isolated trajectories"));
+}
