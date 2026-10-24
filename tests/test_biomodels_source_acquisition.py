@@ -413,6 +413,118 @@ def test_parent_timeout_retains_phase_source_hash_and_bounded_case_packet(
         )
 
 
+def test_case_packet_preserves_raw_crlf_source_bytes(tmp_path):
+    validator = _validator()
+    entry = {
+        "id": "BIOMD0000000008",
+        "filename": "model.xml",
+        "format": "SBML",
+        "sha256": "",
+    }
+    raw_source = b"\xef\xbb\xbf<sbml>\r\n  <model/>\r\n</sbml>\r\n"
+    digest = hashlib.sha256(raw_source).hexdigest()
+    source_path = tmp_path / "source.xml"
+    source_path.write_bytes(raw_source)
+    decoded_source = source_path.read_text(encoding="utf-8-sig")
+    assert "\r\n" not in decoded_source
+
+    model_dir = tmp_path / "artifacts" / entry["id"]
+    model_dir.mkdir(parents=True)
+    artifact_path = model_dir / "source.xml"
+    artifact_path.write_bytes(
+        validator._source_xml_artifact_bytes(
+            source_path, decoded_source, extracted_from_archive=False
+        )
+    )
+    record = {
+        "status": "timeout",
+        "source_validation": {"status": "verified_sha256", "sha256": digest},
+    }
+    args = SimpleNamespace(artifacts_dir=tmp_path / "artifacts")
+
+    packet_path = Path(validator._write_case_packet(entry, args, record))
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    packet_source = next(
+        item for item in packet["artifacts"] if item["name"] == "source.xml"
+    )
+
+    assert artifact_path.read_bytes() == raw_source
+    assert packet["source_xml_representation"] == "original-source-bytes"
+    assert packet_source["sha256"] == digest
+    assert packet["source_validation"]["sha256"] == digest
+
+
+def test_case_packet_distinguishes_extracted_archive_sbml_from_archive_hash(tmp_path):
+    validator = _validator()
+    entry = {
+        "id": "BIOMD0000000009",
+        "filename": "model.omex",
+        "format": "COMBINE archive",
+    }
+    archive_bytes = b"verified archive bytes"
+    archive_digest = hashlib.sha256(archive_bytes).hexdigest()
+    source_path = tmp_path / entry["filename"]
+    source_path.write_bytes(archive_bytes)
+    extracted_sbml = "<sbml>\r\n  <model/>\r\n</sbml>\r\n"
+    extracted_bytes = extracted_sbml.encode("utf-8")
+
+    model_dir = tmp_path / "artifacts" / entry["id"]
+    model_dir.mkdir(parents=True)
+    artifact_path = model_dir / "source.xml"
+    artifact_path.write_bytes(
+        validator._source_xml_artifact_bytes(
+            source_path, extracted_sbml, extracted_from_archive=True
+        )
+    )
+    args = SimpleNamespace(artifacts_dir=tmp_path / "artifacts")
+    record = {
+        "status": "timeout",
+        "source_validation": {
+            "status": "verified_sha256",
+            "sha256": archive_digest,
+        },
+    }
+
+    packet_path = Path(validator._write_case_packet(entry, args, record))
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    packet_source = next(
+        item for item in packet["artifacts"] if item["name"] == "source.xml"
+    )
+
+    assert artifact_path.read_bytes() == extracted_bytes
+    assert packet["source_xml_representation"] == "extracted-sbml-utf8"
+    assert packet_source["sha256"] == hashlib.sha256(extracted_bytes).hexdigest()
+    assert packet_source["sha256"] != packet["source_validation"]["sha256"]
+
+
+def test_omitted_source_xml_retains_its_digest_in_packet(tmp_path):
+    validator = _validator()
+    entry = {"id": "BIOMD0000000010", "format": "SBML", "filename": "large.xml"}
+    raw_source = b"x" * (validator.MAX_CASE_PACKET_FILE_BYTES + 1)
+    digest = hashlib.sha256(raw_source).hexdigest()
+    model_dir = tmp_path / "artifacts" / entry["id"]
+    model_dir.mkdir(parents=True)
+    (model_dir / "source.xml").write_bytes(raw_source)
+    args = SimpleNamespace(artifacts_dir=tmp_path / "artifacts")
+
+    packet_path = Path(
+        validator._write_case_packet(
+            entry,
+            args,
+            {
+                "status": "timeout",
+                "source_validation": {"status": "verified_sha256", "sha256": digest},
+            },
+        )
+    )
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+
+    omitted_source = next(
+        item for item in packet["omitted_artifacts"] if item["name"] == "source.xml"
+    )
+    assert omitted_source["sha256"] == digest
+
+
 def test_parent_timeout_verdict_survives_denied_record_persistence(
     tmp_path, monkeypatch
 ):
