@@ -249,6 +249,7 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateSingleWorker(const BatchSsaOptions
     odeOpts.nSteps = options.nSteps;
     odeOpts.method = "ssa";
     odeOpts.maxSimSteps = options.maxSimSteps;
+    odeOpts.isolatedTrajectory = true;
 
     uint64_t totalEvents = 0;
 
@@ -404,6 +405,7 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
             odeOpts.nSteps = options.nSteps;
             odeOpts.method = "ssa";
             odeOpts.maxSimSteps = options.maxSimSteps;
+            odeOpts.isolatedTrajectory = true;
 
             for (std::size_t b = startIdx; b < endIdx; ++b) {
                 // Same derivation as the single-worker loop above.

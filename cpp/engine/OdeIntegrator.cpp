@@ -250,6 +250,8 @@ OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& ne
             NativeEvent native;
             native.id = event.id;
             native.trigger = compile::lowerResolvedExpressionToAst(event.trigger, compiled);
+            addExpressionDelays(
+                functionEvaluator_.expandFunctions(native.trigger));
             native.initialValue = event.initialValue;
             native.persistent = event.persistent;
             native.useValuesFromTriggerTime = event.useValuesFromTriggerTime;
@@ -274,8 +276,11 @@ OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& ne
                 native.priority = value;
             }
             for (const auto& assignment : event.assignments) {
-                native.assignments.push_back({assignment.target,
-                    compile::lowerResolvedExpressionToAst(assignment.value, compiled)});
+                auto value = compile::lowerResolvedExpressionToAst(
+                    assignment.value, compiled);
+                addExpressionDelays(functionEvaluator_.expandFunctions(value));
+                native.assignments.push_back(
+                    {assignment.target, std::move(value)});
             }
             nativeEvents_.push_back(std::move(native));
         }
@@ -2100,12 +2105,15 @@ bool OdeIntegrator::steadyStateReached(const OdeOptions& options,
 void OdeIntegrator::validateEventRootSurface() {
     if (nativeEvents_.empty()) return;
     const auto dynamic = [&](const ast::Expression& value) {
-        return (value.kind() == ast::ExpressionKind::Identifier ||
-                value.kind() == ast::ExpressionKind::ObservableRef) &&
-               (value.name() == "time" || observableIndex_.count(value.name()));
+        return ((value.kind() == ast::ExpressionKind::Identifier ||
+                 value.kind() == ast::ExpressionKind::ObservableRef) &&
+                (value.name() == "time" || observableIndex_.count(value.name()))) ||
+               (value.kind() == ast::ExpressionKind::Function &&
+                value.name() == "delay" && value.args().size() == 2);
     };
     for (const auto& event : nativeEvents_) {
-        for (const auto* conjunct : triggerConjuncts(event.trigger)) {
+        const auto expandedTrigger = functionEvaluator_.expandFunctions(event.trigger);
+        for (const auto* conjunct : triggerConjuncts(expandedTrigger)) {
             const auto& arguments = conjunct->args();
             if (!dynamic(arguments[0]) && !dynamic(arguments[1])) {
                 throw std::runtime_error(
@@ -2148,14 +2156,7 @@ void OdeIntegrator::validateEventTargets() {
 
 double OdeIntegrator::eventValue(const ast::Expression& expression,
                                  double time, const double* state) const {
-    std::vector<double> groups;
-    updateGroups(state, groups);
-    const double value = expression.evaluate([&](const std::string& name) {
-        if (name == "time") return time;
-        const auto observable = observableIndex_.find(name);
-        if (observable != observableIndex_.end()) return groups[observable->second];
-        return model_.getParameters().evaluate(name, time);
-    }, time);
+    const double value = evaluateExpressionWithHistory(expression, time, state);
     if (!std::isfinite(value)) throw std::runtime_error("bng3_events expression is nonfinite");
     return value;
 }
@@ -2389,6 +2390,23 @@ double OdeIntegrator::cvodeEventRoot(double time, const double* scaledState) con
 }
 
 OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
+    if (options.isolatedTrajectory) {
+        if (options.method != "ssa") {
+            throw std::runtime_error(
+                "isolatedTrajectory is reserved for independent SSA samples");
+        }
+        if (hasPositiveExpressionDelay_) {
+            throw std::runtime_error(
+                "delay(expr, tau) is not supported by batch SSA");
+        }
+        for (const auto& reaction : compiledRxns_) {
+            if (reaction.delay > 0.0) {
+                throw std::runtime_error(
+                    "Delayed reactions require single-trajectory SSA");
+            }
+        }
+        return integrateCore(options);
+    }
     if (options.batchSize > 0) {
         if (hasPositiveExpressionDelay_) {
             throw std::runtime_error(
@@ -3223,6 +3241,7 @@ OdeResult OdeIntegrator::integrateBatchSSA(const OdeOptions& opts) {
     // Pre-compute output time grid from a single reference run's time points.
     OdeOptions singleOpts = opts;
     singleOpts.batchSize = 0;
+    singleOpts.isolatedTrajectory = true;
     singleOpts.seed = (opts.seed == 0) ? 1u : opts.seed;
     const auto refTimes = outputTimes(singleOpts);
     const std::size_t T = refTimes.size();
@@ -3256,6 +3275,7 @@ OdeResult OdeIntegrator::integrateBatchSSA(const OdeOptions& opts) {
             OdeIntegrator localInt(model_, network_);
             OdeOptions trajOpts = opts;
             trajOpts.batchSize = 0;
+            trajOpts.isolatedTrajectory = true;
             for (std::size_t traj = lo; traj < hi; ++traj) {
                 // Each trajectory gets its own decorrelated seed. See
                 // batchTrajectorySeed in engine/BatchSsa.hpp for why this is a

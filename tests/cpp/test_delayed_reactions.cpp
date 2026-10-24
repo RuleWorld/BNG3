@@ -530,6 +530,53 @@ end model
     std::filesystem::remove(output);
 }
 
+TEST_CASE("native event triggers and assignments evaluate historical delay expressions") {
+    auto model = parser::parseModel(R"(
+begin model
+begin parameters
+  tau 1
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 1
+  B() 0
+end seed species
+begin observables
+  Molecules Aobs A()
+  Molecules B_count B()
+end observables
+begin functions
+  delayed(x) delay(x, tau)
+end functions
+begin reaction rules
+  A() -> 0 1
+end reaction rules
+begin bng3_events version 1
+  event "delayed_threshold"
+    trigger: delayed(Aobs) < 0.5
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: B_count = delayed(Aobs)
+  end event
+end bng3_events
+end model
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    const auto b = speciesIndex(network, "B");
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 3.0;
+    options.nSteps = 30;
+    const auto result = integrator.integrate(options);
+    CHECK(result.concentrations.back()[b] == Catch::Approx(0.5).epsilon(2e-5));
+}
+
 TEST_CASE("direct SSA consumes at initiation and completes with zero propensity") {
     auto model = parser::parseModel(R"(
 begin model
@@ -755,6 +802,10 @@ end model
     // exp(-(t-1)), giving 1 + (1-exp(-3)) total at t=4.
     CHECK(result.concentrations.back()[b] ==
           Catch::Approx(2.0 - std::exp(-3.0)).epsilon(1e-5));
+    options.method = "rk4";
+    CHECK_THROWS_WITH(engine::OdeIntegrator(*model, network).integrate(options),
+                      Catch::Matchers::ContainsSubstring(
+                          "delay(expr, tau) requires the CVODE ODE method"));
 }
 
 TEST_CASE("nested function delay uses historical parameter values") {

@@ -70,6 +70,9 @@ struct OdeOptions {
     std::size_t batchSize = 0;       // 0 = single trajectory; N>0 = batched SSA (GPU/CPU pool)
     bool batchGpuPreferred = true;   // try GPU first when batchSize > 0; silently fall back to CPU pool
     std::string batchGpuBackend;     // "auto" (default), "cuda", "metal", or "none" (force CPU pool)
+    // Internal: a CPU batch worker owns its RNG/state and must not publish or
+    // share the network's resumable single-trajectory session.
+    bool isolatedTrajectory = false;
 };
 
 struct OdeResult {
