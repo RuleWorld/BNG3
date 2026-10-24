@@ -9,6 +9,7 @@ unchanged.
 from __future__ import annotations
 
 import math
+import re
 from decimal import Decimal, InvalidOperation, localcontext
 from typing import Any, Dict, Iterable, Mapping, Optional
 
@@ -172,6 +173,117 @@ def _set_parameter_value(parameter: Any, value: float) -> None:
         parameter.value = value
 
 
+def _parameter_id(parameter: Any) -> str:
+    return str(
+        parameter.get("id", "")
+        if isinstance(parameter, Mapping)
+        else getattr(parameter, "id", "")
+    )
+
+
+def _kinetic_law_math(kinetic_law: Any) -> str:
+    if isinstance(kinetic_law, Mapping):
+        return str(kinetic_law.get("math", "") or "")
+    return str(getattr(kinetic_law, "math", "") or "")
+
+
+def _set_kinetic_law_math(kinetic_law: Any, expression: str) -> None:
+    if isinstance(kinetic_law, Mapping):
+        kinetic_law["math"] = expression
+    if hasattr(kinetic_law, "math"):
+        kinetic_law.math = expression
+
+
+def _source_coordinate_expression(
+    expression: str,
+    symbol_factors: Mapping[str, float],
+    result_factor: float,
+    function_definitions: Mapping[str, Any],
+) -> str:
+    """Rewrite one SBML expression from normalized coordinates to source ones."""
+
+    if not expression:
+        return expression
+    if function_definitions:
+        # Use the writer's established bounded expansion so formal arguments
+        # remain local even when they shadow a scaled global parameter.
+        from .writer import inline_sbml_functions
+
+        expression = inline_sbml_functions(expression, function_definitions)
+    factors = {
+        str(symbol): factor
+        for symbol, factor in symbol_factors.items()
+        if symbol and math.isfinite(factor) and factor != 0 and not _near_one(factor)
+    }
+    if function_definitions:
+        # Valid SBML function bodies can reference only their formal arguments
+        # and other functions (L3V2 Core 4.3.2). After expansion, a remaining
+        # call therefore carries any scaled dependencies in its actuals.
+        # Reuse the writer's nested-call parser to avoid confusing function
+        # formals or similarly named globals with real dependencies.
+        from .writer import _function_call_pattern, _split_arguments
+
+        for function_id in function_definitions:
+            pattern = _function_call_pattern(str(function_id))
+            cursor = 0
+            while match := pattern.search(expression, cursor):
+                depth = 1
+                end = match.end()
+                while depth and end < len(expression):
+                    if expression[end] == "(":
+                        depth += 1
+                    elif expression[end] == ")":
+                        depth -= 1
+                    end += 1
+                if depth:
+                    break
+                actuals = _split_arguments(expression[match.end() : end - 1])
+                actual_text = " ".join(actuals)
+                if any(
+                    re.search(
+                        rf"(?<![A-Za-z0-9_.$]){re.escape(symbol)}(?![A-Za-z0-9_])",
+                        actual_text,
+                    )
+                    for symbol in factors
+                ):
+                    raise ValueError(
+                        "SBML unit normalization for unresolved function call "
+                        f"{function_id!r} with scaled actual arguments is not "
+                        "losslessly representable."
+                    )
+                cursor = end
+    if factors:
+        identifiers = sorted(factors, key=lambda symbol: (-len(symbol), symbol))
+        pattern = re.compile(
+            r"(?<![A-Za-z0-9_.$])(?:"
+            + "|".join(re.escape(symbol) for symbol in identifiers)
+            + r")(?![A-Za-z0-9_])"
+        )
+
+        def source_coordinate(match: re.Match[str]) -> str:
+            symbol = match.group(0)
+            factor = factors[symbol]
+            return f"({symbol} / {factor:.17g})"
+
+        expression = pattern.sub(source_coordinate, expression)
+    if math.isfinite(result_factor) and not _near_one(result_factor):
+        expression = f"({result_factor:.17g}) * ({expression})"
+    return expression
+
+
+def _expression_value(owner: Any, name: str) -> str:
+    if isinstance(owner, Mapping):
+        return str(owner.get(name, "") or "")
+    return str(getattr(owner, name, "") or "")
+
+
+def _set_expression_value(owner: Any, name: str, expression: str) -> None:
+    if hasattr(owner, name):
+        setattr(owner, name, expression)
+    elif isinstance(owner, dict):
+        owner[name] = expression
+
+
 def apply_unit_scaling(model: SBMLModel) -> list[Dict[str, Any]]:
     """Scale parsed SBML values into SI-base units and return audit warnings."""
 
@@ -216,18 +328,21 @@ def apply_unit_scaling(model: SBMLModel) -> list[Dict[str, Any]]:
         )
         return warnings
 
-    def scale_parameter(parameter: Any, scope: str) -> None:
-        parameter_id = (
-            parameter.get("id", "")
-            if isinstance(parameter, Mapping)
-            else getattr(parameter, "id", "")
-        )
+    coordinate_factors: Dict[str, float] = {}
+    local_coordinate_factors: Dict[str, Dict[str, float]] = {}
+
+    def scale_parameter(
+        parameter: Any, scope: str, coordinate_map: Dict[str, float]
+    ) -> float:
+        parameter_id = _parameter_id(parameter)
         units = (
             parameter.get("units", "")
             if isinstance(parameter, Mapping)
             else getattr(parameter, "units", "")
         )
         factor = resolve_unit_factor(str(units or ""), model)
+        if parameter_id:
+            coordinate_map[parameter_id] = factor
         exact_factor = resolve_decimal_unit_factor(str(units or ""), model)
         value = _parameter_value(parameter)
         if not _near_one(factor) and math.isfinite(value):
@@ -238,25 +353,41 @@ def apply_unit_scaling(model: SBMLModel) -> list[Dict[str, Any]]:
                     f'(unit "{units}") to SI base units.'
                 )
             )
+        return factor
 
     for parameter in model.parameters.values():
-        scale_parameter(parameter, "global")
+        scale_parameter(parameter, "global", coordinate_factors)
     for reaction in model.reactions.values():
+        local_factors: Dict[str, float] = {}
         for parameter in _local_parameters(getattr(reaction, "kinetic_law", None)):
-            scale_parameter(parameter, f"local ({getattr(reaction, 'id', 'reaction')})")
+            factor = scale_parameter(
+                parameter,
+                f"local ({getattr(reaction, 'id', 'reaction')})",
+                local_factors,
+            )
+            parameter_id = _parameter_id(parameter)
+            if parameter_id:
+                local_factors[parameter_id] = factor
+        if local_factors:
+            local_coordinate_factors[str(getattr(reaction, "id", ""))] = local_factors
 
     compartment_factors: Dict[str, float] = {}
     compartment_exact_factors: Dict[str, Optional[Decimal]] = {}
     for compartment_id, compartment in model.compartments.items():
-        dimensions = float(getattr(compartment, "spatial_dimensions", 3) or 3)
+        dimensions = float(getattr(compartment, "spatial_dimensions", 3))
         default_units = (
             area_default
             if dimensions == 2
-            else length_default if dimensions == 1 else volume_default
+            else (
+                length_default
+                if dimensions == 1
+                else volume_default if dimensions == 3 else ""
+            )
         )
         units = str(getattr(compartment, "units", "") or default_units or "")
         factor = resolve_unit_factor(units, model)
         compartment_factors[compartment_id] = factor
+        coordinate_factors[str(compartment_id)] = factor
         compartment_exact_factors[compartment_id] = resolve_decimal_unit_factor(
             units, model
         )
@@ -272,14 +403,27 @@ def apply_unit_scaling(model: SBMLModel) -> list[Dict[str, Any]]:
                 )
             )
 
+    species_amount_factors: Dict[str, float] = {}
     for species_id, species in model.species.items():
         substance_units = str(
             getattr(species, "substance_units", "") or substance_default or ""
         )
         substance_factor = resolve_unit_factor(substance_units, model)
         substance_exact_factor = resolve_decimal_unit_factor(substance_units, model)
-        volume_factor = compartment_factors.get(
-            getattr(species, "compartment", ""), 1.0
+        compartment = model.compartments.get(getattr(species, "compartment", ""))
+        raw_dimensions = getattr(compartment, "spatial_dimensions", 3)
+        dimensions = 3.0 if raw_dimensions is None else float(raw_dimensions)
+        volume_factor = (
+            compartment_factors.get(getattr(species, "compartment", ""), 1.0)
+            if dimensions != 0
+            else 1.0
+        )
+        species_amount_factors[str(species_id)] = substance_factor
+        coordinate_factors[str(species_id)] = (
+            substance_factor
+            if dimensions == 0
+            or bool(getattr(species, "has_only_substance_units", False))
+            else substance_factor / (volume_factor or 1.0)
         )
         volume_exact_factor = compartment_exact_factors.get(
             getattr(species, "compartment", "")
@@ -322,6 +466,102 @@ def apply_unit_scaling(model: SBMLModel) -> list[Dict[str, Any]]:
                     f'Scaled species "{species_id}" initialConcentration by '
                     f"{concentration_factor:g}."
                 )
+            )
+
+    reaction_rate_factors: Dict[str, float] = {}
+    for reaction_id, reaction in model.reactions.items():
+        participants: Dict[str, float] = {}
+        net_stoichiometry: Dict[str, float] = {}
+        for reference in reaction.reactants:
+            species_id = str(reference.species)
+            if species_id == "EmptySet":
+                continue
+            net_stoichiometry[species_id] = net_stoichiometry.get(
+                species_id, 0
+            ) - float(reference.stoichiometry)
+        for reference in reaction.products:
+            species_id = str(reference.species)
+            if species_id == "EmptySet":
+                continue
+            net_stoichiometry[species_id] = net_stoichiometry.get(
+                species_id, 0
+            ) + float(reference.stoichiometry)
+        for species_id, coefficient in net_stoichiometry.items():
+            if coefficient == 0:
+                continue
+            species = model.species.get(species_id)
+            if species is None or species.boundary_condition or species.constant:
+                continue
+            conversion_factor_id = (
+                getattr(species, "conversion_factor", None) or model.conversion_factor
+            )
+            conversion_factor_scale = coordinate_factors.get(
+                str(conversion_factor_id), 1.0
+            )
+            participants[species_id] = (
+                species_amount_factors.get(species_id, 1.0) / conversion_factor_scale
+            )
+        rate_factors = list(participants.values())
+        rate_factor = rate_factors[0] if rate_factors else 1.0
+        if any(
+            not math.isclose(factor, rate_factor, rel_tol=1e-12)
+            for factor in rate_factors[1:]
+        ):
+            raise ValueError(
+                f'Reaction "{reaction_id}" normalized flux scaling is not '
+                "losslessly representable because its species require different "
+                "normalized flux scales."
+            )
+        reaction_rate_factors[str(reaction_id)] = rate_factor
+        coordinate_factors[str(reaction_id)] = rate_factor
+
+    for reaction_id, reaction in model.reactions.items():
+        kinetic_law = getattr(reaction, "kinetic_law", None)
+        if kinetic_law is None:
+            continue
+        rate_factor = reaction_rate_factors[str(reaction_id)]
+        factors = dict(coordinate_factors)
+        factors.update(local_coordinate_factors.get(str(reaction_id), {}))
+        expression = _kinetic_law_math(kinetic_law)
+        _set_kinetic_law_math(
+            kinetic_law,
+            _source_coordinate_expression(
+                expression, factors, rate_factor, model.function_definitions
+            ),
+        )
+
+    def rewrite_owner(owner: Any, field: str, result_factor: float) -> None:
+        expression = _expression_value(owner, field)
+        if expression:
+            _set_expression_value(
+                owner,
+                field,
+                _source_coordinate_expression(
+                    expression,
+                    coordinate_factors,
+                    result_factor,
+                    model.function_definitions,
+                ),
+            )
+
+    for rule in model.rules:
+        result_factor = coordinate_factors.get(str(rule.variable), 1.0)
+        rewrite_owner(rule, "math", result_factor if rule.type != "algebraic" else 1.0)
+    for assignment in model.initial_assignments:
+        rewrite_owner(
+            assignment,
+            "math",
+            coordinate_factors.get(str(assignment.symbol), 1.0),
+        )
+    for event in model.events:
+        rewrite_owner(event, "trigger", 1.0)
+        rewrite_owner(event, "delay", 1.0)
+        rewrite_owner(event, "priority", 1.0)
+        for assignment in event.assignments:
+            rewrite_owner(
+                assignment,
+                "math",
+                coordinate_factors.get(str(assignment.variable), 1.0),
             )
 
     if warnings:
