@@ -71,3 +71,17 @@ def test_python_parameter_change_preserves_explicit_continuation():
         10.0 * (1.0 - np.exp(-0.5)),
         rtol=1e-5,
     )
+
+
+def test_python_direct_ssa_continues_pending_completion():
+    source = SOURCE.replace("A() 10", "A() 1").replace(
+        "A() -> B() 0.5 delay=tau", "A() -> B() 1000000 delay=tau"
+    )
+    model = BioNetGenModel(cpp.parse_string(source))
+    first = model.simulate(method="ssa", t_end=1.0, n_steps=2, seed=17)
+    continued = model.simulate(
+        method="ssa", t_start=1.0, t_end=3.0, n_steps=4, seed=17,
+        continue_simulation=True,
+    )
+    np.testing.assert_allclose(first.observables["B_count"][-1], 0.0, atol=1e-8)
+    np.testing.assert_allclose(continued.observables["B_count"][-1], 1.0, atol=1e-8)
