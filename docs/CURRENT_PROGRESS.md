@@ -5,6 +5,101 @@ SBML atomizer — the constructs it refuses, why, and whether each boundary is
 reducible — is recorded separately in
 [`ATOMIZER_LIMITATIONS.md`](ATOMIZER_LIMITATIONS.md).
 
+## Curated BioModels #162 (2026-10-23)
+
+The previously paused full curated BioModels lane was explicitly resumed and
+run as [workflow run 40003233859](https://github.com/RuleWorld/BNG3/actions/runs/40003233859)
+at exact main source `2eeb244f896e54b55335f918d10f4034fb322571`. The
+independent main CI run [39959629615](https://github.com/RuleWorld/BNG3/actions/runs/39959629615)
+completed successfully; it is separate from the corpus result. The run's
+retained artifact [12529835188](https://github.com/RuleWorld/BNG3/actions/runs/40003233859/artifacts/12529835188)
+is 3,612,605 bytes, SHA-256
+`d024971a913d72dd0025b1b7d33f002c675a5c8d613b8189afdf8e1e6ce1f581`. Its
+runtime pins libRoadRunner 2.10.0 and python-libsbml 5.21.2. The full run
+selected all 1,096 curated records and retained both flat and modern atomized
+reports. The 2026-09-15 offline snapshot verified all 1,096 inventory mappings
+and 1,084 source payloads. The live membership endpoint's HTTP 403 was recorded
+as unavailable; the verified offline snapshot supplied the run inputs.
+
+Flat results: 946 passed, 112 unsupported, 11 unsupported-format,
+21 timed out, one failed, four not comparable, and one source-acquisition
+harness error. Atomized results: 945 passed, 112 unsupported,
+11 unsupported-format, 23 timed out, one failed, three not comparable, and one
+source-acquisition harness error. The report's 1,083 SBML records include
+eight SBML files extracted from COMBINE archives. These counts describe this
+bounded run; they are not a universal SBML support claim.
+
+`BIOMD0000000638` is the only product execution/numerical `failed` record in
+both modes; this does not establish an SBML semantic mismatch. Its exact
+203,221-byte source payload (SHA256
+`1f62b7e92938b686d29039bc4aaa2a6fa024d6b6fc927ed773dd82d48a9c7657`) matches
+the offline snapshot. The failed report record does not retain a libSBML source
+validation result. BNG3 CVODE fails with flag `-3` in both modes before a
+cross-engine trajectory comparison is produced. A separate source-side
+control, run with libSBML 5.21.1 and libRoadRunner 2.10.0, found zero libSBML
+errors and produced 11 finite time rows when selecting time plus all floating
+species (shape 11 by 22) at `t=0..1`, 10 intervals, `rtol=1e-7`, and
+`atol=1e-12`. The exact selections and command used for both source controls
+are:
+
+```sh
+SOURCE=/path/to/source.xml python - <<'PY'
+import os
+
+import libsbml
+import numpy as np
+import roadrunner
+
+source = os.environ["SOURCE"]
+assert libsbml.readSBMLFromFile(source).getNumErrors() == 0
+rr = roadrunner.RoadRunner(open(source, encoding="utf-8").read())
+rr.timeCourseSelections = ["time", *rr.model.getFloatingSpeciesIds()]
+rr.setIntegrator("cvode")
+rr.integrator.setValue("relative_tolerance", 1e-7)
+rr.integrator.setValue("absolute_tolerance", 1e-12)
+values = rr.simulate(0, 1, 11)
+assert values.shape[0] == 11 and np.isfinite(values).all()
+PY
+```
+
+The source SHA-256 above is for `BIOMD0000000638`; the unit-scaled
+compartment-size conversion remains a lead from earlier measurements, not an
+isolated cause.
+
+The report's 21 flat / 23 atomized timeouts all hit the per-record 180-second
+budget. The current report and execution logs do not record the stage reached
+by any of these timeouts. Twelve-record timeout cohorts in older inventory
+expectations are historical triage hints only; they do not establish stages in
+this run. These remain unresolved performance outcomes, not product semantic
+failures. Twenty-eight unique source payloads spanning the failure, timeout,
+and not-comparable cohorts were independently checked with libSBML 5.21.1
+against the snapshot hashes and byte lengths; each parses as SBML with a model
+and zero errors.
+
+Three shared not-comparable records (`BIOMD0000000803`, `0731`, and `0973`)
+have a source observable undefined at `t=0`; BNG3 and libRoadRunner report the
+same undefined value, so a pointwise comparison is not measurable. Flat-mode
+`BIOMD0000000451` is a distinct concern: the report records that BNG3
+simulation and written-SBML validation completed, but libRoadRunner CVODE
+could not integrate the BNG3-written SBML. A separate source-side control, with
+libSBML 5.21.1 and libRoadRunner 2.10.0, validates the exact source payload and
+produces 11 finite time rows with time plus all floating species selected
+(shape 11 by 60) on the same grid and tolerances; its SHA-256 is
+`ba8e4a50a0e477906f96a66cc49494c825eaab0a489083f7bcdec5adf25b79c5`. The
+reproduction command above applies with `SOURCE` set to this payload. Retain
+the report's `not_comparable` classification, but treat this as unresolved
+writer/output numerical risk rather than an unavailable-source oracle.
+
+The run did not close issue #162: it exercised the modern Atomizer's flat and
+atomized modes with BNG3 CVODE and libRoadRunner 2.10.0, but did not run the
+legacy Atomizer cross-engine comparator requested by the issue. The hosted
+workflow also failed its corpus-inventory comparison because it did not pass
+the report's exact source revision to the inventory checker; this harness
+wiring issue is separate from the scientific outcomes. A separate
+non-SBML `Other` record, `BIOMD0000001075`, is a source-acquisition harness
+error (HTTP 403), not a semantic result. Preserve the raw per-mode reports and
+all record classifications; do not infer closure from the passing counts.
+
 ## Structural SBML atomization recovers molecular identity
 
 The atomized SBML translation (`atomize=True`) recognized a molecular
@@ -1001,9 +1096,11 @@ records source-only test limitations and excludes broad speed/RSS claims.
 - #165 proves the Lean reference matcher, including exact embedding domains
   and mapping equality independent of association-list order. No `sorry`,
   new axiom or hidden premise; #166 production lowering remains unproved.
-- Full curated BioModels #162 remains stopped until explicitly authorized.
-  CUDA #175 requires actual NVIDIA hardware. #195 policy/owners and #202's
-  14 approval decisions remain unresolved.
+- The authorized full curated BioModels #162 run is recorded above; its
+  product execution/numerical failure, timeout cohort, unresolved
+  output-comparison case, and missing legacy Atomizer comparator keep the
+  issue open. CUDA #175 requires actual NVIDIA hardware. #195 policy/owners
+  and #202's 14 approval decisions remain unresolved.
 
 Continue existing candidates and explicit issue dependencies. Current work covers
 NET group counting/compartment investigation and classification of the historical NFsim failures.
