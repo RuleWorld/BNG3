@@ -96,6 +96,22 @@ passed 190/190 written-export comparisons. These two bounded observations do
 not qualify the full corpus or close issue #162; atomized source-fidelity and
 written-export numerical gaps remain open.
 
+The structural-inference repair at `13b81c8663bb32e95f11ca147a6f807543ce4d8d`
+retains flat source species when inferred complexes would change
+cross-compartment reaction execution. Independent local replays of the same
+two source payloads, horizon, output grid and tolerances above now match all
+21/21 and 94/94 source species respectively, without a numerical-refinement
+retry. Both original sources have zero libSBML parse errors. The measured
+Python package source SHA-256 is
+`f227b8e28ad2c86093ab38c3f906a5f7ca0a5e5e28417c1b226989fc8b72c491`;
+the reused native extension has the SHA-256 above and was built from
+`402adfb29275d1285725e8505afdaa8f7547b923`, whose C++ sources match this repair.
+Focused structural, Multi and compartment-rule tests pass locally (102 passed,
+three existing Multi skips); disabling the new guard breaks the independent
+source-law regression. These bounded source-output results do not qualify
+longer horizons, stochastic execution or the full corpus. The 0451
+written-SBML/libRoadRunner convergence failure remains separately open.
+
 The historical report's 21 flat / 23 atomized timeouts all hit the per-record
 180-second budget. Its execution logs do not record the stage reached by any of
 these timeouts. Twelve-record timeout cohorts in older inventory expectations
