@@ -417,6 +417,11 @@ TEST_CASE("native ODE continuation preserves delayed history and reset clears it
     second.tStart = 2.0;
     second.tEnd = 4.0;
     second.continueSimulation = true;
+    auto rejected = second;
+    rejected.method = "euler";
+    CHECK_THROWS_WITH(splitIntegrator.integrate(rejected),
+                      Catch::Matchers::ContainsSubstring(
+                          "Delayed reactions require the CVODE ODE method"));
     const auto continued = splitIntegrator.integrate(second);
 
     engine::OdeIntegrator wholeIntegrator(*model, wholeNetwork);
