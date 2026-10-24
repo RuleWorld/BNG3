@@ -26,12 +26,18 @@ Flat results: 946 passed, 112 unsupported, 11 unsupported-format,
 harness error. Atomized results: 945 passed, 112 unsupported,
 11 unsupported-format, 23 timed out, one failed, three not comparable, and one
 source-acquisition harness error. The report's 1,083 SBML records include
-eight SBML files extracted from COMBINE archives. These counts describe this
-bounded run; they are not a universal SBML support claim.
+eight SBML files extracted from COMBINE archives. The trajectory comparator
+ran libRoadRunner on BNG3-written SBML, not the original source SBML. Thus
+the 946 / 945 passes measure written-export cross-engine consistency; they
+do not establish Atomizer source fidelity. Original-source trajectory
+comparison remains an acceptance gap. These are historical raw counts: the
+comparer also used a global magnitude floor that can mask a smaller series'
+mismatch when another observable is much larger. Per-observable scaling
+requires its own regression and requalification.
 
 `BIOMD0000000638` is the only product execution/numerical `failed` record in
-both modes; this does not establish an SBML semantic mismatch. Its exact
-203,221-byte source payload (SHA256
+both modes; that report alone does not establish an SBML semantic mismatch.
+Its exact 203,221-byte source payload (SHA256
 `1f62b7e92938b686d29039bc4aaa2a6fa024d6b6fc927ed773dd82d48a9c7657`) matches
 the offline snapshot. The failed report record does not retain a libSBML source
 validation result. BNG3 CVODE fails with flag `-3` in both modes before a
@@ -62,9 +68,15 @@ assert values.shape[0] == 11 and np.isfinite(values).all()
 PY
 ```
 
-The source SHA-256 above is for `BIOMD0000000638`; the unit-scaled
-compartment-size conversion remains a lead from earlier measurements, not an
-isolated cause.
+The source SHA-256 above is for `BIOMD0000000638`. A subsequent local
+one-reaction reproducer establishes a source-fidelity defect in unit
+normalization: for a custom `1e-15 litre` volume unit, `cell=2`, concentration
+`A=1`, undeclared-unit `k=0.1`, and flux `cell*k*A*A`, normalization changes
+the initial numerical flux from `0.2` to `2e14`. The original-source
+libRoadRunner trajectory and translated native trajectory disagree. This
+isolates a transformation defect; it does not establish that repairing it
+will resolve the full model's integration failure. A committed regression,
+principled repair, and hosted replay remain pending.
 
 The report's 21 flat / 23 atomized timeouts all hit the per-record 180-second
 budget. The current report and execution logs do not record the stage reached
@@ -77,8 +89,10 @@ against the snapshot hashes and byte lengths; each parses as SBML with a model
 and zero errors.
 
 Three shared not-comparable records (`BIOMD0000000803`, `0731`, and `0973`)
-have a source observable undefined at `t=0`; BNG3 and libRoadRunner report the
-same undefined value, so a pointwise comparison is not measurable. Flat-mode
+have a translated/written observable undefined at `t=0`; BNG3 and
+libRoadRunner reading BNG3-written SBML report the same undefined value, so
+that pointwise comparison is not measurable. Undefinedness in the original
+source has not been established. Flat-mode
 `BIOMD0000000451` is a distinct concern: the report records that BNG3
 simulation and written-SBML validation completed, but libRoadRunner CVODE
 could not integrate the BNG3-written SBML. A separate source-side control, with
