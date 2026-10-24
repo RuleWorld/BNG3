@@ -211,7 +211,7 @@ FlattenedReactionNetwork FlattenedReactionNetwork::fromModelAndNetwork(
 
 CpuBatchSsaSimulator::CpuBatchSsaSimulator(const ast::Model& model, const GeneratedNetwork& network)
     : model_(model), network_(network) {
-    requireNoDelayedSemantics(model_, network_, "SSA");
+    requireNoExpressionDelaySemantics(model_, network_, "batch SSA");
 }
 
 BatchSsaMetrics CpuBatchSsaSimulator::simulateSingleWorker(const BatchSsaOptions& options) {
@@ -394,10 +394,11 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
         std::size_t endIdx = std::min(startIdx + chunkSize, batchSize);
         if (startIdx >= endIdx) continue;
 
-        futures.push_back(std::async(std::launch::async, [this, &options, &integrator, startIdx, endIdx, numPoints, numObs, numSpecies, &metrics]() {
+        futures.push_back(std::async(std::launch::async, [this, &options, startIdx, endIdx, numPoints, numObs, numSpecies, &metrics]() {
             WorkerResult wRes;
             wRes.sumObs.resize(numPoints, std::vector<double>(numObs, 0.0));
             wRes.sumSqObs.resize(numPoints, std::vector<double>(numObs, 0.0));
+            OdeIntegrator integrator(model_, network_);
 
             OdeOptions odeOpts;
             odeOpts.tStart = options.tStart;

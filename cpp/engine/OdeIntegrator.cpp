@@ -206,7 +206,37 @@ OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& ne
                 if (expression.args().size() != 2) {
                     throw std::runtime_error("delay(expr, tau) expects two arguments");
                 }
-                const double delay = delayedTime(expression.args()[1], model_);
+                const auto duration = functionEvaluator_.expandFunctions(
+                    expression.args()[1]);
+                std::function<bool(const ast::Expression&)> isStaticDuration;
+                isStaticDuration = [&](const ast::Expression& term) {
+                    if (term.kind() == ast::ExpressionKind::Identifier) {
+                        if (term.name() == "time" || term.name() == "t") return false;
+                        try {
+                            return !model_.getParameters().isTimeDependent(term.name());
+                        } catch (...) {
+                            return false;
+                        }
+                    }
+                    if (term.kind() == ast::ExpressionKind::ObservableRef ||
+                        term.kind() == ast::ExpressionKind::TableFunction) {
+                        return false;
+                    }
+                    if (term.kind() == ast::ExpressionKind::Function &&
+                        (term.name() == "time" || term.name() == "t" ||
+                         term.name() == "tfun")) {
+                        return false;
+                    }
+                    for (const auto& child : term.args()) {
+                        if (!isStaticDuration(child)) return false;
+                    }
+                    return true;
+                };
+                if (!isStaticDuration(duration)) {
+                    throw std::runtime_error(
+                        "delay expression duration must be static");
+                }
+                const double delay = delayedTime(duration, model_);
                 if (!std::isfinite(delay) || delay < 0.0) {
                     throw std::runtime_error(
                         "delay duration must be finite and nonnegative");
@@ -2399,24 +2429,34 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
             throw std::runtime_error(
                 "delay(expr, tau) is not supported by batch SSA");
         }
+        SimulationSession trajectory;
+        trajectory.initialized = true;
+        trajectory.startTime = options.tStart;
+        trajectory.currentTime = options.tStart;
+        trajectory.reactionDelays.reserve(compiledRxns_.size());
         for (const auto& reaction : compiledRxns_) {
-            if (reaction.delay > 0.0) {
-                throw std::runtime_error(
-                    "Delayed reactions require single-trajectory SSA");
-            }
+            trajectory.reactionDelays.push_back(reaction.delay);
         }
-        return integrateCore(options);
+        trajectory.state.resize(nSpecies_);
+        trajectory.initialState.resize(nSpecies_);
+        for (std::size_t i = 0; i < nSpecies_; ++i) {
+            trajectory.state[i] = network_.species.get(i).getAmount();
+            trajectory.initialState[i] = trajectory.state[i];
+        }
+        activeSimulationSession_ = &trajectory;
+        try {
+            auto result = integrateCore(options);
+            activeSimulationSession_ = nullptr;
+            return result;
+        } catch (...) {
+            activeSimulationSession_ = nullptr;
+            throw;
+        }
     }
     if (options.batchSize > 0) {
         if (hasPositiveExpressionDelay_) {
             throw std::runtime_error(
                 "delay(expr, tau) is not supported by batch SSA");
-        }
-        for (const auto& reaction : compiledRxns_) {
-            if (reaction.delay > 0.0) {
-                throw std::runtime_error(
-                    "Delayed reactions require single-trajectory SSA");
-            }
         }
         return integrateCore(options);
     }
@@ -3162,7 +3202,10 @@ void OdeIntegrator::writeBinaryOutputFiles(const std::string& prefix, const OdeR
 // is large enough to pay for the launch; otherwise falls back to the CPU pool.
 // ---------------------------------------------------------------------------
 OdeResult OdeIntegrator::integrateBatchSSA(const OdeOptions& opts) {
-    if (opts.batchGpuPreferred) {
+    const bool hasDelayedReactions = std::any_of(
+        compiledRxns_.begin(), compiledRxns_.end(),
+        [](const CompiledReaction& reaction) { return reaction.delay > 0.0; });
+    if (opts.batchGpuPreferred && !hasDelayedReactions) {
         const GpuBackendKind requested = gpuBackendFromName(opts.batchGpuBackend);
         const GpuBackendKind selected =
             (requested == GpuBackendKind::Auto) ? defaultGpuBackend() : requested;

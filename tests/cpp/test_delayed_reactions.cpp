@@ -191,6 +191,54 @@ end model
 )"), Catch::Matchers::ContainsSubstring("event-assigned parameter 'tau'"));
 }
 
+TEST_CASE("delay expression durations must be static across a run") {
+    const auto makeModel = [](const std::string& duration, const std::string& event) {
+        return parser::parseModel(R"(
+begin model
+begin parameters
+  tau 2
+  tauAlias tau
+  k 1
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin observables
+  Molecules Aobs A()
+end observables
+begin reaction rules
+  A() -> B() k*delay(Aobs, )" + duration + R"()
+end reaction rules
+)" + event + R"(
+end model
+)");
+    };
+    {
+        auto model = makeModel("time()", "");
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+        CHECK_THROWS_WITH(engine::OdeIntegrator(*model, network),
+                          Catch::Matchers::ContainsSubstring("duration must be static"));
+    }
+    {
+        CHECK_THROWS_WITH(makeModel("tauAlias", R"(
+begin bng3_events version 1
+  event "change_tau"
+    trigger: time >= 1
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: tau = 3
+  end event
+end bng3_events
+ )"), Catch::Matchers::ContainsSubstring("event-assigned parameter 'tau'"));
+    }
+}
+
 TEST_CASE("delay keywords remain valid parameter identifiers outside modifiers") {
     auto model = parser::parseModel(R"(
 begin model
@@ -714,8 +762,7 @@ TEST_CASE("SSA and PSA retain explicit delayed-reaction backend boundaries") {
     auto model = parse("A() -> B() 0.5 delay=tau");
     engine::NetworkGenerator generator(*model);
     const auto network = generator.generateNative();
-    CHECK_THROWS_WITH(engine::CpuBatchSsaSimulator(*model, network),
-                      Catch::Matchers::ContainsSubstring("not supported by SSA"));
+    CHECK_NOTHROW(engine::CpuBatchSsaSimulator(*model, network));
     CHECK_THROWS_WITH(engine::PsaSimulator(*model, network),
                       Catch::Matchers::ContainsSubstring("not supported by PSA"));
 }
@@ -910,3 +957,69 @@ TEST_CASE("native ODE validates delayed parameter values at execution time") {
                       Catch::Matchers::ContainsSubstring("finite and nonnegative"));
 }
 
+
+TEST_CASE("CPU SSA batches isolate delayed completion queues across workers") {
+    constexpr std::size_t batchSize = 64;
+    const auto run = [&](const std::string& rule, unsigned int workers) {
+        auto model = parse(rule);
+        engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+        engine::CpuBatchSsaSimulator simulator(*model, network);
+        engine::BatchSsaOptions options;
+        options.batchSize = batchSize;
+        options.tEnd = 4.0;
+        options.nSteps = 4;
+        options.baseSeed = 2718;
+        return workers == 1
+            ? simulator.simulateSingleWorker(options)
+            : simulator.simulateMultiCore(options, workers);
+    };
+    for (const auto* rule : {"A() -> B() 0.5 delay=tau",
+                             "G() -> G() + M() 0.5 delay=tau NonConsuming"}) {
+        const auto serial = run(rule, 1);
+        const auto parallel = run(rule, 4);
+        const auto repeatedParallel = run(rule, 4);
+        REQUIRE(serial.trajectoryEventCounts.size() == batchSize);
+        CHECK(serial.trajectoryEventCounts == parallel.trajectoryEventCounts);
+        CHECK(parallel.trajectoryEventCounts == repeatedParallel.trajectoryEventCounts);
+        CHECK(serial.finalSpecies == parallel.finalSpecies);
+        CHECK(serial.finalObservables == parallel.finalObservables);
+        CHECK(serial.totalEvents == parallel.totalEvents);
+
+        auto oracleModel = parse(rule);
+        engine::NetworkGenerator oracleGenerator(*oracleModel);
+        const auto oracleNetwork = oracleGenerator.generateNative();
+        const auto delayedProduct = speciesIndex(
+            oracleNetwork, rule[0] == 'A' ? "B" : "M");
+        for (std::size_t trajectory = 0; trajectory < batchSize; ++trajectory) {
+            engine::OdeIntegrator direct(*oracleModel, oracleNetwork);
+            engine::OdeOptions directOptions;
+            directOptions.method = "ssa";
+            directOptions.tEnd = 4.0;
+            directOptions.nSteps = 4;
+            directOptions.seed = engine::batchTrajectoryEngineSeed(2718, trajectory);
+            const auto directResult = direct.integrate(directOptions);
+            CHECK(directResult.concentrations[2][delayedProduct] == 0.0);
+            CHECK(serial.finalSpecies[trajectory * oracleNetwork.species.size() +
+                                      delayedProduct] ==
+                  static_cast<std::int32_t>(std::round(
+                      directResult.concentrations.back()[delayedProduct])));
+        }
+
+        auto model = parse(rule);
+        engine::NetworkGenerator generator(*model);
+        auto network = generator.generateNative();
+        engine::OdeIntegrator integrator(*model, network);
+        engine::OdeOptions options;
+        options.method = "ssa";
+        options.batchSize = batchSize;
+        options.batchGpuPreferred = false;
+        options.tEnd = 4.0;
+        options.nSteps = 4;
+        options.seed = 2718;
+        const auto batch = integrator.integrate(options);
+        const auto repeatedBatch = integrator.integrate(options);
+        CHECK(batch.concentrations == repeatedBatch.concentrations);
+        CHECK(batch.eventCount == repeatedBatch.eventCount);
+    }
+}
