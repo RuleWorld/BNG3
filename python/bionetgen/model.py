@@ -64,6 +64,7 @@ class BioNetGenModel:
         self._source_path = source_path
         self._source_metadata = source_metadata or ""
         self._network: Optional[_cpp.GeneratedNetwork] = None
+        self._continuation_network: Optional[_cpp.GeneratedNetwork] = None
         self._simulation_has_run = False
 
     @property
@@ -117,20 +118,24 @@ class BioNetGenModel:
         return self._model.get_parameter(name)
 
     def set_parameter(self, name: str, value: float) -> None:
+        previous_network = self._network or self._continuation_network
+        can_continue = self._simulation_has_run and previous_network is not None
         try:
             self._model.set_parameter(name, value)
         finally:
             # Generated networks contain evaluated seed amounts and other
             # parameter-dependent compile results. Also discard the cache if
             # parameter reevaluation raises after changing the model.
+            self._continuation_network = previous_network if can_continue else None
             self._network = None
-            self._simulation_has_run = False
+            self._simulation_has_run = can_continue
 
     def reset_simulation(self) -> None:
         """Discard the current native trajectory and regenerate from model seeds."""
         if self._network is not None and _cpp is not None:
             _cpp.reset_simulation(self._network)
         self._network = None
+        self._continuation_network = None
         self._simulation_has_run = False
 
     def parameter_scan(self, *args, **kwargs):
@@ -190,6 +195,11 @@ class BioNetGenModel:
 
     def generate_network(self, max_iter: int = 100) -> _cpp.GeneratedNetwork:
         self._network = _cpp.generate_network(self._model, max_iter=max_iter)
+        if self._continuation_network is not None:
+            _cpp.continue_simulation_from(
+                self._continuation_network, self._network
+            )
+            self._continuation_network = None
         return self._network
 
     def simulate(

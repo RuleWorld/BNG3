@@ -751,8 +751,10 @@ end model
     options.nSteps = 1;
     const auto result = integrator.integrate(options);
     REQUIRE(result.timePoints.size() == 2);
+    // SBML prehistory holds A=1 through t=1; afterward the delayed source is
+    // exp(-(t-1)), giving 1 + (1-exp(-3)) total at t=4.
     CHECK(result.concentrations.back()[b] ==
-          Catch::Approx(1.0 - std::exp(-3.0)).epsilon(1e-5));
+          Catch::Approx(2.0 - std::exp(-3.0)).epsilon(1e-5));
 }
 
 TEST_CASE("nested function delay uses historical parameter values") {
@@ -797,7 +799,45 @@ end model
     continuation.tEnd = 3.0;
     continuation.continueSimulation = true;
     const auto continued = continuedIntegrator.integrate(continuation);
-    CHECK(continued.concentrations.back()[b] == Catch::Approx(0.5).epsilon(1e-5));
+    // The delayed source still sees k=0.5 for source times through t=1;
+    // this contributes 0.5 on [0,1] and the same on the continued [1,3].
+    CHECK(continued.concentrations.back()[b] == Catch::Approx(1.5).epsilon(1e-5));
+}
+
+TEST_CASE("method of steps propagates breakpoints through summed delays") {
+    auto model = parser::parseModel(R"(
+begin model
+begin parameters
+  tau1 0.7
+  tau2 0.9
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin observables
+  Molecules Aobs A()
+end observables
+begin reaction rules
+  A() -> 0 1
+  0 -> B() delay(delay(Aobs, tau1), tau2)
+end reaction rules
+end model
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    const auto b = speciesIndex(network, "B");
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 4.0;
+    options.nSteps = 1;
+    const auto result = integrator.integrate(options);
+    CHECK(result.concentrations.back()[b] ==
+          Catch::Approx(2.6 - std::exp(-2.4)).epsilon(2e-5));
 }
 
 TEST_CASE("network exporters refuse delay metadata even when the AST lacks the rule") {

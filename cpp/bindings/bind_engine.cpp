@@ -418,6 +418,18 @@ void bind_engine(py::module_& m) {
     }, py::arg("network"),
        "Clear the native trajectory history, pending completions, and random stream");
 
+    m.def("continue_simulation_from", [](const GeneratedNetwork& previous,
+                                          GeneratedNetwork& regenerated) {
+        regenerated.simulationSession = previous.simulationSession;
+        if (regenerated.simulationSession.state.size() == regenerated.species.size()) {
+            for (std::size_t i = 0; i < regenerated.species.size(); ++i) {
+                regenerated.species.get(i).setAmount(
+                    regenerated.simulationSession.state[i]);
+            }
+        }
+    }, py::arg("previous"), py::arg("regenerated"),
+       "Carry a successful native trajectory into a regenerated network");
+
     m.def("jax_ode_flatten", [](Model& model, GeneratedNetwork& network) {
         bng::compile::requireNoNativeEvents(model, "JAX ODE flattening");
         std::vector<double> initialState;

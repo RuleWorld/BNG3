@@ -53,3 +53,21 @@ def test_python_native_continuation_reset_and_default_fresh_run():
     reset = model.simulate(method="ode", t_end=2.0, n_steps=4)
     np.testing.assert_allclose(reset.observables["A_count"][0], 10.0)
     np.testing.assert_allclose(reset.observables["B_count"][-1], 0.0, atol=1e-8)
+
+
+def test_python_parameter_change_preserves_explicit_continuation():
+    source = SOURCE.replace(
+        "  tau 2\n", "  tau 2\n  k 0.5\n"
+    ).replace("A() -> B() 0.5 delay=tau", "A() -> B() k delay=tau")
+    model = BioNetGenModel(cpp.parse_string(source))
+    model.simulate(method="ode", t_end=1.0, n_steps=10)
+    model.set_parameter("k", 1.0)
+    continued = model.simulate(
+        method="ode", t_start=1.0, t_end=3.0, n_steps=20,
+        continue_simulation=True,
+    )
+    np.testing.assert_allclose(
+        continued.observables["B_count"][-1],
+        10.0 * (1.0 - np.exp(-0.5)),
+        rtol=1e-5,
+    )
