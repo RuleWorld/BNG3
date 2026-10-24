@@ -313,6 +313,7 @@ def test_process_timeout_record_keeps_last_completed_and_active_phase(
     assert record["phase_progress"] == {
         "last_completed_phase": "source-parse",
         "active_phase": "network-generation",
+        "completed_phases": ["source-parse"],
     }
     assert "@@SBML_CASE_PHASE@@ started network-generation" in (
         args.artifacts_dir / "semantic" / "00001" / "stderr.log"
@@ -333,6 +334,7 @@ def test_phase_progress_restores_outer_phase_after_nested_completion():
     assert progress == {
         "last_completed_phase": "official-bng3-cvode",
         "active_phase": "official-reference-comparison",
+        "completed_phases": ["official-bng3-cvode"],
     }
 
 
@@ -352,6 +354,7 @@ def test_phase_progress_ignores_partial_or_unknown_breadcrumbs():
     assert progress == {
         "last_completed_phase": None,
         "active_phase": "atomizer-translation",
+        "completed_phases": [],
     }
 
 

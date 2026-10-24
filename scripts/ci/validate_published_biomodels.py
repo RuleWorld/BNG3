@@ -39,6 +39,7 @@ from scripts.ci.deterministic_environment import (
     ensure_fixed_hash_seed,
     fixed_hash_seed_environment,
 )
+from scripts.ci.case_phase_journal import case_phase_scope, phase_progress
 from scripts.ci.imported_package_guard import (
     ForeignPackageError,
     package_source_digest,
@@ -51,6 +52,52 @@ NUMERICAL_COMPARISON_ATOL_FLOOR = 5e-12
 # libRoadRunner and BNG3 use independent CVODE builds and Jacobian paths;
 # retain a small model-scale floor for cross-engine dense-output differences.
 NUMERICAL_COMPARISON_RTOL_FLOOR = 1e-5
+BIOMODELS_CASE_PHASE_PREFIX = "@@BIOMODELS_CASE_PHASE@@"
+MAX_CASE_PACKET_BYTES = 4 * 1024 * 1024
+MAX_CASE_PACKET_FILE_BYTES = 1024 * 1024
+
+
+def _mode_stage(result: dict[str, Any], name: str):
+    """Retain per-mode stage outcomes while emitting timeout breadcrumbs."""
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def stage():
+        try:
+            with case_phase_scope(BIOMODELS_CASE_PHASE_PREFIX, name):
+                yield
+        except BaseException as exc:
+            result.setdefault("stage_results", []).append(
+                {
+                    "name": name,
+                    "status": "failed",
+                    "error": f"{type(exc).__name__}: {exc}",
+                }
+            )
+            raise
+        else:
+            result.setdefault("stage_results", []).append(
+                {"name": name, "status": "passed"}
+            )
+
+    return stage()
+
+
+def _failed_mode_result(mode: str, prior: dict[str, Any], exc: BaseException):
+    """Turn an exception into a mode result without dropping prior evidence."""
+
+    result = dict(prior)
+    message = f"{type(exc).__name__}: {exc}"
+    result.update(
+        mode=mode,
+        status="unsupported" if _known_unsupported_error(message) else "failed",
+        core_passed=False,
+        error=message,
+    )
+    if result["status"] == "unsupported":
+        result["unsupported_reason"] = message
+    return result
 
 
 def _json_compatible(value: Any) -> Any:
@@ -1408,6 +1455,7 @@ def _validate_mode(
     simulation_atol: float,
     source_path: Path | None = None,
     artifacts_dir: Path | None = None,
+    partial_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     from bionetgen.atomizer.modern import (
         Atomizer,
@@ -1418,12 +1466,11 @@ def _validate_mode(
     from bionetgen.atomizer.modern.types import standardize_name
 
     mode = "atomized" if mode_atomize else "flat"
-    result: dict[str, Any] = {
-        "mode": mode,
-        "source_xml": {},
-    }
+    result: dict[str, Any] = partial_result if partial_result is not None else {}
+    result.update(mode=mode, source_xml={})
     try:
-        result["source_xml"] = _validate_xml(sbml, "source SBML")
+        with _mode_stage(result, "source-xml-validation"):
+            result["source_xml"] = _validate_xml(sbml, "source SBML")
     except RuntimeError as exc:
         # A small number of archived BioModels files contain malformed or
         # stale package XML.  Preserve the exact libSBML diagnosis, but do
@@ -1457,7 +1504,8 @@ def _validate_mode(
         result["core_passed"] = False
         return result
     try:
-        source_model = SBMLParser().parse(sbml, source_path=source_path)
+        with _mode_stage(result, "source-sbml-parse"):
+            source_model = SBMLParser().parse(sbml, source_path=source_path)
     except ValueError as exc:
         message = str(exc)
         if 'SBML "qual"' not in message and "qualitative/logical" not in message:
@@ -1488,7 +1536,8 @@ def _validate_mode(
     )
     source_warnings = result["source"]["warnings"]
     try:
-        atomized = atomizer.atomize(sbml, source_path=source_path)
+        with _mode_stage(result, "atomizer-translation"):
+            atomized = atomizer.atomize(sbml, source_path=source_path)
     except ValueError as exc:
         message = str(exc)
         if 'SBML "qual"' in message or "qualitative/logical" in message:
@@ -1530,26 +1579,30 @@ def _validate_mode(
         }
         result["core_passed"] = False
         return result
-    cpp_model = cpp.parse_string(atomized.bngl)
-    network = cpp.generate_network(cpp_model, max_iter=100)
+    with _mode_stage(result, "network-generation"):
+        cpp_model = cpp.parse_string(atomized.bngl)
+        network = cpp.generate_network(cpp_model, max_iter=100)
     result["generated_network"] = {
         "species": network.num_species,
         "reactions": network.num_reactions,
     }
 
     output_path = work_dir / f"{model_id}_{mode}.xml"
-    cpp.io.write_sbml(
-        cpp_model,
-        network,
-        str(output_path),
-        source_metadata=source_metadata,
-    )
+    with _mode_stage(result, "sbml-export"):
+        cpp.io.write_sbml(
+            cpp_model,
+            network,
+            str(output_path),
+            source_metadata=source_metadata,
+        )
     if artifacts_dir is not None:
         (artifacts_dir / output_path.name).write_bytes(output_path.read_bytes())
     roundtrip_sbml = output_path.read_text(encoding="utf-8")
-    result["written_xml"] = _validate_xml(roundtrip_sbml, "written SBML")
+    with _mode_stage(result, "written-sbml-validation"):
+        result["written_xml"] = _validate_xml(roundtrip_sbml, "written SBML")
 
-    roundtrip_model = SBMLParser().parse(roundtrip_sbml)
+    with _mode_stage(result, "roundtrip-sbml-parse"):
+        roundtrip_model = SBMLParser().parse(roundtrip_sbml)
     result["reimport_parser"] = {
         "species": len(roundtrip_model.species),
         "reactions": len(roundtrip_model.reactions),
@@ -1573,63 +1626,69 @@ def _validate_mode(
             and roundtrip_model.source_metadata_payload == source_metadata
         ),
     }
-    reimport = Atomizer(
-        atomize=False,
-        quiet_mode=True,
-        t_end=simulation_t_end,
-        n_steps=simulation_n_steps,
-    ).atomize(roundtrip_sbml)
+    with _mode_stage(result, "roundtrip-atomizer-translation"):
+        reimport = Atomizer(
+            atomize=False,
+            quiet_mode=True,
+            t_end=simulation_t_end,
+            n_steps=simulation_n_steps,
+        ).atomize(roundtrip_sbml)
     if not reimport.success:
         raise RuntimeError(reimport.error or "round-trip Atomizer returned failure")
     if artifacts_dir is not None:
         (artifacts_dir / f"reimported.{mode}.bngl").write_text(
             reimport.bngl, encoding="utf-8"
         )
-    reimport_cpp = cpp.parse_string(reimport.bngl)
-    reimport_network = cpp.generate_network(reimport_cpp, max_iter=100)
+    with _mode_stage(result, "roundtrip-network-generation"):
+        reimport_cpp = cpp.parse_string(reimport.bngl)
+        reimport_network = cpp.generate_network(reimport_cpp, max_iter=100)
     result["reimport_network"] = {
         "species": reimport_network.num_species,
         "reactions": reimport_network.num_reactions,
     }
 
-    native = dict(cpp.io.read_sbml(str(output_path), False))
-    result["native_reader"] = native
-    if not native.get("success"):
-        raise RuntimeError(native.get("error") or "native SBML reader returned failure")
-    if native["species_count"] != network.num_species:
-        raise RuntimeError(
-            "native SBML reader species count differs from writer network: "
-            f"{native['species_count']} != {network.num_species}"
-        )
-    if native["reaction_count"] != network.num_reactions:
-        raise RuntimeError(
-            "native SBML reader reaction count differs from writer network: "
-            f"{native['reaction_count']} != {network.num_reactions}"
-        )
+    with _mode_stage(result, "native-sbml-readback"):
+        native = dict(cpp.io.read_sbml(str(output_path), False))
+        result["native_reader"] = native
+        if not native.get("success"):
+            raise RuntimeError(
+                native.get("error") or "native SBML reader returned failure"
+            )
+        if native["species_count"] != network.num_species:
+            raise RuntimeError(
+                "native SBML reader species count differs from writer network: "
+                f"{native['species_count']} != {network.num_species}"
+            )
+        if native["reaction_count"] != network.num_reactions:
+            raise RuntimeError(
+                "native SBML reader reaction count differs from writer network: "
+                f"{native['reaction_count']} != {network.num_reactions}"
+            )
 
     comparison: dict[str, Any] | None = None
     initial_runtime_error: RuntimeError | None = None
     oracle_error: OracleIntegrationError | None = None
     try:
-        comparison = _simulate_and_compare(
-            cpp_model,
-            model_type,
-            output_path,
-            t_end=simulation_t_end,
-            n_steps=simulation_n_steps,
-            rtol=simulation_rtol,
-            atol=simulation_atol,
-            function_names={
-                standardize_name(str(rule.variable))
-                for rule in source_model.rules
-                if rule.type == "assignment" and rule.variable
-            }
-            | {
-                standardize_name(str(assignment.symbol))
-                for assignment in source_model.initial_assignments
-                if assignment.symbol
-            },
-        )
+        with _mode_stage(result, "cross-engine-comparison"):
+            comparison = _simulate_and_compare(
+                cpp_model,
+                model_type,
+                output_path,
+                t_end=simulation_t_end,
+                n_steps=simulation_n_steps,
+                rtol=simulation_rtol,
+                atol=simulation_atol,
+                function_names={
+                    standardize_name(str(rule.variable))
+                    for rule in source_model.rules
+                    if rule.type == "assignment" and rule.variable
+                }
+                | {
+                    standardize_name(str(assignment.symbol))
+                    for assignment in source_model.initial_assignments
+                    if assignment.symbol
+                },
+            )
     except OracleIntegrationError as exc:
         oracle_error = exc
     except RuntimeError as exc:
@@ -1654,16 +1713,17 @@ def _validate_mode(
         last_comparison = comparison
         for retry_max_step in retries:
             try:
-                stabilized = _simulate_and_compare(
-                    cpp_model,
-                    model_type,
-                    output_path,
-                    t_end=simulation_t_end,
-                    n_steps=simulation_n_steps,
-                    rtol=simulation_rtol,
-                    atol=simulation_atol,
-                    max_step=retry_max_step,
-                )
+                with _mode_stage(result, "cross-engine-comparison-retry"):
+                    stabilized = _simulate_and_compare(
+                        cpp_model,
+                        model_type,
+                        output_path,
+                        t_end=simulation_t_end,
+                        n_steps=simulation_n_steps,
+                        rtol=simulation_rtol,
+                        atol=simulation_atol,
+                        max_step=retry_max_step,
+                    )
             except RuntimeError:
                 continue
             last_comparison = stabilized
@@ -1809,13 +1869,41 @@ def _run_isolated_model(
                 f"worker exited {completed.returncode} without a report: "
                 f"{completed.stderr[-500:]}"
             )
-        return json.loads(worker_json.read_text(encoding="utf-8"))["records"][0]
-    except subprocess.TimeoutExpired:
+        worker_record = json.loads(worker_json.read_text(encoding="utf-8"))["records"][
+            0
+        ]
+        progress = phase_progress(completed.stderr, BIOMODELS_CASE_PHASE_PREFIX)
+        if progress["active_phase"] is not None or progress["last_completed_phase"]:
+            worker_record["phase_progress"] = progress
+        if worker_record.get("status") in {
+            "failed",
+            "timeout",
+            "harness_error",
+            "not_comparable",
+        }:
+            worker_record["source_validation"] = _timeout_source_validation(entry, args)
+            if args.artifacts_dir is not None:
+                _attach_case_packet(worker_record, entry, args)
+        return worker_record
+    except subprocess.TimeoutExpired as exc:
+        stderr = exc.stderr or ""
         record.update(
             status="timeout",
             core_passed=False,
             error=f"per-model timeout after {args.model_timeout}s",
         )
+        progress = phase_progress(stderr, BIOMODELS_CASE_PHASE_PREFIX)
+        if progress["active_phase"] is not None or progress["last_completed_phase"]:
+            record["phase_progress"] = progress
+        record["source_validation"] = _timeout_source_validation(entry, args)
+        if args.artifacts_dir is not None:
+            _attach_case_packet(record, entry, args)
+            model_dir = args.artifacts_dir / str(entry["id"])
+            model_dir.mkdir(parents=True, exist_ok=True)
+            (model_dir / "record.json").write_text(
+                json.dumps(_json_compatible(record), indent=2, allow_nan=False) + "\n",
+                encoding="utf-8",
+            )
     except Exception as exc:
         record.update(
             status="harness_error",
@@ -1825,6 +1913,104 @@ def _run_isolated_model(
     finally:
         worker_json.unlink(missing_ok=True)
     return record
+
+
+def _timeout_source_validation(
+    entry: dict[str, Any], args: argparse.Namespace
+) -> dict[str, Any]:
+    expected = str(entry.get("sha256", "")).lower()
+    source_path = _model_source_cache_path(args.cache_dir, entry)
+    evidence: dict[str, Any] = {
+        "model_id": str(entry.get("id", "")),
+        "filename": Path(str(entry.get("filename", ""))).name,
+        "expected_sha256": expected or None,
+        "status": "unverified",
+    }
+    if not source_path.is_file():
+        evidence["reason"] = "cached source payload is missing"
+        return evidence
+    actual = _sha256(source_path)
+    evidence["actual_sha256"] = actual
+    if not re.fullmatch(r"[0-9a-f]{64}", expected):
+        evidence["reason"] = "inventory does not provide a valid source SHA-256"
+    elif actual != expected:
+        evidence["status"] = "sha256_mismatch"
+        evidence["reason"] = "cached source SHA-256 differs from pinned inventory"
+    else:
+        evidence["status"] = "verified_sha256"
+        evidence["sha256"] = actual
+    return evidence
+
+
+def _write_case_packet(
+    entry: dict[str, Any], args: argparse.Namespace, record: dict[str, Any]
+) -> str:
+    """Write a small allowlisted packet for a failed or interrupted model."""
+
+    model_dir = args.artifacts_dir / str(entry["id"])
+    packet_dir = model_dir / "case-packet"
+    packet_dir.mkdir(parents=True, exist_ok=True)
+    allowed = {
+        "source.xml",
+        "translated.flat.bngl",
+        "translated.atomized.bngl",
+        "reimported.flat.bngl",
+        "reimported.atomized.bngl",
+        f"{entry['id']}_flat.xml",
+        f"{entry['id']}_atomized.xml",
+    }
+    files = []
+    omitted = []
+    # Leave room for the JSON receipt itself so artifacts plus metadata stay
+    # within the advertised packet cap.
+    remaining = MAX_CASE_PACKET_BYTES - 64 * 1024
+    for path in sorted(model_dir.iterdir()):
+        if not path.is_file() or path.name not in allowed:
+            continue
+        size = path.stat().st_size
+        if size > MAX_CASE_PACKET_FILE_BYTES or size > remaining:
+            omitted.append(
+                {
+                    "name": path.name,
+                    "size_bytes": size,
+                    "reason": "per-file or packet byte cap",
+                }
+            )
+            continue
+        remaining -= size
+        target = packet_dir / path.name
+        shutil.copyfile(path, target)
+        files.append({"name": path.name, "size_bytes": size})
+    packet = {
+        "model_id": str(entry["id"]),
+        "source_validation": record.get("source_validation", {}),
+        "phase_progress": record.get("phase_progress"),
+        "status": record.get("status"),
+        "artifacts": files,
+        "omitted_artifacts": omitted,
+        "included_bytes": MAX_CASE_PACKET_BYTES - 64 * 1024 - remaining,
+        "max_bytes": MAX_CASE_PACKET_BYTES,
+    }
+    packet_path = packet_dir / "packet.json"
+    packet_path.write_text(
+        json.dumps(_json_compatible(packet), indent=2, allow_nan=False) + "\n",
+        encoding="utf-8",
+    )
+    if packet_path.stat().st_size + packet["included_bytes"] > MAX_CASE_PACKET_BYTES:
+        packet_path.unlink()
+        raise RuntimeError("case packet metadata exceeded reserved byte budget")
+    return str(packet_path)
+
+
+def _attach_case_packet(
+    record: dict[str, Any], entry: dict[str, Any], args: argparse.Namespace
+) -> None:
+    """Retain the original model verdict if optional packet writing fails."""
+
+    try:
+        record["case_packet"] = _write_case_packet(entry, args, record)
+    except Exception as exc:
+        record["case_packet_error"] = f"{type(exc).__name__}: {exc}"
 
 
 def main() -> int:
@@ -2011,7 +2197,12 @@ def main() -> int:
         model_artifacts: Path | None = None
         try:
             path = _model_source_cache_path(args.cache_dir, entry)
-            record["sha256"] = _download_if_needed(path, entry, offline=args.offline)
+            with case_phase_scope(
+                BIOMODELS_CASE_PHASE_PREFIX, "source-sha256-verification"
+            ):
+                record["sha256"] = _download_if_needed(
+                    path, entry, offline=args.offline
+                )
             record["source_artifact"] = {
                 "format": entry.get("format", ""),
                 "filename": entry.get("filename", ""),
@@ -2062,6 +2253,7 @@ def main() -> int:
                 mode_results = []
                 for atomize in modes:
                     mode_name = "atomized" if atomize else "flat"
+                    mode_result: dict[str, Any] = {"mode": mode_name}
                     try:
                         mode_results.append(
                             _validate_mode(
@@ -2078,23 +2270,13 @@ def main() -> int:
                                 args.simulation_atol,
                                 source_path=path if not is_archive else None,
                                 artifacts_dir=model_artifacts,
+                                partial_result=mode_result,
                             )
                         )
                     except Exception as exc:
-                        message = f"{type(exc).__name__}: {exc}"
-                        mode_result = {
-                            "mode": mode_name,
-                            "status": (
-                                "unsupported"
-                                if _known_unsupported_error(message)
-                                else "failed"
-                            ),
-                            "core_passed": False,
-                            "error": message,
-                        }
-                        if mode_result["status"] == "unsupported":
-                            mode_result["unsupported_reason"] = message
-                        mode_results.append(mode_result)
+                        mode_results.append(
+                            _failed_mode_result(mode_name, mode_result, exc)
+                        )
                 record["modes"] = mode_results
             mode_statuses = [
                 mode_result.get("status", "passed") for mode_result in record["modes"]
