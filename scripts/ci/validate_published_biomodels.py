@@ -140,6 +140,16 @@ def _model_source_cache_path(cache_dir: Path, entry: dict[str, Any]) -> Path:
     return cache_dir / "models" / model_id / filename
 
 
+def _source_xml_artifact_bytes(
+    source_path: Path, source_xml: str, *, extracted_from_archive: bool
+) -> bytes:
+    """Keep original SBML bytes or encode the extracted archive member clearly."""
+
+    if extracted_from_archive:
+        return source_xml.encode("utf-8")
+    return source_path.read_bytes()
+
+
 def _migrate_legacy_source_cache(
     cache_dir: Path, entries: list[dict[str, Any]]
 ) -> dict[str, int]:
@@ -2318,13 +2328,14 @@ def _write_case_packet(
             continue
         size = path.stat().st_size
         if size > MAX_CASE_PACKET_FILE_BYTES or size > remaining:
-            omitted.append(
-                {
-                    "name": path.name,
-                    "size_bytes": size,
-                    "reason": "per-file or packet byte cap",
-                }
-            )
+            omission = {
+                "name": path.name,
+                "size_bytes": size,
+                "reason": "per-file or packet byte cap",
+            }
+            if path.name == "source.xml":
+                omission["sha256"] = _sha256(path)
+            omitted.append(omission)
             continue
         target = packet_dir / path.name
         shutil.copyfile(path, target)
@@ -2350,6 +2361,9 @@ def _write_case_packet(
     packet = {
         "model_id": str(entry["id"]),
         "source_validation": record.get("source_validation", {}),
+        "source_xml_representation": (
+            "extracted-sbml-utf8" if _is_archive_entry(entry) else "original-source-bytes"
+        ),
         "phase_progress": record.get("phase_progress"),
         "status": record.get("status"),
         "artifacts": files,
@@ -2726,7 +2740,11 @@ def main() -> int:
                 sbml = path.read_text(encoding="utf-8-sig")
                 record["extracted_sbml"] = False
             if model_artifacts is not None:
-                (model_artifacts / "source.xml").write_text(sbml, encoding="utf-8")
+                (model_artifacts / "source.xml").write_bytes(
+                    _source_xml_artifact_bytes(
+                        path, sbml, extracted_from_archive=is_archive
+                    )
+                )
             with tempfile.TemporaryDirectory(
                 prefix=f"{entry['id']}-", dir=args.cache_dir
             ) as temp:
