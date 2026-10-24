@@ -2362,7 +2362,9 @@ def _write_case_packet(
         "model_id": str(entry["id"]),
         "source_validation": record.get("source_validation", {}),
         "source_xml_representation": (
-            "extracted-sbml-utf8" if _is_archive_entry(entry) else "original-source-bytes"
+            "extracted-sbml-utf8"
+            if _is_archive_entry(entry)
+            else "original-source-bytes"
         ),
         "phase_progress": record.get("phase_progress"),
         "status": record.get("status"),

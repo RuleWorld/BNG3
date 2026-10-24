@@ -444,7 +444,9 @@ def test_case_packet_preserves_raw_crlf_source_bytes(tmp_path):
 
     packet_path = Path(validator._write_case_packet(entry, args, record))
     packet = json.loads(packet_path.read_text(encoding="utf-8"))
-    packet_source = next(item for item in packet["artifacts"] if item["name"] == "source.xml")
+    packet_source = next(
+        item for item in packet["artifacts"] if item["name"] == "source.xml"
+    )
 
     assert artifact_path.read_bytes() == raw_source
     assert packet["source_xml_representation"] == "original-source-bytes"
@@ -485,7 +487,9 @@ def test_case_packet_distinguishes_extracted_archive_sbml_from_archive_hash(tmp_
 
     packet_path = Path(validator._write_case_packet(entry, args, record))
     packet = json.loads(packet_path.read_text(encoding="utf-8"))
-    packet_source = next(item for item in packet["artifacts"] if item["name"] == "source.xml")
+    packet_source = next(
+        item for item in packet["artifacts"] if item["name"] == "source.xml"
+    )
 
     assert artifact_path.read_bytes() == extracted_bytes
     assert packet["source_xml_representation"] == "extracted-sbml-utf8"
@@ -515,7 +519,9 @@ def test_omitted_source_xml_retains_its_digest_in_packet(tmp_path):
     )
     packet = json.loads(packet_path.read_text(encoding="utf-8"))
 
-    omitted_source = next(item for item in packet["omitted_artifacts"] if item["name"] == "source.xml")
+    omitted_source = next(
+        item for item in packet["omitted_artifacts"] if item["name"] == "source.xml"
+    )
     assert omitted_source["sha256"] == digest
 
 
