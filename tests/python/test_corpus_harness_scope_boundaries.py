@@ -2,14 +2,13 @@
 
 Two boundaries of the measurement are pinned here.
 
-*An observable that has no value.*  A source model may define an observable
+*An observable that has no value.*  A model may define an observable
 that is undefined at the initial point -- the logarithm of a quantity that is
 zero there, a ratio of two quantities that are both zero.  Both engines then
-report the *same* undefined value, so the record reproduces its source
-exactly; what the record cannot do is be compared pointwise.  The gate used
-to record such a record as a failure, which claimed a disagreement that does
-not exist.  It now records a *not comparable* verdict that names the
-undefined point.
+report the *same* undefined value for the model being compared, so the record
+cannot be compared pointwise at that value.  This does not establish that a
+translated model reproduces its original SBML source.  The gate records a *not
+comparable* verdict that names the undefined point.
 
 *An explicit refusal.*  The Atomizer refuses some constructs on purpose, with
 a message that names the construct.  The gate has to recognise such a
@@ -92,6 +91,35 @@ EVENT_DRIVEN_COMPARTMENT = """<?xml version="1.0" encoding="UTF-8"?>
         </listOfEventAssignments>
       </event>
     </listOfEvents>
+  </model>
+</sbml>
+"""
+
+CUSTOM_UNIT_SPECIES = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="unit_oracle" substanceUnits="millimole" volumeUnits="microliter"
+    timeUnits="second">
+    <listOfUnitDefinitions>
+      <unitDefinition id="millimole"><listOfUnits>
+        <unit kind="mole" scale="-3"/>
+      </listOfUnits></unitDefinition>
+      <unitDefinition id="microliter"><listOfUnits>
+        <unit kind="liter" scale="-6"/>
+      </listOfUnits></unitDefinition>
+    </listOfUnitDefinitions>
+    <listOfCompartments>
+      <compartment id="cell" size="2" units="microliter"
+        spatialDimensions="3" constant="true"/>
+      <compartment id="point" size="1" spatialDimensions="0" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="A" compartment="cell" initialAmount="2"
+        hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+      <species id="B" compartment="cell" initialConcentration="1"
+        hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="C" compartment="point" initialAmount="0.5"
+        hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
   </model>
 </sbml>
 """
@@ -208,6 +236,308 @@ def test_unrelated_large_observable_cannot_mask_small_series_mismatch(monkeypatc
     assert result["failed_observables"] == ["small"]
     assert result["observables"]["large"]["passed"] is True
     assert result["observables"]["small"]["tolerance"] < 1.0
+
+
+def test_source_comparison_uses_original_sbml_and_species_quantity_units(monkeypatch):
+    """The source oracle receives source SBML and amount/concentration selections."""
+
+    import numpy as np
+    from types import SimpleNamespace
+
+    harness = _harness()
+    source_sbml = "<sbml id='original'/>"
+    rr_calls = []
+
+    class FakeRoadRunner:
+        integrator = SimpleNamespace(hasValue=lambda _name: False)
+
+        def __init__(self, model_source):
+            assert model_source == source_sbml
+            self.timeCourseSelections = []
+
+        def simulate(self, start, end, points):
+            rr_calls.append((self.timeCourseSelections, start, end, points))
+            return np.array([[0.0, 2.0, 1.0], [60.0, 4.0, 2.0]])
+
+    monkeypatch.setitem(
+        sys.modules,
+        "roadrunner",
+        SimpleNamespace(RoadRunner=FakeRoadRunner, __version__="test"),
+    )
+
+    class FakeCpp:
+        def parse_string(self, bngl):
+            import re
+
+            aliases = re.findall(r"^\s*(SSTSREF_[A-Za-z0-9_]+)\(\) =", bngl, re.M)
+            return SimpleNamespace(aliases=aliases)
+
+    class FakeModel:
+        def __init__(self, model):
+            self.model = model
+
+        def simulate(self, **_kwargs):
+            values = [[2.0, 4.0], [1.0, 2.0]]
+            return SimpleNamespace(
+                time=np.array([0.0, 60.0]),
+                observables={},
+                functions=dict(zip(self.model.aliases, values)),
+            )
+
+    source_model = SimpleNamespace(
+        species={
+            "amount_species": SimpleNamespace(
+                has_only_substance_units=True,
+                compartment="cell",
+                substance_units="",
+            ),
+            "concentration_species": SimpleNamespace(
+                has_only_substance_units=False,
+                compartment="cell",
+                substance_units="",
+            ),
+        },
+        compartments={
+            "cell": SimpleNamespace(spatial_dimensions=3, units="tiny_liter")
+        },
+        parameters={},
+        reactions={},
+        rules=[],
+        events=[],
+        initial_assignments=[],
+        function_definitions={},
+        time_units="minute",
+        substance_units="millimole",
+        volume_units="tiny_liter",
+        area_units="",
+        length_units="",
+        unit_definitions={
+            "millimole": [{"scale": -3}],
+            "tiny_liter": [{"scale": -15}],
+        },
+    )
+    result = harness._simulate_source_and_compare(
+        FakeCpp(),
+        "begin model\nend model\n",
+        FakeModel,
+        source_sbml,
+        source_model,
+        {
+            "amount_species": "amount_species",
+            "concentration_species": "concentration_species",
+        },
+        t_end=60.0,
+        n_steps=1,
+        rtol=1e-7,
+        atol=1e-12,
+        model_id="source_units",
+    )
+
+    assert result["passed"] is True
+    assert result["comparison_scope"] == (
+        "original_source_sbml_species_output_fidelity"
+    )
+    assert result["source_time_units"] == "minute"
+    assert result["source_species_targets"]["amount_species"] == (
+        "(amount_species_amt) * 1000"
+    )
+    assert result["source_species_targets"]["concentration_species"] == (
+        "(concentration_species_amt / __compartment_cell__) * 0.000000000001"
+    )
+    assert result["source_species_normalization"]["amount_species"] == {
+        "quantity_kind": "amount",
+        "substance_factor": 0.001,
+        "compartment_factor": 1e-15,
+        "normalized_to_source_factor": 1000.0,
+    }
+    assert result["source_species_normalization"]["concentration_species"] == {
+        "quantity_kind": "concentration",
+        "substance_factor": 0.001,
+        "compartment_factor": 1e-15,
+        "normalized_to_source_factor": 1e-12,
+    }
+    assert rr_calls == [
+        (
+            ["time", "amount_species", "[concentration_species]"],
+            0.0,
+            60.0,
+            2,
+        )
+    ]
+
+
+def test_source_comparison_executes_normalized_amount_and_concentration_targets():
+    """Exercise generated aliases against real RoadRunner and native BNG3."""
+
+    pytest.importorskip("roadrunner")
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    from bionetgen import BioNetGenModel
+    from bionetgen.atomizer.modern import Atomizer, SBMLParser
+
+    harness = _harness()
+    parsed = SBMLParser().parse(CUSTOM_UNIT_SPECIES)
+    atomized = Atomizer(atomize=False, quiet_mode=True, t_end=10, n_steps=10).atomize(
+        CUSTOM_UNIT_SPECIES
+    )
+    assert atomized.success, atomized.error
+
+    result = harness._simulate_source_and_compare(
+        cpp,
+        atomized.bngl,
+        BioNetGenModel,
+        CUSTOM_UNIT_SPECIES,
+        parsed,
+        dict(atomized.observable_map),
+        t_end=10.0,
+        n_steps=10,
+        rtol=1e-7,
+        atol=1e-12,
+        model_id="unit_oracle",
+    )
+
+    assert result["passed"] is True, result.get("error")
+    assert result["source_species_roadrunner_selections"] == {
+        "A": "A",
+        "B": "[B]",
+        "C": "C",
+    }
+    assert (
+        result["source_species_normalization"]["A"]["normalized_to_source_factor"]
+        == 1000.0
+    )
+    assert (
+        result["source_species_normalization"]["B"]["normalized_to_source_factor"]
+        == 0.001
+    )
+    assert result["source_species_normalization"]["C"]["quantity_kind"] == "amount"
+    assert all(
+        item["max_abs_difference"] < 1e-12 for item in result["observables"].values()
+    )
+
+
+def test_source_comparison_fails_on_original_species_mismatch():
+    """A source initial amount change remains visible after normalization."""
+
+    pytest.importorskip("roadrunner")
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    from bionetgen import BioNetGenModel
+    from bionetgen.atomizer.modern import Atomizer, SBMLParser
+
+    harness = _harness()
+    atomized = Atomizer(atomize=False, quiet_mode=True, t_end=10, n_steps=10).atomize(
+        CUSTOM_UNIT_SPECIES
+    )
+    assert atomized.success, atomized.error
+    altered_source = CUSTOM_UNIT_SPECIES.replace(
+        'initialAmount="2"', 'initialAmount="2.2"'
+    )
+    altered_model = SBMLParser().parse(altered_source)
+
+    result = harness._simulate_source_and_compare(
+        cpp,
+        atomized.bngl,
+        BioNetGenModel,
+        altered_source,
+        altered_model,
+        dict(atomized.observable_map),
+        t_end=10.0,
+        n_steps=10,
+        rtol=1e-7,
+        atol=1e-12,
+        model_id="source_mismatch",
+    )
+
+    assert result["passed"] is False
+    assert result["failed_observables"] == ["A"]
+
+
+def test_source_unit_factors_follow_atomizer_normalization_boundaries():
+    """Use the parser's scaling routine for defaults and spatial dimensions."""
+
+    from types import SimpleNamespace
+
+    harness = _harness()
+
+    def model(*, defaults, dimension, substance_units=""):
+        compartment = SimpleNamespace(size=1.0, spatial_dimensions=dimension, units="")
+        species = SimpleNamespace(compartment="cell", substance_units=substance_units)
+        return SimpleNamespace(
+            species={"S": species},
+            compartments={"cell": compartment},
+            parameters={},
+            reactions={},
+            rules=[],
+            events=[],
+            initial_assignments=[],
+            function_definitions={},
+            unit_definitions={
+                "substance": [{"scale": -3}],
+                "volume": [{"scale": -6}],
+                "area": [{"scale": -4}],
+                "length": [{"scale": -2}],
+            },
+            substance_units="substance" if defaults else "",
+            volume_units="volume" if defaults else "",
+            area_units="area" if defaults else "",
+            length_units="length" if defaults else "",
+        )
+
+    # apply_unit_scaling intentionally leaves all source numeric values intact
+    # when both model defaults are absent, including explicit local units.
+    assert harness._source_species_unit_factors(
+        model(defaults=False, dimension=2, substance_units="substance")
+    ) == {"S": (1.0, 1.0)}
+
+    expected_compartment_factors = {
+        0: 1e-6,  # The Atomizer treats spatialDimensions=0 as its 3D default.
+        1: 1e-2,
+        2: 1e-4,
+        3: 1e-6,
+    }
+    for dimension, compartment_factor in expected_compartment_factors.items():
+        assert harness._source_species_unit_factors(
+            model(defaults=True, dimension=dimension)
+        ) == {"S": (1e-3, compartment_factor)}
+
+
+@pytest.mark.parametrize(
+    ("written", "source", "expected"),
+    [
+        (None, {"failed_observables": ["S"]}, "failed"),
+        (
+            {"not_comparable": {"oracle": "load"}},
+            {"failed_observables": ["S"]},
+            "failed",
+        ),
+        (
+            {"not_comparable": {"undefined": "at zero"}},
+            {"failed_observables": ["S"]},
+            "failed",
+        ),
+        (
+            {"failed_observables": ["written"]},
+            {"not_comparable": {"mapping": "missing"}},
+            "failed",
+        ),
+        (
+            {"passed": False, "not_comparable": {"oracle": "load"}},
+            {"harness_error": "bad alias"},
+            "harness_error",
+        ),
+        (
+            {"passed": True},
+            {"not_comparable": {"mapping": "missing"}},
+            "not_comparable",
+        ),
+        ({"passed": True}, {"passed": True}, "passed"),
+    ],
+)
+def test_source_and_written_comparison_verdict_priority(written, source, expected):
+    """A measured semantic mismatch outranks written or source measurement gaps."""
+
+    harness = _harness()
+    verdict, _reason = harness._comparison_verdict(written, source)
+    assert verdict == expected
 
 
 def test_the_gate_records_the_atomizers_refusal_as_a_gap():

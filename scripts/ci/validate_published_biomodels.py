@@ -1096,6 +1096,10 @@ class OracleIntegrationError(RuntimeError):
     """
 
 
+class BngSimulationError(RuntimeError):
+    """BNG3 could not produce the trajectory required by a comparison."""
+
+
 def _same_undefined_value(left: np.ndarray, right: np.ndarray) -> bool:
     """Return True when both engines report the same undefined value.
 
@@ -1165,25 +1169,32 @@ def _simulate_and_compare(
     atol: float,
     max_step: float = 0.0,
     function_names: set[str] | None = None,
+    reference_model: str | None = None,
+    reference_selections: dict[str, str] | None = None,
+    comparison_scope: str = COMPARISON_SCOPE,
+    source_time_units: str | None = None,
 ) -> dict[str, Any]:
     """Compare BNG3/CVODE observables with libRoadRunner on one time grid."""
 
     try:
         import roadrunner
     except ImportError as exc:
-        raise RuntimeError(
+        raise OracleIntegrationError(
             "libRoadRunner is required for direct numerical comparison"
         ) from exc
 
-    bng_result = model_type(cpp_model).simulate(
-        method="ode",
-        t_start=0.0,
-        t_end=t_end,
-        n_steps=n_steps,
-        rtol=rtol,
-        atol=atol,
-        max_step=max_step,
-    )
+    try:
+        bng_result = model_type(cpp_model).simulate(
+            method="ode",
+            t_start=0.0,
+            t_end=t_end,
+            n_steps=n_steps,
+            rtol=rtol,
+            atol=atol,
+            max_step=max_step,
+        )
+    except Exception as exc:
+        raise BngSimulationError(f"BNG3 CVODE could not simulate model: {exc}") from exc
     series = dict(bng_result.observables)
     function_values = getattr(bng_result, "functions", {}) or {}
     if function_names is None:
@@ -1202,15 +1213,25 @@ def _simulate_and_compare(
         name: np.asarray(series[name], dtype=float) for name in observable_names
     }
 
-    rr = roadrunner.RoadRunner(str(output_path))
-    integrator = rr.integrator
-    if integrator.hasValue("relative_tolerance"):
-        integrator.setValue("relative_tolerance", rtol)
-    if integrator.hasValue("absolute_tolerance"):
-        integrator.setValue("absolute_tolerance", atol)
-    if max_step > 0.0 and integrator.hasValue("maximum_time_step"):
-        integrator.setValue("maximum_time_step", max_step)
-    available = set(rr.getAssignmentRuleIds())
+    compared_model = (
+        "original source SBML" if reference_model is not None else "written SBML"
+    )
+    try:
+        rr = roadrunner.RoadRunner(
+            reference_model if reference_model is not None else str(output_path)
+        )
+        integrator = rr.integrator
+        if integrator.hasValue("relative_tolerance"):
+            integrator.setValue("relative_tolerance", rtol)
+        if integrator.hasValue("absolute_tolerance"):
+            integrator.setValue("absolute_tolerance", atol)
+        if max_step > 0.0 and integrator.hasValue("maximum_time_step"):
+            integrator.setValue("maximum_time_step", max_step)
+    except Exception as exc:
+        raise OracleIntegrationError(
+            f"the independent oracle (libRoadRunner) could not load the "
+            f"{compared_model}: {type(exc).__name__}: {exc}"
+        ) from exc
 
     def sbml_id(name: str) -> str:
         valid = "".join(char if char.isalnum() or char == "_" else "_" for char in name)
@@ -1218,28 +1239,43 @@ def _simulate_and_compare(
             valid = "_" + valid
         return valid or "species"
 
-    selected_names = []
-    missing = []
-    for name in observable_names:
-        safe_name = sbml_id(name)
-        candidates = [
-            safe_name,
-            "obs_" + safe_name,
-            "func_" + safe_name,
-            "param_" + safe_name,
-        ]
-        selected = next(
-            (candidate for candidate in candidates if candidate in available), None
-        )
-        if selected is None:
-            missing.append(name)
-        else:
-            selected_names.append(selected)
+    selected_names: list[str] = []
+    missing: list[str] = []
+    if reference_selections is not None:
+        for name, selection in reference_selections.items():
+            if name not in bng_values:
+                missing.append(name)
+            else:
+                selected_names.append(selection)
+        observable_names = list(reference_selections)
+        bng_values = {
+            name: bng_values[name] for name in observable_names if name in bng_values
+        }
+    else:
+        available = set(rr.getAssignmentRuleIds())
+        for name in observable_names:
+            safe_name = sbml_id(name)
+            candidates = [
+                safe_name,
+                "obs_" + safe_name,
+                "func_" + safe_name,
+                "param_" + safe_name,
+            ]
+            selected = next(
+                (candidate for candidate in candidates if candidate in available),
+                None,
+            )
+            if selected is None:
+                missing.append(name)
+            else:
+                selected_names.append(selected)
     if missing:
-        raise RuntimeError(
-            "written SBML is missing observable assignment rules: "
-            + ", ".join(missing[:10])
+        missing_description = (
+            "mapped BNG3 source outputs are missing: "
+            if reference_selections is not None
+            else "written SBML is missing observable assignment rules: "
         )
+        raise RuntimeError(missing_description + ", ".join(missing[:10]))
     rr.timeCourseSelections = ["time", *selected_names]
     try:
         rr_values = np.asarray(rr.simulate(0.0, t_end, n_steps + 1), dtype=float)
@@ -1248,7 +1284,7 @@ def _simulate_and_compare(
         # measurement, not a disagreement between the two engines.
         raise OracleIntegrationError(
             "the independent oracle (libRoadRunner) could not integrate the "
-            f"written SBML: {type(exc).__name__}: {exc}"
+            f"{compared_model}: {type(exc).__name__}: {exc}"
         ) from exc
     expected_shape = (len(bng_time), len(observable_names) + 1)
     if rr_values.ndim != 2 or rr_values.shape != expected_shape:
@@ -1273,6 +1309,11 @@ def _simulate_and_compare(
     failed = []
     not_comparable: dict[str, str] = {}
     undefined_points: set[str] = set()
+    observable_description = (
+        "the original source observable"
+        if reference_model is not None
+        else "the translated/written observable"
+    )
     for index, name in enumerate(observable_names, start=1):
         left = bng_values[name]
         right = rr_values[:, index]
@@ -1288,8 +1329,7 @@ def _simulate_and_compare(
         else:
             # The observable is not a finite number somewhere on the grid.
             # When both engines report the same undefined value at the same
-            # points, the translated/written observable is undefined there;
-            # the finite points are what the comparison can measure.
+            # points, the compared model's observable is undefined there.
             undefined = _same_undefined_value(left, right)
             if undefined:
                 mask = np.isfinite(left) & np.isfinite(right)
@@ -1326,7 +1366,7 @@ def _simulate_and_compare(
             passed = False
             points = ", ".join(f"t={_format_time(time)}" for time in undefined_at[:5])
             not_comparable[name] = (
-                f"the translated/written observable is undefined at {points} "
+                f"{observable_description} is undefined at {points} "
                 f"({_undefined_label(left)}); BNG3 and libRoadRunner "
                 "report the same undefined value"
             )
@@ -1355,6 +1395,8 @@ def _simulate_and_compare(
         "rtol": rtol,
         "atol": atol,
         "max_step": max_step,
+        "comparison_scope": comparison_scope,
+        "comparison_scale_scope": "per_observable",
         "comparison_atol_floor": NUMERICAL_COMPARISON_ATOL_FLOOR,
         "comparison_rtol_floor": NUMERICAL_COMPARISON_RTOL_FLOOR,
         "comparison_reference_scale": comparison_scale,
@@ -1362,13 +1404,16 @@ def _simulate_and_compare(
         "sbml_observable_ids": dict(zip(observable_names, selected_names)),
         "observables": comparisons,
     }
+    if source_time_units is not None:
+        base["source_time_units"] = source_time_units
     if not_comparable:
         return {
             **base,
             "passed": False,
             "not_comparable": not_comparable,
             "error": (
-                "the translated/written observable is undefined at "
+                observable_description
+                + " is undefined at "
                 + ", ".join(sorted(undefined_points))
                 + ": BNG3 and libRoadRunner report the same undefined value, "
                 "so a pointwise comparison cannot measure the record ("
@@ -1388,6 +1433,201 @@ def _simulate_and_compare(
             "failed_observables": failed,
         }
     return {**base, "passed": True, "failed_observables": []}
+
+
+SOURCE_COMPARISON_SCOPE = "original_source_sbml_species_output_fidelity"
+
+
+def _source_species_unit_factors(
+    source_model: Any,
+) -> dict[str, tuple[float, float]]:
+    """Measure effective factors by running the Atomizer's normalizer on probes."""
+
+    from copy import deepcopy
+
+    from bionetgen.atomizer.modern.units import apply_unit_scaling
+
+    normalized = deepcopy(source_model)
+    for species in normalized.species.values():
+        species.initial_amount = 1.0
+        species.initial_amount_set = True
+        species.initial_concentration = 1.0
+        species.initial_concentration_set = True
+    for compartment in normalized.compartments.values():
+        compartment.size = 1.0
+    apply_unit_scaling(normalized)
+    return {
+        species_id: (
+            float(normalized.species[species_id].initial_amount),
+            float(
+                normalized.compartments[species.compartment].size
+                if species.compartment in normalized.compartments
+                else 1.0
+            ),
+        )
+        for species_id, species in normalized.species.items()
+    }
+
+
+def _simulate_source_and_compare(
+    cpp: Any,
+    bngl: str,
+    model_type: Any,
+    source_sbml: str,
+    source_model: Any,
+    observable_map: dict[str, str],
+    *,
+    t_end: float,
+    n_steps: int,
+    rtol: float,
+    atol: float,
+    max_step: float = 0.0,
+    model_id: str,
+) -> dict[str, Any]:
+    """Compare mapped BNG3 species with the original SBML in libRoadRunner."""
+
+    from bionetgen.atomizer.modern.types import standardize_name
+    from scripts.ci.validate_sbml_test_suite import (
+        _reference_output_target,
+        _with_reference_output_functions,
+    )
+
+    from decimal import Decimal
+
+    default_units = {"amount": [], "concentration": []}
+    targets: dict[str, str] = {}
+    selections: dict[str, str] = {}
+    normalizations: dict[str, dict[str, Any]] = {}
+    unmapped: list[str] = []
+    effective_factors = _source_species_unit_factors(source_model)
+    for species_id, species in source_model.species.items():
+        compartment = source_model.compartments.get(species.compartment)
+        dimensions = (
+            float(getattr(compartment, "spatial_dimensions", 3))
+            if compartment is not None
+            else 3.0
+        )
+        is_zero_dimensional = dimensions == 0.0
+        if is_zero_dimensional:
+            default_units["amount"].append(species_id)
+        target = _reference_output_target(
+            species_id,
+            default_units,
+            source_model,
+            observable_map,
+            standardize_name,
+        )
+        if target is None:
+            unmapped.append(species_id)
+            continue
+        substance_factor, compartment_factor = effective_factors[species_id]
+        substance_exact = Decimal(str(substance_factor))
+        compartment_exact = Decimal(str(compartment_factor))
+        quantity_kind = (
+            "amount"
+            if species.has_only_substance_units or is_zero_dimensional
+            else "concentration"
+        )
+        to_source_factor = (
+            Decimal(1) / substance_exact
+            if quantity_kind == "amount"
+            else compartment_exact / substance_exact
+        )
+        if not to_source_factor.is_finite() or to_source_factor == 0:
+            unmapped.append(species_id)
+            continue
+        if to_source_factor != Decimal(1):
+            target = f"({target}) * {format(to_source_factor.normalize(), 'f')}"
+        targets[species_id] = target
+        normalizations[species_id] = {
+            "quantity_kind": quantity_kind,
+            "substance_factor": substance_factor,
+            "compartment_factor": compartment_factor,
+            "normalized_to_source_factor": float(to_source_factor),
+        }
+        # SBML's species symbol uses amount when hasOnlySubstanceUnits is true.
+        # RoadRunner's bracket selection always requests concentration.
+        selections[species_id] = (
+            species_id if quantity_kind == "amount" else f"[{species_id}]"
+        )
+
+    if not targets:
+        return {
+            "passed": False,
+            "comparison_scope": SOURCE_COMPARISON_SCOPE,
+            "comparison_scale_scope": "per_observable",
+            "source_time_units": source_model.time_units
+            or "unspecified; source numeric time",
+            "source_comparison_surface": "mapped_species_outputs",
+            "failed_observables": [],
+            "not_comparable": {
+                "source_species_mapping": "no source species has an exact BNG3 output mapping"
+            },
+            "error": "original source comparison has no mapped source species",
+            "source_species_targets": targets,
+            "source_species_roadrunner_selections": selections,
+            "unmapped_source_species": unmapped,
+        }
+
+    safe_model_id = re.sub(r"[^A-Za-z0-9_]", "_", model_id)
+    reference_bngl, aliases = _with_reference_output_functions(
+        bngl, targets, safe_model_id
+    )
+    reference_model = cpp.parse_string(reference_bngl)
+    reference_selections = {
+        aliases[species_id]: selection for species_id, selection in selections.items()
+    }
+    comparison = _simulate_and_compare(
+        reference_model,
+        model_type,
+        Path("original-source.sbml"),
+        t_end=t_end,
+        n_steps=n_steps,
+        rtol=rtol,
+        atol=atol,
+        max_step=max_step,
+        function_names=set(aliases.values()),
+        reference_model=source_sbml,
+        reference_selections=reference_selections,
+        comparison_scope=SOURCE_COMPARISON_SCOPE,
+        source_time_units=source_model.time_units or "unspecified; source numeric time",
+    )
+    comparison["source_comparison_surface"] = "mapped_species_outputs"
+    alias_to_species = {alias: species_id for species_id, alias in aliases.items()}
+    if comparison.get("error"):
+        for alias, species_id in alias_to_species.items():
+            comparison["error"] = comparison["error"].replace(alias, species_id)
+    comparison["observables"] = {
+        alias_to_species.get(alias, alias): details
+        for alias, details in comparison.get("observables", {}).items()
+    }
+    comparison["sbml_observable_ids"] = {
+        alias_to_species.get(alias, alias): selection
+        for alias, selection in comparison.get("sbml_observable_ids", {}).items()
+    }
+    comparison["failed_observables"] = [
+        alias_to_species.get(alias, alias)
+        for alias in comparison.get("failed_observables", [])
+    ]
+    if "not_comparable" in comparison:
+        comparison["not_comparable"] = {
+            alias_to_species.get(alias, alias): reason
+            for alias, reason in comparison["not_comparable"].items()
+        }
+    comparison["source_species_targets"] = targets
+    comparison["source_species_normalization"] = normalizations
+    comparison["source_species_roadrunner_selections"] = selections
+    comparison["unmapped_source_species"] = unmapped
+    if unmapped:
+        comparison["passed"] = False
+        comparison.setdefault("not_comparable", {})["source_species_mapping"] = (
+            "no exact BNG3 output mapping for: " + ", ".join(unmapped[:10])
+        )
+        comparison["error"] = (
+            "original source comparison could not measure every species; "
+            + ", ".join(unmapped[:10])
+        )
+    return comparison
 
 
 def _retry_numerical_comparison(
@@ -1441,6 +1681,54 @@ def _retry_numerical_comparison(
     result = dict(comparison)
     result["refinement_attempt"] = attempt
     return result
+
+
+def _comparison_verdict(
+    comparison: dict[str, Any] | None,
+    source_comparison: dict[str, Any] | None,
+    *,
+    oracle_error: Exception | None = None,
+    comparison_error: Exception | None = None,
+) -> tuple[str, str | None]:
+    """Resolve comparison outcomes with semantic failures ahead of gaps."""
+
+    written_failed = comparison is not None and bool(
+        comparison.get("failed_observables")
+    )
+    source_failed = source_comparison is not None and bool(
+        source_comparison.get("failed_observables")
+    )
+    if source_failed:
+        return "failed", source_comparison.get(
+            "error", "original source SBML comparison failed"
+        )
+    if written_failed:
+        return "failed", comparison.get("error", "numerical comparison failed")
+    if source_comparison is not None and source_comparison.get("harness_error"):
+        return "harness_error", source_comparison["harness_error"]
+    if comparison is None:
+        if oracle_error is not None:
+            return "not_comparable", str(oracle_error)
+        return "failed", str(
+            comparison_error or "written comparison produced no result"
+        )
+    if comparison.get("not_comparable"):
+        return "not_comparable", comparison.get(
+            "error", "the written comparison could not be measured"
+        )
+    if not comparison.get("passed", False):
+        return "failed", comparison.get("error", "numerical comparison failed")
+    if source_comparison is None:
+        return "harness_error", "original source SBML comparison returned no result"
+    if source_comparison.get("not_comparable"):
+        return "not_comparable", source_comparison.get(
+            "error", "original source SBML comparison could not be measured"
+        )
+    if not source_comparison.get("passed", False):
+        return "failed", source_comparison.get(
+            "error", "original source SBML comparison failed"
+        )
+    return "passed", None
 
 
 def _validate_mode(
@@ -1736,23 +2024,88 @@ def _validate_mode(
             if stabilized.get("passed", False):
                 break
         comparison = last_comparison
-        if comparison is None:
-            if oracle_error is not None:
-                # The oracle could not integrate the written model, so the
-                # comparison cannot be measured.  That is a limitation of the
-                # measurement, not a disagreement between the two engines.
-                result["status"] = "not_comparable"
-                result["not_comparable_reason"] = str(oracle_error)
-                result["simulation_comparison"] = {
-                    "passed": False,
-                    "skipped": False,
-                    "not_comparable": {"oracle": str(oracle_error)},
-                    "method_bngl": "BNG3 CVODE",
-                    "method_sbml": "libRoadRunner CVODE",
-                }
-                result["core_passed"] = False
-                return result
-            raise initial_runtime_error
+    source_comparison: dict[str, Any] | None = None
+    try:
+        with _mode_stage(result, "original-source-sbml-comparison"):
+            source_comparison = _simulate_source_and_compare(
+                cpp,
+                atomized.bngl,
+                model_type,
+                sbml,
+                source_model,
+                dict(atomized.observable_map),
+                t_end=simulation_t_end,
+                n_steps=simulation_n_steps,
+                rtol=simulation_rtol,
+                atol=simulation_atol,
+                model_id=model_id,
+            )
+    except OracleIntegrationError as exc:
+        source_comparison = {
+            "passed": False,
+            "comparison_scope": SOURCE_COMPARISON_SCOPE,
+            "comparison_scale_scope": "per_observable",
+            "source_time_units": source_model.time_units
+            or "unspecified; source numeric time",
+            "source_comparison_surface": "mapped_species_outputs",
+            "failed_observables": [],
+            "not_comparable": {"oracle": str(exc)},
+            "error": str(exc),
+        }
+    except BngSimulationError as exc:
+        source_comparison = {
+            "passed": False,
+            "comparison_scope": SOURCE_COMPARISON_SCOPE,
+            "comparison_scale_scope": "per_observable",
+            "source_time_units": source_model.time_units
+            or "unspecified; source numeric time",
+            "source_comparison_surface": "mapped_species_outputs",
+            "failed_observables": ["BNG3 simulation"],
+            "error": str(exc),
+        }
+    except Exception as exc:
+        source_comparison = {
+            "passed": False,
+            "comparison_scope": SOURCE_COMPARISON_SCOPE,
+            "comparison_scale_scope": "per_observable",
+            "source_time_units": source_model.time_units
+            or "unspecified; source numeric time",
+            "source_comparison_surface": "mapped_species_outputs",
+            "failed_observables": [],
+            "harness_error": f"{type(exc).__name__}: {exc}",
+            "error": f"original source comparison harness error: {exc}",
+        }
+    result["source_simulation_comparison"] = source_comparison
+    result["source_comparison_scope"] = SOURCE_COMPARISON_SCOPE
+    if source_comparison is not None and source_comparison.get("failed_observables"):
+        source_comparison = _retry_numerical_comparison(
+            source_comparison,
+            compare=lambda **settings: _simulate_source_and_compare(
+                cpp,
+                atomized.bngl,
+                model_type,
+                sbml,
+                source_model,
+                dict(atomized.observable_map),
+                model_id=model_id,
+                **settings,
+            ),
+            t_end=simulation_t_end,
+            n_steps=simulation_n_steps,
+            rtol=simulation_rtol,
+            atol=simulation_atol,
+            max_step=float(source_comparison.get("max_step") or 0.0),
+        )
+        result["source_simulation_comparison"] = source_comparison
+    if comparison is None and oracle_error is not None:
+        comparison = {
+            "passed": False,
+            "skipped": False,
+            "not_comparable": {"oracle": str(oracle_error)},
+            "error": str(oracle_error),
+            "method_bngl": "BNG3 CVODE",
+            "method_sbml": "libRoadRunner CVODE",
+        }
     if comparison is not None and comparison.get("failed_observables"):
         function_names = {
             standardize_name(str(rule.variable))
@@ -1779,26 +2132,21 @@ def _validate_mode(
             max_step=float(comparison.get("max_step") or 0.0),
         )
     result["simulation_comparison"] = comparison
-    if comparison.get("failed_observables"):
-        result["status"] = "failed"
+    verdict, reason = _comparison_verdict(
+        comparison,
+        source_comparison,
+        oracle_error=oracle_error,
+        comparison_error=initial_runtime_error,
+    )
+    if verdict != "passed":
+        result["status"] = verdict
         result["core_passed"] = False
-        result["error"] = comparison.get("error", "numerical comparison failed")
-        return result
-    if comparison.get("not_comparable"):
-        # The record's own observable has no value to compare at some point of
-        # the grid, and both engines report the same undefined value there.
-        # The comparison cannot measure the record, so the record says so
-        # instead of claiming a pass or a disagreement.
-        result["status"] = "not_comparable"
-        result["not_comparable_reason"] = comparison.get(
-            "error", "the comparison could not be measured"
-        )
-        result["core_passed"] = False
-        return result
-    if not comparison.get("passed", False):
-        result["status"] = "failed"
-        result["core_passed"] = False
-        result["error"] = comparison.get("error", "numerical comparison failed")
+        if verdict == "not_comparable":
+            result["not_comparable_reason"] = reason
+        elif verdict == "harness_error":
+            result["error"] = reason
+        else:
+            result["error"] = reason
         return result
 
     limitations = _simulation_limitations(result["source"]["warnings"])
