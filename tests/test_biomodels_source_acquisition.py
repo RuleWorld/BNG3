@@ -333,6 +333,184 @@ def test_isolated_model_worker_receives_offline_flag(tmp_path, monkeypatch):
     assert record["status"] == "passed"
 
 
+def test_parent_timeout_retains_phase_source_hash_and_bounded_case_packet(
+    tmp_path, monkeypatch
+):
+    import argparse
+    import subprocess
+
+    validator = _validator()
+    source_bytes = b"<sbml level='3' version='2'/>"
+    digest = hashlib.sha256(source_bytes).hexdigest()
+    entry = {
+        "id": "BIOMD0000000008",
+        "filename": "model.xml",
+        "sha256": digest,
+    }
+    cache_dir = tmp_path / "cache"
+    cached_source = validator._model_source_cache_path(cache_dir, entry)
+    cached_source.parent.mkdir(parents=True)
+    cached_source.write_bytes(source_bytes)
+    artifacts_dir = tmp_path / "artifacts"
+    case_dir = artifacts_dir / entry["id"]
+    case_dir.mkdir(parents=True)
+    (case_dir / "source.xml").write_bytes(source_bytes)
+    (case_dir / "translated.flat.bngl").write_text("begin model\nend model\n")
+    (case_dir / "BIOMD0000000008_flat.xml").write_text("<sbml/>")
+    (case_dir / "translated.atomized.bngl").write_bytes(b"x" * 1_100_000)
+    stderr = b"\n".join(
+        (
+            b"@@BIOMODELS_CASE_PHASE@@ completed source-sha256-verification",
+            b"@@BIOMODELS_CASE_PHASE@@ started source-xml-validation",
+        )
+    )
+
+    def timeout(command, **kwargs):
+        raise subprocess.TimeoutExpired(
+            command, 180, output=b"partial stdout", stderr=stderr
+        )
+
+    monkeypatch.setattr(validator.subprocess, "run", timeout)
+    args = argparse.Namespace(
+        cache_dir=cache_dir,
+        manifest=Path("provenance/published-biomodels.json"),
+        mode="flat",
+        simulation_t_end=1.0,
+        simulation_n_steps=10,
+        simulation_rtol=1e-8,
+        simulation_atol=1e-12,
+        ode_smoke=False,
+        artifacts_dir=artifacts_dir,
+        model_timeout=180,
+    )
+
+    record = validator._run_isolated_model(entry, args)
+
+    assert record["status"] == "timeout"
+    assert record["phase_progress"]["last_completed_phase"] == (
+        "source-sha256-verification"
+    )
+    assert record["phase_progress"]["active_phase"] == "source-xml-validation"
+    assert record["source_validation"]["status"] == "verified_sha256"
+    assert record["source_validation"]["model_id"] == entry["id"]
+    assert record["source_validation"]["sha256"] == digest
+    packet_path = case_dir / "case-packet" / "packet.json"
+    packet = json.loads(packet_path.read_text(encoding="utf-8"))
+    assert packet["source_validation"]["sha256"] == digest
+    assert {item["name"] for item in packet["artifacts"]} == {
+        "source.xml",
+        "translated.flat.bngl",
+        "BIOMD0000000008_flat.xml",
+    }
+    assert packet["included_bytes"] <= validator.MAX_CASE_PACKET_BYTES
+    assert record["case_packet"].endswith("case-packet/packet.json")
+    assert all(item.get("sha256") for item in packet["artifacts"])
+    packet_by_name = {item["name"]: item for item in packet["artifacts"]}
+    assert packet_by_name["source.xml"]["sha256"] == digest
+    for name, item in packet_by_name.items():
+        assert hashlib.sha256((packet_path.parent / name).read_bytes()).hexdigest() == (
+            item["sha256"]
+        )
+
+
+def test_parent_timeout_verdict_survives_denied_record_persistence(
+    tmp_path, monkeypatch
+):
+    import argparse
+    import subprocess
+
+    validator = _validator()
+    source_bytes = b"<sbml/>"
+    digest = hashlib.sha256(source_bytes).hexdigest()
+    entry = {
+        "id": "BIOMD0000000008",
+        "filename": "model.xml",
+        "sha256": digest,
+    }
+    cache_dir = tmp_path / "cache"
+    cached_source = validator._model_source_cache_path(cache_dir, entry)
+    cached_source.parent.mkdir(parents=True)
+    cached_source.write_bytes(source_bytes)
+    artifacts_dir = tmp_path / "artifacts"
+
+    def timeout(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, 180, stderr=b"")
+
+    original_write_text = Path.write_text
+
+    def deny_record(path, *args, **kwargs):
+        if path.name == "record.json":
+            raise PermissionError("read-only artifact mount")
+        return original_write_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(validator.subprocess, "run", timeout)
+    monkeypatch.setattr(validator, "_attach_case_packet", lambda *_args: None)
+    monkeypatch.setattr(Path, "write_text", deny_record)
+    args = argparse.Namespace(
+        cache_dir=cache_dir,
+        manifest=Path("provenance/published-biomodels.json"),
+        mode="flat",
+        simulation_t_end=1.0,
+        simulation_n_steps=10,
+        simulation_rtol=1e-8,
+        simulation_atol=1e-12,
+        ode_smoke=False,
+        artifacts_dir=artifacts_dir,
+        model_timeout=180,
+    )
+
+    record = validator._run_isolated_model(entry, args)
+
+    assert record["status"] == "timeout"
+    assert record["core_passed"] is False
+    assert record["record_persistence_error"] == (
+        "PermissionError: read-only artifact mount"
+    )
+
+
+def test_failed_mode_record_keeps_completed_stages_and_prior_results():
+    validator = _validator()
+    result = {
+        "mode": "atomized",
+        "comparison_scope": validator.COMPARISON_SCOPE,
+        "generated_network": {"species": 3},
+    }
+    with pytest.raises(RuntimeError) as caught:
+        with validator._mode_stage(result, "native-sbml-readback"):
+            raise RuntimeError("native reader failed")
+
+    failed = validator._failed_mode_result("atomized", result, caught.value)
+    assert failed["status"] == "failed"
+    assert failed["comparison_scope"] == "written_sbml_export_consistency"
+    assert failed["generated_network"] == {"species": 3}
+    assert failed["stage_results"] == [
+        {
+            "name": "native-sbml-readback",
+            "status": "failed",
+            "error": "RuntimeError: native reader failed",
+        }
+    ]
+
+
+def test_case_packet_error_does_not_replace_model_verdict(monkeypatch, tmp_path):
+    import argparse
+
+    validator = _validator()
+    monkeypatch.setattr(
+        validator,
+        "_write_case_packet",
+        lambda *_args: (_ for _ in ()).throw(OSError("disk full")),
+    )
+    record = {"status": "timeout", "core_passed": False}
+    args = argparse.Namespace(artifacts_dir=tmp_path)
+
+    validator._attach_case_packet(record, {"id": "BIOMD0000000008"}, args)
+
+    assert record["status"] == "timeout"
+    assert record["core_passed"] is False
+    assert record["case_packet_error"] == "OSError: disk full"
+
+
 def test_same_source_filename_uses_model_identity_and_content_sha(
     tmp_path, monkeypatch
 ):

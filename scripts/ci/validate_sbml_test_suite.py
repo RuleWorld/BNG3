@@ -49,6 +49,11 @@ from scripts.ci.deterministic_environment import (
     ensure_fixed_hash_seed,
     fixed_hash_seed_environment,
 )
+from scripts.ci.case_phase_journal import (
+    case_phase_scope,
+    phase_progress,
+    write_phase_breadcrumb,
+)
 from scripts.ci.imported_package_guard import (
     ForeignPackageError,
     package_source_digest,
@@ -115,52 +120,19 @@ class OfficialReferenceUnsupported(ValueError):
 
 def _case_phase(phase: str, state: str) -> None:
     """Write a flushed phase breadcrumb that survives an isolated timeout."""
-
-    print(f"{CASE_PHASE_PREFIX} {state} {phase}", file=sys.stderr, flush=True)
+    write_phase_breadcrumb(CASE_PHASE_PREFIX, phase, state)
 
 
 @contextlib.contextmanager
 def _case_phase_scope(phase: str) -> Iterable[None]:
     """Record one case stage's start and successful completion in worker logs."""
-
-    _case_phase(phase, "started")
-    try:
+    with case_phase_scope(CASE_PHASE_PREFIX, phase):
         yield
-    except BaseException:
-        _case_phase(phase, "failed")
-        raise
-    else:
-        _case_phase(phase, "completed")
 
 
-def _phase_progress(log: str | bytes) -> dict[str, str | None]:
+def _phase_progress(log: str | bytes) -> dict[str, Any]:
     """Recover the active and last completed phases from captured worker logs."""
-
-    if isinstance(log, bytes):
-        log = log.decode("utf-8", errors="replace")
-    last_completed = None
-    active = []
-    for line in log.splitlines():
-        if not line.startswith(CASE_PHASE_PREFIX + " "):
-            continue
-        parts = line.split(" ", 2)
-        if len(parts) != 3:
-            continue
-        _, state, phase = parts
-        if not phase or state not in {"started", "completed", "failed"}:
-            continue
-        if state == "started":
-            active.append(phase)
-        elif state == "completed":
-            last_completed = phase
-            if phase in active:
-                del active[active.index(phase) :]
-        elif state == "failed":
-            active.append(phase)
-    return {
-        "last_completed_phase": last_completed,
-        "active_phase": active[-1] if active else None,
-    }
+    return phase_progress(log, CASE_PHASE_PREFIX)
 
 
 def _suite_lock_entry(lock_path: Path = DEFAULT_SUITE_LOCK) -> dict[str, str]:
