@@ -32,7 +32,8 @@ the 946 / 945 passes measure written-export cross-engine consistency; they
 do not establish Atomizer source fidelity. These are historical raw counts:
 the comparer also used a global magnitude floor that can mask a smaller
 series' mismatch when another observable is much larger. Per-observable
-scaling requires its own regression and requalification.
+scaling and its regression were added in merged [PR #424](https://github.com/RuleWorld/BNG3/pull/424).
+The historical corpus counts still need requalification with that comparator.
 
 In the historical report, `BIOMD0000000638` is the only product
 execution/numerical `failed` record in both modes; that report alone does not
@@ -95,15 +96,15 @@ passed 190/190 written-export comparisons. These two bounded observations do
 not qualify the full corpus or close issue #162; atomized source-fidelity and
 written-export numerical gaps remain open.
 
-The report's 21 flat / 23 atomized timeouts all hit the per-record 180-second
-budget. The current report and execution logs do not record the stage reached
-by any of these timeouts. Twelve-record timeout cohorts in older inventory
-expectations are historical triage hints only; they do not establish stages in
-this run. These remain unresolved performance outcomes, not product semantic
-failures. Twenty-eight unique source payloads spanning the failure, timeout,
-and not-comparable cohorts were independently checked with libSBML 5.21.1
-against the snapshot hashes and byte lengths; each parses as SBML with a model
-and zero errors.
+The historical report's 21 flat / 23 atomized timeouts all hit the per-record
+180-second budget. Its execution logs do not record the stage reached by any of
+these timeouts. Twelve-record timeout cohorts in older inventory expectations
+are triage hints only; they do not establish stages in that run. These were
+unresolved performance outcomes, not product semantic failures. Twenty-eight
+unique source payloads spanning the historical failure, timeout, and
+not-comparable cohorts were independently checked with libSBML 5.21.1 against
+the snapshot hashes and byte lengths; each parses as SBML with a model and zero
+errors.
 
 Three shared not-comparable records (`BIOMD0000000803`, `0731`, and `0973`)
 have a translated/written observable undefined at `t=0`; BNG3 and
