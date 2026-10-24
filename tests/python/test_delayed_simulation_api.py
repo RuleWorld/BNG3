@@ -3,7 +3,6 @@ import numpy as np
 from bionetgen import BioNetGenModel
 from _extdep import require_extension
 
-
 cpp = require_extension()
 
 
@@ -34,7 +33,10 @@ def test_python_native_continuation_reset_and_default_fresh_run():
     model = BioNetGenModel(cpp.parse_string(SOURCE))
     first = model.simulate(method="ode", t_end=2.0, n_steps=4)
     continued = model.simulate(
-        method="ode", t_start=2.0, t_end=4.0, n_steps=4,
+        method="ODE",
+        t_start=2.0,
+        t_end=4.0,
+        n_steps=4,
         continue_simulation=True,
     )
     a = continued.observables["A_count"]
@@ -56,14 +58,17 @@ def test_python_native_continuation_reset_and_default_fresh_run():
 
 
 def test_python_parameter_change_preserves_explicit_continuation():
-    source = SOURCE.replace(
-        "  tau 2\n", "  tau 2\n  k 0.5\n"
-    ).replace("A() -> B() 0.5 delay=tau", "A() -> B() k delay=tau")
+    source = SOURCE.replace("  tau 2\n", "  tau 2\n  k 0.5\n").replace(
+        "A() -> B() 0.5 delay=tau", "A() -> B() k delay=tau"
+    )
     model = BioNetGenModel(cpp.parse_string(source))
     model.simulate(method="ode", t_end=1.0, n_steps=10)
     model.set_parameter("k", 1.0)
     continued = model.simulate(
-        method="ode", t_start=1.0, t_end=3.0, n_steps=20,
+        method="ode",
+        t_start=1.0,
+        t_end=3.0,
+        n_steps=20,
         continue_simulation=True,
     )
     np.testing.assert_allclose(
@@ -80,7 +85,11 @@ def test_python_direct_ssa_continues_pending_completion():
     model = BioNetGenModel(cpp.parse_string(source))
     first = model.simulate(method="ssa", t_end=1.0, n_steps=2, seed=17)
     continued = model.simulate(
-        method="ssa", t_start=1.0, t_end=3.0, n_steps=4, seed=17,
+        method="ssa",
+        t_start=1.0,
+        t_end=3.0,
+        n_steps=4,
+        seed=17,
         continue_simulation=True,
     )
     np.testing.assert_allclose(first.observables["B_count"][-1], 0.0, atol=1e-8)

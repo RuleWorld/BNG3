@@ -196,9 +196,7 @@ class BioNetGenModel:
     def generate_network(self, max_iter: int = 100) -> _cpp.GeneratedNetwork:
         self._network = _cpp.generate_network(self._model, max_iter=max_iter)
         if self._continuation_network is not None:
-            _cpp.continue_simulation_from(
-                self._continuation_network, self._network
-            )
+            _cpp.continue_simulation_from(self._continuation_network, self._network)
             self._continuation_network = None
         return self._network
 
@@ -289,20 +287,16 @@ class BioNetGenModel:
             raise TypeError("method must be a string")
         if not isinstance(continue_simulation, bool):
             raise TypeError("continue_simulation must be a boolean")
-        if continue_simulation and method not in {"ode", "ssa"}:
-            raise ValueError(
-                "continue_simulation is supported only for native ODE and SSA"
-            )
         method = method.lower()
         if method not in {"ode", "ssa", "nf", "pla", "psa"}:
             raise ValueError(
                 "Unknown simulation method: "
                 f"{method!r}. Use 'ode', 'ssa', 'nf', 'pla', or 'psa'."
             )
-        if not isinstance(continue_simulation, bool):
-            raise TypeError("continue_simulation must be a bool")
         if continue_simulation and method not in {"ode", "ssa"}:
-            raise ValueError("continue_simulation is supported only for ODE and SSA")
+            raise ValueError(
+                "continue_simulation is supported only for native ODE and SSA"
+            )
         if not continue_simulation and self._simulation_has_run:
             self.reset_simulation()
         if not math.isfinite(float(t_start)) or not math.isfinite(float(t_end)):
