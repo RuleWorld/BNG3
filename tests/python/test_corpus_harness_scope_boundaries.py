@@ -489,7 +489,7 @@ def test_source_unit_factors_follow_atomizer_normalization_boundaries():
     ) == {"S": (1.0, 1.0)}
 
     expected_compartment_factors = {
-        0: 1e-6,  # The Atomizer treats spatialDimensions=0 as its 3D default.
+        0: 1.0,  # A zero-dimensional compartment has no volume unit to scale.
         1: 1e-2,
         2: 1e-4,
         3: 1e-6,
