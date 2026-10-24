@@ -160,6 +160,56 @@ def test_a_non_finite_observable_does_not_widen_the_comparison_tolerance():
     assert harness._finite_max_abs(np.array([np.nan, np.inf])) == 0.0
 
 
+def test_unrelated_large_observable_cannot_mask_small_series_mismatch(monkeypatch):
+    """Each observable's numerical floor must use its own magnitude."""
+
+    import numpy as np
+    from types import SimpleNamespace
+
+    harness = _harness()
+
+    class FakeRoadRunner:
+        integrator = SimpleNamespace(hasValue=lambda _name: False)
+
+        def __init__(self, _path):
+            self.timeCourseSelections = []
+
+        def getAssignmentRuleIds(self):
+            return {"large", "small"}
+
+        def simulate(self, _start, _end, _points):
+            return np.array([[0.0, 1e18, 100.0], [1.0, 1e18, 106.0]])
+
+    monkeypatch.setitem(
+        sys.modules,
+        "roadrunner",
+        SimpleNamespace(RoadRunner=FakeRoadRunner, __version__="test"),
+    )
+
+    class FakeModel:
+        def simulate(self, **_kwargs):
+            return SimpleNamespace(
+                time=np.array([0.0, 1.0]),
+                observables={"large": [1e18, 1e18], "small": [100.0, 100.0]},
+                functions={},
+            )
+
+    result = harness._simulate_and_compare(
+        object(),
+        lambda _model: FakeModel(),
+        Path("written.xml"),
+        t_end=1.0,
+        n_steps=1,
+        rtol=1e-7,
+        atol=1e-12,
+    )
+
+    assert result["passed"] is False
+    assert result["failed_observables"] == ["small"]
+    assert result["observables"]["large"]["passed"] is True
+    assert result["observables"]["small"]["tolerance"] < 1.0
+
+
 def test_the_gate_records_the_atomizers_refusal_as_a_gap():
     """An explicit refusal names its construct and is not a failure."""
 
