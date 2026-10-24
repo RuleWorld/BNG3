@@ -1,0 +1,194 @@
+{
+  "kind": "curated-biomodels-stage-replay-cohort",
+  "source_run_id": "40003233859",
+  "source_run_commit": "2eeb244f896e54b55335f918d10f4034fb322571",
+  "source_reports_sha256": {
+    "flat": "3a71712a26c009de2015948f6fc057296c358e8ecca95e95fe6092bdddcff687",
+    "atomized": "fa0a5839471e47532ca87ad0a48870bc432dc1ebcccde6699063e26fe2f54231"
+  },
+  "model_timeout_seconds": 180,
+  "models": {
+    "BIOMD0000000579": [
+      "flat",
+      "atomized"
+    ],
+    "BIOMD0000001098": [
+      "flat",
+      "atomized"
+    ],
+    "BIOMD0000000183": [
+      "flat",
+      "atomized"
+    ],
+    "BIOMD0000000497": [
+      "flat",
+      "atomized"
+    ],
+    "BIOMD0000000496": [
+      "flat",
+      "atomized"
+    ],
+    "BIOMD0000001096": [
+      "flat",
+      "atomized"
+    ],
+    "BIOMD0000000293": [
+      "flat",
+      "atomized"
+    ],
+    "BIOMD0000000574": [
+      "flat",
+      "atomized"
+    ],
+    "BIOMD0000000474": [
+      "flat",
+      "atomized"
+    ],
+    "BIOMD0000001099": [
+      "flat",
+      "atomized"
+    ],
+    "BIOMD0000000255": [
+      "flat",
+      "atomized"
+    ],
+    "BIOMD0000000397": [
+      "flat",
+      "atomized"
+    ],
+    "BIOMD0000000457": [
+      "flat",
+      "atomized"
+    ],
+    "BIOMD0000000235": [
+      "flat",
+      "atomized"
+    ],
+    "BIOMD0000000595": [
+      "flat",
+      "atomized"
+    ],
+    "BIOMD0000000471": [
+      "flat",
+      "atomized"
+    ],
+    "BIOMD0000000385": [
+      "flat",
+      "atomized"
+    ],
+    "BIOMD0000000473": [
+      "flat",
+      "atomized"
+    ],
+    "BIOMD0000000469": [
+      "flat",
+      "atomized"
+    ],
+    "BIOMD0000000470": [
+      "flat",
+      "atomized"
+    ],
+    "BIOMD0000000472": [
+      "flat",
+      "atomized"
+    ],
+    "BIOMD0000000557": [
+      "atomized"
+    ],
+    "BIOMD0000000026": [
+      "atomized"
+    ]
+  },
+  "prior_statuses": {
+    "BIOMD0000000579": {
+      "flat": "timeout",
+      "atomized": "timeout"
+    },
+    "BIOMD0000001098": {
+      "flat": "timeout",
+      "atomized": "timeout"
+    },
+    "BIOMD0000000183": {
+      "flat": "timeout",
+      "atomized": "timeout"
+    },
+    "BIOMD0000000497": {
+      "flat": "timeout",
+      "atomized": "timeout"
+    },
+    "BIOMD0000000496": {
+      "flat": "timeout",
+      "atomized": "timeout"
+    },
+    "BIOMD0000001096": {
+      "flat": "timeout",
+      "atomized": "timeout"
+    },
+    "BIOMD0000000293": {
+      "flat": "timeout",
+      "atomized": "timeout"
+    },
+    "BIOMD0000000574": {
+      "flat": "timeout",
+      "atomized": "timeout"
+    },
+    "BIOMD0000000474": {
+      "flat": "timeout",
+      "atomized": "timeout"
+    },
+    "BIOMD0000001099": {
+      "flat": "timeout",
+      "atomized": "timeout"
+    },
+    "BIOMD0000000255": {
+      "flat": "timeout",
+      "atomized": "timeout"
+    },
+    "BIOMD0000000397": {
+      "flat": "timeout",
+      "atomized": "timeout"
+    },
+    "BIOMD0000000457": {
+      "flat": "timeout",
+      "atomized": "timeout"
+    },
+    "BIOMD0000000235": {
+      "flat": "timeout",
+      "atomized": "timeout"
+    },
+    "BIOMD0000000595": {
+      "flat": "timeout",
+      "atomized": "timeout"
+    },
+    "BIOMD0000000471": {
+      "flat": "timeout",
+      "atomized": "timeout"
+    },
+    "BIOMD0000000385": {
+      "flat": "timeout",
+      "atomized": "timeout"
+    },
+    "BIOMD0000000473": {
+      "flat": "timeout",
+      "atomized": "timeout"
+    },
+    "BIOMD0000000469": {
+      "flat": "timeout",
+      "atomized": "timeout"
+    },
+    "BIOMD0000000470": {
+      "flat": "timeout",
+      "atomized": "timeout"
+    },
+    "BIOMD0000000472": {
+      "flat": "timeout",
+      "atomized": "timeout"
+    },
+    "BIOMD0000000557": {
+      "atomized": "timeout"
+    },
+    "BIOMD0000000026": {
+      "atomized": "timeout"
+    }
+  }
+}

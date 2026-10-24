@@ -94,7 +94,10 @@ def test_curated_biomodels_lane_is_manual_and_uses_the_pinned_full_inventory():
         for step in corpus["steps"]
         if step.get("name") == "Run full flat and atomized BioModels corpus"
     )
-    assert full.get("if") == "inputs.biomodels_only_id == ''"
+    assert (
+        full.get("if")
+        == "inputs.biomodels_only_id == '' && !inputs.biomodels_stage_replay"
+    )
     assert "lane_failed=1" in full["run"] and "continue" in full["run"]
     assert "membership-check.json" in commands
     bundle_install = next(

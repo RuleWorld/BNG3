@@ -2172,7 +2172,7 @@ def _validate_mode(
 
 
 def _run_isolated_model(
-    entry: dict[str, Any], args: argparse.Namespace
+    entry: dict[str, Any], args: argparse.Namespace, *, mode: str | None = None
 ) -> dict[str, Any]:
     """Run one model in a bounded subprocess and return its record."""
 
@@ -2188,7 +2188,7 @@ def _run_isolated_model(
         "--json",
         str(worker_json),
         "--mode",
-        args.mode,
+        mode or args.mode,
         "--offline",
         "--only-id",
         entry["id"],
@@ -2395,6 +2395,82 @@ def _persist_parent_record(
         record["record_persistence_error"] = f"{type(exc).__name__}: {exc}"
 
 
+def _load_stage_replay_cohort(
+    path: Path,
+    *,
+    inventory_ids: set[str],
+    mode: str,
+    model_timeout: int,
+) -> dict[str, Any]:
+    """Load a small manifest of prior per-mode stage timeouts."""
+
+    cohort = json.loads(path.read_text(encoding="utf-8"))
+    if cohort.get("kind") != "curated-biomodels-stage-replay-cohort":
+        raise ValueError("invalid stage replay cohort kind")
+    if mode not in {"flat", "atomized", "both"}:
+        raise ValueError(f"invalid stage replay mode: {mode}")
+    if cohort.get("model_timeout_seconds") != model_timeout:
+        raise ValueError("stage replay timeout must match cohort timeout")
+    report_hashes = cohort.get("source_reports_sha256")
+    if (
+        not isinstance(report_hashes, dict)
+        or set(report_hashes) != {"flat", "atomized"}
+        or any(
+            not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            for digest in report_hashes.values()
+        )
+    ):
+        raise ValueError("stage replay cohort requires flat/atomized report SHA-256s")
+    models = cohort.get("models")
+    statuses = cohort.get("prior_statuses")
+    if not isinstance(models, dict) or not 1 <= len(models) <= 25:
+        raise ValueError("stage replay cohort must contain 1 to 25 models")
+    if not isinstance(statuses, dict) or set(statuses) != set(models):
+        raise ValueError("stage replay prior status records must match models")
+    selected: dict[str, list[str]] = {}
+    normalized_statuses: dict[str, dict[str, str]] = {}
+    allowed_modes = {"flat", "atomized"}
+    for model_id, listed_modes in models.items():
+        if model_id not in inventory_ids:
+            raise ValueError(f"unknown model in stage replay cohort: {model_id}")
+        if (
+            not isinstance(listed_modes, list)
+            or not listed_modes
+            or len(set(listed_modes)) != len(listed_modes)
+            or not set(listed_modes) <= allowed_modes
+        ):
+            raise ValueError(f"invalid stage replay modes for {model_id}")
+        old_statuses = statuses[model_id]
+        if not isinstance(old_statuses, dict) or set(old_statuses) != set(listed_modes):
+            raise ValueError(f"stage replay prior status modes disagree for {model_id}")
+        if any(status != "timeout" for status in old_statuses.values()):
+            raise ValueError(
+                f"stage replay prior status must be timeout for {model_id}"
+            )
+        selected_modes = (
+            listed_modes if mode == "both" else [mode] if mode in listed_modes else []
+        )
+        if selected_modes:
+            selected[model_id] = selected_modes
+            normalized_statuses[model_id] = {
+                selected_mode: old_statuses[selected_mode]
+                for selected_mode in selected_modes
+            }
+    if not selected:
+        raise ValueError(f"stage replay cohort has no models for mode {mode}")
+    if not cohort.get("source_run_id") or not cohort.get("source_run_commit"):
+        raise ValueError("stage replay cohort is missing source run identity")
+    return {
+        "source_run_id": str(cohort["source_run_id"]),
+        "source_run_commit": str(cohort["source_run_commit"]),
+        "source_reports_sha256": cohort.get("source_reports_sha256", {}),
+        "model_timeout_seconds": model_timeout,
+        "models": selected,
+        "prior_statuses": normalized_statuses,
+        "partial_run": True,
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     repo = Path(__file__).resolve().parents[2]
@@ -2431,6 +2507,11 @@ def main() -> int:
     parser.add_argument("--max-models", type=int, default=0)
     parser.add_argument("--only-id")
     parser.add_argument(
+        "--replay-cohort",
+        type=Path,
+        help="replay a bounded manifest of prior per-mode stage timeouts",
+    )
+    parser.add_argument(
         "--isolate-models",
         action="store_true",
         help="run each model in a bounded child process",
@@ -2448,6 +2529,9 @@ def main() -> int:
     parser.add_argument("--simulation-rtol", type=float, default=1e-7)
     parser.add_argument("--simulation-atol", type=float, default=1e-12)
     args = parser.parse_args()
+
+    if args.replay_cohort and (args.only_id or args.max_models):
+        parser.error("--replay-cohort cannot be combined with --only-id/--max-models")
 
     if bool(args.source_bundle_receipt) != bool(args.source_bundle_manifest):
         parser.error(
@@ -2506,7 +2590,21 @@ def main() -> int:
         args.fetch_record_metadata,
     )
     all_models = list(inventory["models"])
-    if args.only_id:
+    replay_cohort = None
+    if args.replay_cohort:
+        try:
+            replay_cohort = _load_stage_replay_cohort(
+                args.replay_cohort,
+                inventory_ids={str(entry["id"]) for entry in all_models},
+                mode=args.mode,
+                model_timeout=args.model_timeout,
+            )
+        except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            parser.error(f"invalid stage replay cohort: {exc}")
+        selected_models = [
+            entry for entry in all_models if str(entry["id"]) in replay_cohort["models"]
+        ]
+    elif args.only_id:
         selected_models = [entry for entry in all_models if entry["id"] == args.only_id]
         if not selected_models:
             raise SystemExit(
@@ -2516,7 +2614,7 @@ def main() -> int:
         selected_models = (
             all_models[: args.max_models] if args.max_models else all_models
         )
-    partial = bool(args.max_models or args.only_id)
+    partial = bool(args.max_models or args.only_id or replay_cohort)
     expected_total = int(manifest["expected_total_records"])
     expected_sbml = int(manifest["expected_sbml_records"])
     expected_non_sbml = int(manifest["expected_non_sbml_records"])
@@ -2633,8 +2731,13 @@ def main() -> int:
                 prefix=f"{entry['id']}-", dir=args.cache_dir
             ) as temp:
                 mode_results = []
+                model_modes = (
+                    replay_cohort["models"][str(entry["id"])] if replay_cohort else None
+                )
                 for atomize in modes:
                     mode_name = "atomized" if atomize else "flat"
+                    if model_modes is not None and mode_name not in model_modes:
+                        continue
                     mode_result: dict[str, Any] = {"mode": mode_name}
                     try:
                         mode_results.append(
@@ -2711,6 +2814,18 @@ def main() -> int:
     if sbml_selected:
         if args.jobs < 1:
             raise SystemExit("--jobs must be at least one")
+
+        def run_isolated(entry: dict[str, Any]) -> dict[str, Any]:
+            selected_modes = (
+                replay_cohort["models"][str(entry["id"])] if replay_cohort else []
+            )
+            worker_mode = (
+                (selected_modes[0] if len(selected_modes) == 1 else "both")
+                if replay_cohort
+                else None
+            )
+            return _run_isolated_model(entry, args, mode=worker_mode)
+
         cache_migration = _migrate_legacy_source_cache(args.cache_dir, sbml_selected)
         print(
             "source cache: "
@@ -2720,16 +2835,10 @@ def main() -> int:
             flush=True,
         )
         if args.jobs == 1:
-            isolated_records = [
-                _run_isolated_model(entry, args) for entry in sbml_selected
-            ]
+            isolated_records = [run_isolated(entry) for entry in sbml_selected]
         else:
             with concurrent.futures.ThreadPoolExecutor(max_workers=args.jobs) as pool:
-                isolated_records = list(
-                    pool.map(
-                        lambda entry: _run_isolated_model(entry, args), sbml_selected
-                    )
-                )
+                isolated_records = list(pool.map(run_isolated, sbml_selected))
         records.extend(isolated_records)
         for record in isolated_records:
             print(f"{record['id']}: {record['status'].upper()}", flush=True)
@@ -2768,6 +2877,7 @@ def main() -> int:
         "inventory": inventory,
         "completeness": completeness,
         "mode": args.mode,
+        "replay_cohort": replay_cohort,
         "simulation": {
             "t_start": 0.0,
             "t_end": args.simulation_t_end,
