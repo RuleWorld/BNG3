@@ -38,6 +38,7 @@ struct SimulationSession {
     double currentTime = 0.0;
     std::vector<double> initialState;
     std::vector<double> state;
+    std::vector<std::uint64_t> networkAmountVersions;
     std::vector<HistoryPoint> history;
     std::vector<double> reactionDelays;
     std::vector<double> discontinuities;
@@ -56,6 +57,7 @@ struct SimulationSession {
         currentTime = 0.0;
         initialState.clear();
         state.clear();
+        networkAmountVersions.clear();
         history.clear();
         reactionDelays.clear();
         discontinuities.clear();

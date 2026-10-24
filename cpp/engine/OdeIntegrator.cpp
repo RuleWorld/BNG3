@@ -2512,14 +2512,20 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
         std::vector<double> networkState(nSpecies_);
         bool networkDiffers = false;
         bool networkIsOriginal = working.initialState.size() == nSpecies_;
+        bool networkWasExplicitlyChanged = false;
         for (std::size_t i = 0; i < nSpecies_; ++i) {
             networkState[i] = network_.species.get(i).getAmount();
             networkDiffers = networkDiffers ||
                 std::abs(networkState[i] - working.state[i]) > 1e-12;
             networkIsOriginal = networkIsOriginal &&
                 std::abs(networkState[i] - working.initialState[i]) <= 1e-12;
+            networkWasExplicitlyChanged = networkWasExplicitlyChanged ||
+                (working.networkAmountVersions.size() == nSpecies_ &&
+                 network_.species.get(i).getAmountVersion() !=
+                     working.networkAmountVersions[i]);
         }
-        if (networkDiffers && !networkIsOriginal) {
+        if (networkDiffers &&
+            (networkWasExplicitlyChanged || !networkIsOriginal)) {
             hasNetworkIntervention = true;
             stateBeforeIntervention = working.state;
             stateAfterIntervention = networkState;
@@ -2536,9 +2542,12 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
         }
         working.state.resize(nSpecies_);
         working.initialState.resize(nSpecies_);
+        working.networkAmountVersions.resize(nSpecies_);
         for (std::size_t i = 0; i < nSpecies_; ++i) {
             working.state[i] = network_.species.get(i).getAmount();
             working.initialState[i] = working.state[i];
+            working.networkAmountVersions[i] =
+                network_.species.get(i).getAmountVersion();
         }
     }
     activeSimulationSession_ = &working;
@@ -2573,6 +2582,11 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
                 pending.event, pending.executionTime, pending.values});
         }
         working.eventTriggerRoseAt = triggerRoseAt_;
+        working.networkAmountVersions.resize(nSpecies_);
+        for (std::size_t i = 0; i < nSpecies_; ++i) {
+            working.networkAmountVersions[i] =
+                network_.species.get(i).getAmountVersion();
+        }
         working.initialized = true;
         *simulationSession_ = std::move(working);
         activeSimulationSession_ = nullptr;

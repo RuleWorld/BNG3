@@ -1046,3 +1046,31 @@ TEST_CASE("delayed SSA continuation is restricted to one trajectory") {
                       Catch::Matchers::ContainsSubstring(
                           "continue_simulation is not supported for isolated trajectories"));
 }
+
+TEST_CASE("continuation applies an explicit species reset to the seed amount") {
+    auto model = parse("A() -> B() 0.5 delay=tau");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    const auto a = speciesIndex(network, "A");
+    const auto b = speciesIndex(network, "B");
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions first;
+    first.method = "cvode";
+    first.tEnd = 1.0;
+    first.nSteps = 10;
+    const auto firstResult = integrator.integrate(first);
+    for (std::size_t i = 0; i < network.species.size(); ++i) {
+        network.species.get(i).setAmount(firstResult.concentrations.back()[i]);
+    }
+    network.species.get(a).setAmount(10.0);
+    engine::OdeOptions continuation = first;
+    continuation.tStart = 1.0;
+    continuation.tEnd = 3.0;
+    continuation.nSteps = 20;
+    continuation.continueSimulation = true;
+    const auto result = integrator.integrate(continuation);
+    CHECK(result.concentrations.back()[a] ==
+          Catch::Approx(10.0 * std::exp(-1.0)).epsilon(1e-5));
+    CHECK(result.concentrations.back()[b] ==
+          Catch::Approx(10.0 * (1.0 - std::exp(-0.5))).epsilon(1e-5));
+}
