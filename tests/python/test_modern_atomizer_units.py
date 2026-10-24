@@ -637,6 +637,7 @@ def test_zero_dimensional_native_trajectory_matches_roadrunner(atomize_mode):
 def test_atomizer_refuses_unresolved_function_chain_when_scaled_actual_is_used():
     import libsbml
     from bionetgen.atomizer.modern import Atomizer
+    from scripts.ci.validate_published_biomodels import _known_unsupported_error
 
     functions = []
     for index in range(22):
@@ -682,13 +683,16 @@ def test_atomizer_refuses_unresolved_function_chain_when_scaled_actual_is_used()
     result = Atomizer(quiet_mode=True).atomize(source)
 
     assert result.success is False
+    assert _known_unsupported_error(str(result.error)) is True
     assert "unresolved function call" in result.error
     assert "scaled actual arguments" in result.error
+    assert "not losslessly representable" in result.error
 
 
 def test_atomizer_refuses_reaction_with_unequal_normalized_species_flux_scales():
     import libsbml
     from bionetgen.atomizer.modern import Atomizer
+    from scripts.ci.validate_published_biomodels import _known_unsupported_error
 
     source = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2"><model id="unequal_flux_scales" substanceUnits="small" volumeUnits="litre"><listOfUnitDefinitions><unitDefinition id="small"><listOfUnits><unit kind="mole" exponent="1" scale="-3" multiplier="1"/></listOfUnits></unitDefinition><unitDefinition id="large"><listOfUnits><unit kind="mole" exponent="1" scale="-2" multiplier="1"/></listOfUnits></unitDefinition></listOfUnitDefinitions><listOfCompartments><compartment id="cell" size="1" spatialDimensions="3" constant="true"/></listOfCompartments><listOfSpecies><species id="A" compartment="cell" initialAmount="1" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/><species id="B" compartment="cell" initialAmount="0" substanceUnits="large" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/></listOfSpecies><listOfReactions><reaction id="r" reversible="false"><listOfReactants><speciesReference species="A" stoichiometry="1" constant="true"/></listOfReactants><listOfProducts><speciesReference species="B" stoichiometry="1" constant="true"/></listOfProducts><kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></kineticLaw></reaction></listOfReactions></model></sbml>"""
     document = libsbml.readSBMLFromString(source)
@@ -703,7 +707,9 @@ def test_atomizer_refuses_reaction_with_unequal_normalized_species_flux_scales()
     result = Atomizer(quiet_mode=True).atomize(source)
 
     assert result.success is False
+    assert _known_unsupported_error(str(result.error)) is True
     assert "different normalized flux scales" in result.error
+    assert "not losslessly representable" in result.error
 
     boundary_source = source.replace(
         'id="B" compartment="cell" initialAmount="0" substanceUnits="large" '

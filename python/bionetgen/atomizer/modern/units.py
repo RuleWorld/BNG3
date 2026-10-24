@@ -247,8 +247,9 @@ def _source_coordinate_expression(
                     for symbol in factors
                 ):
                     raise ValueError(
-                        "Cannot preserve SBML unit normalization for unresolved "
-                        f"function call {function_id!r} with scaled actual arguments."
+                        "SBML unit normalization for unresolved function call "
+                        f"{function_id!r} with scaled actual arguments is not "
+                        "losslessly representable."
                     )
                 cursor = end
     if factors:
@@ -507,8 +508,9 @@ def apply_unit_scaling(model: SBMLModel) -> list[Dict[str, Any]]:
             for factor in rate_factors[1:]
         ):
             raise ValueError(
-                f'Cannot preserve reaction "{reaction_id}" because its species '
-                "require different normalized flux scales."
+                f'Reaction "{reaction_id}" normalized flux scaling is not '
+                "losslessly representable because its species require different "
+                "normalized flux scales."
             )
         reaction_rate_factors[str(reaction_id)] = rate_factor
         coordinate_factors[str(reaction_id)] = rate_factor
