@@ -78,6 +78,29 @@ inline void requireNoDelayedSemantics(const ast::Model& model,
     }
 }
 
+inline void requireNoExpressionDelaySemantics(
+    const ast::Model& model, const GeneratedNetwork& network,
+    const std::string& backend) {
+    for (const auto& reaction : network.reactions.all()) {
+        if (reaction.getRateExpression() &&
+            expressionUsesDelay(*reaction.getRateExpression())) {
+            throw std::runtime_error(
+                "delay(x, tau) expressions are not supported by " + backend);
+        }
+        if (!reaction.getRateExpression() &&
+            containsDelayCall(reaction.getRateLaw())) {
+            throw std::runtime_error(
+                "delay(x, tau) expressions are not supported by " + backend);
+        }
+    }
+    for (const auto& function : model.getFunctions()) {
+        if (expressionUsesDelay(function.getExpression())) {
+            throw std::runtime_error(
+                "delay(x, tau) expressions are not supported by " + backend);
+        }
+    }
+}
+
 inline void requireNoDelayedRuleSemantics(const ast::Model& model,
                                           const std::string& backend) {
     for (const auto& rule : model.getReactionRules()) {

@@ -2114,22 +2114,49 @@ void BNGAstVisitor::finalizeThermodynamicMetadata() {
         for (const auto& assignment : event.assignments) eventTargets.insert(assignment.target);
     }
     const auto& parameters = currentModel_->getParameters();
-    for (const auto& rule : currentModel_->getReactionRules()) {
-        if (!rule.getDelayExpression()) continue;
-        const auto directDependencies = rule.getDelayExpression()->getDependencies();
+    const auto rejectEventAssignedDelayDependencies = [&](const ast::Expression& delay) {
+        const auto directDependencies = delay.getDependencies();
         std::unordered_set<std::string> dependencies(directDependencies.begin(),
                                                      directDependencies.end());
         std::vector<std::string> pending(dependencies.begin(), dependencies.end());
         for (std::size_t i = 0; i < pending.size(); ++i) {
             const auto& name = pending[i];
             if (eventTargets.count(name) != 0) {
-                throw std::runtime_error("Reaction delay depends on event-assigned parameter '" + name + "'");
+                throw std::runtime_error(
+                    "Delay duration depends on event-assigned parameter '" + name + "'");
             }
             if (!parameters.contains(name)) continue;
             for (const auto& dependency : parameters.get(name).getExpression().getDependencies()) {
                 if (dependencies.insert(dependency).second) pending.push_back(dependency);
             }
         }
+    };
+    for (const auto& rule : currentModel_->getReactionRules()) {
+        if (rule.getDelayExpression()) {
+            rejectEventAssignedDelayDependencies(*rule.getDelayExpression());
+        }
+        for (const auto& rate : rule.getRates()) {
+            std::function<void(const ast::Expression&)> visit;
+            visit = [&](const ast::Expression& expression) {
+                if (expression.kind() == ast::ExpressionKind::Function &&
+                    expression.name() == "delay" && expression.args().size() == 2) {
+                    rejectEventAssignedDelayDependencies(expression.args()[1]);
+                }
+                for (const auto& child : expression.args()) visit(child);
+            };
+            visit(rate);
+        }
+    }
+    for (const auto& function : currentModel_->getFunctions()) {
+        std::function<void(const ast::Expression&)> visit;
+        visit = [&](const ast::Expression& expression) {
+            if (expression.kind() == ast::ExpressionKind::Function &&
+                expression.name() == "delay" && expression.args().size() == 2) {
+                rejectEventAssignedDelayDependencies(expression.args()[1]);
+            }
+            for (const auto& child : expression.args()) visit(child);
+        };
+        visit(function.getExpression());
     }
 }
 
