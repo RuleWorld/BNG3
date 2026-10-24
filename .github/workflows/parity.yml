@@ -903,5 +903,5 @@ jobs:
         env:
           MPLBACKEND: Agg
           SYMPY_USE_GMPY: "0"
-          BNG3_SOURCE_REVISION: ${{ github.sha }}
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
           BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
