@@ -400,6 +400,7 @@ void bind_engine(py::module_& m) {
         .def_readwrite("sparse", &OdeOptions::sparse)
         .def_readwrite("check_product_scale", &OdeOptions::checkProductScale)
         .def_readwrite("enforce_nonnegative", &OdeOptions::enforceNonnegative)
+        .def_readwrite("continue_simulation", &OdeOptions::continueSimulation)
         .def_readwrite("batch_size", &OdeOptions::batchSize,
             "Number of independent SSA trajectories to run in batch mode (0 = single trajectory)")
         .def_readwrite("batch_gpu_preferred", &OdeOptions::batchGpuPreferred,
@@ -411,6 +412,11 @@ void bind_engine(py::module_& m) {
         return gen.generateNative(max_iter);
     }, py::arg("model"), py::arg("max_iter") = 100,
        "Generate the reaction network from a model");
+
+    m.def("reset_simulation", [](GeneratedNetwork& network) {
+        network.simulationSession.reset();
+    }, py::arg("network"),
+       "Clear the native trajectory history, pending completions, and random stream");
 
     m.def("jax_ode_flatten", [](Model& model, GeneratedNetwork& network) {
         bng::compile::requireNoNativeEvents(model, "JAX ODE flattening");
@@ -516,7 +522,8 @@ void bind_engine(py::module_& m) {
                              const std::vector<double>& sample_times,
                              std::size_t max_sim_steps,
                              std::size_t output_step_interval, bool sparse,
-                             double check_product_scale) {
+                             double check_product_scale,
+                             bool continue_simulation) {
         if (max_sim_steps > 0 || output_step_interval > 0) {
             throw std::runtime_error(
                 "max_sim_steps and output_step_interval are supported only "
@@ -542,12 +549,19 @@ void bind_engine(py::module_& m) {
         opts.outputStepInterval = output_step_interval;
         opts.sparse = sparse;
         opts.checkProductScale = check_product_scale;
+        opts.continueSimulation = continue_simulation;
         auto t_opts = std::chrono::steady_clock::now();
 
         OdeIntegrator integrator(model, network);
         auto t_ctor = std::chrono::steady_clock::now();
         const bool probe = probeOn();
         OdeResult result = integrator.integrate(opts);
+        if (!result.concentrations.empty()) {
+            for (std::size_t i = 0; i < network.species.size() &&
+                                    i < result.concentrations.back().size(); ++i) {
+                network.species.get(i).setAmount(result.concentrations.back()[i]);
+            }
+        }
         auto t_eng = std::chrono::steady_clock::now();
 
         py::gil_scoped_acquire acquire;
@@ -578,6 +592,7 @@ void bind_engine(py::module_& m) {
         py::arg("output_step_interval") = 0,
         py::arg("sparse") = false,
         py::arg("check_product_scale") = 0.0,
+        py::arg("continue_simulation") = false,
         "Run ODE simulation on a generated network");
 
     m.def("simulate_ssa", [](Model& model, GeneratedNetwork& network,
@@ -588,7 +603,8 @@ void bind_engine(py::module_& m) {
                              std::size_t output_step_interval,
                              std::size_t batch_size,
                              bool batch_gpu_preferred,
-                             const std::string& batch_gpu_backend) {
+                             const std::string& batch_gpu_backend,
+                             bool continue_simulation) {
         py::gil_scoped_release release;
 
         OdeOptions opts;
@@ -604,9 +620,16 @@ void bind_engine(py::module_& m) {
         opts.batchSize = batch_size;
         opts.batchGpuPreferred = batch_gpu_preferred;
         opts.batchGpuBackend = batch_gpu_backend;
+        opts.continueSimulation = continue_simulation;
 
         OdeIntegrator integrator(model, network);
         OdeResult result = integrator.integrate(opts);
+        if (!result.concentrations.empty()) {
+            for (std::size_t i = 0; i < network.species.size() &&
+                                    i < result.concentrations.back().size(); ++i) {
+                network.species.get(i).setAmount(result.concentrations.back()[i]);
+            }
+        }
 
         py::gil_scoped_acquire acquire;
         return result_to_dict(result, model);
@@ -624,6 +647,7 @@ void bind_engine(py::module_& m) {
         py::arg("batch_size") = static_cast<std::size_t>(0),
         py::arg("batch_gpu_preferred") = true,
         py::arg("batch_gpu_backend") = std::string("auto"),
+        py::arg("continue_simulation") = false,
         "Run SSA simulation on a generated network. "
         "Set batch_size > 1 to run many independent trajectories and return mean + std-dev trajectories; "
         "uses a GPU backend (CUDA or Metal) when one is available and beneficial, "

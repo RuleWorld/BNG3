@@ -64,6 +64,7 @@ class BioNetGenModel:
         self._source_path = source_path
         self._source_metadata = source_metadata or ""
         self._network: Optional[_cpp.GeneratedNetwork] = None
+        self._simulation_has_run = False
 
     @property
     def parameters(self) -> list:
@@ -123,6 +124,14 @@ class BioNetGenModel:
             # parameter-dependent compile results. Also discard the cache if
             # parameter reevaluation raises after changing the model.
             self._network = None
+            self._simulation_has_run = False
+
+    def reset_simulation(self) -> None:
+        """Discard the current native trajectory and regenerate from model seeds."""
+        if self._network is not None and _cpp is not None:
+            _cpp.reset_simulation(self._network)
+        self._network = None
+        self._simulation_has_run = False
 
     def parameter_scan(self, *args, **kwargs):
         from bionetgen.scan import parameter_scan as _parameter_scan
@@ -207,6 +216,7 @@ class BioNetGenModel:
         equilibrate: float = 0.0,
         traversal_limit: int = -1,
         backend: Optional[str] = None,
+        continue_simulation: bool = False,
     ) -> SimResult:
         """Run a simulation using the specified method.
 
@@ -221,6 +231,9 @@ class BioNetGenModel:
         t_start : float
             Absolute start time for the simulation. NF uses this time for
             time-dependent functions and output coordinates.
+        continue_simulation : bool
+            Continue the last successful native ODE/SSA trajectory from
+            ``t_start``. The default starts a fresh trajectory.
         rtol, atol : float
             Relative and absolute tolerances (ODE only).
         seed : int
@@ -264,12 +277,24 @@ class BioNetGenModel:
         """
         if not isinstance(method, str):
             raise TypeError("method must be a string")
+        if not isinstance(continue_simulation, bool):
+            raise TypeError("continue_simulation must be a boolean")
+        if continue_simulation and method not in {"ode", "ssa"}:
+            raise ValueError(
+                "continue_simulation is supported only for native ODE and SSA"
+            )
         method = method.lower()
         if method not in {"ode", "ssa", "nf", "pla", "psa"}:
             raise ValueError(
                 "Unknown simulation method: "
                 f"{method!r}. Use 'ode', 'ssa', 'nf', 'pla', or 'psa'."
             )
+        if not isinstance(continue_simulation, bool):
+            raise TypeError("continue_simulation must be a bool")
+        if continue_simulation and method not in {"ode", "ssa"}:
+            raise ValueError("continue_simulation is supported only for ODE and SSA")
+        if not continue_simulation and self._simulation_has_run:
+            self.reset_simulation()
         if not math.isfinite(float(t_start)) or not math.isfinite(float(t_end)):
             raise ValueError("t_start and t_end must be finite")
         if t_end < t_start:
@@ -386,6 +411,7 @@ class BioNetGenModel:
                 "only for method='ode' or method='ssa'"
             )
 
+        use_bngsim = False
         if method == "nf":
             # backend is not applicable to network-free; reject explicit bngsim
             if backend is not None and str(backend).lower() not in (
@@ -451,6 +477,10 @@ class BioNetGenModel:
                 use_bngsim = False
 
             if use_bngsim:
+                if continue_simulation:
+                    raise RuntimeError(
+                        "continue_simulation requires the native ODE or SSA backend"
+                    )
                 # PLA/PSA not yet claimed for BNGsim — fail closed before any
                 # lowering check so the message is precise even when the build
                 # is unavailable.
@@ -526,6 +556,7 @@ class BioNetGenModel:
                         sample_times=normalized_sample_times,
                         max_sim_steps=max_sim_steps,
                         output_step_interval=output_step_interval,
+                        continue_simulation=continue_simulation,
                         sparse=sparse,
                         check_product_scale=check_product_scale,
                     )
@@ -544,6 +575,7 @@ class BioNetGenModel:
                         sample_times=normalized_sample_times,
                         max_sim_steps=max_sim_steps,
                         output_step_interval=output_step_interval,
+                        continue_simulation=continue_simulation,
                     )
                     if isinstance(raw, dict) and "backend" not in raw:
                         raw["backend"] = "bngsim"
@@ -598,6 +630,8 @@ class BioNetGenModel:
             else:
                 raise AssertionError("validated method dispatch is incomplete")
 
+        if method in {"ode", "ssa"} and not use_bngsim:
+            self._simulation_has_run = True
         return SimResult(raw)
 
     def execute(self, verbose: bool = False) -> None:

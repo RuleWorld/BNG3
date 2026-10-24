@@ -58,6 +58,7 @@ struct OdeOptions {
     std::size_t maxSimSteps = 0;   // Max internal simulation steps (0 = unlimited)
     bool saveProgress = false;     // Write .net checkpoint at each output step
     bool printNet = false;         // Write .net file after simulation with final concentrations
+    bool continueSimulation = false; // Continue one committed native trajectory/session
     bool printEnd = false;         // Output final state when simulation stops (stop_if or steady_state)
     std::size_t outputStepInterval = 0; // Output every N internal steps (0 = disabled, use n_steps timing)
     std::string netfile;           // Custom .net file to read instead of auto-generating
@@ -121,7 +122,13 @@ public:
         bool isFunctional = false;    // true if rate depends on time/observables
         bool isTimeDependent = false; // SSA cannot use the direct method for these rates
         std::optional<ast::Expression> functionalRateExpr;  // for runtime evaluation
+        // Preserve the source coefficient even when it is folded into
+        // rateConstant. Delayed completion may evaluate this expression at a
+        // historical parameter snapshot after a continuation intervention.
+        std::optional<ast::Expression> sourceRateExpr;
         bool isTotalRate = false;     // true if rate is total (not multiplied by reactant conc)
+        double delay = 0.0;           // constant reaction delay (0 = ordinary reaction)
+        bool nonConsuming = false;    // defer net stoichiometry until completion
     };
 
     struct CompiledGroup {
@@ -149,6 +156,9 @@ private:
     };
 
     std::vector<CompiledReaction> compiledRxns_;
+    std::vector<std::size_t> delayedRxnIndices_;
+    std::vector<double> historyDelays_;
+    bool hasPositiveExpressionDelay_ = false;
     std::vector<CompiledGroup> compiledGroups_;
     std::vector<bool> fixedSpecies_;    // true for $ (constant) species
     std::size_t nSpecies_ = 0;
@@ -172,6 +182,8 @@ private:
     std::vector<std::size_t> constantProductIndices_;          // Flattened product species indices
     bool useCompactConstantReactions_ = false;
     std::vector<std::size_t> functionalRxnIndices_;            // Indices of functional-rate reactions
+    SimulationSession* simulationSession_ = nullptr;
+    SimulationSession* activeSimulationSession_ = nullptr;
     io::TfunRegistry tfunRegistry_;                            // Time-function tables for TFUN expressions
     std::vector<double> cvodeStateScale_;
     mutable std::vector<double> cvodePhysicalState_;
@@ -290,6 +302,15 @@ private:
     void updateFunctions(const std::vector<double>& groupValues,
                          double time,
                          std::vector<double>& functionValues) const;
+    std::vector<double> historyStateAt(double time) const;
+    std::unordered_map<std::string, double> historyParametersAt(double time) const;
+    double evaluateExpressionWithHistory(
+        const ast::Expression& expression, double time,
+        const double* state) const;
+    void recordHistoryPoint(double time, const std::vector<double>& state);
+    void recordHistoryJump(double time, const std::vector<double>& state);
+    double reactionFlux(const CompiledReaction& reaction,
+                        double rateCoefficient, const double* state) const;
     std::vector<double> outputTimes(const OdeOptions& options) const;
     std::optional<ast::Expression> parseStopIf(const OdeOptions& options) const;
     bool stopConditionMet(const ast::Expression& condition,
@@ -304,6 +325,7 @@ private:
     OdeResult integrateCvode(const OdeOptions& opts);
     OdeResult integrateSSA(const OdeOptions& opts);
     OdeResult integrateBatchSSA(const OdeOptions& opts);
+    OdeResult integrateCore(const OdeOptions& options);
 
     double computePropensity(const CompiledReaction& rxn,
                              const std::vector<double>& y,

@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <cmath>
+#include <cstdint>
 #include <fstream>
 #include <iterator>
 #include <memory>
@@ -53,6 +54,43 @@ end model
 std::string readFile(const std::filesystem::path& path) {
     std::ifstream input(path);
     return std::string(std::istreambuf_iterator<char>(input), {});
+}
+
+std::size_t speciesIndex(const engine::GeneratedNetwork& network,
+                         const std::string& molecule) {
+    const auto prefix = molecule + "(";
+    for (std::size_t i = 0; i < network.species.size(); ++i) {
+        if (network.species.get(i).getSpeciesGraph().toString().rfind(prefix, 0) == 0) {
+            return i;
+        }
+    }
+    throw std::runtime_error("missing species " + molecule);
+}
+
+double poissonChernoffDeviation(double mean, double tailProbability) {
+    const auto divergence = [mean](double deviation, bool upper) {
+        const double delta = deviation / mean;
+        return mean * ((1.0 + (upper ? delta : -delta)) *
+                           std::log(1.0 + (upper ? delta : -delta)) -
+                       (upper ? delta : -delta));
+    };
+    double low = 0.0;
+    double high = mean;
+    while (std::exp(-divergence(high, true)) > tailProbability) high *= 2.0;
+    for (int i = 0; i < 80; ++i) {
+        const double middle = (low + high) / 2.0;
+        if (std::exp(-divergence(middle, true)) > tailProbability) low = middle;
+        else high = middle;
+    }
+    const double upperDeviation = high;
+    low = 0.0;
+    high = mean;
+    for (int i = 0; i < 80; ++i) {
+        const double middle = (low + high) / 2.0;
+        if (std::exp(-divergence(middle, false)) > tailProbability) low = middle;
+        else high = middle;
+    }
+    return std::max(upperDeviation, high);
 }
 
 }  // namespace
@@ -106,10 +144,8 @@ end model
         "readFile", {{"file", output.filename().string()}}});
     reloaded->addAction(ast::Action{
         "simulate", {{"method", "ode"}, {"t_end", "1"}, {"n_steps", "1"}}});
-    CHECK_THROWS_WITH(actions::ActionDispatch::execute(
-                          *reloaded, output.parent_path() / "delayed_read.bngl"),
-                      Catch::Matchers::ContainsSubstring(
-                          "Delayed reactions are not supported by the native ODE engine"));
+    CHECK_NOTHROW(actions::ActionDispatch::execute(
+        *reloaded, output.parent_path() / "delayed_read.bngl"));
     std::filesystem::remove(output);
 }
 
@@ -276,15 +312,358 @@ TEST_CASE("SBML action defaults to a valid version for Level 3") {
     std::filesystem::remove(outputPath);
 }
 
-TEST_CASE("native ODE refuses a delayed reaction instead of running it undelayed") {
+TEST_CASE("native ODE applies consuming delayed reaction completions") {
     auto model = parse("A() -> B() 0.5 delay=tau");
     engine::NetworkGenerator generator(*model);
     const auto network = generator.generateNative();
-    CHECK_THROWS_WITH(engine::OdeIntegrator(*model, network),
-                      Catch::Matchers::ContainsSubstring("Delayed reactions are not supported"));
+    const auto a = speciesIndex(network, "A");
+    const auto b = speciesIndex(network, "B");
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tStart = 0.0;
+    options.tEnd = 4.0;
+    options.nSteps = 8;
+    const auto result = integrator.integrate(options);
+    const auto& initial = result.concentrations.front();
+    const auto& atDelay = result.concentrations[4];
+    const auto& final = result.concentrations.back();
+    CHECK(initial[a] == Catch::Approx(10.0));
+    CHECK(initial[b] == Catch::Approx(0.0));
+    CHECK(atDelay[a] == Catch::Approx(10.0 * std::exp(-1.0)).epsilon(1e-5));
+    CHECK(atDelay[b] == Catch::Approx(0.0).margin(1e-7));
+    CHECK(final[a] == Catch::Approx(10.0 * std::exp(-2.0)).epsilon(1e-5));
+    CHECK(final[b] == Catch::Approx(10.0 * (1.0 - std::exp(-1.0))).epsilon(1e-5));
 }
 
-TEST_CASE("SSA and PSA refuse delayed reactions at their construction boundary") {
+TEST_CASE("native ODE nonconsuming reaction waits for delayed completion") {
+    auto model = parse("G() -> G() + M() 0.5 delay=tau NonConsuming");
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    const auto m = speciesIndex(network, "M");
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tStart = 0.0;
+    options.tEnd = 4.0;
+    options.nSteps = 8;
+    const auto result = integrator.integrate(options);
+    CHECK(result.concentrations[4][m] == Catch::Approx(0.0).margin(1e-7));
+    CHECK(result.concentrations.back()[m] == Catch::Approx(2.0).epsilon(1e-5));
+}
+
+TEST_CASE("native ODE continuation preserves delayed history and reset clears it") {
+    auto model = parse("A() -> B() 0.5 delay=tau");
+    engine::NetworkGenerator generator(*model);
+    auto splitNetwork = generator.generateNative();
+    auto wholeNetwork = splitNetwork;
+    const auto a = speciesIndex(splitNetwork, "A");
+    const auto b = speciesIndex(splitNetwork, "B");
+    engine::OdeIntegrator splitIntegrator(*model, splitNetwork);
+    engine::OdeOptions first;
+    first.method = "cvode";
+    first.tEnd = 2.0;
+    first.nSteps = 4;
+    const auto firstResult = splitIntegrator.integrate(first);
+    engine::OdeOptions second = first;
+    second.tStart = 2.0;
+    second.tEnd = 4.0;
+    second.continueSimulation = true;
+    const auto continued = splitIntegrator.integrate(second);
+
+    engine::OdeIntegrator wholeIntegrator(*model, wholeNetwork);
+    engine::OdeOptions whole = first;
+    whole.tEnd = 4.0;
+    whole.nSteps = 8;
+    const auto unsplit = wholeIntegrator.integrate(whole);
+    REQUIRE(!firstResult.concentrations.empty());
+    CHECK(firstResult.concentrations.back()[b] == Catch::Approx(0.0).margin(1e-7));
+    CHECK(continued.concentrations.back()[a] ==
+          Catch::Approx(unsplit.concentrations.back()[a]).epsilon(1e-7));
+    CHECK(continued.concentrations.back()[b] ==
+          Catch::Approx(unsplit.concentrations.back()[b]).epsilon(1e-7));
+
+    splitNetwork.simulationSession.reset();
+    splitNetwork.species.get(a).setAmount(10.0);
+    splitNetwork.species.get(b).setAmount(0.0);
+    engine::OdeOptions reset = first;
+    reset.tEnd = 2.0;
+    reset.nSteps = 4;
+    const auto resetResult = splitIntegrator.integrate(reset);
+    CHECK(resetResult.concentrations.back()[b] == Catch::Approx(0.0).margin(1e-7));
+}
+
+TEST_CASE("delayed ODE completion uses the historical parameter coefficient") {
+    auto model = parser::parseModel(R"(
+begin model
+begin parameters
+  tau 2
+  k 0.5
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin reaction rules
+  A() -> B() k delay=tau
+end reaction rules
+end model
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    const auto b = speciesIndex(network, "B");
+    engine::OdeIntegrator firstIntegrator(*model, network);
+    engine::OdeOptions first;
+    first.method = "cvode";
+    first.tEnd = 1.0;
+    first.nSteps = 10;
+    const auto firstResult = firstIntegrator.integrate(first);
+    REQUIRE(firstResult.concentrations.size() == 11);
+    model->getParameters().all().at(1).setValue(1.0);
+
+    engine::OdeIntegrator continuedIntegrator(*model, network);
+    engine::OdeOptions continuation = first;
+    continuation.tStart = 1.0;
+    continuation.tEnd = 3.0;
+    continuation.nSteps = 20;
+    continuation.continueSimulation = true;
+    const auto continued = continuedIntegrator.integrate(continuation);
+    CHECK(continued.concentrations.back()[b] ==
+          Catch::Approx(10.0 * (1.0 - std::exp(-0.5))).epsilon(1e-5));
+}
+
+TEST_CASE("native delayed event execution survives an ODE continuation") {
+    auto model = parser::parseModel(R"(
+begin model
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 0
+end seed species
+begin observables
+  Molecules A_count A()
+end observables
+begin bng3_events version 1
+  event "later"
+    trigger: time >= 0.5
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    delay: 1
+    assignment: A_count = 5
+  end event
+end bng3_events
+end model
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    const auto a = speciesIndex(network, "A");
+    engine::OdeIntegrator firstIntegrator(*model, network);
+    engine::OdeOptions first;
+    first.method = "cvode";
+    first.tEnd = 1.0;
+    first.nSteps = 10;
+    const auto firstResult = firstIntegrator.integrate(first);
+    CHECK(firstResult.concentrations.back()[a] == Catch::Approx(0.0));
+
+    engine::OdeIntegrator continuedIntegrator(*model, network);
+    engine::OdeOptions continuation = first;
+    continuation.tStart = 1.0;
+    continuation.tEnd = 2.0;
+    continuation.continueSimulation = true;
+    const auto continued = continuedIntegrator.integrate(continuation);
+    CHECK(continued.concentrations.back()[a] == Catch::Approx(5.0));
+}
+
+TEST_CASE("action continue preserves delayed SSA completions across legs") {
+    auto model = parser::parseModel(R"(
+begin model
+begin parameters
+  tau 2
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin observables
+  Molecules B_count B()
+end observables
+begin reaction rules
+  A() -> B() 1000000 delay=tau
+end reaction rules
+end model
+)");
+    model->addAction(ast::Action{"simulate", {
+        {"method", "ssa"}, {"t_end", "1"}, {"n_steps", "2"},
+        {"seed", "17"}, {"prefix", "bng3_delayed_action"}}});
+    model->addAction(ast::Action{"simulate", {
+        {"method", "ssa"}, {"t_end", "2"}, {"n_steps", "4"},
+        {"seed", "17"}, {"prefix", "bng3_delayed_action"},
+        {"continue", "1"}}});
+    const auto source = std::filesystem::temp_directory_path() /
+                        "bng3_delayed_action.bngl";
+    CHECK_NOTHROW(actions::ActionDispatch::execute(*model, source));
+    const auto output = source.parent_path() / "bng3_delayed_action.gdat";
+    std::istringstream data(readFile(output));
+    std::string line;
+    double finalTime = -1.0;
+    double finalB = -1.0;
+    while (std::getline(data, line)) {
+        if (line.empty() || line.front() == '#') continue;
+        std::istringstream row(line);
+        double time = 0.0;
+        double b = 0.0;
+        if (row >> time >> b) {
+            finalTime = time;
+            finalB = b;
+        }
+    }
+    CHECK(finalTime == Catch::Approx(3.0));
+    CHECK(finalB == 1.0);
+    std::filesystem::remove(output);
+}
+
+TEST_CASE("direct SSA consumes at initiation and completes with zero propensity") {
+    auto model = parser::parseModel(R"(
+begin model
+begin parameters
+  tau 2
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin reaction rules
+  A() -> B() 1000000 delay=tau
+end reaction rules
+end model
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    const auto a = speciesIndex(network, "A");
+    const auto b = speciesIndex(network, "B");
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "ssa";
+    options.seed = 17;
+    options.tStart = 5.0;
+    options.tEnd = 8.0;
+    options.nSteps = 6;
+    const auto result = integrator.integrate(options);
+    REQUIRE(result.concentrations.size() == 7);
+    CHECK(result.concentrations.front()[a] == 1.0);
+    CHECK(result.concentrations.front()[b] == 0.0);
+    CHECK(result.concentrations[4][a] == 0.0);
+    CHECK(result.concentrations[4][b] == 0.0);
+    CHECK(result.concentrations.back()[b] == 1.0);
+}
+
+TEST_CASE("direct SSA delayed completion laws match binomial and Poisson oracles") {
+    constexpr std::size_t runs = 512;
+    std::uint64_t consumingTotal = 0;
+    std::uint64_t nonconsumingTotal = 0;
+    for (std::size_t run = 0; run < runs; ++run) {
+        {
+            auto model = parse("A() -> B() 0.5 delay=tau");
+            engine::NetworkGenerator generator(*model);
+            auto network = generator.generateNative();
+            const auto b = speciesIndex(network, "B");
+            engine::OdeIntegrator integrator(*model, network);
+            engine::OdeOptions options;
+            options.method = "ssa";
+            options.seed = static_cast<int>(run + 1);
+            options.tEnd = 4.0;
+            options.nSteps = 2;
+            const auto result = integrator.integrate(options);
+            consumingTotal += static_cast<std::uint64_t>(
+                result.concentrations.back()[b]);
+        }
+        {
+            auto model = parse("G() -> G() + M() 0.5 delay=tau NonConsuming");
+            engine::NetworkGenerator generator(*model);
+            auto network = generator.generateNative();
+            const auto m = speciesIndex(network, "M");
+            engine::OdeIntegrator integrator(*model, network);
+            engine::OdeOptions options;
+            options.method = "ssa";
+            options.seed = static_cast<int>(run + 1);
+            options.tEnd = 4.0;
+            options.nSteps = 2;
+            const auto result = integrator.integrate(options);
+            nonconsumingTotal += static_cast<std::uint64_t>(
+                result.concentrations.back()[m]);
+        }
+    }
+    constexpr double familywiseAlpha = 0.01;
+    constexpr double perTailAlpha = familywiseAlpha / 4.0;
+    const double consumingTrials = 10.0 * runs;
+    const double consumingProbability = 1.0 - std::exp(-1.0);
+    const double consumingMean = consumingTrials * consumingProbability;
+    const double consumingDeviation = std::sqrt(
+        consumingTrials * std::log(2.0 / (familywiseAlpha / 2.0)) / 2.0);
+    const auto consumingLower = static_cast<std::uint64_t>(
+        std::floor(consumingMean - consumingDeviation));
+    const auto consumingUpper = static_cast<std::uint64_t>(
+        std::ceil(consumingMean + consumingDeviation));
+    const double nonconsumingMean = 2.0 * runs;
+    const double nonconsumingDeviation = poissonChernoffDeviation(
+        nonconsumingMean, perTailAlpha);
+    CHECK(consumingTotal >= consumingLower);
+    CHECK(consumingTotal <= consumingUpper);
+    CHECK(nonconsumingTotal >= static_cast<std::uint64_t>(
+                                   std::floor(nonconsumingMean - nonconsumingDeviation)));
+    CHECK(nonconsumingTotal <= static_cast<std::uint64_t>(
+                                   std::ceil(nonconsumingMean + nonconsumingDeviation)));
+}
+
+TEST_CASE("direct SSA continuation preserves its queue and random stream") {
+    auto model = parse("A() -> B() 0.5 delay=tau");
+    engine::NetworkGenerator generator(*model);
+    auto splitNetwork = generator.generateNative();
+    auto wholeNetwork = splitNetwork;
+    engine::OdeIntegrator splitIntegrator(*model, splitNetwork);
+    engine::OdeOptions first;
+    first.method = "ssa";
+    first.seed = 29;
+    first.tEnd = 2.0;
+    first.nSteps = 2;
+    const auto firstResult = splitIntegrator.integrate(first);
+    engine::OdeOptions second = first;
+    second.tStart = 2.0;
+    second.tEnd = 4.0;
+    second.continueSimulation = true;
+    const auto continued = splitIntegrator.integrate(second);
+
+    engine::OdeIntegrator wholeIntegrator(*model, wholeNetwork);
+    engine::OdeOptions whole = first;
+    whole.tEnd = 4.0;
+    whole.nSteps = 4;
+    const auto unsplit = wholeIntegrator.integrate(whole);
+    REQUIRE(!firstResult.concentrations.empty());
+    REQUIRE(!continued.concentrations.empty());
+    REQUIRE(!unsplit.concentrations.empty());
+    CHECK(continued.concentrations.back() == unsplit.concentrations.back());
+
+    splitNetwork.simulationSession.reset();
+    splitNetwork.species.get(speciesIndex(splitNetwork, "A")).setAmount(10.0);
+    engine::OdeOptions reset = first;
+    reset.continueSimulation = false;
+    reset.tEnd = 1.0;
+    const auto resetResult = splitIntegrator.integrate(reset);
+    CHECK(resetResult.concentrations.front()[speciesIndex(splitNetwork, "A")] == 10.0);
+}
+
+TEST_CASE("SSA and PSA retain explicit delayed-reaction backend boundaries") {
     auto model = parse("A() -> B() 0.5 delay=tau");
     engine::NetworkGenerator generator(*model);
     const auto network = generator.generateNative();
@@ -294,15 +673,131 @@ TEST_CASE("SSA and PSA refuse delayed reactions at their construction boundary")
                       Catch::Matchers::ContainsSubstring("not supported by PSA"));
 }
 
-TEST_CASE("native simulation refuses the SBML delay function in a rate law") {
-    auto model = parse("A() -> B() 1");
-    engine::GeneratedNetwork network;
-    network.reactions.add(ast::Rxn(
-        "r_delay", {}, {}, "delay(A, tau)", 1.0, {},
-        ast::Expression::function("delay", {ast::Expression::identifier("A"),
-                                             ast::Expression::identifier("tau")})));
-    CHECK_THROWS_WITH(engine::OdeIntegrator(*model, network),
-                      Catch::Matchers::ContainsSubstring("delay(x, tau)"));
+TEST_CASE("native ODE evaluates the whole delay expression from historical states") {
+    auto model = parser::parseModel(R"(
+begin model
+begin parameters
+  tau 1
+  lambda 1
+  k 1
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin observables
+  Molecules Aobs A()
+end observables
+begin functions
+  doubled(x) 2*x
+end functions
+begin reaction rules
+  A() -> 0 lambda
+  0 -> B() k*delay(doubled(Aobs), tau)
+end reaction rules
+end model
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    const auto a = speciesIndex(network, "A");
+    const auto b = speciesIndex(network, "B");
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 3.0;
+    options.nSteps = 30;
+    const auto result = integrator.integrate(options);
+    CHECK(result.concentrations[10][a] == Catch::Approx(std::exp(-1.0)).epsilon(1e-5));
+    CHECK(result.concentrations[10][b] == Catch::Approx(2.0).epsilon(1e-5));
+    const double expected = 2.0 + 2.0 * (1.0 - std::exp(-2.0));
+    CHECK(result.concentrations.back()[b] == Catch::Approx(expected).epsilon(1e-5));
+}
+
+TEST_CASE("ODE collects parameterized function delays with sparse output") {
+    auto model = parser::parseModel(R"(
+begin model
+begin parameters
+  tau 1
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin observables
+  Molecules Aobs A()
+end observables
+begin functions
+  delayed(x, d) delay(x, d)
+end functions
+begin reaction rules
+  A() -> 0 1
+  0 -> B() delayed(Aobs, tau)
+end reaction rules
+end model
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    const auto b = speciesIndex(network, "B");
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 4.0;
+    options.nSteps = 1;
+    const auto result = integrator.integrate(options);
+    REQUIRE(result.timePoints.size() == 2);
+    CHECK(result.concentrations.back()[b] ==
+          Catch::Approx(1.0 - std::exp(-3.0)).epsilon(1e-5));
+}
+
+TEST_CASE("nested function delay uses historical parameter values") {
+    auto model = parser::parseModel(R"(
+begin model
+begin parameters
+  tau 2
+  k 0.5
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin observables
+  Molecules Aobs A()
+end observables
+begin functions
+  delayed(x) delay(x, tau)
+end functions
+begin reaction rules
+  0 -> B() delayed(k*Aobs)
+end reaction rules
+end model
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    const auto b = speciesIndex(network, "B");
+    engine::OdeIntegrator firstIntegrator(*model, network);
+    engine::OdeOptions first;
+    first.method = "cvode";
+    first.tEnd = 1.0;
+    first.nSteps = 5;
+    REQUIRE_NOTHROW(firstIntegrator.integrate(first));
+    model->getParameters().all().at(1).setValue(1.0);
+
+    engine::OdeIntegrator continuedIntegrator(*model, network);
+    engine::OdeOptions continuation = first;
+    continuation.tStart = 1.0;
+    continuation.tEnd = 3.0;
+    continuation.continueSimulation = true;
+    const auto continued = continuedIntegrator.integrate(continuation);
+    CHECK(continued.concentrations.back()[b] == Catch::Approx(0.5).epsilon(1e-5));
 }
 
 TEST_CASE("network exporters refuse delay metadata even when the AST lacks the rule") {

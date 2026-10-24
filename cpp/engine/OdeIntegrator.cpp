@@ -190,8 +190,58 @@ bool hasWordBoundaryMatchCaseInsensitive(std::string_view text, std::string_view
 
 
 OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& network)
-    : model_(model), network_(network), functionEvaluator_(model) {
-    requireNoDelayedSemantics(model_, network_, "the native ODE engine");
+    : model_(model), network_(network), functionEvaluator_(model),
+      simulationSession_(&network.simulationSession) {
+    for (const auto& reaction : network_.reactions.all()) {
+        if (reaction.getDelayExpression()) {
+            const double delay = delayedTime(*reaction.getDelayExpression(), model_);
+            if (delay > 0.0) historyDelays_.push_back(delay);
+        }
+    }
+    const auto addExpressionDelays = [&](const ast::Expression& root) {
+        std::function<void(const ast::Expression&)> visit;
+        visit = [&](const ast::Expression& expression) {
+            if (expression.kind() == ast::ExpressionKind::Function &&
+                expression.name() == "delay") {
+                if (expression.args().size() != 2) {
+                    throw std::runtime_error("delay(expr, tau) expects two arguments");
+                }
+                const double delay = delayedTime(expression.args()[1], model_);
+                if (!std::isfinite(delay) || delay < 0.0) {
+                    throw std::runtime_error(
+                        "delay duration must be finite and nonnegative");
+                }
+                if (delay > 0.0) {
+                    historyDelays_.push_back(delay);
+                    hasPositiveExpressionDelay_ = true;
+                }
+            }
+            for (const auto& child : expression.args()) visit(child);
+        };
+        visit(root);
+    };
+    for (const auto& reaction : network_.reactions.all()) {
+        if (reaction.getRateExpression()) {
+            const auto expanded = functionEvaluator_.expandFunctions(
+                *reaction.getRateExpression());
+            addExpressionDelays(expanded);
+        } else {
+            try {
+                const auto parsed = parser::parseExpression(reaction.getRateLaw());
+                const auto expanded = functionEvaluator_.expandFunctions(parsed);
+                addExpressionDelays(expanded);
+            } catch (...) {
+                if (containsDelayCall(reaction.getRateLaw())) throw;
+            }
+        }
+    }
+    for (const auto& function : model_.getFunctions()) {
+        if (function.getArgs().empty()) {
+            const auto expanded = functionEvaluator_.expandFunctions(
+                function.getExpression());
+            addExpressionDelays(expanded);
+        }
+    }
     ast::validateNativeEventSubset(model_);
     if (model_.getEventFormatVersion()) {
         const compile::CompiledModel compiled(model_);
@@ -464,6 +514,9 @@ void OdeIntegrator::compile() {
         crxn.reactantIndices = rxn.getReactants();
         crxn.productIndices = rxn.getProducts();
         crxn.statFactor = rxn.getFactor();
+        crxn.delay = rxn.getDelayExpression()
+            ? delayedTime(*rxn.getDelayExpression(), model_) : 0.0;
+        crxn.nonConsuming = rxn.isNonConsuming();
         // The rule-level TotalRate decision is kept apart from the
         // per-reaction flag.  A special rate law reuses that flag to mean
         // "this rate is already a complete flux", and that reuse must not
@@ -1059,6 +1112,7 @@ void OdeIntegrator::compile() {
                         crxn.rateConstant = 0.0;
                         hasFunctionalRates_ = true;
                     } else {
+                        crxn.sourceRateExpr = parsed;
                         crxn.rateConstant = parsed.evaluate(paramResolver);
                     }
                     return true;
@@ -1079,6 +1133,11 @@ void OdeIntegrator::compile() {
             // trivial numeric expressions.
             if (!evaluated) {
                 try {
+                    try {
+                        crxn.sourceRateExpr = parser::parseExpression(rateStr);
+                    } catch (...) {
+                        crxn.sourceRateExpr = parser::parseExpression(rawRateLaw);
+                    }
                     crxn.rateConstant = evaluateRateString(rateStr, paramResolver);
                 } catch (const std::exception&) {
                     crxn.isFunctional = true;
@@ -1154,8 +1213,13 @@ void OdeIntegrator::compile() {
     constantProductIndices_.clear();
     useCompactConstantReactions_ = false;
     functionalRxnIndices_.clear();
+    delayedRxnIndices_.clear();
     for (std::size_t i = 0; i < compiledRxns_.size(); ++i) {
-        if (compiledRxns_[i].isFunctional) {
+        const auto& reaction = compiledRxns_[i];
+        if (reaction.delay > 0.0) {
+            delayedRxnIndices_.push_back(i);
+            if (reaction.isFunctional) functionalRxnIndices_.push_back(i);
+        } else if (reaction.isFunctional) {
             functionalRxnIndices_.push_back(i);
         } else {
             constantRxnIndices_.push_back(i);
@@ -1445,28 +1509,17 @@ void OdeIntegrator::updateFunctions(
     // snapshot used by the rate-law resolver so exported assignment values
     // are on exactly the integration output grid.
     // The model function list and result indices are immutable for this
-    // integrator. ModelFunctionEvaluator handles nested numeric arguments and
-    // cycles while the resolver below supplies live observables/parameters.
+    // integrator. The history-aware evaluator resolves observables, parameters,
+    // and nested delay() calls from one state/time context.
     const auto& functions = model_.getFunctions();
-    std::function<double(const std::string&)> resolver;
-    resolver = [&](const std::string& name) -> double {
-        if (name == "time") {
-            return time;
-        }
-        const auto observable = observableIndex_.find(name);
-        if (observable != observableIndex_.end() &&
-            observable->second < groupValues.size()) {
-            return groupValues[observable->second];
-        }
-        return model_.getParameters().evaluate(name, time);
-    };
+    const auto functionState = historyStateAt(time);
 
     for (const auto index : resultFunctionIndices_) {
         const auto& function = functions[index];
         try {
             functionValues.push_back(
-                functionEvaluator_.evaluate(
-                    function.getExpression(), resolver, time));
+                evaluateExpressionWithHistory(
+                    function.getExpression(), time, functionState.data()));
         } catch (const std::exception&) {
             // Keep a malformed optional function from invalidating an
             // otherwise executable state trajectory.  The writer/parser
@@ -1572,8 +1625,8 @@ void OdeIntegrator::evaluateFunctionalRateCoefficients(
         double rate;
         if (rxn.functionalRateExpr.has_value()) {
             try {
-                rate = functionEvaluator_.evaluate(
-                    *rxn.functionalRateExpr, resolver, t);
+                rate = evaluateExpressionWithHistory(
+                    *rxn.functionalRateExpr, t, y);
             } catch (const std::exception& error) {
                 if (failOnError) {
                     throw std::runtime_error(
@@ -1652,6 +1705,7 @@ void OdeIntegrator::derivs(double t, const double* y, double* dydt) const {
     if (hasFunctionalRates_) {
         for (const auto idx : functionalRxnIndices_) {
             const auto& rxn = compiledRxns_[idx];
+            if (rxn.delay > 0.0) continue;
             double rate = functionalRateCoefficients_[idx];
 
             if (!rxn.isTotalRate) {
@@ -1665,11 +1719,254 @@ void OdeIntegrator::derivs(double t, const double* y, double* dydt) const {
         }
     }
 
+    for (const auto idx : delayedRxnIndices_) {
+        const auto& rxn = compiledRxns_[idx];
+        const double currentRate = rxn.isFunctional
+            ? functionalRateCoefficients_[idx] : rxn.rateConstant;
+        const double initiationFlux = reactionFlux(rxn, currentRate, y);
+        if (!rxn.nonConsuming) {
+            for (const auto ri : rxn.reactantIndices) dydt[ri] -= initiationFlux;
+        }
+
+        const auto* session = activeSimulationSession_
+            ? activeSimulationSession_ : simulationSession_;
+        if (session && t >= session->startTime + rxn.delay) {
+            const double delayedTimeValue = t - rxn.delay;
+            const auto delayedState = historyStateAt(delayedTimeValue);
+            double delayedRate = rxn.rateConstant;
+            if (rxn.sourceRateExpr) {
+                delayedRate = evaluateExpressionWithHistory(
+                    *rxn.sourceRateExpr, delayedTimeValue, delayedState.data());
+            } else if (rxn.isFunctional) {
+                std::vector<double> rates(compiledRxns_.size(), 0.0);
+                std::vector<double> groups;
+                evaluateFunctionalRateCoefficients(
+                    delayedTimeValue, delayedState.data(), rates.data(), groups);
+                delayedRate = rates[idx];
+            }
+            const double completionFlux =
+                reactionFlux(rxn, delayedRate, delayedState.data());
+            if (rxn.nonConsuming) {
+                for (const auto ri : rxn.reactantIndices) dydt[ri] -= completionFlux;
+            }
+            for (const auto pi : rxn.productIndices) dydt[pi] += completionFlux;
+        }
+    }
+
     // Zero derivatives for fixed (constant) species
     for (std::size_t i = 0; i < nSpecies_; ++i) {
         if (fixedSpecies_[i]) {
             dydt[i] = 0.0;
         }
+    }
+}
+
+double OdeIntegrator::reactionFlux(const CompiledReaction& reaction,
+                                  double rateCoefficient,
+                                  const double* state) const {
+    double flux = rateCoefficient;
+    if (!reaction.isTotalRate) {
+        for (const auto reactant : reaction.reactantIndices) {
+            flux *= state[reactant];
+        }
+    }
+    return flux;
+}
+
+std::vector<double> OdeIntegrator::historyStateAt(double time) const {
+    const auto* session = activeSimulationSession_
+        ? activeSimulationSession_ : simulationSession_;
+    if (!session || session->history.empty()) {
+        std::vector<double> initial(nSpecies_);
+        for (std::size_t i = 0; i < nSpecies_; ++i) {
+            initial[i] = network_.species.get(i).getAmount();
+        }
+        return initial;
+    }
+    const auto& history = session->history;
+    if (time <= history.front().time) return history.front().state;
+    if (time >= history.back().time) return history.back().state;
+
+    auto right = std::upper_bound(
+        history.begin(), history.end(), time,
+        [](double query, const SimulationSession::HistoryPoint& point) {
+            return query < point.time;
+        });
+    if (right == history.begin()) return right->state;
+    const auto left = std::prev(right);
+    if (std::abs(time - left->time) <= 1e-14) return left->state;
+    if (right == history.end()) return left->state;
+    const double width = right->time - left->time;
+    if (!(width > 0.0)) return right->state;
+    const double x = (time - left->time) / width;
+    const double x2 = x * x;
+    const double x3 = x2 * x;
+    const double h00 = 2 * x3 - 3 * x2 + 1;
+    const double h10 = x3 - 2 * x2 + x;
+    const double h01 = -2 * x3 + 3 * x2;
+    const double h11 = x3 - x2;
+    std::vector<double> result(nSpecies_);
+    for (std::size_t i = 0; i < nSpecies_; ++i) {
+        result[i] = h00 * left->state[i] + h10 * width * left->derivative[i] +
+                    h01 * right->state[i] + h11 * width * right->derivative[i];
+    }
+    return result;
+}
+
+std::unordered_map<std::string, double> OdeIntegrator::historyParametersAt(
+    double time) const {
+    const auto* session = activeSimulationSession_
+        ? activeSimulationSession_ : simulationSession_;
+    if (!session || session->history.empty()) return {};
+    const auto& history = session->history;
+    if (time <= history.front().time) return history.front().parameters;
+    if (time > history.back().time + 1e-14) {
+        std::unordered_map<std::string, double> current;
+        for (const auto& parameter : model_.getParameters().all()) {
+            try {
+                current[parameter.getName()] =
+                    model_.getParameters().evaluate(parameter.getName(), time);
+            } catch (...) {}
+        }
+        return current;
+    }
+    auto right = std::upper_bound(
+        history.begin(), history.end(), time,
+        [](double query, const SimulationSession::HistoryPoint& point) {
+            return query < point.time;
+        });
+    if (right == history.end()) return history.back().parameters;
+    if (right == history.begin()) return right->parameters;
+    const auto left = std::prev(right);
+    if (std::abs(time - left->time) <= 1e-14 ||
+        !(right->time > left->time)) return left->parameters;
+    const double fraction = (time - left->time) / (right->time - left->time);
+    auto values = left->parameters;
+    for (const auto& [name, rightValue] : right->parameters) {
+        const auto found = left->parameters.find(name);
+        if (found != left->parameters.end()) {
+            values[name] = found->second + fraction * (rightValue - found->second);
+        } else {
+            values[name] = rightValue;
+        }
+    }
+    return values;
+}
+
+double OdeIntegrator::evaluateExpressionWithHistory(
+    const ast::Expression& expression, double time, const double* state) const {
+    std::function<double(const ast::Expression&, double, const double*,
+                         const std::unordered_map<std::string, double>&)> evaluateAt;
+    evaluateAt = [&](const ast::Expression& current, double currentTime,
+                     const double* currentState,
+                     const std::unordered_map<std::string, double>& parameters) {
+        std::vector<double> groupValues;
+        updateGroups(currentState, groupValues);
+        const auto resolver = [&](const std::string& name) -> double {
+            if (name == "time" || name == "t") return currentTime;
+            if (name.rfind("__substrate_", 0) == 0) {
+                const std::string rest = name.substr(12);
+                const auto marker = rest.find("_off");
+                const auto indexText = marker == std::string::npos
+                    ? rest : rest.substr(0, marker);
+                try {
+                    const auto index = static_cast<std::size_t>(std::stoul(indexText));
+                    if (index < nSpecies_) return currentState[index];
+                } catch (...) {}
+                return 0.0;
+            }
+            if (name.rfind("__tfun_", 0) == 0 && name.size() > 9 &&
+                name.substr(name.size() - 2) == "__") {
+                const auto atPos = name.find("_AT_");
+                if (atPos != std::string::npos) {
+                    const auto tfunName = name.substr(7, atPos - 7);
+                    try {
+                        const double value = std::stod(
+                            name.substr(atPos + 4, name.size() - atPos - 6));
+                        if (tfunRegistry_.has(tfunName)) {
+                            return tfunRegistry_.evaluate(tfunName, value);
+                        }
+                    } catch (...) {}
+                }
+                const auto tfunName = name.substr(7, name.size() - 9);
+                if (tfunRegistry_.has(tfunName)) {
+                    return tfunRegistry_.evaluate(tfunName, currentTime);
+                }
+            }
+            const auto observable = observableIndex_.find(name);
+            if (observable != observableIndex_.end() &&
+                observable->second < groupValues.size()) {
+                return groupValues[observable->second];
+            }
+            const auto historicalParameter = parameters.find(name);
+            if (historicalParameter != parameters.end()) {
+                return historicalParameter->second;
+            }
+            return model_.getParameters().evaluate(name, currentTime);
+        };
+        const ast::Expression::DelayedEvaluator delayed =
+            [&](const ast::Expression& delayedExpression, double delayedTime) {
+                const auto delayedState = historyStateAt(delayedTime);
+                const auto delayedParameters = historyParametersAt(delayedTime);
+                return evaluateAt(delayedExpression, delayedTime,
+                                  delayedState.data(), delayedParameters);
+            };
+        return functionEvaluator_.evaluate(current, resolver, currentTime, delayed);
+    };
+    return evaluateAt(expression, time, state, historyParametersAt(time));
+}
+
+void OdeIntegrator::recordHistoryPoint(double time,
+                                       const std::vector<double>& state) {
+    auto* session = activeSimulationSession_
+        ? activeSimulationSession_ : simulationSession_;
+    if (!session) return;
+    std::vector<double> derivative(nSpecies_, 0.0);
+    derivs(time, state.data(), derivative.data());
+    SimulationSession::HistoryPoint point;
+    point.time = time;
+    point.state = state;
+    point.derivative = std::move(derivative);
+    for (const auto& parameter : model_.getParameters().all()) {
+        try {
+            point.parameters[parameter.getName()] =
+                model_.getParameters().evaluate(parameter.getName(), time);
+        } catch (...) {}
+    }
+    if (!session->history.empty() &&
+        std::abs(session->history.back().time - time) <= 1e-14) {
+        session->history.back() = std::move(point);
+    } else {
+        session->history.push_back(std::move(point));
+    }
+}
+
+void OdeIntegrator::recordHistoryJump(double time,
+                                      const std::vector<double>& state) {
+    auto* session = activeSimulationSession_
+        ? activeSimulationSession_ : simulationSession_;
+    if (!session) return;
+    std::vector<double> derivative(nSpecies_, 0.0);
+    derivs(time, state.data(), derivative.data());
+    SimulationSession::HistoryPoint point;
+    point.time = time;
+    point.state = state;
+    point.derivative = std::move(derivative);
+    for (const auto& parameter : model_.getParameters().all()) {
+        try {
+            point.parameters[parameter.getName()] =
+                model_.getParameters().evaluate(parameter.getName(), time);
+        } catch (...) {}
+    }
+    if (!session->history.empty() &&
+        std::abs(session->history.back().time - time) <= 1e-14) {
+        session->history.push_back(std::move(point));
+    } else {
+        session->history.push_back(std::move(point));
+    }
+    if (session->discontinuities.empty() ||
+        std::abs(session->discontinuities.back() - time) > 1e-14) {
+        session->discontinuities.push_back(time);
     }
 }
 
@@ -2092,6 +2389,135 @@ double OdeIntegrator::cvodeEventRoot(double time, const double* scaledState) con
 }
 
 OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
+    if (options.batchSize > 0) {
+        if (hasPositiveExpressionDelay_) {
+            throw std::runtime_error(
+                "delay(expr, tau) is not supported by batch SSA");
+        }
+        for (const auto& reaction : compiledRxns_) {
+            if (reaction.delay > 0.0) {
+                throw std::runtime_error(
+                    "Delayed reactions require single-trajectory SSA");
+            }
+        }
+        return integrateCore(options);
+    }
+
+    SimulationSession working = *simulationSession_;
+    if (options.method == "ssa" && hasPositiveExpressionDelay_) {
+        throw std::runtime_error(
+            "delay(expr, tau) has no direct SSA semantics");
+    }
+    bool hasNetworkIntervention = false;
+    bool hasParameterIntervention = false;
+    std::vector<double> stateBeforeIntervention;
+    std::vector<double> stateAfterIntervention;
+    if (options.continueSimulation) {
+        if (!working.initialized ||
+            std::abs(working.currentTime - options.tStart) > 1e-10) {
+            throw std::runtime_error(
+                "continue_simulation requires a prior successful run ending at t_start");
+        }
+        if (working.reactionDelays.size() != compiledRxns_.size()) {
+            throw std::runtime_error(
+                "continue_simulation cannot change the compiled reaction set");
+        }
+        for (std::size_t i = 0; i < compiledRxns_.size(); ++i) {
+            if (working.reactionDelays[i] != compiledRxns_[i].delay) {
+                throw std::runtime_error(
+                    "continue_simulation requires reaction delays to remain constant");
+            }
+        }
+        if (!working.history.empty()) {
+            const auto& previousParameters = working.history.back().parameters;
+            for (const auto& parameter : model_.getParameters().all()) {
+                try {
+                    const double current = model_.getParameters().evaluate(
+                        parameter.getName(), options.tStart);
+                    const auto previous = previousParameters.find(parameter.getName());
+                    if (previous != previousParameters.end() &&
+                        std::abs(previous->second - current) > 1e-12) {
+                        hasParameterIntervention = true;
+                        break;
+                    }
+                } catch (...) {}
+            }
+        }
+        std::vector<double> networkState(nSpecies_);
+        bool networkDiffers = false;
+        bool networkIsOriginal = working.initialState.size() == nSpecies_;
+        for (std::size_t i = 0; i < nSpecies_; ++i) {
+            networkState[i] = network_.species.get(i).getAmount();
+            networkDiffers = networkDiffers ||
+                std::abs(networkState[i] - working.state[i]) > 1e-12;
+            networkIsOriginal = networkIsOriginal &&
+                std::abs(networkState[i] - working.initialState[i]) <= 1e-12;
+        }
+        if (networkDiffers && !networkIsOriginal) {
+            hasNetworkIntervention = true;
+            stateBeforeIntervention = working.state;
+            stateAfterIntervention = networkState;
+            working.state = networkState;
+        }
+    } else {
+        working.reset();
+        working.initialized = true;
+        working.startTime = options.tStart;
+        working.currentTime = options.tStart;
+        working.reactionDelays.reserve(compiledRxns_.size());
+        for (const auto& reaction : compiledRxns_) {
+            working.reactionDelays.push_back(reaction.delay);
+        }
+        working.state.resize(nSpecies_);
+        working.initialState.resize(nSpecies_);
+        for (std::size_t i = 0; i < nSpecies_; ++i) {
+            working.state[i] = network_.species.get(i).getAmount();
+            working.initialState[i] = working.state[i];
+        }
+    }
+    activeSimulationSession_ = &working;
+    try {
+        if (hasNetworkIntervention) {
+            recordHistoryJump(options.tStart, stateBeforeIntervention);
+            recordHistoryJump(options.tStart, stateAfterIntervention);
+        }
+        if (hasParameterIntervention) {
+            recordHistoryJump(options.tStart, working.state);
+        }
+        if (options.method != "cvode" && options.method != "ssa") {
+            if (hasPositiveExpressionDelay_) {
+                throw std::runtime_error(
+                    "delay(expr, tau) requires the CVODE ODE method");
+            }
+            for (const auto& reaction : compiledRxns_) {
+                if (reaction.delay > 0.0) {
+                    throw std::runtime_error(
+                        "Delayed reactions require the CVODE ODE method");
+                }
+            }
+        }
+        auto result = integrateCore(options);
+        if (!result.concentrations.empty()) {
+            working.state = result.concentrations.back();
+            working.currentTime = result.timePoints.back();
+        }
+        working.pendingNativeEvents.clear();
+        for (const auto& pending : pendingEvents_) {
+            working.pendingNativeEvents.push_back({
+                pending.event, pending.executionTime, pending.values});
+        }
+        working.eventTriggerRoseAt = triggerRoseAt_;
+        working.initialized = true;
+        *simulationSession_ = std::move(working);
+        activeSimulationSession_ = nullptr;
+        return result;
+    } catch (...) {
+        activeSimulationSession_ = nullptr;
+        throw;
+    }
+}
+
+OdeResult OdeIntegrator::integrateCore(const OdeOptions& options) {
     if (!nativeEvents_.empty() && options.method != "cvode") {
         throw std::runtime_error("bng3_events require CVODE continuous root detection");
     }
@@ -2978,18 +3404,29 @@ struct CvodeSession {
 OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     auto times = outputTimes(opts);
     const auto stopIfExpr = parseStopIf(opts);
-    // A queued event belongs to one run: a second integration of the same
-    // integrator must not inherit it.
     pendingEvents_.clear();
-    // The instant at which each event's trigger last rose belongs to one run
-    // as well.
-    triggerRoseAt_.assign(nativeEvents_.size(),
-                          -std::numeric_limits<double>::infinity());
+    auto* eventSession = activeSimulationSession_
+        ? activeSimulationSession_ : simulationSession_;
+    if (opts.continueSimulation && eventSession) {
+        for (const auto& pending : eventSession->pendingNativeEvents) {
+            pendingEvents_.push_back({pending.event, pending.executionTime,
+                                      pending.values});
+        }
+        triggerRoseAt_ = eventSession->eventTriggerRoseAt;
+    }
+    if (!opts.continueSimulation ||
+        triggerRoseAt_.size() != nativeEvents_.size()) {
+        triggerRoseAt_.assign(nativeEvents_.size(),
+                              -std::numeric_limits<double>::infinity());
+    }
 
     std::vector<double> initialState(nSpecies_);
     std::vector<double> initialDerivatives(nSpecies_);
     for (std::size_t i = 0; i < nSpecies_; ++i) {
-        initialState[i] = network_.species.get(i).getAmount();
+        initialState[i] = activeSimulationSession_ &&
+                activeSimulationSession_->state.size() == nSpecies_
+            ? activeSimulationSession_->state[i]
+            : network_.species.get(i).getAmount();
     }
     if (stopIfExpr.has_value() &&
         stopConditionMet(*stopIfExpr, opts.tStart, initialState) &&
@@ -3005,7 +3442,8 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
             lastRootValues_.push_back(
                 eventRootValue(group.trigger, opts.tStart, initialState.data()));
         }
-        for (std::size_t index = 0; index < nativeEvents_.size(); ++index) {
+        for (std::size_t index = 0;
+             !opts.continueSimulation && index < nativeEvents_.size(); ++index) {
             const auto& event = nativeEvents_[index];
             const auto& trigger = event.trigger;
             // A strict trigger is false while its two sides are equal, so an
@@ -3048,7 +3486,9 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
         }
         // The events that trigger at the start of the simulation are executed
         // before the solver takes its first step.
-        applyDueEvents(opts.tStart, initialState);
+        if (applyDueEvents(opts.tStart, initialState)) {
+            recordHistoryJump(opts.tStart, initialState);
+        }
     }
 
     // The SUNDIALS handles used below are raw pointers with manual
@@ -3177,6 +3617,18 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
         }
     }
 
+    double minimumDelay = std::numeric_limits<double>::infinity();
+    for (const double delay : historyDelays_) {
+        minimumDelay = std::min(minimumDelay, delay);
+    }
+    if (std::isfinite(minimumDelay)) {
+        const double stepLimit = opts.maxStep > 0.0
+            ? std::min(opts.maxStep, minimumDelay) : minimumDelay;
+        if (CVodeSetMaxStep(cvode_mem, stepLimit) != CV_SUCCESS) {
+            throw std::runtime_error("CVodeSetMaxStep for delayed history failed");
+        }
+    }
+
     // Note: Perl's run_network does NOT enable stability limit detection.
     // Disabled for exact parity with Perl CVODE stepping behavior.
     // CVodeSetStabLimDet(cvode_mem, 1);
@@ -3217,6 +3669,13 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     result.concentrations.reserve(times.size());
 
     double t = opts.tStart;
+    {
+        std::vector<double> state(nSpecies_);
+        for (std::size_t i = 0; i < nSpecies_; ++i) {
+            state[i] = NV_Ith_S(y, i) * cvodeStateScale_[i];
+        }
+        recordHistoryPoint(t, state);
+    }
 
     for (std::size_t step = 0; step < times.size(); ++step) {
         const double tOut = times[step];
@@ -3229,6 +3688,28 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                 double target = tOut;
                 for (const auto& pending : pendingEvents_) {
                     if (pending.executionTime < target) target = pending.executionTime;
+                }
+                for (const double delay : historyDelays_) {
+                    const double historyStart = activeSimulationSession_
+                        ? activeSimulationSession_->startTime : opts.tStart;
+                    const double elapsed = std::max(0.0, t - historyStart);
+                    const double interval = std::floor(elapsed / delay) + 1.0;
+                    const double breakpoint = historyStart + interval * delay;
+                    if (breakpoint > t + 1e-13 && breakpoint < target) {
+                        target = breakpoint;
+                    }
+                    if (activeSimulationSession_) {
+                        for (const double discontinuity :
+                             activeSimulationSession_->discontinuities) {
+                            if (discontinuity > t + 1e-13) continue;
+                            const double lagged =
+                                std::floor((t - discontinuity) / delay) + 1.0;
+                            const double propagated = discontinuity + lagged * delay;
+                            if (propagated > t + 1e-13 && propagated < target) {
+                                target = propagated;
+                            }
+                        }
+                    }
                 }
                 if (target < t) target = t;
                 if (target <= t) {
@@ -3248,7 +3729,15 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                     }
                     continue;
                 }
-                flag = CVode(cvode_mem, target, y, &t, CV_NORMAL);
+                if ((target < tOut - 1e-12 || !historyDelays_.empty()) &&
+                    CVodeSetStopTime(cvode_mem, target) != CV_SUCCESS) {
+                    throw std::runtime_error("CVodeSetStopTime failed");
+                }
+                // Method-of-steps needs every accepted solver state in the
+                // history. Keep CV_NORMAL for ordinary simulations so this
+                // feature does not change their established CVODE path.
+                flag = CVode(cvode_mem, target, y, &t,
+                             historyDelays_.empty() ? CV_NORMAL : CV_ONE_STEP);
 
                 if (flag == CV_ROOT_RETURN) {
                     // CVodeGetRootInfo writes one entry per registered root
@@ -3264,6 +3753,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                     if (root != rootsFound.end()) {
                         std::vector<double> state(nSpecies_);
                         for (std::size_t i = 0; i < nSpecies_; ++i) state[i] = NV_Ith_S(y, i) * cvodeStateScale_[i];
+                        recordHistoryPoint(t, state);
                         // The session owns the SUNDIALS handles: an
                         // exception here unwinds the integration and the
                         // session releases the linear solver, the matrix,
@@ -3312,6 +3802,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                         // waits in the queue until its delay has elapsed.
                         if (applyDueEvents(t, state)) {
                             for (std::size_t i = 0; i < nSpecies_; ++i) NV_Ith_S(y, i) = state[i] / cvodeStateScale_[i];
+                            recordHistoryJump(t, state);
                             if (CVodeReInit(cvode_mem, t, y) != CV_SUCCESS) {
                                 throw std::runtime_error("bng3_events CVodeReInit failed");
                             }
@@ -3327,13 +3818,30 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                     for (std::size_t i = 0; i < nSpecies_; ++i) {
                         dueState[i] = NV_Ith_S(y, i) * cvodeStateScale_[i];
                     }
+                    recordHistoryPoint(t, dueState);
                     if (applyDueEvents(t, dueState)) {
                         for (std::size_t i = 0; i < nSpecies_; ++i) {
                             NV_Ith_S(y, i) = dueState[i] / cvodeStateScale_[i];
                         }
+                        recordHistoryJump(t, dueState);
                         if (CVodeReInit(cvode_mem, t, y) != CV_SUCCESS) {
                             // The session releases the SUNDIALS handles.
                             throw std::runtime_error("bng3_events CVodeReInit failed");
+                        }
+                        continue;
+                    }
+                    if (t < target - 1e-12) continue;
+                    if (target < tOut - 1e-12) {
+                        // A method-of-steps kink (including a sum-generated
+                        // breakpoint) becomes a source discontinuity for each
+                        // other delay in the model.
+                        if (activeSimulationSession_ && !historyDelays_.empty()) {
+                            auto& discontinuities =
+                                activeSimulationSession_->discontinuities;
+                            if (discontinuities.empty() ||
+                                std::abs(discontinuities.back() - t) > 1e-12) {
+                                discontinuities.push_back(t);
+                            }
                         }
                         continue;
                     }
@@ -3521,7 +4029,13 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         opts.seed > 0
             ? static_cast<std::mt19937_64::result_type>(opts.seed)
             : static_cast<std::mt19937_64::result_type>(std::random_device{}());
-    std::mt19937_64 rng(seedValue);
+    auto* session = activeSimulationSession_;
+    std::mt19937_64 localRng(seedValue);
+    if (session && !session->rngInitialized) {
+        session->rng.seed(seedValue);
+        session->rngInitialized = true;
+    }
+    auto& rng = session ? session->rng : localRng;
     std::uniform_real_distribution<double> uniform(0.0, 1.0);
 
     // Initialize state (round to nearest integer)
@@ -3529,7 +4043,9 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     auto& y = scratch.state;
     y.resize(nSpecies_);
     for (std::size_t i = 0; i < nSpecies_; ++i) {
-        y[i] = std::round(network_.species.get(i).getAmount());
+        const double state = session && session->state.size() == nSpecies_
+            ? session->state[i] : network_.species.get(i).getAmount();
+        y[i] = std::round(state);
     }
     const bool stopAtInitial =
         stopIfExpr.has_value() && stopConditionMet(*stopIfExpr, opts.tStart, y);
@@ -3754,30 +4270,94 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         if (t >= opts.tEnd) {
             break;
         }
-        if (totalPropensity <= 0.0) {
+        double nextCompletion = std::numeric_limits<double>::infinity();
+        if (session) {
+            for (const auto& pending : session->pendingCompletions) {
+                nextCompletion = std::min(nextCompletion, pending.time);
+            }
+        }
+        double nextReaction = std::numeric_limits<double>::infinity();
+        if (totalPropensity > 0.0) {
+            if (session) {
+                if (!session->ssaHazardInitialized) {
+                    double r1 = uniform(rng);
+                    while (r1 == 0.0 || r1 == 1.0) r1 = uniform(rng);
+                    session->ssaRemainingHazard = -std::log(r1);
+                    session->ssaHazardInitialized = true;
+                }
+                nextReaction = t + session->ssaRemainingHazard / totalPropensity;
+            } else {
+                double r1 = uniform(rng);
+                while (r1 == 0.0 || r1 == 1.0) r1 = uniform(rng);
+                nextReaction = t - std::log(r1) / totalPropensity;
+            }
+        }
+
+        if (nextCompletion <= nextReaction && nextCompletion <= opts.tEnd) {
+            if (session && totalPropensity > 0.0) {
+                session->ssaRemainingHazard = std::max(
+                    0.0, session->ssaRemainingHazard -
+                             totalPropensity * (nextCompletion - t));
+            }
+            if (opts.outputStepInterval == 0 || explicitTimes) {
+                appendScheduledBefore(nextCompletion);
+            }
+            t = nextCompletion;
+            std::vector<std::size_t> completed;
+            for (std::size_t i = 0; i < session->pendingCompletions.size(); ++i) {
+                if (std::abs(session->pendingCompletions[i].time - t) <= 1e-12) {
+                    completed.push_back(i);
+                }
+            }
+            std::sort(completed.rbegin(), completed.rend());
+            for (const auto index : completed) {
+                const auto pending = session->pendingCompletions[index];
+                const auto& reaction = compiledRxns_[pending.reaction];
+                if (reaction.nonConsuming) {
+                    for (const auto idx : reaction.reactantIndices) {
+                        if (!fixedSpecies_[idx]) y[idx] -= 1.0;
+                    }
+                }
+                for (const auto idx : reaction.productIndices) {
+                    if (!fixedSpecies_[idx]) y[idx] += 1.0;
+                }
+                session->pendingCompletions.erase(
+                    session->pendingCompletions.begin() +
+                    static_cast<std::ptrdiff_t>(index));
+            }
+            recomputeAll();
+            if (opts.outputStepInterval == 0 || explicitTimes) {
+                appendScheduledThrough(t);
+            } else if ((ssaStepCount % opts.outputStepInterval) == 0) {
+                result.timePoints.push_back(t);
+                result.concentrations.push_back(y);
+            }
+            if (stopIfExpr.has_value() && stopConditionMet(*stopIfExpr, t, y)) {
+                stoppedEarly = true;
+            }
+            continue;
+        }
+
+        if (nextReaction > opts.tEnd) {
+            if (session && totalPropensity > 0.0) {
+                session->ssaRemainingHazard = std::max(
+                    0.0, session->ssaRemainingHazard -
+                             totalPropensity * (opts.tEnd - t));
+            }
             t = opts.tEnd;
             break;
         }
 
-        // Compute time to next reaction
-        double r1 = uniform(rng);
-        while (r1 == 0.0 || r1 == 1.0) {
-            r1 = uniform(rng);
-        }
-        double tau = -std::log(r1) / totalPropensity;
-
-        // Check if next reaction would occur after end time
-        if (t + tau > opts.tEnd) {
-            t = opts.tEnd;
-            break;
-        }
-
-        const double eventTime = t + tau;
+        const double eventTime = nextReaction;
         if (opts.outputStepInterval == 0 || explicitTimes) {
             // Scheduled samples before the event see the pre-event state.
             appendScheduledBefore(eventTime);
         }
         t = eventTime;
+        if (session) {
+            session->ssaHazardInitialized = false;
+            session->ssaRemainingHazard = 0.0;
+        }
 
         // Select next reaction
         double r2 = uniform(rng);
@@ -3826,14 +4406,26 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         // untouched - a constant species still contributes its amount to the
         // rate law it appears in - only the state update skips it.
         const auto& rxn = compiledRxns_[selectedRxn];
-        for (const auto idx : rxn.reactantIndices) {
-            if (fixedSpecies_[idx]) continue;
-            y[idx] -= 1.0;
-            if (y[idx] < 0.0) y[idx] = 0.0;  // Safety clamp
-        }
-        for (const auto idx : rxn.productIndices) {
-            if (fixedSpecies_[idx]) continue;
-            y[idx] += 1.0;
+        if (rxn.delay > 0.0) {
+            if (!rxn.nonConsuming) {
+                for (const auto idx : rxn.reactantIndices) {
+                    if (fixedSpecies_[idx]) continue;
+                    y[idx] -= 1.0;
+                    if (y[idx] < 0.0) y[idx] = 0.0;
+                }
+            }
+            session->pendingCompletions.push_back({
+                t + rxn.delay, selectedRxn, session->nextCompletionOrder++});
+        } else {
+            for (const auto idx : rxn.reactantIndices) {
+                if (fixedSpecies_[idx]) continue;
+                y[idx] -= 1.0;
+                if (y[idx] < 0.0) y[idx] = 0.0;
+            }
+            for (const auto idx : rxn.productIndices) {
+                if (fixedSpecies_[idx]) continue;
+                y[idx] += 1.0;
+            }
         }
 
         // Recompute propensities.  On a network with a dependency graph only
