@@ -404,17 +404,84 @@ def test_parent_timeout_retains_phase_source_hash_and_bounded_case_packet(
     }
     assert packet["included_bytes"] <= validator.MAX_CASE_PACKET_BYTES
     assert record["case_packet"].endswith("case-packet/packet.json")
+    assert all(item.get("sha256") for item in packet["artifacts"])
+    packet_by_name = {item["name"]: item for item in packet["artifacts"]}
+    assert packet_by_name["source.xml"]["sha256"] == digest
+    for name, item in packet_by_name.items():
+        assert hashlib.sha256((packet_path.parent / name).read_bytes()).hexdigest() == (
+            item["sha256"]
+        )
+
+
+def test_parent_timeout_verdict_survives_denied_record_persistence(
+    tmp_path, monkeypatch
+):
+    import argparse
+    import subprocess
+
+    validator = _validator()
+    source_bytes = b"<sbml/>"
+    digest = hashlib.sha256(source_bytes).hexdigest()
+    entry = {
+        "id": "BIOMD0000000008",
+        "filename": "model.xml",
+        "sha256": digest,
+    }
+    cache_dir = tmp_path / "cache"
+    cached_source = validator._model_source_cache_path(cache_dir, entry)
+    cached_source.parent.mkdir(parents=True)
+    cached_source.write_bytes(source_bytes)
+    artifacts_dir = tmp_path / "artifacts"
+
+    def timeout(command, **kwargs):
+        raise subprocess.TimeoutExpired(command, 180, stderr=b"")
+
+    original_write_text = Path.write_text
+
+    def deny_record(path, *args, **kwargs):
+        if path.name == "record.json":
+            raise PermissionError("read-only artifact mount")
+        return original_write_text(path, *args, **kwargs)
+
+    monkeypatch.setattr(validator.subprocess, "run", timeout)
+    monkeypatch.setattr(validator, "_attach_case_packet", lambda *_args: None)
+    monkeypatch.setattr(Path, "write_text", deny_record)
+    args = argparse.Namespace(
+        cache_dir=cache_dir,
+        manifest=Path("provenance/published-biomodels.json"),
+        mode="flat",
+        simulation_t_end=1.0,
+        simulation_n_steps=10,
+        simulation_rtol=1e-8,
+        simulation_atol=1e-12,
+        ode_smoke=False,
+        artifacts_dir=artifacts_dir,
+        model_timeout=180,
+    )
+
+    record = validator._run_isolated_model(entry, args)
+
+    assert record["status"] == "timeout"
+    assert record["core_passed"] is False
+    assert record["record_persistence_error"] == (
+        "PermissionError: read-only artifact mount"
+    )
 
 
 def test_failed_mode_record_keeps_completed_stages_and_prior_results():
     validator = _validator()
-    result = {"mode": "atomized", "generated_network": {"species": 3}}
+    result = {
+        "mode": "atomized",
+        "comparison_scope": validator.COMPARISON_SCOPE,
+        "generated_network": {"species": 3},
+    }
     with pytest.raises(RuntimeError) as caught:
         with validator._mode_stage(result, "native-sbml-readback"):
             raise RuntimeError("native reader failed")
 
     failed = validator._failed_mode_result("atomized", result, caught.value)
     assert failed["status"] == "failed"
+    assert failed["comparison_scope"] == "written_sbml_export_consistency"
     assert failed["generated_network"] == {"species": 3}
     assert failed["stage_results"] == [
         {

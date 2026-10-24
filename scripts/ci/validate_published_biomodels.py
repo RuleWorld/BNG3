@@ -55,6 +55,7 @@ NUMERICAL_COMPARISON_RTOL_FLOOR = 1e-5
 BIOMODELS_CASE_PHASE_PREFIX = "@@BIOMODELS_CASE_PHASE@@"
 MAX_CASE_PACKET_BYTES = 4 * 1024 * 1024
 MAX_CASE_PACKET_FILE_BYTES = 1024 * 1024
+COMPARISON_SCOPE = "written_sbml_export_consistency"
 
 
 def _mode_stage(result: dict[str, Any], name: str):
@@ -1287,8 +1288,8 @@ def _simulate_and_compare(
         else:
             # The observable is not a finite number somewhere on the grid.
             # When both engines report the same undefined value at the same
-            # points, the source's own observable is undefined there and the
-            # finite points are what the comparison can measure.
+            # points, the translated/written observable is undefined there;
+            # the finite points are what the comparison can measure.
             undefined = _same_undefined_value(left, right)
             if undefined:
                 mask = np.isfinite(left) & np.isfinite(right)
@@ -1318,14 +1319,14 @@ def _simulate_and_compare(
         )
         scaled_error = max_abs / tolerance if tolerance else math.inf
         if undefined:
-            # The source's own observable has no value at this point, so the
-            # pointwise comparison cannot be made there.  The agreement at the
+            # The translated/written observable has no value at this point, so
+            # the pointwise comparison cannot be made there. The agreement at
             # finite points is recorded as evidence, but the record is not
             # comparable and must say so rather than claim a pass.
             passed = False
             points = ", ".join(f"t={_format_time(time)}" for time in undefined_at[:5])
             not_comparable[name] = (
-                f"the source observable is undefined at {points} "
+                f"the translated/written observable is undefined at {points} "
                 f"({_undefined_label(left)}); BNG3 and libRoadRunner "
                 "report the same undefined value"
             )
@@ -1366,7 +1367,7 @@ def _simulate_and_compare(
             "passed": False,
             "not_comparable": not_comparable,
             "error": (
-                "the source observable is undefined at "
+                "the translated/written observable is undefined at "
                 + ", ".join(sorted(undefined_points))
                 + ": BNG3 and libRoadRunner report the same undefined value, "
                 "so a pointwise comparison cannot measure the record ("
@@ -1467,7 +1468,11 @@ def _validate_mode(
 
     mode = "atomized" if mode_atomize else "flat"
     result: dict[str, Any] = partial_result if partial_result is not None else {}
-    result.update(mode=mode, source_xml={})
+    result.update(
+        mode=mode,
+        source_xml={},
+        comparison_scope=COMPARISON_SCOPE,
+    )
     try:
         with _mode_stage(result, "source-xml-validation"):
             result["source_xml"] = _validate_xml(sbml, "source SBML")
@@ -1898,12 +1903,7 @@ def _run_isolated_model(
         record["source_validation"] = _timeout_source_validation(entry, args)
         if args.artifacts_dir is not None:
             _attach_case_packet(record, entry, args)
-            model_dir = args.artifacts_dir / str(entry["id"])
-            model_dir.mkdir(parents=True, exist_ok=True)
-            (model_dir / "record.json").write_text(
-                json.dumps(_json_compatible(record), indent=2, allow_nan=False) + "\n",
-                encoding="utf-8",
-            )
+            _persist_parent_record(record, entry, args)
     except Exception as exc:
         record.update(
             status="harness_error",
@@ -1977,10 +1977,27 @@ def _write_case_packet(
                 }
             )
             continue
-        remaining -= size
         target = packet_dir / path.name
         shutil.copyfile(path, target)
-        files.append({"name": path.name, "size_bytes": size})
+        copied_size = target.stat().st_size
+        if copied_size > MAX_CASE_PACKET_FILE_BYTES or copied_size > remaining:
+            target.unlink()
+            omitted.append(
+                {
+                    "name": path.name,
+                    "size_bytes": copied_size,
+                    "reason": "copied file exceeds per-file or packet byte cap",
+                }
+            )
+            continue
+        remaining -= copied_size
+        files.append(
+            {
+                "name": path.name,
+                "size_bytes": copied_size,
+                "sha256": _sha256(target),
+            }
+        )
     packet = {
         "model_id": str(entry["id"]),
         "source_validation": record.get("source_validation", {}),
@@ -2011,6 +2028,22 @@ def _attach_case_packet(
         record["case_packet"] = _write_case_packet(entry, args, record)
     except Exception as exc:
         record["case_packet_error"] = f"{type(exc).__name__}: {exc}"
+
+
+def _persist_parent_record(
+    record: dict[str, Any], entry: dict[str, Any], args: argparse.Namespace
+) -> None:
+    """Persist parent timeout evidence without replacing its model verdict."""
+
+    try:
+        model_dir = args.artifacts_dir / str(entry["id"])
+        model_dir.mkdir(parents=True, exist_ok=True)
+        (model_dir / "record.json").write_text(
+            json.dumps(_json_compatible(record), indent=2, allow_nan=False) + "\n",
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        record["record_persistence_error"] = f"{type(exc).__name__}: {exc}"
 
 
 def main() -> int:
@@ -2392,6 +2425,7 @@ def main() -> int:
             "n_steps": args.simulation_n_steps,
             "rtol": args.simulation_rtol,
             "atol": args.simulation_atol,
+            "comparison_scope": COMPARISON_SCOPE,
             "comparison": "all generated BNGL observables on the same time grid",
             "engines": ["BNG3 CVODE", "libRoadRunner CVODE"],
         },
