@@ -108,6 +108,10 @@ def test_curated_biomodels_lane_is_manual_and_uses_the_pinned_full_inventory():
         in bundle_install["run"]
     )
     assert "--receipt" in bundle_install["run"]
+    assert "--source-bundle-receipt" in smoke["run"]
+    assert "--source-bundle-manifest" in smoke["run"]
+    assert "--source-bundle-receipt" in full["run"]
+    assert "--source-bundle-manifest" in full["run"]
     assert 'membership.get("status") != "matched"' not in commands
     assert 'manifest_digest != provenance["manifest_sha256"]' in commands
     assert (
@@ -116,6 +120,13 @@ def test_curated_biomodels_lane_is_manual_and_uses_the_pinned_full_inventory():
     assert "curated-biomodels-${{ github.sha }}" in "\n".join(
         step.get("with", {}).get("name", "") for step in corpus["steps"]
     )
+    inventory_gate = next(
+        step
+        for step in corpus["steps"]
+        if step.get("name")
+        == "Build per-record corpus inventory and compare flat expectations"
+    )
+    assert '--report-revision "$BNG3_SOURCE_REVISION"' in inventory_gate["run"]
 
 
 def test_curated_biomodels_inventory_is_a_complete_pinned_query_result():

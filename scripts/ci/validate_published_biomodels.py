@@ -436,11 +436,23 @@ def _enumerate_inventory(
     return inventory
 
 
-def _download_if_needed(path: Path, entry: dict[str, Any]) -> str:
+def _download_if_needed(
+    path: Path, entry: dict[str, Any], *, offline: bool = False
+) -> str:
     expected = entry.get("sha256")
+    if offline and not re.fullmatch(r"[0-9a-f]{64}", str(expected or "")):
+        raise SourceAcquisitionError(
+            "offline source cache cannot be verified without an expected SHA-256",
+            [],
+        )
     if expected and path.exists() and _sha256(path) == expected:
         return str(expected)
     if not path.exists() or (expected and _sha256(path) != expected):
+        if offline:
+            raise SourceAcquisitionError(
+                f"offline source cache is missing or has the wrong SHA-256: {path}",
+                [],
+            )
         attempts: list[dict[str, Any]] = []
         try:
             request = urllib.request.Request(
@@ -500,6 +512,123 @@ def _download_if_needed(path: Path, entry: dict[str, Any]) -> str:
     if expected and actual != expected:
         raise SourceIntegrityError(path, str(expected), actual)
     return actual
+
+
+def _verified_no_sbml_archive_records(
+    receipt_path: Path,
+    bundle_manifest_path: Path,
+    inventory_path: Path,
+    query_manifest_path: Path,
+    *,
+    repo_root: Path,
+) -> dict[str, dict[str, Any]]:
+    """Load pinned negative archive evidence only from a verified bundle receipt."""
+
+    from scripts.ci.install_biomodels_source_bundle import (
+        SOURCE_FIELDS,
+        _validate_records,
+    )
+
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    bundle_manifest = json.loads(bundle_manifest_path.read_text(encoding="utf-8"))
+    inventory = json.loads(inventory_path.read_text(encoding="utf-8"))
+    query_manifest = json.loads(query_manifest_path.read_text(encoding="utf-8"))
+    bundle_manifest_sha = _sha256(bundle_manifest_path)
+    inventory_sha = _sha256(inventory_path)
+    query_manifest_sha = _sha256(query_manifest_path)
+    if receipt.get("status") != "verified":
+        raise ValueError("source bundle receipt is not verified")
+    if bundle_manifest.get("kind") != "curated-biomodels-offline-source-bundle":
+        raise ValueError("unexpected offline source bundle manifest kind")
+    if receipt.get("bundle_manifest_sha256") != bundle_manifest_sha:
+        raise ValueError("source bundle receipt does not bind the bundle manifest")
+    if (
+        receipt.get("inventory_sha256") != inventory_sha
+        or bundle_manifest.get("inventory_sha256") != inventory_sha
+    ):
+        raise ValueError("source bundle receipt does not bind the pinned inventory")
+    if (
+        receipt.get("query_manifest_sha256") != query_manifest_sha
+        or bundle_manifest.get("query_manifest_sha256") != query_manifest_sha
+    ):
+        raise ValueError("source bundle receipt does not bind the query manifest")
+    if (
+        receipt.get("bundle_sha256") != bundle_manifest.get("bundle_sha256")
+        or receipt.get("query") != bundle_manifest.get("query")
+        or receipt.get("snapshot_date") != bundle_manifest.get("snapshot_date")
+        or inventory.get("source") != bundle_manifest.get("source")
+        or inventory.get("query") != bundle_manifest.get("query")
+        or query_manifest.get("search_api_url") != bundle_manifest.get("source")
+        or query_manifest.get("curation_query") != bundle_manifest.get("query")
+        or query_manifest.get("snapshot_date") != bundle_manifest.get("snapshot_date")
+    ):
+        raise ValueError(
+            "source bundle receipt and pinned snapshot identities disagree"
+        )
+
+    records, payload_hashes, no_sbml_ids = _validate_records(bundle_manifest, inventory)
+    if receipt.get("records_verified") != len(records):
+        raise ValueError("source bundle receipt record count is inconsistent")
+    if receipt.get("payloads_verified") != len(payload_hashes):
+        raise ValueError("source bundle receipt payload count is inconsistent")
+    receipt_ids = receipt.get("verified_non_sbml_archive_ids")
+    if not isinstance(receipt_ids, list) or sorted(receipt_ids) != sorted(no_sbml_ids):
+        raise ValueError("source bundle receipt no-SBML archive IDs are inconsistent")
+
+    archive_module = repo_root / "python/bionetgen/atomizer/modern/archive.py"
+    if not archive_module.is_file():
+        raise ValueError(f"archive inspection module is missing: {archive_module}")
+    archive_module_sha = _sha256(archive_module)
+    evidence: dict[str, dict[str, Any]] = {}
+    for model_id in no_sbml_ids:
+        source_record = next(
+            row for row in inventory["models"] if row.get("id") == model_id
+        )
+        bundle_record = records[model_id]
+        inspection = bundle_record.get("archive_inspection") or {}
+        if inspection.get("archive_module_sha256") != archive_module_sha:
+            raise ValueError(
+                f"source archive inspection module is stale for {model_id}"
+            )
+        if inspection.get("source_archive_sha256") != source_record.get("sha256"):
+            raise ValueError(f"source archive hash is inconsistent for {model_id}")
+        if not re.fullmatch(
+            r"[0-9a-f]{64}", str(inspection.get("member_list_sha256", ""))
+        ):
+            raise ValueError(
+                f"source archive member-list hash is invalid for {model_id}"
+            )
+        evidence[model_id] = {
+            "source": {field: source_record.get(field) for field in SOURCE_FIELDS},
+            "archive_inspection": inspection,
+        }
+    return evidence
+
+
+def _verified_no_sbml_archive_outcome(
+    entry: dict[str, Any], evidence: dict[str, Any]
+) -> dict[str, Any]:
+    source = evidence["source"]
+    if any(entry.get(field) != value for field, value in source.items()):
+        raise ValueError(
+            f"runtime inventory source identity disagrees with verified "
+            f"no-SBML evidence for {entry.get('id')}"
+        )
+    return {
+        "sha256": source["sha256"],
+        "status": "unsupported",
+        "unsupported_reason": "verified source archive contains no SBML XML document",
+        "core_passed": False,
+        "source_artifact": {
+            "format": source["format"],
+            "filename": source["filename"],
+            "mime_type": source["mime_type"],
+            "sha256": source["sha256"],
+            "size_bytes": int(source["file_size"]),
+            "sbml_extracted": False,
+            "archive_inspection": evidence["archive_inspection"],
+        },
+    }
 
 
 def _validate_xml(text: str, label: str) -> dict[str, Any]:
@@ -1719,6 +1848,13 @@ def main() -> int:
     parser.add_argument("--mode", choices=("flat", "atomized", "both"), default="flat")
     parser.add_argument("--refresh-inventory", action="store_true")
     parser.add_argument("--offline", action="store_true")
+    parser.add_argument("--source-bundle-receipt", type=Path)
+    parser.add_argument("--source-bundle-manifest", type=Path)
+    parser.add_argument(
+        "--source-query-inventory",
+        type=Path,
+        default=repo / "provenance" / "curated-biomodels-query-inventory.json",
+    )
     parser.add_argument(
         "--fetch-record-metadata",
         action="store_true",
@@ -1744,6 +1880,24 @@ def main() -> int:
     parser.add_argument("--simulation-rtol", type=float, default=1e-7)
     parser.add_argument("--simulation-atol", type=float, default=1e-12)
     args = parser.parse_args()
+
+    if bool(args.source_bundle_receipt) != bool(args.source_bundle_manifest):
+        parser.error(
+            "--source-bundle-receipt and --source-bundle-manifest must be paired"
+        )
+    verified_no_sbml_archives: dict[str, dict[str, Any]] = {}
+    if args.source_bundle_receipt:
+        try:
+            verified_no_sbml_archives = _verified_no_sbml_archive_records(
+                args.source_bundle_receipt,
+                args.source_bundle_manifest,
+                args.source_query_inventory,
+                args.manifest,
+                repo_root=repo,
+            )
+        except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as exc:
+            print(f"source bundle evidence preflight failed: {exc}", file=sys.stderr)
+            return 1
 
     try:
         package_trace = verify_imported_package(Path(__file__).resolve().parents[2])
@@ -1840,6 +1994,16 @@ def main() -> int:
             )
             continue
 
+        negative_evidence = verified_no_sbml_archives.get(str(entry.get("id")))
+        if negative_evidence is not None:
+            record.update(_verified_no_sbml_archive_outcome(entry, negative_evidence))
+            records.append(record)
+            print(
+                f"{entry['id']}: UNSUPPORTED (verified archive contains no SBML)",
+                flush=True,
+            )
+            continue
+
         if args.isolate_models and not args.worker:
             sbml_selected.append(entry)
             continue
@@ -1847,7 +2011,7 @@ def main() -> int:
         model_artifacts: Path | None = None
         try:
             path = _model_source_cache_path(args.cache_dir, entry)
-            record["sha256"] = _download_if_needed(path, entry)
+            record["sha256"] = _download_if_needed(path, entry, offline=args.offline)
             record["source_artifact"] = {
                 "format": entry.get("format", ""),
                 "filename": entry.get("filename", ""),
