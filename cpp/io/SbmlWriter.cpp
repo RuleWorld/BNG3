@@ -9,6 +9,7 @@
 #include <cmath>
 #include <functional>
 #include <map>
+#include <set>
 #include <stdexcept>
 #include <string_view>
 #include <unordered_set>
@@ -763,6 +764,21 @@ std::string SbmlWriter::writeReactions(
                 sbml << "/>\n";
             }
             sbml << "        </listOfProducts>\n";
+        }
+
+        // Completion still depends on the delayed reactants, but does not
+        // consume them. SBML requires species in kinetic math to be declared
+        // as participants or modifiers (Core validation rule 21121).
+        if (completion) {
+            std::set<std::size_t> modifiers(rxn.getReactants().begin(), rxn.getReactants().end());
+            for (const auto idx : rxn.getProducts()) modifiers.erase(idx);
+            if (!modifiers.empty()) {
+                sbml << "        <listOfModifiers>\n";
+                for (const auto idx : modifiers) {
+                    sbml << "          <modifierSpeciesReference species=\"S" << (idx + 1) << "\"/>\n";
+                }
+                sbml << "        </listOfModifiers>\n";
+            }
         }
 
         // Kinetic law with MathML

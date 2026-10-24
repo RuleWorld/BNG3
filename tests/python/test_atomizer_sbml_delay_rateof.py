@@ -254,6 +254,13 @@ end model
         assert document.getNumErrors() == 0, [
             str(error) for error in document.getErrors()
         ]
+        document.checkConsistency()
+        errors = [
+            document.getError(i).getMessage()
+            for i in range(document.getNumErrors())
+            if document.getError(i).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
+        ]
+        assert not errors, errors
         return document.getModel()
 
     def delay_nodes(node):
@@ -271,6 +278,10 @@ end model
     assert initiation.getNumProducts() == 0
     assert completion.getNumReactants() == 0
     assert completion.getNumProducts() == 1
+    assert completion.getNumModifiers() == 1
+    assert (
+        completion.getModifier(0).getSpecies() == initiation.getReactant(0).getSpecies()
+    )
     initiation_formula = libsbml.formulaToL3String(initiation.getKineticLaw().getMath())
     assert "0.5" in initiation_formula, initiation_formula
     completion_delays = list(delay_nodes(completion.getKineticLaw().getMath()))

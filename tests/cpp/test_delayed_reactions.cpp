@@ -203,6 +203,8 @@ TEST_CASE("SBML lowers consuming delay with an empty initial history gate") {
 
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring("R1_init"));
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring("R1_complete"));
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+                        "<modifierSpeciesReference species=\"S1\"/>"));
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring("<csymbol encoding=\"text\" definitionURL=\"http://www.sbml.org/sbml/symbols/delay\"> delay </csymbol>"));
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring("<cn> 5 </cn>"));
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring("<apply><geq/>"));
@@ -211,6 +213,17 @@ TEST_CASE("SBML lowers consuming delay with an empty initial history gate") {
     const auto level2 = io::SbmlWriter::write(*model, &network, options);
     CHECK_THAT(level2, Catch::Matchers::ContainsSubstring(
                            "definitionURL=\"http://www.sbml.org/sbml/symbols/delay\""));
+}
+
+TEST_CASE("SBML action defaults to a valid version for Level 3") {
+    auto model = parse("A() -> B() 0.5 delay=tau");
+    model->addAction(ast::Action{"writeSBML", {{"level", "3"}}});
+    const auto sourcePath = std::filesystem::temp_directory_path() / "bng3-delay-action.bngl";
+    actions::ActionDispatch::execute(*model, sourcePath);
+    const auto outputPath = sourcePath.parent_path() / "bng3-delay-action_sbml.xml";
+    CHECK_THAT(readFile(outputPath), Catch::Matchers::ContainsSubstring(
+                                       "level=\"3\" version=\"2\""));
+    std::filesystem::remove(outputPath);
 }
 
 TEST_CASE("native ODE refuses a delayed reaction instead of running it undelayed") {

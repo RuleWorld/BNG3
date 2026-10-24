@@ -4137,7 +4137,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             sbmlOpts.level = static_cast<int>(parseScalarValue(
                 readArgument(action, "level", "2"), model));
             sbmlOpts.version = static_cast<int>(parseScalarValue(
-                readArgument(action, "version", "3"), model));  // Perl default: L2V3
+                readArgument(action, "version", sbmlOpts.level == 3 ? "2" : "3"), model));  // Perl default: L2V3
             sbmlOpts.networksExport = true;
             sbmlOpts.startTime = parseScalarValue(
                 readArgument(action, "t_start", "0"), model);
