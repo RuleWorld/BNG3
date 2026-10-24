@@ -57,15 +57,21 @@ void bind_io(py::module_& m) {
 
     io.def("write_sbml", [](const Model& model, const GeneratedNetwork& network,
                             const std::string& path,
-                            const std::string& source_metadata) {
+                            const std::string& source_metadata,
+                            double start_time,
+                            int level) {
         SbmlWriter::Options options;
         options.sourceMetadata = source_metadata;
+        options.startTime = start_time;
+        options.level = level;
         std::string content = SbmlWriter::write(model, &network, options);
         std::ofstream out(path);
         if (!out) throw std::runtime_error("Cannot open file: " + path);
         out << content;
     }, py::arg("model"), py::arg("network"), py::arg("path"),
        py::arg("source_metadata") = "",
+       py::arg("start_time") = 0.0,
+       py::arg("level") = 3,
        "Write model to SBML format");
 
     io.def("read_sbml", [](const std::string& path, bool atomize) {

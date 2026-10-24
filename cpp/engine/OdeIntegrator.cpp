@@ -30,6 +30,7 @@
 #include "antlr4-runtime.h"
 #include "ast/Function.hpp"
 #include "ast/ReactionRule.hpp"
+#include "DelayedSemanticsGuard.hpp"
 #include "compile/CompiledRateLaw.hpp"
 #include "core/Ullmann.hpp"
 #include "io/NetWriter.hpp"
@@ -190,6 +191,7 @@ bool hasWordBoundaryMatchCaseInsensitive(std::string_view text, std::string_view
 
 OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& network)
     : model_(model), network_(network), functionEvaluator_(model) {
+    requireNoDelayedSemantics(model_, network_, "the native ODE engine");
     ast::validateNativeEventSubset(model_);
     if (model_.getEventFormatVersion()) {
         const compile::CompiledModel compiled(model_);

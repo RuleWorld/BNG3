@@ -1,6 +1,8 @@
 cpp/actions/ActionDispatch.cpp
 cpp/actions/ActionDispatch.hpp
 cpp/engine/BngsimAdapter.cpp
+# Shared semantic refusal boundary reads source AST metadata for native backends.
+cpp/engine/DelayedSemanticsGuard.hpp
 cpp/engine/HybridModelGenerator.cpp
 cpp/engine/HybridModelGenerator.hpp
 cpp/engine/LegacyNetworkRuleKernel.cpp

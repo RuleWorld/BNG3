@@ -1,4 +1,5 @@
 #include "PsaSimulator.hpp"
+#include "DelayedSemanticsGuard.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -87,6 +88,7 @@ double evaluateRateString(const std::string& rateStr,
 
 PsaSimulator::PsaSimulator(const ast::Model& model, const GeneratedNetwork& network)
     : model_(model), network_(network), functionEvaluator_(model) {
+    requireNoDelayedSemantics(model_, network_, "PSA");
     if (model_.getEventFormatVersion().has_value()) {
         throw std::runtime_error(ast::kUnsupportedEventExecutionMessage);
     }

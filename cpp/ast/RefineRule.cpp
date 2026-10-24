@@ -550,7 +550,7 @@ ExpandRuleResult expandRule(
                     for (std::size_t i = 1; i < rates.size(); ++i) {
                         newRates.push_back(rates[i]);
                     }
-                    result.childRules[idx] = ReactionRule(
+                    ReactionRule refinedRule(
                         childRule.getRuleName(),
                         childRule.getLabel(),
                         childRule.getReactants(),
@@ -560,6 +560,15 @@ ExpandRuleResult expandRule(
                         childRule.isBidirectional(),
                         childRule.getReactantPatterns(),
                         childRule.getProductPatterns());
+                    if (childRule.getDelayExpression()) {
+                        refinedRule.setDelay(*childRule.getDelayExpression(),
+                                             childRule.isNonConsuming());
+                    }
+                    if (childRule.hasDrivingWork()) {
+                        refinedRule.setDrivingWorkExpression(
+                            childRule.drivingWorkExpression());
+                    }
+                    result.childRules[idx] = std::move(refinedRule);
                 }
             }
         }
@@ -991,6 +1000,12 @@ std::unique_ptr<ReactionRule> restrictRule(
         rule.isBidirectional(),
         std::move(reactants),
         std::move(products));
+    if (rule.getDelayExpression()) {
+        childRule->setDelay(*rule.getDelayExpression(), rule.isNonConsuming());
+    }
+    if (rule.hasDrivingWork()) {
+        childRule->setDrivingWorkExpression(rule.drivingWorkExpression());
+    }
 
     // ---- Step 8: Check DeleteMolecules flag (Perl lines 722-735) ----
     // If the child rule has molecule deletion transforms that reference

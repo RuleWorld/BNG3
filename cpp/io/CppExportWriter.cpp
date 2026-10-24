@@ -1,6 +1,7 @@
 #include "CppExportWriter.hpp"
 
 #include "EnergyExportGuard.hpp"
+#include "engine/DelayedSemanticsGuard.hpp"
 
 #include <sstream>
 #include <iomanip>
@@ -21,6 +22,7 @@ std::string CppExportWriter::write(const ast::Model& model, const engine::Genera
 }
 
 std::string CppExportWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network, const Options& opts) {
+    engine::requireNoDelayedSemantics(model, network, "C++ export");
     requireNoEnergySemantics(model, "C++ export");
     compile::requireNoNativeEvents(model, "C++ export");
     std::ostringstream out;

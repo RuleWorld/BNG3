@@ -39,6 +39,7 @@ public:
         int level = 3;               // SBML level (current core)
         int version = 2;             // SBML version (current core)
         bool networksExport = true;  // Export generated network (vs rules)
+        double startTime = 0.0;      // Simulation time t0 for delayed-reaction history gates
         // Optional opaque source metadata payload supplied by the modern
         // SBML importer.  It is encoded in a namespaced SBML annotation so
         // notes/CVTerms/package declarations survive the executable export
@@ -111,7 +112,8 @@ private:
         const engine::GeneratedNetwork& network,
         const ast::Model& model,
         const SymbolIds& symbolIds,
-        int level);
+        int level,
+        double startTime);
     // Serialize the native event block as SBML events so an exported model
     // keeps the trigger semantics that the BNGL block carried.
     static std::string writeEvents(

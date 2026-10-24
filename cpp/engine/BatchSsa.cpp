@@ -1,5 +1,6 @@
 #include "compile/CompiledModel.hpp"
 #include "engine/BatchSsa.hpp"
+#include "engine/DelayedSemanticsGuard.hpp"
 
 #include <algorithm>
 #include <chrono>
@@ -209,7 +210,9 @@ FlattenedReactionNetwork FlattenedReactionNetwork::fromModelAndNetwork(
 // ============================================================================
 
 CpuBatchSsaSimulator::CpuBatchSsaSimulator(const ast::Model& model, const GeneratedNetwork& network)
-    : model_(model), network_(network) {}
+    : model_(model), network_(network) {
+    requireNoDelayedSemantics(model_, network_, "SSA");
+}
 
 BatchSsaMetrics CpuBatchSsaSimulator::simulateSingleWorker(const BatchSsaOptions& options) {
     auto tStartTotal = std::chrono::high_resolution_clock::now();

@@ -17,7 +17,9 @@ public:
         std::string rateLaw,
         double factor = 1.0,
         std::string originRuleName = {},
-        std::optional<Expression> rateExpression = std::nullopt);
+        std::optional<Expression> rateExpression = std::nullopt,
+        std::optional<Expression> delayExpression = std::nullopt,
+        bool nonConsuming = false);
 
     const std::string& getLabel() const;
     const std::vector<std::size_t>& getReactants() const;
@@ -27,6 +29,8 @@ public:
     double getFactor() const;
     void addFactor(double factor);
     const std::optional<Expression>& getRateExpression() const;
+    const std::optional<Expression>& getDelayExpression() const;
+    bool isNonConsuming() const;
 
 private:
     std::string label_;
@@ -36,6 +40,8 @@ private:
     double factor_;
     std::string originRuleName_;
     std::optional<Expression> rateExpression_;
+    std::optional<Expression> delayExpression_;
+    bool nonConsuming_;
 };
 
 } // namespace bng::ast

@@ -101,6 +101,9 @@ void bind_model(py::module_& m) {
     py::class_<ReactionRule>(m, "ReactionRule")
         .def_property_readonly("label", &ReactionRule::getLabel)
         .def_property_readonly("is_bidirectional", &ReactionRule::isBidirectional)
+        .def_property_readonly("has_delay", [](const ReactionRule& rule) {
+            return rule.getDelayExpression().has_value();
+        })
         .def_property_readonly("has_driving_work", &ReactionRule::hasDrivingWork)
         .def_property_readonly("driving_work", [](const ReactionRule& rr) {
             return rr.drivingWorkExpression().toString();
