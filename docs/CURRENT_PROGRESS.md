@@ -5,6 +5,23 @@ SBML atomizer — the constructs it refuses, why, and whether each boundary is
 reducible — is recorded separately in
 [`ATOMIZER_LIMITATIONS.md`](ATOMIZER_LIMITATIONS.md).
 
+## SBML event initial-edge contract (2026-10-25 candidate)
+
+The native event module now includes an independent source comparison for an
+event whose trigger is already true at time zero with `initialValue=false`.
+This fixture lowers to the existing time-zero scheduled action; the test runs
+the emitted BNGL actions and compares all changing species against
+libRoadRunner 2.10.0, including the event target at the initial row. The
+continuous state-trigger test in the same module separately compares a later
+rising-edge event and its state updates against libRoadRunner. On the isolated
+candidate, a Release native extension built from the checked-out source passed
+all 33 tests in `tests/python/test_modern_atomizer_native_events.py`.
+
+This qualifies those two bounded paths only. It does not establish delayed
+event cancellation/persistence, cascades/recurrence, stochastic event
+transitions or general equal-priority ordering; those remain explicit #158
+gaps. Exact hosted checks for the candidate are pending.
+
 ## Curated BioModels #162 (2026-10-23)
 
 The previously paused full curated BioModels lane was explicitly resumed and

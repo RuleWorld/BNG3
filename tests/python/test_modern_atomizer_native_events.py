@@ -28,6 +28,7 @@ def coupled_event_model(
     persistent: str = "true",
     operator: str = "lt",
     threshold: str = "0.75",
+    trigger_initial_value: str = "true",
     use_values_from_trigger_time: str = "true",
     assignment: str = '<eventAssignment variable="S2">'
     '<math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>'
@@ -86,7 +87,7 @@ def coupled_event_model(
     </listOfReactions>
     <listOfEvents>
       <event id="reset" useValuesFromTriggerTime="{use_values_from_trigger_time}">
-        <trigger initialValue="true" persistent="{persistent}">
+        <trigger initialValue="{trigger_initial_value}" persistent="{persistent}">
           <math xmlns="http://www.w3.org/1998/Math/MathML">
             <apply><{operator}/><ci>S1</ci><cn>{threshold}</cn></apply>
           </math>
@@ -523,6 +524,50 @@ def test_native_event_trajectory_matches_independent_roadrunner(tmp_path):
     np.testing.assert_allclose(
         actual.observables["S3_amt"], expected[:, 3], rtol=2e-6, atol=2e-6
     )
+
+
+def test_native_event_initial_false_to_true_edge_matches_independent_roadrunner(
+    tmp_path,
+):
+    roadrunner = pytest.importorskip("roadrunner")
+    xml = coupled_event_model(threshold="2", trigger_initial_value="false")
+    result = atomize(xml, t_end=1.0, n_steps=50)
+    assert result.success, result.error
+
+    from bionetgen import load
+
+    path = tmp_path / "initial_event.bngl"
+    path.write_text(result.bngl)
+    load(str(path)).execute()
+    output_lines = (tmp_path / "initial_event.gdat").read_text().splitlines()
+    header = next(
+        line.strip().lstrip("# ").split()
+        for line in output_lines
+        if line.lstrip().startswith("#")
+        and line.strip().lstrip("# ").startswith("time")
+    )
+    data_lines = [
+        line
+        for line in output_lines
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    actual = np.asarray(
+        [[float(value) for value in line.split()] for line in data_lines]
+    )
+
+    oracle = roadrunner.RoadRunner(xml)
+    oracle.integrator.relative_tolerance = 1e-10
+    oracle.integrator.absolute_tolerance = 1e-12
+    expected = oracle.simulate(0, 1.0, 51, selections=["time", "S1", "S2", "S3"])
+
+    np.testing.assert_allclose(
+        actual[:, [header.index(name) for name in ("S1", "S2", "S3")]],
+        expected[:, 1:4],
+        rtol=2e-6,
+        atol=2e-6,
+    )
+    assert actual[0, header.index("time")] == pytest.approx(0.0)
+    assert actual[0, header.index("S2")] == pytest.approx(1.0)
 
 
 def _delayed_trajectory(tmp_path, name, **kwargs):
