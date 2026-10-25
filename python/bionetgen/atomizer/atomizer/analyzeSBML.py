@@ -2238,9 +2238,7 @@ class SBMLAnalyzer:
                     ):
                         reactantString.append([element])
                     else:
-                        reactantString.append(
-                            list(externalDependencyGraph[element][0])
-                        )
+                        reactantString.append(list(externalDependencyGraph[element][0]))
 
                 # same for products
                 for element in reaction[1]:
@@ -2250,9 +2248,7 @@ class SBMLAnalyzer:
                     ):
                         productString.append([element])
                     else:
-                        productString.append(
-                            list(externalDependencyGraph[element][0])
-                        )
+                        productString.append(list(externalDependencyGraph[element][0]))
 
                 # remove those chemicals that match exactly on both sides since those are not interesting.
                 # and unlike lexical pattern matching we are not going to go around trying to increase string size
