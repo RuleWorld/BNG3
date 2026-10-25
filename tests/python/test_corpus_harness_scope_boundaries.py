@@ -566,7 +566,17 @@ def test_source_comparison_maps_roadrunner_state_tolerances_to_native_amounts():
     assert result["roadrunner_requested_atol"] == 1e-12
     assert result["native_solver_atol"] < 1e-30
     assert result["roadrunner_effective_atol_min"] == pytest.approx(4e-32)
-    assert result["roadrunner_state_count"] == 4
+    # RoadRunner builds differ in whether constant floating species occupy a
+    # solver coordinate. Compare with the actual oracle vector, not a fixed
+    # dimension, while retaining the independent three-dynamic-species check.
+    import roadrunner
+
+    oracle = roadrunner.RoadRunner(TINY_VOLUME_ASSOCIATION)
+    oracle.integrator.setValue("relative_tolerance", 1e-7)
+    oracle.integrator.setValue("absolute_tolerance", 1e-12)
+    expected_tolerances = oracle.integrator.getAbsoluteToleranceVector()
+    assert result["roadrunner_state_count"] == len(expected_tolerances)
+    assert result["roadrunner_effective_atol_min"] == min(expected_tolerances)
     assert result["dynamic_species_count"] == 3
     assert result["initial_source_comparison_passed"] is True
     assert result["source_solver_attempts"] == [

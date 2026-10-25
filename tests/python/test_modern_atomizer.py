@@ -1822,6 +1822,11 @@ def test_playground_function_call_pattern_cache_is_bounded_for_many_names():
     )
 
     assert extend_function("unrelated(x)", {}, definitions) == "unrelated(x)"
+    assert _function_call_pattern.cache_info().misses == 0
+    # Exercise more active identifiers than fit in the cache. Absent identifiers
+    # intentionally bypass matcher compilation.
+    for name in definitions:
+        assert extend_function(f"{name}(x)", {}, definitions) == "((x))"
     info = _function_call_pattern.cache_info()
 
     assert info.maxsize == cache_limit
