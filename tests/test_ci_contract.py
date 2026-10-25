@@ -56,7 +56,7 @@ CPP_CMAKE = REPO / "cpp" / "CMakeLists.txt"
 TOP_LEVEL_CMAKE = REPO / "CMakeLists.txt"
 
 
-@pytest.mark.parametrize("job_id", ["cpp-build", "python-test"])
+@pytest.mark.parametrize("job_id", ["cpp-build", "python-test", "python-integration"])
 def test_semantic_test_jobs_retain_reports_on_failure(job_id):
     steps = parse_workflow(CI_WORKFLOW)["jobs"][job_id]["steps"]
     report_tests = [
@@ -603,10 +603,10 @@ def test_ssts_run_scope_marks_category_cohorts_partial():
     )
 
 
-def test_pull_request_runs_keep_exact_head_evidence_available():
-    """A later PR push must not cancel validation for the preceding SHA."""
+def test_pull_request_runs_replace_superseded_work():
+    """A later PR push cancels superseded work; manual evidence stays isolated."""
 
-    _assert_exact_head_concurrency(CI_WORKFLOW, "ci.yml")
+    _assert_pr_concurrency(CI_WORKFLOW, "ci.yml")
 
 
 def test_wheel_workflows_use_supported_platform_targets_and_test_dependencies():
@@ -684,7 +684,7 @@ def test_lint_job_installs_ci_contract_dependencies():
 def test_external_parity_workflow_is_present_and_keeps_exact_head_evidence():
     """Cross-tool checks must be independently reproducible per PR head."""
 
-    _assert_exact_head_concurrency(PARITY_WORKFLOW, "parity.yml")
+    _assert_pr_concurrency(PARITY_WORKFLOW, "parity.yml")
     parity_doc = parse_workflow(PARITY_WORKFLOW)
     assert parity_doc["env"]["BNG3_CI_STRICT_ORACLES"] == "1"
     parity_jobs = parity_doc.get("jobs") or {}
@@ -709,16 +709,17 @@ def test_external_parity_workflow_is_present_and_keeps_exact_head_evidence():
     assert parity_jobs["bng2-parity"]["needs"] == "oracle-lock"
 
 
-def _assert_exact_head_concurrency(path: Path, label: str) -> None:
-    """Both halves of the per-head evidence contract, read from parsed YAML."""
+def _assert_pr_concurrency(path: Path, label: str) -> None:
+    """Read the scheduling policy separately from source identity checks."""
 
     concurrency = concurrency_of(path)
-    assert "${{ github.event.pull_request.head.sha || github.sha }}" in str(
-        concurrency.get("group")
-    ), f"{label} concurrency group must key on the PR head"
-    assert (
-        concurrency.get("cancel-in-progress") is False
-    ), f"{label} must not cancel an in-flight exact-head run"
+    assert concurrency.get("group") == (
+        "${{ github.workflow }}-${{ github.event_name }}-"
+        "${{ github.event.pull_request.number || github.run_id }}"
+    ), f"{label} must replace PR work and isolate non-PR evidence"
+    assert concurrency.get("cancel-in-progress") == (
+        "${{ github.event_name == 'pull_request' }}"
+    ), f"{label} must only cancel superseded PR work"
 
 
 def test_external_parity_jobs_use_pinned_oracle_checkouts_and_fail_closed():
@@ -959,7 +960,7 @@ def test_issue182_frozen_ssa_ensemble_inputs_match_the_bng2_lock():
 def test_formal_workflow_runs_pinned_kernel_and_nfnext_contracts():
     """The Lean reference must be kernel-checked on every PR head."""
 
-    _assert_exact_head_concurrency(FORMAL_WORKFLOW, "formal.yml")
+    _assert_pr_concurrency(FORMAL_WORKFLOW, "formal.yml")
     formal = yaml.safe_dump(
         parse_workflow(FORMAL_WORKFLOW), sort_keys=False, default_flow_style=False
     )
@@ -1187,7 +1188,7 @@ def test_pull_request_exercises_clean_source_distribution_install():
     """PRs must exercise the sdist install path, not only an in-tree wheel."""
 
     job = _workflow_job("package-smoke")
-    assert "needs: [python-test]" in job
+    assert "needs: [python-integration]" in job
     assert not re.search(r"^\s+if:.*github\.event_name.*push", job, re.MULTILINE)
     assert "python -m build --sdist" in job
     assert "python -m venv" in job
@@ -1324,7 +1325,8 @@ def test_python_test_jobs_download_the_matching_native_cli_artifact():
     assert "${{ github.workspace }}/build/cpp/bng_cpp" in matrix_job["env"]["BNG_CPP"]
     assert "windows" in matrix_job["env"]["BNG_CPP"]
 
-    assert "python-test" in integration_job["needs"]
+    assert "python-test" not in integration_job["needs"]
+    assert "python-integration" in matrix_job["needs"]
     assert "cpp-build" in integration_job["needs"]
     assert "bng_cpp-ubuntu-22.04-gcc-12" in _workflow_job("python-integration")
     assert (

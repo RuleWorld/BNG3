@@ -12,9 +12,9 @@ that reports success while measuring something else*.
    invisible to any tool that does not raise on it.
 
 2. **Vacuous pytest selectors.** `pytest -k "..."` that matches nothing exits
-   0. A step can therefore select a test that was renamed, deleted, or moved,
-   and the job stays green having run nothing. Every `-k`/`-m` a workflow
-   passes is collected here and must select at least one test.
+   5. Collecting selectors before the test matrix distinguishes stale or empty
+   selections from broken collection. Every `-k`/`-m` a workflow passes is
+   collected here and must select at least one test.
 
 Neither check is a text search. A duplicate key cannot be seen by grepping,
 and a selector's reachability cannot be seen by reading it.
@@ -273,9 +273,9 @@ def _collection_args(argv: list[str]) -> tuple[list[str], list[str]]:
 def test_workflow_pytest_selector_collects_at_least_one_test(invocation):
     """A `-k`/`-m` in a workflow must select at least one test.
 
-    `pytest -k "renamed_test"` selects nothing and exits 0, so the job passes
-    green having run no test at all. This collects from the working tree --
-    the tree the workflow itself checks out -- and fails on a zero count.
+    `pytest -k "renamed_test"` selects nothing and exits 5. This guard
+    reports that separately from collection errors. It collects from the tree
+    the workflow checks out and fails on a zero count.
 
     Two failures are distinguished deliberately, because conflating them is
     how a check starts lying:
@@ -295,14 +295,22 @@ def test_workflow_pytest_selector_collects_at_least_one_test(invocation):
         cmd += [flag, value]
     cmd += ["--collect-only", "-q"]
 
-    proc = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True)
+    where = f"{invocation['workflow']}::{invocation['job']}::{invocation['step']}"
+    try:
+        proc = subprocess.run(
+            cmd, cwd=REPO, capture_output=True, text=True, timeout=120
+        )
+    except subprocess.TimeoutExpired:
+        pytest.fail(
+            f"COULD NOT VERIFY {where}: selector collection timed out after 120s.\n"
+            f"$ {' '.join(cmd)}",
+            pytrace=False,
+        )
     collected = [
         line
         for line in proc.stdout.splitlines()
         if "::" in line and not line.startswith(("=", "-", " "))
     ]
-
-    where = f"{invocation['workflow']}::{invocation['job']}::{invocation['step']}"
 
     if proc.returncode == 0 and collected:
         return
@@ -316,7 +324,7 @@ def test_workflow_pytest_selector_collects_at_least_one_test(invocation):
         pytest.fail(
             f"VACUOUS SELECTOR: {where} selects zero tests with "
             f"{invocation['selectors']} over {targets} (pytest exit "
-            f"{proc.returncode}). The job would pass without running anything.\n"
+            f"{proc.returncode}). The selection runs no tests.\n"
             f"$ {' '.join(cmd)}\n{proc.stdout[-1500:]}",
             pytrace=False,
         )
