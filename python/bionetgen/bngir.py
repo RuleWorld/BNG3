@@ -2682,11 +2682,13 @@ def from_bngir(document: str | Mapping[str, Any], *, native: bool = False):
 
 
 def semantic_equal(left: Any, right: Any, *, version: str = VERSION) -> bool:
-    """Compare canonical BNGIR documents, ignoring JSON formatting.
+    """Compare canonical BNGIR model serializations at ``version``.
 
-    Raises the version's serialization refusals (for example physical-unit
-    metadata under 0.1): the comparison itself needs a wire form that the
-    chosen version can represent.
+    This compares only model fields represented by the selected wire version;
+    it is not a general test of mathematical equivalence. Optional top-level
+    provenance supplied separately to :func:`to_bngir` is not model state and
+    is not compared. Raises the version's serialization refusals (for example
+    physical-unit metadata under 0.1) when either model cannot be represented.
     """
     left_doc = _parse_document(to_bngir(left, version=version))
     right_doc = _parse_document(to_bngir(right, version=version))
