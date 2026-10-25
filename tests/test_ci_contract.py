@@ -1371,6 +1371,10 @@ def test_pybionetgen_compatibility_runs_against_a_regular_installed_package():
     )
     assert "BNG3_SOURCE_REVISION" in compatibility_step.get("env", {})
     assert "BNG3_PR_HEAD_SHA" in compatibility_step.get("env", {})
+    exact_source = "${{ github.event.pull_request.head.sha || github.sha }}"
+    assert (
+        compatibility_step["env"]["BNG3_SOURCE_REVISION"] == exact_source
+    ), "PyBioNetGen compatibility must verify the commit checked out by its job"
 
     checker = (REPO / "scripts" / "ci" / "check_pybionetgen_compat.py").read_text(
         encoding="utf-8"
