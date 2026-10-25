@@ -37,10 +37,16 @@ Current family dispositions:
   general cascades/recurrence lack an independent conformance matrix. State
   triggered events under SSA are refused because stochastic jump scheduling is
   not implemented.
-- #159: PR #443's exact-head official-reference job passed its bounded 128-case
-  PR selection at `87bdb756100542e05c95a099f9ab6c5d21d5c242`; its full scheduled
-  suite and full revision-locked report are still not established. #160's
-  requested feature-class inventory is likewise incomplete; explicit per-case
+- #159: the full locked suite ran at exact merged source
+  `32ac6788760270ce0ce75ef485d8e7a64836b600` in [run 40222470623](https://github.com/RuleWorld/BNG3/actions/runs/40222470623):
+  all 1,923 cases were selected; conversion passed 1,798 and classified 125
+  unsupported, with zero product failures/timeouts. Round trip and independent
+  comparison each passed those same 1,798 records; 125 were not tested. Official
+  conformance reported 1,781 passed, 141 unsupported and one failed. The report
+  SHA-256 is `e01550eb8b3e8eb74361aa4feb85eab032dd43c6d49da208c6a0c41009edcea1`;
+  targeted failure triage is in progress. This is a current full report, but its
+  failed official gate and outstanding case-level scope prevent closure. #160's
+  requested current feature-class mapping remains incomplete; explicit per-case
   refusal is not a complete class disposition.
 - #146: the exact-head run [38852202284](https://github.com/RuleWorld/BNG3/actions/runs/38852202284)
   passed one fixed-seed `simple_system` -oSteps endpoint comparison at
