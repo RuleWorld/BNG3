@@ -570,12 +570,6 @@ void bind_engine(py::module_& m) {
         auto t_ctor = std::chrono::steady_clock::now();
         const bool probe = probeOn();
         OdeResult result = integrator.integrate(opts);
-        if (!result.concentrations.empty()) {
-            for (std::size_t i = 0; i < network.species.size() &&
-                                    i < result.concentrations.back().size(); ++i) {
-                network.species.get(i).setAmount(result.concentrations.back()[i]);
-            }
-        }
         auto t_eng = std::chrono::steady_clock::now();
 
         py::gil_scoped_acquire acquire;
@@ -641,12 +635,6 @@ void bind_engine(py::module_& m) {
 
         OdeIntegrator integrator(model, network);
         OdeResult result = integrator.integrate(opts);
-        if (!result.concentrations.empty()) {
-            for (std::size_t i = 0; i < network.species.size() &&
-                                    i < result.concentrations.back().size(); ++i) {
-                network.species.get(i).setAmount(result.concentrations.back()[i]);
-            }
-        }
 
         py::gil_scoped_acquire acquire;
         return result_to_dict(result, model);
