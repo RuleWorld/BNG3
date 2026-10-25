@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from bionetgen.atomizer.modern import (
     Component,
     Databases,
@@ -98,3 +100,20 @@ def test_playground_structures_expose_camel_case_object_methods():
     assert species.getSize() == 1
     assert species.toString(True) == "A(site!1~P)@cell"
     assert str(readFromString("A(site~P)")) == "A(site~P)"
+
+
+@pytest.mark.parametrize(
+    ("left", "right", "expected"),
+    [
+        ([], [], 1.0),
+        (["1"], [], 0.0),
+        ([], ["1"], 0.0),
+        (["1", "1"], ["1"], 4 / 3),
+        (["1"], ["1", "1"], 2 / 3),
+        ([1, "1"], ["1"], 2 / 3),
+        (["1", "2"], ["3", "2"], 0.5),
+    ],
+)
+def test_sequence_match_ratio_preserves_inclusion_scoring(left, right, expected):
+    # Repeated left bonds count individually; this is not multiset matching.
+    assert Species._sequence_match_ratio(left, right) == expected

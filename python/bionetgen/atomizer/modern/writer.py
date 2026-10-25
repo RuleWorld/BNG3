@@ -12,18 +12,6 @@ from dataclasses import dataclass, field
 from fractions import Fraction
 from functools import lru_cache
 
-# ⚡ Bolt: Pre-compile frequent math normalization regexes to avoid overhead in tight loops
-_RE_MATH_ZERO_CALL = re.compile(r"(^|\s)0\(\)(?=\s|$)")
-_RE_MATH_PI = re.compile(r"\bpi\b")
-_RE_MATH_MIN = re.compile(r"\bmin\s*\(", flags=re.IGNORECASE)
-_RE_MATH_MAX = re.compile(r"\bmax\s*\(", flags=re.IGNORECASE)
-_RE_MATH_EXPONENTIALE = re.compile(r"\bexponentiale\b", flags=re.IGNORECASE)
-_RE_MATH_TRUE = re.compile(r"\btrue\b", flags=re.IGNORECASE)
-_RE_MATH_FALSE = re.compile(r"\bfalse\b", flags=re.IGNORECASE)
-_RE_MATH_TIME = re.compile(r"\btime\b(?!\s*\()")
-_RE_MATH_ZERO_CALL_NO_ARGS = re.compile(r"(?<![A-Za-z0-9_])0\s*\(\s*\)")
-_RE_MATH_IF = re.compile(r"\bif\s*\(")
-_RE_MATH_NOT = re.compile(r"(?<![=!<>])!(?!=)")
 from typing import (
     Dict,
     Iterable,
@@ -106,6 +94,18 @@ _MULTI_NUMERIC_TOKEN = re.compile(r"__SBML_MULTI_NUMERIC__([A-Za-z_][A-Za-z0-9_]
 # as governed ``identifier``/``dropped`` diagnostics at emission rather than
 # rewritten; see ``_report_unspellable_identifiers``.
 _SBML_ID_RUN = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
+
+_RE_MATH_ZERO_CALL = re.compile(r"(^|\s)0\(\)(?=\s|$)")
+_RE_MATH_PI = re.compile(r"\bpi\b")
+_RE_MATH_MIN = re.compile(r"\bmin\s*\(", flags=re.IGNORECASE)
+_RE_MATH_MAX = re.compile(r"\bmax\s*\(", flags=re.IGNORECASE)
+_RE_MATH_EXPONENTIALE = re.compile(r"\bexponentiale\b", flags=re.IGNORECASE)
+_RE_MATH_TRUE = re.compile(r"\btrue\b", flags=re.IGNORECASE)
+_RE_MATH_FALSE = re.compile(r"\bfalse\b", flags=re.IGNORECASE)
+_RE_MATH_TIME = re.compile(r"\btime\b(?!\s*\()")
+_RE_MATH_ZERO_CALL_NO_ARGS = re.compile(r"(?<![A-Za-z0-9_])0\s*\(\s*\)")
+_RE_MATH_IF = re.compile(r"\bif\s*\(")
+_RE_MATH_NOT = re.compile(r"(?<![=!<>])!(?!=)")
 
 
 def _declared_id_spans(

@@ -149,9 +149,8 @@ class Species:
                     bondList = []
                     for x in [z for z in self.molecules if z.name == element.name]:
                         bondList.append((x, sum([y.bonds for y in x.components], [])))
-                    score = -1.0
+                    score = 0
                     for x in bondList:
-                        # ⚡ Bolt: Cache ratio instead of computing difflib twice per iteration
                         current_score = difflib.SequenceMatcher(
                             None, x[1], bond1
                         ).ratio()
