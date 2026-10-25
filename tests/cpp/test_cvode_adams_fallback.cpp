@@ -33,6 +33,8 @@ TEST_CASE("CVODE retries a singular-zero Hill rate with Adams at the same contro
         }
         return network.species.size();
     };
+    // Independent libRoadRunner 2.10.0 Adams integration of this reduced
+    // fixture's SBML: t=0..1, rtol=1e-10, requested atol=1e-16.
     const std::array<std::pair<std::string, std::array<double, 2>>, 4> references{{
         {"s30", {4.404569871022636e-11, 4.026009739534826e-7}},
         {"s31", {1.761829022936136e-8, 1.6105177138623e-5}},

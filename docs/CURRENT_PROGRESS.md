@@ -110,7 +110,40 @@ Focused structural, Multi and compartment-rule tests pass locally (102 passed,
 three existing Multi skips); disabling the new guard breaks the independent
 source-law regression. These bounded source-output results do not qualify
 longer horizons, stochastic execution or the full corpus. The 0451
-written-SBML/libRoadRunner convergence failure remains separately open.
+written-SBML/libRoadRunner convergence failure was still open at that checkpoint.
+
+The consolidated repair at `7d8c5e03f2c5177d1cdf3b1315e17e019e5f494c`
+adds one Adams/fixed-point restart after the existing native BDF recovery
+paths end with convergence flag -4, preserving the original state, solver
+controls and output grid. The independent RoadRunner comparison similarly
+records a narrowly gated Adams retry for finite initial rates with a
+non-finite initial Jacobian, preserving its exact initial tolerance vector.
+A local replay now passes both flat and atomized modes for all 21 source
+species of 0638, 94 of 0451 and 240 of 0579. Written-export comparisons pass
+126, 243 and 655 outputs respectively. These remain separate evidence scopes.
+The horizon is `t=0..1` with 10 intervals, requested `rtol=1e-7` and
+`atol=1e-12`; 0451 uses mapped native `atol=8e-14`. The raw 0638 and 0451
+payload hashes match those above; older diagnostic `source.xml` copies
+normalize CRLF to LF and are not byte-identical provenance artifacts.
+
+This replay uses the current worktree Python harness and a separately built
+native CLI with SHA-256
+`d849927b9f99973fc235d6a347778de9ab01adf20e23193502e365a6dac95421`.
+Its build source is `0a0161723a871c82f874c75cd40c98372c9c02e8`, with a C++
+tree identical to the consolidated repair. A retained earlier extension is
+used only for parsing/export, not simulation. The temporary CLI adapter,
+controls, hashes and per-attempt solver statistics are retained under
+`/tmp/bng3-campaign/root-0451-raw-source-cli-comparison.json` and the
+corresponding `root-BIOMD0000000638-raw-source-cli-comparison.json` and
+`root-BIOMD0000000579-raw-source-cli-comparison.json` reports.
+Focused Python checks pass 275 tests; the native restart regression passes
+2,132 assertions in dense/sparse modes against independent RoadRunner
+reference values, and existing ODE-option checks pass 179 assertions.
+The assignment dependency prefilter also reduces a 240-rule chain translation
+from 25.45 to 1.33 seconds with byte-identical output; flat 0474 translates in
+29.21 seconds where the baseline exceeded 150 seconds. Translation timing is
+not an execution pass. Hosted qualification, longer horizons, stochastic
+execution and full-corpus qualification remain open.
 
 The historical report's 21 flat / 23 atomized timeouts all hit the per-record
 180-second budget. Its execution logs do not record the stage reached by any of
@@ -130,8 +163,10 @@ source has not been established. For `BIOMD0000000451`, the historical
 flat-mode `not_comparable` classification remains accurate for its
 written-SBML comparison: libRoadRunner could not integrate the BNG3-written
 SBML. The bounded replay above separately shows that the original source
-trajectory is available and flat-mode source comparison passes; atomized mode
-still has source-species mismatches.
+trajectory was available and flat-mode source comparison passed; that earlier
+atomized replay still had source-species mismatches. The consolidated bounded
+replay above supersedes those two current gaps without changing the historical
+classification.
 
 The run did not close issue #162: it exercised the modern Atomizer's flat and
 atomized modes with BNG3 CVODE and libRoadRunner 2.10.0, but did not run the

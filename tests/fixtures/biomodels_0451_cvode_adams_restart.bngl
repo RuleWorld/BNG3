@@ -1,6 +1,7 @@
 # Reduced native solver regression derived from the flat Atomizer output for
 # BIOMD0000000451. It retains all 94 initial species and the five reactions
 # needed to reproduce the CVODE BDF corrector failure at rtol=1e-7, atol=8e-14.
+# Original source SHA-256: ba8e4a50a0e477906f96a66cc49494c825eaab0a489083f7bcdec5adf25b79c5
 # Other reaction rules were removed to keep this fixture bounded.
 
 begin model
