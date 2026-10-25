@@ -5,7 +5,6 @@ Created on Wed May 30 11:44:17 2012
 @author: proto
 """
 
-from copy import copy as shallow_copy
 import difflib
 import hashlib
 import numpy
@@ -31,7 +30,9 @@ class Species:
         return bondNumbers
 
     def copy(self):
-        species = Species()
+        # ⚡ Bolt: Use __new__ to avoid overhead of __init__ calls
+        species = Species.__new__(Species)
+        species.__dict__.update(self.__dict__)
         species.molecules = [molecule.copy() for molecule in self.molecules]
         if hasattr(self, "bonds"):
             species.bonds = list(self.bonds)
@@ -262,7 +263,9 @@ class Molecule:
         self.hash = hashlib.sha1(a).digest()
 
     def copy(self):
-        molecule = shallow_copy(self)
+        # ⚡ Bolt: Use __new__ and __dict__ update to avoid shallow_copy overhead
+        molecule = Molecule.__new__(Molecule)
+        molecule.__dict__.update(self.__dict__)
         molecule.components = [element.copy() for element in self.components]
         return molecule
 

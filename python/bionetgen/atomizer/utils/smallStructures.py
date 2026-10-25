@@ -6,7 +6,6 @@ Created on Wed May 30 11:44:17 2012
 """
 
 from collections import Counter
-from copy import copy as shallow_copy
 import re
 from random import randint
 from pyparsing import Word, Suppress, Optional, alphanums, Group, ZeroOrMore
@@ -115,7 +114,9 @@ class Species:
         return bondNumbers
 
     def copy(self):
-        species = Species()
+        # ⚡ Bolt: Use __new__ to avoid overhead of __init__ calls
+        species = Species.__new__(Species)
+        species.__dict__.update(self.__dict__)
         species.identifier = randint(0, 1000000)
         species.molecules = [molecule.copy() for molecule in self.molecules]
         if hasattr(self, "bonds"):
@@ -488,7 +489,9 @@ class Molecule:
         self.uniqueIdentifier = randint(0, 100000)
 
     def copy(self):
-        molecule = shallow_copy(self)
+        # ⚡ Bolt: Use __new__ and __dict__ update to avoid shallow_copy overhead
+        molecule = Molecule.__new__(Molecule)
+        molecule.__dict__.update(self.__dict__)
         molecule.components = [element.copy() for element in self.components]
         return molecule
 
