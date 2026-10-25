@@ -108,7 +108,7 @@ keyword_as_component_name
     | ASINH | ACOSH | ATANH | EXP | LN | LOG10 | LOG2 | SQRT | ABS
     | MIN | MAX | SUM | AVG | IF | TIME | SAT |  MM | HILL | ARRHENIUS
     | MRATIO | TFUN | FUNCTIONPRODUCT
-    | TYPE | METHOD | PARAMETER | FILE | FORMAT | PREFIX | SUFFIX
+    | TYPE | METHOD | PARAMETER | FILE | FORMAT | PREFIX | SUFFIX | DELAY | NONCONSUMING
     ;
 
 // Allow block header keywords to be used as molecule names
@@ -119,7 +119,7 @@ keyword_as_mol_name
     | MODEL | SEED | GROUPS | POPULATION | COUNTER
     // `priority` is a keyword only in rule modifiers and bng3_events fields.
     // Those positions are syntactically distinct from molecule names.
-    | PRIORITY
+    | PRIORITY | DELAY | NONCONSUMING
     ;
 
 // Allow numeric states like ~0~p and mixed like ~2P~10P (INT followed by STRING)
@@ -335,6 +335,8 @@ rule_modifiers
     | MOVECONNECTED
     | MATCHONCE
     | TOTALRATE
+    | DELAY BECOMES expression
+    | NONCONSUMING
     | PRIORITY BECOMES expression  // BNG2 parity: priority modifier (priority=5)
     | INCLUDE_REACTANTS LPAREN INT COMMA pattern_list RPAREN
     | EXCLUDE_REACTANTS LPAREN INT COMMA pattern_list RPAREN
@@ -411,7 +413,7 @@ event_def
     ;
 
 event_delay
-    : STRING COLON expression
+    : (STRING | DELAY) COLON expression
     ;
 
 event_priority
@@ -537,6 +539,7 @@ nested_hash_item
 // This includes all possible BNG2.pl action options for full compatibility
 arg_name
     : STRING
+    | DELAY | NONCONSUMING
     // Expression identifiers
     | TIME
     // generate_network options
@@ -555,6 +558,8 @@ arg_name
     | PARAM | COMPLEX | GET_FINAL_STATE | GML | NOCSLF | NOTF | BINARY_OUTPUT | UTL | EQUIL | NFSIM_EXEC
     // Hybrid model options
     | MOL_THRESHOLD | ACTIONS
+    // These rule-modifier keywords remain valid parameter and expression identifiers.
+    | DELAY | NONCONSUMING
     // Parameter scan options
     | PARAMETER | PAR_MIN | PAR_MAX | N_SCAN_PTS | LOG_SCALE | RESET_CONC
     // Mfile options
@@ -632,7 +637,7 @@ function_call
     : (EXP | LN | LOG10 | LOG2 | SQRT | ABS | SIN | COS | TAN | ASIN | ACOS | ATAN 
        | SINH | COSH | TANH | ASINH | ACOSH | ATANH | RINT | MIN | MAX | SUM | AVG
        | IF | SAT | MM | HILL | ARRHENIUS | TIME | T_START | T_END
-       | MRATIO | TFUN | FUNCTIONPRODUCT)  // BNG2 parity: mratio, TFUN, FunctionProduct
+       | MRATIO | TFUN | FUNCTIONPRODUCT | DELAY)  // BNG2 parity: mratio, TFUN, FunctionProduct
       LPAREN expression_list? RPAREN
     ;
 

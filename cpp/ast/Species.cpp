@@ -29,6 +29,11 @@ double Species::getAmount() const {
 
 void Species::setAmount(double amount) {
     amount_ = amount;
+    ++amountVersion_;
+}
+
+std::uint64_t Species::getAmountVersion() const {
+    return amountVersion_;
 }
 
 bool Species::isConstant() const {

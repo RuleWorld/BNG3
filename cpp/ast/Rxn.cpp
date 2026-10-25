@@ -11,14 +11,18 @@ Rxn::Rxn(
     std::string rateLaw,
     double factor,
     std::string originRuleName,
-    std::optional<Expression> rateExpression)
+    std::optional<Expression> rateExpression,
+    std::optional<Expression> delayExpression,
+    bool nonConsuming)
     : label_(std::move(label)),
       reactants_(std::move(reactants)),
       products_(std::move(products)),
       rateLaw_(std::move(rateLaw)),
       factor_(factor),
       originRuleName_(std::move(originRuleName)),
-      rateExpression_(std::move(rateExpression)) {}
+      rateExpression_(std::move(rateExpression)),
+      delayExpression_(std::move(delayExpression)),
+      nonConsuming_(nonConsuming) {}
 
 const std::string& Rxn::getLabel() const {
     return label_;
@@ -50,6 +54,14 @@ void Rxn::addFactor(double factor) {
 
 const std::optional<Expression>& Rxn::getRateExpression() const {
     return rateExpression_;
+}
+
+const std::optional<Expression>& Rxn::getDelayExpression() const {
+    return delayExpression_;
+}
+
+bool Rxn::isNonConsuming() const {
+    return nonConsuming_;
 }
 
 } // namespace bng::ast

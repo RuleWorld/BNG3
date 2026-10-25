@@ -1,4 +1,5 @@
 #include "BngsimAdapter.hpp"
+#include "DelayedSemanticsGuard.hpp"
 #include "FiniteBackend.hpp"
 
 #include <algorithm>
@@ -485,6 +486,7 @@ std::string expressionForBngsim(const ast::Expression& expression,
 std::unique_ptr<bngsim::NetworkModel> buildBngsimNetwork(
     const ast::Model& model,
     const GeneratedNetwork& network) {
+    requireNoDelayedSemantics(model, network, "the BNGsim adapter");
     const auto check = checkBngsimLowering(model, network);
     if (!check.supported) {
         throw std::runtime_error(check.blockers.empty()

@@ -221,10 +221,12 @@ def test_ssts_workflow_bounds_execution_and_preserves_failure_artifacts():
         runner.DEFAULT_SUITE_LOCK.parents[1] / ".github/workflows/sbml-conformance.yml"
     )
     assert workflow["concurrency"]["group"] == (
-        "${{ github.workflow }}-${{ github.event_name == 'workflow_dispatch' "
-        "&& github.run_id || github.event.pull_request.head.sha || github.sha }}"
+        "${{ github.workflow }}-${{ github.event_name }}-"
+        "${{ github.event.pull_request.number || github.run_id }}"
     )
-    assert workflow["concurrency"]["cancel-in-progress"] is False
+    assert workflow["concurrency"]["cancel-in-progress"] == (
+        "${{ github.event_name == 'pull_request' }}"
+    )
     job = workflow["jobs"]["conformance"]
     assert job["timeout-minutes"] <= 360
     steps = job["steps"]

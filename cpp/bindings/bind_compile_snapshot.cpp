@@ -95,6 +95,7 @@ const char* builtinName(BuiltinFunction builtin) {
     case BuiltinFunction::Tan: return "tan";
     case BuiltinFunction::Tanh: return "tanh";
     case BuiltinFunction::Time: return "time";
+    case BuiltinFunction::Delay: return "delay";
     case BuiltinFunction::Arrhenius: return "arrhenius";
     case BuiltinFunction::Saturation: return "saturation";
     case BuiltinFunction::MichaelisMenten: return "michaelis_menten";
@@ -378,6 +379,12 @@ py::dict compiledSnapshot(const bng::ast::Model& astModel) {
     bng::compile::requireNoNativeEvents(astModel, "BNGIR v0.2 structural snapshot");
     Document document(astModel);
     const auto& model = document.model();
+    for (const auto& rule : model.rules()) {
+        if (rule.delayExpression()) {
+            throw std::runtime_error(
+                "compiled snapshot cannot represent delayed reaction rules");
+        }
+    }
     if (!document.valid()) {
         throw std::runtime_error("cannot create structural semantic snapshot from invalid model");
     }

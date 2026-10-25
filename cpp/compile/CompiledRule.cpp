@@ -340,6 +340,8 @@ public:
         compiled.label_ = rule.getLabel();
         compiled.conservativeInvalidation_ = rule.getOperations().empty();
         compiled.bidirectional_ = rule.isBidirectional();
+        compiled.delayExpression_ = rule.getDelayExpression();
+        compiled.nonConsuming_ = rule.isNonConsuming();
 
         // Reservoir work must be statically evaluable: a time- or
         // observable-dependent drive would change the cycle affinity during a

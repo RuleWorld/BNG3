@@ -14,6 +14,11 @@ on:
       - "tests/python/**"
       - "scripts/**"
 
+concurrency:
+  # Replace superseded PR work; isolate every manual/scheduled/main run.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 permissions:
   contents: read
 
@@ -21,6 +26,7 @@ jobs:
   formatting-patch:
     name: Check formatting and suggest patch
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 

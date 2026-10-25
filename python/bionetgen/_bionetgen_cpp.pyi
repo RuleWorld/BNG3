@@ -89,6 +89,8 @@ class ReactionRule:
     @property
     def is_bidirectional(self) -> bool: ...
     @property
+    def has_delay(self) -> bool: ...
+    @property
     def reactant_patterns(self) -> List[str]: ...
     @property
     def product_patterns(self) -> List[str]: ...
@@ -582,6 +584,8 @@ class io:
         network: GeneratedNetwork,
         path: str,
         source_metadata: str = "",
+        start_time: float = 0.0,
+        level: int = 3,
     ) -> None:
         """Write model to SBML format."""
         ...

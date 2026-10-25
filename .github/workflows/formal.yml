@@ -10,9 +10,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # Keep formal evidence attached to the exact PR head under review.
-  group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.sha }}
-  cancel-in-progress: false
+  # Replace superseded PR work; isolate every manual/scheduled/main run.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -21,6 +21,7 @@ jobs:
   lean-kernel:
     name: Lean 4.33.1 kernel and NFnext contracts
     runs-on: ubuntu-22.04
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
 

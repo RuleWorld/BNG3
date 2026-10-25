@@ -16,10 +16,9 @@ on:
         default: false
 
 concurrency:
-  # Preserve the evidence for each exact PR head.  A later documentation push
-  # must not cancel a semantic parity run for the preceding head.
-  group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.sha }}
-  cancel-in-progress: false
+  # Replace superseded PR work; isolate every manual/scheduled/main run.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

@@ -149,6 +149,9 @@ public:
     const std::vector<Expression>& getRates() const;
     const std::vector<std::string>& getModifiers() const;
     bool isBidirectional() const;
+    const std::optional<Expression>& getDelayExpression() const;
+    bool isNonConsuming() const;
+    void setDelay(Expression expression, bool nonConsuming);
 
     // Signed chemical work supplied by a driving reservoir, from a
     // `driven_by(W)` annotation. Work shifts local detailed balance to
@@ -261,6 +264,8 @@ private:
     bool bidirectional_;
     Expression drivingWork_;
     bool hasDrivingWork_ = false;
+    std::optional<Expression> delayExpression_;
+    bool nonConsuming_ = false;
     std::vector<SpeciesGraph> reactantPatterns_;
     std::vector<SpeciesGraph> productPatterns_;
     struct PatternCache;

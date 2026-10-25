@@ -1,6 +1,7 @@
 #pragma once
 
 #include "Model.hpp"
+#include "ModelFunctionEvaluator.hpp"
 #include <set>
 #include <cmath>
 #include <stdexcept>
@@ -17,6 +18,7 @@ inline void validateNativeEventSubset(const Model& model) {
         throw std::runtime_error(std::string(kUnsupportedEventExecutionMessage) + ": " + reason);
     };
     if (model.getEvents().empty()) fail("at least one event is required");
+    const ModelFunctionEvaluator functionEvaluator(model);
     for (const auto& event : model.getEvents()) {
     if (event.priority) {
         // The priority orders the assignments of events that are executed
@@ -33,7 +35,7 @@ inline void validateNativeEventSubset(const Model& model) {
             } catch (const std::exception&) { fail("event priority requires static parameters"); }
         }
     }
-    const auto& trigger = event.trigger;
+    const auto trigger = functionEvaluator.expandFunctions(event.trigger);
     // A trigger is a strict inequality or a conjunction of them.  A
     // conjunction holds only where every conjunct holds, so its root function
     // is the smallest of the conjunct root functions.
@@ -62,6 +64,19 @@ inline void validateNativeEventSubset(const Model& model) {
         }
         return false;
     };
+    const auto dynamicDelayedExpression = [&](const Expression& expression) {
+        if (expression.kind() != ExpressionKind::Function ||
+            expression.name() != "delay" || expression.args().size() != 2) {
+            return false;
+        }
+        for (const auto& dependency : expression.args()[0].getDependencies()) {
+            if (dependency == "time") return true;
+            for (const auto& observable : model.getObservables()) {
+                if (observable.getName() == dependency) return true;
+            }
+        }
+        return false;
+    };
     // Every conjunct of the trigger has to compare a time or species
     // observable against a static threshold or another observable.
     std::function<void(const Expression&)> checkSides = [&](const Expression& expression) {
@@ -69,8 +84,10 @@ inline void validateNativeEventSubset(const Model& model) {
             for (const auto& child : expression.args()) checkSides(child);
             return;
         }
-        const bool leftDynamic = dynamicIdentifier(expression.args()[0]);
-        const bool rightDynamic = dynamicIdentifier(expression.args()[1]);
+        const bool leftDynamic = dynamicIdentifier(expression.args()[0]) ||
+                                 dynamicDelayedExpression(expression.args()[0]);
+        const bool rightDynamic = dynamicIdentifier(expression.args()[1]) ||
+                                  dynamicDelayedExpression(expression.args()[1]);
         if (!leftDynamic && !rightDynamic) {
             fail("trigger requires one time or species observable against a static threshold");
         }
@@ -118,6 +135,26 @@ inline void validateNativeEventSubset(const Model& model) {
             for (const auto& child : expression.args()) continuous(child);
             return;
         }
+        if (dynamicDelayedExpression(expression)) {
+            for (const auto& name : expression.args()[1].getDependencies()) {
+                if (name == "time") fail("delay expression duration must be static");
+                for (const auto& observable : model.getObservables()) {
+                    if (observable.getName() == name) {
+                        fail("delay expression duration must be static");
+                    }
+                }
+                try {
+                    if (model.getParameters().isTimeDependent(name)) {
+                        fail("delay expression duration must be static");
+                    }
+                } catch (const std::exception&) {
+                    fail("delay expression duration requires static parameters");
+                }
+            }
+            continuous(expression.args()[0]);
+            continuous(expression.args()[1]);
+            return;
+        }
         fail("only continuous polynomial event expressions are supported");
     };
     // Every conjunct of the trigger is a continuous polynomial expression.
@@ -151,7 +188,7 @@ inline void validateNativeEventSubset(const Model& model) {
             found = found || observable.getName() == assignment.target;
         }
         if (!found) fail("assignment target must be a species observable");
-        continuous(assignment.value);
+        continuous(functionEvaluator.expandFunctions(assignment.value));
     }
     if (targets.empty()) fail("event requires an assignment");
     }

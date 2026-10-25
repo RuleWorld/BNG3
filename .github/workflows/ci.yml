@@ -8,10 +8,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  # Keep hosted evidence attached to the exact PR head being evaluated. A
-  # checklist/documentation push must not cancel the preceding semantic run.
-  group: ${{ github.workflow }}-${{ github.event.pull_request.head.sha || github.sha }}
-  cancel-in-progress: false
+  # Replace superseded PR work; isolate every manual/scheduled/main run.
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   CMAKE_BUILD_TYPE: Release
@@ -26,12 +25,15 @@ jobs:
   lint:
     name: Lint & Format
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install linters and policy dependencies
         # Pinned: unpinned black floated 26.5.1 -> 26.10.0 overnight (2026-10-04/05)
@@ -80,7 +82,12 @@ jobs:
         run: python -m tests.validation.exception_ledger --max-exceptions 1
 
       - name: Run CI contract tests
-        run: python -m pytest tests/test_ci_contract.py -q
+        run: python -m pytest tests/test_ci_contract.py tests/test_ci_fast_feedback.py tests/test_workflow_guard_selftests.py -q --maxfail=1
+
+      - name: Check workflow structure before native builds
+        run: >-
+          python -m pytest tests/test_workflow_contract.py -q --maxfail=1
+          -k "not test_workflow_pytest_selector_collects_at_least_one_test"
 
       - name: Check the legacy dependency inventory against the live tree
         # The inventory of the legacy compatibility paths is evidence, not
@@ -126,6 +133,7 @@ jobs:
           retention-days: 30
 
   windows-harness-reexec:
+    needs: [lint, harness]
     name: Windows harness re-exec contract
     runs-on: windows-2022
     timeout-minutes: 10
@@ -135,6 +143,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install pytest
         run: python -m pip install pytest
@@ -150,10 +160,12 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════════════
 
   cpp-build:
+    needs: [lint, harness]
     name: C++ (${{ matrix.os }}, ${{ matrix.compiler }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'pull_request' }}
       matrix:
         include:
           - os: ubuntu-22.04
@@ -179,6 +191,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install validation harness dependencies
         run: python -m pip install pytest numpy
@@ -227,7 +241,7 @@ jobs:
         run: cmake --build build --config ${{ env.CMAKE_BUILD_TYPE }}
 
       - name: Run C++ unit tests
-        run: ctest --test-dir build --output-on-failure -C ${{ env.CMAKE_BUILD_TYPE }} --output-junit ctest-results.xml
+        run: ctest --test-dir build --output-on-failure --stop-on-failure --no-tests=error -C ${{ env.CMAKE_BUILD_TYPE }} --output-junit ctest-results.xml
 
       - name: Retain C++ test results and replay diagnostics
         if: always()
@@ -250,14 +264,18 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════════════
 
   cpp-asan:
+    needs: [lint, harness]
     name: C++ ASan (Ubuntu)
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
         run: |
@@ -288,13 +306,13 @@ jobs:
       - name: Run tests under ASan
         env:
           ASAN_OPTIONS: detect_leaks=0
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --output-on-failure --stop-on-failure --no-tests=error
 
       - name: Qualify issue 141 late CVODE exception cleanup
         env:
           ASAN_OPTIONS: detect_leaks=1
         run: >-
-          ctest --test-dir build --output-on-failure --no-tests=error
+          ctest --test-dir build --output-on-failure --stop-on-failure --no-tests=error
           -R '^OdeIntegrator recovers after late stop condition failure$'
 
 
@@ -319,8 +337,10 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════════════
 
   cpp-cuda:
+    needs: [lint, harness]
     name: C++ batch SSA (CUDA backend, Ubuntu)
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     env:
       # Series-level pin: NVIDIA keeps every published series in the repo, so
       # this keeps resolving, unlike a full patch pin that can be withdrawn.
@@ -334,6 +354,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Disable unrelated Microsoft apt feed
         run: sudo python3 scripts/ci/disable_unreachable_microsoft_apt_source.py
@@ -391,7 +413,7 @@ jobs:
           echo "::notice::CudaSsaBackend.cu produced a real object file."
 
       - name: Run tests with the CUDA backend compiled in
-        run: ctest --test-dir build --output-on-failure
+        run: ctest --test-dir build --output-on-failure --stop-on-failure --no-tests=error
 
       - name: Batch SSA still runs without a CUDA device
         run: |
@@ -425,8 +447,10 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════════════
 
   batch-ssa-cpu-reference:
+    needs: [lint, harness]
     name: Batch SSA CPU reference parity (Ubuntu)
     runs-on: ubuntu-22.04
+    timeout-minutes: 20
     env:
       CC: gcc-12
       CXX: g++-12
@@ -436,6 +460,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
         run: |
@@ -485,8 +511,9 @@ jobs:
     name: Validation (full corpus, ${{ matrix.os }})
     needs: cpp-build
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'pull_request' }}
       matrix:
         include:
           - os: ubuntu-22.04
@@ -502,6 +529,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install comparison dependencies
         run: python -m pip install numpy
@@ -532,12 +561,15 @@ jobs:
     name: BNGL Corpus Parse Inventory
     needs: cpp-build
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Download bng_cpp artifact
         uses: actions/download-artifact@v4
@@ -594,8 +626,10 @@ jobs:
   # ═══════════════════════════════════════════════════════════════════════════
 
   python-jax:
+    needs: [lint, harness]
     name: Optional JAX CPU (ODE and SSA availability)
     runs-on: ubuntu-22.04
+    timeout-minutes: 25
     env:
       BNG3_PYTHON_TEST_MODE: installed
       CMAKE_BUILD_PARALLEL_LEVEL: 2
@@ -606,6 +640,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install native build tools
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
@@ -637,13 +673,14 @@ jobs:
 
   python-test:
     name: Python ${{ matrix.python-version }} (${{ matrix.os }})
-    needs: [cpp-build]
+    needs: [cpp-build, python-integration]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
     env:
       BNG3_PYTHON_TEST_MODE: installed
       BNG_CPP: ${{ github.workspace }}/build/cpp/bng_cpp${{ startsWith(matrix.os, 'windows') && '.exe' || '' }}
     strategy:
-      fail-fast: false
+      fail-fast: ${{ github.event_name == 'pull_request' }}
       matrix:
         os: [ubuntu-22.04, macos-14, windows-2022]
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
@@ -671,6 +708,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install system dependencies (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu')
@@ -687,13 +726,15 @@ jobs:
       - name: Install Python build dependencies
         run: pip install scikit-build-core pybind11 numpy scipy libroadrunner click packaging pytest pytest-cov jsonschema cement colorlog pyparsing pylru pandas matplotlib pyyaml lxml networkx sympy seaborn xmltodict "ipykernel>=6,<7" nbclient
 
-      - name: Install python-libsbml (macOS Python 3.9)
-        if: matrix.os == 'macos-14' && matrix.python-version == '3.9'
-        run: python -m pip install "python-libsbml==5.21.1"
+      - name: Install python-libsbml (Python 3.9 wheels)
+        if: matrix.python-version == '3.9'
+        run: >-
+          python -m pip install --only-binary=:all: "python-libsbml==5.21.1"
 
       - name: Install python-libsbml (other matrix targets)
-        if: matrix.os != 'macos-14' || matrix.python-version != '3.9'
-        run: python -m pip install python-libsbml
+        if: matrix.python-version != '3.9'
+        run: >-
+          python -m pip install --only-binary=:all: python-libsbml
 
       - name: Build and install package (Windows)
         if: startsWith(matrix.os, 'windows')
@@ -724,14 +765,14 @@ jobs:
           MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
 
       - name: Run Python tests
-        run: pytest tests/python/test_sbml_import.py -v --tb=short --junitxml=sbml-results.xml
+        run: pytest tests/python/test_sbml_import.py -v --tb=short --junitxml=sbml-results.xml --maxfail=1
         env:
           SYMPY_USE_GMPY: "0"
           MPLBACKEND: Agg
           MPLCONFIGDIR: ${{ runner.temp }}/matplotlib
 
       - name: Run Python tests
-        run: pytest tests/python/ -v --tb=short --cov=bionetgen --cov-report=xml --ignore=tests/python/test_sbml_import.py --junitxml=python-results.xml
+        run: pytest tests/python/ -v --tb=short --cov=bionetgen --cov-report=xml --ignore=tests/python/test_sbml_import.py --junitxml=python-results.xml --maxfail=1
         env:
           SYMPY_USE_GMPY: "0"
           MPLBACKEND: Agg
@@ -769,8 +810,9 @@ jobs:
 
   python-integration:
     name: Integration Tests
-    needs: [cpp-build, python-test]
+    needs: [cpp-build]
     runs-on: ubuntu-22.04
+    timeout-minutes: 20
     env:
       BNG3_PYTHON_TEST_MODE: installed
       BNG_CPP: ${{ github.workspace }}/build/cpp/bng_cpp
@@ -789,6 +831,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install dependencies
         run: |
@@ -806,20 +850,29 @@ jobs:
           BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Run atomizer tests
-        run: pytest tests/python/ -v -k "atomizer" --tb=short
+        run: pytest tests/python/ -v -k "atomizer" --tb=short --maxfail=1 --junitxml=atomizer-results.xml
         env:
           SYMPY_USE_GMPY: "0"
 
       - name: Run model loading tests
-        run: pytest tests/python/ -v -k "model" --tb=short
+        run: pytest tests/python/ -v -k "model" --tb=short --maxfail=1 --junitxml=model-results.xml
         env:
           SYMPY_USE_GMPY: "0"
 
       - name: Check workflow YAML integrity and test-selector reachability
         # The full extra supplies PyYAML for the root-level workflow contracts.
-        run: pytest tests/test_workflow_contract.py -q --tb=short
+        run: pytest tests/test_workflow_contract.py -q --maxfail=1 --tb=short
         env:
           SYMPY_USE_GMPY: "0"
+
+      - name: Retain integration test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: integration-test-results
+          path: |
+            atomizer-results.xml
+            model-results.xml
 
       - name: Test CLI commands
         run: |
@@ -852,8 +905,9 @@ jobs:
 
   package-smoke:
     name: Package Smoke (sdist)
-    needs: [python-test]
+    needs: [python-integration]
     runs-on: ubuntu-22.04
+    timeout-minutes: 20
     env:
       BNG3_PYTHON_TEST_MODE: installed
     steps:
@@ -862,6 +916,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install packaging and native build dependencies
         run: |
@@ -908,6 +964,7 @@ jobs:
     name: Wheels (${{ matrix.os }})
     needs: [cpp-build, python-test, validation]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     strategy:
       fail-fast: false
@@ -937,6 +994,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Setup MSVC (Windows)
         if: startsWith(matrix.os, 'windows')
@@ -982,6 +1041,7 @@ jobs:
     name: Source Distribution
     needs: [python-test]
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
@@ -989,6 +1049,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: pyproject.toml
 
       - name: Install build tools
         run: pip install build
@@ -1010,6 +1072,7 @@ jobs:
     name: Publish to PyPI
     needs: [wheels, sdist]
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
     if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     environment: pypi
     permissions:
@@ -1034,6 +1097,7 @@ jobs:
     name: Docker Image
     needs: [python-test]
     runs-on: ubuntu-22.04
+    timeout-minutes: 30
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
@@ -1077,6 +1141,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
       - name: Install harness dependencies
         run: python -m pip install pytest numpy pyyaml scipy
       # Workflow selector collection runs in python-integration, where the
@@ -1104,7 +1170,7 @@ jobs:
           print('Harness contracts only; no native/corpus qualification. Selected tests:', selected, flush=True)
           subprocess.check_call([
               sys.executable, '-m', 'pytest', '-p', 'tests.validation.pytest_evidence',
-              *selected, '-q', '--junitxml=' + str(output / 'junit.xml'),
+              *selected, '-q', '--maxfail=1', '--junitxml=' + str(output / 'junit.xml'),
           ])
           PY
       - name: Retain the discovered denominator without qualifying it
