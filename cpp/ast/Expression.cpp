@@ -580,6 +580,15 @@ double Expression::evaluateWithFunctions(
     const std::function<double(const std::string&)>& resolveIdentifier,
     double t, const FunctionResolver& resolveFunction,
     const FunctionPredicate& isUserFunction) const {
+    return evaluateWithFunctions(resolveIdentifier, t, resolveFunction,
+                                 isUserFunction, DelayedEvaluator{});
+}
+
+double Expression::evaluateWithFunctions(
+    const std::function<double(const std::string&)>& resolveIdentifier,
+    double t, const FunctionResolver& resolveFunction,
+    const FunctionPredicate& isUserFunction,
+    const DelayedEvaluator& evaluateDelayed) const {
     switch (kind_) {
     case ExpressionKind::Number:
         return numberValue_;
@@ -590,7 +599,7 @@ double Expression::evaluateWithFunctions(
         return resolveIdentifier(text_);
     case ExpressionKind::Unary: {
         const double value = children_.front().evaluateWithFunctions(
-            resolveIdentifier, t, resolveFunction, isUserFunction);
+            resolveIdentifier, t, resolveFunction, isUserFunction, evaluateDelayed);
         if (text_ == "+") {
             return value;
         }
@@ -604,9 +613,9 @@ double Expression::evaluateWithFunctions(
     }
     case ExpressionKind::Binary: {
         const double lhs = children_[0].evaluateWithFunctions(
-            resolveIdentifier, t, resolveFunction, isUserFunction);
+            resolveIdentifier, t, resolveFunction, isUserFunction, evaluateDelayed);
         const double rhs = children_[1].evaluateWithFunctions(
-            resolveIdentifier, t, resolveFunction, isUserFunction);
+            resolveIdentifier, t, resolveFunction, isUserFunction, evaluateDelayed);
 
         if (text_ == "+") return lhs + rhs;
         if (text_ == "-") return lhs - rhs;
@@ -628,8 +637,23 @@ double Expression::evaluateWithFunctions(
     case ExpressionKind::Function: {
         const auto evalArg = [&](std::size_t index) {
             return children_[index].evaluateWithFunctions(
-                resolveIdentifier, t, resolveFunction, isUserFunction);
+                resolveIdentifier, t, resolveFunction, isUserFunction, evaluateDelayed);
         };
+
+        if (text_ == "delay") {
+            requireArity(text_, children_, 2);
+            const double duration = evalArg(1);
+            if (!std::isfinite(duration) || duration < 0.0) {
+                throw std::runtime_error(
+                    "delay duration must be finite and nonnegative");
+            }
+            if (duration == 0.0) return evalArg(0);
+            if (!evaluateDelayed) {
+                throw std::runtime_error(
+                    "delay(expr, tau) requires a historical-state evaluator");
+            }
+            return evaluateDelayed(children_[0], t - duration);
+        }
 
         if (text_ == "time" || text_ == "t") {
             requireArity(text_, children_, 0);
@@ -849,7 +873,7 @@ double Expression::evaluateWithFunctions(
             values.reserve(children_.size());
             for (const auto& child : children_)
                 values.push_back(child.evaluateWithFunctions(
-                    resolveIdentifier, t, resolveFunction, isUserFunction));
+                    resolveIdentifier, t, resolveFunction, isUserFunction, evaluateDelayed));
             return resolveFunction(text_, values);
         }
         if (children_.empty()) return resolveIdentifier(text_);
@@ -864,7 +888,7 @@ double Expression::evaluateWithFunctions(
             values.reserve(children_.size());
             for (const auto& child : children_) {
                 values.push_back(child.evaluateWithFunctions(
-                    resolveIdentifier, t, resolveFunction, isUserFunction));
+                    resolveIdentifier, t, resolveFunction, isUserFunction, evaluateDelayed));
             }
             return resolveFunction(text_, values);
         }
@@ -874,7 +898,7 @@ double Expression::evaluateWithFunctions(
             throw std::runtime_error("TFUN expression must have one counter expression");
         }
         const double counter = children_.front().evaluateWithFunctions(
-            resolveIdentifier, t, resolveFunction, isUserFunction);
+            resolveIdentifier, t, resolveFunction, isUserFunction, evaluateDelayed);
         if (!tableFilePath_.empty()) {
             std::ostringstream value;
             value << std::scientific << std::setprecision(17) << counter;

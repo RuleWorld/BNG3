@@ -61,6 +61,32 @@ def test_bngir_round_trip_semantic_equality():
     assert restored.name == "bngir_fixture"
 
 
+def test_bngir_refuses_delayed_rules_in_both_wire_versions():
+    source = r"""
+begin model
+begin parameters
+    tau 2
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin reaction rules
+    A() -> B() 1 delay=tau
+end reaction rules
+end model
+"""
+    model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(source))
+    for version in ("0.1", "0.2"):
+        with pytest.raises(ValueError, match="cannot represent delayed reaction rules"):
+            model.to_bngir(version=version)
+    with pytest.raises(RuntimeError, match="cannot represent delayed reaction rules"):
+        bionetgen.model._cpp._compiled_snapshot(model._model)
+
+
 def test_bngir_document_conforms_to_published_schema():
     model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(MODEL))
     document = json.loads(model.to_bngir())

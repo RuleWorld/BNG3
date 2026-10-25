@@ -73,6 +73,7 @@ std::string builtinName(BuiltinFunction function) {
     case BuiltinFunction::Tan: return "tan";
     case BuiltinFunction::Tanh: return "tanh";
     case BuiltinFunction::Time: return "time";
+    case BuiltinFunction::Delay: return "delay";
     case BuiltinFunction::Arrhenius: return "Arrhenius";
     case BuiltinFunction::Saturation: return "Sat";
     case BuiltinFunction::MichaelisMenten: return "MM";

@@ -42,6 +42,7 @@
 ///                   that remains their compatibility oracle.
 
 #include "NFinput_fromAst.hh"
+#include "engine/DelayedSemanticsGuard.hpp"
 #include "NFinput_fromCompiled.hh"
 #include "compile/Document.hpp"
 #include "NFinput.hh"
@@ -6081,6 +6082,13 @@ System* buildSystemFromAstWithSeedOverrides(
     };
     if (unavailableReason != nullptr) unavailableReason->clear();
     if (semanticsUnsupported != nullptr) *semanticsUnsupported = false;
+
+    try {
+        bng::engine::requireNoDelayedRuleSemantics(model, "NFsim");
+    } catch (const std::exception& error) {
+        if (semanticsUnsupported != nullptr) *semanticsUnsupported = true;
+        return fail(error.what());
+    }
 
     bng::compile::Document compiledDocument(model);
     const auto& compiledModel = compiledDocument.model();

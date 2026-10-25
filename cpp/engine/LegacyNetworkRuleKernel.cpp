@@ -82,6 +82,9 @@ struct LegacyNetworkRuleKernel::Impl {
               compile::lowerPatternsToSpeciesGraphs(direction.reactantPatterns, context),
               compile::lowerPatternsToSpeciesGraphs(direction.productPatterns, context)),
           state(rule.createExecutionState()) {
+        if (compiledRule.delayExpression()) {
+            rule.setDelay(*compiledRule.delayExpression(), compiledRule.isNonConsuming());
+        }
         rule.setHasScopePrefix(hasSpeciesScope(direction));
         astHooks.deleteMolecules = deletesMolecules(compiledRule);
         astHooks.wholeSpeciesDeletions = direction.wholeSpeciesDeletions;

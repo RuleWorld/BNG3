@@ -2,6 +2,7 @@
 #include "SscWriter.hpp"
 
 #include "EnergyExportGuard.hpp"
+#include "engine/DelayedSemanticsGuard.hpp"
 
 #include <sstream>
 #include <iomanip>
@@ -27,6 +28,7 @@ std::string SscWriter::writeConfig(const ast::Model& model) {
 
 
 std::string SscWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network) {
+    engine::requireNoDelayedSemantics(model, network, "SSC export");
     requireNoEnergySemantics(model, "SSC");
     compile::requireNoNativeEvents(model, "SSC export");
     std::ostringstream out;

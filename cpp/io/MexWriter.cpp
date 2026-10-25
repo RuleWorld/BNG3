@@ -2,6 +2,7 @@
 #include "MexWriter.hpp"
 
 #include "EnergyExportGuard.hpp"
+#include "engine/DelayedSemanticsGuard.hpp"
 
 #include <sstream>
 #include <iomanip>
@@ -26,6 +27,7 @@ std::string MexWriter::write(const ast::Model& model, const engine::GeneratedNet
 }
 
 std::string MexWriter::write(const ast::Model& model, const engine::GeneratedNetwork& network, const Options& opts) {
+    engine::requireNoDelayedSemantics(model, network, "MEX export");
     requireNoEnergySemantics(model, "MEX");
     compile::requireNoNativeEvents(model, "MEX export");
     std::ostringstream out;

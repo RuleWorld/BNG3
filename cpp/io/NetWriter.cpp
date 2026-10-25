@@ -33,6 +33,7 @@
 #include "compile/energy/BarrierTable.hpp"
 #include "compile/energy/DrivenEnergy.hpp"
 #include "engine/NetworkGenerator.hpp"
+#include "engine/DelayedSemanticsGuard.hpp"
 #include "ast/BarrierPattern.hpp"
 #include "engine/ObservableProjection.hpp"
 
@@ -2257,6 +2258,42 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
 
     const auto derivedRateParams = NetWriter::buildDerivedRateParams(model, network);
 
+    std::unordered_map<std::string, std::string> delayParameterByExpression;
+    std::vector<std::pair<std::string, ast::Expression>> delayParameters;
+    std::unordered_set<std::string> occupiedParameterNames;
+    for (const auto& parameter : model.getParameters().all()) {
+        occupiedParameterNames.insert(parameter.getName());
+    }
+    for (const auto& [ruleName, info] : derivedRateParams) {
+        (void)ruleName;
+        if (!info.paramName.empty()) occupiedParameterNames.insert(info.paramName);
+        for (const auto& [index, value] : info.perSpeciesRates) {
+            (void)index;
+            occupiedParameterNames.insert(value.first);
+        }
+        for (const auto& [index, value] : info.perReactionRates) {
+            (void)index;
+            occupiedParameterNames.insert(value.first);
+        }
+    }
+    std::size_t delayParameterIndex = 1;
+    for (const auto& reaction : network.reactions.all()) {
+        if (!reaction.getDelayExpression()) continue;
+        const auto& expression = *reaction.getDelayExpression();
+        (void)engine::delayedTime(expression, model);
+        if (expression.kind() == ast::ExpressionKind::Number ||
+            expression.kind() == ast::ExpressionKind::Identifier) continue;
+        const auto key = expression.toBnglString();
+        if (delayParameterByExpression.count(key) != 0) continue;
+        std::string name;
+        do {
+            name = "__delay_" + std::to_string(delayParameterIndex++);
+        } while (occupiedParameterNames.count(name) != 0);
+        occupiedParameterNames.insert(name);
+        delayParameterByExpression.emplace(key, name);
+        delayParameters.emplace_back(name, expression);
+    }
+
     // Add derived rate parameters to the model so they can be used by OdeIntegrator
     // We evaluate the expression strings numerically using a simple evaluator
     // Format: exp(-(Ea0_S_kinase+(phi*(Gf_S_kinase/RT))))
@@ -2334,6 +2371,16 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             out << "    " << parameterIndex++ << " " << parameter.getName() << " "
                 << valStr.str() << parameterCommentSuffix(parameter.getName()) << '\n';
         }
+    }
+    for (const auto& [name, expression] : delayParameters) {
+        out << "    " << parameterIndex++ << " " << name << " ";
+        if (writerOpts.evaluateExpressions) {
+            const auto value = engine::delayedTime(expression, model);
+            out << std::setprecision(std::numeric_limits<double>::max_digits10) << value;
+        } else {
+            out << expression.toBnglString();
+        }
+        out << "\n";
     }
     // Seed species initial amounts are written directly in species section
     // using parameter names (e.g., Ga_0) - no _InitialConc parameters needed
@@ -2507,6 +2554,19 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
     out << "begin reactions\n";
     std::size_t reactionIndex = 1;
     for (const auto& reaction : network.reactions.all()) {
+        const auto writeDelayMetadata = [&]() {
+            if (!reaction.getDelayExpression()) return;
+            const auto& delay = *reaction.getDelayExpression();
+            std::string expression = delay.toBnglString();
+            if (delay.kind() != ast::ExpressionKind::Identifier) {
+                const auto found = delayParameterByExpression.find(expression);
+                if (found != delayParameterByExpression.end()) expression = found->second;
+            }
+            expression.erase(std::remove_if(expression.begin(), expression.end(),
+                [](unsigned char c) { return std::isspace(c) != 0; }), expression.end());
+            out << " delay=" << expression;
+            if (reaction.isNonConsuming()) out << " NonConsuming";
+        };
         const bool totalRate =
             hasTotalRateModifier(model, reaction.getOriginRuleName());
         // Perl BNG2 (Rxn.pm::stringID) sorts reactant/product indices for
@@ -2593,6 +2653,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                           std::string("_reverse__").size()) +
                           "r"
                     : reaction.getOriginRuleName();
+      writeDelayMetadata();
       out << " #" << ruleComment;
       if (!totalRate && unitExpr.has_value()) {
         out << " unit_conversion=" << *unitExpr;
@@ -2617,6 +2678,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             std::string ruleComment = isReverse
                 ? reaction.getOriginRuleName().substr(std::string("_reverse__").size()) + "r"
                 : reaction.getOriginRuleName();
+            writeDelayMetadata();
             out << " #" << ruleComment;
             if (!totalRate && unitExpr.has_value()) {
                 out << " unit_conversion=" << *unitExpr;
@@ -2639,6 +2701,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             }
             out << rateParamName;
             // Perl writes rule name comment like #Rule1
+            writeDelayMetadata();
             out << " #" << reaction.getOriginRuleName();
         } else if (derivedFound != derivedRateParams.end()) {
             const auto unitFactor = unitConversionFactor(reaction, model, network);
@@ -2653,6 +2716,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                 wrotePrefix = true;
             }
             out << derivedFound->second.paramName;
+            writeDelayMetadata();
             out << " #" << (reaction.getOriginRuleName().rfind("_", 0) == 0 ? reaction.getOriginRuleName() : "_" + reaction.getOriginRuleName());
             if (!totalRate && unitExpr.has_value()) {
                 out << " unit_conversion=" << *unitExpr;
@@ -2734,6 +2798,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             } else {
                 out << reaction.getRateLaw();
             }
+            writeDelayMetadata();
             // Append rule name comment for non-derived reactions
             if (!reaction.getOriginRuleName().empty()) {
                 out << " #" << reaction.getOriginRuleName();

@@ -1,4 +1,5 @@
 #include "PlaSimulator.hpp"
+#include "DelayedSemanticsGuard.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -144,6 +145,7 @@ PlaConfig PlaConfig::parse(const std::string& configStr) {
 
 PlaSimulator::PlaSimulator(const ast::Model& model, const GeneratedNetwork& network)
     : model_(model), network_(network) {
+    requireNoDelayedSemantics(model_, network_, "PLA");
     if (model_.getEventFormatVersion().has_value()) {
         throw std::runtime_error(ast::kUnsupportedEventExecutionMessage);
     }

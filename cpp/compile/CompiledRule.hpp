@@ -167,6 +167,8 @@ public:
     const std::string& label() const { return label_; }
     bool requiresConservativeInvalidation() const { return conservativeInvalidation_; }
     bool isBidirectional() const { return bidirectional_; }
+    const std::optional<ast::Expression>& delayExpression() const { return delayExpression_; }
+    bool isNonConsuming() const { return nonConsuming_; }
 
     // Signed reservoir work from a `driven_by(W)` annotation.
     //
@@ -208,6 +210,8 @@ private:
     std::string label_;
     bool conservativeInvalidation_ = false;
     bool bidirectional_ = false;
+    std::optional<ast::Expression> delayExpression_;
+    bool nonConsuming_ = false;
     bool hasDrivingWork_ = false;
     std::string drivingWorkExpression_;
     std::optional<double> drivingWorkValue_;

@@ -9,6 +9,7 @@
 #include <cmath>
 #include <functional>
 #include <map>
+#include <set>
 #include <stdexcept>
 #include <string_view>
 #include <unordered_set>
@@ -20,6 +21,7 @@
 #include "parser/PatternGraphBuilder.hpp"
 #include "core/Ullmann.hpp"
 #include "engine/NetworkGenerator.hpp"
+#include "engine/DelayedSemanticsGuard.hpp"
 #include "io/NetWriter.hpp"
 #include "compile/CompiledModel.hpp"
 #include "compile/TotalRate.hpp"
@@ -218,6 +220,9 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
 
 std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNetwork* network, const Options& options) {
     requireNoEnergySemantics(model, "SBML");
+    if (!std::isfinite(options.startTime)) {
+        throw std::runtime_error("SBML start time must be finite");
+    }
     const compile::CompiledModel compiled(model);
     std::ostringstream sbml;
     // Preserve enough precision for a numerical round trip. The default
@@ -268,7 +273,7 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
 
     // Reactions
     if (network && options.networksExport) {
-        sbml << writeReactions(*network, model, symbolIds, options.level);
+        sbml << writeReactions(*network, model, symbolIds, options.level, options.startTime);
     }
 
     // Events
@@ -688,7 +693,8 @@ std::string SbmlWriter::writeReactions(
     const engine::GeneratedNetwork& network,
     const ast::Model& model,
     const SymbolIds& symbolIds,
-    int level) {
+    int level,
+    double startTime) {
     std::ostringstream sbml;
     sbml << std::setprecision(17);
     if (network.reactions.all().empty()) {
@@ -699,7 +705,20 @@ std::string SbmlWriter::writeReactions(
     const auto& reactions = network.reactions.all();
     for (std::size_t r = 0; r < reactions.size(); ++r) {
         const auto& rxn = reactions[r];
+        const double delay = rxn.getDelayExpression()
+            ? engine::delayedTime(*rxn.getDelayExpression(), model) : 0.0;
+        const bool delayed = delay > 0.0;
+        const bool splitConsuming = delayed && !rxn.isNonConsuming();
+        for (int part = 0; part < (splitConsuming ? 2 : 1); ++part) {
+        const bool completion = splitConsuming && part == 1;
+        const bool hasReactants = !completion && !rxn.getReactants().empty();
+        const bool hasProducts = (!splitConsuming || completion) && !rxn.getProducts().empty();
+        // SBML reactions must have at least one participant. A delayed source
+        // needs only its completion reaction; a delayed sink needs only its
+        // initiation reaction.
+        if (splitConsuming && !hasReactants && !hasProducts) continue;
         std::string reactionId = "R" + std::to_string(r + 1);
+        if (splitConsuming) reactionId += completion ? "_complete" : "_init";
         const bool syntheticRateRule =
             (rxn.getOriginRuleName().rfind("__rate_rule_", 0) == 0 &&
              rxn.getOriginRuleName().rfind("__rate_rule__", 0) != 0) ||
@@ -708,7 +727,7 @@ std::string SbmlWriter::writeReactions(
         sbml << "      <reaction id=\"" << reactionId << "\" reversible=\"false\">\n";
 
         // Reactants
-        if (!rxn.getReactants().empty()) {
+        if (hasReactants) {
             sbml << "        <listOfReactants>\n";
             std::map<std::size_t, std::size_t> reactantStoichiometry;
             for (const auto idx : rxn.getReactants()) {
@@ -728,7 +747,7 @@ std::string SbmlWriter::writeReactions(
         }
 
         // Products
-        if (!rxn.getProducts().empty()) {
+        if (hasProducts) {
             sbml << "        <listOfProducts>\n";
             std::map<std::size_t, std::size_t> productStoichiometry;
             for (const auto idx : rxn.getProducts()) {
@@ -747,6 +766,21 @@ std::string SbmlWriter::writeReactions(
             sbml << "        </listOfProducts>\n";
         }
 
+        // Completion still depends on the delayed reactants, but does not
+        // consume them. SBML requires species in kinetic math to be declared
+        // as participants or modifiers (Core validation rule 21121).
+        if (completion) {
+            std::set<std::size_t> modifiers(rxn.getReactants().begin(), rxn.getReactants().end());
+            for (const auto idx : rxn.getProducts()) modifiers.erase(idx);
+            if (!modifiers.empty()) {
+                sbml << "        <listOfModifiers>\n";
+                for (const auto idx : modifiers) {
+                    sbml << "          <modifierSpeciesReference species=\"S" << (idx + 1) << "\"/>\n";
+                }
+                sbml << "        </listOfModifiers>\n";
+            }
+        }
+
         // Kinetic law with MathML
         if (hasTotalRateModifier(model, rxn.getOriginRuleName())) {
             sbml << "        <annotation><bng:totalRate "
@@ -756,6 +790,25 @@ std::string SbmlWriter::writeReactions(
         sbml << "          <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
         if (syntheticRateRule) {
             sbml << "            <cn> 0 </cn>\n";
+        } else if (delayed && (completion || rxn.isNonConsuming())) {
+            const std::string propensity = rateLawToMathML(
+                rxn, model, network, "            ", symbolIds);
+            sbml << "            <piecewise>\n"
+                 << "              <piece>\n"
+                 << "                <apply>\n"
+                 << "                  <csymbol encoding=\"text\" definitionURL=\"http://www.sbml.org/sbml/symbols/delay\"> delay </csymbol>\n"
+                 << propensity
+                 << exprToMathML(*rxn.getDelayExpression(), "                  ", symbolIds)
+                 << "                </apply>\n"
+                 << "                <apply><geq/>\n"
+                 << exprToMathML(ast::Expression::identifier("time"), "              ", symbolIds)
+                 << "              <apply><plus/><cn> " << startTime << " </cn>\n"
+                 << exprToMathML(*rxn.getDelayExpression(), "                ", symbolIds)
+                 << "              </apply>\n"
+                 << "                </apply>\n"
+                 << "              </piece>\n"
+                 << "              <otherwise><cn> 0 </cn></otherwise>\n"
+                 << "            </piecewise>\n";
         } else {
             sbml << rateLawToMathML(rxn, model, network, "            ", symbolIds);
         }
@@ -763,6 +816,7 @@ std::string SbmlWriter::writeReactions(
         sbml << "        </kineticLaw>\n";
 
         sbml << "      </reaction>\n";
+        }
     }
 
     sbml << "    </listOfReactions>\n";

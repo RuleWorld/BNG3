@@ -1371,8 +1371,15 @@ def test_pybionetgen_compatibility_runs_against_a_regular_installed_package():
         for step in job_doc["steps"]
         if step.get("name") == "Run source-derived compatibility contracts"
     )
-    assert "BNG3_SOURCE_REVISION" in compatibility_step.get("env", {})
-    assert "BNG3_PR_HEAD_SHA" in compatibility_step.get("env", {})
+    checkout_step = next(
+        step
+        for step in job_doc["steps"]
+        if step.get("uses", "").startswith("actions/checkout@")
+    )
+    candidate_revision = "${{ github.event.pull_request.head.sha || github.sha }}"
+    assert checkout_step["with"]["ref"] == candidate_revision
+    assert compatibility_step["env"]["BNG3_SOURCE_REVISION"] == candidate_revision
+    assert compatibility_step["env"]["BNG3_PR_HEAD_SHA"] == candidate_revision
 
     checker = (REPO / "scripts" / "ci" / "check_pybionetgen_compat.py").read_text(
         encoding="utf-8"

@@ -7,6 +7,7 @@
 #include "ast/RxnList.hpp"
 #include "ast/SpeciesList.hpp"
 #include "compile/Document.hpp"
+#include "engine/SimulationSession.hpp"
 
 namespace bng::ast { class Model; }
 namespace bng::compile { class BNGcoreLoweringContext; }
@@ -16,6 +17,7 @@ namespace bng::engine {
 struct GeneratedNetwork {
     ast::SpeciesList species;
     ast::RxnList reactions;
+    mutable SimulationSession simulationSession;
 
     // Reaction rates loaded from a .net file already include compartment-unit
     // conversion. Keep source-generated networks distinguishable so readers

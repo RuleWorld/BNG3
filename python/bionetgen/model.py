@@ -64,6 +64,9 @@ class BioNetGenModel:
         self._source_path = source_path
         self._source_metadata = source_metadata or ""
         self._network: Optional[_cpp.GeneratedNetwork] = None
+        self._continuation_network: Optional[_cpp.GeneratedNetwork] = None
+        self._network_from_continuation = False
+        self._simulation_has_run = False
 
     @property
     def parameters(self) -> list:
@@ -116,13 +119,27 @@ class BioNetGenModel:
         return self._model.get_parameter(name)
 
     def set_parameter(self, name: str, value: float) -> None:
+        previous_network = self._network or self._continuation_network
+        can_continue = self._simulation_has_run and previous_network is not None
         try:
             self._model.set_parameter(name, value)
         finally:
             # Generated networks contain evaluated seed amounts and other
             # parameter-dependent compile results. Also discard the cache if
             # parameter reevaluation raises after changing the model.
+            self._continuation_network = previous_network if can_continue else None
             self._network = None
+            self._network_from_continuation = False
+            self._simulation_has_run = can_continue
+
+    def reset_simulation(self) -> None:
+        """Discard the current native trajectory and regenerate from model seeds."""
+        if self._network is not None and _cpp is not None:
+            _cpp.reset_simulation(self._network)
+        self._network = None
+        self._continuation_network = None
+        self._network_from_continuation = False
+        self._simulation_has_run = False
 
     def parameter_scan(self, *args, **kwargs):
         from bionetgen.scan import parameter_scan as _parameter_scan
@@ -180,7 +197,12 @@ class BioNetGenModel:
         return write_sbml_multi(self, path)
 
     def generate_network(self, max_iter: int = 100) -> _cpp.GeneratedNetwork:
+        carrying_session = self._continuation_network is not None
         self._network = _cpp.generate_network(self._model, max_iter=max_iter)
+        if carrying_session:
+            _cpp.continue_simulation_from(self._continuation_network, self._network)
+            self._continuation_network = None
+        self._network_from_continuation = carrying_session
         return self._network
 
     def simulate(
@@ -207,6 +229,7 @@ class BioNetGenModel:
         equilibrate: float = 0.0,
         traversal_limit: int = -1,
         backend: Optional[str] = None,
+        continue_simulation: bool = False,
     ) -> SimResult:
         """Run a simulation using the specified method.
 
@@ -221,6 +244,9 @@ class BioNetGenModel:
         t_start : float
             Absolute start time for the simulation. NF uses this time for
             time-dependent functions and output coordinates.
+        continue_simulation : bool
+            Continue the last successful native ODE/SSA trajectory from
+            ``t_start``. The default starts a fresh trajectory.
         rtol, atol : float
             Relative and absolute tolerances (ODE only).
         seed : int
@@ -264,12 +290,25 @@ class BioNetGenModel:
         """
         if not isinstance(method, str):
             raise TypeError("method must be a string")
+        if not isinstance(continue_simulation, bool):
+            raise TypeError("continue_simulation must be a boolean")
         method = method.lower()
         if method not in {"ode", "ssa", "nf", "pla", "psa"}:
             raise ValueError(
                 "Unknown simulation method: "
                 f"{method!r}. Use 'ode', 'ssa', 'nf', 'pla', or 'psa'."
             )
+        if continue_simulation and method not in {"ode", "ssa"}:
+            raise ValueError(
+                "continue_simulation is supported only for native ODE and SSA"
+            )
+        native_fresh_run = method in {"ode", "ssa"} and not continue_simulation
+        if (
+            not continue_simulation
+            and self._simulation_has_run
+            and not native_fresh_run
+        ):
+            self.reset_simulation()
         if not math.isfinite(float(t_start)) or not math.isfinite(float(t_end)):
             raise ValueError("t_start and t_end must be finite")
         if t_end < t_start:
@@ -386,6 +425,7 @@ class BioNetGenModel:
                 "only for method='ode' or method='ssa'"
             )
 
+        use_bngsim = False
         if method == "nf":
             # backend is not applicable to network-free; reject explicit bngsim
             if backend is not None and str(backend).lower() not in (
@@ -434,8 +474,44 @@ class BioNetGenModel:
                     f"Unknown backend: {effective_backend!r}. Use 'auto', 'native', or 'bngsim'."
                 )
 
+            fresh_snapshot = None
+            if native_fresh_run and eb != "bngsim":
+                fresh_snapshot = (
+                    self._network,
+                    self._continuation_network,
+                    self._network_from_continuation,
+                    self._simulation_has_run,
+                )
+
+            def restore_failed_fresh_run():
+                if fresh_snapshot is not None:
+                    (
+                        self._network,
+                        self._continuation_network,
+                        self._network_from_continuation,
+                        self._simulation_has_run,
+                    ) = fresh_snapshot
+
+            if eb == "bngsim" and self._simulation_has_run and not continue_simulation:
+                self.reset_simulation()
+
+            if native_fresh_run:
+                if self._network is None:
+                    # A parameter change retains the previous network only
+                    # for an explicit continuation. Fresh compilation uses
+                    # current seeds.
+                    self._continuation_network = None
+                elif self._network_from_continuation:
+                    self._network = None
+                    self._network_from_continuation = False
+                    self._continuation_network = None
+
             if self._network is None:
-                self.generate_network()
+                try:
+                    self.generate_network()
+                except Exception:
+                    restore_failed_fresh_run()
+                    raise
 
             # For explicit bngsim we fail closed; for auto we keep native as
             # default (Phase A-C). Phase D will flip auto to prefer bngsim
@@ -451,6 +527,10 @@ class BioNetGenModel:
                 use_bngsim = False
 
             if use_bngsim:
+                if continue_simulation:
+                    raise RuntimeError(
+                        "continue_simulation requires the native ODE or SSA backend"
+                    )
                 # PLA/PSA not yet claimed for BNGsim — fail closed before any
                 # lowering check so the message is precise even when the build
                 # is unavailable.
@@ -510,25 +590,31 @@ class BioNetGenModel:
                     if isinstance(raw, dict) and "backend" not in raw:
                         raw["backend"] = "bngsim"
                 else:
-                    raw = _cpp.simulate_ode(
-                        self._model,
-                        self._network,
-                        t_end=t_end,
-                        n_steps=n_steps,
-                        t_start=t_start,
-                        rtol=rtol,
-                        atol=atol,
-                        method="cvode",
-                        max_step=max_step,
-                        steady_state=steady_state,
-                        steady_state_tol=steady_state_tol,
-                        stop_if=stop_if,
-                        sample_times=normalized_sample_times,
-                        max_sim_steps=max_sim_steps,
-                        output_step_interval=output_step_interval,
-                        sparse=sparse,
-                        check_product_scale=check_product_scale,
-                    )
+                    try:
+                        raw = _cpp.simulate_ode(
+                            self._model,
+                            self._network,
+                            t_end=t_end,
+                            n_steps=n_steps,
+                            t_start=t_start,
+                            rtol=rtol,
+                            atol=atol,
+                            method="cvode",
+                            max_step=max_step,
+                            steady_state=steady_state,
+                            steady_state_tol=steady_state_tol,
+                            stop_if=stop_if,
+                            sample_times=normalized_sample_times,
+                            max_sim_steps=max_sim_steps,
+                            output_step_interval=output_step_interval,
+                            continue_simulation=continue_simulation,
+                            fresh_from_initial_state=native_fresh_run,
+                            sparse=sparse,
+                            check_product_scale=check_product_scale,
+                        )
+                    except Exception:
+                        restore_failed_fresh_run()
+                        raise
                     if isinstance(raw, dict) and "backend" not in raw:
                         raw["backend"] = "native"
             elif method == "ssa":
@@ -544,22 +630,29 @@ class BioNetGenModel:
                         sample_times=normalized_sample_times,
                         max_sim_steps=max_sim_steps,
                         output_step_interval=output_step_interval,
+                        continue_simulation=continue_simulation,
                     )
                     if isinstance(raw, dict) and "backend" not in raw:
                         raw["backend"] = "bngsim"
                 else:
-                    raw = _cpp.simulate_ssa(
-                        self._model,
-                        self._network,
-                        t_end=t_end,
-                        n_steps=n_steps,
-                        t_start=t_start,
-                        seed=seed,
-                        stop_if=stop_if,
-                        sample_times=normalized_sample_times,
-                        max_sim_steps=max_sim_steps,
-                        output_step_interval=output_step_interval,
-                    )
+                    try:
+                        raw = _cpp.simulate_ssa(
+                            self._model,
+                            self._network,
+                            t_end=t_end,
+                            n_steps=n_steps,
+                            t_start=t_start,
+                            seed=seed,
+                            stop_if=stop_if,
+                            sample_times=normalized_sample_times,
+                            max_sim_steps=max_sim_steps,
+                            output_step_interval=output_step_interval,
+                            continue_simulation=continue_simulation,
+                            fresh_from_initial_state=native_fresh_run,
+                        )
+                    except Exception:
+                        restore_failed_fresh_run()
+                        raise
                     if isinstance(raw, dict) and "backend" not in raw:
                         raw["backend"] = "native"
             elif method == "pla":
@@ -598,6 +691,8 @@ class BioNetGenModel:
             else:
                 raise AssertionError("validated method dispatch is incomplete")
 
+        if method in {"ode", "ssa"} and not use_bngsim:
+            self._simulation_has_run = True
         return SimResult(raw)
 
     def execute(self, verbose: bool = False) -> None:

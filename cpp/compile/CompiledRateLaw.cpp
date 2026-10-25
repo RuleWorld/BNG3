@@ -69,6 +69,7 @@ BuiltinFunction builtinFunction(const std::string& rawName) {
     if (name == "tan") return BuiltinFunction::Tan;
     if (name == "tanh") return BuiltinFunction::Tanh;
     if (name == "t" || name == "time") return BuiltinFunction::Time;
+    if (name == "delay") return BuiltinFunction::Delay;
     if (name == "arrhenius") return BuiltinFunction::Arrhenius;
     if (name == "sat") return BuiltinFunction::Saturation;
     if (name == "mm") return BuiltinFunction::MichaelisMenten;
@@ -315,6 +316,10 @@ void collectDependencies(const ResolvedExpression& expression,
     case ResolvedExpressionKind::BuiltinCall:
         if (expression.builtin == BuiltinFunction::Time) {
             dependencies.time = true;
+        }
+        if (expression.builtin == BuiltinFunction::Delay) {
+            dependencies.time = true;
+            dependencies.observable = true;
         }
         if (expression.builtin == BuiltinFunction::TableFunction) {
             dependencies.tableFunction = true;

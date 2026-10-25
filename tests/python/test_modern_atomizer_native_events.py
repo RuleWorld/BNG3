@@ -539,6 +539,30 @@ def _delayed_trajectory(tmp_path, name, **kwargs):
     return times, s1, s2, crossing, after
 
 
+@pytest.mark.parametrize("delay", ["0.001", "0.02", "0.5"])
+@pytest.mark.parametrize("n_steps", [20, 400])
+def test_delayed_event_stop_time_matches_independent_roadrunner(
+    tmp_path, delay, n_steps
+):
+    roadrunner = pytest.importorskip("roadrunner")
+    xml = coupled_event_model(delay=delay)
+    model = _load(atomize(xml), tmp_path)
+    actual = model.simulate(method="ode", t_end=1.0, n_steps=n_steps)
+
+    oracle = roadrunner.RoadRunner(xml)
+    oracle.integrator.relative_tolerance = 1e-10
+    oracle.integrator.absolute_tolerance = 1e-12
+    expected = oracle.simulate(
+        0, 1.0, n_steps + 1, selections=["time", "S1", "S2", "S3"]
+    )
+    # Short delays can execute inside the solver step that found the root;
+    # coarse and fine output grids must preserve that execution instant.
+    for column, name in enumerate(["S1_amt", "S2_amt", "S3_amt"], start=1):
+        np.testing.assert_allclose(
+            actual.observables[name], expected[:, column], rtol=2e-6, atol=2e-6
+        )
+
+
 def test_native_event_delay_runs_the_assignment_after_the_delay(tmp_path):
     times, s1, s2, crossing, after = _delayed_trajectory(
         tmp_path, "delayed", delay="0.5"

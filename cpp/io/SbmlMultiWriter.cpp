@@ -11,6 +11,7 @@
 
 #include "compile/CompiledModel.hpp"
 #include "engine/NetworkGenerator.hpp"
+#include "engine/DelayedSemanticsGuard.hpp"
 #include "SbmlUnitWriter.hpp"
 
 namespace bng::io {
@@ -61,6 +62,7 @@ std::string SbmlMultiWriter::write(const ast::Model& model) {
 }
 
 std::string SbmlMultiWriter::write(const ast::Model& model, const Options& options) {
+    engine::requireNoDelayedRuleSemantics(model, "SBML-Multi export");
     requireNoEnergySemantics(model, "SBML-multi");
     compile::requireNoNativeEvents(model, "SBML-Multi export");
     const compile::CompiledModel compiled(model);

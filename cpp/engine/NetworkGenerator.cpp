@@ -478,6 +478,20 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
             tSetRules, tTotal - tContext - tPlans - tSeeds - tExpand - tSetRules);
     }
 
+    for (const auto& reaction : network.reactions.all()) {
+        if (!reaction.isNonConsuming()) continue;
+        std::unordered_map<std::size_t, int> netStoichiometry;
+        for (const auto species : reaction.getReactants()) --netStoichiometry[species];
+        for (const auto species : reaction.getProducts()) ++netStoichiometry[species];
+        for (const auto& [species, net] : netStoichiometry) {
+            (void)species;
+            if (net < 0) {
+                throw std::runtime_error(
+                    "NonConsuming delayed rule generates a reaction with negative net reactant stoichiometry");
+            }
+        }
+    }
+
     return network;
 }
 

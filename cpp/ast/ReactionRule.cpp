@@ -986,6 +986,19 @@ bool ReactionRule::isBidirectional() const {
     return bidirectional_;
 }
 
+const std::optional<Expression>& ReactionRule::getDelayExpression() const {
+    return delayExpression_;
+}
+
+bool ReactionRule::isNonConsuming() const {
+    return nonConsuming_;
+}
+
+void ReactionRule::setDelay(Expression expression, bool nonConsuming) {
+    delayExpression_ = std::move(expression);
+    nonConsuming_ = nonConsuming;
+}
+
 bool ReactionRule::hasDrivingWork() const {
     return hasDrivingWork_;
 }
@@ -1872,7 +1885,8 @@ std::size_t ReactionRule::expandRule(
                 rates_.empty() ? "0" : rates_.front().toString(),
                 1.0,
                 ruleName_,
-                rates_.empty() ? std::nullopt : std::optional<Expression>(rates_.front())));
+                rates_.empty() ? std::nullopt : std::optional<Expression>(rates_.front()),
+                delayExpression_, nonConsuming_));
             return 1;
         }
         return 0;
@@ -3238,7 +3252,8 @@ bool ReactionRule::buildReaction(
         rateLawStr,
         factor,
         ruleName_,
-        rates_.empty() ? std::nullopt : std::optional<Expression>(rates_.front())));
+        rates_.empty() ? std::nullopt : std::optional<Expression>(rates_.front()),
+        delayExpression_, nonConsuming_));
     return added;
 }
 
