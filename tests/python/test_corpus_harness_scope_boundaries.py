@@ -702,6 +702,63 @@ def test_source_retry_error_keeps_the_last_measured_failure(monkeypatch):
     )
 
 
+def test_source_retry_not_comparable_keeps_the_last_measured_failure(monkeypatch):
+    """A not-comparable retry cannot erase the initial measured mismatch."""
+
+    from types import SimpleNamespace
+
+    from bionetgen.atomizer.modern import Atomizer, SBMLParser
+
+    harness = _harness()
+    parsed = SBMLParser().parse(CUSTOM_UNIT_SPECIES)
+    atomized = Atomizer(atomize=False, quiet_mode=True).atomize(CUSTOM_UNIT_SPECIES)
+    assert atomized.success, atomized.error
+
+    def compare(*_args, **kwargs):
+        if kwargs["max_step"] == 0.0:
+            return {
+                "passed": False,
+                "failed_observables": ["A"],
+                "observables": {"A": {"passed": False, "max_scaled_error": 2.0}},
+            }
+        return {
+            "passed": False,
+            "failed_observables": [],
+            "not_comparable": {"A": "retry oracle returned no finite values"},
+            "error": "retry oracle output was undefined",
+        }
+
+    monkeypatch.setattr(harness, "_simulate_and_compare", compare)
+
+    class FakeCpp:
+        def parse_string(self, _bngl):
+            return SimpleNamespace()
+
+    result = harness._simulate_source_and_compare(
+        FakeCpp(),
+        atomized.bngl,
+        object,
+        CUSTOM_UNIT_SPECIES,
+        parsed,
+        dict(atomized.observable_map),
+        t_end=1.0,
+        n_steps=10,
+        rtol=1e-7,
+        atol=1e-12,
+        model_id="retry_not_comparable_preserves_measurement",
+    )
+
+    assert result["passed"] is False
+    assert result["failed_observables"] == ["A"]
+    assert result["observables"]["A"]["max_scaled_error"] == 2.0
+    assert result["source_solver_attempts"][-1]["not_comparable"] == {
+        "A": "retry oracle returned no finite values"
+    }
+    assert result["source_solver_attempts"][-1]["error"] == (
+        "retry oracle output was undefined"
+    )
+
+
 def test_source_unit_factors_follow_atomizer_normalization_boundaries():
     """Use the parser's scaling routine for defaults and spatial dimensions."""
 

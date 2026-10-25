@@ -1731,17 +1731,18 @@ def _simulate_source_and_compare(
                     }
                 )
                 continue
-            comparison = refined
-            solver_attempts.append(
-                {
-                    "max_step": retry_step,
-                    "passed": bool(comparison.get("passed", False)),
-                    "failed_observable_count": len(
-                        comparison.get("failed_observables", [])
-                    ),
-                }
-            )
-            if comparison.get("passed", False):
+            attempt = {
+                "max_step": retry_step,
+                "passed": bool(refined.get("passed", False)),
+                "failed_observable_count": len(refined.get("failed_observables", [])),
+            }
+            if refined.get("not_comparable"):
+                attempt["not_comparable"] = refined["not_comparable"]
+            if refined.get("error"):
+                attempt["error"] = refined["error"]
+            solver_attempts.append(attempt)
+            if refined.get("passed", False):
+                comparison = refined
                 break
     comparison["source_comparison_surface"] = "mapped_species_outputs"
     comparison["initial_source_comparison_passed"] = initial_source_comparison_passed
