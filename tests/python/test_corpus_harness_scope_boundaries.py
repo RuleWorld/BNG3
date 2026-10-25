@@ -240,6 +240,7 @@ def test_unrelated_large_observable_cannot_mask_small_series_mismatch(monkeypatc
     class FakeRoadRunner:
         integrator = SimpleNamespace(
             hasValue=lambda _name: False,
+            getValue=lambda _name: True,
             getAbsoluteToleranceVector=lambda: np.array([1e-12]),
         )
 
@@ -326,6 +327,7 @@ def test_source_comparison_uses_original_sbml_and_species_quantity_units(monkeyp
     class FakeRoadRunner:
         integrator = SimpleNamespace(
             hasValue=lambda _name: False,
+            getValue=lambda _name: True,
             getAbsoluteToleranceVector=lambda: np.array([1e-12, 1e-12]),
         )
 
@@ -900,3 +902,137 @@ def test_the_gate_names_the_construct_of_a_record_it_cannot_measure():
 
     assert "not_comparable" in inventory.CORPUS_EXPECTATION_STATUSES
     assert "source" in inventory.CORPUS_GAP_SIDES
+
+
+def test_oracle_adams_retry_preserves_initial_state_and_solver_controls(tmp_path):
+    """A finite fractional-power law can have an unusable initial Jacobian."""
+    import numpy as np
+
+    roadrunner = pytest.importorskip("roadrunner")
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    from bionetgen import BioNetGenModel
+
+    model = cpp.parse_string("""begin model
+begin parameters
+ n 0.004304
+end parameters
+begin molecule types
+ A()
+ B()
+end molecule types
+begin species
+ A() 0
+ B() 0
+end species
+begin observables
+ Molecules A A()
+ Molecules B B()
+end observables
+begin functions
+ fractional_response() A^n/(1+A^n)
+end functions
+begin reaction rules
+ 0 -> A() 1
+ 0 -> B() fractional_response()
+end reaction rules
+end model
+""")
+    written = tmp_path / "fractional-response.xml"
+    BioNetGenModel(model).write_sbml(str(written))
+    oracle = roadrunner.RoadRunner(str(written))
+    oracle.integrator.setValue("relative_tolerance", 1e-7)
+    oracle.integrator.setValue("absolute_tolerance", 1e-12)
+    oracle.integrator.setValue("maximum_time_step", 0.001)
+    oracle.timeCourseSelections = ["time", "S1", "S2"]
+    initial_tolerances = list(oracle.integrator.getAbsoluteToleranceVector())
+    assert np.isfinite(oracle.getReactionRates()).all()
+    assert not np.isfinite(oracle.getFullJacobian()).all()
+
+    class FailingBdfOracle:
+        calls = 0
+
+        def __getattr__(self, name):
+            return getattr(oracle, name)
+
+        def simulate(self, *args):
+            self.calls += 1
+            if self.calls == 1:
+                # Reproduce an integration failure after state was advanced.
+                oracle.simulate(0.0, 0.01, 2)
+                raise RuntimeError("CV_CONV_FAILURE: regression trigger")
+            return oracle.simulate(*args)
+
+    wrapped = FailingBdfOracle()
+    values, attempts = _harness()._simulate_oracle_trajectory(wrapped, 1.0, 10)
+    assert wrapped.calls == 2
+    assert attempts[0]["stiff"] is True
+    assert "CV_CONV_FAILURE" in attempts[0]["error"]
+    assert attempts[1] == {"stiff": False, "passed": True}
+    assert values[0].tolist() == [0.0, 0.0, 0.0]
+    assert values[:, 1] == pytest.approx(values[:, 0], abs=1e-10)
+    assert oracle.integrator.getValue("relative_tolerance") == 1e-7
+    assert oracle.integrator.getValue("maximum_time_step") == 0.001
+    assert list(oracle.integrator.getAbsoluteToleranceVector()) == initial_tolerances
+
+
+@pytest.mark.parametrize("nonfinite_jacobian", [False, True])
+def test_oracle_retry_does_not_hide_unrelated_errors(nonfinite_jacobian):
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    class FailedOracle:
+        calls = 0
+        integrator = SimpleNamespace(
+            getValue=lambda _key: True,
+            getAbsoluteToleranceVector=lambda: [1e-12],
+        )
+
+        def simulate(self, *_args):
+            self.calls += 1
+            raise RuntimeError("unrelated failure")
+
+        def resetAll(self):
+            pytest.fail("unrelated integration errors must not trigger a retry")
+
+        def getFullJacobian(self):
+            return np.array([[float("nan") if nonfinite_jacobian else 1.0]])
+
+    oracle = FailedOracle()
+    with pytest.raises(RuntimeError, match="unrelated failure"):
+        _harness()._simulate_oracle_trajectory(oracle, 1.0, 10)
+    assert oracle.calls == 1
+
+
+@pytest.mark.parametrize("finite_rates,finite_jacobian", [(True, True), (False, False)])
+def test_oracle_adams_retry_requires_finite_law_and_nonfinite_jacobian(
+    finite_rates, finite_jacobian
+):
+    from types import SimpleNamespace
+
+    class FailedOracle:
+        calls = 0
+        resets = 0
+        integrator = SimpleNamespace(
+            getValue=lambda _key: True,
+            getAbsoluteToleranceVector=lambda: [1e-12],
+        )
+
+        def simulate(self, *_args):
+            self.calls += 1
+            raise RuntimeError("CV_CONV_FAILURE: initial failure")
+
+        def resetAll(self):
+            self.resets += 1
+
+        def getReactionRates(self):
+            return [1.0 if finite_rates else float("nan")]
+
+        def getFullJacobian(self):
+            return [[1.0 if finite_jacobian else float("nan")]]
+
+    oracle = FailedOracle()
+    with pytest.raises(RuntimeError, match="CV_CONV_FAILURE: initial failure"):
+        _harness()._simulate_oracle_trajectory(oracle, 1.0, 10)
+    assert oracle.calls == 1
+    assert oracle.resets == 1

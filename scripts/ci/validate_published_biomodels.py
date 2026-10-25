@@ -1168,6 +1168,48 @@ def _undefined_label(values: np.ndarray) -> str:
     return "a non-finite value"
 
 
+def _simulate_oracle_trajectory(
+    rr: Any, t_end: float, n_steps: int
+) -> tuple[np.ndarray, list[dict[str, Any]]]:
+    """Retry BDF convergence failure only for a finite law with a singular Jacobian.
+
+    Fractional powers at zero can make RoadRunner's initial numerical Jacobian
+    non-finite although the rate law and trajectory are finite. CVODE Adams uses
+    functional iteration instead; retain the same error controls and time grid.
+    """
+    stiff = bool(rr.integrator.getValue("stiff"))
+    attempts: list[dict[str, Any]] = []
+    initial_tolerances = list(rr.integrator.getAbsoluteToleranceVector())
+    try:
+        values = np.asarray(rr.simulate(0.0, t_end, n_steps + 1), dtype=float)
+    except Exception as exc:
+        if not stiff or "CV_CONV_FAILURE" not in str(exc):
+            raise
+        # Diagnose at the initial state, not at a partially advanced failed step.
+        rr.resetAll()
+        if (
+            not np.isfinite(rr.getReactionRates()).all()
+            or np.isfinite(rr.getFullJacobian()).all()
+        ):
+            raise
+        attempts.append(
+            {"stiff": True, "passed": False, "error": f"{type(exc).__name__}: {exc}"}
+        )
+        rr.integrator.setValue("stiff", False)
+        # A scalar tolerance is rescaled from current state by RoadRunner.
+        # Preserve the exact initial vector across the failed attempt and reset.
+        rr.integrator.setValue("absolute_tolerance", initial_tolerances)
+        try:
+            values = np.asarray(rr.simulate(0.0, t_end, n_steps + 1), dtype=float)
+        except Exception as retry_exc:
+            raise RuntimeError(
+                f"BDF failed: {exc}; Adams retry failed: {retry_exc}"
+            ) from retry_exc
+        stiff = False
+    attempts.append({"stiff": stiff, "passed": True})
+    return values, attempts
+
+
 def _simulate_and_compare(
     cpp_model: Any,
     model_type: Any,
@@ -1336,7 +1378,9 @@ def _simulate_and_compare(
         raise RuntimeError(missing_description + ", ".join(missing[:10]))
     rr.timeCourseSelections = ["time", *selected_names]
     try:
-        rr_values = np.asarray(rr.simulate(0.0, t_end, n_steps + 1), dtype=float)
+        rr_values, oracle_solver_attempts = _simulate_oracle_trajectory(
+            rr, t_end, n_steps
+        )
     except Exception as exc:
         # The oracle's own solver failed.  That is a limitation of the
         # measurement, not a disagreement between the two engines.
@@ -1456,6 +1500,7 @@ def _simulate_and_compare(
         "roadrunner_requested_atol": atol,
         "roadrunner_effective_atol_min": rr_effective_atol_min,
         "roadrunner_state_count": rr_state_count,
+        "roadrunner_solver_attempts": oracle_solver_attempts,
         "native_solver_atol": actual_native_atol,
         "native_amount_scale": native_amount_scale,
         "native_tolerance_mapping": tolerance_mapping,
