@@ -3246,6 +3246,13 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                     }
                     continue;
                 }
+                if (!pendingEvents_.empty() || !nativeEvents_.empty()) {
+                    sunrealtype internalT = static_cast<sunrealtype>(t);
+                    CVodeGetCurrentTime(cvode_mem, &internalT);
+                    if (static_cast<double>(target) > static_cast<double>(internalT)) {
+                        CVodeSetStopTime(cvode_mem, target);
+                    }
+                }
                 flag = CVode(cvode_mem, target, y, &t, CV_NORMAL);
 
                 if (flag == CV_ROOT_RETURN) {
