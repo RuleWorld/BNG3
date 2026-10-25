@@ -95,6 +95,7 @@ const char* builtinName(BuiltinFunction builtin) {
     case BuiltinFunction::Tan: return "tan";
     case BuiltinFunction::Tanh: return "tanh";
     case BuiltinFunction::Time: return "time";
+    case BuiltinFunction::Delay: return "delay";
     case BuiltinFunction::Arrhenius: return "arrhenius";
     case BuiltinFunction::Saturation: return "saturation";
     case BuiltinFunction::MichaelisMenten: return "michaelis_menten";

@@ -165,6 +165,7 @@ const char* builtinText(bng::compile::BuiltinFunction op) {
     case Fn::Sinh: return "sinh"; case Fn::Sqrt: return "sqrt";
     case Fn::Sum: return "sum"; case Fn::Tan: return "tan";
     case Fn::Tanh: return "tanh"; case Fn::Time: return "time";
+    case Fn::Delay: return "";
     case Fn::Arrhenius: return "Arrhenius"; case Fn::Saturation: return "Sat";
     case Fn::MichaelisMenten: return "MM"; case Fn::Hill: return "Hill";
     case Fn::FunctionProduct: return "FunctionProduct"; case Fn::Hybrid: return "Hybrid";

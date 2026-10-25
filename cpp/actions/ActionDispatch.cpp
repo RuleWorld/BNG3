@@ -1844,7 +1844,9 @@ void runSimulation(
 
     // Parse continue flag (BNG2 parity)
     const auto continueText = lowercase(stripQuotes(readArgument(action, "continue", "0")));
-    bool continueSimulation = (continueText == "1" || continueText == "true");
+    const bool continueRequested = (continueText == "1" || continueText == "true");
+    const bool continueSimulation = continueRequested && lastSimulationEndTime > 0.0;
+    opts.continueSimulation = continueSimulation;
 
     // When continue=1 and no explicit t_start, use the previous simulation's end time
     if (continueSimulation && tStartText.empty() && lastSimulationEndTime > 0.0) {
@@ -2009,7 +2011,8 @@ void runSimulation(
         }
     }
     // Save end time for potential continue (used as tStart for next phase)
-    lastSimulationEndTime = opts.tEnd;
+    lastSimulationEndTime = result.timePoints.empty()
+        ? opts.tEnd : result.timePoints.back();
 
     // Write output files
     const auto prefix = simulationPrefix(action, sourcePath);
@@ -2681,8 +2684,12 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 setParameterValue(actionIndex, target, valueText);
                 if (network.has_value()) {
                     const auto savedAmounts = snapshotConcentrations(*network);
+                    const auto savedSession = network->simulationSession;
                     network = generator.generate(sourcePath);
                     restoreConcentrations(*network, savedAmounts);
+                    if (savedSession.initialized) {
+                        network->simulationSession = savedSession;
+                    }
                 }
                 continue;
             }
@@ -2752,6 +2759,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             if (protoName == "resetconcentrations" || protoName == "reset_concentrations") {
                 ensureNetwork();
+                network->simulationSession.reset();
+                lastSimulationState.clear();
+                lastSimulationEndTime = 0.0;
                 const auto label = stripQuotes(readArgument(protoAction, "value", "default"));
                 const auto found = savedConcentrations.find(label);
                 if (found != savedConcentrations.end()) {

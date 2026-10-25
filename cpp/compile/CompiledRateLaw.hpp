@@ -98,6 +98,7 @@ enum class BuiltinFunction {
     Tan,
     Tanh,
     Time,
+    Delay,
     Arrhenius,
     Saturation,
     MichaelisMenten,

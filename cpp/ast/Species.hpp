@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 
 #include "SpeciesGraph.hpp"
@@ -14,6 +15,7 @@ public:
     SpeciesGraph& getSpeciesGraph();
     double getAmount() const;
     void setAmount(double amount);
+    std::uint64_t getAmountVersion() const;
     bool isConstant() const;
     const std::string& getCompartment() const;
     void setCompartment(std::string compartment);
@@ -30,6 +32,7 @@ public:
 private:
     SpeciesGraph graph_;
     double amount_;
+    std::uint64_t amountVersion_ = 0;
     bool constant_;
     std::string compartment_;
     std::size_t index_ = 0;
