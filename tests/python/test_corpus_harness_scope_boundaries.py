@@ -124,6 +124,47 @@ CUSTOM_UNIT_SPECIES = """<?xml version="1.0" encoding="UTF-8"?>
 </sbml>
 """
 
+TINY_VOLUME_ASSOCIATION = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level2/version4" level="2" version="4">
+  <model id="tiny_volume_association">
+    <listOfCompartments>
+      <compartment id="c" size="4e-14"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="A" compartment="c" initialConcentration="1e-6"
+        hasOnlySubstanceUnits="false"/>
+      <species id="B" compartment="c" initialConcentration="1e-6"
+        hasOnlySubstanceUnits="false"/>
+      <species id="C" compartment="c" initialConcentration="0"
+        hasOnlySubstanceUnits="false"/>
+      <species id="D" compartment="c" initialConcentration="2e-6"
+        hasOnlySubstanceUnits="false" constant="true"/>
+      <species id="E" compartment="c" initialConcentration="3e-6"
+        hasOnlySubstanceUnits="false" boundaryCondition="true" constant="true"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k" value="1e13"/>
+    </listOfParameters>
+    <listOfReactions>
+      <reaction id="bind">
+        <listOfReactants>
+          <speciesReference species="A"/>
+          <speciesReference species="B"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="C"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci>c</ci><ci>k</ci><ci>A</ci><ci>B</ci></apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>
+"""
+
 
 def _load(path: Path, name: str) -> ModuleType:
     spec = importlib.util.spec_from_file_location(name, path)
@@ -197,7 +238,10 @@ def test_unrelated_large_observable_cannot_mask_small_series_mismatch(monkeypatc
     harness = _harness()
 
     class FakeRoadRunner:
-        integrator = SimpleNamespace(hasValue=lambda _name: False)
+        integrator = SimpleNamespace(
+            hasValue=lambda _name: False,
+            getAbsoluteToleranceVector=lambda: np.array([1e-12]),
+        )
 
         def __init__(self, _path):
             self.timeCourseSelections = []
@@ -238,6 +282,37 @@ def test_unrelated_large_observable_cannot_mask_small_series_mismatch(monkeypatc
     assert result["observables"]["small"]["tolerance"] < 1.0
 
 
+def test_comparison_refuses_roadrunner_without_effective_tolerance_vector(monkeypatch):
+    """A missing RoadRunner tolerance API is not treated as an empty vector."""
+
+    from types import SimpleNamespace
+
+    harness = _harness()
+
+    class RoadRunnerWithoutToleranceVector:
+        integrator = SimpleNamespace(hasValue=lambda _name: False)
+
+        def __init__(self, _model):
+            pass
+
+    monkeypatch.setitem(
+        sys.modules,
+        "roadrunner",
+        SimpleNamespace(RoadRunner=RoadRunnerWithoutToleranceVector),
+    )
+
+    with pytest.raises(harness.OracleIntegrationError, match="does not expose"):
+        harness._simulate_and_compare(
+            object(),
+            object,
+            Path("written.xml"),
+            t_end=1.0,
+            n_steps=1,
+            rtol=1e-7,
+            atol=1e-12,
+        )
+
+
 def test_source_comparison_uses_original_sbml_and_species_quantity_units(monkeypatch):
     """The source oracle receives source SBML and amount/concentration selections."""
 
@@ -249,7 +324,10 @@ def test_source_comparison_uses_original_sbml_and_species_quantity_units(monkeyp
     rr_calls = []
 
     class FakeRoadRunner:
-        integrator = SimpleNamespace(hasValue=lambda _name: False)
+        integrator = SimpleNamespace(
+            hasValue=lambda _name: False,
+            getAbsoluteToleranceVector=lambda: np.array([1e-12, 1e-12]),
+        )
 
         def __init__(self, model_source):
             assert model_source == source_sbml
@@ -410,6 +488,11 @@ def test_source_comparison_executes_normalized_amount_and_concentration_targets(
         == 0.001
     )
     assert result["source_species_normalization"]["C"]["quantity_kind"] == "amount"
+    assert result["source_to_native_amount_factor_min"] != 1.0
+    assert result["native_solver_atol"] == pytest.approx(
+        result["roadrunner_effective_atol_min"]
+        * result["source_to_native_amount_factor_min"]
+    )
     assert all(
         item["max_abs_difference"] < 1e-12 for item in result["observables"].values()
     )
@@ -449,6 +532,231 @@ def test_source_comparison_fails_on_original_species_mismatch():
 
     assert result["passed"] is False
     assert result["failed_observables"] == ["A"]
+
+
+def test_source_comparison_maps_roadrunner_state_tolerances_to_native_amounts():
+    """Tiny native amount states use the source oracle's effective tolerance."""
+
+    pytest.importorskip("roadrunner")
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    from bionetgen import BioNetGenModel
+    from bionetgen.atomizer.modern import Atomizer, SBMLParser
+
+    harness = _harness()
+    parsed = SBMLParser().parse(TINY_VOLUME_ASSOCIATION)
+    atomized = Atomizer(atomize=False, quiet_mode=True).atomize(TINY_VOLUME_ASSOCIATION)
+    assert atomized.success, atomized.error
+
+    result = harness._simulate_source_and_compare(
+        cpp,
+        atomized.bngl,
+        BioNetGenModel,
+        TINY_VOLUME_ASSOCIATION,
+        parsed,
+        dict(atomized.observable_map),
+        t_end=1.0,
+        n_steps=10,
+        rtol=1e-7,
+        atol=1e-12,
+        model_id="tiny_volume_association",
+    )
+
+    assert result["passed"] is True, result.get("failed_observables")
+    assert result["requested_comparison_atol"] == 1e-12
+    assert result["roadrunner_requested_atol"] == 1e-12
+    assert result["native_solver_atol"] < 1e-30
+    assert result["roadrunner_effective_atol_min"] == pytest.approx(4e-32)
+    assert result["roadrunner_state_count"] == 4
+    assert result["dynamic_species_count"] == 3
+    assert result["initial_source_comparison_passed"] is True
+    assert result["source_solver_attempts"] == [
+        {"max_step": 0.0, "passed": True, "failed_observable_count": 0}
+    ]
+
+
+def test_source_comparison_refinement_does_not_hide_a_mutated_rate_law():
+    """A changed source kinetic law still fails after the bounded retry."""
+
+    pytest.importorskip("roadrunner")
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    from bionetgen import BioNetGenModel
+    from bionetgen.atomizer.modern import Atomizer, SBMLParser
+
+    harness = _harness()
+    parsed = SBMLParser().parse(TINY_VOLUME_ASSOCIATION)
+    atomized = Atomizer(atomize=False, quiet_mode=True).atomize(TINY_VOLUME_ASSOCIATION)
+    assert atomized.success, atomized.error
+    mutated_bngl = atomized.bngl.replace("10000000000000", "0")
+    assert mutated_bngl != atomized.bngl
+
+    result = harness._simulate_source_and_compare(
+        cpp,
+        mutated_bngl,
+        BioNetGenModel,
+        TINY_VOLUME_ASSOCIATION,
+        parsed,
+        dict(atomized.observable_map),
+        t_end=1.0,
+        n_steps=10,
+        rtol=1e-7,
+        atol=1e-12,
+        max_step=1e-4,
+        model_id="tiny_volume_association_mutated_rate",
+    )
+
+    assert result["passed"] is False
+    assert set(result["failed_observables"]) == {"A", "B", "C"}
+    assert result["initial_source_comparison_passed"] is False
+    assert len(result["source_solver_attempts"]) == 4
+    assert all(
+        later["max_step"] < earlier["max_step"]
+        for earlier, later in zip(
+            result["source_solver_attempts"], result["source_solver_attempts"][1:]
+        )
+    )
+    assert result["source_solver_attempts"][-1]["max_step"] == pytest.approx(1e-5)
+    assert result["source_solver_attempts"][-1]["passed"] is False
+
+
+def test_written_export_solver_tolerance_uses_native_amount_coordinates(tmp_path):
+    """BNG-written SBML retains the native amount coordinate scale."""
+
+    pytest.importorskip("roadrunner")
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    from bionetgen import BioNetGenModel
+    from bionetgen.atomizer.modern import Atomizer
+
+    harness = _harness()
+    atomized = Atomizer(atomize=False, quiet_mode=True).atomize(TINY_VOLUME_ASSOCIATION)
+    assert atomized.success, atomized.error
+    cpp_model = cpp.parse_string(atomized.bngl)
+    written = tmp_path / "tiny-volume-written.xml"
+    BioNetGenModel(cpp_model).write_sbml(str(written))
+
+    result = harness._simulate_and_compare(
+        cpp_model,
+        BioNetGenModel,
+        written,
+        t_end=1.0,
+        n_steps=10,
+        rtol=1e-7,
+        atol=1e-12,
+    )
+
+    assert result["passed"] is True, result.get("failed_observables")
+    assert result["native_amount_scale"] == 1.0
+    assert result["native_tolerance_mapping"] == "conservative_minima"
+    assert result["native_solver_atol"] <= result["roadrunner_effective_atol_min"]
+
+
+def test_source_retry_error_keeps_the_last_measured_failure(monkeypatch):
+    """An integration error during retries must not erase measured mismatch."""
+
+    from types import SimpleNamespace
+
+    from bionetgen.atomizer.modern import Atomizer, SBMLParser
+
+    harness = _harness()
+    parsed = SBMLParser().parse(CUSTOM_UNIT_SPECIES)
+    atomized = Atomizer(atomize=False, quiet_mode=True).atomize(CUSTOM_UNIT_SPECIES)
+    assert atomized.success, atomized.error
+
+    calls = []
+
+    def compare(*_args, **kwargs):
+        calls.append(kwargs["max_step"])
+        if kwargs["max_step"] > 0.0:
+            raise RuntimeError("simulated retry integration error")
+        return {
+            "passed": False,
+            "failed_observables": ["A"],
+            "observables": {"A": {"passed": False, "max_scaled_error": 2.0}},
+        }
+
+    monkeypatch.setattr(harness, "_simulate_and_compare", compare)
+
+    class FakeCpp:
+        def parse_string(self, _bngl):
+            return SimpleNamespace()
+
+    result = harness._simulate_source_and_compare(
+        FakeCpp(),
+        atomized.bngl,
+        object,
+        CUSTOM_UNIT_SPECIES,
+        parsed,
+        dict(atomized.observable_map),
+        t_end=1.0,
+        n_steps=10,
+        rtol=1e-7,
+        atol=1e-12,
+        model_id="retry_error_preserves_measurement",
+    )
+
+    assert result["passed"] is False
+    assert result["failed_observables"] == ["A"]
+    assert result["observables"]["A"]["max_scaled_error"] == 2.0
+    assert calls == [0.0, 5e-4, 1e-4, 5e-5, 2e-5, 1e-5]
+    assert result["source_solver_attempts"][-1]["error"] == (
+        "RuntimeError: simulated retry integration error"
+    )
+
+
+def test_source_retry_not_comparable_keeps_the_last_measured_failure(monkeypatch):
+    """A not-comparable retry cannot erase the initial measured mismatch."""
+
+    from types import SimpleNamespace
+
+    from bionetgen.atomizer.modern import Atomizer, SBMLParser
+
+    harness = _harness()
+    parsed = SBMLParser().parse(CUSTOM_UNIT_SPECIES)
+    atomized = Atomizer(atomize=False, quiet_mode=True).atomize(CUSTOM_UNIT_SPECIES)
+    assert atomized.success, atomized.error
+
+    def compare(*_args, **kwargs):
+        if kwargs["max_step"] == 0.0:
+            return {
+                "passed": False,
+                "failed_observables": ["A"],
+                "observables": {"A": {"passed": False, "max_scaled_error": 2.0}},
+            }
+        return {
+            "passed": False,
+            "failed_observables": [],
+            "not_comparable": {"A": "retry oracle returned no finite values"},
+            "error": "retry oracle output was undefined",
+        }
+
+    monkeypatch.setattr(harness, "_simulate_and_compare", compare)
+
+    class FakeCpp:
+        def parse_string(self, _bngl):
+            return SimpleNamespace()
+
+    result = harness._simulate_source_and_compare(
+        FakeCpp(),
+        atomized.bngl,
+        object,
+        CUSTOM_UNIT_SPECIES,
+        parsed,
+        dict(atomized.observable_map),
+        t_end=1.0,
+        n_steps=10,
+        rtol=1e-7,
+        atol=1e-12,
+        model_id="retry_not_comparable_preserves_measurement",
+    )
+
+    assert result["passed"] is False
+    assert result["failed_observables"] == ["A"]
+    assert result["observables"]["A"]["max_scaled_error"] == 2.0
+    assert result["source_solver_attempts"][-1]["not_comparable"] == {
+        "A": "retry oracle returned no finite values"
+    }
+    assert result["source_solver_attempts"][-1]["error"] == (
+        "retry oracle output was undefined"
+    )
 
 
 def test_source_unit_factors_follow_atomizer_normalization_boundaries():

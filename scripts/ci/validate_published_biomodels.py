@@ -1177,6 +1177,8 @@ def _simulate_and_compare(
     n_steps: int,
     rtol: float,
     atol: float,
+    native_amount_scale: float = 1.0,
+    native_tolerance_context: dict[str, Any] | None = None,
     max_step: float = 0.0,
     function_names: set[str] | None = None,
     reference_model: str | None = None,
@@ -1193,6 +1195,72 @@ def _simulate_and_compare(
             "libRoadRunner is required for direct numerical comparison"
         ) from exc
 
+    if not math.isfinite(atol) or atol <= 0.0:
+        raise OracleIntegrationError(
+            "requested comparison absolute tolerance must be finite and positive"
+        )
+    if not math.isfinite(native_amount_scale) or native_amount_scale <= 0.0:
+        raise OracleIntegrationError(
+            "native amount normalization scale must be finite and positive"
+        )
+
+    compared_model = (
+        "original source SBML" if reference_model is not None else "written SBML"
+    )
+    try:
+        rr = roadrunner.RoadRunner(
+            reference_model if reference_model is not None else str(output_path)
+        )
+        integrator = rr.integrator
+        if integrator.hasValue("relative_tolerance"):
+            integrator.setValue("relative_tolerance", rtol)
+        if integrator.hasValue("absolute_tolerance"):
+            integrator.setValue("absolute_tolerance", atol)
+        if max_step > 0.0 and integrator.hasValue("maximum_time_step"):
+            integrator.setValue("maximum_time_step", max_step)
+        if not hasattr(integrator, "getAbsoluteToleranceVector"):
+            raise OracleIntegrationError(
+                "libRoadRunner integrator does not expose effective absolute "
+                "tolerance vectors required for source-faithful comparison"
+            )
+        tolerance_mapping = "conservative_minima"
+        rr_effective_atol_min = None
+        rr_state_count = None
+        if native_tolerance_context and native_tolerance_context.get(
+            "empty_dynamic_species_set"
+        ):
+            actual_native_atol = atol
+            tolerance_mapping = "empty_dynamic_species_set"
+        else:
+            tolerance_vector = np.asarray(
+                integrator.getAbsoluteToleranceVector(), dtype=float
+            ).reshape(-1)
+            if not np.isfinite(tolerance_vector).all() or (tolerance_vector <= 0).any():
+                raise OracleIntegrationError(
+                    "libRoadRunner returned non-positive or non-finite effective "
+                    "absolute tolerances"
+                )
+            rr_state_count = int(tolerance_vector.size)
+            if rr_state_count:
+                rr_effective_atol_min = float(np.min(tolerance_vector))
+                derived_native_atol = rr_effective_atol_min * native_amount_scale
+                if not math.isfinite(derived_native_atol) or derived_native_atol <= 0.0:
+                    raise OracleIntegrationError(
+                        "mapped native absolute tolerance is zero or non-finite"
+                    )
+                actual_native_atol = min(atol, derived_native_atol)
+                tolerance_mapping = "conservative_minima"
+            else:
+                actual_native_atol = atol
+                tolerance_mapping = "empty_source_state_vector"
+    except OracleIntegrationError:
+        raise
+    except Exception as exc:
+        raise OracleIntegrationError(
+            f"the independent oracle (libRoadRunner) could not load the "
+            f"{compared_model}: {type(exc).__name__}: {exc}"
+        ) from exc
+
     try:
         bng_result = model_type(cpp_model).simulate(
             method="ode",
@@ -1200,7 +1268,7 @@ def _simulate_and_compare(
             t_end=t_end,
             n_steps=n_steps,
             rtol=rtol,
-            atol=atol,
+            atol=actual_native_atol,
             max_step=max_step,
         )
     except Exception as exc:
@@ -1222,26 +1290,6 @@ def _simulate_and_compare(
     bng_values = {
         name: np.asarray(series[name], dtype=float) for name in observable_names
     }
-
-    compared_model = (
-        "original source SBML" if reference_model is not None else "written SBML"
-    )
-    try:
-        rr = roadrunner.RoadRunner(
-            reference_model if reference_model is not None else str(output_path)
-        )
-        integrator = rr.integrator
-        if integrator.hasValue("relative_tolerance"):
-            integrator.setValue("relative_tolerance", rtol)
-        if integrator.hasValue("absolute_tolerance"):
-            integrator.setValue("absolute_tolerance", atol)
-        if max_step > 0.0 and integrator.hasValue("maximum_time_step"):
-            integrator.setValue("maximum_time_step", max_step)
-    except Exception as exc:
-        raise OracleIntegrationError(
-            f"the independent oracle (libRoadRunner) could not load the "
-            f"{compared_model}: {type(exc).__name__}: {exc}"
-        ) from exc
 
     def sbml_id(name: str) -> str:
         valid = "".join(char if char.isalnum() or char == "_" else "_" for char in name)
@@ -1404,6 +1452,13 @@ def _simulate_and_compare(
         "n_steps": n_steps,
         "rtol": rtol,
         "atol": atol,
+        "requested_comparison_atol": atol,
+        "roadrunner_requested_atol": atol,
+        "roadrunner_effective_atol_min": rr_effective_atol_min,
+        "roadrunner_state_count": rr_state_count,
+        "native_solver_atol": actual_native_atol,
+        "native_amount_scale": native_amount_scale,
+        "native_tolerance_mapping": tolerance_mapping,
         "max_step": max_step,
         "comparison_scope": comparison_scope,
         "comparison_scale_scope": "per_observable",
@@ -1414,6 +1469,8 @@ def _simulate_and_compare(
         "sbml_observable_ids": dict(zip(observable_names, selected_names)),
         "observables": comparisons,
     }
+    if native_tolerance_context:
+        base.update(native_tolerance_context)
     if source_time_units is not None:
         base["source_time_units"] = source_time_units
     if not_comparable:
@@ -1579,6 +1636,37 @@ def _simulate_source_and_compare(
             "unmapped_source_species": unmapped,
         }
 
+    dynamic_species = {
+        species_id
+        for species_id, species in source_model.species.items()
+        if not getattr(species, "constant", False)
+        and not getattr(species, "boundary_condition", False)
+    }
+    amount_factors = [
+        float(effective_factors[species_id][0])
+        for species_id in dynamic_species
+        if species_id in effective_factors
+        and math.isfinite(float(effective_factors[species_id][0]))
+        and float(effective_factors[species_id][0]) > 0.0
+    ]
+    if dynamic_species and not amount_factors:
+        raise OracleIntegrationError(
+            "no positive source-to-native amount factor is available for dynamic states"
+        )
+    native_amount_scale = min(amount_factors) if amount_factors else 1.0
+    native_tolerance_context = {
+        "dynamic_species_count": len(dynamic_species),
+        "source_to_native_amount_factor_min": (
+            native_amount_scale if amount_factors else None
+        ),
+        "source_normalization_rule": (
+            "minimum positive normalized amount per unit source amount "
+            "across nonconstant, nonboundary source species"
+            if amount_factors
+            else "no dynamic source species; retain requested scalar"
+        ),
+        "empty_dynamic_species_set": not bool(dynamic_species),
+    }
     safe_model_id = re.sub(r"[^A-Za-z0-9_]", "_", model_id)
     reference_bngl, aliases = _with_reference_output_functions(
         bngl, targets, safe_model_id
@@ -1587,22 +1675,78 @@ def _simulate_source_and_compare(
     reference_selections = {
         aliases[species_id]: selection for species_id, selection in selections.items()
     }
-    comparison = _simulate_and_compare(
-        reference_model,
-        model_type,
-        Path("original-source.sbml"),
-        t_end=t_end,
-        n_steps=n_steps,
-        rtol=rtol,
-        atol=atol,
-        max_step=max_step,
-        function_names=set(aliases.values()),
-        reference_model=source_sbml,
-        reference_selections=reference_selections,
-        comparison_scope=SOURCE_COMPARISON_SCOPE,
-        source_time_units=source_model.time_units or "unspecified; source numeric time",
-    )
+
+    def compare_with_step(step: float) -> dict[str, Any]:
+        return _simulate_and_compare(
+            reference_model,
+            model_type,
+            Path("original-source.sbml"),
+            t_end=t_end,
+            n_steps=n_steps,
+            rtol=rtol,
+            atol=atol,
+            native_amount_scale=native_amount_scale,
+            native_tolerance_context=native_tolerance_context,
+            max_step=step,
+            function_names=set(aliases.values()),
+            reference_model=source_sbml,
+            reference_selections=reference_selections,
+            comparison_scope=SOURCE_COMPARISON_SCOPE,
+            source_time_units=source_model.time_units
+            or "unspecified; source numeric time",
+        )
+
+    comparison = compare_with_step(max_step)
+    solver_attempts = [
+        {
+            "max_step": max_step,
+            "passed": bool(comparison.get("passed", False)),
+            "failed_observable_count": len(comparison.get("failed_observables", [])),
+        }
+    ]
+    initial_source_comparison_passed = bool(comparison.get("passed", False))
+    if (
+        not initial_source_comparison_passed
+        and comparison.get("failed_observables")
+        and not comparison.get("not_comparable")
+    ):
+        retry_max_step = max(abs(t_end) / 2000.0, 1e-6)
+        retries = [retry_max_step * factor for factor in (1.0, 0.2, 0.1, 0.04, 0.02)]
+        seen_steps = {max_step} if max_step > 0.0 else set()
+        for retry_step in retries:
+            if retry_step in seen_steps or retry_step <= 0.0:
+                continue
+            if max_step > 0.0 and retry_step >= max_step:
+                continue
+            seen_steps.add(retry_step)
+            try:
+                refined = compare_with_step(retry_step)
+            except RuntimeError as exc:
+                solver_attempts.append(
+                    {
+                        "max_step": retry_step,
+                        "passed": False,
+                        "failed_observable_count": None,
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                )
+                continue
+            attempt = {
+                "max_step": retry_step,
+                "passed": bool(refined.get("passed", False)),
+                "failed_observable_count": len(refined.get("failed_observables", [])),
+            }
+            if refined.get("not_comparable"):
+                attempt["not_comparable"] = refined["not_comparable"]
+            if refined.get("error"):
+                attempt["error"] = refined["error"]
+            solver_attempts.append(attempt)
+            if refined.get("passed", False):
+                comparison = refined
+                break
     comparison["source_comparison_surface"] = "mapped_species_outputs"
+    comparison["initial_source_comparison_passed"] = initial_source_comparison_passed
+    comparison["source_solver_attempts"] = solver_attempts
     alias_to_species = {alias: species_id for species_id, alias in aliases.items()}
     if comparison.get("error"):
         for alias, species_id in alias_to_species.items():
