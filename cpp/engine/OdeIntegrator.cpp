@@ -3247,10 +3247,16 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                     continue;
                 }
                 if (!pendingEvents_.empty() || !nativeEvents_.empty()) {
-                    sunrealtype internalT = static_cast<sunrealtype>(t);
-                    CVodeGetCurrentTime(cvode_mem, &internalT);
-                    if (static_cast<double>(target) > static_cast<double>(internalT)) {
-                        CVodeSetStopTime(cvode_mem, target);
+                    // CV_NORMAL may return an interpolated output/root time
+                    // behind the internal time. Interpolate to a pending event
+                    // inside that step instead of setting an invalid past stop.
+                    sunrealtype internalTime;
+                    if (CVodeGetCurrentTime(cvode_mem, &internalTime) != CV_SUCCESS) {
+                        throw std::runtime_error("CVodeGetCurrentTime failed");
+                    }
+                    if (target > internalTime &&
+                        CVodeSetStopTime(cvode_mem, target) != CV_SUCCESS) {
+                        throw std::runtime_error("CVodeSetStopTime failed");
                     }
                 }
                 flag = CVode(cvode_mem, target, y, &t, CV_NORMAL);
