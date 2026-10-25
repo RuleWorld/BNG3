@@ -1484,7 +1484,9 @@ void regeneratePreservingAmounts(engine::NetworkGenerator& generator,
         return;
     }
     const auto savedAmounts = snapshotConcentrations(*network);
+    const auto savedSession = network->simulationSession;
     network = generator.generate(sourcePath);
+    network->simulationSession = savedSession;
     restoreConcentrations(*network, savedAmounts);
 }
 
