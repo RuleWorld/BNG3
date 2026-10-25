@@ -433,6 +433,78 @@ def test_cross_compartment_use_flattens_complex_even_with_same_compartment_path(
     assert compare_flat_and_atomized(sbml)["problems"] == []
 
 
+def test_unresolved_explicit_molecules_do_not_trigger_false_fallback_structure():
+    sbml = build_sbml(
+        "unresolved_explicit_pattern",
+        [("X", "A(b!1).B(b!1)", 1.0, None)],
+        [],
+    )
+
+    record = _inference(sbml, "X")
+
+    assert record["confidence"] == "explicit-pattern"
+    assert record["molecules"] == ["A", "B"]
+    assert not any(
+        alternative.get("code") == "cross-compartment-inference"
+        for alternative in record["alternatives"]
+    )
+
+
+def test_forced_flattening_uses_source_id_and_matches_source_execution():
+    sbml = build_sbml(
+        "unresolved_explicit_cross_compartment",
+        [
+            ("X", "A(b!1).B(b!1)", 1.0, None),
+            ("C", "C", 1.0, None),
+            ("Y", "Y", 0.0, None),
+        ],
+        [_reaction("capture", ["X", "C"], ["Y"], "kon", ["X", "C"])],
+        [("kon", 0.1)],
+    )
+    sbml = re.sub(
+        r'<compartment id="c"[^>]*/>',
+        '<compartment id="pm" size="1" spatialDimensions="3" constant="true"/>'
+        '<compartment id="cyt" size="1" spatialDimensions="3" constant="true"/>',
+        sbml,
+        count=1,
+    )
+    for species_id, compartment in (("X", "pm"), ("Y", "pm"), ("C", "cyt")):
+        sbml = re.sub(
+            rf'(<species id="{re.escape(species_id)}"[^>]* compartment=")[^\"]+',
+            rf"\g<1>{compartment}",
+            sbml,
+            count=1,
+        )
+
+    record = _inference(sbml, "X")
+
+    assert record["confidence"] == "elemental"
+    assert record["molecules"] == ["X"]
+    assert any(
+        alternative.get("code") == "cross-compartment-inference"
+        for alternative in record["alternatives"]
+    )
+    import numpy as np
+    import bionetgen._bionetgen_cpp as cpp
+    from bionetgen.model import BioNetGenModel
+
+    roadrunner = pytest.importorskip("roadrunner")
+    translated = _atomize(sbml)
+    assert translated.success, translated.error
+    bng = BioNetGenModel(cpp.parse_string(translated.bngl)).simulate(
+        method="ode", t_end=1.0, n_steps=10, rtol=1e-9, atol=1e-12
+    )
+    source = roadrunner.RoadRunner(sbml)
+    source.integrator.setValue("relative_tolerance", 1e-9)
+    source.integrator.setValue("absolute_tolerance", 1e-12)
+    source.timeCourseSelections = ["time", "[X]", "[C]", "[Y]"]
+    reference = source.simulate(0.0, 1.0, 11)
+    for column, species_id in enumerate(("X", "C", "Y"), start=1):
+        np.testing.assert_allclose(
+            bng.observables[species_id], reference[:, column], rtol=1e-6, atol=5e-9
+        )
+
+
 def test_cross_compartment_fallback_keeps_source_ids_when_names_collide():
     sbml = _compartment_topology_model(
         compartments=[("pm", 3, None), ("cyt", 3, None)],

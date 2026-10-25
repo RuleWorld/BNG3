@@ -1338,9 +1338,16 @@ def _cross_compartment_complex_alternative(
     product flat instead of applying an unverified molecular interpretation.
     """
 
+    # A molecule spelled out in a species name is not necessarily a source
+    # species in its own right.  Without a declared component species there is
+    # no compartment evidence to compare against the product.
+    if not components or any(
+        component not in model.species for component in components
+    ):
+        return None
+
     species_compartments = [
-        model.species.get(component, SBMLSpecies(component)).compartment
-        for component in components
+        model.species[component].compartment for component in components
     ]
     product_compartment = model.species.get(
         species_id, SBMLSpecies(species_id)
@@ -1483,12 +1490,15 @@ def _cross_compartment_complex_reactant_alternative(
 def _flat_cross_compartment_inference(
     species_id: str,
     name: str,
-    item: SBMLSpecies,
     alternative: Dict[str, Any],
 ) -> Tuple[Species, List[str], Dict[str, str], StructuralInference]:
     """Keep a cross-compartment source species as an exact flat species."""
 
-    structure = _elemental_species(item)
+    # The source identifier is the identity that the reaction graph uses.
+    # Parsing the SBML name here could recreate a complex that this fallback
+    # was specifically asked to keep flat.
+    structure = Species()
+    structure.add_molecule(Molecule(standardize_name(species_id), species_id))
     _sanitize_structure(structure)
     record = _structure_inference(
         species_id,
@@ -1548,7 +1558,7 @@ def _apply_cross_compartment_inference_fallback(
         return inferred
 
     flat = _flat_cross_compartment_inference(
-        species_id, item.name or species_id, item, alternative
+        species_id, item.name or species_id, alternative
     )
     flat[3].alternatives.extend(inference.alternatives)
     return flat
