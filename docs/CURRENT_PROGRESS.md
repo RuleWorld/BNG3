@@ -22,6 +22,35 @@ event cancellation/persistence, cascades/recurrence, stochastic event
 transitions or general equal-priority ordering; those remain explicit #158
 gaps. Exact hosted checks for the candidate are pending.
 
+Current family dispositions:
+
+- #157: native trigger roots and state updates are implemented for the tested
+  ODE/CVODE subset. The new time-zero fixture uses a scheduled action. A later
+  continuous crossing is tested independently; the full initial/rising-edge,
+  parameter/compartment and solver-reinitialization matrix is not established.
+- #158: delayed execution and trigger-time/execution-time value selection exist
+  in the ODE event queue; selected delayed trajectories compare with
+  libRoadRunner. Nonpersistent cancellation is implemented by retesting before
+  execution and has focused action-lowering coverage, but no broad independent
+  queue qualification. Runtime priorities are constant-only; unorderable
+  simultaneous groups are refused. Assignment-triggered retesting exists, but
+  general cascades/recurrence lack an independent conformance matrix. State
+  triggered events under SSA are refused because stochastic jump scheduling is
+  not implemented.
+- #159: PR #443's exact-head official-reference job passed its bounded 128-case
+  PR selection at `87bdb756100542e05c95a099f9ab6c5d21d5c242`; its full scheduled
+  suite and full revision-locked report are still not established. #160's
+  requested feature-class inventory is likewise incomplete; explicit per-case
+  refusal is not a complete class disposition.
+- #146: the exact-head run [38852202284](https://github.com/RuleWorld/BNG3/actions/runs/38852202284)
+  passed one fixed-seed `simple_system` -oSteps endpoint comparison at
+  `2f7200a279767bcc4a78a33775224e30f3d65521`. It does not run the four strict
+  deletion fixtures whose earlier receipt is red. The PR #443 independent
+  NFsim lane is a separate bounded pass; scheduled historical NFsim validation
+  is skipped. Historical v17 local-rate binding, v19 malformed source,
+  r42/r43 missing XML inputs and r21 unresolved statistical comparison remain
+  distinct investigation classes, not a current aggregate engine failure.
+
 ## Curated BioModels #162 (2026-10-23)
 
 The previously paused full curated BioModels lane was explicitly resumed and
