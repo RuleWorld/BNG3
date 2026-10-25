@@ -1876,3 +1876,31 @@ def test_cuda_job_disables_only_unreachable_microsoft_apt_entries(tmp_path):
         "sudo python3 scripts/ci/disable_unreachable_microsoft_apt_source.py"
     )
     assert cuda_steps.index(filter_step) < cuda_steps.index(install_step)
+
+
+def test_parity_revision_declarations_match_the_product_checkout():
+    """A PR merge SHA must never be attributed to a PR-head product build."""
+    workflow = parse_workflow(PARITY_WORKFLOW)
+    declarations = 0
+    for job_id, job in workflow["jobs"].items():
+        checkout = next(
+            step
+            for step in job["steps"]
+            if step.get("uses", "").startswith("actions/checkout@")
+            and not step.get("with", {}).get("path")
+        )
+        source_ref = checkout["with"]["ref"]
+        for step in job["steps"]:
+            env = {
+                **workflow.get("env", {}),
+                **job.get("env", {}),
+                **step.get("env", {}),
+            }
+            for key in ("BNG3_SOURCE_REVISION", "BNG3_PR_HEAD_SHA"):
+                if key in env:
+                    declarations += 1
+                    assert env[key] == source_ref, (
+                        f"{job_id}: {step.get('name')}: {key}={env[key]!r} "
+                        f"does not match product checkout {source_ref!r}"
+                    )
+    assert declarations, "no product revision declarations checked"
