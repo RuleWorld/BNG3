@@ -535,7 +535,8 @@ void bind_engine(py::module_& m) {
                              std::size_t max_sim_steps,
                              std::size_t output_step_interval, bool sparse,
                              double check_product_scale,
-                             bool continue_simulation) {
+                             bool continue_simulation,
+                             bool fresh_from_initial_state) {
         if (max_sim_steps > 0 || output_step_interval > 0) {
             throw std::runtime_error(
                 "max_sim_steps and output_step_interval are supported only "
@@ -562,6 +563,7 @@ void bind_engine(py::module_& m) {
         opts.sparse = sparse;
         opts.checkProductScale = check_product_scale;
         opts.continueSimulation = continue_simulation;
+        opts.freshFromInitialState = fresh_from_initial_state;
         auto t_opts = std::chrono::steady_clock::now();
 
         OdeIntegrator integrator(model, network);
@@ -605,6 +607,7 @@ void bind_engine(py::module_& m) {
         py::arg("sparse") = false,
         py::arg("check_product_scale") = 0.0,
         py::arg("continue_simulation") = false,
+        py::arg("fresh_from_initial_state") = false,
         "Run ODE simulation on a generated network");
 
     m.def("simulate_ssa", [](Model& model, GeneratedNetwork& network,
@@ -616,7 +619,8 @@ void bind_engine(py::module_& m) {
                              std::size_t batch_size,
                              bool batch_gpu_preferred,
                              const std::string& batch_gpu_backend,
-                             bool continue_simulation) {
+                             bool continue_simulation,
+                             bool fresh_from_initial_state) {
         py::gil_scoped_release release;
 
         OdeOptions opts;
@@ -633,6 +637,7 @@ void bind_engine(py::module_& m) {
         opts.batchGpuPreferred = batch_gpu_preferred;
         opts.batchGpuBackend = batch_gpu_backend;
         opts.continueSimulation = continue_simulation;
+        opts.freshFromInitialState = fresh_from_initial_state;
 
         OdeIntegrator integrator(model, network);
         OdeResult result = integrator.integrate(opts);
@@ -660,6 +665,7 @@ void bind_engine(py::module_& m) {
         py::arg("batch_gpu_preferred") = true,
         py::arg("batch_gpu_backend") = std::string("auto"),
         py::arg("continue_simulation") = false,
+        py::arg("fresh_from_initial_state") = false,
         "Run SSA simulation on a generated network. "
         "Set batch_size > 1 to run many independent trajectories and return mean + std-dev trajectories; "
         "uses a GPU backend (CUDA or Metal) when one is available and beneficial, "

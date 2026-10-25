@@ -59,6 +59,7 @@ struct OdeOptions {
     bool saveProgress = false;     // Write .net checkpoint at each output step
     bool printNet = false;         // Write .net file after simulation with final concentrations
     bool continueSimulation = false; // Continue one committed native trajectory/session
+    bool freshFromInitialState = false; // Start fresh from an existing session's original state
     bool printEnd = false;         // Output final state when simulation stops (stop_if or steady_state)
     std::size_t outputStepInterval = 0; // Output every N internal steps (0 = disabled, use n_steps timing)
     std::string netfile;           // Custom .net file to read instead of auto-generating

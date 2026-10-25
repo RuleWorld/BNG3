@@ -2532,6 +2532,16 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
             working.state = networkState;
         }
     } else {
+        std::vector<double> freshState;
+        if (options.freshFromInitialState && working.initialized &&
+            working.initialState.size() == nSpecies_) {
+            freshState = working.initialState;
+        } else {
+            freshState.resize(nSpecies_);
+            for (std::size_t i = 0; i < nSpecies_; ++i) {
+                freshState[i] = network_.species.get(i).getAmount();
+            }
+        }
         working.reset();
         working.initialized = true;
         working.startTime = options.tStart;
@@ -2544,7 +2554,7 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
         working.initialState.resize(nSpecies_);
         working.networkAmountVersions.resize(nSpecies_);
         for (std::size_t i = 0; i < nSpecies_; ++i) {
-            working.state[i] = network_.species.get(i).getAmount();
+            working.state[i] = freshState[i];
             working.initialState[i] = working.state[i];
             working.networkAmountVersions[i] =
                 network_.species.get(i).getAmountVersion();
