@@ -94,6 +94,18 @@ _MULTI_NUMERIC_TOKEN = re.compile(r"__SBML_MULTI_NUMERIC__([A-Za-z_][A-Za-z0-9_]
 # rewritten; see ``_report_unspellable_identifiers``.
 _SBML_ID_RUN = re.compile(r"[A-Za-z_][A-Za-z0-9_-]*")
 
+_RE_PI_MATH = re.compile(r"\bpi\b")
+_RE_MIN_MATH = re.compile(r"\bmin\s*\(", flags=re.IGNORECASE)
+_RE_MAX_MATH = re.compile(r"\bmax\s*\(", flags=re.IGNORECASE)
+_RE_EXPONENTIALE_MATH = re.compile(r"\bexponentiale\b", flags=re.IGNORECASE)
+_RE_TRUE_MATH = re.compile(r"\btrue\b", flags=re.IGNORECASE)
+_RE_FALSE_MATH = re.compile(r"\bfalse\b", flags=re.IGNORECASE)
+_RE_TIME_MATH = re.compile(r"\btime\b(?!\s*\()")
+_RE_ZERO_CALL_MATH = re.compile(r"(?<![A-Za-z0-9_])0\s*\(\s*\)")
+
+_RE_IF_MATH = re.compile(r"\bif\s*\(")
+_RE_NOT_MATH = re.compile(r"(?<![=!<>])!(?!=)")
+
 
 def _declared_id_spans(
     expression: str, names: Iterable[str]
@@ -698,23 +710,20 @@ def convert_math_expression(expression: str) -> str:
         ),
     )
 
-    result = re.sub(r"\bpi\b", "3.14159265358979", result)
+    result = _RE_PI_MATH.sub("3.14159265358979", result)
     # A few SBML formula exporters use upper-case function names.  BNGL's
     # expression lexer uses the canonical lower-case tokens.
-    for function in ("min", "max"):
-        result = re.sub(
-            rf"\b{function}\s*\(", f"{function}(", result, flags=re.IGNORECASE
-        )
-    result = re.sub(
-        r"\bexponentiale\b", "2.71828182845905", result, flags=re.IGNORECASE
-    )
-    result = re.sub(r"\btrue\b", "1", result, flags=re.IGNORECASE)
-    result = re.sub(r"\bfalse\b", "0", result, flags=re.IGNORECASE)
-    result = re.sub(r"\btime\b(?!\s*\()", "time()", result)
+    result = _RE_MIN_MATH.sub("min(", result)
+    result = _RE_MAX_MATH.sub("max(", result)
+
+    result = _RE_EXPONENTIALE_MATH.sub("2.71828182845905", result)
+    result = _RE_TRUE_MATH.sub("1", result)
+    result = _RE_FALSE_MATH.sub("0", result)
+    result = _RE_TIME_MATH.sub("time()", result)
     # A zero-valued SBML expression can arrive from libSBML as ``0()`` after
     # function/assignment folding.  BNGL accepts the scalar literal ``0``;
     # ``0()`` is a syntax error and is never a meaningful call.
-    result = re.sub(r"(?<![A-Za-z0-9_])0\s*\(\s*\)", "0", result)
+    result = _RE_ZERO_CALL_MATH.sub("0", result)
     result = result.replace("--", "+")
     return result
 
@@ -1530,10 +1539,10 @@ def _safe_numeric_expression(
     normalized = str(expression or "")
     normalized = normalized.replace("^", "**")
     normalized = normalized.replace("&&", " and ").replace("||", " or ")
-    normalized = re.sub(r"\bif\s*\(", "if_(", normalized)
-    normalized = re.sub(r"\btrue\b", "1", normalized, flags=re.IGNORECASE)
-    normalized = re.sub(r"\bfalse\b", "0", normalized, flags=re.IGNORECASE)
-    normalized = re.sub(r"(?<![=!<>])!(?!=)", " not ", normalized)
+    normalized = _RE_IF_MATH.sub("if_(", normalized)
+    normalized = _RE_TRUE_MATH.sub("1", normalized)
+    normalized = _RE_FALSE_MATH.sub("0", normalized)
+    normalized = _RE_NOT_MATH.sub(" not ", normalized)
     try:
         tree = ast.parse(normalized, mode="eval")
     except SyntaxError:

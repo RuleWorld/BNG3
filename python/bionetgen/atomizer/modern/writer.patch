@@ -1,0 +1,17 @@
+--- python/bionetgen/atomizer/modern/writer.py
++++ python/bionetgen/atomizer/modern/writer.py
+@@ -1540,10 +1540,10 @@
+     normalized = str(expression or "")
+     normalized = normalized.replace("^", "**")
+     normalized = normalized.replace("&&", " and ").replace("||", " or ")
+-    normalized = re.sub(r"\bif\s*\(", "if_(", normalized)
+-    normalized = re.sub(r"\btrue\b", "1", normalized, flags=re.IGNORECASE)
+-    normalized = re.sub(r"\bfalse\b", "0", normalized, flags=re.IGNORECASE)
+-    normalized = re.sub(r"(?<![=!<>])!(?!=)", " not ", normalized)
++    normalized = _RE_IF_MATH.sub("if_(", normalized)
++    normalized = _RE_TRUE_MATH.sub("1", normalized)
++    normalized = _RE_FALSE_MATH.sub("0", normalized)
++    normalized = _RE_NOT_MATH.sub(" not ", normalized)
+     try:
+         tree = ast.parse(normalized, mode="eval")
+     except SyntaxError:
