@@ -6,7 +6,6 @@ Created on Wed May 30 11:44:17 2012
 """
 
 from collections import Counter
-from copy import copy as shallow_copy
 import re
 from random import randint
 from pyparsing import Word, Suppress, Optional, alphanums, Group, ZeroOrMore
@@ -115,7 +114,14 @@ class Species:
         return bondNumbers
 
     def copy(self):
-        species = Species()
+        species = self.__class__.__new__(self.__class__)
+        if hasattr(self, "__dict__"):
+            species.__dict__ = self.__dict__.copy()
+        for cls in type(self).__mro__:
+            if hasattr(cls, "__slots__"):
+                for slot in cls.__slots__:
+                    if hasattr(self, slot):
+                        setattr(species, slot, getattr(self, slot))
         species.identifier = randint(0, 1000000)
         species.molecules = [molecule.copy() for molecule in self.molecules]
         if hasattr(self, "bonds"):
@@ -488,12 +494,15 @@ class Molecule:
         self.uniqueIdentifier = randint(0, 100000)
 
     def copy(self):
-        if type(self) is Molecule:
-            molecule = Molecule.__new__(Molecule)
+        # ⚡ Bolt: Fast explicit object cloning instead of copy module overhead
+        molecule = self.__class__.__new__(self.__class__)
+        if hasattr(self, "__dict__"):
             molecule.__dict__ = self.__dict__.copy()
-        else:
-            # Subclasses may carry slots or implement their own copy protocol.
-            molecule = shallow_copy(self)
+        for cls in type(self).__mro__:
+            if hasattr(cls, "__slots__"):
+                for slot in cls.__slots__:
+                    if hasattr(self, slot):
+                        setattr(molecule, slot, getattr(self, slot))
         molecule.components = [element.copy() for element in self.components]
         return molecule
 

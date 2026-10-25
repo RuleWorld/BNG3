@@ -3,7 +3,8 @@ import functools
 from . import analyzeSBML
 from collections import Counter, defaultdict
 import itertools
-from copy import deepcopy, copy
+from copy import deepcopy
+import pickle
 from bionetgen.atomizer.utils.util import logMess, memoize, memoizeMapped
 from . import atomizationAux as atoAux
 from .annotation_utils import identifiers_org_databases
@@ -87,7 +88,9 @@ class SCTSolver:
 
         # let's store each step separately for analysis downstream
         self.database.scts = {}
-        self.database.scts["01_binding_sct"] = deepcopy(self.database.dependencyGraph)
+        self.database.scts["01_binding_sct"] = pickle.loads(
+            pickle.dumps(self.database.dependencyGraph, -1)
+        )
 
         # lexical dependency graph contains lexically induced binding compositions. atomizer gives preference to binding obtained this way as opposed to stoichiometry
         # stronger bounds on stoichiometry based binding can be defined in
@@ -161,7 +164,9 @@ class SCTSolver:
                 )
 
         # let's store each step separately for analysis downstream
-        self.database.scts["03_post_user_sct"] = deepcopy(self.database.dependencyGraph)
+        self.database.scts["03_post_user_sct"] = pickle.loads(
+            pickle.dumps(self.database.dependencyGraph, -1)
+        )
 
         # self.database.eequivalence translator contains 1:1 equivalences
         # FIXME: do we need this update step or is it enough with the later one?
