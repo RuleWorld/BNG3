@@ -809,6 +809,8 @@ def _formal_pattern(names: Tuple[str, ...]):
 
 def _replace_nested_function(expression: str, function: str, replacer) -> str:
     result = expression
+    if function not in result:
+        return result
     pattern = _function_call_pattern(function)
     search_index = 0
     guard = 0
