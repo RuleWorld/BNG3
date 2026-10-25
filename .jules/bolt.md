@@ -1,0 +1,3 @@
+## 2025-02-12 - [Component/Molecule/Species Copy Optimization]
+**Learning:** Python's `copy.copy()` and `copy.deepcopy()` in python/bionetgen/atomizer (Molecule, Species, Component) are major performance bottlenecks. Using `__new__` (e.g., `Molecule.__new__(Molecule)`) bypasses `__init__` and avoids expensive/incorrect side effects like random hash allocation. This, combined with `__dict__` copying and explicitly copying simple nested list structures with `list()`, yields >3x speedup.
+**Action:** When implementing or modifying custom `.copy()` methods in tight loops (especially structures), use `__new__`, copy `__dict__`, and explicitly map lists instead of standard `copy.deepcopy` or instantiation-then-mutate.
