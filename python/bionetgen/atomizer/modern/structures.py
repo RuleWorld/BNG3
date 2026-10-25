@@ -8,11 +8,10 @@ deterministic, which is useful for Python callers and reproducible output.
 
 from __future__ import annotations
 
-import copy
 import re
 from collections import Counter
 from dataclasses import dataclass
-from typing import Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple, Union
 
 Bond = Union[str, int]
 
@@ -565,7 +564,8 @@ class Species:
             return 1.0
         if not left or not right:
             return 0.0
-        matches = sum(1 for item in left if item in right)
+        right_set = set(right)
+        matches = sum(1 for item in left if item in right_set)
         return (2 * matches) / (len(left) + len(right))
 
     def update_bonds(self, bond_numbers: Iterable[int]) -> None:
