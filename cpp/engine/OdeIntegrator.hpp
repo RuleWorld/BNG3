@@ -310,7 +310,8 @@ private:
     std::unordered_map<std::string, double> historyParametersAt(double time) const;
     double evaluateExpressionWithHistory(
         const ast::Expression& expression, double time,
-        const double* state) const;
+        const double* state,
+        bool discreteReactantCounts = false) const;
     void recordHistoryPoint(double time, const std::vector<double>& state);
     void recordHistoryJump(double time, const std::vector<double>& state);
     double reactionFlux(const CompiledReaction& reaction,

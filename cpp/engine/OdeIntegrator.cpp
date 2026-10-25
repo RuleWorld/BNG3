@@ -1661,7 +1661,7 @@ void OdeIntegrator::evaluateFunctionalRateCoefficients(
         if (rxn.functionalRateExpr.has_value()) {
             try {
                 rate = evaluateExpressionWithHistory(
-                    *rxn.functionalRateExpr, t, y);
+                    *rxn.functionalRateExpr, t, y, discreteReactantCounts);
             } catch (const std::exception& error) {
                 if (failOnError) {
                     throw std::runtime_error(
@@ -1889,7 +1889,8 @@ std::unordered_map<std::string, double> OdeIntegrator::historyParametersAt(
 }
 
 double OdeIntegrator::evaluateExpressionWithHistory(
-    const ast::Expression& expression, double time, const double* state) const {
+    const ast::Expression& expression, double time, const double* state,
+    bool discreteReactantCounts) const {
     std::function<double(const ast::Expression&, double, const double*,
                          const std::unordered_map<std::string, double>&)> evaluateAt;
     evaluateAt = [&](const ast::Expression& current, double currentTime,
@@ -1906,7 +1907,14 @@ double OdeIntegrator::evaluateExpressionWithHistory(
                     ? rest : rest.substr(0, marker);
                 try {
                     const auto index = static_cast<std::size_t>(std::stoul(indexText));
-                    if (index < nSpecies_) return currentState[index];
+                    if (index < nSpecies_) {
+                        double value = currentState[index];
+                        if (marker != std::string::npos && discreteReactantCounts) {
+                            const double offset = std::stod(rest.substr(marker + 4));
+                            value = std::max(0.0, value - offset);
+                        }
+                        return value;
+                    }
                 } catch (...) {}
                 return 0.0;
             }
