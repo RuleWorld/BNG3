@@ -11,7 +11,10 @@ import numpy as np
 import json
 import itertools
 import bionetgen.atomizer.utils.structures as st
-from copy import deepcopy, copy
+from copy import copy
+import pickle
+def deepcopy(obj):
+    return pickle.loads(pickle.dumps(obj, -1))
 from . import detectOntology
 from .annotation_utils import identifiers_org_databases
 import re

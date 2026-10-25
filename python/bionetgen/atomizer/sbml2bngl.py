@@ -5,7 +5,10 @@ Created on Tue Dec  6 17:42:31 2011
 @author: proto
 """
 
-from copy import deepcopy, copy
+from copy import copy
+import pickle
+def deepcopy(obj):
+    return pickle.loads(pickle.dumps(obj, -1))
 from bionetgen.atomizer.writer import bnglWriter as writer
 
 log = {"species": [], "reactions": []}

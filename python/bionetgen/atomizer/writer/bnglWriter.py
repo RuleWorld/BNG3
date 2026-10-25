@@ -6,7 +6,9 @@
 # sys.setdefaultencoding("ISO-8859-1")
 
 import re
-from copy import deepcopy
+import pickle
+def deepcopy(obj):
+    return pickle.loads(pickle.dumps(obj, -1))
 from bionetgen.atomizer.utils.util import TranslationException, logMess
 import string
 

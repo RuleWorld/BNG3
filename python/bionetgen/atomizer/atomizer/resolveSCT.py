@@ -3,7 +3,10 @@ import functools
 from . import analyzeSBML
 from collections import Counter, defaultdict
 import itertools
-from copy import deepcopy, copy
+from copy import copy
+import pickle
+def deepcopy(obj):
+    return pickle.loads(pickle.dumps(obj, -1))
 from bionetgen.atomizer.utils.util import logMess, memoize, memoizeMapped
 from . import atomizationAux as atoAux
 from .annotation_utils import identifiers_org_databases

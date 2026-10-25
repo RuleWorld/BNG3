@@ -11,7 +11,10 @@ Created on Tue Dec  6 17:42:31 2011
 
 @author: proto
 """
-from copy import deepcopy, copy
+from copy import copy
+import pickle
+def deepcopy(obj):
+    return pickle.loads(pickle.dumps(obj, -1))
 from . import analyzeSBML
 import bionetgen.atomizer.utils.structures as st
 from bionetgen.atomizer.utils.util import logMess
