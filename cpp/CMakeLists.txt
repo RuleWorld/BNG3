@@ -169,6 +169,7 @@ target_link_libraries(bng_engine PUBLIC
     antlr4_static
     sundials_cvode_static
     sundials_nvecserial_static
+    sundials_sunnonlinsolfixedpoint_static
     sundials_sunlinsoldense_static
     sundials_sunlinsolspgmr_static
     sundials_sunmatrixdense_static

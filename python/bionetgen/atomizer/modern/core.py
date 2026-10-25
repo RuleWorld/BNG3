@@ -1325,6 +1325,245 @@ def _components_are_uncontested(
     return not any(component in context.contested for component in components)
 
 
+def _cross_compartment_complex_alternative(
+    species_id: str,
+    components: Sequence[str],
+    model: SBMLModel,
+    confidence: str,
+) -> Optional[Dict[str, Any]]:
+    """Explain why a source composition cannot be emitted as a BNGL complex.
+
+    The source-faithful structural lowering used here is limited to a shared
+    compartment.  If the inferred composition spans compartments, keep the
+    product flat instead of applying an unverified molecular interpretation.
+    """
+
+    # A molecule spelled out in a species name is not necessarily a source
+    # species in its own right.  Without a declared component species there is
+    # no compartment evidence to compare against the product.
+    if not components or any(
+        component not in model.species for component in components
+    ):
+        return None
+
+    species_compartments = [
+        model.species[component].compartment for component in components
+    ]
+    product_compartment = model.species.get(
+        species_id, SBMLSpecies(species_id)
+    ).compartment
+
+    compartments = [*species_compartments, product_compartment]
+    if len(set(compartments)) <= 1:
+        return None
+    return _alternative_inference(
+        confidence,
+        "the inferred complex spans compartments; source-faithful structural "
+        "lowering is not established for this reaction, so the source product "
+        "is retained flat",
+        code="cross-compartment-inference",
+        components=list(components),
+        component_compartments=species_compartments,
+        product_compartment=product_compartment,
+    )
+
+
+def _cross_compartment_reaction_alternatives(
+    model: SBMLModel,
+) -> Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, List[Dict[str, Any]]]]:
+    """Precompute cross-compartment source reactions that guard inference."""
+
+    inferred_products: Dict[str, List[Dict[str, Any]]] = OrderedDict()
+    incompatible_reactant_uses: Dict[str, List[Dict[str, Any]]] = OrderedDict()
+    for reaction_id, reaction in model.reactions.items():
+        reactants = _stoichiometric_species(reaction.reactants)
+        products = _stoichiometric_species(reaction.products)
+        distinct_reactants = _distinct_species(reactants)
+        distinct_products = _distinct_species(products)
+        unit_reactants = all(stoichiometry == 1 for _, stoichiometry in reactants)
+        unit_products = all(stoichiometry == 1 for _, stoichiometry in products)
+        composition: Optional[Sequence[str]] = None
+        target_id = ""
+        direction = ""
+        if (
+            unit_reactants
+            and unit_products
+            and len(distinct_reactants) >= 2
+            and len(distinct_products) == 1
+            and distinct_products[0] not in distinct_reactants
+        ):
+            target_id = distinct_products[0]
+            composition = distinct_reactants
+            direction = "association"
+        elif (
+            unit_reactants
+            and unit_products
+            and len(distinct_reactants) == 1
+            and len(distinct_products) >= 2
+            and distinct_reactants[0] not in distinct_products
+        ):
+            target_id = distinct_reactants[0]
+            composition = distinct_products
+            direction = "dissociation"
+        if composition is not None:
+            alternative = _cross_compartment_complex_alternative(
+                target_id, composition, model, "reaction-topology"
+            )
+            if alternative is not None:
+                alternative["reaction"] = reaction_id
+                alternative["direction"] = direction
+                alternative["reaction_participants"] = (
+                    distinct_reactants
+                    if direction == "association"
+                    else distinct_products
+                )
+                inferred_products.setdefault(target_id, []).append(alternative)
+
+        if len(distinct_reactants) < 2:
+            continue
+        reaction_compartments = {
+            participant: model.species.get(
+                participant, SBMLSpecies(participant)
+            ).compartment
+            for participant in distinct_reactants
+        }
+        for participant in distinct_reactants:
+            others = [other for other in distinct_reactants if other != participant]
+            participant_compartment = reaction_compartments[participant]
+            if all(
+                participant_compartment == reaction_compartments[other]
+                for other in others
+            ):
+                continue
+            incompatible_reactant_uses.setdefault(participant, []).append(
+                {
+                    "reaction": reaction_id,
+                    "reaction_participants": list(distinct_reactants),
+                    "reaction_compartments": [
+                        reaction_compartments[other] for other in distinct_reactants
+                    ],
+                }
+            )
+    return inferred_products, incompatible_reactant_uses
+
+
+def _cross_compartment_complex_reactant_alternative(
+    species_id: str,
+    components: Sequence[str],
+    context: _StructuralContext,
+    confidence: str,
+) -> Optional[Dict[str, Any]]:
+    """Keep an inferred complex flat when a source rule uses it across compartments."""
+
+    if len(components) < 2:
+        return None
+    uses = context.topology.get("cross_compartment_reactant_uses", {}).get(
+        species_id, []
+    )
+    if not uses:
+        return None
+    species_compartment = context.model.species.get(
+        species_id, SBMLSpecies(species_id)
+    ).compartment
+    first_use = uses[0]
+    return _alternative_inference(
+        confidence,
+        "the source reaction consumes this inferred complex with a species "
+        "from another compartment; keeping it flat preserves the source "
+        "species identifiers without relying on unverified cross-compartment "
+        "structural matching",
+        code="cross-compartment-inference",
+        direction="complex-reactant",
+        reaction=first_use["reaction"],
+        source_reactions=[use["reaction"] for use in uses],
+        components=list(components),
+        component_compartments=[
+            context.model.species.get(component, SBMLSpecies(component)).compartment
+            for component in components
+        ],
+        product_compartment=species_compartment,
+        reaction_participants=first_use["reaction_participants"],
+        reaction_compartments=first_use["reaction_compartments"],
+    )
+
+
+def _flat_cross_compartment_inference(
+    species_id: str,
+    name: str,
+    alternative: Dict[str, Any],
+) -> Tuple[Species, List[str], Dict[str, str], StructuralInference]:
+    """Keep a cross-compartment source species as an exact flat species."""
+
+    # The source identifier is the identity that the reaction graph uses.
+    # Parsing the SBML name here could recreate a complex that this fallback
+    # was specifically asked to keep flat.
+    structure = Species()
+    structure.add_molecule(Molecule(standardize_name(species_id), species_id))
+    _sanitize_structure(structure)
+    record = _structure_inference(
+        species_id,
+        name,
+        structure,
+        "elemental",
+        "the source reaction spans compartments, so its exact flat source "
+        "species representation is kept",
+    )
+    record.alternatives.append(alternative)
+    return structure, [], {}, record
+
+
+def _apply_cross_compartment_inference_fallback(
+    species_id: str,
+    item: SBMLSpecies,
+    context: _StructuralContext,
+    inferred: Tuple[Species, List[str], Dict[str, str], StructuralInference],
+) -> Tuple[Species, List[str], Dict[str, str], StructuralInference]:
+    """Retain flat source species where structural lowering is not established."""
+
+    structure, components, modifications, inference = inferred
+    product_alternatives = context.topology.get(
+        "cross_compartment_product_alternatives", {}
+    ).get(species_id, [])
+    alternative: Optional[Dict[str, Any]] = None
+    if product_alternatives:
+        alternative = dict(product_alternatives[0])
+        alternative["source_reactions"] = [
+            candidate["reaction"] for candidate in product_alternatives
+        ]
+    elif len(structure.molecules) > 1:
+        if inference.confidence == "explicit-pattern":
+            component_ids = [
+                context.names_to_ids.get(name, name) for name in components
+            ]
+        else:
+            component_ids = [
+                (
+                    name
+                    if name in context.model.species
+                    else context.names_to_ids.get(name, name)
+                )
+                for name in components
+            ]
+        alternative = _cross_compartment_complex_reactant_alternative(
+            species_id, component_ids, context, inference.confidence
+        )
+        if alternative is None:
+            alternative = _cross_compartment_complex_alternative(
+                species_id,
+                component_ids,
+                context.model,
+                inference.confidence,
+            )
+    if alternative is None:
+        return inferred
+
+    flat = _flat_cross_compartment_inference(
+        species_id, item.name or species_id, alternative
+    )
+    flat[3].alternatives.extend(inference.alternatives)
+    return flat
+
+
 def _infer_species_structure(
     species_id: str,
     item: SBMLSpecies,
@@ -1729,10 +1968,16 @@ def build_species_composition_table(
         "complexes": {},
         "modifications": {},
         "unbindings": {},
+        "cross_compartment_product_alternatives": {},
+        "cross_compartment_reactant_uses": {},
     }
     context: Optional[_StructuralContext] = None
     if atomize:
         topology = analyze_structural_topology(model)
+        (
+            topology["cross_compartment_product_alternatives"],
+            topology["cross_compartment_reactant_uses"],
+        ) = _cross_compartment_reaction_alternatives(model)
         modification_bases: Dict[str, List[str]] = OrderedDict()
         for derived_id, base_id in modifications.items():
             modification_bases.setdefault(derived_id, []).append(base_id)
@@ -1808,6 +2053,17 @@ def build_species_composition_table(
         elif context is not None:
             structure, components, modifications_info, inference = (
                 _infer_species_structure(species_id, item, context)
+            )
+            (
+                structure,
+                components,
+                modifications_info,
+                inference,
+            ) = _apply_cross_compartment_inference_fallback(
+                species_id,
+                item,
+                context,
+                (structure, components, modifications_info, inference),
             )
             is_elemental = inference.is_elemental
         else:

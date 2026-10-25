@@ -1,5 +1,7 @@
 """Source-derived contracts for Playground writer rate helpers."""
 
+from collections import OrderedDict
+
 import pytest
 
 from bionetgen.atomizer.modern import (
@@ -28,7 +30,11 @@ from bionetgen.atomizer.modern import (
     write_reaction_rules_flat,
     write_reaction_rules_flat_v2,
 )
-from bionetgen.atomizer.modern.writer import _contains_static_zero_divisor
+from bionetgen.atomizer.modern.writer import (
+    _contains_static_zero_divisor,
+    _function_call_pattern,
+    extend_function,
+)
 
 
 def _mass_action_model(rate: str = "k * A", reversible: bool = False) -> SBMLModel:
@@ -77,6 +83,47 @@ def test_inline_sbml_functions_expands_nested_calls_and_keeps_unknown_calls():
     assert inline_sbml_functions("outer(a) + missing(a)", definitions) == (
         "((((a))^2)) + missing(a)"
     )
+
+
+def test_unused_function_definitions_do_not_compile_call_matchers():
+    """Many absent calls skip regex work while nested and prefix calls expand."""
+
+    definitions = OrderedDict(
+        (
+            f"unused_{index}",
+            SBMLFunctionDefinition(id=f"unused_{index}", arguments=["x"], math="x + 1"),
+        )
+        for index in range(1000)
+    )
+    definitions.update(
+        {
+            "outer": SBMLFunctionDefinition(
+                id="outer",
+                arguments=["x"],
+                math="inner(x) + f_long(x) + f(x)",
+            ),
+            "f": SBMLFunctionDefinition(id="f", arguments=["x"], math="x + 1"),
+            "f_long": SBMLFunctionDefinition(
+                id="f_long", arguments=["x"], math="x + 2"
+            ),
+            "inner": SBMLFunctionDefinition(id="inner", arguments=["x"], math="x * 2"),
+        }
+    )
+    _function_call_pattern.cache_clear()
+
+    result = extend_function(
+        "outer(3) + f_long(2) + not_outer(4) + outer_suffix(5)",
+        {},
+        definitions,
+    )
+
+    assert result == (
+        "((((3)) * 2) + (((3)) + 2) + (((3)) + 1)) + ((2) + 2) "
+        "+ not_outer(4) + outer_suffix(5)"
+    )
+    cache_info = _function_call_pattern.cache_info()
+    assert cache_info.misses < 20
+    assert cache_info.currsize < 20
 
 
 def test_split_reversible_rate_returns_reference_shaped_forward_and_reverse_laws():

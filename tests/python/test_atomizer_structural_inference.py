@@ -10,6 +10,7 @@ molecular structure is known by construction.
 from __future__ import annotations
 
 import os
+import re
 import sys
 
 import pytest
@@ -278,6 +279,320 @@ def test_reaction_topology_infers_a_complex_from_an_unbinding():
 
     assert record["confidence"] == "reaction-topology"
     assert record["molecules"] == ["A", "B"]
+
+
+def _compartment_topology_model(
+    *,
+    compartments,
+    species_compartments,
+    product_name="assembled",
+    reactions=None,
+    extra_species=(),
+    prefix_species=(),
+):
+    """Build a topology case with explicit source compartment geometry."""
+
+    sbml = build_sbml(
+        "compartment_topology",
+        [
+            *prefix_species,
+            ("A", "A", 4.0, None),
+            ("B", "B", 4.0, None),
+            ("AB", product_name, 0.0, None),
+            *extra_species,
+        ],
+        (
+            [_reaction("bind", ["A", "B"], ["AB"], "kon", ["A", "B"])]
+            if reactions is None
+            else reactions
+        ),
+        [("kon", 0.5), ("koff", 0.2)],
+    )
+    compartment_entries = []
+    for name, dimensions, outside in compartments:
+        outside_attribute = f' outside="{outside}"' if outside else ""
+        compartment_entries.append(
+            f'<compartment id="{name}" size="1" spatialDimensions="{dimensions}" '
+            f'constant="true"{outside_attribute}/>'
+        )
+    compartment_xml = "\n".join(compartment_entries)
+    sbml = re.sub(r'<compartment id="c"[^>]*/>', compartment_xml, sbml, count=1)
+    for species_id, compartment in species_compartments.items():
+        sbml = re.sub(
+            rf'(<species id="{re.escape(species_id)}"[^>]* compartment=")[^"]+',
+            rf"\g<1>{compartment}",
+            sbml,
+            count=1,
+        )
+    return sbml
+
+
+def test_nonadjacent_compartment_topology_falls_back_with_machine_reason():
+    sbml = _compartment_topology_model(
+        compartments=[("pm", 3, None), ("cyt", 3, None)],
+        species_compartments={"A": "pm", "B": "cyt", "AB": "pm"},
+    )
+
+    record = _inference(sbml, "AB")
+
+    assert record["confidence"] == "elemental"
+    assert record["molecules"] == ["AB"]
+    fallback = next(
+        alternative
+        for alternative in record["alternatives"]
+        if alternative.get("code") == "cross-compartment-inference"
+    )
+    assert fallback["components"] == ["A", "B"]
+    assert fallback["component_compartments"] == ["pm", "cyt"]
+    assert fallback["product_compartment"] == "pm"
+
+
+def test_same_compartment_topology_stays_structural_and_adjacent_falls_back():
+    same = _compartment_topology_model(
+        compartments=[("cell", 3, None)],
+        species_compartments={"A": "cell", "B": "cell", "AB": "cell"},
+    )
+    adjacent = _compartment_topology_model(
+        compartments=[("outside", 3, None), ("membrane", 2, "outside")],
+        species_compartments={"A": "membrane", "B": "outside", "AB": "membrane"},
+    )
+
+    assert _inference(same, "AB")["confidence"] == "reaction-topology"
+    adjacent_record = _inference(adjacent, "AB")
+    assert adjacent_record["confidence"] == "elemental"
+    assert any(
+        alternative.get("code") == "cross-compartment-inference"
+        for alternative in adjacent_record["alternatives"]
+    )
+    assert compare_flat_and_atomized(adjacent)["problems"] == []
+
+
+def test_cross_compartment_fallback_covers_unbinding_and_name_inference():
+    unbinding = _compartment_topology_model(
+        compartments=[("pm", 3, None), ("cyt", 3, None)],
+        species_compartments={"A": "pm", "B": "cyt", "AB": "pm"},
+        reactions=[_reaction("unbind", ["AB"], ["A", "B"], "koff", ["AB"])],
+    )
+    name_only = _compartment_topology_model(
+        compartments=[("pm", 3, None), ("cyt", 3, None)],
+        species_compartments={"A": "pm", "B": "cyt", "AB": "pm"},
+        product_name="A-B",
+        reactions=[],
+    )
+    explicit = _compartment_topology_model(
+        compartments=[("pm", 3, None), ("cyt", 3, None)],
+        species_compartments={"A": "pm", "B": "cyt", "AB": "pm"},
+        product_name="A(b!1).B(b!1)",
+    )
+
+    for sbml in (unbinding, name_only, explicit):
+        record = _inference(sbml, "AB")
+        assert record["confidence"] == "elemental"
+        assert any(
+            alternative.get("code") == "cross-compartment-inference"
+            for alternative in record["alternatives"]
+        )
+
+
+def test_cross_compartment_use_flattens_complex_even_with_same_compartment_path():
+    sbml = _compartment_topology_model(
+        compartments=[("pm", 3, None), ("cyt", 3, None)],
+        species_compartments={
+            "A": "pm",
+            "B": "pm",
+            "AB": "pm",
+            "C": "pm",
+            "D": "cyt",
+            "ABC": "pm",
+            "ABD": "pm",
+        },
+        extra_species=[
+            ("C", "C", 4.0, None),
+            ("D", "D", 4.0, None),
+            ("ABC", "final", 0.0, None),
+            ("ABD", "cross-compartment product", 0.0, None),
+        ],
+        reactions=[
+            _reaction("bind", ["A", "B"], ["AB"], "kon", ["A", "B"]),
+            _reaction("extend", ["AB", "C"], ["ABC"], "kon", ["AB", "C"]),
+            _reaction("capture", ["AB", "D"], ["ABD"], "kon", ["AB", "D"]),
+        ],
+    )
+
+    ab = _inference(sbml, "AB")
+    abc = _inference(sbml, "ABC")
+
+    assert ab["confidence"] == "elemental"
+    assert any(
+        alternative.get("code") == "cross-compartment-inference"
+        and "capture" in alternative.get("source_reactions", [])
+        for alternative in ab["alternatives"]
+    )
+    assert abc["confidence"] == "reaction-topology"
+    assert abc["molecules"] == ["AB", "C"]
+    assert compare_flat_and_atomized(sbml)["problems"] == []
+
+
+def test_unresolved_explicit_molecules_do_not_trigger_false_fallback_structure():
+    sbml = build_sbml(
+        "unresolved_explicit_pattern",
+        [("X", "A(b!1).B(b!1)", 1.0, None)],
+        [],
+    )
+
+    record = _inference(sbml, "X")
+
+    assert record["confidence"] == "explicit-pattern"
+    assert record["molecules"] == ["A", "B"]
+    assert not any(
+        alternative.get("code") == "cross-compartment-inference"
+        for alternative in record["alternatives"]
+    )
+
+
+def test_forced_flattening_uses_source_id_and_matches_source_execution():
+    sbml = build_sbml(
+        "unresolved_explicit_cross_compartment",
+        [
+            ("X", "A(b!1).B(b!1)", 1.0, None),
+            ("C", "C", 1.0, None),
+            ("Y", "Y", 0.0, None),
+        ],
+        [_reaction("capture", ["X", "C"], ["Y"], "kon", ["X", "C"])],
+        [("kon", 0.1)],
+    )
+    sbml = re.sub(
+        r'<compartment id="c"[^>]*/>',
+        '<compartment id="pm" size="1" spatialDimensions="3" constant="true"/>'
+        '<compartment id="cyt" size="1" spatialDimensions="3" constant="true"/>',
+        sbml,
+        count=1,
+    )
+    for species_id, compartment in (("X", "pm"), ("Y", "pm"), ("C", "cyt")):
+        sbml = re.sub(
+            rf'(<species id="{re.escape(species_id)}"[^>]* compartment=")[^\"]+',
+            rf"\g<1>{compartment}",
+            sbml,
+            count=1,
+        )
+
+    record = _inference(sbml, "X")
+
+    assert record["confidence"] == "elemental"
+    assert record["molecules"] == ["X"]
+    assert any(
+        alternative.get("code") == "cross-compartment-inference"
+        for alternative in record["alternatives"]
+    )
+    import numpy as np
+    import bionetgen._bionetgen_cpp as cpp
+    from bionetgen.model import BioNetGenModel
+
+    roadrunner = pytest.importorskip("roadrunner")
+    translated = _atomize(sbml)
+    assert translated.success, translated.error
+    bng = BioNetGenModel(cpp.parse_string(translated.bngl)).simulate(
+        method="ode", t_end=1.0, n_steps=10, rtol=1e-9, atol=1e-12
+    )
+    source = roadrunner.RoadRunner(sbml)
+    source.integrator.setValue("relative_tolerance", 1e-9)
+    source.integrator.setValue("absolute_tolerance", 1e-12)
+    source.timeCourseSelections = ["time", "[X]", "[C]", "[Y]"]
+    reference = source.simulate(0.0, 1.0, 11)
+    for column, species_id in enumerate(("X", "C", "Y"), start=1):
+        np.testing.assert_allclose(
+            bng.observables[species_id], reference[:, column], rtol=1e-6, atol=5e-9
+        )
+
+
+def test_cross_compartment_fallback_keeps_source_ids_when_names_collide():
+    sbml = _compartment_topology_model(
+        compartments=[("pm", 3, None), ("cyt", 3, None)],
+        species_compartments={
+            "shadow": "cyt",
+            "A": "pm",
+            "B": "pm",
+            "AB": "pm",
+            "D": "cyt",
+            "ABD": "pm",
+        },
+        prefix_species=[("shadow", "A", 4.0, None)],
+        extra_species=[("D", "D", 4.0, None), ("ABD", "product", 0.0, None)],
+        reactions=[
+            _reaction("bind", ["A", "B"], ["AB"], "kon", ["A", "B"]),
+            _reaction("capture", ["AB", "D"], ["ABD"], "kon", ["AB", "D"]),
+        ],
+    )
+
+    record = _inference(sbml, "AB")
+    fallback = next(
+        alternative
+        for alternative in record["alternatives"]
+        if alternative.get("code") == "cross-compartment-inference"
+    )
+
+    assert fallback["components"] == ["A", "B"]
+    assert fallback["component_compartments"] == ["pm", "pm"]
+
+
+def test_nonadjacent_compartment_fallback_preserves_executable_reaction():
+    sbml = _compartment_topology_model(
+        compartments=[("pm", 3, None), ("cyt", 3, None)],
+        species_compartments={"A": "pm", "B": "cyt", "AB": "pm"},
+    )
+
+    report = compare_flat_and_atomized(sbml)
+
+    assert report["problems"] == []
+    assert report["flat_species"] == report["atomized_species"]
+    assert report["flat_reactions"] == report["atomized_reactions"]
+
+
+@pytest.mark.parametrize(
+    ("compartments", "species_compartments"),
+    [
+        (
+            [("pm", 3, None), ("cyt", 3, None)],
+            {"A": "pm", "B": "cyt", "AB": "pm"},
+        ),
+        (
+            [("outside", 3, None), ("membrane", 2, "outside")],
+            {"A": "membrane", "B": "outside", "AB": "membrane"},
+        ),
+    ],
+)
+def test_cross_compartment_fallback_matches_original_sbml_law(
+    compartments, species_compartments
+):
+    import numpy as np
+
+    roadrunner = pytest.importorskip("roadrunner")
+    import bionetgen._bionetgen_cpp as cpp
+    from bionetgen.model import BioNetGenModel
+
+    sbml = _compartment_topology_model(
+        compartments=compartments,
+        species_compartments=species_compartments,
+    )
+    translated = _atomize(sbml)
+    assert translated.success, translated.error
+
+    bng = BioNetGenModel(cpp.parse_string(translated.bngl)).simulate(
+        method="ode", t_end=1.0, n_steps=10, rtol=1e-9, atol=1e-12
+    )
+    source = roadrunner.RoadRunner(sbml)
+    source.integrator.setValue("relative_tolerance", 1e-9)
+    source.integrator.setValue("absolute_tolerance", 1e-12)
+    source.timeCourseSelections = ["time", "[A]", "[B]", "[AB]"]
+    reference = source.simulate(0.0, 1.0, 11)
+
+    for column, species_id in enumerate(("A", "B", "AB"), start=1):
+        np.testing.assert_allclose(
+            bng.observables[species_id],
+            reference[:, column],
+            rtol=1e-6,
+            atol=5e-9,
+        )
 
 
 def test_association_that_is_not_one_to_one_keeps_the_flat_representation():

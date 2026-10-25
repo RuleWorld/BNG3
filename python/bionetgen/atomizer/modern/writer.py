@@ -818,6 +818,8 @@ def _formal_pattern(names: Tuple[str, ...]):
 
 def _replace_nested_function(expression: str, function: str, replacer) -> str:
     result = expression
+    if function not in result:
+        return result
     pattern = _function_call_pattern(function)
     search_index = 0
     guard = 0
@@ -4027,16 +4029,21 @@ def _lowerable_species_assignment_rules(
     # Assignment functions may reference one another.  Reject cycles as a
     # group; C++ function evaluation is intentionally not a cyclic algebraic
     # solver and must not recurse indefinitely on malformed input.
+    standardized_candidates = {
+        variable: standardize_name(variable) for variable in candidates
+    }
     dependencies: Dict[str, Set[str]] = {}
     for variable, rule in candidates.items():
+        math = rule.math
         dependencies[variable] = {
             dependency
             for dependency in candidates
             if dependency != variable
+            and (dependency in math or standardized_candidates[dependency] in math)
             and (
                 re.search(rf"\b{re.escape(dependency)}\b", rule.math)
                 or re.search(
-                    rf"\b{re.escape(standardize_name(dependency))}\b", rule.math
+                    rf"\b{re.escape(standardized_candidates[dependency])}\b", math
                 )
             )
         }
