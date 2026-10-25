@@ -41,10 +41,12 @@
 #include "cvode/cvode.h"
 #include "nvector/nvector_serial.h"
 #include "sundials/sundials_context.h"
+#include "sundials/sundials_nonlinearsolver.h"
 #include "sundials/sundials_types.h"
 #include "sunlinsol/sunlinsol_dense.h"
 #include "sunlinsol/sunlinsol_spgmr.h"
 #include "sunmatrix/sunmatrix_dense.h"
+#include "sunnonlinsol/sunnonlinsol_fixedpoint.h"
 
 namespace bng::engine {
 
@@ -2151,43 +2153,58 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
         if (options.enforceNonnegative) {
             return integrateCvode(options);
         }
-        try {
-            // SBML state variables are not inherently nonnegative.  Preserve
-            // that source semantics on the first attempt; use constraints
-            // only as a general solver-stability fallback when CVODE cannot
-            // complete a model with otherwise valid nonnegative initial
-            // populations.
-            return integrateCvode(options);
-        } catch (const std::runtime_error& error) {
-            const std::string message = error.what();
-            if (message.find("CVODE") == std::string::npos) {
-                throw;
-            }
-            OdeOptions retry = options;
-            retry.enforceNonnegative = true;
+        const auto integrateWithExistingRetries = [&]() -> OdeResult {
             try {
-                return integrateCvode(retry);
-            } catch (const std::runtime_error& constrainedError) {
-                // A few imported SBML models have an extremely small
-                // characteristic timescale (often from a tiny declared
-                // compartment).  With no user-specified max_step, CVODE can
-                // spend its entire internal-step budget chasing that scale.
-                // Retry once with a bounded step only after both ordinary
-                // and nonnegative-constrained CVODE paths fail.  An explicit
-                // user max_step remains authoritative and is never replaced.
-                if (options.maxStep > 0.0 ||
-                    std::string(constrainedError.what()).find("CVODE") ==
-                        std::string::npos) {
+                // SBML state variables are not inherently nonnegative.
+                // Preserve that source semantics on the first attempt; use
+                // constraints only as a solver-stability fallback when CVODE
+                // cannot complete otherwise valid nonnegative populations.
+                return integrateCvode(options);
+            } catch (const std::runtime_error& error) {
+                if (std::string(error.what()).find("CVODE") == std::string::npos) {
                     throw;
                 }
-                // Preserve the source-sign semantics for the bounded retry;
-                // the unconstrained solver is the path that can recover
-                // valid negative intermediate states in cross-compartment
-                // population models.
-                OdeOptions stepped = options;
-                const double span = std::abs(options.tEnd - options.tStart);
-                stepped.maxStep = std::max(span / 2000.0, 1e-6);
-                return integrateCvode(stepped);
+                OdeOptions retry = options;
+                retry.enforceNonnegative = true;
+                try {
+                    return integrateCvode(retry);
+                } catch (const std::runtime_error& constrainedError) {
+                    // A few imported SBML models have an extremely small
+                    // characteristic timescale (often from a tiny declared
+                    // compartment). With no user max_step, CVODE can spend
+                    // its internal-step budget chasing that scale. Retry once
+                    // with a bounded step only after the existing ordinary
+                    // and constrained CVODE paths fail.
+                    if (options.maxStep > 0.0 ||
+                        std::string(constrainedError.what()).find("CVODE") ==
+                            std::string::npos) {
+                        throw;
+                    }
+                    OdeOptions stepped = options;
+                    const double span = std::abs(options.tEnd - options.tStart);
+                    stepped.maxStep = std::max(span / 2000.0, 1e-6);
+                    return integrateCvode(stepped);
+                }
+            }
+        };
+
+        try {
+            return integrateWithExistingRetries();
+        } catch (const std::runtime_error& error) {
+            const std::string message = error.what();
+            if (message != "CVODE failed with flag " +
+                               std::to_string(CV_CONV_FAILURE)) {
+                throw;
+            }
+            try {
+                // Only a terminal BDF convergence failure gets one complete
+                // Adams restart. Start with the caller's original model state,
+                // tolerances, output grid, and unconstrained semantics.
+                return integrateCvode(options, true);
+            } catch (const std::exception& fallbackError) {
+                throw std::runtime_error(
+                    message + "; Adams fixed-point fallback failed: " +
+                    fallbackError.what());
             }
         }
     } else if (options.method == "ssa") {
@@ -2955,6 +2972,7 @@ struct CvodeSession {
     SUNContext sunctx = nullptr;
     N_Vector y = nullptr;
     void* cvode_mem = nullptr;
+    SUNNonlinearSolver nonlinearSolver = nullptr;
     SUNMatrix A = nullptr;
     SUNLinearSolver LS = nullptr;
 
@@ -2966,6 +2984,10 @@ struct CvodeSession {
         if (LS) { SUNLinSolFree(LS); LS = nullptr; }
         if (A) { SUNMatDestroy(A); A = nullptr; }
         if (cvode_mem) { CVodeFree(&cvode_mem); }
+        if (nonlinearSolver) {
+            SUNNonlinSolFree(nonlinearSolver);
+            nonlinearSolver = nullptr;
+        }
         if (y) { N_VDestroy(y); y = nullptr; }
         if (sunctx) { SUNContext_Free(&sunctx); }
     }
@@ -2973,7 +2995,8 @@ struct CvodeSession {
 
 }  // namespace
 
-OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
+OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
+                                         bool useAdamsFallback) {
     auto times = outputTimes(opts);
     const auto stopIfExpr = parseStopIf(opts);
     // A queued event belongs to one run: a second integration of the same
@@ -3057,6 +3080,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     SUNContext& sunctx = session.sunctx;
     N_Vector& y = session.y;
     void*& cvode_mem = session.cvode_mem;
+    SUNNonlinearSolver& nonlinearSolver = session.nonlinearSolver;
     SUNMatrix& A = session.A;
     SUNLinearSolver& LS = session.LS;
 
@@ -3090,8 +3114,12 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
         NV_Ith_S(y, i) = initialState[i] / scale;
     }
 
-    // Create CVODE solver (v7: BDF with context, Newton is default)
-    cvode_mem = CVodeCreate(CV_BDF, sunctx);
+    // The default solver remains BDF/Newton. After a repeated BDF corrector
+    // convergence failure, one fresh attempt uses Adams with fixed-point
+    // iteration, which avoids finite-difference Jacobians at singular
+    // fractional-power states without changing the model or error weights.
+    const int linearMultistepMethod = useAdamsFallback ? CV_ADAMS : CV_BDF;
+    cvode_mem = CVodeCreate(linearMultistepMethod, sunctx);
     if (cvode_mem == nullptr) {
         throw std::runtime_error("Failed to create CVODE solver");
     }
@@ -3101,10 +3129,22 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     if (flag != CV_SUCCESS) {
         throw std::runtime_error("CVodeInit failed with flag " + std::to_string(flag));
     }
+    if (useAdamsFallback) {
+        nonlinearSolver = SUNNonlinSol_FixedPoint(y, 0, sunctx);
+        if (nonlinearSolver == nullptr) {
+            throw std::runtime_error("Failed to create CVODE fixed-point solver");
+        }
+        flag = CVodeSetNonlinearSolver(cvode_mem, nonlinearSolver);
+        if (flag != CV_SUCCESS) {
+            throw std::runtime_error("CVodeSetNonlinearSolver (fixed-point) failed");
+        }
+    }
     // Keep the standard BDF order ceiling. The component-scaled state
     // addresses disparate SBML scales while the normal order ceiling
     // preserves parity with libRoadRunner CVODE.
-    CVodeSetMaxOrd(cvode_mem, 5);
+    if (!useAdamsFallback) {
+        CVodeSetMaxOrd(cvode_mem, 5);
+    }
 
     // The state is scaled below, so use component-wise absolute tolerances
     // that map the requested physical ``atol`` back into scaled coordinates.
@@ -3182,30 +3222,32 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
     // Linear solver setup (v7 API: SUNMatrix + SUNLinearSolver + CVodeSetLinearSolver)
     // Choose solver based on network size and sparse option
     // Dense for small networks, GMRES for large/sparse networks
-    if (!opts.sparse && nSpecies_ < 500) {
-        // Dense direct solver
-        A = SUNDenseMatrix(static_cast<sunindextype>(nSpecies_),
-                           static_cast<sunindextype>(nSpecies_), sunctx);
-        if (A == nullptr) {
-            throw std::runtime_error("SUNDenseMatrix failed");
-        }
-        LS = SUNLinSol_Dense(y, A, sunctx);
-        if (LS == nullptr) {
-            throw std::runtime_error("SUNLinSol_Dense failed");
-        }
-        flag = CVodeSetLinearSolver(cvode_mem, LS, A);
-        if (flag != CV_SUCCESS) {
-            throw std::runtime_error("CVodeSetLinearSolver (dense) failed");
-        }
-    } else {
-        // GMRES iterative solver (better for large sparse systems)
-        LS = SUNLinSol_SPGMR(y, SUN_PREC_NONE, 0, sunctx);
-        if (LS == nullptr) {
-            throw std::runtime_error("SUNLinSol_SPGMR failed");
-        }
-        flag = CVodeSetLinearSolver(cvode_mem, LS, nullptr);
-        if (flag != CV_SUCCESS) {
-            throw std::runtime_error("CVodeSetLinearSolver (GMRES) failed");
+    if (!useAdamsFallback) {
+        if (!opts.sparse && nSpecies_ < 500) {
+            // Dense direct solver
+            A = SUNDenseMatrix(static_cast<sunindextype>(nSpecies_),
+                               static_cast<sunindextype>(nSpecies_), sunctx);
+            if (A == nullptr) {
+                throw std::runtime_error("SUNDenseMatrix failed");
+            }
+            LS = SUNLinSol_Dense(y, A, sunctx);
+            if (LS == nullptr) {
+                throw std::runtime_error("SUNLinSol_Dense failed");
+            }
+            flag = CVodeSetLinearSolver(cvode_mem, LS, A);
+            if (flag != CV_SUCCESS) {
+                throw std::runtime_error("CVodeSetLinearSolver (dense) failed");
+            }
+        } else {
+            // GMRES iterative solver (better for large sparse systems)
+            LS = SUNLinSol_SPGMR(y, SUN_PREC_NONE, 0, sunctx);
+            if (LS == nullptr) {
+                throw std::runtime_error("SUNLinSol_SPGMR failed");
+            }
+            flag = CVodeSetLinearSolver(cvode_mem, LS, nullptr);
+            if (flag != CV_SUCCESS) {
+                throw std::runtime_error("CVodeSetLinearSolver (GMRES) failed");
+            }
         }
     }
 
@@ -3411,15 +3453,19 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
         long int nfeDQ = 0;
         CVodeGetNumSteps(cvode_mem, &nsteps);
         CVodeGetNumRhsEvals(cvode_mem, &nfevals);
-        CVodeGetNumJacEvals(cvode_mem, &njevals);
+        if (!useAdamsFallback) {
+            CVodeGetNumJacEvals(cvode_mem, &njevals);
+            CVodeGetNumLinSolvSetups(cvode_mem, &nsetups);
+            CVodeGetNumLinIters(cvode_mem, &nliters);
+            CVodeGetNumLinConvFails(cvode_mem, &nlnfails);
+        }
         nfeDQ = 0;  // Not available in SUNDIALS 7.6.0
-        CVodeGetNumLinSolvSetups(cvode_mem, &nsetups);
         CVodeGetNumErrTestFails(cvode_mem, &netfails);
         CVodeGetNumNonlinSolvIters(cvode_mem, &nni);
         CVodeGetNumNonlinSolvConvFails(cvode_mem, &nnf);
-        CVodeGetNumLinIters(cvode_mem, &nliters);
-        CVodeGetNumLinConvFails(cvode_mem, &nlnfails);
-        std::cerr << "BNG3_CVODE_STATS {\"steps\": " << nsteps
+        std::cerr << "BNG3_CVODE_STATS {\"lmm\": \""
+                  << (useAdamsFallback ? "Adams" : "BDF")
+                  << "\", \"steps\": " << nsteps
                   << ", \"rhs_evals\": " << nfevals
                   << ", \"jac_evals\": " << njevals
                   << ", \"jac_rhs_evals\": " << nfeDQ

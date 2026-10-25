@@ -1,0 +1,425 @@
+# Reduced native solver regression derived from the flat Atomizer output for
+# BIOMD0000000451. It retains all 94 initial species and the five reactions
+# needed to reproduce the CVODE BDF corrector failure at rtol=1e-7, atol=8e-14.
+# Other reaction rules were removed to keep this fixture bounded.
+
+begin model
+begin parameters
+  __Avogadro__ 1
+  __compartment_default__ 1
+  __compartment_c1__ 1
+  parameter_1 2
+  parameter_2 0.00850607781012331
+  ModelValue_5 0.00850607781012331
+end parameters
+begin compartments
+  default 3 1
+  c1 3 1
+end compartments
+begin molecule types
+  M_s1()
+  M_s10()
+  M_s11()
+  M_s12()
+  M_s13()
+  M_s14()
+  M_s2()
+  M_s20()
+  M_s21()
+  M_s22()
+  M_s24()
+  M_s25()
+  M_s26()
+  M_s27()
+  M_s28()
+  M_s29()
+  M_s3()
+  M_s30()
+  M_s31()
+  M_s32()
+  M_s33()
+  M_s34()
+  M_s35()
+  M_s36()
+  M_s37()
+  M_s38()
+  M_s39()
+  M_s40()
+  M_s43()
+  M_s44()
+  M_s45()
+  M_s46()
+  M_s47()
+  M_s48()
+  M_s49()
+  M_s50()
+  M_s51()
+  M_s52()
+  M_s53()
+  M_s54()
+  M_s55()
+  M_s57()
+  M_s58()
+  M_s59()
+  M_s62()
+  M_s63()
+  M_s65()
+  M_s67()
+  M_s68()
+  M_s69()
+  M_s70()
+  M_s73()
+  M_s74()
+  M_s75()
+  M_s76()
+  M_s77()
+  M_s78()
+  M_s79()
+  M_s80()
+  M_s81()
+  M_s82()
+  M_s83()
+  M_s85()
+  M_s86()
+  M_s87()
+  M_s89()
+  M_s90()
+  M_species_1()
+  M_species_10()
+  M_species_11()
+  M_species_12()
+  M_species_13()
+  M_species_14()
+  M_species_15()
+  M_species_16()
+  M_species_17()
+  M_species_18()
+  M_species_19()
+  M_species_2()
+  M_species_20()
+  M_species_21()
+  M_species_22()
+  M_species_23()
+  M_species_24()
+  M_species_25()
+  M_species_26()
+  M_species_27()
+  M_species_3()
+  M_species_4()
+  M_species_5()
+  M_species_6()
+  M_species_7()
+  M_species_8()
+  M_species_9()
+end molecule types
+begin seed species
+  @c1:M_s68() 0
+  @default:M_s22() 0
+  @c1:M_s12() 0
+  @default:M_s11() 0
+  @c1:M_s1() 0
+  @c1:M_s52() 0
+  @default:M_s51() 0
+  @c1:M_s36() 0
+  @default:M_s89() 0
+  @default:M_s55() 0
+  @c1:M_s31() 0
+  @default:M_s30() 0
+  @c1:M_s43() 0
+  @default:M_s87() 1
+  @c1:M_s46() 0
+  @default:M_s90() 1
+  @c1:M_s73() 0
+  @default:M_species_1() 0
+  @c1:M_s74() 0
+  @default:M_species_2() 0
+  @default:M_species_12() 0
+  @default:$M_species_13() 1
+  @default:$M_species_14() 1
+  @default:$M_species_15() 1
+  @default:$M_species_16() 0
+  @default:$M_species_17() 0
+  @default:$M_species_18() 0
+  @default:$M_species_19() 0
+  @default:$M_species_24() 0
+  @default:$M_species_20() 0
+  @default:$M_species_21() 0
+  @default:$M_species_22() 0
+  @default:$M_species_23() 1
+  @default:$M_species_25() 1
+  @default:$M_species_26() 0
+  @default:$M_species_27() 1
+  @c1:M_s47() 0.9999999518
+  @c1:M_s48() 0
+  @c1:M_s44() 0.999999951844375
+  @c1:M_s45() 0
+  @c1:M_s37() 0.999999951844375
+  @c1:M_s38() 0
+  @c1:M_s32() 0.999999951844375
+  @c1:M_s33() 0
+  @c1:M_s24() 0.999999951844375
+  @c1:M_s25() 0
+  @c1:M_s13() 0.999999951844375
+  @c1:M_s14() 0
+  @c1:M_s2() 0.999999951844375
+  @c1:M_s3() 0
+  @c1:M_s53() 0.999999951844375
+  @c1:M_s54() 0
+  @c1:M_s58() 0.999999951844375
+  @c1:$M_species_8() 0.9999999518
+  @c1:$M_species_9() 0.9999999518
+  @c1:M_s57() 0
+  @c1:M_s59() 0
+  @c1:M_s62() 0.999999951844375
+  @c1:M_s63() 0
+  @c1:$M_s65() 0.5
+  @c1:M_s10() 0
+  @c1:$M_species_10() 0.5
+  @c1:$M_species_11() 0.5
+  @c1:M_s20() 0
+  @c1:$M_s67() 0.999999951844375
+  @c1:M_s21() 0
+  @c1:$M_s69() 0.5
+  @c1:M_s28() 0
+  @c1:$M_s70() 0.999999951844375
+  @c1:M_s26() 0
+  @c1:$M_s75() 0.999999951844375
+  @c1:M_s50() 0
+  @c1:$M_s76() 0.999999951844375
+  @c1:M_s49() 0
+  @c1:$M_s77() 0.999999951844375
+  @c1:M_s39() 0
+  @c1:$M_s78() 0.999999951844375
+  @c1:$M_s79() 0.999999951844375
+  @c1:M_s29() 0
+  @c1:$M_s80() 0.999999951844375
+  @c1:M_s27() 0
+  @c1:$M_s81() 0.999999951844375
+  @c1:M_s35() 0
+  @c1:$M_s82() 1
+  @c1:M_s34() 0
+  @c1:M_s85() 0.08
+  @c1:$M_s86() 0.9999999518
+  @c1:M_s83() 0
+  @c1:M_s40() 0
+  @c1:M_species_4() 0.9999999518
+  @c1:M_species_3() 0
+  @c1:$M_species_5() 0.9999999518
+  @c1:$M_species_6() 0.999999951844375
+  @c1:$M_species_7() 0.999999951844375
+end seed species
+begin observables
+  Species s22_amt @default:M_s22() # s22 amount
+  Species s22 @default:M_s22() # s22
+  Species s11_amt @default:M_s11() # s11 amount
+  Species s11 @default:M_s11() # s11
+  Species s51_amt @default:M_s51() # s51 amount
+  Species s51 @default:M_s51() # s51
+  Species s55_amt @default:M_s55() # s55 amount
+  Species s55 @default:M_s55() # s55
+  Species s30_amt @default:M_s30() # s30 amount
+  Species s30 @default:M_s30() # s30
+  Species s87_amt @default:M_s87() # s87 amount
+  Species s87 @default:M_s87() # s87
+  Species s89_amt @default:M_s89() # s89 amount
+  Species s89 @default:M_s89() # s89
+  Species s90_amt @default:M_s90() # s90 amount
+  Species s90 @default:M_s90() # s90
+  Species species_1_amt @default:M_species_1() # species_1 amount
+  Species species_1 @default:M_species_1() # species_1
+  Species species_2_amt @default:M_species_2() # species_2 amount
+  Species species_2 @default:M_species_2() # species_2
+  Species species_12_amt @default:M_species_12() # species_12 amount
+  Species species_12 @default:M_species_12() # species_12
+  Species species_13_amt @default:M_species_13() # species_13 amount
+  Species species_13 @default:M_species_13() # species_13
+  Species species_14_amt @default:M_species_14() # species_14 amount
+  Species species_14 @default:M_species_14() # species_14
+  Species species_15_amt @default:M_species_15() # species_15 amount
+  Species species_15 @default:M_species_15() # species_15
+  Species species_16_amt @default:M_species_16() # species_16 amount
+  Species species_16 @default:M_species_16() # species_16
+  Species species_17_amt @default:M_species_17() # species_17 amount
+  Species species_17 @default:M_species_17() # species_17
+  Species species_18_amt @default:M_species_18() # species_18 amount
+  Species species_18 @default:M_species_18() # species_18
+  Species species_19_amt @default:M_species_19() # species_19 amount
+  Species species_19 @default:M_species_19() # species_19
+  Species species_20_amt @default:M_species_20() # species_20 amount
+  Species species_20 @default:M_species_20() # species_20
+  Species species_21_amt @default:M_species_21() # species_21 amount
+  Species species_21 @default:M_species_21() # species_21
+  Species species_22_amt @default:M_species_22() # species_22 amount
+  Species species_22 @default:M_species_22() # species_22
+  Species species_23_amt @default:M_species_23() # species_23 amount
+  Species species_23 @default:M_species_23() # species_23
+  Species species_24_amt @default:M_species_24() # species_24 amount
+  Species species_24 @default:M_species_24() # species_24
+  Species species_25_amt @default:M_species_25() # species_25 amount
+  Species species_25 @default:M_species_25() # species_25
+  Species species_26_amt @default:M_species_26() # species_26 amount
+  Species species_26 @default:M_species_26() # species_26
+  Species species_27_amt @default:M_species_27() # species_27 amount
+  Species species_27 @default:M_species_27() # species_27
+  Species s48_amt @c1:M_s48() # s48 amount
+  Species s48 @c1:M_s48() # s48
+  Species s47_amt @c1:M_s47() # s47 amount
+  Species s47 @c1:M_s47() # s47
+  Species s46_amt @c1:M_s46() # s46 amount
+  Species s46 @c1:M_s46() # s46
+  Species s45_amt @c1:M_s45() # s45 amount
+  Species s45 @c1:M_s45() # s45
+  Species s44_amt @c1:M_s44() # s44 amount
+  Species s44 @c1:M_s44() # s44
+  Species s43_amt @c1:M_s43() # s43 amount
+  Species s43 @c1:M_s43() # s43
+  Species s38_amt @c1:M_s38() # s38 amount
+  Species s38 @c1:M_s38() # s38
+  Species s37_amt @c1:M_s37() # s37 amount
+  Species s37 @c1:M_s37() # s37
+  Species s36_amt @c1:M_s36() # s36 amount
+  Species s36 @c1:M_s36() # s36
+  Species s33_amt @c1:M_s33() # s33 amount
+  Species s33 @c1:M_s33() # s33
+  Species s32_amt @c1:M_s32() # s32 amount
+  Species s32 @c1:M_s32() # s32
+  Species s31_amt @c1:M_s31() # s31 amount
+  Species s31 @c1:M_s31() # s31
+  Species s25_amt @c1:M_s25() # s25 amount
+  Species s25 @c1:M_s25() # s25
+  Species s24_amt @c1:M_s24() # s24 amount
+  Species s24 @c1:M_s24() # s24
+  Species s14_amt @c1:M_s14() # s14 amount
+  Species s14 @c1:M_s14() # s14
+  Species s13_amt @c1:M_s13() # s13 amount
+  Species s13 @c1:M_s13() # s13
+  Species s12_amt @c1:M_s12() # s12 amount
+  Species s12 @c1:M_s12() # s12
+  Species s3_amt @c1:M_s3() # s3 amount
+  Species s3 @c1:M_s3() # s3
+  Species s2_amt @c1:M_s2() # s2 amount
+  Species s2 @c1:M_s2() # s2
+  Species s1_amt @c1:M_s1() # s1 amount
+  Species s1 @c1:M_s1() # s1
+  Species s52_amt @c1:M_s52() # s52 amount
+  Species s52 @c1:M_s52() # s52
+  Species s54_amt @c1:M_s54() # s54 amount
+  Species s54 @c1:M_s54() # s54
+  Species s53_amt @c1:M_s53() # s53 amount
+  Species s53 @c1:M_s53() # s53
+  Species s58_amt @c1:M_s58() # s58 amount
+  Species s58 @c1:M_s58() # s58
+  Species s59_amt @c1:M_s59() # s59 amount
+  Species s59 @c1:M_s59() # s59
+  Species s62_amt @c1:M_s62() # s62 amount
+  Species s62 @c1:M_s62() # s62
+  Species s63_amt @c1:M_s63() # s63 amount
+  Species s63 @c1:M_s63() # s63
+  Species s65_amt @c1:M_s65() # s65 amount
+  Species s65 @c1:M_s65() # s65
+  Species s10_amt @c1:M_s10() # s10 amount
+  Species s10 @c1:M_s10() # s10
+  Species s20_amt @c1:M_s20() # s20 amount
+  Species s20 @c1:M_s20() # s20
+  Species s67_amt @c1:M_s67() # s67 amount
+  Species s67 @c1:M_s67() # s67
+  Species s21_amt @c1:M_s21() # s21 amount
+  Species s21 @c1:M_s21() # s21
+  Species s68_amt @c1:M_s68() # s68 amount
+  Species s68 @c1:M_s68() # s68
+  Species s69_amt @c1:M_s69() # s69 amount
+  Species s69 @c1:M_s69() # s69
+  Species s28_amt @c1:M_s28() # s28 amount
+  Species s28 @c1:M_s28() # s28
+  Species s70_amt @c1:M_s70() # s70 amount
+  Species s70 @c1:M_s70() # s70
+  Species s26_amt @c1:M_s26() # s26 amount
+  Species s26 @c1:M_s26() # s26
+  Species s57_amt @c1:M_s57() # s57 amount
+  Species s57 @c1:M_s57() # s57
+  Species s73_amt @c1:M_s73() # s73 amount
+  Species s73 @c1:M_s73() # s73
+  Species s74_amt @c1:M_s74() # s74 amount
+  Species s74 @c1:M_s74() # s74
+  Species s75_amt @c1:M_s75() # s75 amount
+  Species s75 @c1:M_s75() # s75
+  Species s50_amt @c1:M_s50() # s50 amount
+  Species s50 @c1:M_s50() # s50
+  Species s49_amt @c1:M_s49() # s49 amount
+  Species s49 @c1:M_s49() # s49
+  Species s76_amt @c1:M_s76() # s76 amount
+  Species s76 @c1:M_s76() # s76
+  Species s39_amt @c1:M_s39() # s39 amount
+  Species s39 @c1:M_s39() # s39
+  Species s77_amt @c1:M_s77() # s77 amount
+  Species s77 @c1:M_s77() # s77
+  Species s78_amt @c1:M_s78() # s78 amount
+  Species s78 @c1:M_s78() # s78
+  Species s79_amt @c1:M_s79() # s79 amount
+  Species s79 @c1:M_s79() # s79
+  Species s29_amt @c1:M_s29() # s29 amount
+  Species s29 @c1:M_s29() # s29
+  Species s27_amt @c1:M_s27() # s27 amount
+  Species s27 @c1:M_s27() # s27
+  Species s80_amt @c1:M_s80() # s80 amount
+  Species s80 @c1:M_s80() # s80
+  Species s81_amt @c1:M_s81() # s81 amount
+  Species s81 @c1:M_s81() # s81
+  Species s35_amt @c1:M_s35() # s35 amount
+  Species s35 @c1:M_s35() # s35
+  Species s34_amt @c1:M_s34() # s34 amount
+  Species s34 @c1:M_s34() # s34
+  Species s82_amt @c1:M_s82() # s82 amount
+  Species s82 @c1:M_s82() # s82
+  Species s85_amt @c1:M_s85() # s85 amount
+  Species s85 @c1:M_s85() # s85
+  Species s83_amt @c1:M_s83() # s83 amount
+  Species s83 @c1:M_s83() # s83
+  Species s86_amt @c1:M_s86() # s86 amount
+  Species s86 @c1:M_s86() # s86
+  Species s40_amt @c1:M_s40() # s40 amount
+  Species s40 @c1:M_s40() # s40
+  Species species_8_amt @c1:M_species_8() # species_8 amount
+  Species species_8 @c1:M_species_8() # species_8
+  Species species_9_amt @c1:M_species_9() # species_9 amount
+  Species species_9 @c1:M_species_9() # species_9
+  Species species_10_amt @c1:M_species_10() # species_10 amount
+  Species species_10 @c1:M_species_10() # species_10
+  Species species_11_amt @c1:M_species_11() # species_11 amount
+  Species species_11 @c1:M_species_11() # species_11
+  Species species_4_amt @c1:M_species_4() # species_4 amount
+  Species species_4 @c1:M_species_4() # species_4
+  Species species_3_amt @c1:M_species_3() # species_3 amount
+  Species species_3 @c1:M_species_3() # species_3
+  Species species_5_amt @c1:M_species_5() # species_5 amount
+  Species species_5 @c1:M_species_5() # species_5
+  Species species_6_amt @c1:M_species_6() # species_6 amount
+  Species species_6 @c1:M_species_6() # species_6
+  Species species_7_amt @c1:M_species_7() # species_7 amount
+  Species species_7 @c1:M_species_7() # species_7
+end observables
+begin functions
+  _c_s30() = s30 / __compartment_default__
+  _c_species_13() = species_13 / __compartment_default__
+  _c_species_15() = species_15 / __compartment_default__
+  _c_s38() = s38 / __compartment_c1__
+  _c_s33() = s33 / __compartment_c1__
+  _c_s32() = s32 / __compartment_c1__
+  _c_s31() = s31 / __compartment_c1__
+  _c_s25() = s25 / __compartment_c1__
+  _c_s26() = s26 / __compartment_c1__
+  _c_s39() = s39 / __compartment_c1__
+  _c_s77() = s77 / __compartment_c1__
+  _c_s29() = s29 / __compartment_c1__
+  _c_s35() = s35 / __compartment_c1__
+  _c_s34() = s34 / __compartment_c1__
+  _c_s82() = s82 / __compartment_c1__
+end functions
+begin reaction rules
+  re18: @c1:M_s31() -> @default:M_s30() (0.1) * (__compartment_c1__)**-1
+  re19_forward: @default:M_s30() + @c1:M_s32() -> @c1:M_s33() ((0.1) * (_c_s30()) * (_c_s32()) * (((13.0657)) ^ ((parameter_1)) / (((_c_s29())) ^ ((parameter_1)) + ((13.0657)) ^ ((parameter_1))))) TotalRate
+  re20_forward: @default:M_species_15() -> @c1:M_s31() ((0.1) * (_c_species_15()) * (((0.210399)) ^ ((parameter_1)) / (((_c_s26())) ^ ((parameter_1)) + ((0.210399)) ^ ((parameter_1)))) * (((56.3452)) ^ ((parameter_1)) / (((_c_species_13())) ^ ((parameter_1)) + ((56.3452)) ^ ((parameter_1)))) * ((((_c_s31())) ^ ((parameter_1)) / (((_c_s31())) ^ ((parameter_1)) + ((98.0373)) ^ ((parameter_1)))) + (((_c_s35())) ^ ((parameter_1)) / (((_c_s35())) ^ ((parameter_1)) + ((0.855534)) ^ ((parameter_1)))) + (((_c_s39())) ^ ((parameter_1)) / (((_c_s39())) ^ ((parameter_1)) + ((4.32731)) ^ ((parameter_1)))))) TotalRate
+  re24: @c1:M_s82() -> @c1:M_s34() __compartment_c1__ * (((0.1) * (_c_s82()) * (((0.1)) ^ ((parameter_1)) / (((_c_s25())) ^ ((parameter_1)) + ((0.1)) ^ ((parameter_1)))) * (((_c_s33())) ^ ((0.004304)) / (((_c_s33())) ^ ((0.004304)) + ((0.1)) ^ ((0.004304))))) - ((0.1) * (_c_s34()))) TotalRate
+  re26: @c1:M_s77() -> @c1:M_s39() __compartment_c1__ * (((0.1) * (_c_s77()) * (1 + (((_c_s38())) ^ ((parameter_1)) / (((_c_s38())) ^ ((parameter_1)) + ((0.374591)) ^ ((parameter_1)))))) - ((0.1) * (_c_s39()))) TotalRate
+end reaction rules
+end model

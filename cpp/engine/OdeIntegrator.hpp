@@ -301,7 +301,7 @@ private:
 
     OdeResult integrateEuler(const OdeOptions& opts);
     OdeResult integrateRK4(const OdeOptions& opts);
-    OdeResult integrateCvode(const OdeOptions& opts);
+    OdeResult integrateCvode(const OdeOptions& opts, bool useAdamsFallback = false);
     OdeResult integrateSSA(const OdeOptions& opts);
     OdeResult integrateBatchSSA(const OdeOptions& opts);
 

@@ -152,6 +152,20 @@ target_link_libraries(test_ode_options PRIVATE
 )
 catch_discover_tests(test_ode_options)
 
+# Reproduces BIOMD0000000451's singular-zero Hill Jacobian with a reduced,
+# checked-in model while exercising BDF-to-Adams CVODE recovery.
+add_executable(test_cvode_adams_fallback test_cvode_adams_fallback.cpp)
+target_compile_definitions(test_cvode_adams_fallback PRIVATE
+    BNG3_CVODE_ADAMS_FIXTURE_PATH="${CMAKE_SOURCE_DIR}/tests/fixtures/biomodels_0451_cvode_adams_restart.bngl"
+)
+target_link_libraries(test_cvode_adams_fallback PRIVATE
+    Catch2::Catch2WithMain
+    Catch2::Catch2
+    bng_engine
+    bng_ast
+)
+catch_discover_tests(test_cvode_adams_fallback)
+
 # test_ode_function_index — invalidation regression tests for the per-model
 # function index in OdeIntegrator (functionIndex_, zeroArgumentFunctionSet_,
 # resultFunctionIndices_).
