@@ -914,7 +914,7 @@ def test_oracle_adams_retry_preserves_initial_state_and_solver_controls(tmp_path
 
     model = cpp.parse_string("""begin model
 begin parameters
- n 0.004304
+ n 0.5
 end parameters
 begin molecule types
  A()
@@ -970,6 +970,10 @@ end model
     assert attempts[1] == {"stiff": False, "passed": True}
     assert values[0].tolist() == [0.0, 0.0, 0.0]
     assert values[:, 1] == pytest.approx(values[:, 0], abs=1e-10)
+    # With A(t)=t, integrate sqrt(t)/(1+sqrt(t)) independently in closed form.
+    root_time = np.sqrt(values[:, 0])
+    expected_b = values[:, 0] - 2 * root_time + 2 * np.log1p(root_time)
+    assert values[:, 2] == pytest.approx(expected_b, abs=1e-8)
     assert oracle.integrator.getValue("relative_tolerance") == 1e-7
     assert oracle.integrator.getValue("maximum_time_step") == 0.001
     assert list(oracle.integrator.getAbsoluteToleranceVector()) == initial_tolerances
