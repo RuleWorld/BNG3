@@ -58,6 +58,22 @@ MAX_CASE_PACKET_FILE_BYTES = 1024 * 1024
 COMPARISON_SCOPE = "written_sbml_export_consistency"
 
 
+def _write_mode_checkpoint(
+    result: dict[str, Any], path: Path | None, *, state: str = "in_progress"
+) -> None:
+    """Atomically retain completed mode evidence before later stages can time out."""
+
+    if path is None:
+        return
+    payload = {**result, "checkpoint_state": state}
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(
+        json.dumps(_json_compatible(payload), indent=2, allow_nan=False) + "\n",
+        encoding="utf-8",
+    )
+    temporary.replace(path)
+
+
 def _mode_stage(result: dict[str, Any], name: str):
     """Retain per-mode stage outcomes while emitting timeout breadcrumbs."""
 
@@ -1956,6 +1972,16 @@ def _validate_mode(
 
     mode = "atomized" if mode_atomize else "flat"
     result: dict[str, Any] = partial_result if partial_result is not None else {}
+    checkpoint_path = (
+        artifacts_dir / f"mode.{mode}.progress.json"
+        if artifacts_dir is not None
+        else None
+    )
+
+    def finish() -> dict[str, Any]:
+        _write_mode_checkpoint(result, checkpoint_path, state="complete")
+        return result
+
     result.update(
         mode=mode,
         source_xml={},
@@ -1980,7 +2006,7 @@ def _validate_mode(
             "method_sbml": "libRoadRunner CVODE",
         }
         result["core_passed"] = False
-        return result
+        return finish()
     surface_counts, surface_limitations = _sbml_surface_limitations(sbml)
     result["source"] = surface_counts
     if surface_limitations:
@@ -1995,7 +2021,7 @@ def _validate_mode(
             "method_sbml": "libRoadRunner CVODE",
         }
         result["core_passed"] = False
-        return result
+        return finish()
     try:
         with _mode_stage(result, "source-sbml-parse"):
             source_model = SBMLParser().parse(sbml, source_path=source_path)
@@ -2013,7 +2039,7 @@ def _validate_mode(
             "method_sbml": "libRoadRunner CVODE",
         }
         result["core_passed"] = False
-        return result
+        return finish()
     result["source"] = {
         "species": len(source_model.species),
         "reactions": len(source_model.reactions),
@@ -2044,7 +2070,7 @@ def _validate_mode(
                 "method_sbml": "libRoadRunner CVODE",
             }
             result["core_passed"] = False
-            return result
+            return finish()
         raise
     if not atomized.success:
         raise RuntimeError(atomized.error or "modern Atomizer returned failure")
@@ -2071,7 +2097,7 @@ def _validate_mode(
             "method_sbml": "libRoadRunner CVODE",
         }
         result["core_passed"] = False
-        return result
+        return finish()
     with _mode_stage(result, "network-generation"):
         cpp_model = cpp.parse_string(atomized.bngl)
         network = cpp.generate_network(cpp_model, max_iter=100)
@@ -2276,6 +2302,7 @@ def _validate_mode(
         }
     result["source_simulation_comparison"] = source_comparison
     result["source_comparison_scope"] = SOURCE_COMPARISON_SCOPE
+    _write_mode_checkpoint(result, checkpoint_path)
     if source_comparison is not None and source_comparison.get("failed_observables"):
         source_comparison = _retry_numerical_comparison(
             source_comparison,
@@ -2331,6 +2358,7 @@ def _validate_mode(
             max_step=float(comparison.get("max_step") or 0.0),
         )
     result["simulation_comparison"] = comparison
+    _write_mode_checkpoint(result, checkpoint_path)
     verdict, reason = _comparison_verdict(
         comparison,
         source_comparison,
@@ -2346,14 +2374,14 @@ def _validate_mode(
             result["error"] = reason
         else:
             result["error"] = reason
-        return result
+        return finish()
 
     limitations = _simulation_limitations(result["source"]["warnings"])
     if limitations:
         result["status"] = "unsupported"
         result["unsupported_reason"] = " ".join(limitations)
         result["core_passed"] = False
-        return result
+        return finish()
 
     if ode_smoke:
         try:
@@ -2367,7 +2395,7 @@ def _validate_mode(
         except Exception as exc:  # published initial conditions may be singular
             result["ode"] = {"passed": False, "error": f"{type(exc).__name__}: {exc}"}
     result["core_passed"] = True
-    return result
+    return finish()
 
 
 def _run_isolated_model(
@@ -2450,6 +2478,9 @@ def _run_isolated_model(
             record["phase_progress"] = progress
         record["source_validation"] = _timeout_source_validation(entry, args)
         if args.artifacts_dir is not None:
+            checkpoints = _load_mode_checkpoints(entry, args)
+            if checkpoints:
+                record["mode_checkpoints"] = checkpoints
             _attach_case_packet(record, entry, args)
             _persist_parent_record(record, entry, args)
     except Exception as exc:
@@ -2490,6 +2521,30 @@ def _timeout_source_validation(
     return evidence
 
 
+def _load_mode_checkpoints(
+    entry: dict[str, Any], args: argparse.Namespace
+) -> dict[str, dict[str, Any]]:
+    """Load atomically saved per-mode state after an isolated child timeout."""
+
+    model_dir = args.artifacts_dir / str(entry["id"])
+    checkpoints: dict[str, dict[str, Any]] = {}
+    for mode in ("flat", "atomized"):
+        path = model_dir / f"mode.{mode}.progress.json"
+        if not path.is_file():
+            continue
+        try:
+            checkpoint = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError):
+            continue
+        if (
+            isinstance(checkpoint, dict)
+            and checkpoint.get("mode") == mode
+            and checkpoint.get("checkpoint_state") in {"in_progress", "complete"}
+        ):
+            checkpoints[mode] = checkpoint
+    return checkpoints
+
+
 def _write_case_packet(
     entry: dict[str, Any], args: argparse.Namespace, record: dict[str, Any]
 ) -> str:
@@ -2506,6 +2561,8 @@ def _write_case_packet(
         "reimported.atomized.bngl",
         f"{entry['id']}_flat.xml",
         f"{entry['id']}_atomized.xml",
+        "mode.flat.progress.json",
+        "mode.atomized.progress.json",
     }
     files = []
     omitted = []

@@ -358,6 +358,21 @@ def test_parent_timeout_retains_phase_source_hash_and_bounded_case_packet(
     (case_dir / "translated.flat.bngl").write_text("begin model\nend model\n")
     (case_dir / "BIOMD0000000008_flat.xml").write_text("<sbml/>")
     (case_dir / "translated.atomized.bngl").write_bytes(b"x" * 1_100_000)
+    checkpoint = {
+        "mode": "flat",
+        "checkpoint_state": "in_progress",
+        "stage_results": [
+            {"name": "original-source-sbml-comparison", "status": "passed"}
+        ],
+        "source_simulation_comparison": {
+            "passed": True,
+            "comparison_scope": "original_source_sbml_species_output_fidelity",
+            "observable_count": 94,
+        },
+    }
+    (case_dir / "mode.flat.progress.json").write_text(
+        json.dumps(checkpoint), encoding="utf-8"
+    )
     stderr = b"\n".join(
         (
             b"@@BIOMODELS_CASE_PHASE@@ completed source-sha256-verification",
@@ -394,6 +409,13 @@ def test_parent_timeout_retains_phase_source_hash_and_bounded_case_packet(
     assert record["source_validation"]["status"] == "verified_sha256"
     assert record["source_validation"]["model_id"] == entry["id"]
     assert record["source_validation"]["sha256"] == digest
+    assert record["mode_checkpoints"]["flat"]["checkpoint_state"] == "in_progress"
+    assert (
+        record["mode_checkpoints"]["flat"]["source_simulation_comparison"][
+            "observable_count"
+        ]
+        == 94
+    )
     packet_path = case_dir / "case-packet" / "packet.json"
     packet = json.loads(packet_path.read_text(encoding="utf-8"))
     assert packet["source_validation"]["sha256"] == digest
@@ -401,12 +423,16 @@ def test_parent_timeout_retains_phase_source_hash_and_bounded_case_packet(
         "source.xml",
         "translated.flat.bngl",
         "BIOMD0000000008_flat.xml",
+        "mode.flat.progress.json",
     }
     assert packet["included_bytes"] <= validator.MAX_CASE_PACKET_BYTES
     assert record["case_packet"].endswith("case-packet/packet.json")
     assert all(item.get("sha256") for item in packet["artifacts"])
     packet_by_name = {item["name"]: item for item in packet["artifacts"]}
     assert packet_by_name["source.xml"]["sha256"] == digest
+    assert packet_by_name["mode.flat.progress.json"]["sha256"] == hashlib.sha256(
+        (packet_path.parent / "mode.flat.progress.json").read_bytes()
+    ).hexdigest()
     for name, item in packet_by_name.items():
         assert hashlib.sha256((packet_path.parent / name).read_bytes()).hexdigest() == (
             item["sha256"]
@@ -602,6 +628,35 @@ def test_failed_mode_record_keeps_completed_stages_and_prior_results():
             "error": "RuntimeError: native reader failed",
         }
     ]
+
+
+def test_mode_checkpoint_retains_completed_comparison_without_claiming_pass(tmp_path):
+    validator = _validator()
+    checkpoint = tmp_path / "mode.flat.progress.json"
+    result = {
+        "mode": "flat",
+        "stage_results": [
+            {"name": "original-source-sbml-comparison", "status": "passed"}
+        ],
+        "source_simulation_comparison": {
+            "passed": True,
+            "comparison_scope": "original_source_sbml_species_output_fidelity",
+            "observable_count": 94,
+        },
+        "simulation_comparison": {
+            "passed": True,
+            "comparison_scope": "written_sbml_export_consistency",
+            "observable_count": 190,
+        },
+    }
+    validator._write_mode_checkpoint(result, checkpoint)
+
+    saved = json.loads(checkpoint.read_text(encoding="utf-8"))
+    assert saved["checkpoint_state"] == "in_progress"
+    assert saved["source_simulation_comparison"]["observable_count"] == 94
+    assert saved["simulation_comparison"]["observable_count"] == 190
+    assert "status" not in saved
+    assert "core_passed" not in saved
 
 
 def test_case_packet_error_does_not_replace_model_verdict(monkeypatch, tmp_path):

@@ -650,6 +650,7 @@ jobs:
             --json "$artifacts/source-smoke-report.json" \
             --source-bundle-receipt "$artifacts/source-bundle-receipt.json" \
             --source-bundle-manifest provenance/curated-biomodels-source-bundle.json \
+            --artifacts-dir "$artifacts/source-smoke-model-artifacts" \
             --mode both --only-id "$BIOMODELS_ONLY_ID" \
             --offline --isolate-models --jobs 1 --model-timeout 180 \
             2>&1 | tee "$artifacts/source-smoke-execution.log"

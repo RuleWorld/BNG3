@@ -141,6 +141,7 @@ def test_biomodels_stage_replay_is_separate_from_positive_smoke():
         if item.get("name") == "Run one-model flat and atomized BioModels smoke"
     )
     assert "biomodels_stage_replay" in smoke["if"]
+    assert "--artifacts-dir" in smoke["run"]
     full = next(
         item
         for item in steps
