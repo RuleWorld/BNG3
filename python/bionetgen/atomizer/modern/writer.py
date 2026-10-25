@@ -11,6 +11,19 @@ from collections import OrderedDict
 from dataclasses import dataclass, field
 from fractions import Fraction
 from functools import lru_cache
+
+# ⚡ Bolt: Pre-compile frequent math normalization regexes to avoid overhead in tight loops
+_RE_MATH_ZERO_CALL = re.compile(r"(^|\s)0\(\)(?=\s|$)")
+_RE_MATH_PI = re.compile(r"\bpi\b")
+_RE_MATH_MIN = re.compile(r"\bmin\s*\(", flags=re.IGNORECASE)
+_RE_MATH_MAX = re.compile(r"\bmax\s*\(", flags=re.IGNORECASE)
+_RE_MATH_EXPONENTIALE = re.compile(r"\bexponentiale\b", flags=re.IGNORECASE)
+_RE_MATH_TRUE = re.compile(r"\btrue\b", flags=re.IGNORECASE)
+_RE_MATH_FALSE = re.compile(r"\bfalse\b", flags=re.IGNORECASE)
+_RE_MATH_TIME = re.compile(r"\btime\b(?!\s*\()")
+_RE_MATH_ZERO_CALL_NO_ARGS = re.compile(r"(?<![A-Za-z0-9_])0\s*\(\s*\)")
+_RE_MATH_IF = re.compile(r"\bif\s*\(")
+_RE_MATH_NOT = re.compile(r"(?<![=!<>])!(?!=)")
 from typing import (
     Dict,
     Iterable,
@@ -419,7 +432,7 @@ def bngl_reaction(
     result += f" {rate}"
     if comment:
         result += f" {comment}"
-    result = re.sub(r"(^|\s)0\(\)(?=\s|$)", r"\1 0", result)
+    result = _RE_MATH_ZERO_CALL.sub(r"\1 0", result)
     if reaction_name:
         result = f"{reaction_name}: {result}"
     return result
@@ -504,7 +517,7 @@ def _requested_simulation_seed(actions: Optional[str]) -> Optional[str]:
 def _evaluate_arithmetic(expression: str) -> Optional[float]:
     """Evaluate a restricted numeric expression used for constant seed folding."""
 
-    normalized = re.sub(r"\bif\s*\(", "if_(", expression)
+    normalized = _RE_MATH_IF.sub("if_(", expression)
     normalized = normalized.replace("&&", " and ").replace("||", " or ")
     normalized = normalized.replace("^", "**")
     try:
@@ -750,23 +763,19 @@ def convert_math_expression(expression: str) -> str:
         ),
     )
 
-    result = re.sub(r"\bpi\b", "3.14159265358979", result)
+    result = _RE_MATH_PI.sub("3.14159265358979", result)
     # A few SBML formula exporters use upper-case function names.  BNGL's
     # expression lexer uses the canonical lower-case tokens.
-    for function in ("min", "max"):
-        result = re.sub(
-            rf"\b{function}\s*\(", f"{function}(", result, flags=re.IGNORECASE
-        )
-    result = re.sub(
-        r"\bexponentiale\b", "2.71828182845905", result, flags=re.IGNORECASE
-    )
-    result = re.sub(r"\btrue\b", "1", result, flags=re.IGNORECASE)
-    result = re.sub(r"\bfalse\b", "0", result, flags=re.IGNORECASE)
-    result = re.sub(r"\btime\b(?!\s*\()", "time()", result)
+    result = _RE_MATH_MIN.sub("min(", result)
+    result = _RE_MATH_MAX.sub("max(", result)
+    result = _RE_MATH_EXPONENTIALE.sub("2.71828182845905", result)
+    result = _RE_MATH_TRUE.sub("1", result)
+    result = _RE_MATH_FALSE.sub("0", result)
+    result = _RE_MATH_TIME.sub("time()", result)
     # A zero-valued SBML expression can arrive from libSBML as ``0()`` after
     # function/assignment folding.  BNGL accepts the scalar literal ``0``;
     # ``0()`` is a syntax error and is never a meaningful call.
-    result = re.sub(r"(?<![A-Za-z0-9_])0\s*\(\s*\)", "0", result)
+    result = _RE_MATH_ZERO_CALL_NO_ARGS.sub("0", result)
     result = result.replace("--", "+")
     return result
 
@@ -1582,10 +1591,10 @@ def _safe_numeric_expression(
     normalized = str(expression or "")
     normalized = normalized.replace("^", "**")
     normalized = normalized.replace("&&", " and ").replace("||", " or ")
-    normalized = re.sub(r"\bif\s*\(", "if_(", normalized)
-    normalized = re.sub(r"\btrue\b", "1", normalized, flags=re.IGNORECASE)
-    normalized = re.sub(r"\bfalse\b", "0", normalized, flags=re.IGNORECASE)
-    normalized = re.sub(r"(?<![=!<>])!(?!=)", " not ", normalized)
+    normalized = _RE_MATH_IF.sub("if_(", normalized)
+    normalized = _RE_MATH_TRUE.sub("1", normalized)
+    normalized = _RE_MATH_FALSE.sub("0", normalized)
+    normalized = _RE_MATH_NOT.sub(" not ", normalized)
     try:
         tree = ast.parse(normalized, mode="eval")
     except SyntaxError:
