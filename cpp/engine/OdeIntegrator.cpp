@@ -3832,9 +3832,18 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts) {
                     }
                     continue;
                 }
-                if ((target < tOut - 1e-12 || !historyDelays_.empty()) &&
-                    CVodeSetStopTime(cvode_mem, target) != CV_SUCCESS) {
-                    throw std::runtime_error("CVodeSetStopTime failed");
+                if (target < tOut - 1e-12 || !historyDelays_.empty()) {
+                    // CV_NORMAL may step past a returned output/root time.
+                    // If target is already inside that step, CVode interpolates
+                    // to it; a stop behind the internal time is invalid.
+                    sunrealtype internalTime;
+                    if (CVodeGetCurrentTime(cvode_mem, &internalTime) != CV_SUCCESS) {
+                        throw std::runtime_error("CVodeGetCurrentTime failed");
+                    }
+                    if (target > internalTime &&
+                        CVodeSetStopTime(cvode_mem, target) != CV_SUCCESS) {
+                        throw std::runtime_error("CVodeSetStopTime failed");
+                    }
                 }
                 // Method-of-steps needs every accepted solver state in the
                 // history. Keep CV_NORMAL for ordinary simulations so this
