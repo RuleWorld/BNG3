@@ -14,6 +14,8 @@ import bionetgen
 from tests.validation.integrated_cases import generated_cases, reuse_bngl
 from tests.validation.integrated_protocol import (
     _lifecycle_construction_isolation,
+    _lifecycle_mutation_baseline,
+    _reuse_source_controls,
     _result_difference,
 )
 
@@ -79,6 +81,14 @@ def main() -> None:
                 raise AssertionError(
                     f"concurrent construction/isolation differed: {difference}"
                 )
+            print(
+                f"iteration={iteration} stage=lifecycle-mutation-baseline", flush=True
+            )
+            difference = _lifecycle_mutation_baseline(bionetgen, case, directory)
+            if difference:
+                raise AssertionError(f"lifecycle mutation differed: {difference}")
+            print(f"iteration={iteration} stage=parameter-source-controls", flush=True)
+            _reuse_source_controls(bionetgen, case, directory)
             gc.collect()
     print("completed all requested iterations", flush=True)
 
