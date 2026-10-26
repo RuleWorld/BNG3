@@ -8894,12 +8894,33 @@ def synthesize_event_actions(
         for index, value in enumerate(boundaries)
         if index == 0 or value > boundaries[index - 1]
     ]
-    total_duration = t_final - boundaries[0]
 
     def steps_for(start: float, end: float) -> int:
-        scale = (end - start) / total_duration if total_duration > 0 else 1
+        scale = (end - start) / (t_final - boundaries[0])
         # JavaScript Math.round rounds nonnegative half ties upward; Python round ties to even.
         return max(1, math.floor(context.base_steps * scale + 0.5))
+
+    deterministic_method = method.lower() in {"ode", "cvode"}
+    if deterministic_method:
+        requested_duration = float(context.base_t_end)
+        output_grid = [
+            requested_duration * index / max(1, context.base_steps)
+            for index in range(max(1, context.base_steps) + 1)
+        ]
+        if t_final > requested_duration:
+            output_grid.append(t_final)
+
+    def sample_times_for(start: float, end: float, *, include_start: bool) -> str:
+        samples = [value for value in output_grid if value > start and value < end]
+        if include_start:
+            samples.insert(0, start)
+        samples.append(end)
+        return "[" + ",".join(_format_number(value) for value in samples) + "]"
+
+    def sampling_for(start: float, end: float, *, include_start: bool) -> str:
+        if deterministic_method:
+            return f"sample_times=>{sample_times_for(start, end, include_start=include_start)}"
+        return f"n_steps=>{steps_for(start, end)}"
 
     lines = [
         f"# {len(merged)} time-triggered SBML event(s) translated to scheduled actions.",
@@ -8919,11 +8940,11 @@ def synthesize_event_actions(
         else ""
     )
     for end in boundaries[1:]:
-        steps = steps_for(phase_start, end)
         if first:
             lines.append(
                 f'simulate({{method=>"{method}", t_start=>0, '
-                f"t_end=>{_format_number(end)}, n_steps=>{steps}"
+                f"t_end=>{_format_number(end)}, "
+                f"{sampling_for(phase_start, end, include_start=True)}"
                 f"{seed_argument}}})"
             )
             first = False
@@ -8931,7 +8952,8 @@ def synthesize_event_actions(
             lines.append(
                 f'simulate({{continue=>1, method=>"{method}", '
                 f"t_start=>{_format_number(phase_start)}, "
-                f"t_end=>{_format_number(end)}, n_steps=>{steps}"
+                f"t_end=>{_format_number(end)}, "
+                f"{sampling_for(phase_start, end, include_start=False)}"
                 f"{seed_argument}}})"
             )
         for time, sets in merged:
@@ -8941,12 +8963,12 @@ def synthesize_event_actions(
                 # scheduled assignments execute. Emit the post-event state at
                 # the same simulation time so discontinuities follow SBML's
                 # right-continuous event output semantics.
-                lines.append(
-                    f'simulate({{continue=>1, method=>"{method}", '
-                    f"t_start=>{_format_number(time)}, "
-                    f"t_end=>{_format_number(time)}, n_steps=>1"
-                    f"{seed_argument}}})"
-                )
+                if deterministic_method:
+                    lines.append(
+                        f'simulate({{continue=>1, method=>"{method}", '
+                        f"t_start=>{_format_number(time)}, "
+                        f"t_end=>{_format_number(time)}, n_steps=>1}})"
+                    )
         phase_start = end
 
     if abs(phase_start - t_final) > 1e-12:
@@ -8954,7 +8976,7 @@ def synthesize_event_actions(
             f'simulate({{continue=>1, method=>"{method}", '
             f"t_start=>{_format_number(phase_start)}, "
             f"t_end=>{_format_number(t_final)}, "
-            f"n_steps=>{steps_for(phase_start, t_final)}"
+            f"{sampling_for(phase_start, t_final, include_start=False)}"
             f"{seed_argument}}})"
         )
 

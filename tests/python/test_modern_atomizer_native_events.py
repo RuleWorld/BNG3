@@ -570,7 +570,8 @@ def test_native_event_initial_false_to_true_edge_matches_independent_roadrunner(
     assert actual[0, header.index("S2")] == pytest.approx(1.0)
 
 
-def test_scheduled_event_endpoint_records_post_assignment_state(tmp_path):
+@pytest.mark.parametrize("event_time", [0.55, 1.0])
+def test_scheduled_event_endpoint_records_post_assignment_state(tmp_path, event_time):
     roadrunner = pytest.importorskip("roadrunner")
     xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
   <model id="scheduled_endpoint">
@@ -580,23 +581,28 @@ def test_scheduled_event_endpoint_records_post_assignment_state(tmp_path):
     <listOfSpecies>
       <species id="S" compartment="C" initialAmount="1"
                hasOnlySubstanceUnits="true"/>
+      <species id="T" compartment="C" initialAmount="2"
+               hasOnlySubstanceUnits="true"/>
     </listOfSpecies>
     <listOfEvents>
-      <event id="set_at_half">
+      <event id="set_at_endpoint">
         <trigger initialValue="true" persistent="true">
           <math xmlns="http://www.w3.org/1998/Math/MathML">
-            <apply><geq/><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>0.5</cn></apply>
+            <apply><geq/><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>{event_time}</cn></apply>
           </math>
         </trigger>
         <listOfEventAssignments>
           <eventAssignment variable="S">
             <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>5</cn></math>
           </eventAssignment>
+          <eventAssignment variable="T">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>7</cn></math>
+          </eventAssignment>
         </listOfEventAssignments>
       </event>
     </listOfEvents>
   </model>
-</sbml>"""
+</sbml>""".format(event_time=event_time)
     result = atomize(xml, t_end=1.0, n_steps=10)
     assert result.success, result.error
     assert "time-triggered SBML event(s) translated to scheduled actions" in result.bngl
@@ -620,14 +626,30 @@ def test_scheduled_event_endpoint_records_post_assignment_state(tmp_path):
             if line.strip() and not line.lstrip().startswith("#")
         ]
     )
-    boundary = rows[np.isclose(rows[:, header.index("time")], 0.5)]
+    output_times = rows[:, header.index("time")]
+    boundary = rows[np.isclose(output_times, event_time)]
     assert boundary.shape[0] == 2
+    if event_time < 1.0:
+        expected_times = [0.1 * index for index in range(6)]
+        expected_times.extend([event_time, event_time])
+        expected_times.extend([0.1 * index for index in range(6, 11)])
+    else:
+        expected_times = [0.1 * index for index in range(11)] + [1.0, 2.5]
+    np.testing.assert_allclose(output_times, expected_times, atol=1e-12, rtol=0)
+    assert boundary[0, header.index("S_amt")] == pytest.approx(1.0)
+    assert boundary[0, header.index("T_amt")] == pytest.approx(2.0)
     actual_after_event = boundary[-1, header.index("S_amt")]
+    actual_second_assignment = boundary[-1, header.index("T_amt")]
+    assert actual_after_event == pytest.approx(5.0)
+    assert actual_second_assignment == pytest.approx(7.0)
 
-    reference = roadrunner.RoadRunner(xml).simulate(0.0, 1.0, 11)
-    reference_index = int(np.flatnonzero(np.isclose(reference["time"], 0.5))[0])
+    reference = roadrunner.RoadRunner(xml).simulate(times=[0.0, event_time])
+    reference_index = int(np.flatnonzero(reference["time"] == event_time)[-1])
     assert actual_after_event == pytest.approx(
         reference[reference_index, reference.colnames.index("[S]")], abs=1e-12
+    )
+    assert actual_second_assignment == pytest.approx(
+        reference[reference_index, reference.colnames.index("[T]")], abs=1e-12
     )
 
 
