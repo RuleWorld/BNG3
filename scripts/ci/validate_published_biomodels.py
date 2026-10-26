@@ -1331,6 +1331,7 @@ def _source_action_bngl(
                 "source ODE action interval ends before it starts"
             )
         tolerance = max(1e-12, abs(t_end) * 1e-12)
+        zero_duration = math.isclose(start, end, rel_tol=0.0, abs_tol=tolerance)
         sample_times = [start]
         for index, time_value in enumerate(requested_times):
             if start + tolerance < time_value < end - tolerance:
@@ -1343,14 +1344,19 @@ def _source_action_bngl(
             sample_times.append(end)
         previous_end = end
         updates = {
-            "sample_times": "["
-            + ",".join(format(value, ".17g") for value in sample_times)
-            + "]",
             "rtol": format(rtol, ".17g"),
             "atol": format(atol, ".17g"),
             "max_step": format(max_step, ".17g"),
             "print_functions": "1",
         }
+        if zero_duration:
+            # Continued actions drop their initial row. Keep two equal output
+            # times so the retained row records the post-assignment state.
+            updates["n_steps"] = "1"
+        else:
+            updates["sample_times"] = (
+                "[" + ",".join(format(value, ".17g") for value in sample_times) + "]"
+            )
         arguments = replace_arguments(arguments, updates)
         return match.group("prefix") + arguments + match.group("suffix")
 
