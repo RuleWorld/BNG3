@@ -781,15 +781,17 @@ def test_event_target_parameter_initial_assignment_stays_dynamic(tmp_path):
     columns = lines[0].lstrip("# ").split()
     bng_data = np.loadtxt(lines[1:])
 
+    bng_times = bng_data[:, columns.index("time")]
+    unique_times, keep_indices = np.unique(bng_times, return_index=True)
     rr = roadrunner.RoadRunner(xml)
     rr.integrator.setValue("relative_tolerance", 1e-9)
     rr.integrator.setValue("absolute_tolerance", 1e-12)
     rr.timeCourseSelections = ["time", "A"]
-    reference = rr.simulate(times=bng_data[:, columns.index("time")])
-    jump = int(np.argmin(np.abs(bng_data[:, columns.index("time")] - 1.0)))
-    compare = np.ones(len(bng_data), dtype=bool)
-    compare[max(0, jump - 1) : min(len(bng_data), jump + 2)] = False
-    bng_values = bng_data[compare, columns.index("A_amt")]
+    reference = rr.simulate(times=unique_times)
+    jump = int(np.argmin(np.abs(unique_times - 1.0)))
+    compare = np.ones(len(unique_times), dtype=bool)
+    compare[max(0, jump - 1) : min(len(unique_times), jump + 2)] = False
+    bng_values = bng_data[keep_indices[compare], columns.index("A_amt")]
     rr_values = reference[compare, reference.colnames.index("A")]
     assert np.max(np.abs(bng_values - rr_values)) <= 1e-7
 
@@ -4559,16 +4561,18 @@ def test_state_event_updates_parameter_driven_stoichiometry_matches_libroadrunne
     columns = lines[0].lstrip("# ").split()
     bng_data = np.loadtxt(lines[1:])
 
+    bng_times = bng_data[:, columns.index("time")]
+    unique_times, keep_indices = np.unique(bng_times, return_index=True)
     rr = roadrunner.RoadRunner(xml)
     rr.integrator.setValue("relative_tolerance", 1e-9)
     rr.integrator.setValue("absolute_tolerance", 1e-12)
     rr.timeCourseSelections = ["time", "X"]
-    reference = rr.simulate(times=bng_data[:, columns.index("time")])
+    reference = rr.simulate(times=unique_times)
 
-    jump = int(np.argmin(np.abs(bng_data[:, columns.index("time")] - 1.0)))
-    compare = np.ones(len(bng_data), dtype=bool)
-    compare[max(0, jump - 1) : min(len(bng_data), jump + 2)] = False
-    bng_values = bng_data[compare, columns.index("X_amt")]
+    jump = int(np.argmin(np.abs(unique_times - 1.0)))
+    compare = np.ones(len(unique_times), dtype=bool)
+    compare[max(0, jump - 1) : min(len(unique_times), jump + 2)] = False
+    bng_values = bng_data[keep_indices[compare], columns.index("X_amt")]
     rr_values = reference[compare, reference.colnames.index("X")]
     assert np.max(np.abs(bng_values - rr_values)) <= 5e-10
     assert abs(float(bng_data[-1, columns.index("X_amt")]) - 4.0) <= 1e-8
@@ -4614,16 +4618,21 @@ def test_state_event_updates_species_reference_stoichiometry_matches_libroadrunn
     columns = lines[0].lstrip("# ").split()
     bng_data = np.loadtxt(lines[1:])
 
+    bng_times = bng_data[:, columns.index("time")]
+    unique_times, keep_indices = np.unique(bng_times, return_index=True)
     rr = roadrunner.RoadRunner(xml)
     rr.integrator.setValue("relative_tolerance", 1e-9)
     rr.integrator.setValue("absolute_tolerance", 1e-12)
     rr.timeCourseSelections = ["time", "X"]
-    reference = rr.simulate(times=bng_data[:, columns.index("time")])
+    reference = rr.simulate(times=unique_times)
 
-    bng_values = bng_data[:, columns.index("X_amt")]
-    rr_values = reference[:, reference.colnames.index("X")]
+    jump = int(np.argmin(np.abs(unique_times - 5.0)))
+    compare = np.ones(len(unique_times), dtype=bool)
+    compare[max(0, jump - 1) : min(len(unique_times), jump + 2)] = False
+    bng_values = bng_data[keep_indices[compare], columns.index("X_amt")]
+    rr_values = reference[compare, reference.colnames.index("X")]
     assert np.max(np.abs(bng_values - rr_values)) <= 5e-10
-    assert abs(float(bng_values[-1]) - 20.0) <= 1e-8
+    assert abs(float(bng_data[-1, columns.index("X_amt")]) - 20.0) <= 1e-8
 
 
 def test_synthetic_rate_rule_observables_have_stable_order():
@@ -4787,21 +4796,23 @@ def test_quadratic_reaction_events_support_independent_delays(tmp_path):
     lines = model_path.with_suffix(".gdat").read_text().splitlines()
     columns = lines[0].lstrip("# ").split()
     bng_data = np.loadtxt(lines[1:])
+    bng_times = bng_data[:, columns.index("time")]
+    unique_times, keep_indices = np.unique(bng_times, return_index=True)
     rr = roadrunner.RoadRunner(xml)
     rr.integrator.setValue("relative_tolerance", 1e-9)
     rr.integrator.setValue("absolute_tolerance", 1e-12)
     rr.timeCourseSelections = ["time", "S1", "S2", "S3"]
-    reference = rr.simulate(times=bng_data[:, columns.index("time")])
+    reference = rr.simulate(times=unique_times)
     state_columns = [columns.index(f"{name}_amt") for name in ("S1", "S2", "S3")]
     jump_indices = np.flatnonzero(
-        np.max(np.abs(np.diff(bng_data[:, state_columns], axis=0)), axis=1) > 0.1
+        np.max(np.abs(np.diff(bng_data[keep_indices, :][:, state_columns], axis=0)), axis=1) > 0.1
     )
     assert len(jump_indices) >= 2
-    compare = np.ones(len(bng_data), dtype=bool)
+    compare = np.ones(len(unique_times), dtype=bool)
     compare[jump_indices] = False
     compare[jump_indices + 1] = False
     for name in ("S1", "S2", "S3"):
-        bng_values = bng_data[compare, columns.index(f"{name}_amt")]
+        bng_values = bng_data[keep_indices, columns.index(f"{name}_amt")][compare]
         rr_values = reference[compare, reference.colnames.index(name)]
         scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
         assert float(np.max(np.abs(bng_values - rr_values))) <= max(5e-10, 1e-5 * scale)
