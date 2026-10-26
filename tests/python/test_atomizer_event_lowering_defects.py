@@ -167,8 +167,10 @@ def test_recurring_reset_event_fires_at_every_period():
     assert "begin actions" in action_block, result.bngl
     phases = action_block.count("simulate(")
     # One phase per firing (0.01 s apart over the 1 s horizon) plus the
-    # trailing phase that carries the model to the horizon.
-    assert phases == 101, phases
+    # trailing phase that carries the model to the horizon. Deterministic
+    # phases additionally emit a zero-duration continuation after each firing
+    # so the post-assignment state is recorded at the event time.
+    assert phases == 201, phases
     assert action_block.count('setParameter("Q", ') == 100
 
 
