@@ -80,6 +80,26 @@ def _write_protocol_progress(directory, case_id, check, stage, **context):
     temporary.replace(path)
 
 
+def _antlr_thread_local_cache_enabled(compile_command):
+    """Read the ANTLR DFA-cache mode from one generated-parser compile line."""
+    import shlex
+
+    arguments = compile_command.get("arguments")
+    if arguments is None:
+        arguments = shlex.split(compile_command["command"])
+    definitions = [
+        value
+        for argument in arguments
+        if argument.startswith("-DANTLR4_USE_THREAD_LOCAL_CACHE")
+        for value in [argument.partition("=")[2] or "1"]
+    ]
+    if not definitions:
+        return False
+    if any(value != definitions[0] for value in definitions[1:]):
+        raise ValueError("conflicting ANTLR4_USE_THREAD_LOCAL_CACHE definitions")
+    return definitions[0] not in {"0", "false", "False"}
+
+
 def _topology_unavailable_row(case_id):
     return _row(
         case_id,

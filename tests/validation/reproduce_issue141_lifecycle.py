@@ -17,6 +17,7 @@ from tests.validation.integrated_protocol import (
     _lifecycle_mutation_baseline,
     _reuse_source_controls,
     _result_difference,
+    _antlr_thread_local_cache_enabled,
 )
 
 
@@ -61,6 +62,28 @@ def main() -> None:
         "native_extension_sha256": hashlib.sha256(native.read_bytes()).hexdigest(),
         "iterations": args.iterations,
     }
+    compile_commands = json.loads(Path("build/compile_commands.json").read_text())
+    parser_commands = [
+        command
+        for command in compile_commands
+        if Path(command.get("file", "")).name in {"BNGParser.cpp", "BNGLexer.cpp"}
+        and "/parser/generated/" in command.get("file", "").replace("\\", "/")
+    ]
+    if {Path(command["file"]).name for command in parser_commands} != {
+        "BNGParser.cpp",
+        "BNGLexer.cpp",
+    }:
+        raise RuntimeError("compile database is missing generated BNG parser sources")
+    modes = {_antlr_thread_local_cache_enabled(command) for command in parser_commands}
+    if len(modes) != 1:
+        raise RuntimeError("lexer/parser ANTLR DFA cache modes differ")
+    thread_local_dfa_cache = modes.pop()
+    identity["antlr_dfa_cache_mode"] = (
+        "thread-local" if thread_local_dfa_cache else "shared"
+    )
+    identity["antlr_parser_init"] = (
+        "per-thread" if thread_local_dfa_cache else "shared call_once"
+    )
     print(json.dumps(identity, sort_keys=True), flush=True)
 
     case = next(

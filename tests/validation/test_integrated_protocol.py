@@ -223,6 +223,32 @@ def test_protocol_progress_records_last_native_stage(tmp_path):
     assert not list(tmp_path.glob("protocol-progress.*.tmp"))
 
 
+def test_antlr_thread_local_cache_probe_reads_compiler_definitions():
+    assert not protocol._antlr_thread_local_cache_enabled(
+        {"command": "c++ -Iantlr/runtime -c cpp/parser/generated/BNGParser.cpp"}
+    )
+    assert protocol._antlr_thread_local_cache_enabled(
+        {
+            "arguments": [
+                "c++",
+                "-DANTLR4_USE_THREAD_LOCAL_CACHE=1",
+                "-c",
+                "cpp/parser/generated/BNGParser.cpp",
+            ]
+        }
+    )
+    assert not protocol._antlr_thread_local_cache_enabled(
+        {
+            "arguments": [
+                "c++",
+                "-DANTLR4_USE_THREAD_LOCAL_CACHE=0",
+                "-c",
+                "cpp/parser/generated/BNGParser.cpp",
+            ]
+        }
+    )
+
+
 def test_rate_parameter_does_not_select_unused_source_parameter():
     model = SimpleNamespace(
         parameters=[SimpleNamespace(name="k", expression="0.4")],

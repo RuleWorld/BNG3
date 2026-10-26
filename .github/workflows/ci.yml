@@ -341,6 +341,7 @@ jobs:
           cmake -B build -G Ninja \
             -DCMAKE_BUILD_TYPE=Debug \
             -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
             -DCMAKE_C_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
             -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
             -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" \
@@ -356,7 +357,7 @@ jobs:
       - name: Repeat issue 141 exception and concurrent lifecycle path
         env:
           ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:halt_on_error=1
-          PYTHONPATH: python
+          PYTHONPATH: python:.
         run: |
           export LD_PRELOAD="$(gcc -print-file-name=libasan.so)"
           python tests/validation/reproduce_issue141_lifecycle.py --iterations 25
