@@ -144,6 +144,11 @@ def test_issue141_lifecycle_asan_configures_shadow_memory_compatible_aslr():
         "Without LD_PRELOAD, ASan aborts because it is not first in the library "
         "list; verify_asan_link_order=0 suppresses that check safely"
     )
+    assert "alloc_dealloc_mismatch=0" in asan_opts, (
+        "numpy uses Python's allocator internally; ASan's operator delete "
+        "interceptor flags this as a mismatch; alloc_dealloc_mismatch=0 suppresses "
+        "the false positive without masking BNG3 allocator bugs"
+    )
     assert command.index(aslr_setup) < command.index(native_import)
     assert command.index(native_import) < command.index(reproducer)
 
