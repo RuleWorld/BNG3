@@ -95,9 +95,9 @@ def test_semantic_test_jobs_retain_reports_on_failure(job_id):
         assert "build/Testing/Temporary/" in paths
 
 
-def test_issue141_lifecycle_asan_exposes_repo_root_for_tests_package_import():
-    job = job_subtree_text(CI_WORKFLOW, "python-native-lifecycle-asan")
-    steps = parse_workflow(CI_WORKFLOW)["jobs"]["python-native-lifecycle-asan"]["steps"]
+def test_issue141_lifecycle_exposes_repo_root_for_tests_package_import():
+    job = job_subtree_text(CI_WORKFLOW, "python-native-lifecycle")
+    steps = parse_workflow(CI_WORKFLOW)["jobs"]["python-native-lifecycle"]["steps"]
     reproduce = next(
         step
         for step in steps
@@ -121,36 +121,21 @@ def test_issue141_lifecycle_asan_exposes_repo_root_for_tests_package_import():
     )
 
 
-def test_issue141_lifecycle_asan_configures_shadow_memory_compatible_aslr():
-    steps = parse_workflow(CI_WORKFLOW)["jobs"]["python-native-lifecycle-asan"]["steps"]
+def test_issue141_python_native_lifecycle_uses_stock_python_without_asan_runtime_mixing():
+    job = job_subtree_text(CI_WORKFLOW, "python-native-lifecycle")
+    steps = parse_workflow(CI_WORKFLOW)["jobs"]["python-native-lifecycle"]["steps"]
     reproduce = next(
         step
         for step in steps
         if "reproduce_issue141_lifecycle.py" in step.get("run", "")
     )
-    command = reproduce["run"]
-    aslr_setup = "sudo sysctl -w vm.mmap_rnd_bits=28"
-    native_import = (
-        "python -c 'import bionetgen.model as model; assert model._cpp.__file__'"
+    assert "-fsanitize=address" not in job, (
+        "the setup-python interpreter and NumPy wheels are not ASan-instrumented; "
+        "keep Python lifecycle checks outside the native ASan process"
     )
-    reproducer = "python tests/validation/reproduce_issue141_lifecycle.py"
-    assert aslr_setup in command
-    assert "LD_PRELOAD" not in command, (
-        "LD_PRELOAD of libasan into a non-ASan Python host breaks __cxa_throw "
-        "interception; vm.mmap_rnd_bits=28 + verify_asan_link_order=0 is sufficient"
-    )
-    asan_opts = reproduce.get("env", {}).get("ASAN_OPTIONS", "")
-    assert "verify_asan_link_order=0" in asan_opts, (
-        "Without LD_PRELOAD, ASan aborts because it is not first in the library "
-        "list; verify_asan_link_order=0 suppresses that check safely"
-    )
-    assert "alloc_dealloc_mismatch=0" in asan_opts, (
-        "numpy uses Python's allocator internally; ASan's operator delete "
-        "interceptor flags this as a mismatch; alloc_dealloc_mismatch=0 suppresses "
-        "the false positive without masking BNG3 allocator bugs"
-    )
-    assert command.index(aslr_setup) < command.index(native_import)
-    assert command.index(native_import) < command.index(reproducer)
+    assert "ASAN_OPTIONS" not in reproduce.get("env", {})
+    assert "LD_PRELOAD" not in reproduce.get("run", "")
+    assert "python tests/validation/reproduce_issue141_lifecycle.py" in reproduce["run"]
 
 
 # The flags that embed a second copy of the C++ runtime into a binary. They are

@@ -315,9 +315,9 @@ jobs:
           ctest --test-dir build --output-on-failure --stop-on-failure --no-tests=error
           -R '^OdeIntegrator recovers after late stop condition failure$'
 
-  python-native-lifecycle-asan:
+  python-native-lifecycle:
     needs: [lint, harness]
-    name: Python/native lifecycle ASan (Ubuntu)
+    name: Python/native lifecycle (Ubuntu)
     runs-on: ubuntu-22.04
     timeout-minutes: 35
     steps:
@@ -333,7 +333,7 @@ jobs:
           sudo apt-get install -y cmake ninja-build
           python -m pip install pytest numpy
 
-      - name: Configure Python bindings with AddressSanitizer
+      - name: Configure Python bindings
         env:
           CC: gcc-12
           CXX: g++-12
@@ -342,27 +342,18 @@ jobs:
             -DCMAKE_BUILD_TYPE=Debug \
             -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
             -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
-            -DCMAKE_C_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
-            -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
-            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" \
-            -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address" \
             -DBUILD_PYTHON_BINDINGS=ON \
             -DBUILD_CLI=OFF \
             -DBUILD_NFSIM_CLI=OFF \
             -DBUILD_TESTS=OFF
 
-      - name: Build instrumented Python extension
+      - name: Build Python extension
         run: cmake --build build --parallel 2
 
       - name: Repeat issue 141 exception and concurrent lifecycle path
         env:
-          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:halt_on_error=1:verify_asan_link_order=0:alloc_dealloc_mismatch=0
           PYTHONPATH: python:build/cpp:.
         run: |
-          # Ubuntu's runner kernel can randomize PIE binaries into ASan's shadow range.
-          # Reducing vm.mmap_rnd_bits to 28 keeps PIE load addresses out of the
-          # region ASan reserves for shadow memory; sysctl alone is sufficient.
-          sudo sysctl -w vm.mmap_rnd_bits=28
           python -c 'import bionetgen.model as model; assert model._cpp.__file__'
           python tests/validation/reproduce_issue141_lifecycle.py --iterations 25
 
