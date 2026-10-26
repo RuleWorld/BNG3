@@ -264,6 +264,143 @@ def test_native_import_executes_independently_authored_reversible_rule():
         assert dict(zip(network.species_names, row)) == pytest.approx(expected)
 
 
+def test_native_import_executes_independently_authored_reversible_association(
+    monkeypatch,
+):
+    """A reversible multi-pattern rewrite preserves both directions exactly."""
+    document = _independent_reversible_bngir_document()
+    model = document["model"]
+    model["metadata"]["name"] = "independent_reversible_association"
+    model["molecule_types"].append(
+        {"id": 2, "name": "D", "population": False, "components": []}
+    )
+    reactant_a = copy.deepcopy(model["rules"][0]["forward"]["reactants"][0])
+    reactant_b = copy.deepcopy(model["rules"][0]["reverse"]["reactants"][0])
+    product_d = {
+        "compartment_prefix": False,
+        "molecules": [
+            {"occurrence": 0, "sites": [], "type": "D", "type_id": 2}
+        ],
+    }
+    model["seeds"] = [
+        {
+            "id": 0,
+            "pattern": copy.deepcopy(reactant_a),
+            "amount": {"kind": "number", "value": 10.0},
+            "constant": False,
+        },
+        {
+            "id": 1,
+            "pattern": copy.deepcopy(reactant_b),
+            "amount": {"kind": "number", "value": 10.0},
+            "constant": False,
+        },
+    ]
+    forward = copy.deepcopy(model["rules"][0]["forward"])
+    forward.update(
+        reactants=[reactant_a, reactant_b],
+        products=[product_d],
+        mutations=[
+            {
+                "kind": "delete_molecule",
+                "molecule": {"side": "reactant", "pattern": 0, "molecule": 0},
+            },
+            {
+                "kind": "delete_molecule",
+                "molecule": {"side": "reactant", "pattern": 1, "molecule": 0},
+            },
+            {
+                "kind": "add_molecule",
+                "molecule": {"side": "product", "pattern": 0, "molecule": 0},
+            },
+        ],
+    )
+    reverse = copy.deepcopy(model["rules"][0]["reverse"])
+    reverse.update(
+        reactants=[copy.deepcopy(product_d)],
+        products=[copy.deepcopy(reactant_a), copy.deepcopy(reactant_b)],
+        mutations=[
+            {
+                "kind": "add_molecule",
+                "molecule": {"side": "product", "pattern": 0, "molecule": 0},
+            },
+            {
+                "kind": "add_molecule",
+                "molecule": {"side": "product", "pattern": 1, "molecule": 0},
+            },
+            {
+                "kind": "delete_molecule",
+                "molecule": {"side": "reactant", "pattern": 0, "molecule": 0},
+            },
+        ],
+    )
+    model["rules"] = [
+        {
+            "id": 0,
+            "name": "R1",
+            "label": "associate:",
+            "bidirectional": True,
+            "forward": forward,
+            "reverse": reverse,
+            "modifiers": [],
+            "molecule_mappings": [],
+            "component_mappings": [],
+        }
+    ]
+
+    schema_path = (
+        Path(__file__).parents[2] / "provenance" / "schemas" / "bngir-0.2.schema.json"
+    )
+    jsonschema.validate(document, json.loads(schema_path.read_text()))
+    malformed = copy.deepcopy(document)
+    malformed["model"]["rules"][0]["reverse"]["mutations"].pop()
+    with pytest.raises(ValueError, match="do not state the delete-and-add operations"):
+        bionetgen.from_bngir(malformed, native=True)
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("native BNGIR import fell back to the BNGL parser")
+
+    monkeypatch.setattr(_cpp, "parse_string", forbidden)
+    restored = bionetgen.from_bngir(document, native=True)
+    assert json.loads(restored.to_bngir(version="0.2")) == document
+
+    network = restored.generate_network()
+    assert network.num_species == 3
+    assert network.num_reactions == 2
+    initial = [10.0 if name in {"A()", "B()"} else 0.0 for name in network.species_names]
+    derivative = _cpp._validation_ode_rhs(restored._model, network, 0.0, initial)
+    assert dict(zip(network.species_names, derivative)) == pytest.approx(
+        {"A()": -10.0, "B()": -10.0, "D()": 10.0}
+    )
+
+    k_forward, k_reverse = 0.1, 0.2
+    discriminant = (2 * 10 * k_forward + k_reverse) ** 2 - 4 * k_forward**2 * 10**2
+    low = ((2 * 10 * k_forward + k_reverse) - math.sqrt(discriminant)) / (
+        2 * k_forward
+    )
+    high = ((2 * 10 * k_forward + k_reverse) + math.sqrt(discriminant)) / (
+        2 * k_forward
+    )
+    result = restored.simulate(method="ode", t_end=0.5, n_steps=5)
+    for time, row in zip(result.time, result.concentrations):
+        ratio = (low / high) * math.exp(k_forward * (low - high) * time)
+        expected_d = (low - ratio * high) / (1.0 - ratio)
+        expected = {"A()": 10.0 - expected_d, "B()": 10.0 - expected_d, "D()": expected_d}
+        assert dict(zip(network.species_names, row)) == pytest.approx(expected)
+
+
+def test_native_import_refuses_a_reversible_rule_that_carries_molecule_types():
+    document = _independent_reversible_bngir_document()
+    rule = document["model"]["rules"][0]
+    carried = copy.deepcopy(rule["forward"]["reactants"][0])
+    rule["forward"]["products"] = [carried]
+    rule["reverse"]["reactants"] = [copy.deepcopy(carried)]
+    rule["reverse"]["products"] = copy.deepcopy(rule["forward"]["reactants"])
+
+    with pytest.raises(ValueError, match="cannot carry molecule types"):
+        bionetgen.from_bngir(document, native=True)
+
+
 def test_native_import_rejects_reverse_patterns_that_do_not_invert_forward():
     document = _independent_reversible_bngir_document()
     document["model"]["rules"][0]["reverse"]["reactants"] = copy.deepcopy(
@@ -292,7 +429,7 @@ def test_direct_native_builder_rejects_inconsistent_reverse_mutations():
     document = _independent_reversible_bngir_document()
     document["model"]["rules"][0]["reverse"]["mutations"].pop()
 
-    with pytest.raises(RuntimeError, match="do not state the one-molecule conversion"):
+    with pytest.raises(RuntimeError, match="do not state the delete-and-add operations"):
         _cpp._model_from_bngir_v02(document["model"])
 
 
