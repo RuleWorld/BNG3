@@ -315,6 +315,52 @@ jobs:
           ctest --test-dir build --output-on-failure --stop-on-failure --no-tests=error
           -R '^OdeIntegrator recovers after late stop condition failure$'
 
+  python-native-lifecycle-asan:
+    needs: [lint, harness]
+    name: Python/native lifecycle ASan (Ubuntu)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install build and focused-test dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build
+          python -m pip install pytest numpy
+
+      - name: Configure Python bindings with AddressSanitizer
+        env:
+          CC: gcc-12
+          CXX: g++-12
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
+            -DCMAKE_C_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address" \
+            -DCMAKE_SHARED_LINKER_FLAGS="-fsanitize=address" \
+            -DBUILD_PYTHON_BINDINGS=ON \
+            -DBUILD_CLI=OFF \
+            -DBUILD_NFSIM_CLI=OFF \
+            -DBUILD_TESTS=OFF
+
+      - name: Build instrumented Python extension
+        run: cmake --build build --parallel 2
+
+      - name: Repeat issue 141 exception and concurrent lifecycle path
+        env:
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:halt_on_error=1
+          PYTHONPATH: python
+        run: |
+          export LD_PRELOAD="$(gcc -print-file-name=libasan.so)"
+          python tests/validation/reproduce_issue141_lifecycle.py --iterations 25
+
 
   # ═══════════════════════════════════════════════════════════════════════════
   # CUDA batch-SSA backend
