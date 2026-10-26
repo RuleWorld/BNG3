@@ -361,7 +361,7 @@ jobs:
         run: |
           # Ubuntu's runner kernel can randomize PIE binaries into ASan's shadow range.
           sudo sysctl -w vm.mmap_rnd_bits=28
-          export LD_PRELOAD="$(gcc -print-file-name=libasan.so)"
+          export LD_PRELOAD="$(gcc-12 -print-file-name=libasan.so)"
           python -c 'import bionetgen.model as model; assert model._cpp.__file__'
           python tests/validation/reproduce_issue141_lifecycle.py --iterations 25
 
