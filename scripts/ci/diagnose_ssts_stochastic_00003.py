@@ -21,6 +21,7 @@ import numpy as np
 
 EXPECTED_SOURCE_SHA256 = "c58a50dd86f981150b533dd9af25c38f9ef3aeeedad2f679400e022add77f50e"
 EXPECTED_BNG3_REVISION = "0f004fecd318abb5b21829d869765a07cb6684cf"
+OFFICIAL_RUN_ID = 40314965237
 RUNS = 40_000
 SEED = 20_261_026
 DEFAULT_REPLICATES = 250
@@ -104,7 +105,9 @@ def _verify_source_law_identities() -> None:
         raise ArithmeticError("late-time source-law limit failed")
 
 
-def _load_case(report_path: Path, case_dir: Path) -> tuple[dict[str, Any], str]:
+def _load_case(
+    report_path: Path, case_dir: Path
+) -> tuple[dict[str, Any], dict[str, Any]]:
     report = json.loads(report_path.read_text())
     if report.get("source_provenance", {}).get("bng3_commit") != EXPECTED_BNG3_REVISION:
         raise ValueError("report is not from the declared BNG3 revision")
@@ -119,14 +122,28 @@ def _load_case(report_path: Path, case_dir: Path) -> tuple[dict[str, Any], str]:
         raise ValueError("SSTS source XML hash differs from the locked case")
     if record["input_sha256"]["sbml"] != source_sha:
         raise ValueError("report source hash does not match the supplied case XML")
-    return record["official_conformance"], source_sha
+    runtime = report.get("runtime_provenance", {})
+    return record["official_conformance"], {
+        "sbml_sha256": source_sha,
+        "report_sha256": _sha256(report_path),
+        "suite_revision": report.get("suite_commit"),
+        "run_id": OFFICIAL_RUN_ID,
+        "bng3_revision": EXPECTED_BNG3_REVISION,
+        "bng3_package_source_sha256": runtime.get("python_package_source_sha256"),
+        "native_extension_sha256": runtime.get("native_extension_sha256"),
+        "python_version": runtime.get("python_version"),
+        "bionetgen_version": runtime.get("bionetgen_version"),
+        "numpy_version": runtime.get("numpy_version"),
+        "libsbml_version": runtime.get("libsbml_version"),
+        "roadrunner_version": runtime.get("roadrunner_version"),
+    }
 
 
 def diagnose(report_path: Path, case_dir: Path, replicates: int) -> dict[str, Any]:
-    official, source_sha = _load_case(report_path, case_dir)
+    official, provenance = _load_case(report_path, case_dir)
     _verify_source_law_identities()
-    if replicates <= 0:
-        raise ValueError("replicates must be positive")
+    if replicates < 2:
+        raise ValueError("replicates must be at least two to estimate pilot spread")
 
     # Over one unit interval, each molecule independently leaves a
     # zero-inflated geometric number of descendants. Conditional on K
@@ -176,14 +193,26 @@ def diagnose(report_path: Path, case_dir: Path, replicates: int) -> dict[str, An
         "official_reason_unchanged": official["reason"],
         "source": {
             "suite_case": "stochastic/00003 l3v2",
-            "sha256": source_sha,
+            "sha256": provenance["sbml_sha256"],
+            "suite_revision": provenance["suite_revision"],
             "process": "X -> 2X at 1*X; X -> 0 at 1.1*X; X(0)=100",
         },
         "implementation": {
-            "revision": EXPECTED_BNG3_REVISION,
+            "revision": provenance["bng3_revision"],
+            "official_run_id": provenance["run_id"],
+            "report_sha256": provenance["report_sha256"],
+            "python_package_source_sha256": provenance[
+                "bng3_package_source_sha256"
+            ],
+            "native_extension_sha256": provenance["native_extension_sha256"],
             "official_engine": official.get("engine"),
             "official_runs": official.get("runs"),
             "official_seed_base": official.get("seeds", {}).get("base"),
+            "python_version": provenance["python_version"],
+            "bionetgen_version": provenance["bionetgen_version"],
+            "numpy_version": provenance["numpy_version"],
+            "libsbml_version": provenance["libsbml_version"],
+            "roadrunner_version": provenance["roadrunner_version"],
         },
         "source_law": {
             "mean": "100*a",

@@ -1,10 +1,19 @@
 {
   "diagnostic_only": true,
   "implementation": {
+    "bionetgen_version": "3.0.0a1",
+    "libsbml_version": "5.21.2",
+    "native_extension_sha256": "c2ad1222c7765babb6c36e08938e794be9d82df6efda2b6044a1fa58f678b1b1",
+    "numpy_version": "2.5.3",
     "official_engine": "cpu:batch",
+    "official_run_id": 40314965237,
     "official_runs": 40000,
     "official_seed_base": 1000000,
-    "revision": "0f004fecd318abb5b21829d869765a07cb6684cf"
+    "python_package_source_sha256": "50ae6a9790cabdf69b886c7dc742af5b3e76cc0f5ad77b3a12a1530cfec702d8",
+    "python_version": "3.12.15",
+    "report_sha256": "ef8b7e737d5c72a10acaa3dddbd4fa02e86c48678b3cd5968d80b0c6fdb23f80",
+    "revision": "0f004fecd318abb5b21829d869765a07cb6684cf",
+    "roadrunner_version": "2.10.0"
   },
   "interpretation": "The official conformance status remains failed. The exact-source-law pilot shows that five standard-deviation-statistic violations are typical for this non-Gaussian birth-death source law at the recorded ensemble size; this does not establish a batch SSA defect or change the official acceptance rule.",
   "official_reason_unchanged": "stochastic distribution mismatch: 5 of 100 official mean/standard-deviation acceptance tests were violated; the SBML Test Suite guidance treats 1\u20133 violations as probably fine and says larger counts may indicate an error. The separately reported independent-normal binomial tail is only a diagnostic: checks across output times reuse the same trajectories and are not independent.",
@@ -88,7 +97,8 @@
   "source": {
     "process": "X -> 2X at 1*X; X -> 0 at 1.1*X; X(0)=100",
     "sha256": "c58a50dd86f981150b533dd9af25c38f9ef3aeeedad2f679400e022add77f50e",
-    "suite_case": "stochastic/00003 l3v2"
+    "suite_case": "stochastic/00003 l3v2",
+    "suite_revision": "cf38585fac5de8e0e90112febb62851ee2181816"
   },
   "source_law": {
     "a": "exp(-0.1*t)",
