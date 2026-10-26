@@ -401,6 +401,55 @@ def test_native_import_refuses_a_reversible_rule_that_carries_molecule_types():
         bionetgen.from_bngir(document, native=True)
 
 
+def test_native_import_refuses_repeated_molecule_types_in_reversible_patterns():
+    document = _independent_reversible_bngir_document()
+    rule = document["model"]["rules"][0]
+    reactant_a = copy.deepcopy(rule["forward"]["reactants"][0])
+    product_b = copy.deepcopy(rule["forward"]["products"][0])
+    rule["forward"].update(
+        reactants=[reactant_a, copy.deepcopy(reactant_a)],
+        products=[product_b],
+        mutations=[
+            {
+                "kind": "delete_molecule",
+                "molecule": {"side": "reactant", "pattern": 0, "molecule": 0},
+            },
+            {
+                "kind": "delete_molecule",
+                "molecule": {"side": "reactant", "pattern": 1, "molecule": 0},
+            },
+            {
+                "kind": "add_molecule",
+                "molecule": {"side": "product", "pattern": 0, "molecule": 0},
+            },
+        ],
+    )
+    rule["reverse"].update(
+        reactants=[copy.deepcopy(product_b)],
+        products=[reactant_a, copy.deepcopy(reactant_a)],
+        mutations=[
+            {
+                "kind": "add_molecule",
+                "molecule": {"side": "product", "pattern": 0, "molecule": 0},
+            },
+            {
+                "kind": "add_molecule",
+                "molecule": {"side": "product", "pattern": 1, "molecule": 0},
+            },
+            {
+                "kind": "delete_molecule",
+                "molecule": {"side": "reactant", "pattern": 0, "molecule": 0},
+            },
+        ],
+    )
+
+    message = "do not support repeated molecule-type patterns"
+    with pytest.raises(ValueError, match=message):
+        bionetgen.from_bngir(document, native=True)
+    with pytest.raises(RuntimeError, match=message):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
 def test_native_import_rejects_reverse_patterns_that_do_not_invert_forward():
     document = _independent_reversible_bngir_document()
     document["model"]["rules"][0]["reverse"]["reactants"] = copy.deepcopy(

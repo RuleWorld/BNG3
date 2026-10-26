@@ -124,7 +124,12 @@ void requireReversibleDirectionMutations(
                 "native BNGIR " + where +
                 " reversible patterns must contain one molecule each");
         }
-        reactantTypes.insert((*nodes.begin())->get_type().get_type_name());
+        const auto typeName = (*nodes.begin())->get_type().get_type_name();
+        if (!reactantTypes.insert(typeName).second) {
+            throw std::runtime_error(
+                "native BNGIR " + where +
+                " reversible rules do not support repeated molecule-type patterns");
+        }
     }
     for (const auto& graph : products) {
         const auto nodes = graph.getGraph();
@@ -133,7 +138,12 @@ void requireReversibleDirectionMutations(
                 "native BNGIR " + where +
                 " reversible patterns must contain one molecule each");
         }
-        productTypes.insert((*nodes.begin())->get_type().get_type_name());
+        const auto typeName = (*nodes.begin())->get_type().get_type_name();
+        if (!productTypes.insert(typeName).second) {
+            throw std::runtime_error(
+                "native BNGIR " + where +
+                " reversible rules do not support repeated molecule-type patterns");
+        }
     }
     for (const auto& moleculeType : productTypes) {
         if (reactantTypes.count(moleculeType)) {
