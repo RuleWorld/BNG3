@@ -153,6 +153,7 @@ def test_amount_based_zero_order_rate_is_a_complete_flux():
     assert "TotalRate" in rate
     # The extent rate is the law's own value; no volume factor is applied.
     assert rate.endswith("1 TotalRate")
+    assert 'setOption("BNG3AbsoluteFluxRules","J0")' in result.bngl
     assert "__compartment_C__" not in rate
 
 

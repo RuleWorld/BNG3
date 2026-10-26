@@ -5,6 +5,7 @@
 
 #include "ast/Model.hpp"
 #include "ast/ReactionRule.hpp"
+#include "ast/Rxn.hpp"
 
 namespace bng::compile {
 
@@ -86,6 +87,41 @@ bool isTotalRateReaction(const ast::Model& model, const std::string& originRuleN
     const auto origin = resolveOriginRule(originRuleName);
     if (origin.name.empty() || origin.name == originRuleName) return false;
     return isTotalRateRule(model, origin.name);
+}
+
+bool isAbsoluteFluxReaction(const ast::Model& model,
+                            const std::string& originRuleName) {
+    if (originRuleName.empty()) return false;
+    for (const auto& rule : model.getReactionRules()) {
+        if (rule.getRuleName() == originRuleName) {
+            return rule.isAbsoluteFlux() && isTotalRateRule(rule);
+        }
+    }
+    const auto origin = resolveOriginRule(originRuleName);
+    if (origin.name.empty() || origin.name == originRuleName) return false;
+    for (const auto& rule : model.getReactionRules()) {
+        if (rule.getRuleName() == origin.name) {
+            return rule.isAbsoluteFlux() && isTotalRateRule(rule);
+        }
+    }
+    return false;
+}
+
+bool isAbsoluteFluxReaction(const ast::Model& model, const ast::Rxn& reaction) {
+    return reaction.isAbsoluteFlux() ||
+           isAbsoluteFluxReaction(model, reaction.getOriginRuleName());
+}
+
+std::string absoluteFluxRuleNames(const ast::Model& model) {
+    std::string names;
+    for (const auto& rule : model.getReactionRules()) {
+        if (!rule.isAbsoluteFlux()) continue;
+        if (!names.empty()) names += ',';
+        auto key = rule.getLabel().empty() ? rule.getRuleName() : rule.getLabel();
+        if (!key.empty() && key.back() == ':') key.pop_back();
+        names += key;
+    }
+    return names;
 }
 
 } // namespace bng::compile

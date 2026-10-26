@@ -398,10 +398,13 @@ engine::GeneratedNetwork networkFromNetData(
             }
             return indices;
         };
+        const auto reactionIndex = static_cast<std::size_t>(std::stoull(index));
+        const bool absoluteFlux =
+            netData.absoluteFluxReactionIndices.count(reactionIndex) != 0;
         network.reactions.add(ast::Rxn(
             index, parseSpeciesIndices(reactantsText),
             parseSpeciesIndices(productsText), rate, 1.0, {}, std::nullopt,
-            std::move(delayExpression), nonConsuming));
+            std::move(delayExpression), nonConsuming, absoluteFlux));
     }
 
     addNetObservables(netData, model);
@@ -1358,8 +1361,12 @@ engine::GeneratedNetwork networkFromParsedData(
                 products.push_back(std::stoul(token) - 1);
             }
         }
-        loadedNetwork.reactions.add(
-            ast::Rxn(idxStr, reactants, products, rateStr));
+        const auto reactionIndex = static_cast<std::size_t>(std::stoul(idxStr));
+        const bool absoluteFlux =
+            parseResult.absoluteFluxReactionIndices.count(reactionIndex) != 0;
+        loadedNetwork.reactions.add(ast::Rxn(
+            idxStr, reactants, products, rateStr, 1.0, {}, std::nullopt,
+            std::nullopt, false, absoluteFlux));
     }
     return loadedNetwork;
 }
@@ -2290,6 +2297,16 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             std::ofstream out(outputPath);
             if (!out) throw std::runtime_error("Could not open output file: " + outputPath.string());
             out << "# Created by bng_cpp\n";
+            std::string absoluteFluxIndices;
+            for (std::size_t index = 0; index < network->reactions.size(); ++index) {
+                if (!network->reactions.all()[index].isAbsoluteFlux()) continue;
+                if (!absoluteFluxIndices.empty()) absoluteFluxIndices += ',';
+                absoluteFluxIndices += std::to_string(index + 1);
+            }
+            if (!absoluteFluxIndices.empty()) {
+                out << "setOption(\"BNG3AbsoluteFluxReactionIndices\",\""
+                    << absoluteFluxIndices << "\")\n";
+            }
             // Parameters
             out << "begin parameters\n";
             std::size_t pidx = 1;

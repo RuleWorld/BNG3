@@ -1727,6 +1727,11 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
         raise ValueError(
             "native BNGIR model.metadata.options must map strings to strings"
         )
+    if "BNG3AbsoluteFluxRules" in options:
+        raise ValueError(
+            "native BNGIR does not support BNG3AbsoluteFluxRules metadata; "
+            "use the BNGL import path to preserve absolute-flux rule semantics"
+        )
 
     parameter_ids: set[int] = set()
     parameter_names: set[str] = set()

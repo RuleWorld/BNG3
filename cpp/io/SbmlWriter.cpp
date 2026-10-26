@@ -782,9 +782,23 @@ std::string SbmlWriter::writeReactions(
         }
 
         // Kinetic law with MathML
-        if (hasTotalRateModifier(model, rxn.getOriginRuleName())) {
-            sbml << "        <annotation><bng:totalRate "
-                    "xmlns:bng=\"https://bionetgen.org/sbml\"/></annotation>\n";
+        const bool totalRate =
+            hasTotalRateModifier(model, rxn.getOriginRuleName());
+        // Every SBML kinetic law emitted here is a complete extent flux.  For
+        // authored finite-network TotalRate, the writer explicitly adds the
+        // reactant factors first; after serialization that product is part of
+        // the absolute SBML flux too.
+        const bool absoluteFlux = totalRate ||
+            bng::compile::isAbsoluteFluxReaction(model, rxn);
+        if (totalRate || absoluteFlux) {
+            sbml << "        <annotation>\n";
+            if (totalRate) {
+                sbml << "          <bng:totalRate xmlns:bng=\"https://bionetgen.org/sbml\"/>\n";
+            }
+            if (absoluteFlux) {
+                sbml << "          <bng:absoluteFlux xmlns:bng=\"https://bionetgen.org/sbml\"/>\n";
+            }
+            sbml << "        </annotation>\n";
         }
         sbml << "        <kineticLaw>\n";
         sbml << "          <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
@@ -1284,13 +1298,17 @@ std::string SbmlWriter::rateLawToMathML(
     std::vector<std::string> terms;
     const auto unitFactor = NetWriter::computeUnitConversionFactor(rxn, model, network);
     const bool totalRate = hasTotalRateModifier(model, rxn.getOriginRuleName());
+    const bool absoluteFlux =
+        bng::compile::isAbsoluteFluxReaction(model, rxn);
     // A TotalRate rule already carries the complete SBML flux.  Its reaction
     // center symmetry factor is not part of that flux: multiplying it here
     // would make a BNGL -> SBML round-trip disagree with the BNGL TotalRate
     // evaluator (for example, a 3A rule would acquire an erroneous 1/3!).
     // Ordinary elementary rates still retain the network factor.
-    double combinedFactor = totalRate ? 1.0 : rxn.getFactor();
-    if (!totalRate && unitFactor.has_value()) combinedFactor *= *unitFactor;
+    double combinedFactor = (totalRate || absoluteFlux) ? 1.0 : rxn.getFactor();
+    if (!totalRate && !absoluteFlux && unitFactor.has_value()) {
+        combinedFactor *= *unitFactor;
+    }
 
     // Handle the rate expression
     const auto& rateExpr = rxn.getRateExpression();
@@ -1477,7 +1495,7 @@ std::string SbmlWriter::rateLawToMathML(
         // TotalRate expressions already contain the complete SBML flux.
         // Ordinary BNGL rate expressions are coefficients and retain the
         // mass-action reactant factors in the SBML kinetic law.
-        if (!totalRate) {
+        if (!absoluteFlux) {
             for (const auto idx : rxn.getReactants()) {
                 out << indent << "  <ci> S" << (idx + 1) << " </ci>\n";
             }
@@ -1508,7 +1526,7 @@ std::string SbmlWriter::rateLawToMathML(
         int termCount = 0;
         if (std::abs(combinedFactor - 1.0) > 1e-12) termCount++;
         termCount++; // rate constant
-        if (!totalRate) {
+        if (!absoluteFlux) {
             termCount += static_cast<int>(rxn.getReactants().size());
         }
 
@@ -1552,7 +1570,7 @@ std::string SbmlWriter::rateLawToMathML(
 
             // Ordinary BNGL rates are coefficients and need their reactant
             // factors. TotalRate laws already contain the complete flux.
-            if (!totalRate) {
+            if (!absoluteFlux) {
                 for (const auto idx : rxn.getReactants()) {
                     out << indent << "  <ci> S" << (idx + 1) << " </ci>\n";
                 }

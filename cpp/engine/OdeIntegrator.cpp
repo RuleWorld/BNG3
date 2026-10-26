@@ -560,12 +560,12 @@ void OdeIntegrator::compile() {
         // hide the rule's TotalRate modifier from the statistical-factor
         // decision made further down.
         const bool ruleIsTotalRate = totalRateForOrigin(rxn.getOriginRuleName());
-        crxn.isTotalRate = ruleIsTotalRate;
+        crxn.isAbsoluteFlux = bng::compile::isAbsoluteFluxReaction(model_, rxn);
+        crxn.isTotalRate = ruleIsTotalRate || crxn.isAbsoluteFlux;
 
-        // A TotalRate expression is already a complete flux.  Do not apply
-        // either the reaction-pattern concentration factors or the network
-        // reaction-center symmetry factor to it.  Ordinary elementary rules
-        // retain both pieces of mass-action lowering below.
+        // TotalRate omits the reaction-center symmetry factor.  Finite-network
+        // authored BNGL laws still receive reactant counts below; only the
+        // separately marked Atomizer absolute flux omits those factors too.
         const auto& originRuleName = rxn.getOriginRuleName();
 
         // Fast path: If NetWriter pre-computed a per-reaction derived rate parameter
@@ -825,6 +825,7 @@ void OdeIntegrator::compile() {
             // Hill Vmax Kh n → rate = Vmax * [S]^n / (Kh^n + [S]^n)
             crxn.isFunctional = true;
             crxn.isTotalRate = true;  // Don't multiply by reactant conc again
+            crxn.isAbsoluteFlux = true;
             hasFunctionalRates_ = true;
 
             // Parse parameters from the rate law string
@@ -1002,10 +1003,10 @@ void OdeIntegrator::compile() {
                 // same prefix, so the engine has to apply the same two
                 // factors or it disagrees with the network it exported.
                 //
-                // A TotalRate rule states its complete flux, so it takes
-                // neither: canonical BioNetGen forces the statistical factor
-                // to one for a TotalRate rule (Rxn.pm), and this engine's
-                // network writer leaves both prefixes off for one.
+                // Authored TotalRate keeps the coefficient as written:
+                // canonical BioNetGen forces the statistical factor to one
+                // (Rxn.pm) and omits its unit conversion. Finite-network
+                // reactant dependence is applied later by reactionFlux().
                 double combinedFactor = 1.0;
                 if (!ruleIsTotalRate) {
                     const auto uf =
@@ -1277,6 +1278,7 @@ void OdeIntegrator::compile() {
             compact.productCount = rxn.productIndices.size();
             compact.rateConstant = rxn.rateConstant;
             compact.isTotalRate = rxn.isTotalRate;
+            compact.isAbsoluteFlux = rxn.isAbsoluteFlux;
             constantReactantIndices_.insert(constantReactantIndices_.end(),
                                             rxn.reactantIndices.begin(), rxn.reactantIndices.end());
             constantProductIndices_.insert(constantProductIndices_.end(),
@@ -1706,7 +1708,7 @@ void OdeIntegrator::derivs(double t, const double* y, double* dydt) const {
         for (const auto& rxn : constantReactions_) {
             double rate = rxn.rateConstant;
 
-            if (!rxn.isTotalRate && rxn.reactantCount > 0) {
+            if (!rxn.isAbsoluteFlux && rxn.reactantCount > 0) {
                 const auto* reactants = constantReactantIndices_.data() + rxn.reactantOffset;
                 for (std::size_t i = 0; i < rxn.reactantCount; ++i) {
                     rate *= y[reactants[i]];
@@ -1727,7 +1729,7 @@ void OdeIntegrator::derivs(double t, const double* y, double* dydt) const {
             const auto& rxn = compiledRxns_[idx];
             double rate = rxn.rateConstant;
 
-            if (!rxn.isTotalRate) {
+            if (!rxn.isAbsoluteFlux) {
                 for (const auto ri : rxn.reactantIndices) {
                     rate *= y[ri];
                 }
@@ -1745,7 +1747,7 @@ void OdeIntegrator::derivs(double t, const double* y, double* dydt) const {
             if (rxn.delay > 0.0) continue;
             double rate = functionalRateCoefficients_[idx];
 
-            if (!rxn.isTotalRate) {
+            if (!rxn.isAbsoluteFlux) {
                 for (const auto ri : rxn.reactantIndices) {
                     rate *= y[ri];
                 }
@@ -1802,7 +1804,7 @@ double OdeIntegrator::reactionFlux(const CompiledReaction& reaction,
                                   double rateCoefficient,
                                   const double* state) const {
     double flux = rateCoefficient;
-    if (!reaction.isTotalRate) {
+    if (!reaction.isAbsoluteFlux) {
         for (const auto reactant : reaction.reactantIndices) {
             flux *= state[reactant];
         }
@@ -4119,8 +4121,17 @@ double OdeIntegrator::computePropensity(const CompiledReaction& rxn,
     // The stat_factor is already baked into rateConstant.
     double propensity = rateCoefficient;
 
-    // For TotalRate, the propensity IS the rate constant (no species multiplication)
-    if (rxn.isTotalRate) {
+    // Atomizer absolute fluxes already contain reactant dependence. Authored
+    // BNGL TotalRate laws follow BNG2's finite-network convention: omit the
+    // symmetry factor but still multiply by the reactant counts.
+    if (rxn.isAbsoluteFlux) {
+        for (std::size_t i = 0; i < rxn.reactantIndices.size(); ++i) {
+            const auto index = rxn.reactantIndices[i];
+            const auto required = static_cast<double>(
+                std::count(rxn.reactantIndices.begin(),
+                           rxn.reactantIndices.begin() + i, index) + 1);
+            if (index >= y.size() || y[index] < required) return 0.0;
+        }
         return propensity;
     }
 

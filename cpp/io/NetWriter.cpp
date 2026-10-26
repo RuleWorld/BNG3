@@ -2253,7 +2253,26 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
         out << "version(\"" << model.getVersion() << "\")\n";
     }
     for (const auto& [key, value] : model.getOptions()) {
+        if (key == "BNG3AbsoluteFluxRules") continue;
         out << "setOption(\"" << key << "\",\"" << value << "\")\n";
+    }
+    const auto absoluteFluxRules = compile::absoluteFluxRuleNames(model);
+    if (!absoluteFluxRules.empty()) {
+        out << "setOption(\"BNG3AbsoluteFluxRules\",\""
+            << absoluteFluxRules << "\")\n";
+    }
+    std::string absoluteFluxReactionIndices;
+    for (std::size_t index = 0; index < network.reactions.size(); ++index) {
+        if (!compile::isAbsoluteFluxReaction(model,
+                                             network.reactions.all()[index])) {
+            continue;
+        }
+        if (!absoluteFluxReactionIndices.empty()) absoluteFluxReactionIndices += ',';
+        absoluteFluxReactionIndices += std::to_string(index + 1);
+    }
+    if (!absoluteFluxReactionIndices.empty()) {
+        out << "setOption(\"BNG3AbsoluteFluxReactionIndices\",\""
+            << absoluteFluxReactionIndices << "\")\n";
     }
 
     const auto derivedRateParams = NetWriter::buildDerivedRateParams(model, network);
@@ -2568,7 +2587,8 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             if (reaction.isNonConsuming()) out << " NonConsuming";
         };
         const bool totalRate =
-            hasTotalRateModifier(model, reaction.getOriginRuleName());
+            hasTotalRateModifier(model, reaction.getOriginRuleName()) ||
+            compile::isAbsoluteFluxReaction(model, reaction);
         // Perl BNG2 (Rxn.pm::stringID) sorts reactant/product indices for
         // Ele and Function rate laws, but preserves match order for the
         // saturating builtins (MM/Sat/Hill/Arrhenius).
