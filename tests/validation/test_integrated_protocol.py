@@ -3,8 +3,10 @@
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from tests.validation import integrated_protocol as protocol
+from tests.validation.reproduce_issue141_lifecycle import _native_extension_path
 
 
 def test_expected_protocol_checks_are_explicit_and_issue_linked():
@@ -247,6 +249,15 @@ def test_antlr_thread_local_cache_probe_reads_compiler_definitions():
             ]
         }
     )
+
+
+def test_issue141_reproducer_uses_the_native_module_bound_by_model(tmp_path):
+    extension = tmp_path / "_bionetgen_cpp.test.so"
+    model_module = SimpleNamespace(_cpp=SimpleNamespace(__file__=str(extension)))
+    assert _native_extension_path(model_module) == extension.resolve()
+
+    with pytest.raises(RuntimeError, match="did not bind a native extension"):
+        _native_extension_path(SimpleNamespace(_cpp=None))
 
 
 def test_rate_parameter_does_not_select_unused_source_parameter():

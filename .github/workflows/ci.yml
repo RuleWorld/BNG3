@@ -357,7 +357,7 @@ jobs:
       - name: Repeat issue 141 exception and concurrent lifecycle path
         env:
           ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:halt_on_error=1
-          PYTHONPATH: python:.
+          PYTHONPATH: python:build/cpp:.
         run: |
           export LD_PRELOAD="$(gcc -print-file-name=libasan.so)"
           python tests/validation/reproduce_issue141_lifecycle.py --iterations 25

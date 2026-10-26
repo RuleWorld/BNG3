@@ -10,6 +10,7 @@ from pathlib import Path
 import tempfile
 
 import bionetgen
+import bionetgen.model as bionetgen_model
 
 from tests.validation.integrated_cases import generated_cases, reuse_bngl
 from tests.validation.integrated_protocol import (
@@ -19,6 +20,14 @@ from tests.validation.integrated_protocol import (
     _result_difference,
     _antlr_thread_local_cache_enabled,
 )
+
+
+def _native_extension_path(model_module) -> Path:
+    """Use the extension already bound by bionetgen.model."""
+    native = getattr(model_module, "_cpp", None)
+    if native is None or not getattr(native, "__file__", None):
+        raise RuntimeError("bionetgen.model did not bind a native extension")
+    return Path(native.__file__).resolve()
 
 
 def _exception_recovery(source: Path) -> None:
@@ -56,7 +65,7 @@ def main() -> None:
     if args.iterations < 1:
         parser.error("--iterations must be positive")
 
-    native = Path(bionetgen._bionetgen_cpp.__file__).resolve()
+    native = _native_extension_path(bionetgen_model)
     identity = {
         "native_extension": str(native),
         "native_extension_sha256": hashlib.sha256(native.read_bytes()).hexdigest(),

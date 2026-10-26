@@ -103,7 +103,7 @@ def test_issue141_lifecycle_asan_exposes_repo_root_for_tests_package_import():
         for step in steps
         if "reproduce_issue141_lifecycle.py" in step.get("run", "")
     )
-    assert reproduce.get("env", {}).get("PYTHONPATH") == "python:."
+    assert reproduce.get("env", {}).get("PYTHONPATH") == "python:build/cpp:."
     assert "tests/validation/reproduce_issue141_lifecycle.py" in job
     environment = os.environ.copy()
     environment["PYTHONPATH"] = os.pathsep.join(("python", "."))
