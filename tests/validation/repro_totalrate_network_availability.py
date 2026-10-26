@@ -82,6 +82,11 @@ def _network(cpp):
 
 
 def _molecule_total(species_names: list[str], values, molecule_type: str) -> float:
+    if len(species_names) != len(values):
+        raise ValueError(
+            "species and population vectors have different lengths: "
+            f"{len(species_names)} != {len(values)}"
+        )
     return sum(
         float(value) * species_name.count(f"{molecule_type}(")
         for species_name, value in zip(species_names, values)
@@ -97,9 +102,14 @@ def main() -> int:
     extension_path = Path(cpp.__file__).resolve()
     extension_sha256 = hashlib.sha256(extension_path.read_bytes()).hexdigest()
     model_sha256 = hashlib.sha256(MODEL.encode("utf-8")).hexdigest()
-    print(f"bng3_source_commit={source_commit}", flush=True)
+    print(f"source_checkout_commit={source_commit}", flush=True)
     print(f"native_extension={extension_path}", flush=True)
     print(f"native_extension_sha256={extension_sha256}", flush=True)
+    print(
+        "native_source_build_binding=UNVERIFIED "
+        "(source commit and extension identity are reported separately)",
+        flush=True,
+    )
     print(f"model_sha256={model_sha256}", flush=True)
 
     ode_model, ode_network = _network(cpp)
