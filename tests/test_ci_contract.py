@@ -95,6 +95,49 @@ def test_semantic_test_jobs_retain_reports_on_failure(job_id):
         assert "build/Testing/Temporary/" in paths
 
 
+def test_issue141_lifecycle_exposes_repo_root_for_tests_package_import():
+    job = job_subtree_text(CI_WORKFLOW, "python-native-lifecycle")
+    steps = parse_workflow(CI_WORKFLOW)["jobs"]["python-native-lifecycle"]["steps"]
+    reproduce = next(
+        step
+        for step in steps
+        if "reproduce_issue141_lifecycle.py" in step.get("run", "")
+    )
+    assert reproduce.get("env", {}).get("PYTHONPATH") == "python:build/cpp:."
+    assert "tests/validation/reproduce_issue141_lifecycle.py" in job
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = os.pathsep.join(("python", "."))
+    subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from tests.validation import integrated_cases, integrated_protocol",
+        ],
+        cwd=REPO,
+        env=environment,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
+def test_issue141_python_native_lifecycle_uses_stock_python_without_asan_runtime_mixing():
+    job = job_subtree_text(CI_WORKFLOW, "python-native-lifecycle")
+    steps = parse_workflow(CI_WORKFLOW)["jobs"]["python-native-lifecycle"]["steps"]
+    reproduce = next(
+        step
+        for step in steps
+        if "reproduce_issue141_lifecycle.py" in step.get("run", "")
+    )
+    assert "-fsanitize=address" not in job, (
+        "the setup-python interpreter and NumPy wheels are not ASan-instrumented; "
+        "keep Python lifecycle checks outside the native ASan process"
+    )
+    assert "ASAN_OPTIONS" not in reproduce.get("env", {})
+    assert "LD_PRELOAD" not in reproduce.get("run", "")
+    assert "python tests/validation/reproduce_issue141_lifecycle.py" in reproduce["run"]
+
+
 # The flags that embed a second copy of the C++ runtime into a binary. They are
 # correct for a CLI executable, which owns its process, and wrong for the
 # Python extension, which is loaded into a process someone else owns.

@@ -123,6 +123,22 @@ TEST_CASE("PatternGraph BNG2 strings retain their exact format", "[BNGcore][Patt
     REQUIRE(graph.get_BNG2_string() == "A(B)");
 }
 
+TEST_CASE("PatternGraph node deletion removes incoming and outgoing edges", "[BNGcore][PatternGraph]") {
+    PatternGraph graph;
+    NodeType typeA("A", ENTITY_NODE_TYPE, NULL_STATE_TYPE);
+    NodeType typeB("B", ENTITY_NODE_TYPE, NULL_STATE_TYPE);
+    Node a(typeA);
+    Node b(typeB);
+    Node* graphA = graph.add_node(a);
+    Node* graphB = graph.add_node(b);
+    graph.add_edge(graphA, graphB);
+
+    REQUIRE(graph.delete_node(graphB));
+    REQUIRE(graph.size() == 1);
+    REQUIRE(graphA->out_degree() == 0);
+    REQUIRE(graph.validate(false));
+}
+
 namespace {
 
 // Counts the node functions that are alive, so a test can observe whether a

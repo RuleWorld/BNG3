@@ -12,11 +12,6 @@
 using namespace BNGcore;
 
 
-// define static members
-node_iter_t        PatternGraph::node_iter;
-node_const_iter_t  PatternGraph::node_const_iter;
-
-
 // Constructor
 PatternGraph::PatternGraph ( )
 {
@@ -158,17 +153,17 @@ PatternGraph::delete_node ( Node * node )
 {
     canonical_flag = false;
 
-    node_iter = std::find( begin(), end(), node );
+    auto node_iter = std::find( begin(), end(), node );
     if ( node_iter == end() )
         return false;
 
     // remove in edges
-    for ( node_const_iter = node->edges_in_begin();  node_const_iter != node->edges_in_end();  ++node_const_iter  )
-        delete_edge ( *node_iter, node  );
+    while ( node->in_degree() > 0 )
+        delete_edge ( *node->edges_in_begin(), node );
 
     // remove out edges
-    for ( node_const_iter = node->edges_out_begin();  node_const_iter != node->edges_out_end();  ++node_const_iter  )
-        delete_edge ( node, *node_iter );
+    while ( node->out_degree() > 0 )
+        delete_edge ( node, *node->edges_out_begin() );
     
     // erase node from graph
     delete node;
@@ -831,9 +826,7 @@ void
 PatternGraph::reset_index ( ) const
 {
     canonical_flag = false;
-    // Canonical labels are queried concurrently for independent graphs during
-    // network generation. Do not use the legacy static iterator here: it is
-    // shared by every PatternGraph instance.
+    // Canonical labels can be queried concurrently for independent graphs.
     node_const_iter_t node_iter;
     for ( node_iter = nodes.begin();  node_iter != nodes.end();  ++node_iter )
         (*node_iter)->set_index( -1 );
@@ -844,7 +837,7 @@ PatternGraph::reset_index ( ) const
 void
 PatternGraph::print ( ) const
 {
-    node_const_iter_t  edge_iter;
+    node_const_iter_t  node_const_iter, edge_iter;
 
     std::cout << "/// PatternGraph::print_graph : " << this << " ///" << std::endl;
     std::cout << "number of nodes: " << nodes.size() << std::endl;

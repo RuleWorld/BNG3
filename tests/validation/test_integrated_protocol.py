@@ -3,8 +3,10 @@
 from types import SimpleNamespace
 
 import numpy as np
+import pytest
 
 from tests.validation import integrated_protocol as protocol
+from tests.validation.reproduce_issue141_lifecycle import _native_extension_path
 
 
 def test_expected_protocol_checks_are_explicit_and_issue_linked():
@@ -197,6 +199,65 @@ def test_lifecycle_receipt_retains_actual_outputs(tmp_path):
     )
     receipt = json.loads((tmp_path / "lifecycle-results.json").read_text())
     assert receipt["lifecycle-mutation-baseline"][0]["observables"]["A"] == [10.0, 8.0]
+
+
+def test_protocol_progress_records_last_native_stage(tmp_path):
+    import json
+
+    protocol._write_protocol_progress(
+        tmp_path,
+        "dimerization-v3-n80-r0-a0",
+        "lifecycle-construction-isolation",
+        "simulate-model",
+        model="left",
+        suffix="parallel",
+        seed=1729,
+    )
+
+    receipt = json.loads((tmp_path / "protocol-progress.json").read_text())
+    assert receipt == {
+        "schema_version": 1,
+        "case_id": "dimerization-v3-n80-r0-a0",
+        "check": "lifecycle-construction-isolation",
+        "stage": "simulate-model",
+        "context": {"model": "left", "suffix": "parallel", "seed": 1729},
+    }
+    assert not list(tmp_path.glob("protocol-progress.*.tmp"))
+
+
+def test_antlr_thread_local_cache_probe_reads_compiler_definitions():
+    assert not protocol._antlr_thread_local_cache_enabled(
+        {"command": "c++ -Iantlr/runtime -c cpp/parser/generated/BNGParser.cpp"}
+    )
+    assert protocol._antlr_thread_local_cache_enabled(
+        {
+            "arguments": [
+                "c++",
+                "-DANTLR4_USE_THREAD_LOCAL_CACHE=1",
+                "-c",
+                "cpp/parser/generated/BNGParser.cpp",
+            ]
+        }
+    )
+    assert not protocol._antlr_thread_local_cache_enabled(
+        {
+            "arguments": [
+                "c++",
+                "-DANTLR4_USE_THREAD_LOCAL_CACHE=0",
+                "-c",
+                "cpp/parser/generated/BNGParser.cpp",
+            ]
+        }
+    )
+
+
+def test_issue141_reproducer_uses_the_native_module_bound_by_model(tmp_path):
+    extension = tmp_path / "_bionetgen_cpp.test.so"
+    model_module = SimpleNamespace(_cpp=SimpleNamespace(__file__=str(extension)))
+    assert _native_extension_path(model_module) == extension.resolve()
+
+    with pytest.raises(RuntimeError, match="did not bind a native extension"):
+        _native_extension_path(SimpleNamespace(_cpp=None))
 
 
 def test_rate_parameter_does_not_select_unused_source_parameter():
