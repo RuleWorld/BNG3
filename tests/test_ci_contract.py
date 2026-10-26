@@ -121,6 +121,26 @@ def test_issue141_lifecycle_asan_exposes_repo_root_for_tests_package_import():
     )
 
 
+def test_issue141_lifecycle_asan_configures_shadow_memory_compatible_aslr():
+    steps = parse_workflow(CI_WORKFLOW)["jobs"]["python-native-lifecycle-asan"]["steps"]
+    reproduce = next(
+        step
+        for step in steps
+        if "reproduce_issue141_lifecycle.py" in step.get("run", "")
+    )
+    command = reproduce["run"]
+    aslr_setup = "sudo sysctl -w vm.mmap_rnd_bits=28"
+    preload = 'export LD_PRELOAD="$(gcc -print-file-name=libasan.so)"'
+    native_import = (
+        "python -c 'import bionetgen.model as model; assert model._cpp.__file__'"
+    )
+    reproducer = "python tests/validation/reproduce_issue141_lifecycle.py"
+    assert aslr_setup in command
+    assert command.index(aslr_setup) < command.index(preload)
+    assert command.index(preload) < command.index(native_import)
+    assert command.index(native_import) < command.index(reproducer)
+
+
 # The flags that embed a second copy of the C++ runtime into a binary. They are
 # correct for a CLI executable, which owns its process, and wrong for the
 # Python extension, which is loaded into a process someone else owns.
