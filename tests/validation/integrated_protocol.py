@@ -62,6 +62,24 @@ def _row(case_id, name, status, detail, first_difference=None):
     }
 
 
+def _write_protocol_progress(directory, case_id, check, stage, **context):
+    """Persist the last native operation reached before a worker exits."""
+    import json
+    import uuid
+
+    path = Path(directory) / "protocol-progress.json"
+    receipt = {
+        "schema_version": 1,
+        "case_id": case_id,
+        "check": check,
+        "stage": stage,
+        "context": context,
+    }
+    temporary = path.with_name(f"{path.stem}.{uuid.uuid4().hex}.tmp")
+    temporary.write_text(json.dumps(receipt, sort_keys=True) + "\n")
+    temporary.replace(path)
+
+
 def _topology_unavailable_row(case_id):
     return _row(
         case_id,
@@ -311,6 +329,7 @@ def run(source: Path, case_id: str, directory: Path, *, case=None) -> list[dict]
         ]
 
     rows = []
+    _write_protocol_progress(directory, case_id, "protocol", "initialized")
     control_source = None
     if case is not None:
         from .integrated_cases import reuse_bngl
@@ -320,6 +339,7 @@ def run(source: Path, case_id: str, directory: Path, *, case=None) -> list[dict]
 
     # Compare both public modern dispatch paths on a genuinely nonuniform
     # absolute grid. The model method result is the API relation under test.
+    _write_protocol_progress(directory, case_id, "modern-run-equivalence", "start")
     try:
         times = [0.25, 0.6, 1.7, 3.0]
         options = dict(
@@ -353,6 +373,7 @@ def run(source: Path, case_id: str, directory: Path, *, case=None) -> list[dict]
 
     # Invalid method/option combinations must fail before creating output. A
     # valid public run in the same installed worker proves the engine is usable.
+    _write_protocol_progress(directory, case_id, "invalid-option-rejection", "start")
     try:
         before = {path.name for path in directory.iterdir()}
         try:
@@ -393,6 +414,7 @@ def run(source: Path, case_id: str, directory: Path, *, case=None) -> list[dict]
     # Isolate two SSA models with distinct rates and seeds. Replay one seed
     # after mutating its sibling, and verify the original model and saved arrays
     # retain their pre-mutation values.
+    _write_protocol_progress(directory, case_id, "independent-ssa-state", "start")
     try:
         # Numeric folding may leave the translation without mutable rates.
         # Use a separately identified native source control in that case.
@@ -499,6 +521,7 @@ def run(source: Path, case_id: str, directory: Path, *, case=None) -> list[dict]
     # Functional recovery is separate from native allocation cleanup. The late
     # conditional reaches CVODE's output loop; an unknown name alone fails
     # before solver allocation and cannot qualify that exception boundary.
+    _write_protocol_progress(directory, case_id, "exception-recovery", "start")
     try:
         recovered = bionetgen.load(source)
         options = dict(method="ode", t_end=1.0, n_steps=2)
@@ -579,6 +602,7 @@ def run(source: Path, case_id: str, directory: Path, *, case=None) -> list[dict]
             ("lifecycle-mutation-baseline", _lifecycle_mutation_baseline),
             ("lifecycle-public-routes", _lifecycle_public_routes),
         ):
+            _write_protocol_progress(directory, case_id, name, "start")
             try:
                 difference = check(bionetgen, case, directory)
                 rows.append(
@@ -694,11 +718,43 @@ def _reuse_source_controls(bionetgen, case, directory):
         if method == "ode":
             options.update(rtol=1e-10, atol=1e-12)
         for parameter, value in scenarios:
+            _write_protocol_progress(
+                directory,
+                case["id"],
+                "parameter-source-controls",
+                "load-model",
+                method=method,
+                parameter=parameter,
+            )
             model = bionetgen.load(source)
+            _write_protocol_progress(
+                directory,
+                case["id"],
+                "parameter-source-controls",
+                "baseline-simulation",
+                method=method,
+                parameter=parameter,
+            )
             baseline = model.simulate(**options)
             snapshot = _copy_result(baseline)
             old = float(model.get_parameter(parameter).value)
+            _write_protocol_progress(
+                directory,
+                case["id"],
+                "parameter-source-controls",
+                "mutate-parameter",
+                method=method,
+                parameter=parameter,
+            )
             model.set_parameter(parameter, value)
+            _write_protocol_progress(
+                directory,
+                case["id"],
+                "parameter-source-controls",
+                "mutated-simulation",
+                method=method,
+                parameter=parameter,
+            )
             actual = model.simulate(**options)
             changed_case = dict(case)
             if parameter == "N":
@@ -709,6 +765,14 @@ def _reuse_source_controls(bionetgen, case, directory):
             reference.write_text(
                 reuse_bngl(changed_case, rate=value if parameter == "k" else RATE)
             )
+            _write_protocol_progress(
+                directory,
+                case["id"],
+                "parameter-source-controls",
+                "fresh-source-simulation",
+                method=method,
+                parameter=parameter,
+            )
             fresh = bionetgen.load(reference).simulate(**options)
             difference = _result_difference(actual, fresh)
             if difference is not None:
@@ -717,7 +781,23 @@ def _reuse_source_controls(bionetgen, case, directory):
                 raise AssertionError(
                     f"ODE override {parameter} had no observable effect"
                 )
+            _write_protocol_progress(
+                directory,
+                case["id"],
+                "parameter-source-controls",
+                "restore-parameter",
+                method=method,
+                parameter=parameter,
+            )
             model.set_parameter(parameter, old)
+            _write_protocol_progress(
+                directory,
+                case["id"],
+                "parameter-source-controls",
+                "restored-simulation",
+                method=method,
+                parameter=parameter,
+            )
             reset = model.simulate(**options)
             difference = _result_difference(reset, baseline) or _snapshot_difference(
                 snapshot, _copy_result(baseline), "saved"
@@ -771,6 +851,12 @@ def _lifecycle_construction_isolation(bionetgen, case, directory):
 
     source = directory / "lifecycle-isolation.bngl"
     source.write_text(reuse_bngl(case))
+    _write_protocol_progress(
+        directory,
+        case["id"],
+        "lifecycle-construction-isolation",
+        "load-concurrent-models",
+    )
     with ThreadPoolExecutor(
         max_workers=lifecycle_budget["concurrent_models_per_case"]
     ) as pool:
@@ -788,12 +874,30 @@ def _lifecycle_construction_isolation(bionetgen, case, directory):
     networks = {}
 
     def replay(model, rate, initial, seed, model_name, suffix):
+        _write_protocol_progress(
+            directory,
+            case["id"],
+            "lifecycle-construction-isolation",
+            "simulate-model",
+            model=model_name,
+            suffix=suffix,
+            seed=seed,
+        )
         actual = model.simulate(seed=seed, **options)
         previous = networks.setdefault(model_name, model._network)
         retained = previous is model._network and previous is not None
         expected_case = dict(case, initial=initial)
         reference = directory / f"lifecycle-isolation-{model_name}-{suffix}.bngl"
         reference.write_text(reuse_bngl(expected_case, rate=rate))
+        _write_protocol_progress(
+            directory,
+            case["id"],
+            "lifecycle-construction-isolation",
+            "simulate-fresh-reference",
+            model=model_name,
+            suffix=suffix,
+            seed=seed,
+        )
         expected = bionetgen.load(reference).simulate(seed=seed, **options)
         receipts.append(
             _result_receipt(
@@ -814,6 +918,9 @@ def _lifecycle_construction_isolation(bionetgen, case, directory):
 
     # Two independent native instances run concurrently, then are interleaved
     # twice more. This is the declared maximum of three runs per instance.
+    _write_protocol_progress(
+        directory, case["id"], "lifecycle-construction-isolation", "parallel-run"
+    )
     with ThreadPoolExecutor(
         max_workers=lifecycle_budget["concurrent_models_per_case"]
     ) as pool:

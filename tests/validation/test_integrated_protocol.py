@@ -199,6 +199,30 @@ def test_lifecycle_receipt_retains_actual_outputs(tmp_path):
     assert receipt["lifecycle-mutation-baseline"][0]["observables"]["A"] == [10.0, 8.0]
 
 
+def test_protocol_progress_records_last_native_stage(tmp_path):
+    import json
+
+    protocol._write_protocol_progress(
+        tmp_path,
+        "dimerization-v3-n80-r0-a0",
+        "lifecycle-construction-isolation",
+        "simulate-model",
+        model="left",
+        suffix="parallel",
+        seed=1729,
+    )
+
+    receipt = json.loads((tmp_path / "protocol-progress.json").read_text())
+    assert receipt == {
+        "schema_version": 1,
+        "case_id": "dimerization-v3-n80-r0-a0",
+        "check": "lifecycle-construction-isolation",
+        "stage": "simulate-model",
+        "context": {"model": "left", "suffix": "parallel", "seed": 1729},
+    }
+    assert not list(tmp_path.glob("protocol-progress.*.tmp"))
+
+
 def test_rate_parameter_does_not_select_unused_source_parameter():
     model = SimpleNamespace(
         parameters=[SimpleNamespace(name="k", expression="0.4")],
