@@ -5,6 +5,79 @@ SBML atomizer — the constructs it refuses, why, and whether each boundary is
 reducible — is recorded separately in
 [`ATOMIZER_LIMITATIONS.md`](ATOMIZER_LIMITATIONS.md).
 
+## SBML event endpoint output contract (2026-10-25 candidate)
+
+The native event module now includes an independent source comparison for an
+event whose trigger is already true at time zero with `initialValue=false`.
+This fixture lowers to the existing time-zero scheduled action; the test runs
+the emitted BNGL actions and compares all changing species against
+libRoadRunner 2.10.0, including the event target at the initial row. The
+continuous state-trigger test in the same module separately compares a later
+rising-edge event and its state updates against libRoadRunner. A fixed-time
+assignment exposed an output boundary gap: the phase simulation wrote its
+endpoint before applying the assignment, and the continued phase omitted its
+starting row. Deterministic generated phases now preserve the requested output
+grid, and ODE/CVODE record the post-assignment state at the same time with a
+zero-duration continuation. The pre/post rows preserve the discontinuity; the
+post-event row agrees with libRoadRunner at the event time. The focused
+regression checks two simultaneous assignments at an off-grid time and at
+`t_end`. A Release native extension built from the checked-out source passed
+all 35 tests in `tests/python/test_modern_atomizer_native_events.py` and the
+focused event lowering modules (123 tests total).
+
+This qualifies these three bounded paths only. It does not establish delayed
+event cancellation/persistence, cascades/recurrence, stochastic event
+transitions or general equal-priority ordering; those remain explicit #158
+gaps. This candidate does not establish action-aware BioModels corpus parity;
+the current direct source comparator bypasses BNGL scheduled actions, so that
+comparison surface is separately under repair.
+
+Current family dispositions:
+
+- #157: native trigger roots and state updates are implemented for the tested
+  ODE/CVODE subset. The time-zero initial-false fixture uses a scheduled
+  action, and fixed-time ODE/CVODE assignments now emit post-event endpoint
+  rows while retaining the requested output grid. A
+  later continuous crossing is tested independently; the full
+  initial/rising-edge, parameter/compartment and solver-reinitialization matrix
+  is not established.
+- #158: delayed execution and trigger-time/execution-time value selection exist
+  in the ODE event queue; selected delayed trajectories compare with
+  libRoadRunner. Nonpersistent cancellation is implemented by retesting before
+  execution and has focused action-lowering coverage, but no broad independent
+  queue qualification. Runtime priorities are constant-only; unorderable
+  simultaneous groups are refused. Assignment-triggered retesting exists, but
+  general cascades/recurrence lack an independent conformance matrix. State
+  triggered events under SSA are refused because stochastic jump scheduling is
+  not implemented.
+- #159: the full locked suite ran at exact merged source
+  `32ac6788760270ce0ce75ef485d8e7a64836b600` in [run 40222470623](https://github.com/RuleWorld/BNG3/actions/runs/40222470623):
+  all 1,923 cases were selected; conversion passed 1,798 and classified 125
+  unsupported, with zero product failures/timeouts. Round trip and independent
+  comparison each passed those same 1,798 records; 125 were not tested. Official
+  conformance reported 1,781 passed, 141 unsupported and one failed: stochastic
+  case `00003`, with five SD statistics outside the official range. The
+  preserved run used 40,000 trajectories and exact official source/settings.
+  The case-level binomial tail assumed independent normal checks across output
+  times, although the same trajectories are reused and the source is a highly
+  non-Gaussian subcritical branching process. The official case remains failed;
+  statistical-gate interpretation remains unchanged pending a separate
+  acceptance decision. The report
+  SHA-256 is `e01550eb8b3e8eb74361aa4feb85eab032dd43c6d49da208c6a0c41009edcea1`;
+  its official failure remains under statistical review. This is a current full
+  report, but its failed official gate and outstanding case-level scope prevent
+  closure. #160's
+  requested current feature-class mapping remains incomplete; explicit per-case
+  refusal is not a complete class disposition.
+- #146: the exact-head run [38852202284](https://github.com/RuleWorld/BNG3/actions/runs/38852202284)
+  passed one fixed-seed `simple_system` -oSteps endpoint comparison at
+  `2f7200a279767bcc4a78a33775224e30f3d65521`. It does not run the four strict
+  deletion fixtures whose earlier receipt is red. The PR #443 independent
+  NFsim lane is a separate bounded pass; scheduled historical NFsim validation
+  is skipped. Historical v17 local-rate binding, v19 malformed source,
+  r42/r43 missing XML inputs and r21 unresolved statistical comparison remain
+  distinct investigation classes, not a current aggregate engine failure.
+
 ## Curated BioModels #162 (2026-10-23)
 
 The previously paused full curated BioModels lane was explicitly resumed and

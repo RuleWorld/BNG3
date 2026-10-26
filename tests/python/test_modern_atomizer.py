@@ -2894,6 +2894,7 @@ def test_playground_event_actions_use_source_half_up_step_rounding():
         is_param=lambda variable: variable == "k",
         base_t_end=2,
         base_steps=5,
+        method="ssa",
     )
     result = synthesize_event_actions(
         [

@@ -127,20 +127,33 @@ def sample_on_reference_grid(bngl, grid):
     import re
 
     before = [time for time in grid if time < EVENT_TIME] + [EVENT_TIME]
-    after = [EVENT_TIME] + [time for time in grid if time > EVENT_TIME]
+    after = [time for time in grid if time > EVENT_TIME]
     lines = []
-    phase = 0
+    first = True
     for line in bngl.splitlines():
-        if line.strip().startswith("simulate("):
-            phase += 1
-            times = before if phase == 1 else after
-            start = 0 if phase == 1 else EVENT_TIME
-            continuation = ",continue=>1" if phase == 2 else ""
-            lines.append(
-                f'  simulate({{method=>"ode", t_start=>{start}, '
-                f"sample_times=>[{','.join(repr(time) for time in times)}]"
-                f"{continuation}, print_functions=>1}})"
-            )
+        stripped = line.strip()
+        if stripped.startswith("simulate("):
+            m_start = re.search(r"t_start=>([0-9.eE+-]+)", stripped)
+            m_end = re.search(r"t_end=>([0-9.eE+-]+)", stripped)
+            if m_start and m_end and float(m_start.group(1)) == float(m_end.group(1)):
+                t = m_start.group(1)
+                lines.append(
+                    f'  simulate({{continue=>1, method=>"ode", t_start=>{t}, '
+                    f"t_end=>{t}, n_steps=>1, print_functions=>1}})"
+                )
+            elif first:
+                first = False
+                lines.append(
+                    f'  simulate({{method=>"ode", t_start=>0, '
+                    f"sample_times=>[{','.join(repr(time) for time in before)}], "
+                    f"print_functions=>1}})"
+                )
+            else:
+                lines.append(
+                    f'  simulate({{continue=>1, method=>"ode", t_start=>{EVENT_TIME}, '
+                    f"sample_times=>[{','.join(repr(time) for time in after)}], "
+                    f"print_functions=>1}})"
+                )
         else:
             lines.append(line)
     return "\n".join(lines)
