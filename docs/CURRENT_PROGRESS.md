@@ -5,7 +5,7 @@ SBML atomizer — the constructs it refuses, why, and whether each boundary is
 reducible — is recorded separately in
 [`ATOMIZER_LIMITATIONS.md`](ATOMIZER_LIMITATIONS.md).
 
-## SBML event initial-edge contract (2026-10-25 candidate)
+## SBML event endpoint output contract (2026-10-25 candidate)
 
 The native event module now includes an independent source comparison for an
 event whose trigger is already true at time zero with `initialValue=false`.
@@ -13,16 +13,17 @@ This fixture lowers to the existing time-zero scheduled action; the test runs
 the emitted BNGL actions and compares all changing species against
 libRoadRunner 2.10.0, including the event target at the initial row. The
 continuous state-trigger test in the same module separately compares a later
-rising-edge event and its state updates against libRoadRunner. On the isolated
-candidate, a fixed-time assignment at `t=0.5` exposed a scheduled-action output
-boundary gap: the phase simulation wrote its endpoint before applying the
-assignment, and the continued phase omitted its starting row. The generated
-action sequence now records the post-assignment state at the same time with a
-zero-duration continuation. Its duplicate-time pre/post rows match the event
-discontinuity; the post-event row matches libRoadRunner. A Release native
-extension built from the checked-out source passed all 34 tests in
-`tests/python/test_modern_atomizer_native_events.py` and the focused event
-lowering modules (122 tests total).
+rising-edge event and its state updates against libRoadRunner. A fixed-time
+assignment exposed an output boundary gap: the phase simulation wrote its
+endpoint before applying the assignment, and the continued phase omitted its
+starting row. Deterministic generated phases now preserve the requested output
+grid, and ODE/CVODE record the post-assignment state at the same time with a
+zero-duration continuation. The pre/post rows preserve the discontinuity; the
+post-event row agrees with libRoadRunner at the event time. The focused
+regression checks two simultaneous assignments at an off-grid time and at
+`t_end`. A Release native extension built from the checked-out source passed
+all 35 tests in `tests/python/test_modern_atomizer_native_events.py` and the
+focused event lowering modules (123 tests total).
 
 This qualifies these three bounded paths only. It does not establish delayed
 event cancellation/persistence, cascades/recurrence, stochastic event
@@ -35,7 +36,8 @@ Current family dispositions:
 
 - #157: native trigger roots and state updates are implemented for the tested
   ODE/CVODE subset. The time-zero initial-false fixture uses a scheduled
-  action, and a fixed-time assignment now emits a post-event endpoint row. A
+  action, and fixed-time ODE/CVODE assignments now emit post-event endpoint
+  rows while retaining the requested output grid. A
   later continuous crossing is tested independently; the full
   initial/rising-edge, parameter/compartment and solver-reinitialization matrix
   is not established.
@@ -59,7 +61,8 @@ Current family dispositions:
   The case-level binomial tail assumed independent normal checks across output
   times, although the same trajectories are reused and the source is a highly
   non-Gaussian subcritical branching process. The official case remains failed;
-  statistical-gate interpretation is under review. The report
+  statistical-gate interpretation remains unchanged pending a separate
+  acceptance decision. The report
   SHA-256 is `e01550eb8b3e8eb74361aa4feb85eab032dd43c6d49da208c6a0c41009edcea1`;
   its official failure remains under statistical review. This is a current full
   report, but its failed official gate and outstanding case-level scope prevent
