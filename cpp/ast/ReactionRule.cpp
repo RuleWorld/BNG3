@@ -920,12 +920,13 @@ ReactionRule ReactionRule::fromResolvedPatterns(
     std::string label,
     std::vector<Expression> rates,
     std::vector<SpeciesGraph> reactantPatterns,
-    std::vector<SpeciesGraph> productPatterns) {
+    std::vector<SpeciesGraph> productPatterns,
+    bool bidirectional) {
     std::vector<std::string> reactants(reactantPatterns.size());
     std::vector<std::string> products(productPatterns.size());
     return ReactionRule(
         std::move(ruleName), std::move(label), std::move(reactants),
-        std::move(products), std::move(rates), {}, false,
+        std::move(products), std::move(rates), {}, bidirectional,
         std::move(reactantPatterns), std::move(productPatterns), false);
 }
 
