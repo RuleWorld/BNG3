@@ -659,4 +659,5 @@ def test_bngir_optional_provenance_envelope_remains_valid(version):
     jsonschema.validate(document, json.loads(schema_path.read_text()))
 
     restored = bionetgen.from_bngir(document)
+    assert "provenance" not in json.loads(bionetgen.to_bngir(model, version=version))
     assert bionetgen.semantic_equal(model, restored, version=version)

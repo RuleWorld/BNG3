@@ -43,7 +43,16 @@ def _direction(reactant, product):
         "products": [product],
         "rate": {"kind": 0, "expression": _parameter(1)},
         "transformations_complete": True,
-        "mutations": [],
+        "mutations": [
+            {
+                "kind": "delete_molecule",
+                "molecule": {"side": "reactant", "pattern": 0, "molecule": 0},
+            },
+            {
+                "kind": "add_molecule",
+                "molecule": {"side": "product", "pattern": 0, "molecule": 0},
+            },
+        ],
         "filters": [],
         "local_scopes": [],
     }
@@ -55,19 +64,29 @@ def _document():
         "format": "BNGIR",
         "version": "0.2",
         "features": {
-            "required": [],
-            "used": ["parameters", "molecule_types", "seeds", "rules"],
+            "required": ["structured_patterns", "structured_expressions"],
+            "used": [
+                "rules",
+                "seeds",
+                "structured_patterns",
+                "structured_expressions",
+            ],
         },
         "protocol": {"actions": []},
         "model": {
             "metadata": {
                 "name": "independent_decay",
                 "version": "2.2",
-                "substance_units": "item",
+                "substance_units": "",
                 "options": {},
             },
             "parameters": [
-                {"id": 0, "name": "base", "expression": _number(0.05)},
+                {
+                    "id": 0,
+                    "name": "base",
+                    "expression": _number(0.05),
+                    "constant_value": 0.05,
+                },
                 {
                     "id": 1,
                     "name": "k",
@@ -76,6 +95,7 @@ def _document():
                         "operator": "multiply",
                         "arguments": [_number(2.0), _parameter(0)],
                     },
+                    "constant_value": 0.1,
                 },
             ],
             "molecule_types": [
@@ -94,7 +114,9 @@ def _document():
             "observables": [],
             "functions": [],
             "energy_patterns": [],
+            "barrier_patterns": [],
             "population_maps": [],
+            "population_types": [],
             "rules": [
                 {
                     "id": 0,
