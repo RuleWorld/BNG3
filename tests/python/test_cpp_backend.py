@@ -751,6 +751,11 @@ end model
         assert len(rows) == 102  # header plus 100 output intervals and t=0
         final = [float(value) for value in rows[-1].split()]
         assert final[1] == pytest.approx(10.0)
+        # Both rate laws integrate from 0 to 10 as \int_0^10 t dt = 50.
+        # This source-law check is independent of BNG2's historical time()
+        # trajectory, which reports zero for the builtin-driven species.
+        assert final[2] == pytest.approx(50.0, rel=1e-8)
+        assert final[3] == pytest.approx(50.0, rel=1e-8)
         assert final[4] == pytest.approx(10.0)
         assert final[5] == pytest.approx(10.0)
         assert final[6] == pytest.approx(0.0, abs=1e-10)
