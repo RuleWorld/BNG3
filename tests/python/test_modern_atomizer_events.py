@@ -1,6 +1,18 @@
 """Source-derived contracts for the Playground eventActions module."""
 
 
+def _positive_simulation_phase_ends(actions: str) -> list[float]:
+    import re
+
+    ends = []
+    for arguments in re.findall(r"simulate\(\{([^}]*)\}\)", actions):
+        start = re.search(r"t_start=>([0-9.eE+-]+)", arguments)
+        end = re.search(r"t_end=>([0-9.eE+-]+)", arguments)
+        if start and end and float(end.group(1)) > float(start.group(1)):
+            ends.append(float(end.group(1)))
+    return ends
+
+
 def test_playground_event_actions_exposes_reference_names_and_result_fields():
     from bionetgen.atomizer.modern.events import (
         EventActionsResult,
@@ -382,10 +394,7 @@ def test_two_species_first_order_transfer_schedules_reentrant_threshold_events()
     assert result.converted == 2
     assert result.untranslated == []
     assert result.actions_block is not None
-    phase_ends = [
-        float(value)
-        for value in re.findall(r"t_end=>([0-9.eE+-]+)", result.actions_block)
-    ]
+    phase_ends = _positive_simulation_phase_ends(result.actions_block)
     assert len(phase_ends) == 4
     for actual, expected in zip(
         phase_ends[:3],
@@ -515,10 +524,7 @@ def test_first_order_chain_schedules_reentrant_terminal_threshold_events():
     assert result.converted == 1
     assert result.untranslated == []
     assert result.actions_block is not None
-    phase_ends = [
-        float(value)
-        for value in re.findall(r"t_end=>([0-9.eE+-]+)", result.actions_block)
-    ]
+    phase_ends = _positive_simulation_phase_ends(result.actions_block)
     assert len(phase_ends) == 3
     assert 0 < phase_ends[0] < phase_ends[1] < 40
     assert phase_ends[2] == 40
@@ -570,10 +576,7 @@ def test_first_order_chain_schedules_persistent_delayed_terminal_event():
     assert result.converted == 1
     assert result.untranslated == []
     assert result.actions_block is not None
-    phase_ends = [
-        float(value)
-        for value in re.findall(r"t_end=>([0-9.eE+-]+)", result.actions_block)
-    ]
+    phase_ends = _positive_simulation_phase_ends(result.actions_block)
     assert len(phase_ends) == 2
     assert abs(phase_ends[0] - 7.079174844177558) < 1e-10
     assert phase_ends[1] == 10
@@ -639,9 +642,7 @@ def test_atomizer_lowers_delayed_first_order_chain_event_with_initial_assignment
     assert "Events NOT simulated" not in result.bngl
     assert "Pool() =" in result.bngl
     assert 'setConcentration("@C:M_Product()", "1")' in result.bngl
-    phase_ends = [
-        float(value) for value in re.findall(r"t_end=>([0-9.eE+-]+)", result.bngl)
-    ]
+    phase_ends = _positive_simulation_phase_ends(result.bngl)
     assert len(phase_ends) == 2
     assert abs(phase_ends[0] - 7.079174844177558) < 1e-10
     assert phase_ends[1] == 10

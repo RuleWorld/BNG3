@@ -14,20 +14,31 @@ the emitted BNGL actions and compares all changing species against
 libRoadRunner 2.10.0, including the event target at the initial row. The
 continuous state-trigger test in the same module separately compares a later
 rising-edge event and its state updates against libRoadRunner. On the isolated
-candidate, a Release native extension built from the checked-out source passed
-all 33 tests in `tests/python/test_modern_atomizer_native_events.py`.
+candidate, a fixed-time assignment at `t=0.5` exposed a scheduled-action output
+boundary gap: the phase simulation wrote its endpoint before applying the
+assignment, and the continued phase omitted its starting row. The generated
+action sequence now records the post-assignment state at the same time with a
+zero-duration continuation. Its duplicate-time pre/post rows match the event
+discontinuity; the post-event row matches libRoadRunner. A Release native
+extension built from the checked-out source passed all 34 tests in
+`tests/python/test_modern_atomizer_native_events.py` and the focused event
+lowering modules (122 tests total).
 
-This qualifies those two bounded paths only. It does not establish delayed
+This qualifies these three bounded paths only. It does not establish delayed
 event cancellation/persistence, cascades/recurrence, stochastic event
 transitions or general equal-priority ordering; those remain explicit #158
-gaps. Exact hosted checks for the candidate are pending.
+gaps. This candidate does not establish action-aware BioModels corpus parity;
+the current direct source comparator bypasses BNGL scheduled actions, so that
+comparison surface is separately under repair.
 
 Current family dispositions:
 
 - #157: native trigger roots and state updates are implemented for the tested
-  ODE/CVODE subset. The new time-zero fixture uses a scheduled action. A later
-  continuous crossing is tested independently; the full initial/rising-edge,
-  parameter/compartment and solver-reinitialization matrix is not established.
+  ODE/CVODE subset. The time-zero initial-false fixture uses a scheduled
+  action, and a fixed-time assignment now emits a post-event endpoint row. A
+  later continuous crossing is tested independently; the full
+  initial/rising-edge, parameter/compartment and solver-reinitialization matrix
+  is not established.
 - #158: delayed execution and trigger-time/execution-time value selection exist
   in the ODE event queue; selected delayed trajectories compare with
   libRoadRunner. Nonpersistent cancellation is implemented by retesting before
@@ -42,10 +53,17 @@ Current family dispositions:
   all 1,923 cases were selected; conversion passed 1,798 and classified 125
   unsupported, with zero product failures/timeouts. Round trip and independent
   comparison each passed those same 1,798 records; 125 were not tested. Official
-  conformance reported 1,781 passed, 141 unsupported and one failed. The report
+  conformance reported 1,781 passed, 141 unsupported and one failed: stochastic
+  case `00003`, with five SD statistics outside the official range. The
+  preserved run used 40,000 trajectories and exact official source/settings.
+  The case-level binomial tail assumed independent normal checks across output
+  times, although the same trajectories are reused and the source is a highly
+  non-Gaussian subcritical branching process. The official case remains failed;
+  statistical-gate interpretation is under review. The report
   SHA-256 is `e01550eb8b3e8eb74361aa4feb85eab032dd43c6d49da208c6a0c41009edcea1`;
-  targeted failure triage is in progress. This is a current full report, but its
-  failed official gate and outstanding case-level scope prevent closure. #160's
+  its official failure remains under statistical review. This is a current full
+  report, but its failed official gate and outstanding case-level scope prevent
+  closure. #160's
   requested current feature-class mapping remains incomplete; explicit per-case
   refusal is not a complete class disposition.
 - #146: the exact-head run [38852202284](https://github.com/RuleWorld/BNG3/actions/runs/38852202284)

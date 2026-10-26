@@ -570,6 +570,67 @@ def test_native_event_initial_false_to_true_edge_matches_independent_roadrunner(
     assert actual[0, header.index("S2")] == pytest.approx(1.0)
 
 
+def test_scheduled_event_endpoint_records_post_assignment_state(tmp_path):
+    roadrunner = pytest.importorskip("roadrunner")
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+  <model id="scheduled_endpoint">
+    <listOfCompartments>
+      <compartment id="C" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="S" compartment="C" initialAmount="1"
+               hasOnlySubstanceUnits="true"/>
+    </listOfSpecies>
+    <listOfEvents>
+      <event id="set_at_half">
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><geq/><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>0.5</cn></apply>
+          </math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="S">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>5</cn></math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>"""
+    result = atomize(xml, t_end=1.0, n_steps=10)
+    assert result.success, result.error
+    assert "time-triggered SBML event(s) translated to scheduled actions" in result.bngl
+
+    from bionetgen import load
+
+    path = tmp_path / "scheduled_endpoint.bngl"
+    path.write_text(result.bngl)
+    load(str(path)).execute()
+    lines = (tmp_path / "scheduled_endpoint.gdat").read_text().splitlines()
+    header = next(
+        line.strip().lstrip("# ").split()
+        for line in lines
+        if line.lstrip().startswith("#")
+        and line.strip().lstrip("# ").startswith("time")
+    )
+    rows = np.asarray(
+        [
+            [float(value) for value in line.split()]
+            for line in lines
+            if line.strip() and not line.lstrip().startswith("#")
+        ]
+    )
+    boundary = rows[np.isclose(rows[:, header.index("time")], 0.5)]
+    assert boundary.shape[0] == 2
+    actual_after_event = boundary[-1, header.index("S_amt")]
+
+    reference = roadrunner.RoadRunner(xml).simulate(0.0, 1.0, 11)
+    reference_index = int(np.flatnonzero(np.isclose(reference["time"], 0.5))[0])
+    assert actual_after_event == pytest.approx(
+        reference[reference_index, reference.colnames.index("[S]")], abs=1e-12
+    )
+
+
 def _delayed_trajectory(tmp_path, name, **kwargs):
     result = atomize(coupled_event_model(**kwargs))
     model = _load(result, tmp_path)

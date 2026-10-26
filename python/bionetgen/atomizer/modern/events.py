@@ -8937,6 +8937,16 @@ def synthesize_event_actions(
         for time, sets in merged:
             if time > 0 and abs(time - end) < 1e-12:
                 lines.extend(_render_sets(sets))
+                # The phase simulation records its endpoint before the
+                # scheduled assignments execute. Emit the post-event state at
+                # the same simulation time so discontinuities follow SBML's
+                # right-continuous event output semantics.
+                lines.append(
+                    f'simulate({{continue=>1, method=>"{method}", '
+                    f"t_start=>{_format_number(time)}, "
+                    f"t_end=>{_format_number(time)}, n_steps=>1"
+                    f"{seed_argument}}})"
+                )
         phase_start = end
 
     if abs(phase_start - t_final) > 1e-12:
