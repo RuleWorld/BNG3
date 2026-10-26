@@ -35,12 +35,14 @@ def bnglReaction(
     product,
     rate,
     tags,
-    translator=[],
+    translator=None,
     isCompartments=False,
     reversible=True,
     comment="",
     reactionName=None,
 ):
+    if translator is None:
+        translator = {}
     if len(reactant) == 0 or (len(reactant) == 1 and reactant[0][1] == 0):
         reactant_str = "0 "
     else:
@@ -74,7 +76,9 @@ def bnglReaction(
     return finalString
 
 
-def printTranslate(chemical, tags, translator={}):
+def printTranslate(chemical, tags, translator=None):
+    if translator is None:
+        translator = {}
     tmp = []
     if chemical[0] not in translator:
         app = chemical[0] + "()" + tags
