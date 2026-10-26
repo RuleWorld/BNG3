@@ -360,8 +360,9 @@ jobs:
           PYTHONPATH: python:build/cpp:.
         run: |
           # Ubuntu's runner kernel can randomize PIE binaries into ASan's shadow range.
+          # Reducing vm.mmap_rnd_bits to 28 keeps PIE load addresses out of the
+          # region ASan reserves for shadow memory; sysctl alone is sufficient.
           sudo sysctl -w vm.mmap_rnd_bits=28
-          export LD_PRELOAD="$(gcc-12 -print-file-name=libasan.so)"
           python -c 'import bionetgen.model as model; assert model._cpp.__file__'
           python tests/validation/reproduce_issue141_lifecycle.py --iterations 25
 

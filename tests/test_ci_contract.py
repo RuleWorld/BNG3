@@ -130,14 +130,16 @@ def test_issue141_lifecycle_asan_configures_shadow_memory_compatible_aslr():
     )
     command = reproduce["run"]
     aslr_setup = "sudo sysctl -w vm.mmap_rnd_bits=28"
-    preload = 'export LD_PRELOAD="$(gcc-12 -print-file-name=libasan.so)"'
     native_import = (
         "python -c 'import bionetgen.model as model; assert model._cpp.__file__'"
     )
     reproducer = "python tests/validation/reproduce_issue141_lifecycle.py"
     assert aslr_setup in command
-    assert command.index(aslr_setup) < command.index(preload)
-    assert command.index(preload) < command.index(native_import)
+    assert "LD_PRELOAD" not in command, (
+        "LD_PRELOAD of libasan into a non-ASan Python host breaks __cxa_throw "
+        "interception; vm.mmap_rnd_bits=28 is sufficient"
+    )
+    assert command.index(aslr_setup) < command.index(native_import)
     assert command.index(native_import) < command.index(reproducer)
 
 
