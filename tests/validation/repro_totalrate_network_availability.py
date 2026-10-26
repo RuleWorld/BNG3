@@ -117,26 +117,20 @@ def main() -> int:
     observable = [float(value) for value in ode["observables"]["rib_elong"]]
     ode_species = ode_network.species_names
     ode_mrna_totals = [
-        _molecule_total(ode_species, row, "mrna")
-        for row in ode["concentrations"]
+        _molecule_total(ode_species, row, "mrna") for row in ode["concentrations"]
     ]
     ode_ribosome_totals = [
-        _molecule_total(ode_species, row, "ribosome")
-        for row in ode["concentrations"]
+        _molecule_total(ode_species, row, "ribosome") for row in ode["concentrations"]
     ]
 
     ssa_model, ssa_network = _network(cpp)
-    ssa = cpp.simulate_ssa(
-        ssa_model, ssa_network, t_end=20.0, n_steps=20, seed=21001
-    )
+    ssa = cpp.simulate_ssa(ssa_model, ssa_network, t_end=20.0, n_steps=20, seed=21001)
     ssa_species = ssa_network.species_names
     ssa_mrna_totals = [
-        _molecule_total(ssa_species, row, "mrna")
-        for row in ssa["concentrations"]
+        _molecule_total(ssa_species, row, "mrna") for row in ssa["concentrations"]
     ]
     ssa_ribosome_totals = [
-        _molecule_total(ssa_species, row, "ribosome")
-        for row in ssa["concentrations"]
+        _molecule_total(ssa_species, row, "ribosome") for row in ssa["concentrations"]
     ]
 
     failures = []
