@@ -2121,11 +2121,11 @@ def _validate_stochastic_seed_span(seed: int, max_offset: int) -> None:
         )
 
 
-#: Per-case false-positive budget for the stochastic violation count.  Under
-#: the null hypothesis a correct simulator violates the official acceptance
-#: ranges with the probability implied by those ranges; a case is only failed
-#: when the observed violation count is unlikely under that null.
-STOCHASTIC_CASE_ERROR_RATE = 1e-3
+#: The SBML Test Suite guide describes zero violations as ideal, 1–3 as
+#: probably fine, and larger counts as possible evidence of an error. Its
+#: stochastic outputs at different times come from the same trajectories, so
+#: a binomial tail over time-index checks is not a calibrated case-level test.
+STOCHASTIC_MAX_PROBABLY_FINE_VIOLATIONS = 3
 #: Relative numerical tolerance for a reference point whose official standard
 #: deviation is zero.  The batched samplers report their statistics in single
 #: precision, so the tolerance is relative to the reference magnitude.
@@ -2213,6 +2213,12 @@ def _binomial_upper_tail(trials: int, probability: float, count: int) -> float:
         )
         total += math.exp(term)
     return min(1.0, max(0.0, total))
+
+
+def _stochastic_violation_count_is_probably_fine(violations: int) -> bool:
+    """Follow the SBML Test Suite's qualitative 1–3 violation guidance."""
+
+    return int(violations) <= STOCHASTIC_MAX_PROBABLY_FINE_VIOLATIONS
 
 
 def _stochastic_statistics(
@@ -2911,7 +2917,9 @@ def _compare_stochastic_case_to_reference(
     modelled_failures, unmodelled = _split_unmodelled_reference_failures(
         parsed, reference, deterministic_failures
     )
-    passed = not modelled_failures and tail >= STOCHASTIC_CASE_ERROR_RATE
+    passed = not modelled_failures and _stochastic_violation_count_is_probably_fine(
+        violations
+    )
     if degenerate_reason is not None and passed:
         return {"status": "unsupported", "reason": degenerate_reason}
     if modelled_failures and ambiguity:
@@ -2922,7 +2930,10 @@ def _compare_stochastic_case_to_reference(
         # the verdict is not a statement about the model.
         failed_indices = {int(failure["index"]) for failure in modelled_failures}
         boundary_reason = _boundary_only_disagreement(failed_indices, ambiguity)
-        if boundary_reason is not None and tail >= STOCHASTIC_CASE_ERROR_RATE:
+        if (
+            boundary_reason is not None
+            and _stochastic_violation_count_is_probably_fine(violations)
+        ):
             return {"status": "unsupported", "reason": boundary_reason}
     if passed and unmodelled:
         # Every mismatch is on a quantity the official reference does not
@@ -2958,10 +2969,11 @@ def _compare_stochastic_case_to_reference(
         reason = (
             f"stochastic distribution mismatch: {violations} of {total_tests} "
             "official mean/standard-deviation acceptance tests were violated; "
-            f"a correct simulator violates them with probability "
-            f"{null_probability:.6g} per test, so {violations} violations have "
-            f"probability {tail:.3g} under that null (budget "
-            f"{STOCHASTIC_CASE_ERROR_RATE:g})"
+            "the SBML Test Suite guidance treats 1–3 violations as probably "
+            "fine and says larger counts may indicate an error. The separately "
+            "reported independent-normal binomial tail is only a diagnostic: "
+            "checks across output times reuse the same trajectories and are not "
+            "independent."
         )
     return {
         "status": "passed" if passed else "failed",
@@ -2996,7 +3008,10 @@ def _compare_stochastic_case_to_reference(
         "violations": violations,
         "null_violation_probability": null_probability,
         "violation_tail_probability": tail,
-        "case_error_rate": STOCHASTIC_CASE_ERROR_RATE,
+        "violation_tail_probability_model": (
+            "diagnostic only; assumes independent standard-normal checks"
+        ),
+        "max_probably_fine_violations": STOCHASTIC_MAX_PROBABLY_FINE_VIOLATIONS,
         "deterministic_failures": modelled_failures,
         "output_targets": targets,
         "output_aliases": output_aliases,

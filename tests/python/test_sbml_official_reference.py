@@ -301,21 +301,15 @@ def test_stochastic_statistics_flags_a_deterministic_reference_mismatch():
 
 def test_stochastic_violation_criterion_follows_the_official_ranges():
     validator = _load_validator("validate_sbml_test_suite")
-    # The official ranges imply the null violation probability.
+    # The reported normal-tail values are diagnostics, not a calibrated
+    # family-wise probability across time points from shared trajectories.
     assert validator._standard_normal_outside((-3.0, 3.0)) == pytest.approx(
         0.0026998, rel=1e-3
     )
     assert validator._standard_normal_outside((-5.0, 5.0)) < 1e-5
-    # A single violation among 100 tests is expected under the null.
-    assert (
-        validator._binomial_upper_tail(100, 0.0026998, 1)
-        > validator.STOCHASTIC_CASE_ERROR_RATE
-    )
-    # A large violation count is not expected under the null.
-    assert (
-        validator._binomial_upper_tail(100, 0.0026998, 10)
-        < validator.STOCHASTIC_CASE_ERROR_RATE
-    )
+    assert validator._stochastic_violation_count_is_probably_fine(0)
+    assert validator._stochastic_violation_count_is_probably_fine(3)
+    assert not validator._stochastic_violation_count_is_probably_fine(4)
 
 
 def test_stochastic_run_budget_and_seeds_are_documented():
@@ -323,8 +317,7 @@ def test_stochastic_run_budget_and_seeds_are_documented():
     assert validator.STOCHASTIC_DEFAULT_RUNS >= 1000
     assert validator.STOCHASTIC_ACTION_RUNS >= 1000
     assert validator.STOCHASTIC_SEED_BASE > 0
-    assert validator.STOCHASTIC_CASE_ERROR_RATE > 0
-    assert validator.STOCHASTIC_CASE_ERROR_RATE < 0.01
+    assert validator.STOCHASTIC_MAX_PROBABLY_FINE_VIOLATIONS == 3
     assert validator._validate_stochastic_seed_base(2_000_000) == 2_000_000
 
 
