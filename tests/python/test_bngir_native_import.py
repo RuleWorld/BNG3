@@ -6,6 +6,7 @@ import copy
 import importlib
 from itertools import permutations
 import json
+import math
 from pathlib import Path
 
 import jsonschema
@@ -119,6 +120,180 @@ end model
 def _document(source: str = SOURCE) -> dict:
     source_model = bionetgen.BioNetGenModel(_cpp.parse_string(source))
     return json.loads(source_model.to_bngir(version="0.2"))
+
+
+def _independent_reversible_bngir_document() -> dict:
+    """Hand-author a two-state reversible model without using the BNGL writer."""
+
+    def molecule(type_id: int, name: str) -> dict:
+        return {
+            "compartment_prefix": False,
+            "molecules": [
+                {"occurrence": 0, "sites": [], "type": name, "type_id": type_id}
+            ],
+        }
+
+    a_pattern = molecule(0, "A")
+    b_pattern = molecule(1, "B")
+
+    def direction(
+        reactant: dict, product: dict, rate_parameter: int, *, reverse: bool = False
+    ) -> dict:
+        mutations = [
+            {
+                "kind": "delete_molecule",
+                "molecule": {"side": "reactant", "pattern": 0, "molecule": 0},
+            },
+            {
+                "kind": "add_molecule",
+                "molecule": {"side": "product", "pattern": 0, "molecule": 0},
+            },
+        ]
+        # The native snapshot emits reverse mutations in the inverse order;
+        # this hand-authored wire fixture uses that canonical v0.2 ordering.
+        if reverse:
+            mutations.reverse()
+        return {
+            "reactants": [copy.deepcopy(reactant)],
+            "products": [copy.deepcopy(product)],
+            "rate": {
+                "kind": 0,
+                "expression": {
+                    "kind": "parameter_ref",
+                    "symbol": {"kind": "parameter", "index": rate_parameter},
+                },
+            },
+            "mutations": mutations,
+            "filters": [],
+            "local_scopes": [],
+            "transformations_complete": True,
+        }
+
+    return {
+        "format": "BNGIR",
+        "version": "0.2",
+        "features": {
+            "required": ["structured_patterns", "structured_expressions"],
+            "used": ["rules", "seeds", "structured_expressions", "structured_patterns"],
+        },
+        "model": {
+            "metadata": {
+                "name": "independent_reversible_two_state",
+                "options": {},
+                "substance_units": "",
+                "version": "2.2",
+            },
+            "parameters": [
+                {
+                    "id": 0,
+                    "name": "kf",
+                    "expression": {"kind": "number", "value": 0.1},
+                    "constant_value": 0.1,
+                },
+                {
+                    "id": 1,
+                    "name": "kr",
+                    "expression": {"kind": "number", "value": 0.2},
+                    "constant_value": 0.2,
+                },
+            ],
+            "molecule_types": [
+                {"id": 0, "name": "A", "population": False, "components": []},
+                {"id": 1, "name": "B", "population": False, "components": []},
+            ],
+            "compartments": [],
+            "seeds": [
+                {
+                    "id": 0,
+                    "pattern": copy.deepcopy(a_pattern),
+                    "amount": {"kind": "number", "value": 100.0},
+                    "constant": False,
+                }
+            ],
+            "observables": [],
+            "functions": [],
+            "rules": [
+                {
+                    "id": 0,
+                    "name": "R1",
+                    "label": "convert:",
+                    "bidirectional": True,
+                    "forward": direction(a_pattern, b_pattern, 0),
+                    "reverse": direction(b_pattern, a_pattern, 1, reverse=True),
+                    "modifiers": [],
+                    "molecule_mappings": [],
+                    "component_mappings": [],
+                }
+            ],
+            "energy_patterns": [],
+            "barrier_patterns": [],
+            "population_types": [],
+            "population_maps": [],
+        },
+        "protocol": {"actions": []},
+    }
+
+
+def test_native_import_executes_independently_authored_reversible_rule():
+    document = _independent_reversible_bngir_document()
+    schema_path = (
+        Path(__file__).parents[2] / "provenance" / "schemas" / "bngir-0.2.schema.json"
+    )
+    jsonschema.validate(document, json.loads(schema_path.read_text()))
+
+    restored = bionetgen.from_bngir(document, native=True)
+
+    assert json.loads(restored.to_bngir(version="0.2")) == document
+    network = restored.generate_network()
+    assert network.num_species == 2
+    assert network.num_reactions == 2
+    assert set(network.species_names) == {"A()", "B()"}
+
+    initial = [100.0 if name == "A()" else 0.0 for name in network.species_names]
+    derivative = _cpp._validation_ode_rhs(restored._model, network, 0.0, initial)
+    assert dict(zip(network.species_names, derivative)) == pytest.approx(
+        {"A()": -10.0, "B()": 10.0}
+    )
+
+    result = restored.simulate(method="ode", t_end=2.0, n_steps=4)
+    total_rate = 0.3
+    equilibrium_b = 100.0 * 0.1 / total_rate
+    for time, row in zip(result.time, result.concentrations):
+        expected_b = equilibrium_b * (1.0 - math.exp(-total_rate * time))
+        expected = {"A()": 100.0 - expected_b, "B()": expected_b}
+        assert dict(zip(network.species_names, row)) == pytest.approx(expected)
+
+
+def test_native_import_rejects_reverse_patterns_that_do_not_invert_forward():
+    document = _independent_reversible_bngir_document()
+    document["model"]["rules"][0]["reverse"]["reactants"] = copy.deepcopy(
+        document["model"]["rules"][0]["forward"]["reactants"]
+    )
+
+    with pytest.raises(
+        ValueError, match="reverse direction must invert forward patterns"
+    ):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_native_import_rejects_contradictory_reverse_mutation_reference():
+    document = _independent_reversible_bngir_document()
+    document["model"]["rules"][0]["reverse"]["mutations"][1]["molecule"][
+        "side"
+    ] = "product"
+
+    with pytest.raises(
+        ValueError, match="contradictory reverse molecule mutation reference"
+    ):
+        bionetgen.from_bngir(document, native=True)
+
+
+def test_direct_native_builder_rejects_inconsistent_reverse_mutations():
+    document = _independent_reversible_bngir_document()
+    document["model"]["rules"][0]["reverse"]["mutations"].pop()
+
+    with pytest.raises(RuntimeError, match="do not state the one-molecule conversion"):
+        _cpp._model_from_bngir_v02(document["model"])
 
 
 def _reorder_parameter_ids(model: dict, names: tuple[str, ...]) -> None:
@@ -1250,10 +1425,10 @@ def test_native_import_rejects_unknown_fields_and_provenance():
 @pytest.mark.parametrize(
     ("field", "value", "expected"),
     [
-        ("bidirectional", True, "forward ordinary rule"),
-        ("bidirectional", 0, "forward ordinary rule"),
-        ("modifiers", ["DeleteMolecules"], "forward ordinary rule"),
-        ("reverse", {}, "unsupported reverse"),
+        ("bidirectional", True, "explicit reverse direction"),
+        ("bidirectional", 0, "must be boolean"),
+        ("modifiers", ["DeleteMolecules"], "does not support rule modifiers"),
+        ("reverse", {}, "explicit reverse direction"),
     ],
 )
 def test_direct_native_builder_refuses_unrepresented_rule_semantics(

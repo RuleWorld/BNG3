@@ -97,6 +97,62 @@ void requireObjectKeys(const py::dict& object,
     }
 }
 
+bool pythonObjectsEqual(const py::handle& left, const py::handle& right) {
+    const int result = PyObject_RichCompareBool(left.ptr(), right.ptr(), Py_EQ);
+    if (result < 0) {
+        throw py::error_already_set();
+    }
+    return result == 1;
+}
+
+void requireReversibleConversionMutations(
+    const py::dict& direction,
+    const std::vector<SpeciesGraph>& reactants,
+    const std::vector<SpeciesGraph>& products,
+    const std::string& where) {
+    if (reactants.size() != 1 || products.size() != 1) {
+        throw std::runtime_error(
+            "native BNGIR " + where +
+            " supports only one reactant and one product pattern for reversible rules");
+    }
+    const auto reactantNodes = reactants.front().getGraph();
+    const auto productNodes = products.front().getGraph();
+    if (reactantNodes.size() != 1 || productNodes.size() != 1 ||
+        (*reactantNodes.begin())->get_type().get_type_name() ==
+            (*productNodes.begin())->get_type().get_type_name()) {
+        throw std::runtime_error(
+            "native BNGIR " + where +
+            " reversible conversion must replace one molecule type with another");
+    }
+
+    std::vector<std::string> observed;
+    for (const auto& rawMutation : py::cast<py::list>(direction["mutations"])) {
+        const auto mutation = py::cast<py::dict>(rawMutation);
+        const auto reference = py::cast<py::dict>(mutation["molecule"]);
+        const auto kind = py::cast<std::string>(mutation["kind"]);
+        const auto side = py::cast<std::string>(reference["side"]);
+        const auto pattern = indexFromBngir(
+            reference["pattern"], "reversible mutation pattern reference");
+        const auto molecule = indexFromBngir(
+            reference["molecule"], "reversible mutation molecule reference");
+        if (molecule != 0) {
+            throw std::runtime_error(
+                "native BNGIR " + where +
+                " has an out-of-slice reversible molecule reference");
+        }
+        observed.push_back(kind + ":" + side + ":" + std::to_string(pattern));
+    }
+    auto expected = std::vector<std::string>{
+        "delete_molecule:reactant:0", "add_molecule:product:0"};
+    std::sort(expected.begin(), expected.end());
+    std::sort(observed.begin(), observed.end());
+    if (observed != expected) {
+        throw std::runtime_error(
+            "native BNGIR " + where +
+            ".mutations do not state the one-molecule conversion represented by its patterns");
+    }
+}
+
 void requireParameterKeys(const py::dict& parameter) {
     static const std::vector<std::string> required = {"id", "name", "expression"};
     static const std::vector<std::string> allowed = {
@@ -748,16 +804,30 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
 
     for (const auto& rawRule : rules) {
         const auto rule = py::cast<py::dict>(rawRule);
-        static const std::vector<std::string> ruleKeys = {
+        static const std::vector<std::string> requiredRuleKeys = {
             "id", "name", "label", "bidirectional", "modifiers", "forward",
             "molecule_mappings", "component_mappings",
         };
-        requireObjectKeys(rule, ruleKeys, ruleKeys, "rule");
+        static const std::vector<std::string> allowedRuleKeys = {
+            "id", "name", "label", "bidirectional", "modifiers", "forward",
+            "reverse", "molecule_mappings", "component_mappings",
+        };
+        requireObjectKeys(
+            rule, requiredRuleKeys, allowedRuleKeys, "rule");
         const py::handle bidirectional = rule["bidirectional"];
-        if (!PyBool_Check(bidirectional.ptr()) || py::cast<bool>(bidirectional) ||
-            !py::cast<py::list>(rule["modifiers"]).empty()) {
+        if (!PyBool_Check(bidirectional.ptr())) {
             throw std::runtime_error(
-                "native BNGIR requires a forward ordinary rule");
+                "native BNGIR rule bidirectional field must be boolean");
+        }
+        const bool isBidirectional = py::cast<bool>(bidirectional);
+        const bool hasReverse = rule.contains(py::str("reverse"));
+        if (isBidirectional != hasReverse) {
+            throw std::runtime_error(
+                "native BNGIR bidirectional rule requires an explicit reverse direction");
+        }
+        if (!py::cast<py::list>(rule["modifiers"]).empty()) {
+            throw std::runtime_error(
+                "native BNGIR does not support rule modifiers");
         }
         const auto direction = py::cast<py::dict>(rule["forward"]);
         static const std::vector<std::string> directionKeys = {
@@ -786,6 +856,10 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
         for (const auto& rawProduct : products) {
             productGraphs.push_back(
                 patternFromBngir(*model, py::cast<py::dict>(rawProduct)));
+        }
+        if (isBidirectional) {
+            requireReversibleConversionMutations(
+                direction, reactantGraphs, productGraphs, "forward rule direction");
         }
         if (reactantGraphs.size() > 1 || productGraphs.size() > 1) {
             // The rule is rebuilt from its patterns, and the pattern structure
@@ -845,11 +919,45 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
         std::vector<Expression> rates;
         rates.push_back(expressionFromBngir(
             py::cast<py::dict>(rate["expression"]), modelScope));
+
+        if (isBidirectional) {
+            const auto reverse = py::cast<py::dict>(rule["reverse"]);
+            requireObjectKeys(reverse, directionKeys, directionKeys,
+                              "reverse rule direction");
+            if (!py::cast<py::list>(reverse["filters"]).empty() ||
+                !py::cast<py::list>(reverse["local_scopes"]).empty()) {
+                throw std::runtime_error(
+                    "native BNGIR does not support reverse filters or local scopes");
+            }
+            if (!PyBool_Check(reverse["transformations_complete"].ptr()) ||
+                !py::cast<bool>(reverse["transformations_complete"])) {
+                throw std::runtime_error(
+                    "native BNGIR reverse rule direction has incomplete transformations");
+            }
+            if (!pythonObjectsEqual(reverse["reactants"], direction["products"]) ||
+                !pythonObjectsEqual(reverse["products"], direction["reactants"])) {
+                throw std::runtime_error(
+                    "native BNGIR reverse direction must invert forward patterns");
+            }
+            requireReversibleConversionMutations(
+                reverse, productGraphs, reactantGraphs, "reverse rule direction");
+            const auto reverseRate = py::cast<py::dict>(reverse["rate"]);
+            static const std::vector<std::string> rateKeys = {"kind", "expression"};
+            requireObjectKeys(reverseRate, rateKeys, rateKeys,
+                              "reverse rule rate");
+            if (indexFromBngir(reverseRate["kind"], "reverse rule rate kind") != 0) {
+                throw std::runtime_error(
+                    "native BNGIR requires an expression reverse rate");
+            }
+            rates.push_back(expressionFromBngir(
+                py::cast<py::dict>(reverseRate["expression"]), modelScope));
+        }
         model->addReactionRule(ReactionRule::fromResolvedPatterns(
             py::cast<std::string>(rule["name"]),
             py::cast<std::string>(rule["label"]),
             std::move(rates),
-            std::move(reactantGraphs), std::move(productGraphs)));
+            std::move(reactantGraphs), std::move(productGraphs),
+            isBidirectional));
     }
 
     // The function bodies are rebuilt last: a body may name a parameter, one
