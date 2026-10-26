@@ -18,9 +18,12 @@ from typing import Any
 
 import numpy as np
 
-
-EXPECTED_SOURCE_SHA256 = "c58a50dd86f981150b533dd9af25c38f9ef3aeeedad2f679400e022add77f50e"
-EXPECTED_REPORT_SHA256 = "ef8b7e737d5c72a10acaa3dddbd4fa02e86c48678b3cd5968d80b0c6fdb23f80"
+EXPECTED_SOURCE_SHA256 = (
+    "c58a50dd86f981150b533dd9af25c38f9ef3aeeedad2f679400e022add77f50e"
+)
+EXPECTED_REPORT_SHA256 = (
+    "ef8b7e737d5c72a10acaa3dddbd4fa02e86c48678b3cd5968d80b0c6fdb23f80"
+)
 EXPECTED_BNG3_REVISION = "0f004fecd318abb5b21829d869765a07cb6684cf"
 OFFICIAL_RUN_ID = 40314965237
 RUNS = 40_000
@@ -57,7 +60,6 @@ def _source_moments(time: int) -> dict[str, float]:
     m4 = factorial[4] + 6.0 * factorial[3] + 7.0 * factorial[2] + factorial[1]
 
     k2 = m2 - m1**2
-    k3 = m3 - 3.0 * m2 * m1 + 2.0 * m1**3
     k4 = m4 - 4.0 * m3 * m1 - 3.0 * m2**2 + 12.0 * m2 * m1**2 - 6.0 * m1**4
     mean = initial * m1
     variance = initial * k2
@@ -72,9 +74,7 @@ def _source_moments(time: int) -> dict[str, float]:
         "variance": variance,
         "sd": math.sqrt(variance),
         "excess_kurtosis": fourth_central / variance**2 - 3.0,
-        "asymptotic_dsmts_y_sd": math.sqrt(
-            (fourth_central / variance**2 - 1.0) / 2.0
-        ),
+        "asymptotic_dsmts_y_sd": math.sqrt((fourth_central / variance**2 - 1.0) / 2.0),
     }
 
 
@@ -85,7 +85,9 @@ def _wilson_interval(successes: int, trials: int) -> list[float]:
     z = 1.959963984540054
     denominator = 1.0 + z * z / trials
     center = (p + z * z / (2.0 * trials)) / denominator
-    radius = z * math.sqrt(p * (1.0 - p) / trials + z * z / (4.0 * trials**2)) / denominator
+    radius = (
+        z * math.sqrt(p * (1.0 - p) / trials + z * z / (4.0 * trials**2)) / denominator
+    )
     return [max(0.0, center - radius), min(1.0, center + radius)]
 
 
@@ -211,9 +213,7 @@ def diagnose(report_path: Path, case_dir: Path, replicates: int) -> dict[str, An
                 "expected SHA-256 of report.json extracted from downloaded workflow artifact"
             ),
             "report_sha256": provenance["report_sha256"],
-            "python_package_source_sha256": provenance[
-                "bng3_package_source_sha256"
-            ],
+            "python_package_source_sha256": provenance["bng3_package_source_sha256"],
             "native_extension_sha256": provenance["native_extension_sha256"],
             "official_engine": official.get("engine"),
             "official_runs": official.get("runs"),
