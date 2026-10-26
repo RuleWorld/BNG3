@@ -7,7 +7,7 @@
     "numpy_version": "2.5.3",
     "official_engine": "cpu:batch",
     "official_run_id": 40314965237,
-    "official_run_id_binding": "expected SHA-256 of downloaded workflow artifact",
+    "official_run_id_binding": "expected SHA-256 of report.json extracted from downloaded workflow artifact",
     "official_runs": 40000,
     "official_seed_base": 1000000,
     "python_package_source_sha256": "50ae6a9790cabdf69b886c7dc742af5b3e76cc0f5ad77b3a12a1530cfec702d8",

@@ -112,7 +112,10 @@ def _load_case(
     report = json.loads(report_path.read_text())
     report_sha = _sha256(report_path)
     if report_sha != EXPECTED_REPORT_SHA256:
-        raise ValueError("report SHA-256 does not match the downloaded official run artifact")
+        raise ValueError(
+            "report SHA-256 does not match the pinned report.json extracted from "
+            "the downloaded official run artifact"
+        )
     if report.get("source_provenance", {}).get("bng3_commit") != EXPECTED_BNG3_REVISION:
         raise ValueError("report is not from the declared BNG3 revision")
     record = next(
@@ -204,7 +207,9 @@ def diagnose(report_path: Path, case_dir: Path, replicates: int) -> dict[str, An
         "implementation": {
             "revision": provenance["bng3_revision"],
             "official_run_id": provenance["run_id"],
-            "official_run_id_binding": "expected SHA-256 of downloaded workflow artifact",
+            "official_run_id_binding": (
+                "expected SHA-256 of report.json extracted from downloaded workflow artifact"
+            ),
             "report_sha256": provenance["report_sha256"],
             "python_package_source_sha256": provenance[
                 "bng3_package_source_sha256"
