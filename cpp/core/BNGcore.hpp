@@ -489,9 +489,6 @@ namespace BNGcore
 		    mutable int         index;
             std::string         compartment_;
             std::string         labelTag_;  // component tag label (e.g., "1" from %1)
-		    // static iterators
-		    static node_iter_t  node_iter;
-		    static node_iter_t  nodes_end;
 	};
 
 
@@ -594,8 +591,6 @@ namespace BNGcore
 
 		private:
 		    // members
-            static node_iter_t          node_iter;
-            static node_const_iter_t    node_const_iter; 
 	};
 
 

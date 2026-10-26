@@ -10,11 +10,6 @@
 using namespace BNGcore;
 
 
-// define static members
-node_iter_t  Node::node_iter;
-node_iter_t  Node::nodes_end;
-
-
 //////////
 // NODE //
 //////////
@@ -87,7 +82,7 @@ Node::add_edge_out ( Node * node )
 bool
 Node::delete_edge_in ( Node * node )
 {
-    node_iter = std::find( edges_in.begin(), edges_in.end(), node );
+    auto node_iter = std::find( edges_in.begin(), edges_in.end(), node );
     if ( node_iter == edges_in.end() )
     {   // edges from node was not found
         return false;
@@ -104,7 +99,7 @@ Node::delete_edge_in ( Node * node )
 bool
 Node::delete_edge_out ( Node * node )
 {
-    node_iter = std::find( edges_out.begin(), edges_out.end(), node );
+    auto node_iter = std::find( edges_out.begin(), edges_out.end(), node );
     if ( node_iter == edges_out.end() )
     {   // edges from node was not found
         return false;
