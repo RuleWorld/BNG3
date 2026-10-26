@@ -9,9 +9,6 @@ import json
 from pathlib import Path
 import tempfile
 
-import bionetgen
-import bionetgen.model as bionetgen_model
-
 from tests.validation.integrated_cases import generated_cases, reuse_bngl
 from tests.validation.integrated_protocol import (
     _lifecycle_construction_isolation,
@@ -30,7 +27,7 @@ def _native_extension_path(model_module) -> Path:
     return Path(native.__file__).resolve()
 
 
-def _exception_recovery(source: Path) -> None:
+def _exception_recovery(source: Path, bionetgen) -> None:
     model = bionetgen.load(source)
     options = dict(method="ode", t_end=1.0, n_steps=2)
     baseline = model.simulate(**options)
@@ -64,6 +61,9 @@ def main() -> None:
     args = parser.parse_args()
     if args.iterations < 1:
         parser.error("--iterations must be positive")
+
+    import bionetgen
+    import bionetgen.model as bionetgen_model
 
     native = _native_extension_path(bionetgen_model)
     identity = {
@@ -106,7 +106,7 @@ def main() -> None:
         source.write_text(reuse_bngl(case))
         for iteration in range(args.iterations):
             print(f"iteration={iteration} stage=exception-recovery", flush=True)
-            _exception_recovery(source)
+            _exception_recovery(source, bionetgen)
             print(f"iteration={iteration} stage=concurrent-lifecycle", flush=True)
             difference = _lifecycle_construction_isolation(bionetgen, case, directory)
             if difference:
