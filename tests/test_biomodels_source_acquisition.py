@@ -369,9 +369,15 @@ def test_parent_timeout_retains_phase_source_hash_and_bounded_case_packet(
             "comparison_scope": "original_source_sbml_species_output_fidelity",
             "observable_count": 94,
         },
+        "simulation_comparison": {
+            "passed": True,
+            "comparison_scope": "written_sbml_export_consistency",
+            "observable_count": 190,
+        },
     }
-    (case_dir / "mode.flat.progress.json").write_text(
-        json.dumps(checkpoint), encoding="utf-8"
+    (case_dir / "mode.atomized.progress.json").write_text("{torn", encoding="utf-8")
+    (case_dir / "mode.atomized.progress.json.tmp").write_text(
+        json.dumps({**checkpoint, "mode": "atomized"}), encoding="utf-8"
     )
     stderr = b"\n".join(
         (
@@ -381,6 +387,9 @@ def test_parent_timeout_retains_phase_source_hash_and_bounded_case_packet(
     )
 
     def timeout(command, **kwargs):
+        validator._write_mode_checkpoint(
+            checkpoint, case_dir / "mode.flat.progress.json"
+        )
         raise subprocess.TimeoutExpired(
             command, 180, output=b"partial stdout", stderr=stderr
         )
@@ -410,11 +419,18 @@ def test_parent_timeout_retains_phase_source_hash_and_bounded_case_packet(
     assert record["source_validation"]["model_id"] == entry["id"]
     assert record["source_validation"]["sha256"] == digest
     assert record["mode_checkpoints"]["flat"]["checkpoint_state"] == "in_progress"
+    assert "atomized" not in record["mode_checkpoints"]
+    assert record["core_passed"] is False
+    assert "modes" not in record
     assert (
         record["mode_checkpoints"]["flat"]["source_simulation_comparison"][
             "observable_count"
         ]
         == 94
+    )
+    assert (
+        record["mode_checkpoints"]["flat"]["simulation_comparison"]["observable_count"]
+        == 190
     )
     packet_path = case_dir / "case-packet" / "packet.json"
     packet = json.loads(packet_path.read_text(encoding="utf-8"))
@@ -424,15 +440,19 @@ def test_parent_timeout_retains_phase_source_hash_and_bounded_case_packet(
         "translated.flat.bngl",
         "BIOMD0000000008_flat.xml",
         "mode.flat.progress.json",
+        "mode.atomized.progress.json",
     }
     assert packet["included_bytes"] <= validator.MAX_CASE_PACKET_BYTES
     assert record["case_packet"].endswith("case-packet/packet.json")
     assert all(item.get("sha256") for item in packet["artifacts"])
     packet_by_name = {item["name"]: item for item in packet["artifacts"]}
     assert packet_by_name["source.xml"]["sha256"] == digest
-    assert packet_by_name["mode.flat.progress.json"]["sha256"] == hashlib.sha256(
-        (packet_path.parent / "mode.flat.progress.json").read_bytes()
-    ).hexdigest()
+    assert (
+        packet_by_name["mode.flat.progress.json"]["sha256"]
+        == hashlib.sha256(
+            (packet_path.parent / "mode.flat.progress.json").read_bytes()
+        ).hexdigest()
+    )
     for name, item in packet_by_name.items():
         assert hashlib.sha256((packet_path.parent / name).read_bytes()).hexdigest() == (
             item["sha256"]
