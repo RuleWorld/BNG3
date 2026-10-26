@@ -895,3 +895,60 @@ def test_events_with_the_same_trigger_and_different_delays_are_ordered():
     assert result.success, result.error
     assert "begin bng3_events version 1" in result.bngl
     assert result.bngl.count('  event "') == 2
+
+
+def test_source_action_grid_preserves_post_assignment_at_early_boundary(tmp_path):
+    """A zero-duration continuation must retain its post-event output row."""
+    from bionetgen import load
+    from scripts.ci.validate_published_biomodels import _source_action_bngl
+
+    bngl = """begin model
+begin parameters
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin observables
+  Species A_count A()
+end observables
+begin reaction rules
+end reaction rules
+end model
+begin actions
+  generate_network({overwrite=>1})
+  simulate({method=>"ode", t_start=>0, t_end=>0.01, sample_times=>[0,0.01]})
+  setConcentration("A()", "5")
+  simulate({continue=>1, method=>"ode", t_start=>0.01, t_end=>0.01, n_steps=>1})
+  simulate({continue=>1, method=>"ode", t_start=>0.01, t_end=>1, sample_times=>[0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1]})
+end actions
+"""
+    source = _source_action_bngl(
+        bngl,
+        rtol=1e-7,
+        atol=1e-12,
+        max_step=0.0,
+        t_end=1.0,
+        n_steps=10,
+    )
+    path = tmp_path / "early_boundary.bngl"
+    path.write_text(source)
+    load(str(path)).execute()
+
+    lines = path.with_suffix(".gdat").read_text().splitlines()
+    header = next(
+        line.removeprefix("#").split() for line in lines if line.startswith("#")
+    )
+    rows = np.asarray(
+        [
+            [float(value) for value in line.split()]
+            for line in lines
+            if line and not line.startswith("#")
+        ]
+    )
+    boundary = rows[np.isclose(rows[:, header.index("time")], 0.01, rtol=0, atol=1e-12)]
+    assert boundary.shape[0] == 2
+    assert boundary[0, header.index("A_count")] == pytest.approx(1.0)
+    assert boundary[-1, header.index("A_count")] == pytest.approx(5.0)
