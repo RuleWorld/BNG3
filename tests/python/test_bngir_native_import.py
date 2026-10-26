@@ -278,9 +278,7 @@ def test_native_import_executes_independently_authored_reversible_association(
     reactant_b = copy.deepcopy(model["rules"][0]["reverse"]["reactants"][0])
     product_d = {
         "compartment_prefix": False,
-        "molecules": [
-            {"occurrence": 0, "sites": [], "type": "D", "type_id": 2}
-        ],
+        "molecules": [{"occurrence": 0, "sites": [], "type": "D", "type_id": 2}],
     }
     model["seeds"] = [
         {
@@ -367,7 +365,9 @@ def test_native_import_executes_independently_authored_reversible_association(
     network = restored.generate_network()
     assert network.num_species == 3
     assert network.num_reactions == 2
-    initial = [10.0 if name in {"A()", "B()"} else 0.0 for name in network.species_names]
+    initial = [
+        10.0 if name in {"A()", "B()"} else 0.0 for name in network.species_names
+    ]
     derivative = _cpp._validation_ode_rhs(restored._model, network, 0.0, initial)
     assert dict(zip(network.species_names, derivative)) == pytest.approx(
         {"A()": -10.0, "B()": -10.0, "D()": 10.0}
@@ -375,9 +375,7 @@ def test_native_import_executes_independently_authored_reversible_association(
 
     k_forward, k_reverse = 0.1, 0.2
     discriminant = (2 * 10 * k_forward + k_reverse) ** 2 - 4 * k_forward**2 * 10**2
-    low = ((2 * 10 * k_forward + k_reverse) - math.sqrt(discriminant)) / (
-        2 * k_forward
-    )
+    low = ((2 * 10 * k_forward + k_reverse) - math.sqrt(discriminant)) / (2 * k_forward)
     high = ((2 * 10 * k_forward + k_reverse) + math.sqrt(discriminant)) / (
         2 * k_forward
     )
@@ -385,7 +383,11 @@ def test_native_import_executes_independently_authored_reversible_association(
     for time, row in zip(result.time, result.concentrations):
         ratio = (low / high) * math.exp(k_forward * (low - high) * time)
         expected_d = (low - ratio * high) / (1.0 - ratio)
-        expected = {"A()": 10.0 - expected_d, "B()": 10.0 - expected_d, "D()": expected_d}
+        expected = {
+            "A()": 10.0 - expected_d,
+            "B()": 10.0 - expected_d,
+            "D()": expected_d,
+        }
         assert dict(zip(network.species_names, row)) == pytest.approx(expected)
 
 
@@ -478,7 +480,9 @@ def test_direct_native_builder_rejects_inconsistent_reverse_mutations():
     document = _independent_reversible_bngir_document()
     document["model"]["rules"][0]["reverse"]["mutations"].pop()
 
-    with pytest.raises(RuntimeError, match="do not state the delete-and-add operations"):
+    with pytest.raises(
+        RuntimeError, match="do not state the delete-and-add operations"
+    ):
         _cpp._model_from_bngir_v02(document["model"])
 
 

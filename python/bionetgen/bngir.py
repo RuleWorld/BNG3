@@ -1660,13 +1660,10 @@ def _native_reversible_direction_v02(
     reactant_pattern_types = [
         pattern["molecules"][0]["type_id"] for pattern in reactants
     ]
-    product_pattern_types = [
-        pattern["molecules"][0]["type_id"] for pattern in products
-    ]
-    if (
-        len(set(reactant_pattern_types)) != len(reactant_pattern_types)
-        or len(set(product_pattern_types)) != len(product_pattern_types)
-    ):
+    product_pattern_types = [pattern["molecules"][0]["type_id"] for pattern in products]
+    if len(set(reactant_pattern_types)) != len(reactant_pattern_types) or len(
+        set(product_pattern_types)
+    ) != len(product_pattern_types):
         raise ValueError(
             f"native BNGIR model.rules[{index}].{direction_name} reversible "
             "rules do not support repeated molecule-type patterns"
@@ -1687,10 +1684,7 @@ def _native_reversible_direction_v02(
         for mutation in direction["mutations"]
     ]
     expected = [
-        *(
-            ("delete_molecule", "reactant", i)
-            for i in range(len(reactants))
-        ),
+        *(("delete_molecule", "reactant", i) for i in range(len(reactants))),
         *(("add_molecule", "product", i) for i in range(len(products))),
     ]
     if sorted(observed) != sorted(expected):
