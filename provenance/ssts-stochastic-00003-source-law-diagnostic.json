@@ -1,0 +1,109 @@
+{
+  "diagnostic_only": true,
+  "implementation": {
+    "official_engine": "cpu:batch",
+    "official_runs": 40000,
+    "official_seed_base": 1000000,
+    "revision": "0f004fecd318abb5b21829d869765a07cb6684cf"
+  },
+  "interpretation": "The official conformance status remains failed. The exact-source-law pilot shows that five standard-deviation-statistic violations are typical for this non-Gaussian birth-death source law at the recorded ensemble size; this does not establish a batch SSA defect or change the official acceptance rule.",
+  "official_reason_unchanged": "stochastic distribution mismatch: 5 of 100 official mean/standard-deviation acceptance tests were violated; the SBML Test Suite guidance treats 1\u20133 violations as probably fine and says larger counts may indicate an error. The separately reported independent-normal binomial tail is only a diagnostic: checks across output times reuse the same trajectories and are not independent.",
+  "official_variance_violations": [
+    {
+      "official_statistic": 7.6549368286289585,
+      "source_law_asymptotic_y_sd": 4.434296443042483,
+      "source_law_sd_units": 1.7263024533778604,
+      "time": 41
+    },
+    {
+      "official_statistic": 8.5666239360658,
+      "source_law_asymptotic_y_sd": 4.885168058530493,
+      "source_law_sd_units": 1.7535986138914383,
+      "time": 43
+    },
+    {
+      "official_statistic": 8.554369861195115,
+      "source_law_asymptotic_y_sd": 5.128622063533659,
+      "source_law_sd_units": 1.6679665132706405,
+      "time": 44
+    },
+    {
+      "official_statistic": 6.881395125889811,
+      "source_law_asymptotic_y_sd": 5.384891599956447,
+      "source_law_sd_units": 1.2779078275123437,
+      "time": 45
+    },
+    {
+      "official_statistic": 5.7567379629624815,
+      "source_law_asymptotic_y_sd": 5.654618658290721,
+      "source_law_sd_units": 1.0180594503082954,
+      "time": 46
+    }
+  ],
+  "official_verdict_unchanged": "failed",
+  "pilot": {
+    "acceptance_limit_changed": false,
+    "independent_ensembles": 250,
+    "mean_sd_statistic_violations_per_ensemble": 5.5,
+    "numpy_version": "2.3.5",
+    "p_ensemble_has_at_least_five_sd_violations": 0.516,
+    "p_ensemble_has_at_least_five_sd_violations_wilson_95pct": [
+      0.45428015272974154,
+      0.5772355816864043
+    ],
+    "per_time": {
+      "41": {
+        "fraction_abs_y_gt_5": 0.26,
+        "mean_y": -0.02406760309472008,
+        "sd_y": 4.352364484658802
+      },
+      "43": {
+        "fraction_abs_y_gt_5": 0.324,
+        "mean_y": -0.3605285914013642,
+        "sd_y": 4.908707587366084
+      },
+      "44": {
+        "fraction_abs_y_gt_5": 0.324,
+        "mean_y": -0.4608124372572048,
+        "sd_y": 5.228358124359546
+      },
+      "45": {
+        "fraction_abs_y_gt_5": 0.38,
+        "mean_y": -0.5461368384696875,
+        "sd_y": 5.638310240535459
+      },
+      "46": {
+        "fraction_abs_y_gt_5": 0.42,
+        "mean_y": -0.4956205967487767,
+        "sd_y": 5.979930240243147
+      }
+    },
+    "rng": "numpy.default_rng PCG64",
+    "sample_times": 50,
+    "sampler": "exact conditional Binomial survivors + negative-binomial descendants",
+    "sd_of_sd_statistic_violation_count": 4.584985098494177,
+    "seed": 20261026,
+    "trajectories_per_ensemble": 40000
+  },
+  "source": {
+    "process": "X -> 2X at 1*X; X -> 0 at 1.1*X; X(0)=100",
+    "sha256": "c58a50dd86f981150b533dd9af25c38f9ef3aeeedad2f679400e022add77f50e",
+    "suite_case": "stochastic/00003 l3v2"
+  },
+  "source_law": {
+    "a": "exp(-0.1*t)",
+    "dsmts_y_asymptotic_variance": "(mu4/sigma^4 - 1)/2",
+    "identity_checks": {
+      "executed_before_sampling": true,
+      "late_time_mean_and_variance_tend_to_zero": true,
+      "small_time_variance_slope": 210.0,
+      "t0_mean": 100.0,
+      "t0_variance": 0.0
+    },
+    "lineage_distribution": "P(0)=1-p; P(k)=p*(1-q)*q^(k-1), k>=1",
+    "mean": "100*a",
+    "p": "0.1*a/(1.1-a)",
+    "q": "(1-a)/(1.1-a)",
+    "variance": "2100*(a-a^2)"
+  }
+}
