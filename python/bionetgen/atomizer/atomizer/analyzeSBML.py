@@ -1520,9 +1520,10 @@ class SBMLAnalyzer:
         """
         flag = True
         if len(ruleList[1]) == 1 and ruleList[1] != "0":
-            # ⚡ Bolt: Replace deepcopy with faster list comprehension/copy() for ~15x speedup
+            # ``differenceParameter`` holds immutable strings and this function
+            # only appends to its own list.
             differences = differenceParameter.copy()
-            tmpRuleList = [x.copy() for x in ruleList]
+            tmpRuleList = deepcopy(ruleList)
 
             while flag:
                 flag = False
@@ -1873,7 +1874,8 @@ class SBMLAnalyzer:
         reactantFlat = Counter([y for x in reactantList for y in x])
         productFlat = Counter([y for x in productList for y in x])
         intersection = reactantFlat & productFlat
-        # ⚡ Bolt: Replace deepcopy with faster dict/Counter copy() method for ~5x speedup
+        # Counter values are integers, and the two copies are decremented
+        # independently, so a shallow copy is enough.
         intersection2 = intersection.copy()
         newReactant = []
         newProduct = []
@@ -2238,7 +2240,9 @@ class SBMLAnalyzer:
                     ):
                         reactantString.append([element])
                     else:
-                        reactantString.append(list(externalDependencyGraph[element][0]))
+                        reactantString.append(
+                            deepcopy(externalDependencyGraph[element][0])
+                        )
 
                 # same for products
                 for element in reaction[1]:
@@ -2248,7 +2252,9 @@ class SBMLAnalyzer:
                     ):
                         productString.append([element])
                     else:
-                        productString.append(list(externalDependencyGraph[element][0]))
+                        productString.append(
+                            deepcopy(externalDependencyGraph[element][0])
+                        )
 
                 # remove those chemicals that match exactly on both sides since those are not interesting.
                 # and unlike lexical pattern matching we are not going to go around trying to increase string size
