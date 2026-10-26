@@ -754,3 +754,107 @@ def test_downloaded_source_hash_mismatch_is_a_harness_integrity_error(
     assert validator._model_exception_status(caught.value) == "harness_error"
     assert caught.value.expected_sha256 == expected
     assert caught.value.actual_sha256 == actual
+
+
+def test_original_source_comparison_executes_actions_on_bng_time_grid(
+    monkeypatch, tmp_path
+):
+    import sys
+    import numpy as np
+
+    validator = _validator()
+    observed_times = []
+    parsed_actions = []
+
+    class Integrator:
+        def hasValue(self, _name):
+            return True
+
+        def setValue(self, _name, _value):
+            pass
+
+        def getAbsoluteToleranceVector(self):
+            return np.array([1e-8])
+
+        def getValue(self, _name):
+            return False
+
+    class Oracle:
+        integrator = Integrator()
+        timeCourseSelections = []
+
+        def __init__(self, _source):
+            pass
+
+        def simulate(self, *args, **kwargs):
+            assert not args
+            times = np.asarray(kwargs["times"], dtype=float)
+            observed_times.extend(times.tolist())
+            assert (np.diff(times) > 0.0).all()
+            return np.column_stack((times, [2.0, 4.0, 5.0]))
+
+        def getAssignmentRuleIds(self):
+            return []
+
+    class ActionModel:
+        def __init__(self, parsed_source, *, source_path):
+            assert parsed_source is True
+            self.source_path = Path(source_path)
+
+        def execute(self):
+            self.source_path.with_suffix(".gdat").write_text(
+                "# time SSTSREF_case_0000\n" "0 2\n" "0.01 3\n" "0.01 4\n" "0.1 5\n",
+                encoding="utf-8",
+            )
+
+    monkeypatch.setitem(sys.modules, "roadrunner", SimpleNamespace(RoadRunner=Oracle))
+
+    def parse_action(source):
+        parsed_actions.append(source)
+        return True
+
+    result = validator._simulate_and_compare(
+        object(),
+        ActionModel,
+        tmp_path / "written.xml",
+        t_end=0.1,
+        n_steps=1,
+        rtol=1e-7,
+        atol=1e-12,
+        reference_model="<sbml/>",
+        action_bngl=(
+            "begin actions\n"
+            '  simulate({method=>"ode", t_start=>0, t_end=>0.01, n_steps=>1})\n'
+            '  simulate({continue=>1, method=>"ode", t_start=>0.01, '
+            "t_end=>0.1, n_steps=>1})\n"
+            "end actions\n"
+        ),
+        action_model_parser=parse_action,
+        reference_selections={"SSTSREF_case_0000": "A"},
+        comparison_scope=validator.SOURCE_COMPARISON_SCOPE,
+    )
+
+    assert result["passed"] is True
+    assert observed_times == [0.0, 0.01, 0.1]
+    assert "t_start=>0, t_end=>0.01" in parsed_actions[0]
+    assert "sample_times=>[0,0.01]" in parsed_actions[0]
+    assert "sample_times=>[0.01,0.10000000000000001]" in parsed_actions[0]
+    assert all("n_steps=>" not in source for source in parsed_actions)
+    assert all("rtol=>9.9999999999999995e-08" in x for x in parsed_actions)
+    assert all("atol=>9.9999999999999998e-13" in x for x in parsed_actions)
+    assert all("max_step=>0" in x for x in parsed_actions)
+    assert all("print_functions=>1" in x for x in parsed_actions)
+
+
+def test_source_action_comparison_refuses_stochastic_protocol():
+    validator = _validator()
+
+    with pytest.raises(validator.OracleIntegrationError, match="deterministic ODE"):
+        validator._source_action_bngl(
+            'begin actions\n  simulate({method=>"ssa"})\nend actions\n',
+            rtol=1e-7,
+            atol=1e-12,
+            max_step=0.0,
+            t_end=1.0,
+            n_steps=10,
+        )

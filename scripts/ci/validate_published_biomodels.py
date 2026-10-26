@@ -1169,7 +1169,7 @@ def _undefined_label(values: np.ndarray) -> str:
 
 
 def _simulate_oracle_trajectory(
-    rr: Any, t_end: float, n_steps: int
+    rr: Any, t_end: float, n_steps: int, *, sample_times: np.ndarray | None = None
 ) -> tuple[np.ndarray, list[dict[str, Any]]]:
     """Retry BDF convergence failure only for a finite law with a singular Jacobian.
 
@@ -1181,7 +1181,14 @@ def _simulate_oracle_trajectory(
     attempts: list[dict[str, Any]] = []
     initial_tolerances = list(rr.integrator.getAbsoluteToleranceVector())
     try:
-        values = np.asarray(rr.simulate(0.0, t_end, n_steps + 1), dtype=float)
+        values = np.asarray(
+            (
+                rr.simulate(times=sample_times)
+                if sample_times is not None
+                else rr.simulate(0.0, t_end, n_steps + 1)
+            ),
+            dtype=float,
+        )
     except Exception as exc:
         if not stiff or "CV_CONV_FAILURE" not in str(exc):
             raise
@@ -1200,7 +1207,14 @@ def _simulate_oracle_trajectory(
         # Preserve the exact initial vector across the failed attempt and reset.
         rr.integrator.setValue("absolute_tolerance", initial_tolerances)
         try:
-            values = np.asarray(rr.simulate(0.0, t_end, n_steps + 1), dtype=float)
+            values = np.asarray(
+                (
+                    rr.simulate(times=sample_times)
+                    if sample_times is not None
+                    else rr.simulate(0.0, t_end, n_steps + 1)
+                ),
+                dtype=float,
+            )
         except Exception as retry_exc:
             raise RuntimeError(
                 f"BDF failed: {exc}; Adams retry failed: {retry_exc}"
@@ -1208,6 +1222,194 @@ def _simulate_oracle_trajectory(
         stiff = False
     attempts.append({"stiff": stiff, "passed": True})
     return values, attempts
+
+
+def _source_action_bngl(
+    bngl: str,
+    *,
+    rtol: float,
+    atol: float,
+    max_step: float,
+    t_end: float,
+    n_steps: int,
+) -> str:
+    """Add the requested comparison grid to generated deterministic ODE actions."""
+
+    pattern = re.compile(
+        r"(?im)^(?P<prefix>\s*simulate(?:_ode|_ssa|_nf|_pla|_psa)?\s*\(\s*\{)"
+        r"(?P<arguments>[^}\n]*)(?P<suffix>\}\s*\))\s*$"
+    )
+    found = 0
+    previous_end = 0.0
+    requested_times = np.linspace(0.0, t_end, n_steps + 1).tolist()
+    covered_times: set[int] = set()
+
+    def argument_value(arguments: str, key: str) -> str | None:
+        match = re.search(rf"(?i)(?<![A-Za-z0-9_]){key}\s*=>\s*([^,]+)", arguments)
+        return match.group(1).strip() if match is not None else None
+
+    def numeric_time(value: str, key: str) -> float:
+        try:
+            parsed = float(value.strip(" '\""))
+        except (TypeError, ValueError) as exc:
+            raise OracleIntegrationError(
+                f"source ODE action {key} is not a static numeric time"
+            ) from exc
+        if not math.isfinite(parsed):
+            raise OracleIntegrationError(
+                f"source ODE action {key} is not a finite numeric time"
+            )
+        return parsed
+
+    def replace_arguments(arguments: str, updates: dict[str, str]) -> str:
+        arguments = re.sub(
+            r"(?i)(?:^|,)\s*sample_times\s*=>\s*\[[^\]]*\]\s*(?=,|$)",
+            "",
+            arguments,
+        )
+        parts = [part.strip() for part in arguments.split(",") if part.strip()]
+        retained = [
+            part
+            for part in parts
+            if not any(re.match(rf"(?i)^{key}\s*=>", part) for key in updates)
+            and not re.match(r"(?i)^n_steps\s*=>", part)
+            and not re.match(r"(?i)^n_output_steps\s*=>", part)
+        ]
+        retained.extend(f"{key}=>{value}" for key, value in updates.items())
+        return ", ".join(retained)
+
+    def update(match: re.Match[str]) -> str:
+        nonlocal found, previous_end
+        arguments = match.group("arguments")
+        action_name = match.group("prefix").split("(", 1)[0].strip().lower()
+        ode_method = (
+            action_name == "simulate_ode"
+            or re.search(
+                r"(?i)\bmethod\s*=>\s*['\"]?(?:ode|cvode)['\"]?\b",
+                arguments,
+            )
+            is not None
+        )
+        simulation_actions = {
+            "simulate",
+            "simulate_ode",
+            "simulate_ssa",
+            "simulate_nf",
+            "simulate_pla",
+            "simulate_psa",
+        }
+        if action_name in simulation_actions and not ode_method:
+            raise OracleIntegrationError(
+                "original-source comparison requires a deterministic ODE action; "
+                f"found {action_name}"
+            )
+        if not ode_method:
+            return match.group(0)
+        found += 1
+        t_end_text = argument_value(arguments, "t_end")
+        if t_end_text is None:
+            raise OracleIntegrationError(
+                "source ODE action has no explicit t_end for the requested grid"
+            )
+        continuing = (argument_value(arguments, "continue") or "").strip(" '\"").lower()
+        is_continuation = continuing in {"1", "true"}
+        if found > 1 and not is_continuation:
+            raise OracleIntegrationError(
+                "generated source ODE actions do not continue one trajectory"
+            )
+        start_text = argument_value(arguments, "t_start")
+        start = (
+            numeric_time(start_text, "t_start")
+            if start_text is not None
+            else previous_end if is_continuation else 0.0
+        )
+        end = numeric_time(t_end_text, "t_end")
+        if start_text is None and is_continuation:
+            end += previous_end
+        if end < start:
+            raise OracleIntegrationError(
+                "source ODE action interval ends before it starts"
+            )
+        tolerance = max(1e-12, abs(t_end) * 1e-12)
+        sample_times = [start]
+        for index, time_value in enumerate(requested_times):
+            if start + tolerance < time_value < end - tolerance:
+                sample_times.append(time_value)
+            if start - tolerance <= time_value <= end + tolerance:
+                covered_times.add(index)
+        if end - sample_times[-1] > tolerance:
+            sample_times.append(end)
+        elif not math.isclose(sample_times[-1], end, rel_tol=0.0, abs_tol=tolerance):
+            sample_times.append(end)
+        previous_end = end
+        updates = {
+            "sample_times": "["
+            + ",".join(format(value, ".17g") for value in sample_times)
+            + "]",
+            "rtol": format(rtol, ".17g"),
+            "atol": format(atol, ".17g"),
+            "max_step": format(max_step, ".17g"),
+            "print_functions": "1",
+        }
+        arguments = replace_arguments(arguments, updates)
+        return match.group("prefix") + arguments + match.group("suffix")
+
+    rewritten = pattern.sub(update, bngl)
+    if not found:
+        raise OracleIntegrationError(
+            "generated source BNGL has no deterministic ODE simulation action"
+        )
+    if len(covered_times) != len(requested_times):
+        missing = [
+            format(time_value, ".17g")
+            for index, time_value in enumerate(requested_times)
+            if index not in covered_times
+        ]
+        raise OracleIntegrationError(
+            "generated source ODE actions do not cover requested output times: "
+            + ", ".join(missing[:8])
+        )
+    return rewritten
+
+
+def _deduplicate_action_trajectory(
+    times: np.ndarray, values: np.ndarray, names: list[str]
+) -> tuple[np.ndarray, np.ndarray, list[dict[str, Any]]]:
+    """Score the post-event row and retain pre-event values as diagnostics."""
+
+    times = np.asarray(times, dtype=float)
+    values = np.asarray(values, dtype=float)
+    if times.ndim != 1 or not times.size or not np.isfinite(times).all():
+        raise RuntimeError("BNG3 action trajectory has invalid output times")
+    if (np.diff(times) < 0.0).any():
+        raise RuntimeError("BNG3 action trajectory output times are not ordered")
+    keep: list[int] = []
+    pre_event_rows: list[dict[str, Any]] = []
+    index = 0
+    while index < times.size:
+        end = index + 1
+        while end < times.size and times[end] == times[index]:
+            end += 1
+        count = end - index
+        if count > 1:
+            if count != 2:
+                raise OracleIntegrationError(
+                    "BNG3 action trajectory has more than two rows at one event time"
+                )
+            pre_event_rows.append(
+                {
+                    "time": float(times[index]),
+                    "outputs": {
+                        name: float(values[index, column + 1])
+                        for column, name in enumerate(names)
+                    },
+                    "scored": False,
+                    "reason": "the left-limit source state is not sampled at the event time",
+                }
+            )
+        keep.append(end - 1)
+        index = end
+    return times[keep], values[keep], pre_event_rows
 
 
 def _simulate_and_compare(
@@ -1224,6 +1426,8 @@ def _simulate_and_compare(
     max_step: float = 0.0,
     function_names: set[str] | None = None,
     reference_model: str | None = None,
+    action_bngl: str | None = None,
+    action_model_parser: Any | None = None,
     reference_selections: dict[str, str] | None = None,
     comparison_scope: str = COMPARISON_SCOPE,
     source_time_units: str | None = None,
@@ -1303,35 +1507,110 @@ def _simulate_and_compare(
             f"{compared_model}: {type(exc).__name__}: {exc}"
         ) from exc
 
-    try:
-        bng_result = model_type(cpp_model).simulate(
-            method="ode",
-            t_start=0.0,
-            t_end=t_end,
-            n_steps=n_steps,
+    unscored_pre_event_rows: list[dict[str, Any]] = []
+    if action_bngl is not None:
+        if action_model_parser is None:
+            raise RuntimeError("source action comparison requires a BNGL parser")
+        action_source = _source_action_bngl(
+            action_bngl,
             rtol=rtol,
             atol=actual_native_atol,
             max_step=max_step,
+            t_end=t_end,
+            n_steps=n_steps,
         )
-    except Exception as exc:
-        raise BngSimulationError(f"BNG3 CVODE could not simulate model: {exc}") from exc
-    series = dict(bng_result.observables)
-    function_values = getattr(bng_result, "functions", {}) or {}
-    if function_names is None:
-        series.update(function_values)
-    else:
-        series.update(
-            {
-                name: values
-                for name, values in function_values.items()
-                if name in function_names
+        action_cpp_model = action_model_parser(action_source)
+        with tempfile.TemporaryDirectory(prefix="biomodels-action-oracle-") as temp:
+            action_path = Path(temp) / "source.bngl"
+            action_path.write_text(action_source, encoding="utf-8")
+            try:
+                model_type(action_cpp_model, source_path=str(action_path)).execute()
+            except Exception as exc:
+                raise BngSimulationError(
+                    f"BNG3 action execution could not simulate model: {exc}"
+                ) from exc
+            gdat_path = action_path.with_suffix(".gdat")
+            try:
+                lines = gdat_path.read_text(encoding="utf-8").splitlines()
+                header = next(line for line in lines if line.startswith("#"))
+                columns = header.removeprefix("#").split()
+                action_values = np.loadtxt(gdat_path, comments="#", dtype=float)
+                action_values = np.atleast_2d(action_values)
+            except (OSError, StopIteration, ValueError) as exc:
+                raise RuntimeError(
+                    f"BNG3 action execution did not produce readable gdat: {exc}"
+                ) from exc
+            if action_values.ndim != 2 or action_values.shape[1] != len(columns):
+                raise RuntimeError("BNG3 action gdat header and data shape differ")
+            column_indices = {name: index for index, name in enumerate(columns)}
+            observable_names = list(reference_selections or {})
+            missing = [name for name in observable_names if name not in column_indices]
+            if missing:
+                raise RuntimeError(
+                    "BNG3 action gdat is missing mapped source outputs: "
+                    + ", ".join(missing[:10])
+                )
+            bng_time, action_values, unscored_pre_event_rows = (
+                _deduplicate_action_trajectory(
+                    action_values[:, column_indices["time"]],
+                    action_values,
+                    observable_names,
+                )
+            )
+            requested_times = np.linspace(0.0, t_end, n_steps + 1)
+            if not all(
+                np.any(np.isclose(bng_time, time_value, rtol=0.0, atol=1e-12))
+                for time_value in requested_times
+            ):
+                raise OracleIntegrationError(
+                    "BNG3 action output omits one or more requested comparison times"
+                )
+            bng_values = {
+                name: action_values[:, column_indices[name]]
+                for name in observable_names
             }
-        )
-    observable_names = list(series)
-    bng_time = np.asarray(bng_result.time, dtype=float)
-    bng_values = {
-        name: np.asarray(series[name], dtype=float) for name in observable_names
-    }
+            if (
+                bng_time.size == 0
+                or not math.isclose(float(bng_time[0]), 0.0, abs_tol=1e-12)
+                or not math.isclose(
+                    float(bng_time[-1]), t_end, rel_tol=0.0, abs_tol=1e-9
+                )
+            ):
+                raise RuntimeError(
+                    "BNG3 action trajectory does not cover the requested source horizon"
+                )
+    else:
+        try:
+            bng_result = model_type(cpp_model).simulate(
+                method="ode",
+                t_start=0.0,
+                t_end=t_end,
+                n_steps=n_steps,
+                rtol=rtol,
+                atol=actual_native_atol,
+                max_step=max_step,
+            )
+        except Exception as exc:
+            raise BngSimulationError(
+                f"BNG3 CVODE could not simulate model: {exc}"
+            ) from exc
+        series = dict(bng_result.observables)
+        function_values = getattr(bng_result, "functions", {}) or {}
+        if function_names is None:
+            series.update(function_values)
+        else:
+            series.update(
+                {
+                    name: values
+                    for name, values in function_values.items()
+                    if name in function_names
+                }
+            )
+        observable_names = list(series)
+        bng_time = np.asarray(bng_result.time, dtype=float)
+        bng_values = {
+            name: np.asarray(series[name], dtype=float) for name in observable_names
+        }
 
     def sbml_id(name: str) -> str:
         valid = "".join(char if char.isalnum() or char == "_" else "_" for char in name)
@@ -1379,7 +1658,10 @@ def _simulate_and_compare(
     rr.timeCourseSelections = ["time", *selected_names]
     try:
         rr_values, oracle_solver_attempts = _simulate_oracle_trajectory(
-            rr, t_end, n_steps
+            rr,
+            t_end,
+            n_steps,
+            sample_times=bng_time if action_bngl is not None else None,
         )
     except Exception as exc:
         # The oracle's own solver failed.  That is a limitation of the
@@ -1488,7 +1770,11 @@ def _simulate_and_compare(
             "passed": passed,
         }
     base: dict[str, Any] = {
-        "method_bngl": "BNG3 CVODE (simulate method='ode')",
+        "method_bngl": (
+            "BNG3 CVODE (generated deterministic ODE actions)"
+            if action_bngl is not None
+            else "BNG3 CVODE (simulate method='ode')"
+        ),
         "method_sbml": "libRoadRunner CVODE",
         "roadrunner_version": getattr(roadrunner, "__version__", None),
         "t_start": 0.0,
@@ -1514,6 +1800,8 @@ def _simulate_and_compare(
         "sbml_observable_ids": dict(zip(observable_names, selected_names)),
         "observables": comparisons,
     }
+    if action_bngl is not None:
+        base["unscored_pre_event_rows"] = unscored_pre_event_rows
     if native_tolerance_context:
         base.update(native_tolerance_context)
     if source_time_units is not None:
@@ -1716,7 +2004,7 @@ def _simulate_source_and_compare(
     reference_bngl, aliases = _with_reference_output_functions(
         bngl, targets, safe_model_id
     )
-    reference_model = cpp.parse_string(reference_bngl)
+    reference_model = None
     reference_selections = {
         aliases[species_id]: selection for species_id, selection in selections.items()
     }
@@ -1735,6 +2023,8 @@ def _simulate_source_and_compare(
             max_step=step,
             function_names=set(aliases.values()),
             reference_model=source_sbml,
+            action_bngl=reference_bngl,
+            action_model_parser=cpp.parse_string,
             reference_selections=reference_selections,
             comparison_scope=SOURCE_COMPARISON_SCOPE,
             source_time_units=source_model.time_units
