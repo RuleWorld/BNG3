@@ -130,7 +130,7 @@ def test_issue141_lifecycle_asan_configures_shadow_memory_compatible_aslr():
     )
     command = reproduce["run"]
     aslr_setup = "sudo sysctl -w vm.mmap_rnd_bits=28"
-    preload = 'export LD_PRELOAD="$(gcc -print-file-name=libasan.so)"'
+    preload = 'export LD_PRELOAD="$(gcc-12 -print-file-name=libasan.so)"'
     native_import = (
         "python -c 'import bionetgen.model as model; assert model._cpp.__file__'"
     )
