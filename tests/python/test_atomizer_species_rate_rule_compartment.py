@@ -139,20 +139,20 @@ def sample_on_reference_grid(bngl, grid):
                 t = m_start.group(1)
                 lines.append(
                     f'  simulate({{continue=>1, method=>"ode", t_start=>{t}, '
-                    f't_end=>{t}, n_steps=>1, print_functions=>1}})'
+                    f"t_end=>{t}, n_steps=>1, print_functions=>1}})"
                 )
             elif first:
                 first = False
                 lines.append(
                     f'  simulate({{method=>"ode", t_start=>0, '
                     f"sample_times=>[{','.join(repr(time) for time in before)}], "
-                    f'print_functions=>1}})'
+                    f"print_functions=>1}})"
                 )
             else:
                 lines.append(
                     f'  simulate({{continue=>1, method=>"ode", t_start=>{EVENT_TIME}, '
                     f"sample_times=>[{','.join(repr(time) for time in after)}], "
-                    f'print_functions=>1}})'
+                    f"print_functions=>1}})"
                 )
         else:
             lines.append(line)

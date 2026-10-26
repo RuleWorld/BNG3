@@ -4805,7 +4805,10 @@ def test_quadratic_reaction_events_support_independent_delays(tmp_path):
     reference = rr.simulate(times=unique_times)
     state_columns = [columns.index(f"{name}_amt") for name in ("S1", "S2", "S3")]
     jump_indices = np.flatnonzero(
-        np.max(np.abs(np.diff(bng_data[keep_indices, :][:, state_columns], axis=0)), axis=1) > 0.1
+        np.max(
+            np.abs(np.diff(bng_data[keep_indices, :][:, state_columns], axis=0)), axis=1
+        )
+        > 0.1
     )
     assert len(jump_indices) >= 2
     compare = np.ones(len(unique_times), dtype=bool)
