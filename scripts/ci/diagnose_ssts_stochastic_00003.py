@@ -20,6 +20,7 @@ import numpy as np
 
 
 EXPECTED_SOURCE_SHA256 = "c58a50dd86f981150b533dd9af25c38f9ef3aeeedad2f679400e022add77f50e"
+EXPECTED_REPORT_SHA256 = "ef8b7e737d5c72a10acaa3dddbd4fa02e86c48678b3cd5968d80b0c6fdb23f80"
 EXPECTED_BNG3_REVISION = "0f004fecd318abb5b21829d869765a07cb6684cf"
 OFFICIAL_RUN_ID = 40314965237
 RUNS = 40_000
@@ -109,6 +110,9 @@ def _load_case(
     report_path: Path, case_dir: Path
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     report = json.loads(report_path.read_text())
+    report_sha = _sha256(report_path)
+    if report_sha != EXPECTED_REPORT_SHA256:
+        raise ValueError("report SHA-256 does not match the downloaded official run artifact")
     if report.get("source_provenance", {}).get("bng3_commit") != EXPECTED_BNG3_REVISION:
         raise ValueError("report is not from the declared BNG3 revision")
     record = next(
@@ -125,7 +129,7 @@ def _load_case(
     runtime = report.get("runtime_provenance", {})
     return record["official_conformance"], {
         "sbml_sha256": source_sha,
-        "report_sha256": _sha256(report_path),
+        "report_sha256": report_sha,
         "suite_revision": report.get("suite_commit"),
         "run_id": OFFICIAL_RUN_ID,
         "bng3_revision": EXPECTED_BNG3_REVISION,
@@ -200,6 +204,7 @@ def diagnose(report_path: Path, case_dir: Path, replicates: int) -> dict[str, An
         "implementation": {
             "revision": provenance["bng3_revision"],
             "official_run_id": provenance["run_id"],
+            "official_run_id_binding": "expected SHA-256 of downloaded workflow artifact",
             "report_sha256": provenance["report_sha256"],
             "python_package_source_sha256": provenance[
                 "bng3_package_source_sha256"
