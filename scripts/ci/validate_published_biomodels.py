@@ -2010,7 +2010,11 @@ def _simulate_source_and_compare(
     reference_bngl, aliases = _with_reference_output_functions(
         bngl, targets, safe_model_id
     )
-    reference_model = None
+    has_actions = (
+        re.search(r"(?im)^\s*simulate(?:_ode|_ssa|_nf|_pla|_psa)?\s*\(", reference_bngl)
+        is not None
+    )
+    reference_model = None if has_actions else cpp.parse_string(reference_bngl)
     reference_selections = {
         aliases[species_id]: selection for species_id, selection in selections.items()
     }
@@ -2029,8 +2033,8 @@ def _simulate_source_and_compare(
             max_step=step,
             function_names=set(aliases.values()),
             reference_model=source_sbml,
-            action_bngl=reference_bngl,
-            action_model_parser=cpp.parse_string,
+            action_bngl=reference_bngl if has_actions else None,
+            action_model_parser=cpp.parse_string if has_actions else None,
             reference_selections=reference_selections,
             comparison_scope=SOURCE_COMPARISON_SCOPE,
             source_time_units=source_model.time_units
