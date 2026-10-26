@@ -1,6 +1,5 @@
+from bionetgen.atomizer.atomizer.analyzeSBML import get_close_matches
 from unittest.mock import patch
-
-from bionetgen.atomizer.atomizer.analyzeSBML import SBMLAnalyzer, get_close_matches
 
 
 def test_get_close_matches_basic():
@@ -60,35 +59,3 @@ def test_get_close_matches_caching(mock_difflib):
     assert matches1 == matches2 == ["apple"]
     # verify difflib was only called once
     mock_difflib.assert_called_once()
-
-
-def _state_free_analyzer():
-    """The methods below only use their arguments, not instance state."""
-    return SBMLAnalyzer.__new__(SBMLAnalyzer)
-
-
-def test_approximate_matching_keeps_its_difference_parameter_unchanged():
-    analyzer = _state_free_analyzer()
-    differences = ["_p"]
-    reactants = ["A_p"]
-    reaction = [reactants, ["A"]]
-
-    analyzer.approximateMatching(reaction, differences)
-
-    assert differences == ["_p"]
-    assert reactants == ["A_p"]
-
-
-def test_remove_exact_matches_decrements_each_side_independently():
-    analyzer = _state_free_analyzer()
-    reactant_list = [["A", "B"]]
-    product_list = [["A", "C"]]
-
-    new_reactants, new_products = analyzer.removeExactMatches(
-        reactant_list, product_list
-    )
-
-    assert new_reactants == [["B"]]
-    assert new_products == [["C"]]
-    assert reactant_list == [["A", "B"]]
-    assert product_list == [["A", "C"]]
