@@ -356,7 +356,7 @@ jobs:
 
       - name: Repeat issue 141 exception and concurrent lifecycle path
         env:
-          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:halt_on_error=1
+          ASAN_OPTIONS: detect_leaks=0:abort_on_error=1:halt_on_error=1:verify_asan_link_order=0
           PYTHONPATH: python:build/cpp:.
         run: |
           # Ubuntu's runner kernel can randomize PIE binaries into ASan's shadow range.

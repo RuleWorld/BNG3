@@ -137,7 +137,12 @@ def test_issue141_lifecycle_asan_configures_shadow_memory_compatible_aslr():
     assert aslr_setup in command
     assert "LD_PRELOAD" not in command, (
         "LD_PRELOAD of libasan into a non-ASan Python host breaks __cxa_throw "
-        "interception; vm.mmap_rnd_bits=28 is sufficient"
+        "interception; vm.mmap_rnd_bits=28 + verify_asan_link_order=0 is sufficient"
+    )
+    asan_opts = reproduce.get("env", {}).get("ASAN_OPTIONS", "")
+    assert "verify_asan_link_order=0" in asan_opts, (
+        "Without LD_PRELOAD, ASan aborts because it is not first in the library "
+        "list; verify_asan_link_order=0 suppresses that check safely"
     )
     assert command.index(aslr_setup) < command.index(native_import)
     assert command.index(native_import) < command.index(reproducer)
