@@ -201,9 +201,7 @@ def _assert_bimolecular_ctmc_marginal(converted_counts: list[int]) -> None:
     initial[0] = 1.0
     expected_probabilities = expm(generator.T * END_TIME) @ initial
     expected_cdf = np.cumsum(expected_probabilities)
-    observed_cdf = np.cumsum(
-        np.bincount(converted_counts, minlength=states) / RUNS
-    )
+    observed_cdf = np.cumsum(np.bincount(converted_counts, minlength=states) / RUNS)
     epsilon = math.sqrt(math.log(2.0 / 0.005) / (2.0 * RUNS))
     assert np.max(np.abs(observed_cdf - expected_cdf)) <= epsilon
 
@@ -284,9 +282,7 @@ def test_physical_bimolecular_rate_matches_independent_native_count_law(
     physical_source.write_text(_physical_bimolecular_source(), encoding="utf-8")
 
     bng2_source = tmp_path / "independent_count_law.bngl"
-    bng2_source.write_text(
-        _independent_bng2_bimolecular_source(), encoding="utf-8"
-    )
+    bng2_source.write_text(_independent_bng2_bimolecular_source(), encoding="utf-8")
     translated = subprocess.run(
         [os.environ.get("PERL", "perl"), configured_bng2, str(bng2_source)],
         cwd=tmp_path,
@@ -308,7 +304,9 @@ def test_physical_bimolecular_rate_matches_independent_native_count_law(
         )
         trajectory = runner._result_to_trajectory(result)
         assert trajectory.construction_path == "direct"
-        direct_counts.append(_bimolecular_conversion_count(trajectory.data, trajectory.columns))
+        direct_counts.append(
+            _bimolecular_conversion_count(trajectory.data, trajectory.columns)
+        )
 
         gdat, error = oracle_nfsim.run_nfsim(
             bng2_xml,
