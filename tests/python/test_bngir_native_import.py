@@ -398,6 +398,186 @@ def _independent_reversible_state_transition_bngir_document() -> dict:
     return document
 
 
+def _independent_bond_formation_bngir_document() -> dict:
+    """Hand-author the matched two-molecule association A(b) + B(a) -> A(b!1).B(a!1)."""
+
+    def molecule(
+        name: str, type_id: int, component: str, bond: dict, occurrence: int = 0
+    ) -> dict:
+        return {
+            "occurrence": occurrence,
+            "type": name,
+            "type_id": type_id,
+            "sites": [
+                {
+                    "occurrence": 0,
+                    "component": component,
+                    "component_index": 0,
+                    "state": {"kind": "any"},
+                    "bond": bond,
+                }
+            ],
+        }
+
+    def pattern(*molecules: dict) -> dict:
+        return {"compartment_prefix": False, "molecules": list(molecules)}
+
+    reactant_a = pattern(molecule("A", 0, "b", {"kind": "unbound"}))
+    reactant_b = pattern(molecule("B", 1, "a", {"kind": "unbound"}))
+    product = pattern(
+        molecule("A", 0, "b", {"kind": "exact", "group": 1}),
+        molecule("B", 1, "a", {"kind": "exact", "group": 1}, occurrence=1),
+    )
+    return {
+        "format": "BNGIR",
+        "version": "0.2",
+        "features": {
+            "required": ["structured_patterns", "structured_expressions"],
+            "used": ["rules", "seeds", "structured_expressions", "structured_patterns"],
+        },
+        "model": {
+            "metadata": {
+                "name": "independent_bond_formation",
+                "options": {},
+                "substance_units": "",
+                "version": "2.2",
+            },
+            "parameters": [
+                {
+                    "id": 0,
+                    "name": "kf",
+                    "expression": {"kind": "number", "value": 0.01},
+                    "constant_value": 0.01,
+                }
+            ],
+            "molecule_types": [
+                {
+                    "id": 0,
+                    "name": "A",
+                    "population": False,
+                    "components": [{"index": 0, "name": "b", "states": []}],
+                },
+                {
+                    "id": 1,
+                    "name": "B",
+                    "population": False,
+                    "components": [{"index": 0, "name": "a", "states": []}],
+                },
+            ],
+            "compartments": [],
+            "seeds": [
+                {
+                    "id": 0,
+                    "pattern": copy.deepcopy(reactant_a),
+                    "amount": {"kind": "number", "value": 10.0},
+                    "constant": False,
+                },
+                {
+                    "id": 1,
+                    "pattern": copy.deepcopy(reactant_b),
+                    "amount": {"kind": "number", "value": 8.0},
+                    "constant": False,
+                },
+            ],
+            "observables": [],
+            "functions": [],
+            "rules": [
+                {
+                    "id": 0,
+                    "name": "R1",
+                    "label": "bind:",
+                    "bidirectional": False,
+                    "forward": {
+                        "reactants": [reactant_a, reactant_b],
+                        "products": [product],
+                        "rate": {
+                            "kind": 0,
+                            "expression": {
+                                "kind": "parameter_ref",
+                                "symbol": {"kind": "parameter", "index": 0},
+                            },
+                        },
+                        "mutations": [
+                            {
+                                "kind": "add_bond",
+                                "source": {
+                                    "side": "reactant",
+                                    "pattern": 0,
+                                    "molecule": 0,
+                                    "site": 0,
+                                },
+                                "partner": {
+                                    "side": "reactant",
+                                    "pattern": 1,
+                                    "molecule": 0,
+                                    "site": 0,
+                                },
+                            }
+                        ],
+                        "filters": [],
+                        "local_scopes": [],
+                        "transformations_complete": True,
+                    },
+                    "modifiers": [],
+                    "molecule_mappings": [
+                        {
+                            "product": {"side": "product", "pattern": 0, "molecule": 0},
+                            "reactant": {
+                                "side": "reactant",
+                                "pattern": 0,
+                                "molecule": 0,
+                            },
+                        },
+                        {
+                            "product": {"side": "product", "pattern": 0, "molecule": 1},
+                            "reactant": {
+                                "side": "reactant",
+                                "pattern": 1,
+                                "molecule": 0,
+                            },
+                        },
+                    ],
+                    "component_mappings": [
+                        {
+                            "product": {
+                                "side": "product",
+                                "pattern": 0,
+                                "molecule": 0,
+                                "site": 0,
+                            },
+                            "reactant": {
+                                "side": "reactant",
+                                "pattern": 0,
+                                "molecule": 0,
+                                "site": 0,
+                            },
+                        },
+                        {
+                            "product": {
+                                "side": "product",
+                                "pattern": 0,
+                                "molecule": 1,
+                                "site": 0,
+                            },
+                            "reactant": {
+                                "side": "reactant",
+                                "pattern": 1,
+                                "molecule": 0,
+                                "site": 0,
+                            },
+                        },
+                    ],
+                }
+            ],
+            "energy_patterns": [],
+            "barrier_patterns": [],
+            "population_types": [],
+            "population_maps": [],
+        },
+        "protocol": {"actions": []},
+    }
+
+
 def test_native_import_executes_independently_authored_reversible_rule():
     document = _independent_reversible_bngir_document()
     schema_path = (
@@ -550,6 +730,98 @@ def test_reversible_state_transition_refuses_malformed_reverse_direction(field, 
     with pytest.raises(ValueError):
         bionetgen.from_bngir(document, native=True)
     with pytest.raises(RuntimeError):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_native_import_executes_independently_authored_bond_formation(monkeypatch):
+    document = _independent_bond_formation_bngir_document()
+    schema_path = (
+        Path(__file__).parents[2] / "provenance" / "schemas" / "bngir-0.2.schema.json"
+    )
+    jsonschema.validate(document, json.loads(schema_path.read_text()))
+
+    bngir_module = importlib.import_module("bionetgen.bngir")
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("native BNGIR import rendered or parsed BNGL")
+
+    monkeypatch.setattr(_cpp, "parse_string", forbidden)
+    monkeypatch.setattr(bngir_module, "_as_bngl_v02", forbidden)
+    restored = bionetgen.from_bngir(document, native=True)
+
+    assert json.loads(restored.to_bngir(version="0.2")) == document
+    network = restored.generate_network()
+    assert network.num_species == 3
+    assert network.num_reactions == 1
+    assert set(network.species_names) == {
+        "A(b)",
+        "B(a)",
+        "A(b!1).B(a!1)",
+    }
+
+    initial = [
+        10.0 if name == "A(b)" else 8.0 if name == "B(a)" else 0.0
+        for name in network.species_names
+    ]
+    derivative = _cpp._validation_ode_rhs(restored._model, network, 0.0, initial)
+    assert dict(zip(network.species_names, derivative)) == pytest.approx(
+        {"A(b)": -0.8, "B(a)": -0.8, "A(b!1).B(a!1)": 0.8}
+    )
+
+    rate, initial_a, initial_b = 0.01, 10.0, 8.0
+    result = restored.simulate(method="ode", t_end=5.0, n_steps=10)
+    for time, row in zip(result.time, result.concentrations):
+        exponential = math.exp((initial_a - initial_b) * rate * time)
+        complex_amount = (
+            initial_a
+            * initial_b
+            * (exponential - 1.0)
+            / (initial_a * exponential - initial_b)
+        )
+        values = dict(zip(network.species_names, row))
+        assert values["A(b!1).B(a!1)"] == pytest.approx(complex_amount)
+        assert values["A(b)"] + complex_amount == pytest.approx(initial_a)
+        assert values["B(a)"] + complex_amount == pytest.approx(initial_b)
+
+
+@pytest.mark.parametrize(
+    ("edit", "message"),
+    [
+        (
+            lambda document: document["model"]["rules"][0]["forward"]["mutations"][0][
+                "partner"
+            ].update(pattern=0),
+            "contradictory add_bond endpoint",
+        ),
+        (
+            lambda document: document["model"]["rules"][0]["molecule_mappings"][1][
+                "reactant"
+            ].update(pattern=0),
+            "contradictory carried mapping",
+        ),
+        (
+            lambda document: document["model"]["rules"][0]["component_mappings"][1][
+                "product"
+            ].update(site=1),
+            "contradictory carried mapping",
+        ),
+        (
+            lambda document: document["model"]["rules"][0]["forward"]["products"][0][
+                "molecules"
+            ][0]["sites"][0]["bond"].update(group=2),
+            None,
+        ),
+    ],
+)
+def test_native_bond_formation_refuses_contradictory_mappings_and_mutations(
+    edit, message
+):
+    document = _independent_bond_formation_bngir_document()
+    edit(document)
+
+    with pytest.raises(ValueError):
+        bionetgen.from_bngir(document, native=True)
+    with pytest.raises(RuntimeError, match=message):
         _cpp._model_from_bngir_v02(document["model"])
 
 
