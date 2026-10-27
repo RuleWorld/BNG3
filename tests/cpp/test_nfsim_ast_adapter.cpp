@@ -3456,6 +3456,190 @@ end model
     delete system;
 }
 
+TEST_CASE("NFsim maps static heterobimolecular physical rates to count hazards") {
+    const auto modelForVolume = [](double volume, double rateMultiplier) {
+        return bng::parser::parseModel(
+            "begin model\n"
+            "  setOption(\"units\", \"strict\")\n"
+            "  setOption(\"NumberPerQuantityUnit\", 6.02214076e23)\n"
+            "  begin units\n"
+            "    timeunits second\n"
+            "  end units\n"
+            "  begin parameters\n"
+            "    k = " + std::to_string(6.02214076e8 * rateMultiplier) +
+            " [M^-1/second]\n"
+            "    Vc = " + std::to_string(volume) + " [fL]\n"
+            "  end parameters\n"
+            "  begin compartments\n"
+            "    cell 3 Vc [fL]\n"
+            "  end compartments\n"
+            "  begin molecule types\n"
+            "    A()\n"
+            "    B()\n"
+            "    C()\n"
+            "  end molecule types\n"
+            "  begin seed species\n"
+            "    A()@cell 10\n"
+            "    B()@cell 10\n"
+            "    C()@cell 0\n"
+            "  end seed species\n"
+            "  begin observables\n"
+            "    Molecules A_count A()@cell\n"
+            "    Molecules B_count B()@cell\n"
+            "    Molecules C_count C()@cell\n"
+            "  end observables\n"
+            "  begin reaction rules\n"
+            "    combine: A()@cell + B()@cell -> C()@cell k\n"
+            "  end reaction rules\n"
+            "end model\n");
+    };
+
+    const auto buildSystem = [](const bng::ast::Model& model) {
+        int traversalLimit = 0;
+        std::string unavailableReason;
+        return std::unique_ptr<NFcore::System>(NFinput::buildSystemFromAst(
+            model, false, 100, false, traversalLimit, {}, &unavailableReason));
+    };
+
+    auto model = modelForVolume(1.0, 1.0);
+    REQUIRE(model != nullptr);
+    const bng::compile::CompiledModel compiled(*model);
+    REQUIRE(compiled.valid());
+    CHECK(bng::compile::capabilitiesFor(*model, bng::compile::BackendKind::NFsim)
+              .state(bng::compile::Feature::Units) ==
+          bng::compile::CapabilityState::ExactLowering);
+
+    auto system = buildSystem(*model);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    // k=6.02214076e8 M^-1 s^-1 and V=1 fL give
+    // k/(N_A*V)=1 item^-1 s^-1. With 10 A and 10 B, the total propensity
+    // is 1*10*10=100. The typed conversion includes V once.
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(100.0));
+    system->setParameter("Vc", 2.0);
+    system->updateSystemWithNewParameters();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(50.0));
+    system->setParameter("Vc", 1.0);
+    system->updateSystemWithNewParameters();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(100.0));
+    CHECK(system->getReaction(0)->volumeConversionFactor == Catch::Approx(1.0));
+    system->setParameter("k", 2.0 * 6.02214076e8);
+    system->updateSystemWithNewParameters();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(200.0));
+    system->setParameter("Vc", 2.0);
+    system->updateSystemWithNewParameters();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(100.0));
+
+    auto updatedFreshModel = modelForVolume(2.0, 2.0);
+    REQUIRE(updatedFreshModel != nullptr);
+    const bng::compile::CompiledModel compiledUpdatedFresh(*updatedFreshModel);
+    REQUIRE(compiledUpdatedFresh.valid());
+    auto updatedFreshSystem = buildSystem(*updatedFreshModel);
+    REQUIRE(updatedFreshSystem != nullptr);
+    REQUIRE(updatedFreshSystem->getAllReactions().size() == 1);
+    updatedFreshSystem->prepareForSimulation();
+    CHECK(updatedFreshSystem->getReaction(0)->get_a() == Catch::Approx(100.0));
+
+    system->setParameter("k", 6.02214076e8);
+    system->setParameter("Vc", 1.0);
+    system->updateSystemWithNewParameters();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(100.0));
+    system->singleStep();
+    CHECK(system->getObservableByName("A_count")->getCount() == 9);
+    CHECK(system->getObservableByName("B_count")->getCount() == 9);
+    CHECK(system->getObservableByName("C_count")->getCount() == 1);
+
+    auto doubledVolumeModel = modelForVolume(2.0, 1.0);
+    REQUIRE(doubledVolumeModel != nullptr);
+    const bng::compile::CompiledModel compiledDoubledVolume(*doubledVolumeModel);
+    REQUIRE(compiledDoubledVolume.valid());
+    auto doubledVolumeSystem = buildSystem(*doubledVolumeModel);
+    REQUIRE(doubledVolumeSystem != nullptr);
+    REQUIRE(doubledVolumeSystem->getAllReactions().size() == 1);
+    doubledVolumeSystem->prepareForSimulation();
+    CHECK(doubledVolumeSystem->getReaction(0)->get_a() == Catch::Approx(50.0));
+}
+
+TEST_CASE("NFsim physical bimolecular capability refuses unsupported contexts") {
+    const auto modelFor = [](const std::string& timeUnits,
+                             const std::string& parameters,
+                             const std::string& compartments,
+                             const std::string& reactants,
+                             const std::string& products) {
+        return bng::parser::parseModel(
+            "begin model\n"
+            "  setOption(\"units\", \"strict\")\n"
+            "  setOption(\"NumberPerQuantityUnit\", 6.02214076e23)\n" +
+            timeUnits +
+            "  begin parameters\n" + parameters +
+            "  end parameters\n" +
+            compartments +
+            "  begin molecule types\n"
+            "    A()\n"
+            "    B()\n"
+            "    C()\n"
+            "  end molecule types\n"
+            "  begin reaction rules\n"
+            "    combine: " + reactants + " -> " + products + " k\n"
+            "  end reaction rules\n"
+            "end model\n");
+    };
+    const std::string secondBasis =
+        "  begin units\n    timeunits second\n  end units\n";
+    const std::string rateAndVolume =
+        "    k = 6.02214076e8 [M^-1/second]\n"
+        "    Vc = 1 [fL]\n";
+    const std::string commonVolume =
+        "  begin compartments\n"
+        "    cell 3 Vc [fL]\n"
+        "    other 3 2 [fL]\n"
+        "  end compartments\n";
+    const std::vector<std::shared_ptr<bng::ast::Model>> unsupportedModels {
+        // Repeated reactant types need an independently qualified symmetry law.
+        modelFor(secondBasis, rateAndVolume, commonVolume,
+                 "A()@cell + A()@cell", "C()@cell"),
+        // A concentration rate cannot infer a volume from unplaced patterns.
+        modelFor(secondBasis, rateAndVolume, "",
+                 "A() + B()", "C()"),
+        // Reactants and product must share one explicitly declared volume.
+        modelFor(secondBasis, rateAndVolume, commonVolume,
+                 "A()@cell + B()@other", "C()@cell"),
+        // The bridge accepts only a direct numeric parameter or literal.
+        modelFor(secondBasis,
+                 "    kbase = 3.01107038e8 [M^-1/second]\n"
+                 "    k = 2*kbase [M^-1/second]\n"
+                 "    Vc = 1 [fL]\n",
+                 commonVolume, "A()@cell + B()@cell", "C()@cell"),
+        // NFsim's bridge requires an explicitly declared second time basis.
+        modelFor("", rateAndVolume, commonVolume,
+                 "A()@cell + B()@cell", "C()@cell"),
+        // A non-second time basis is not silently treated as seconds.
+        modelFor("  begin units\n    timeunits minute\n  end units\n",
+                 "    k = 6.02214076e8 [M^-1/minute]\n"
+                 "    Vc = 1 [fL]\n",
+                 commonVolume, "A()@cell + B()@cell", "C()@cell"),
+    };
+
+    for (std::size_t index = 0; index < unsupportedModels.size(); ++index) {
+        CAPTURE(index);
+        const auto& model = unsupportedModels[index];
+        REQUIRE(model != nullptr);
+        const bng::compile::CompiledModel compiled(*model);
+        REQUIRE(compiled.valid());
+        CHECK(bng::compile::capabilitiesFor(*model, bng::compile::BackendKind::NFsim)
+                  .state(bng::compile::Feature::Units) ==
+              bng::compile::CapabilityState::Unsupported);
+        int traversalLimit = 0;
+        std::string unavailableReason;
+        auto* system = NFinput::buildSystemFromAst(
+            *model, false, 100, false, traversalLimit, {}, &unavailableReason);
+        CHECK(system == nullptr);
+        CHECK(unavailableReason.find("physical-unit") != std::string::npos);
+        delete system;
+    }
+}
+
 TEST_CASE("NFsim physical first-order capability keeps unsupported shapes explicit") {
     const auto modelFor = [](const std::string& unitsBlock,
                              const std::string& parameters,
@@ -3483,7 +3667,6 @@ TEST_CASE("NFsim physical first-order capability keeps unsupported shapes explic
     const std::string secondBasis = "begin units\n  timeunits second\nend units\n";
     const std::vector<std::shared_ptr<bng::ast::Model>> unsupportedModels {
         modelFor("", "  k = 0.5 [second^-1]\n", "A()@cell", "B()@cell"),
-        modelFor(secondBasis, "  k = 0.5 [M^-1/second]\n", "A()@cell + B()@cell", "C()@cell"),
         modelFor(secondBasis,
                  "  kbase = 0.5 [second^-1]\n  k = 2*kbase [second^-1]\n",
                  "A()@cell", "B()@cell"),
