@@ -1,3 +1,7 @@
+> Final backend policy is recorded in [DECISIONS.md](../DECISIONS.md); release
+> scope is in the [capability inventory](../CAPABILITY_UNION_INVENTORY.md).
+> [Current progress](../CURRENT_PROGRESS.md) tracks qualification evidence.
+
 # ADR 0003: Native default and supported optional BNGsim backend
 
 Status: Accepted by maintainer; supersedes the earlier intended BNGsim-default policy.
