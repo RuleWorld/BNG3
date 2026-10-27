@@ -10,7 +10,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from antigaming import CHECK_IDS, fresh_seed, generate_seeded_case, run_pr_checks, run_product_mutations, verify_mutation_ratchet, write_seed_manifest
+from antigaming import CHECK_IDS, fresh_seed, generate_seeded_case, run_pr_checks, run_product_mutations, verify_mutation_ratchet, verify_seed_manifest, write_seed_manifest
 
 
 def main() -> int:
@@ -43,6 +43,7 @@ def main() -> int:
             case_path.write_text(source)
             write_seed_manifest(args.seed_manifest, seed=seed, revision=revision, case_ids=[case_id], case_sha256=hashlib.sha256(source.encode()).hexdigest())
             try:
+                verify_seed_manifest(args.seed_manifest, revision)
                 import importlib.util
                 extension = importlib.util.find_spec("bionetgen._bionetgen_cpp")
                 default_engine = Path(extension.origin).parent / "bng_cpp" if extension and extension.origin else root / "build/cpp/bng_cpp"

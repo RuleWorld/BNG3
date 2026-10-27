@@ -218,6 +218,9 @@ def verify_seed_manifest(path: Path, expected_revision: str) -> None:
     data = json.loads(path.read_text())
     if data.get("schema") != 1 or data.get("revision") != expected_revision or not isinstance(data.get("seed"), int) or data["seed"] <= 0 or not data.get("case_ids") or not re.fullmatch(r"[a-f0-9]{64}", str(data.get("case_sha256", ""))):
         raise ValueError("seed manifest is missing a recorded fresh seed, revision, or case IDs")
+    case_path = path.with_suffix(".bngl")
+    if not case_path.is_file() or hashlib.sha256(case_path.read_bytes()).hexdigest() != data["case_sha256"]:
+        raise ValueError("seeded source case is missing or its digest differs from the replay manifest")
 
 
 def run_product_mutations(root: Path, output: Path, *, timeout: int = 300) -> dict:
