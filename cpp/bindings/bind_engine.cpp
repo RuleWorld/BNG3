@@ -436,6 +436,7 @@ void bind_engine(py::module_& m) {
         std::vector<uint8_t> fixedSpecies;
         std::vector<double> rateConstants;
         std::vector<uint8_t> totalRates;
+        std::vector<uint8_t> absoluteFluxes;
         std::vector<uint8_t> functionalRates;
         std::vector<uint8_t> timeDependentRates;
         std::vector<std::size_t> reactantOffsets{0};
@@ -457,11 +458,13 @@ void bind_engine(py::module_& m) {
 
             rateConstants.reserve(compiledReactions.size());
             totalRates.reserve(compiledReactions.size());
+            absoluteFluxes.reserve(compiledReactions.size());
             functionalRates.reserve(compiledReactions.size());
             timeDependentRates.reserve(compiledReactions.size());
             for (const auto& reaction : compiledReactions) {
                 rateConstants.push_back(reaction.rateConstant);
                 totalRates.push_back(reaction.isTotalRate ? 1 : 0);
+                absoluteFluxes.push_back(reaction.isAbsoluteFlux ? 1 : 0);
                 functionalRates.push_back(reaction.isFunctional ? 1 : 0);
                 timeDependentRates.push_back(reaction.isTimeDependent ? 1 : 0);
                 reactantSpecies.insert(
@@ -481,6 +484,7 @@ void bind_engine(py::module_& m) {
         result["fixed_species"] = vector_to_array(fixedSpecies);
         result["rate_constants"] = vector_to_array(rateConstants);
         result["total_rate"] = vector_to_array(totalRates);
+        result["absolute_flux"] = vector_to_array(absoluteFluxes);
         result["functional_rates"] = vector_to_array(functionalRates);
         result["time_dependent_rates"] = vector_to_array(timeDependentRates);
         result["reactant_offsets"] = vector_to_array(reactantOffsets);

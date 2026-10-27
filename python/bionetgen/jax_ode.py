@@ -73,7 +73,7 @@ def _compile_mass_action_rhs(data: Dict[str, Any]) -> Callable:
     reactant_species = np.asarray(data["reactant_species"], dtype=np.int32)
     product_offsets = np.asarray(data["product_offsets"], dtype=np.int64)
     product_species = np.asarray(data["product_species"], dtype=np.int32)
-    total_rate = np.asarray(data["total_rate"], dtype=bool)
+    absolute_flux = np.asarray(data["absolute_flux"], dtype=bool)
     n_reactions = rate_constants.size
 
     reactant_counts = np.diff(reactant_offsets)
@@ -116,7 +116,7 @@ def _compile_mass_action_rhs(data: Dict[str, Any]) -> Callable:
     )
     reactants_jax = jnp.asarray(padded_reactants)
     reactant_mask_jax = jnp.asarray(reactant_mask)
-    total_rate_jax = jnp.asarray(total_rate)
+    absolute_flux_jax = jnp.asarray(absolute_flux)
     fixed_species_jax = jnp.asarray(data["fixed_species"], dtype=bool)
     change_species_jax = jnp.asarray(change_species, dtype=jnp.int32)
     change_reactions_jax = jnp.asarray(change_reactions, dtype=jnp.int32)
@@ -136,7 +136,9 @@ def _compile_mass_action_rhs(data: Dict[str, Any]) -> Callable:
         )
         mass_action_factors = jnp.prod(reactant_values, axis=1)
         fluxes = rate_constants_jax * jnp.where(
-            total_rate_jax, jnp.ones_like(mass_action_factors), mass_action_factors
+            absolute_flux_jax,
+            jnp.ones_like(mass_action_factors),
+            mass_action_factors,
         )
         derivative = (
             jnp.zeros((n_species,), dtype=state.dtype)

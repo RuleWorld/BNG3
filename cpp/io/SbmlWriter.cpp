@@ -792,10 +792,13 @@ std::string SbmlWriter::writeReactions(
             bng::compile::isAbsoluteFluxReaction(model, rxn);
         if (totalRate || absoluteFlux) {
             sbml << "        <annotation>\n";
+            // A single namespace may only contribute one top-level SBML
+            // annotation element. The historical bng:totalRate marker already
+            // means its SBML kinetic law is a complete flux; emitting both it
+            // and bng:absoluteFlux makes otherwise valid documents invalid.
             if (totalRate) {
                 sbml << "          <bng:totalRate xmlns:bng=\"https://bionetgen.org/sbml\"/>\n";
-            }
-            if (absoluteFlux) {
+            } else if (absoluteFlux) {
                 sbml << "          <bng:absoluteFlux xmlns:bng=\"https://bionetgen.org/sbml\"/>\n";
             }
             sbml << "        </annotation>\n";

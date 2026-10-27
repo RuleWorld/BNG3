@@ -4,6 +4,8 @@
 # Original source SHA-256: ba8e4a50a0e477906f96a66cc49494c825eaab0a489083f7bcdec5adf25b79c5
 # Other reaction rules were removed to keep this fixture bounded.
 
+setOption("BNG3AbsoluteFluxRules", "re19_forward,re20_forward,re24,re26")
+
 begin model
 begin parameters
   __Avogadro__ 1
