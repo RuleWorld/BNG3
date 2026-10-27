@@ -1071,14 +1071,16 @@ public:
   public:
     Observable_patternContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
-    Species_defContext *species_def();
-    antlr4::tree::TerminalNode *GT();
-    antlr4::tree::TerminalNode *INT();
     antlr4::tree::TerminalNode *STRING();
+    antlr4::tree::TerminalNode *LPAREN();
+    antlr4::tree::TerminalNode *RPAREN();
+    antlr4::tree::TerminalNode *INT();
     antlr4::tree::TerminalNode *EQUALS();
+    antlr4::tree::TerminalNode *GT();
     antlr4::tree::TerminalNode *GTE();
     antlr4::tree::TerminalNode *LT();
     antlr4::tree::TerminalNode *LTE();
+    Species_defContext *species_def();
 
     virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
     virtual void exitRule(antlr4::tree::ParseTreeListener *listener) override;
