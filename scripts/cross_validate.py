@@ -112,7 +112,13 @@ def _network_only_text(source: str) -> str:
     return "\n".join(kept_lines) + "\n"
 
 
-def _stage_model(model: Path, models_dir: Path, work_dir: Path) -> Path:
+def _stage_model(
+    model: Path,
+    models_dir: Path,
+    work_dir: Path,
+    *,
+    support_roots: Iterable[Path] = (),
+) -> Path:
     """Copy one network-only model and its explicitly referenced support files."""
 
     work_dir.mkdir(parents=True, exist_ok=True)
@@ -131,6 +137,13 @@ def _stage_model(model: Path, models_dir: Path, work_dir: Path) -> Path:
         models_dir / "DAT_validate",
         work_dir,
     )
+    for root in support_roots:
+        copy_referenced_support_files(
+            model,
+            root,
+            root / "DAT_validate",
+            work_dir,
+        )
     return staged_model
 
 

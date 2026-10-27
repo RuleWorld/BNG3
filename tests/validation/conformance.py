@@ -19,6 +19,9 @@ from . import campaign, inventory, reporting
 
 ROOT = Path(__file__).resolve().parents[2]
 TIERS = ("smoke", "integration", "full", "performance", "platform")
+VALIDATION_FIXTURE_COMPANION_MODELS = frozenset(
+    {"test_sbml_flat", "test_sbml_structured", "michment_cont", "test_sat_cont"}
+)
 
 
 def _result(identity, stage, status, detail="", **kwargs):
@@ -305,7 +308,18 @@ def _model(name, source, args, directory, reference, env):
 
     work = directory / "models" / name
     source_root = source.parent
-    staged = _stage_model(source, source_root, work / "input")
+    support_roots = (
+        (ROOT / "tests/validation/Validate",)
+        if source.parent == ROOT / "models"
+        and name in VALIDATION_FIXTURE_COMPANION_MODELS
+        else ()
+    )
+    staged = _stage_model(
+        source,
+        source_root,
+        work / "input",
+        support_roots=support_roots,
+    )
     text = staged.read_text().replace(
         "generate_network({overwrite=>1})",
         f"generate_network({{overwrite=>1,max_iter=>{args.network_iterations},max_agg=>{args.max_aggregate}}})",

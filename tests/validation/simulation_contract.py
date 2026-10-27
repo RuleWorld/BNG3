@@ -13,6 +13,7 @@ from pathlib import Path
 import numpy as np
 
 from . import campaign, contracts
+from scripts.validate import copy_referenced_support_files
 
 
 def simulation_text(setup, args, *, netfile=None):
@@ -47,6 +48,17 @@ def net_reload_context(source):
     if active_block is not None:
         raise ValueError(f"unterminated {active_block} block in NET reload source")
     return "begin model\n" + "\n".join(context) + "\nend model\n"
+
+
+def _copy_staged_support_files(source, directory):
+    """Copy staged sidecars while keeping the original model actions unloaded."""
+    source = Path(source)
+    return copy_referenced_support_files(
+        source,
+        source.parent,
+        source.parent / "DAT_validate",
+        Path(directory),
+    )
 
 
 def run_simulation(name, work, reference, args, env, network_rows, *, route="bngl"):
@@ -101,6 +113,7 @@ def run_simulation(name, work, reference, args, env, network_rows, *, route="bng
             (directory / "context.bngl").write_text(
                 net_reload_context(source), encoding="utf-8"
             )
+            _copy_staged_support_files(source, directory)
             setup = (
                 'readFile({file=>"context.bngl"})\n' 'readFile({file=>"input.net"})\n'
             )

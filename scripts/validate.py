@@ -209,6 +209,14 @@ def copy_referenced_support_files(
         destination = work_dir / relative
         if destination in seen:
             continue
+        if destination.exists():
+            if destination.read_bytes() != source.read_bytes():
+                raise ValueError(
+                    f"conflicting staged support file for {reference!r}: "
+                    f"{destination} and {source}"
+                )
+            seen.add(destination)
+            continue
         destination.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, destination)
         copied.append(destination)
