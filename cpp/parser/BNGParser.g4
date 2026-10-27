@@ -237,7 +237,8 @@ observable_pattern_list
 
 // Observable pattern can be a species or a stoichiometry comparison (R==1, R>5, etc.)
 observable_pattern
-    : species_def (GT INT)?  // Added option for count filter (>N)
+    : STRING LPAREN RPAREN (EQUALS | GT | GTE | LT | LTE) INT
+    | species_def (GT INT)?  // Added option for count filter (>N)
     | STRING (EQUALS | GT | GTE | LT | LTE) INT  // Stoichiometry comparison: R==1, R>5
     ;
 

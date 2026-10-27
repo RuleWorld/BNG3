@@ -9,6 +9,32 @@
 #include "io/BnglWriter.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
+TEST_CASE("BNGL observable species-count patterns allow empty parentheses") {
+    const std::string source = R"BNGL(
+begin molecule types
+  R()
+end molecule types
+begin seed species
+  R() 4
+end seed species
+begin observables
+  Species R2 R()==2
+end observables
+)BNGL";
+    const auto model = bng::parser::parseModel(source);
+
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getObservables().size() == 1);
+    CHECK(model->getObservables().front().getType() == "Species");
+    CHECK(model->getObservables().front().getPatterns() == std::vector<std::string>{"R()==2"});
+
+    auto malformed = source;
+    const auto threshold = malformed.find("==2");
+    REQUIRE(threshold != std::string::npos);
+    malformed.replace(threshold, 3, "==two");
+    CHECK_THROWS(bng::parser::parseModel(malformed));
+}
+
 TEST_CASE("BNGL unit annotations are preserved in the canonical AST") {
     const auto model = bng::parser::parseModel(R"BNGL(
 begin units
