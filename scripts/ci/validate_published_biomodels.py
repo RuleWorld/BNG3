@@ -1187,11 +1187,14 @@ def _undefined_label(values: np.ndarray) -> str:
 def _simulate_oracle_trajectory(
     rr: Any, t_end: float, n_steps: int, *, sample_times: np.ndarray | None = None
 ) -> tuple[np.ndarray, list[dict[str, Any]]]:
-    """Retry BDF convergence failure only for a finite law with a singular Jacobian.
+    """Retry BDF convergence failure for a finite law with an unusable Jacobian.
 
     Fractional powers at zero can make RoadRunner's initial numerical Jacobian
     non-finite although the rate law and trajectory are finite. CVODE Adams uses
     functional iteration instead; retain the same error controls and time grid.
+    Some valid source SBML models also make RoadRunner's full-Jacobian query
+    raise, so that query failure is recorded and handled like a non-finite
+    Jacobian when reaction rates remain finite.
     """
     stiff = bool(rr.integrator.getValue("stiff"))
     attempts: list[dict[str, Any]] = []
@@ -1210,13 +1213,27 @@ def _simulate_oracle_trajectory(
             raise
         # Diagnose at the initial state, not at a partially advanced failed step.
         rr.resetAll()
-        if (
-            not np.isfinite(rr.getReactionRates()).all()
-            or np.isfinite(rr.getFullJacobian()).all()
-        ):
+        if not np.isfinite(np.asarray(rr.getReactionRates(), dtype=float)).all():
             raise
+        jacobian_error = None
+        try:
+            jacobian = np.asarray(rr.getFullJacobian(), dtype=float)
+        except Exception as diagnostic_exc:
+            jacobian_error = f"{type(diagnostic_exc).__name__}: {diagnostic_exc}"
+        else:
+            if np.isfinite(jacobian).all():
+                raise
         attempts.append(
-            {"stiff": True, "passed": False, "error": f"{type(exc).__name__}: {exc}"}
+            {
+                "stiff": True,
+                "passed": False,
+                "error": f"{type(exc).__name__}: {exc}",
+                **(
+                    {"jacobian_error": jacobian_error}
+                    if jacobian_error is not None
+                    else {}
+                ),
+            }
         )
         rr.integrator.setValue("stiff", False)
         # A scalar tolerance is rescaled from current state by RoadRunner.

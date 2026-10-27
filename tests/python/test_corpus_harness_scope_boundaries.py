@@ -1040,3 +1040,75 @@ def test_oracle_adams_retry_requires_finite_law_and_nonfinite_jacobian(
         _harness()._simulate_oracle_trajectory(oracle, 1.0, 10)
     assert oracle.calls == 1
     assert oracle.resets == 1
+
+
+def test_oracle_adams_retry_when_jacobian_evaluation_throws():
+    """A source SBML oracle can reject the Jacobian request after CVODE fails."""
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    class JacobianErrorOracle:
+        calls = 0
+        resets = 0
+        integrator = SimpleNamespace(
+            getValue=lambda _key: True,
+            getAbsoluteToleranceVector=lambda: [1e-12],
+            setValue=lambda *_args: None,
+        )
+
+        def simulate(self, *_args):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("CV_CONV_FAILURE: source integration failure")
+            return np.array([[0.0, 1.0], [1.0, 2.0]])
+
+        def resetAll(self):
+            self.resets += 1
+
+        def getReactionRates(self):
+            return [1.0]
+
+        def getFullJacobian(self):
+            raise RuntimeError("std::exception")
+
+    oracle = JacobianErrorOracle()
+    values, attempts = _harness()._simulate_oracle_trajectory(oracle, 1.0, 1)
+
+    assert oracle.calls == 2
+    assert oracle.resets == 1
+    assert values.tolist() == [[0.0, 1.0], [1.0, 2.0]]
+    assert attempts[0]["stiff"] is True
+    assert attempts[0]["jacobian_error"] == "RuntimeError: std::exception"
+    assert attempts[1] == {"stiff": False, "passed": True}
+
+
+def test_oracle_adams_retry_does_not_accept_nonfinite_rates_when_jacobian_throws():
+    from types import SimpleNamespace
+
+    import numpy as np
+
+    class InvalidLawOracle:
+        calls = 0
+        integrator = SimpleNamespace(
+            getValue=lambda _key: True,
+            getAbsoluteToleranceVector=lambda: [1e-12],
+        )
+
+        def simulate(self, *_args):
+            self.calls += 1
+            raise RuntimeError("CV_CONV_FAILURE: source integration failure")
+
+        def resetAll(self):
+            pass
+
+        def getReactionRates(self):
+            return [np.nan]
+
+        def getFullJacobian(self):
+            raise RuntimeError("std::exception")
+
+    oracle = InvalidLawOracle()
+    with pytest.raises(RuntimeError, match="CV_CONV_FAILURE"):
+        _harness()._simulate_oracle_trajectory(oracle, 1.0, 1)
+    assert oracle.calls == 1
