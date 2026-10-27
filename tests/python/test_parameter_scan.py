@@ -307,6 +307,26 @@ def test_concurrent_ode_instances_reuse_network_with_independent_parameters(tmp_
             atol=1e-8,
         )
 
+    # Exercise the shared-session snapshot/commit boundary repeatedly. Each
+    # model owns its parameters and starts a fresh trajectory while reusing
+    # the same generated network.
+    for _ in range(4):
+        repeated_models = [bionetgen.load(str(model_path)) for _ in rates]
+        for model, rate in zip(repeated_models, rates):
+            model.set_parameter("k", rate)
+            model._network = shared_network
+        with ThreadPoolExecutor(max_workers=len(repeated_models)) as executor:
+            repeated_results = list(
+                executor.map(lambda model: model.simulate(**options), repeated_models)
+            )
+        for rate, result in zip(rates, repeated_results):
+            np.testing.assert_allclose(
+                result.observables["Xtot"],
+                100.0 * np.exp(-rate * np.asarray(expected_times)),
+                rtol=1e-6,
+                atol=1e-8,
+            )
+
 
 def test_parameter_scan_forwards_advanced_simulation_controls(tmp_path):
     model_path = tmp_path / "decay.bngl"

@@ -186,7 +186,6 @@ private:
     std::vector<std::size_t> constantProductIndices_;          // Flattened product species indices
     bool useCompactConstantReactions_ = false;
     std::vector<std::size_t> functionalRxnIndices_;            // Indices of functional-rate reactions
-    SimulationSession* simulationSession_ = nullptr;
     SimulationSession* activeSimulationSession_ = nullptr;
     io::TfunRegistry tfunRegistry_;                            // Time-function tables for TFUN expressions
     std::vector<double> cvodeStateScale_;

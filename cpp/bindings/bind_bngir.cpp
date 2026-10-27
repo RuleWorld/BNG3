@@ -105,24 +105,52 @@ bool pythonObjectsEqual(const py::handle& left, const py::handle& right) {
     return result == 1;
 }
 
-void requireReversibleConversionMutations(
+void requireReversibleDirectionMutations(
     const py::dict& direction,
     const std::vector<SpeciesGraph>& reactants,
     const std::vector<SpeciesGraph>& products,
     const std::string& where) {
-    if (reactants.size() != 1 || products.size() != 1) {
+    if (reactants.empty() || products.empty()) {
         throw std::runtime_error(
             "native BNGIR " + where +
-            " supports only one reactant and one product pattern for reversible rules");
+            " requires reactant and product patterns for reversible rules");
     }
-    const auto reactantNodes = reactants.front().getGraph();
-    const auto productNodes = products.front().getGraph();
-    if (reactantNodes.size() != 1 || productNodes.size() != 1 ||
-        (*reactantNodes.begin())->get_type().get_type_name() ==
-            (*productNodes.begin())->get_type().get_type_name()) {
-        throw std::runtime_error(
-            "native BNGIR " + where +
-            " reversible conversion must replace one molecule type with another");
+    std::set<std::string> reactantTypes;
+    std::set<std::string> productTypes;
+    for (const auto& graph : reactants) {
+        const auto nodes = graph.getGraph();
+        if (nodes.size() != 1) {
+            throw std::runtime_error(
+                "native BNGIR " + where +
+                " reversible patterns must contain one molecule each");
+        }
+        const auto typeName = (*nodes.begin())->get_type().get_type_name();
+        if (!reactantTypes.insert(typeName).second) {
+            throw std::runtime_error(
+                "native BNGIR " + where +
+                " reversible rules do not support repeated molecule-type patterns");
+        }
+    }
+    for (const auto& graph : products) {
+        const auto nodes = graph.getGraph();
+        if (nodes.size() != 1) {
+            throw std::runtime_error(
+                "native BNGIR " + where +
+                " reversible patterns must contain one molecule each");
+        }
+        const auto typeName = (*nodes.begin())->get_type().get_type_name();
+        if (!productTypes.insert(typeName).second) {
+            throw std::runtime_error(
+                "native BNGIR " + where +
+                " reversible rules do not support repeated molecule-type patterns");
+        }
+    }
+    for (const auto& moleculeType : productTypes) {
+        if (reactantTypes.count(moleculeType)) {
+            throw std::runtime_error(
+                "native BNGIR " + where +
+                " reversible rules cannot carry molecule types across directions");
+        }
     }
 
     std::vector<std::string> observed;
@@ -142,14 +170,19 @@ void requireReversibleConversionMutations(
         }
         observed.push_back(kind + ":" + side + ":" + std::to_string(pattern));
     }
-    auto expected = std::vector<std::string>{
-        "delete_molecule:reactant:0", "add_molecule:product:0"};
+    std::vector<std::string> expected;
+    for (std::size_t index = 0; index < reactants.size(); ++index) {
+        expected.push_back("delete_molecule:reactant:" + std::to_string(index));
+    }
+    for (std::size_t index = 0; index < products.size(); ++index) {
+        expected.push_back("add_molecule:product:" + std::to_string(index));
+    }
     std::sort(expected.begin(), expected.end());
     std::sort(observed.begin(), observed.end());
     if (observed != expected) {
         throw std::runtime_error(
             "native BNGIR " + where +
-            ".mutations do not state the one-molecule conversion represented by its patterns");
+            ".mutations do not state the delete-and-add operations represented by its patterns");
     }
 }
 
@@ -858,7 +891,7 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
                 patternFromBngir(*model, py::cast<py::dict>(rawProduct)));
         }
         if (isBidirectional) {
-            requireReversibleConversionMutations(
+            requireReversibleDirectionMutations(
                 direction, reactantGraphs, productGraphs, "forward rule direction");
         }
         if (reactantGraphs.size() > 1 || productGraphs.size() > 1) {
@@ -939,7 +972,7 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
                 throw std::runtime_error(
                     "native BNGIR reverse direction must invert forward patterns");
             }
-            requireReversibleConversionMutations(
+            requireReversibleDirectionMutations(
                 reverse, productGraphs, reactantGraphs, "reverse rule direction");
             const auto reverseRate = py::cast<py::dict>(reverse["rate"]);
             static const std::vector<std::string> rateKeys = {"kind", "expression"};
