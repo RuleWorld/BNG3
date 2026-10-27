@@ -189,10 +189,13 @@ def test_recurring_native_event_matches_independent_roadrunner(tmp_path):
     )
 
 
-def test_dynamic_native_event_priorities_match_independent_roadrunner(tmp_path):
+@pytest.mark.parametrize("time_symbol", ["time", "t"])
+def test_dynamic_native_event_priorities_match_independent_roadrunner(
+    tmp_path, time_symbol
+):
     roadrunner = pytest.importorskip("roadrunner")
     path = tmp_path / "dynamic-priorities.bngl"
-    path.write_text("""begin molecule types
+    path.write_text(f"""begin molecule types
   S()
   O()
 end molecule types
@@ -220,7 +223,7 @@ begin bng3_events version 1
     persistent: true
     use_values_from_trigger_time: false
     delay: 1
-    priority: 10 - Signal + time
+    priority: 10 - Signal + {time_symbol}
     assignment: Result = 1
   end event
   event "set_last"
@@ -229,7 +232,7 @@ begin bng3_events version 1
     persistent: true
     use_values_from_trigger_time: false
     delay: 1
-    priority: 5 + Signal - time
+    priority: 5 + Signal - {time_symbol}
     assignment: Result = 2
   end event
 end bng3_events
@@ -249,9 +252,7 @@ end bng3_events
     oracle = roadrunner.RoadRunner(sbml)
     oracle.integrator.relative_tolerance = 1e-10
     oracle.integrator.absolute_tolerance = 1e-12
-    expected = oracle.simulate(
-        0, 3, 4, selections=["time", "Signal", "Result"]
-    )
+    expected = oracle.simulate(0, 3, 4, selections=["time", "Signal", "Result"])
     assert expected[2, 2] == pytest.approx(1.0)
     np.testing.assert_allclose(
         actual.observables["Signal"], expected[:, 1], rtol=0, atol=1e-12

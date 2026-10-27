@@ -103,7 +103,7 @@ inline void validateNativeEventSubset(const Model& model) {
         }
         if (expression.kind() == ExpressionKind::Identifier) {
             const auto& name = expression.name();
-            if (name == "time") return;
+            if (name == "time" || name == "t") return;
             for (const auto& observable : model.getObservables()) {
                 if (observable.getName() == name) return;
             }
