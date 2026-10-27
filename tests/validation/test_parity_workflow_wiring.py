@@ -309,3 +309,34 @@ def test_scheduled_nfsim_reports_are_retained_on_failure():
     paths = upload["with"]["path"]
     assert "nfsim-tier-*.xml" in paths
     assert "build/validation/direct_path_sweep.json" in paths
+
+
+def test_historical_nfsim_failure_evidence_is_retained_without_masking_failure():
+    job = _parse_workflow()["jobs"]["nfsim-source-validation"]
+    run = next(
+        step
+        for step in job["steps"]
+        if step.get("name") == "Run the source NFsim validation framework"
+    )
+    assert "set -euo pipefail" in run["run"]
+    assert '2>&1 | tee "$RUNNER_TEMP/nfsim-historical-validation.log"' in run["run"]
+    assert run.get("continue-on-error", False) is False
+
+    upload = next(
+        step
+        for step in job["steps"]
+        if step.get("name") == "Retain NFsim historical validation evidence"
+    )
+    assert upload["if"] == "always()"
+    assert upload["uses"].startswith("actions/upload-artifact@")
+    paths = upload["with"]["path"]
+    for path in (
+        "nfsim-historical-validation.log",
+        "oracle-nfsim/validate/basicModels/v42.bngl",
+        "oracle-nfsim/validate/basicModels/v42.xml",
+        "oracle-nfsim/validate/basicModels/v42_nf.gdat",
+        "oracle-nfsim/validate/basicModels/v43.bngl",
+        "oracle-nfsim/validate/basicModels/v43.xml",
+        "oracle-nfsim/validate/basicModels/v43_nf.gdat",
+    ):
+        assert path in paths

@@ -879,7 +879,24 @@ jobs:
         run: |
           set -euo pipefail
           python "$RUNNER_TEMP/oracle-nfsim/validate/validate.py" \
-            "$RUNNER_TEMP/oracle-nfsim/validate"
+            "$RUNNER_TEMP/oracle-nfsim/validate" \
+            2>&1 | tee "$RUNNER_TEMP/nfsim-historical-validation.log"
+
+      - name: Retain NFsim historical validation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: nfsim-historical-validation-${{ github.sha }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/nfsim-historical-validation.log
+            ${{ runner.temp }}/oracle-nfsim/validate/basicModels/v42.bngl
+            ${{ runner.temp }}/oracle-nfsim/validate/basicModels/v42.xml
+            ${{ runner.temp }}/oracle-nfsim/validate/basicModels/v42_nf.gdat
+            ${{ runner.temp }}/oracle-nfsim/validate/basicModels/v43.bngl
+            ${{ runner.temp }}/oracle-nfsim/validate/basicModels/v43.xml
+            ${{ runner.temp }}/oracle-nfsim/validate/basicModels/v43_nf.gdat
+          if-no-files-found: warn
+          retention-days: 14
 
   pybionetgen-compat:
     name: PyBioNetGen API compatibility
