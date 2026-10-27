@@ -110,7 +110,9 @@ def test_ssts_00003_cpu_batch_terminal_counts_match_direct_ssa(tmp_path):
     # mean/variance false-alarm probability by 2%, without assuming those two
     # statistics are independent.
     endpoints = batch_species[:, 0].astype(np.float64)
-    expected_mean, expected_variance, fourth_central = _source_law_endpoint_moments(T_END)
+    expected_mean, expected_variance, fourth_central = _source_law_endpoint_moments(
+        T_END
+    )
     mean_se = np.sqrt(expected_variance / BATCH_SIZE)
     sample_variance = endpoints.var(ddof=1)
     variance_se = np.sqrt(
@@ -119,7 +121,13 @@ def test_ssts_00003_cpu_batch_terminal_counts_match_direct_ssa(tmp_path):
     )
     assert all(
         np.isfinite(value)
-        for value in (expected_mean, expected_variance, fourth_central, mean_se, variance_se)
+        for value in (
+            expected_mean,
+            expected_variance,
+            fourth_central,
+            mean_se,
+            variance_se,
+        )
     )
     assert mean_se > 0.0 and variance_se > 0.0
     assert abs((endpoints.mean() - expected_mean) / mean_se) <= 10.0
@@ -139,9 +147,9 @@ def test_ssts_00003_cpu_batch_terminal_counts_match_direct_ssa(tmp_path):
         direct_trace = np.asarray(direct["concentrations"])
         assert np.array_equal(direct_trace[0].astype(np.int64), np.array([100]))
         direct_final = direct_trace[-1].astype(np.int64)
-        assert np.array_equal(batch_species[trajectory], direct_final), (
-            f"terminal species mismatch for trajectory={trajectory}, seed={seed}"
-        )
+        assert np.array_equal(
+            batch_species[trajectory], direct_final
+        ), f"terminal species mismatch for trajectory={trajectory}, seed={seed}"
         compared += 1
         if compared == DIRECT_TRAJECTORIES:
             break
