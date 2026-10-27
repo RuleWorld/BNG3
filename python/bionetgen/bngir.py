@@ -1518,7 +1518,10 @@ def _native_expression_v02(
 
 
 def _native_pattern_v02(
-    pattern: Mapping[str, Any], where: str, molecule_ids: set[int]
+    pattern: Mapping[str, Any],
+    where: str,
+    molecule_ids: set[int],
+    molecule_types: Mapping[int, Mapping[str, Any]],
 ) -> None:
     pattern = _require_mapping(pattern, where)
     _native_required_optional_keys(
@@ -1579,8 +1582,154 @@ def _native_pattern_v02(
         raise ValueError(f"native BNGIR {where} references an unknown molecule type id")
     if not isinstance(molecule["type"], str) or not molecule["type"]:
         raise ValueError(f"native BNGIR {where} has no molecule type name")
-    if molecule["sites"] != []:
-        raise ValueError(f"native BNGIR {where} does not support molecule sites")
+    molecule_type = molecule_types[type_id]
+    if molecule["type"] != molecule_type["name"]:
+        raise ValueError(
+            f"native BNGIR {where} molecule type name does not match type_id"
+        )
+    sites = molecule["sites"]
+    components = molecule_type["components"]
+    if not isinstance(sites, list) or len(sites) != len(components):
+        raise ValueError(
+            f"native BNGIR {where} site count does not match its molecule type"
+        )
+    if not components:
+        return
+    site = _require_mapping(sites[0], f"{where}.molecules[0].sites[0]")
+    _native_required_optional_keys(
+        site,
+        {"occurrence", "component", "component_index", "state", "bond"},
+        {"occurrence", "component", "component_index", "state", "bond", "label"},
+        f"{where}.molecules[0].sites[0]",
+    )
+    component = components[0]
+    if (
+        isinstance(site["occurrence"], bool)
+        or not isinstance(site["occurrence"], int)
+        or site["occurrence"] != 0
+        or isinstance(site["component_index"], bool)
+        or not isinstance(site["component_index"], int)
+        or site["component_index"] != 0
+        or site["component"] != component["name"]
+        or site.get("label", "") != ""
+    ):
+        raise ValueError(f"native BNGIR {where} has an out-of-slice site reference")
+    state = _require_mapping(site["state"], f"{where}.molecules[0].sites[0].state")
+    _native_exact_keys(
+        state,
+        {"kind", "value", "index"},
+        f"{where}.molecules[0].sites[0].state",
+    )
+    state_index = state["index"]
+    allowed_states = component["states"]
+    if (
+        state["kind"] != "exact"
+        or isinstance(state_index, bool)
+        or not isinstance(state_index, int)
+        or not 0 <= state_index < len(allowed_states)
+        or state["value"] != allowed_states[state_index]
+    ):
+        raise ValueError(
+            f"native BNGIR {where} has an unknown or inconsistent finite state"
+        )
+    bond = _require_mapping(site["bond"], f"{where}.molecules[0].sites[0].bond")
+    if bond != {"kind": "unbound"}:
+        raise ValueError(
+            f"native BNGIR {where} supports only an explicitly unbound site"
+        )
+
+
+def _native_state_transition_v02(
+    rule: Mapping[str, Any],
+    direction: Mapping[str, Any],
+    index: int,
+    model: Mapping[str, Any],
+) -> None:
+    """Require the explicit one-site correspondence and mutation for this slice."""
+    if rule["bidirectional"]:
+        raise ValueError(
+            f"native BNGIR model.rules[{index}] does not support bidirectional state transitions"
+        )
+    if model["compartments"]:
+        raise ValueError(
+            f"native BNGIR model.rules[{index}] state transitions do not support compartments"
+        )
+    reactants = direction["reactants"]
+    products = direction["products"]
+    if len(reactants) != 1 or len(products) != 1:
+        raise ValueError(
+            f"native BNGIR model.rules[{index}] state transitions require one reactant and product"
+        )
+    reactant = reactants[0]["molecules"][0]
+    product = products[0]["molecules"][0]
+    for pattern in (reactants[0], products[0]):
+        if pattern.get("compartment") or pattern["compartment_prefix"]:
+            raise ValueError(
+                f"native BNGIR model.rules[{index}] state transitions do not support compartments"
+            )
+    if any(
+        "compartment" in molecule or "compartment_id" in molecule
+        for molecule in (reactant, product)
+    ):
+        raise ValueError(
+            f"native BNGIR model.rules[{index}] state transitions do not support compartments"
+        )
+    if reactant["type_id"] != product["type_id"]:
+        raise ValueError(
+            f"native BNGIR model.rules[{index}] state transition must preserve molecule type"
+        )
+    expected_molecule = {
+        "product": {"side": "product", "pattern": 0, "molecule": 0},
+        "reactant": {"side": "reactant", "pattern": 0, "molecule": 0},
+    }
+    if rule["molecule_mappings"] != [expected_molecule]:
+        raise ValueError(
+            f"native BNGIR model.rules[{index}] state transition requires its explicit molecule mapping"
+        )
+    expected_component = {
+        "product": {"side": "product", "pattern": 0, "molecule": 0, "site": 0},
+        "reactant": {"side": "reactant", "pattern": 0, "molecule": 0, "site": 0},
+    }
+    if rule["component_mappings"] != [expected_component]:
+        raise ValueError(
+            f"native BNGIR model.rules[{index}] state transition requires its explicit site mapping"
+        )
+    before = reactant["sites"][0]["state"]
+    after = product["sites"][0]["state"]
+    if before["value"] == after["value"]:
+        raise ValueError(
+            f"native BNGIR model.rules[{index}] state transition must change the site state"
+        )
+    mutations = direction["mutations"]
+    if not isinstance(mutations, list) or len(mutations) != 1:
+        raise ValueError(
+            f"native BNGIR model.rules[{index}] state transition requires one change_state mutation"
+        )
+    mutation = _require_mapping(
+        mutations[0], f"model.rules[{index}].forward.mutations[0]"
+    )
+    _native_exact_keys(
+        mutation,
+        {"kind", "source", "state", "state_index"},
+        f"model.rules[{index}].forward.mutations[0]",
+    )
+    source = _require_mapping(
+        mutation["source"], f"model.rules[{index}].forward.mutations[0].source"
+    )
+    if source != {"side": "reactant", "pattern": 0, "molecule": 0, "site": 0}:
+        raise ValueError(
+            f"native BNGIR model.rules[{index}] has a contradictory state mutation reference"
+        )
+    if (
+        mutation["kind"] != "change_state"
+        or mutation["state"] != after["value"]
+        or isinstance(mutation["state_index"], bool)
+        or not isinstance(mutation["state_index"], int)
+        or mutation["state_index"] != after["index"]
+    ):
+        raise ValueError(
+            f"native BNGIR model.rules[{index}] state mutation does not match its product state"
+        )
 
 
 def _native_multi_pattern_direction_v02(
@@ -1796,6 +1945,7 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
 
     molecule_ids: set[int] = set()
     molecule_names: set[str] = set()
+    molecule_types_by_id: dict[int, Mapping[str, Any]] = {}
     if not isinstance(model["molecule_types"], list):
         raise ValueError("native BNGIR model.molecule_types must be an array")
     for index, raw in enumerate(model["molecule_types"]):
@@ -1820,12 +1970,46 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             raise ValueError(
                 f"native BNGIR molecule type name is invalid or duplicated: {name!r}"
             )
-        if molecule["population"] is not False or molecule["components"] != []:
+        if molecule["population"] is not False:
             raise ValueError(
-                f"native BNGIR molecule type {name!r} must be an ordinary site-free type"
+                f"native BNGIR molecule type {name!r} must be an ordinary molecule type"
             )
+        components = molecule["components"]
+        if not isinstance(components, list) or len(components) not in {0, 1}:
+            raise ValueError(
+                f"native BNGIR molecule type {name!r} supports at most one finite-state component"
+            )
+        if components:
+            component = _require_mapping(
+                components[0], f"model.molecule_types[{index}].components[0]"
+            )
+            _native_exact_keys(
+                component,
+                {"index", "name", "states"},
+                f"model.molecule_types[{index}].components[0]",
+            )
+            component_name = component["name"]
+            states = component["states"]
+            if (
+                component["index"] != 0
+                or isinstance(component["index"], bool)
+                or not isinstance(component_name, str)
+                or re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", component_name) is None
+                or not isinstance(states, list)
+                or len(states) < 2
+                or any(
+                    not isinstance(state, str)
+                    or re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", state) is None
+                    for state in states
+                )
+                or len(set(states)) != len(states)
+            ):
+                raise ValueError(
+                    f"native BNGIR molecule type {name!r} requires one named component with at least two unique finite states"
+                )
         molecule_ids.add(index)
         molecule_names.add(name)
+        molecule_types_by_id[index] = molecule
 
     if not model["seeds"]:
         raise ValueError("native BNGIR requires at least one seed")
@@ -1854,7 +2038,10 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                 f"native BNGIR model.seeds[{index}].constant must be boolean"
             )
         _native_pattern_v02(
-            seed["pattern"], f"model.seeds[{index}].pattern", molecule_ids
+            seed["pattern"],
+            f"model.seeds[{index}].pattern",
+            molecule_ids,
+            molecule_types_by_id,
         )
         _native_expression_v02(
             seed["amount"], parameter_ids, f"model.seeds[{index}].amount"
@@ -1914,6 +2101,7 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                 term["pattern"],
                 f"model.observables[{index}].terms[{term_index}].pattern",
                 molecule_ids,
+                molecule_types_by_id,
             )
             quantity = term["quantity"]
             if (
@@ -2085,7 +2273,16 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                     pattern,
                     f"model.rules[{index}].{side}[{pattern_index}]",
                     molecule_ids,
+                    molecule_types_by_id,
                 )
+        has_state_sites = any(
+            molecule["sites"]
+            for side in ("reactants", "products")
+            for pattern in direction[side]
+            for molecule in pattern["molecules"]
+        )
+        if has_state_sites:
+            _native_state_transition_v02(rule, direction, index, model)
         _native_multi_pattern_direction_v02(rule, direction, index, model, molecule_ids)
         if len(rule["molecule_mappings"]) > 1:
             raise ValueError(
@@ -2123,7 +2320,7 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                     raise ValueError(
                         f"native BNGIR model.rules[{index}] has an out-of-slice molecule mapping reference"
                     )
-        if rule["component_mappings"]:
+        if rule["component_mappings"] and not has_state_sites:
             raise ValueError(
                 f"native BNGIR model.rules[{index}] does not support component mappings"
             )
@@ -2149,6 +2346,10 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                 f"native BNGIR model.rules[{index}].forward.mutations must be an array"
             )
         for mutation_index, raw_mutation in enumerate(mutations):
+            if has_state_sites:
+                # The narrow state-transition validator above checked the
+                # single change_state operation and all of its references.
+                continue
             mutation = _require_mapping(
                 raw_mutation,
                 f"model.rules[{index}].forward.mutations[{mutation_index}]",
