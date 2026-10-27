@@ -8977,7 +8977,7 @@
       "check": "scripts/ci/validate_sbml_test_suite.py + release-capability[sbml.core.Priority.math]",
       "oracle": "official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed",
       "status": "missing",
-      "issue": 158,
+      "issue": 157,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
     },
     {
@@ -8988,7 +8988,7 @@
       "check": "scripts/ci/validate_sbml_test_suite.py + release-capability[sbml.core.Priority.equal-priority-behavior]",
       "oracle": "official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed",
       "status": "missing",
-      "issue": 158,
+      "issue": 157,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
     },
     {
@@ -8999,7 +8999,7 @@
       "check": "scripts/ci/validate_sbml_test_suite.py + release-capability[sbml.core.Delay.math]",
       "oracle": "official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed",
       "status": "missing",
-      "issue": 158,
+      "issue": 157,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
     },
     {
@@ -9010,7 +9010,7 @@
       "check": "scripts/ci/validate_sbml_test_suite.py + release-capability[sbml.core.Delay.queued-firing]",
       "oracle": "official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed",
       "status": "missing",
-      "issue": 158,
+      "issue": 157,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
     },
     {
@@ -9021,7 +9021,7 @@
       "check": "scripts/ci/validate_sbml_test_suite.py + release-capability[sbml.core.EventAssignment.variable]",
       "oracle": "official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed",
       "status": "missing",
-      "issue": 158,
+      "issue": 157,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
     },
     {
@@ -9032,7 +9032,7 @@
       "check": "scripts/ci/validate_sbml_test_suite.py + release-capability[sbml.core.EventAssignment.math]",
       "oracle": "official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed",
       "status": "missing",
-      "issue": 158,
+      "issue": 157,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
     },
     {
