@@ -2,7 +2,9 @@
 
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <string>
+#include <utility>
 
 #include "ast/RxnList.hpp"
 #include "ast/SpeciesList.hpp"
@@ -17,7 +19,26 @@ namespace bng::engine {
 struct GeneratedNetwork {
     ast::SpeciesList species;
     ast::RxnList reactions;
-    mutable SimulationSession simulationSession;
+
+    // A network carries one continuation trajectory shared by its integrators.
+    // Keep the lock shared when a GeneratedNetwork is copied so session
+    // snapshots and replacements cannot race across copies of the same
+    // network. The lock protects storage access; it does not define semantics
+    // for concurrent continuation runs on one trajectory.
+    SimulationSession snapshotSimulationSession() const {
+        std::lock_guard<std::mutex> lock(*simulationSessionMutex_);
+        return simulationSession;
+    }
+
+    void replaceSimulationSession(SimulationSession session) const {
+        std::lock_guard<std::mutex> lock(*simulationSessionMutex_);
+        simulationSession = std::move(session);
+    }
+
+    void resetSimulationSession() const {
+        std::lock_guard<std::mutex> lock(*simulationSessionMutex_);
+        simulationSession.reset();
+    }
 
     // Reaction rates loaded from a .net file already include compartment-unit
     // conversion. Keep source-generated networks distinguishable so readers
@@ -28,6 +49,11 @@ struct GeneratedNetwork {
     // types created during compiled lowering. Keep that storage alive for the
     // lifetime of the generated network rather than the generator call.
     std::shared_ptr<compile::BNGcoreLoweringContext> loweringContext;
+
+private:
+    mutable SimulationSession simulationSession;
+    std::shared_ptr<std::mutex> simulationSessionMutex_ =
+        std::make_shared<std::mutex>();
 };
 
 class NetworkGenerator {

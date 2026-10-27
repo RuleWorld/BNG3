@@ -436,7 +436,7 @@ TEST_CASE("native ODE continuation preserves delayed history and reset clears it
     CHECK(continued.concentrations.back()[b] ==
           Catch::Approx(unsplit.concentrations.back()[b]).epsilon(1e-7));
 
-    splitNetwork.simulationSession.reset();
+    splitNetwork.resetSimulationSession();
     splitNetwork.species.get(a).setAmount(10.0);
     splitNetwork.species.get(b).setAmount(0.0);
     engine::OdeOptions reset = first;
@@ -754,7 +754,7 @@ TEST_CASE("direct SSA continuation preserves its queue and random stream") {
     REQUIRE(!unsplit.concentrations.empty());
     CHECK(continued.concentrations.back() == unsplit.concentrations.back());
 
-    splitNetwork.simulationSession.reset();
+    splitNetwork.resetSimulationSession();
     splitNetwork.species.get(speciesIndex(splitNetwork, "A")).setAmount(10.0);
     engine::OdeOptions reset = first;
     reset.continueSimulation = false;

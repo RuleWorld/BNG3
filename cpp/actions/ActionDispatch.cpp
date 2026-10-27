@@ -1484,9 +1484,9 @@ void regeneratePreservingAmounts(engine::NetworkGenerator& generator,
         return;
     }
     const auto savedAmounts = snapshotConcentrations(*network);
-    const auto savedSession = network->simulationSession;
+    const auto savedSession = network->snapshotSimulationSession();
     network = generator.generate(sourcePath);
-    network->simulationSession = savedSession;
+    network->replaceSimulationSession(savedSession);
     restoreConcentrations(*network, savedAmounts);
 }
 
@@ -2686,11 +2686,11 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 setParameterValue(actionIndex, target, valueText);
                 if (network.has_value()) {
                     const auto savedAmounts = snapshotConcentrations(*network);
-                    const auto savedSession = network->simulationSession;
+                    const auto savedSession = network->snapshotSimulationSession();
                     network = generator.generate(sourcePath);
                     restoreConcentrations(*network, savedAmounts);
                     if (savedSession.initialized) {
-                        network->simulationSession = savedSession;
+                        network->replaceSimulationSession(savedSession);
                     }
                 }
                 continue;
@@ -2761,7 +2761,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             if (protoName == "resetconcentrations" || protoName == "reset_concentrations") {
                 ensureNetwork();
-                network->simulationSession.reset();
+                network->resetSimulationSession();
                 lastSimulationState.clear();
                 lastSimulationEndTime = 0.0;
                 const auto label = stripQuotes(readArgument(protoAction, "value", "default"));

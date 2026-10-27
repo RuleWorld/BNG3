@@ -414,17 +414,18 @@ void bind_engine(py::module_& m) {
        "Generate the reaction network from a model");
 
     m.def("reset_simulation", [](GeneratedNetwork& network) {
-        network.simulationSession.reset();
+        network.resetSimulationSession();
     }, py::arg("network"),
        "Clear the native trajectory history, pending completions, and random stream");
 
     m.def("continue_simulation_from", [](const GeneratedNetwork& previous,
                                           GeneratedNetwork& regenerated) {
-        regenerated.simulationSession = previous.simulationSession;
-        if (regenerated.simulationSession.state.size() == regenerated.species.size()) {
+        auto session = previous.snapshotSimulationSession();
+        regenerated.replaceSimulationSession(session);
+        if (session.state.size() == regenerated.species.size()) {
             for (std::size_t i = 0; i < regenerated.species.size(); ++i) {
                 regenerated.species.get(i).setAmount(
-                    regenerated.simulationSession.state[i]);
+                    session.state[i]);
             }
         }
     }, py::arg("previous"), py::arg("regenerated"),

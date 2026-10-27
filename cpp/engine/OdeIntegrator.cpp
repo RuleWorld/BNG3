@@ -192,8 +192,7 @@ bool hasWordBoundaryMatchCaseInsensitive(std::string_view text, std::string_view
 
 
 OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& network)
-    : model_(model), network_(network), functionEvaluator_(model),
-      simulationSession_(&network.simulationSession) {
+    : model_(model), network_(network), functionEvaluator_(model) {
     for (const auto& reaction : network_.reactions.all()) {
         if (reaction.getDelayExpression()) {
             const double delay = delayedTime(*reaction.getDelayExpression(), model_);
@@ -1765,8 +1764,12 @@ void OdeIntegrator::derivs(double t, const double* y, double* dydt) const {
             for (const auto ri : rxn.reactantIndices) dydt[ri] -= initiationFlux;
         }
 
-        const auto* session = activeSimulationSession_
-            ? activeSimulationSession_ : simulationSession_;
+        std::optional<SimulationSession> fallbackSession;
+        const auto* session = activeSimulationSession_;
+        if (!session) {
+            fallbackSession = network_.snapshotSimulationSession();
+            session = &*fallbackSession;
+        }
         if (session && t >= session->startTime + rxn.delay) {
             const double delayedTimeValue = t - rxn.delay;
             const auto delayedState = historyStateAt(delayedTimeValue);
@@ -1811,8 +1814,12 @@ double OdeIntegrator::reactionFlux(const CompiledReaction& reaction,
 }
 
 std::vector<double> OdeIntegrator::historyStateAt(double time) const {
-    const auto* session = activeSimulationSession_
-        ? activeSimulationSession_ : simulationSession_;
+    std::optional<SimulationSession> fallbackSession;
+    const auto* session = activeSimulationSession_;
+    if (!session) {
+        fallbackSession = network_.snapshotSimulationSession();
+        session = &*fallbackSession;
+    }
     if (!session || session->history.empty()) {
         std::vector<double> initial(nSpecies_);
         for (std::size_t i = 0; i < nSpecies_; ++i) {
@@ -1852,8 +1859,12 @@ std::vector<double> OdeIntegrator::historyStateAt(double time) const {
 
 std::unordered_map<std::string, double> OdeIntegrator::historyParametersAt(
     double time) const {
-    const auto* session = activeSimulationSession_
-        ? activeSimulationSession_ : simulationSession_;
+    std::optional<SimulationSession> fallbackSession;
+    const auto* session = activeSimulationSession_;
+    if (!session) {
+        fallbackSession = network_.snapshotSimulationSession();
+        session = &*fallbackSession;
+    }
     if (!session || session->history.empty()) return {};
     const auto& history = session->history;
     if (time <= history.front().time) return history.front().parameters;
@@ -1963,8 +1974,7 @@ double OdeIntegrator::evaluateExpressionWithHistory(
 
 void OdeIntegrator::recordHistoryPoint(double time,
                                        const std::vector<double>& state) {
-    auto* session = activeSimulationSession_
-        ? activeSimulationSession_ : simulationSession_;
+    auto* session = activeSimulationSession_;
     if (!session) return;
     std::vector<double> derivative(nSpecies_, 0.0);
     derivs(time, state.data(), derivative.data());
@@ -1988,8 +1998,7 @@ void OdeIntegrator::recordHistoryPoint(double time,
 
 void OdeIntegrator::recordHistoryJump(double time,
                                       const std::vector<double>& state) {
-    auto* session = activeSimulationSession_
-        ? activeSimulationSession_ : simulationSession_;
+    auto* session = activeSimulationSession_;
     if (!session) return;
     std::vector<double> derivative(nSpecies_, 0.0);
     derivs(time, state.data(), derivative.data());
@@ -2479,7 +2488,7 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
         return integrateCore(options);
     }
 
-    SimulationSession working = *simulationSession_;
+    SimulationSession working = network_.snapshotSimulationSession();
     if (options.method == "ssa" && hasPositiveExpressionDelay_) {
         throw std::runtime_error(
             "delay(expr, tau) has no direct SSA semantics");
@@ -2608,7 +2617,7 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
                 network_.species.get(i).getAmountVersion();
         }
         working.initialized = true;
-        *simulationSession_ = std::move(working);
+        network_.replaceSimulationSession(std::move(working));
         activeSimulationSession_ = nullptr;
         return result;
     } catch (...) {
@@ -3531,8 +3540,12 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
     auto times = outputTimes(opts);
     const auto stopIfExpr = parseStopIf(opts);
     pendingEvents_.clear();
-    auto* eventSession = activeSimulationSession_
-        ? activeSimulationSession_ : simulationSession_;
+    std::optional<SimulationSession> fallbackSession;
+    auto* eventSession = activeSimulationSession_;
+    if (!eventSession) {
+        fallbackSession = network_.snapshotSimulationSession();
+        eventSession = &*fallbackSession;
+    }
     if (opts.continueSimulation && eventSession) {
         for (const auto& pending : eventSession->pendingNativeEvents) {
             pendingEvents_.push_back({pending.event, pending.executionTime,
