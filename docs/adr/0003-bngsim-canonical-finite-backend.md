@@ -6,7 +6,7 @@
 
 Status: Accepted by maintainer; supersedes the earlier intended BNGsim-default policy.
 
-Native BNG3 ODE/SSA/PLA/PSA solvers are the default. BNGsim is a supported optional backend. All simulators implement one common compiled-model, capability, protocol, lifetime and result interface, including NFcore, NFnext, JAX, GPU and third-party backends. Explicit selection is honored; unavailable installations produce clear errors. No silent semantic approximation is permitted.
+Native BNG3 ODE/SSA/PLA/PSA solvers are the default. BNGsim is a supported optional backend. The required architecture is one common compiled-model, capability, protocol, lifetime and result interface for finite and network-free simulators, including optional JAX, GPU and third-party backends. The shared contract and routing remain implementation work owned by #178; this decision does not claim that the interfaces are complete. Explicit selection must be honored, unavailable installations must produce clear errors, and unsupported semantics must not be approximated. See the [issue-keyed qualification table](../CURRENT_PROGRESS.md) for exact-main evidence.
 
 CompiledModel owns resolved model semantics. The backend adapter consumes them rather than reinterpreting BNGL. Shared option and rate contracts remove duplicated policy in ActionDispatch, OdeIntegrator, exporters and finite-backend routing. Backend-specific mutable state remains separate.
 
