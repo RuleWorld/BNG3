@@ -1,3 +1,5 @@
+> Historical migration report from 2026-09-14. Current implementation and qualification state are in the [issue-keyed progress table](../../../CURRENT_PROGRESS.md); see [final maintainer decisions](../../../DECISIONS.md).
+
 # IR migration validation status
 
 Validation date: 2026-09-11

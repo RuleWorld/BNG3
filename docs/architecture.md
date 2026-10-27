@@ -1,8 +1,10 @@
 # Architecture
 
-The live branch and validation snapshot for this architecture are maintained
-in [`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md). This page describes the
-architecture, not completion of every convergence gate.
+The [capability inventory](CAPABILITY_UNION_INVENTORY.md) defines the complete
+first-release scope; [DECISIONS.md](DECISIONS.md) records final maintainer
+policy. The issue-keyed [current progress table](CURRENT_PROGRESS.md) links
+verification evidence and open obligations. Architecture descriptions here are
+not claims that every required semantic surface is qualified.
 
 The canonical semantic-model boundary and staged migration policy are defined
 in [ADR 0001](adr/0001-canonical-semantic-model-and-layer-boundaries.md).
@@ -235,13 +237,15 @@ primary dispatch:
 
 ```
 model.simulate(method="ode") ─┐
-model.simulate(method="ssa") ─┼─ finite network → FiniteBackend → BNGsim (preferred, opt-in)
+model.simulate(method="ssa") ─┼─ finite network → FiniteBackend → native by default; BNGsim explicitly selected
 model.simulate(method="nf")  ─── rule model → NFsim (independent)
 ```
 
-- `backend="auto"` (default) keeps `native` during migration for stability;
-  developers/CI may set `backend="bngsim"` or `BIONETGEN_FINITE_BACKEND=bngsim`
-  to exercise the BNGsim path for supported models.
+- Native BNG3 finite solvers are the default under the accepted backend policy
+  in [DECISIONS.md](DECISIONS.md). Select `backend="bngsim"` or set
+  `BIONETGEN_FINITE_BACKEND=bngsim` to use the optional adapter where its
+  documented capability checks permit it. This is the policy default, not a
+  temporary migration state.
 - Unsupported forms fail closed before solver construction with
   `BNGsim adapter rejected …` and are surfaced as
   `BioNetGen finite-network backend cannot represent …`; `method="nf"` is never

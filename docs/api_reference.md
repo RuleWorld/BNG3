@@ -1,3 +1,8 @@
+> Release scope is the [capability inventory](CAPABILITY_UNION_INVENTORY.md);
+> final policy is in [DECISIONS.md](DECISIONS.md). The presence of an API method
+> does not by itself establish complete semantic support; see
+> [current qualification evidence](CURRENT_PROGRESS.md).
+
 # API Reference
 
 This reference describes the intended public API. Check

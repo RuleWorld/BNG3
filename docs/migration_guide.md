@@ -2,7 +2,7 @@
 
 The migration surface is still being qualified. Use
 [`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md) for the current branch state and
-the convergence checklist for supported-versus-open capability decisions.
+the [capability inventory](CAPABILITY_UNION_INVENTORY.md) for release scope, [DECISIONS.md](DECISIONS.md) for final policy, and [CURRENT_PROGRESS.md](CURRENT_PROGRESS.md) for issue-level qualification evidence.
 
 BioNetGen 3 replaces the subprocess-based PyBioNetGen/BNG2 workflow with an in-process Python API backed by C++.
 

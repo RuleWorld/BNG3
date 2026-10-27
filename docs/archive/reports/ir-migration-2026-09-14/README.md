@@ -1,3 +1,5 @@
+> Historical migration report from 2026-09-14. Current implementation and qualification state are in the [issue-keyed progress table](../../../CURRENT_PROGRESS.md); see [final maintainer decisions](../../../DECISIONS.md).
+
 # Archived IR-migration reports
 
 This directory contains historical reports and package metadata imported with
@@ -12,7 +14,7 @@ Use the live documents for current work:
   — authoritative completion criteria.
 - [`BNG3_INTEGRATION_PLAN.md`](../../../BNG3_INTEGRATION_PLAN.md) — architecture
   and phased work plan.
-- [`validation/README.md`](../../../validation/README.md) — validation commands
+- [`validation/README.md`](../../../../tests/validation/README.md) — validation commands
   and oracle boundaries.
 
 ## Archived contents

@@ -1,7 +1,7 @@
 # NFcore2 test-first continuation status
 
 > Historical TDD checkpoint. Current contract promotion is governed by the
-> live convergence checklist and [`docs/CURRENT_PROGRESS.md`](../../../../../CURRENT_PROGRESS.md).
+> live convergence checklist and [`docs/CURRENT_PROGRESS.md`](../../../../CURRENT_PROGRESS.md).
 
 Base target: `akutuva21/nfsim`, branch `perf/rasi-translation-optimization`, previously evaluated at `d13086bd3cf2fd268be5efea4d83089301479de3`.
 

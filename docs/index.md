@@ -1,9 +1,11 @@
 # BioNetGen 3 Documentation
 
-For the live implementation snapshot and current validation status, start with
-[`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md). The convergence checklist is the
-release-completion authority. Historical migration reports are grouped under
-[`archive/reports/`](archive/reports/).
+Start with the [capability inventory](CAPABILITY_UNION_INVENTORY.md) for complete
+release scope and [maintainer decisions](DECISIONS.md) for final policy.
+[Current progress](CURRENT_PROGRESS.md) records issue checks, exact-main evidence
+and remaining obligations; it does not claim release completion. The
+[convergence checklist](BNG3_CONVERGENCE_DONE_CHECKLIST.md) is a task index.
+Historical reports are grouped under [`archive/reports/`](archive/reports/).
 
 The current continuation makes direct NFsim construction-path and typed NFnext
 bridge evidence explicit in [`CI_PARITY.md`](CI_PARITY.md),

@@ -1,3 +1,5 @@
+> Historical migration report from 2026-09-14. Current implementation and qualification state are in the [issue-keyed progress table](../../../CURRENT_PROGRESS.md); see [final maintainer decisions](../../../DECISIONS.md).
+
 # BNG3 Lean formalization — expanded milestone report
 
 ## Scope

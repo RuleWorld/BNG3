@@ -1,12 +1,12 @@
 # BioNetGen 3
 
-**Release requirements:** [Capability inventory](docs/CAPABILITY_UNION_INVENTORY.md) · [Maintainer decisions](docs/DECISIONS.md). Every inventory row is required for the first public release.
+**Release scope and final decisions:** [Capability inventory](docs/CAPABILITY_UNION_INVENTORY.md) · [Maintainer decisions](docs/DECISIONS.md) · [Current issue status and evidence](docs/CURRENT_PROGRESS.md). Every inventory row is a first-release requirement; qualification remains incomplete until its independent acceptance evidence is recorded.
 
 BioNetGen 3 is a Python-first, in-process rule-based modeling platform for biochemical reaction systems. It parses BNGL directly in C++, simulates with the bundled backend, and exposes models, results, scans, and exports as ordinary Python objects.
 
 The repository is under active convergence work. The live implementation and
 verification state is recorded in [`docs/CURRENT_PROGRESS.md`](docs/CURRENT_PROGRESS.md);
-the convergence checklist remains the authority for release completion.
+the capability inventory defines release scope, final decisions are recorded in `docs/DECISIONS.md`, and the issue acceptance criteria plus exact-main evidence determine completion. See [the documentation index](docs/index.md).
 
 ## What Is Novel In BNG3
 

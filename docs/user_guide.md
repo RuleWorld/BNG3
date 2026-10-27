@@ -1,8 +1,10 @@
 # User Guide
 
-For current qualification limits and known unsupported paths, see
-[`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md) before relying on this usage
-guide as a completeness claim.
+The [capability inventory](CAPABILITY_UNION_INVENTORY.md) defines first-release
+scope and [DECISIONS.md](DECISIONS.md) records final policy. Consult the
+[issue-keyed progress table](CURRENT_PROGRESS.md) for verified qualification
+evidence and remaining obligations before treating this guide as a completeness
+claim.
 
 This guide walks through the new BNG3 workflow from loading a BNGL file to scanning parameters, importing SBML, and building models programmatically.
 
