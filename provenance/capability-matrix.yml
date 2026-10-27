@@ -10938,5 +10938,1370 @@
       "issue": 171,
       "evidence": "Public tool wrapper retained; full differential case required."
     }
+  ],
+  "validation_capabilities": [
+    {
+      "id": "parser.grammar",
+      "sources": [
+        "cpp/parser/*.g4"
+      ],
+      "tests": [
+        "tests/python/test_bng_parsing.py"
+      ],
+      "issues": [
+        137
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "parser.expressions",
+      "sources": [
+        "cpp/ast/Expression*"
+      ],
+      "tests": [
+        "tests/cpp/test_expression_evaluator.cpp",
+        "tests/validation/test_parity_expressions.py"
+      ],
+      "issues": [
+        143
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "parser.invalid-input",
+      "sources": [
+        "cpp/parser/BNGAstVisitor.cpp"
+      ],
+      "tests": [
+        "tests/cpp/test_correctness_regressions.cpp"
+      ],
+      "issues": [
+        137
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "compiler.symbols",
+      "sources": [
+        "cpp/compile/SymbolTable*"
+      ],
+      "tests": [
+        "tests/cpp/test_symbol_table.cpp"
+      ],
+      "issues": [
+        138
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "compiler.typed-patterns",
+      "sources": [
+        "cpp/compile/Pattern*"
+      ],
+      "tests": [
+        "tests/architecture_contracts"
+      ],
+      "issues": [
+        138,
+        142
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "compiler.rate-laws",
+      "sources": [
+        "cpp/compile/CompiledRateLaw*"
+      ],
+      "tests": [
+        "tests/cpp/test_pk_rate_laws.cpp",
+        "tests/cpp/test_signaling_rate_laws.cpp"
+      ],
+      "issues": [
+        143
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "compiler.protocol",
+      "sources": [
+        "cpp/compile/Document*"
+      ],
+      "tests": [
+        "tests/cpp/test_symbol_table.cpp"
+      ],
+      "issues": [
+        140,
+        141
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "compiler.capabilities",
+      "sources": [
+        "cpp/compile/Capabilities*"
+      ],
+      "tests": [
+        "tests/cpp/test_symbol_table.cpp"
+      ],
+      "issues": [
+        137,
+        145
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "core.graph-identity",
+      "sources": [
+        "cpp/core/PatternGraph*"
+      ],
+      "tests": [
+        "tests/cpp/test_hnauty.cpp",
+        "tests/cpp/test_node_label_parity.cpp"
+      ],
+      "issues": [
+        142,
+        168
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "core.matching",
+      "sources": [
+        "cpp/core/Ullmann*"
+      ],
+      "tests": [
+        "tests/cpp/test_ullmann.cpp"
+      ],
+      "issues": [
+        142
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "core.node-labels",
+      "sources": [
+        "cpp/core/Node*"
+      ],
+      "tests": [
+        "tests/cpp/test_node_operator.cpp"
+      ],
+      "issues": [
+        142
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "network.expansion",
+      "sources": [
+        "cpp/engine/NetworkGenerator*"
+      ],
+      "tests": [
+        "tests/cpp/test_network_generator.cpp",
+        "tests/validation/test_parity_net.py"
+      ],
+      "issues": [
+        139
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "network.rule-multiplicity",
+      "sources": [
+        "cpp/ast/ReactionRule*"
+      ],
+      "tests": [
+        "tests/cpp/test_reaction_rule_expansion.cpp",
+        "tests/python/test_legacy_symmetry_factor.py"
+      ],
+      "issues": [
+        139,
+        143
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "network.observables",
+      "sources": [
+        "cpp/engine/ObservableProjection*"
+      ],
+      "tests": [
+        "tests/cpp/test_observable_counting.cpp"
+      ],
+      "issues": [
+        143
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "network.compartments",
+      "sources": [
+        "cpp/ast/Compartment*"
+      ],
+      "tests": [
+        "tests/cpp/test_compartment_transport.cpp"
+      ],
+      "issues": [
+        141
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "simulation.ode",
+      "sources": [
+        "cpp/engine/OdeIntegrator*"
+      ],
+      "tests": [
+        "tests/cpp/test_ode_options.cpp",
+        "tests/validation/test_parity_ode.py"
+      ],
+      "issues": [
+        144
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "simulation.rhs",
+      "sources": [
+        "cpp/engine/OdeIntegrator*"
+      ],
+      "tests": [
+        "tests/validation/test_parity_rhs.py"
+      ],
+      "issues": [
+        143
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "simulation.ssa",
+      "sources": [
+        "cpp/engine/OdeIntegrator*",
+        "cpp/engine/BatchSsa*"
+      ],
+      "tests": [
+        "tests/validation/test_parity_stochastic.py",
+        "tests/python/test_ssa_closed_form_parity.py"
+      ],
+      "issues": [
+        167
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "simulation.pla",
+      "sources": [
+        "cpp/engine/PlaSimulator*"
+      ],
+      "tests": [
+        "tests/cpp/test_pla_simulator.cpp"
+      ],
+      "issues": [
+        144
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "simulation.psa",
+      "sources": [
+        "cpp/engine/PsaSimulator*"
+      ],
+      "tests": [
+        "tests/cpp/test_psa_simulator.cpp"
+      ],
+      "issues": [
+        144
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "simulation.bngsim-boundary",
+      "sources": [
+        "cpp/engine/Bngsim*",
+        "cpp/engine/FiniteBackend*"
+      ],
+      "tests": [
+        "tests/cpp/test_bngsim_adapter.cpp",
+        "tests/cpp/test_finite_backend.cpp",
+        "tests/python/test_finite_backend.py"
+      ],
+      "issues": [
+        144,
+        145
+      ],
+      "reference": "bngsim",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "nfsim.direct-ast",
+      "sources": [
+        "cpp/nfsim/NFinput/NFinput_fromAst.cpp"
+      ],
+      "tests": [
+        "tests/cpp/test_nfsim_ast_adapter.cpp",
+        "tests/validation/test_parity_nfsim.py"
+      ],
+      "issues": [
+        146
+      ],
+      "reference": "nfsim",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "nfsim.xml-path",
+      "sources": [
+        "cpp/nfsim/NFinput/*.cpp"
+      ],
+      "tests": [
+        "tests/validation/test_parity_nfsim_seed.py"
+      ],
+      "issues": [
+        146
+      ],
+      "reference": "nfsim",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "nfsim.matching",
+      "sources": [
+        "cpp/nfsim/NFcore/*"
+      ],
+      "tests": [
+        "tests/cpp/test_nfsim_reactant_tree.cpp"
+      ],
+      "issues": [
+        146
+      ],
+      "reference": "nfsim",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "nfsim.deletion",
+      "sources": [
+        "cpp/nfsim/NFreactions/*"
+      ],
+      "tests": [
+        "tests/validation/test_parity_nfsim_deletion.py"
+      ],
+      "issues": [
+        146
+      ],
+      "reference": "nfsim",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "nfsim.units",
+      "sources": [
+        "cpp/units/*"
+      ],
+      "tests": [
+        "tests/cpp/test_units.cpp",
+        "tests/cpp/test_parser_units.cpp"
+      ],
+      "issues": [
+        151
+      ],
+      "reference": "nfsim",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "nfsim.energy",
+      "sources": [
+        "cpp/compile/energy/*"
+      ],
+      "tests": [
+        "tests/energy"
+      ],
+      "issues": [
+        152,
+        177
+      ],
+      "reference": "nfsim-rasi",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "nfsim.hybrid",
+      "sources": [
+        "cpp/engine/HybridModelGenerator*"
+      ],
+      "tests": [
+        "tests/cpp/test_hybrid_model_generator.cpp"
+      ],
+      "issues": [
+        150
+      ],
+      "reference": "nfsim",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "nfcore2.lowering-matching-transform",
+      "sources": [
+        "cpp/nfsim/NFcore2/*"
+      ],
+      "tests": [
+        "tests/cpp/test_nfcore2_parity.cpp",
+        "tests/architecture_contracts/nfcore2"
+      ],
+      "issues": [
+        149
+      ],
+      "reference": "nfsim",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "nfnext.lowering-execution",
+      "sources": [
+        "cpp/nfnext/*"
+      ],
+      "tests": [
+        "tests/architecture_contracts/nfnext"
+      ],
+      "issues": [
+        147,
+        148,
+        149
+      ],
+      "reference": "nfsim",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "atomizer.core-lowering",
+      "sources": [
+        "python/bionetgen/atomizer/modern/core.py"
+      ],
+      "tests": [
+        "tests/python/test_modern_atomizer_core.py"
+      ],
+      "issues": [
+        164
+      ],
+      "reference": "pybionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "atomizer.structures",
+      "sources": [
+        "python/bionetgen/atomizer/modern/structures.py",
+        "python/bionetgen/atomizer/modern/rulifier.py"
+      ],
+      "tests": [
+        "tests/python/test_modern_atomizer_structures.py",
+        "tests/python/test_modern_atomizer_rulifier.py"
+      ],
+      "issues": [
+        161
+      ],
+      "reference": "pybionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "atomizer.annotations",
+      "sources": [
+        "python/bionetgen/atomizer/modern/annotation.py"
+      ],
+      "tests": [
+        "tests/python/test_modern_atomizer_annotations.py"
+      ],
+      "issues": [
+        161
+      ],
+      "reference": "pybionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "sbml.multi",
+      "sources": [
+        "python/bionetgen/atomizer/modern/multi.py",
+        "cpp/io/SbmlMultiWriter*"
+      ],
+      "tests": [
+        "tests/python/test_modern_atomizer_multi.py"
+      ],
+      "issues": [
+        161
+      ],
+      "reference": "SBML-Multi-L3V1",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "sbml.events",
+      "sources": [
+        "python/bionetgen/atomizer/modern/events.py"
+      ],
+      "tests": [
+        "tests/python/test_modern_atomizer_events.py"
+      ],
+      "issues": [
+        157,
+        158
+      ],
+      "reference": "SBML-L3V2",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "sbml.units",
+      "sources": [
+        "python/bionetgen/atomizer/modern/units.py",
+        "cpp/io/SbmlUnitWriter*"
+      ],
+      "tests": [
+        "tests/python/test_modern_atomizer_units.py",
+        "tests/cpp/test_sbml_units.cpp"
+      ],
+      "issues": [
+        160
+      ],
+      "reference": "SBML-L3V2",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "sbml.packages-unsupported",
+      "sources": [
+        "python/bionetgen/atomizer/modern/parser.py"
+      ],
+      "tests": [
+        "tests/python/test_modern_atomizer_package_diagnostics.py"
+      ],
+      "issues": [
+        160
+      ],
+      "reference": "SBML-L3V2",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "sbml.native-import",
+      "sources": [
+        "cpp/io/SbmlReader*"
+      ],
+      "tests": [
+        "tests/cpp/test_sbml_reader.cpp",
+        "tests/python/test_sbml_import.py"
+      ],
+      "issues": [
+        159,
+        160
+      ],
+      "reference": "SBML-L3V2",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "bngir.versions-serialization",
+      "sources": [
+        "python/bionetgen/bngir.py"
+      ],
+      "tests": [
+        "tests/python/test_bngir.py",
+        "tests/python/test_bngir_version_bridge.py"
+      ],
+      "issues": [
+        154,
+        156
+      ],
+      "reference": "provenance/schemas/bngir-0.2.schema.json",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "bngir.native-reconstruction",
+      "sources": [
+        "cpp/compile/CompiledModel*"
+      ],
+      "tests": [
+        "tests/python/test_bngir_native_import.py"
+      ],
+      "issues": [
+        153,
+        154,
+        155
+      ],
+      "reference": "provenance/schemas/bngir-0.2.schema.json",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "python.api",
+      "sources": [
+        "python/bionetgen/model.py",
+        "python/bionetgen/__init__.py"
+      ],
+      "tests": [
+        "tests/python/test_cpp_backend.py",
+        "tests/python/test_compatibility_contract.py"
+      ],
+      "issues": [
+        171
+      ],
+      "reference": "pybionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "python.builder",
+      "sources": [
+        "python/bionetgen/builder.py"
+      ],
+      "tests": [
+        "tests/python/test_builder.py"
+      ],
+      "issues": [
+        171
+      ],
+      "reference": "pybionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "python.results",
+      "sources": [
+        "python/bionetgen/result.py"
+      ],
+      "tests": [
+        "tests/python/test_result.py"
+      ],
+      "issues": [
+        171
+      ],
+      "reference": "pybionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "python.compatibility",
+      "sources": [
+        "python/bionetgen/compat/*.py"
+      ],
+      "tests": [
+        "tests/python/test_bngfile_compat.py"
+      ],
+      "issues": [
+        171,
+        172
+      ],
+      "reference": "pybionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "analysis.scan",
+      "sources": [
+        "python/bionetgen/scan.py"
+      ],
+      "tests": [
+        "tests/python/test_parameter_scan.py"
+      ],
+      "issues": [
+        171
+      ],
+      "reference": "pybionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "analysis.sensitivity",
+      "sources": [
+        "python/bionetgen/sensitivity.py"
+      ],
+      "tests": [
+        "tests/python/test_sensitivity.py"
+      ],
+      "issues": [
+        171
+      ],
+      "reference": "pybionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "analysis.visualization",
+      "sources": [
+        "python/bionetgen/viz.py",
+        "python/bionetgen/display.py"
+      ],
+      "tests": [
+        "tests/python/test_viz_export.py",
+        "tests/python/test_display.py"
+      ],
+      "issues": [
+        171
+      ],
+      "reference": "pybionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "export.bngl",
+      "sources": [
+        "cpp/io/BnglWriter*"
+      ],
+      "tests": [
+        "tests/validation/test_export_formats.py"
+      ],
+      "issues": [
+        163,
+        178
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "export.net",
+      "sources": [
+        "cpp/io/NetWriter*"
+      ],
+      "tests": [
+        "tests/validation/test_export_formats.py"
+      ],
+      "issues": [
+        163,
+        178
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "export.xml",
+      "sources": [
+        "cpp/io/XmlWriter*"
+      ],
+      "tests": [
+        "tests/validation/test_export_formats.py"
+      ],
+      "issues": [
+        163,
+        178
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "export.sbml",
+      "sources": [
+        "cpp/io/SbmlWriter*"
+      ],
+      "tests": [
+        "tests/validation/test_export_formats.py"
+      ],
+      "issues": [
+        163,
+        178
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "export.matlab",
+      "sources": [
+        "cpp/io/MatlabWriter*"
+      ],
+      "tests": [
+        "tests/validation/test_export_formats.py"
+      ],
+      "issues": [
+        163,
+        178
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "export.latex",
+      "sources": [
+        "cpp/io/LatexWriter*"
+      ],
+      "tests": [
+        "tests/validation/test_export_formats.py"
+      ],
+      "issues": [
+        163,
+        178
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "export.cpp",
+      "sources": [
+        "cpp/io/CppExportWriter*"
+      ],
+      "tests": [
+        "tests/validation/test_export_formats.py"
+      ],
+      "issues": [
+        163,
+        178
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "export.python",
+      "sources": [
+        "cpp/io/PythonExportWriter*"
+      ],
+      "tests": [
+        "tests/validation/test_export_formats.py"
+      ],
+      "issues": [
+        163,
+        178
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "export.mex",
+      "sources": [
+        "cpp/io/MexWriter*"
+      ],
+      "tests": [
+        "tests/validation/test_export_formats.py"
+      ],
+      "issues": [
+        163,
+        178
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "export.mdl",
+      "sources": [
+        "cpp/io/MdlWriter*"
+      ],
+      "tests": [
+        "tests/validation/test_export_formats.py"
+      ],
+      "issues": [
+        163,
+        178
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "export.ssc",
+      "sources": [
+        "cpp/io/SscWriter*"
+      ],
+      "tests": [
+        "tests/validation/test_export_formats.py"
+      ],
+      "issues": [
+        163,
+        178
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "export.contact-map",
+      "sources": [
+        "cpp/io/ContactMapWriter*"
+      ],
+      "tests": [
+        "tests/validation/test_export_formats.py"
+      ],
+      "issues": [
+        163,
+        178
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "export.reaction-graph",
+      "sources": [
+        "cpp/io/ReactionNetworkGraphWriter*"
+      ],
+      "tests": [
+        "tests/validation/test_export_formats.py"
+      ],
+      "issues": [
+        163,
+        178
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "export.process-graph",
+      "sources": [
+        "cpp/io/ProcessGraphWriter*"
+      ],
+      "tests": [
+        "tests/validation/test_export_formats.py"
+      ],
+      "issues": [
+        163,
+        178
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "export.regulatory-graph",
+      "sources": [
+        "cpp/io/RegulatoryGraphWriter*"
+      ],
+      "tests": [
+        "tests/validation/test_export_formats.py"
+      ],
+      "issues": [
+        163,
+        178
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "export.rule-influence",
+      "sources": [
+        "cpp/io/RuleInfluenceGraphWriter*"
+      ],
+      "tests": [
+        "tests/validation/test_export_formats.py"
+      ],
+      "issues": [
+        163,
+        178
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "export.ruleviz-pattern",
+      "sources": [
+        "cpp/io/RulevizPatternWriter*"
+      ],
+      "tests": [
+        "tests/validation/test_export_formats.py"
+      ],
+      "issues": [
+        163,
+        178
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "export.ruleviz-operation",
+      "sources": [
+        "cpp/io/RulevizOperationWriter*"
+      ],
+      "tests": [
+        "tests/validation/test_export_formats.py"
+      ],
+      "issues": [
+        163,
+        178
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "interface.cli-actions",
+      "sources": [
+        "cpp/actions/ActionDispatch.cpp",
+        "python/bionetgen/cli.py"
+      ],
+      "tests": [
+        "tests/python/test_cli.py",
+        "tests/test_validate.py"
+      ],
+      "issues": [
+        140,
+        171
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "interface.parallel-batch",
+      "sources": [
+        "cpp/cli/*"
+      ],
+      "tests": [
+        "tests/cpp/test_batch_runner.cpp"
+      ],
+      "issues": [
+        171
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "formal.lean-contracts",
+      "sources": [
+        "formal/lean/BNG/**/*.lean"
+      ],
+      "tests": [
+        "tests/architecture_contracts"
+      ],
+      "issues": [
+        166,
+        167,
+        168
+      ],
+      "reference": "formal/lean/CXX_MAPPING.md",
+      "support": "unverified",
+      "notes": "Lean proofs and native correspondence are separate; no proof-completion claim from discovery."
+    },
+    {
+      "id": "platform.packaging",
+      "sources": [
+        "CMakeLists.txt",
+        "pyproject.toml"
+      ],
+      "tests": [
+        "tests/validation/test_worker_package_identity.py"
+      ],
+      "issues": [
+        184
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "platform.cuda",
+      "sources": [
+        "cpp/engine/gpu/*"
+      ],
+      "tests": [
+        "tests/cpp/test_gpu_batch_ssa_backend.cpp"
+      ],
+      "issues": [
+        175
+      ],
+      "reference": "nvidia-cuda",
+      "support": "unverified",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "platform.jax",
+      "sources": [
+        "python/bionetgen/jax_*.py"
+      ],
+      "tests": [
+        "tests/python/test_jax_ode.py",
+        "tests/python/test_jax_ssa.py"
+      ],
+      "issues": [
+        174
+      ],
+      "reference": "jax",
+      "support": "unverified",
+      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+    },
+    {
+      "id": "nfsim.direct-population-maps",
+      "sources": [
+        "cpp/compile/Capabilities.cpp"
+      ],
+      "tests": [
+        "tests/cpp/test_symbol_table.cpp"
+      ],
+      "issues": [
+        150,
+        146
+      ],
+      "reference": "nfsim",
+      "support": "unsupported",
+      "notes": "Direct NFsim capability preflight explicitly rejects population maps; hybrid execution is a separate capability."
+    },
+    {
+      "id": "core.single-nauty",
+      "sources": [
+        "cpp/core/PatternGraph.cpp"
+      ],
+      "tests": [
+        "tests/python/test_single_nauty_contract.py"
+      ],
+      "issues": [
+        142
+      ],
+      "reference": "bionetgen",
+      "support": "implemented",
+      "notes": "The single compiled canonicalizer contract is implemented; this status does not qualify all cross-engine graph semantics."
+    },
+    {
+      "id": "observables.counting-modes",
+      "sources": [
+        "cpp/engine/ObservableProjection.cpp"
+      ],
+      "tests": [
+        "tests/cpp/test_observable_counting.cpp"
+      ],
+      "issues": [
+        143
+      ],
+      "reference": "bionetgen",
+      "support": "implemented",
+      "notes": "CountAll/CountUnique counting has native contracts; independent corpus qualification remains separate."
+    },
+    {
+      "id": "interface.action-initial-amounts",
+      "sources": [
+        "cpp/actions/ActionDispatch.cpp",
+        "cpp/io/NetWriter.cpp"
+      ],
+      "tests": [
+        "tests/validation/test_diagnostic_probes.py::test_set_then_add_is_visible_in_exported_seed_amount"
+      ],
+      "issues": [
+        140,
+        272
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "A focused live probe observes stale exported seed state after set/add; not repaired by validation."
+    },
+    {
+      "id": "import.net-observable-names",
+      "sources": [
+        "cpp/io/NetReader.cpp",
+        "cpp/engine/OdeIntegrator.cpp"
+      ],
+      "tests": [
+        "tests/validation/test_diagnostic_probes.py::test_net_reload_preserves_all_declared_observable_columns"
+      ],
+      "issues": [
+        163,
+        273
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Independent NET reload must preserve the exact observable names; missing columns remain a failure."
+    },
+    {
+      "id": "import.net-empty-groups",
+      "sources": [
+        "cpp/io/NetReader.cpp"
+      ],
+      "tests": [
+        "tests/validation/test_diagnostic_probes.py::test_net_reload_accepts_an_empty_declared_observable_group"
+      ],
+      "issues": [
+        163,
+        274
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Empty declared observable groups are valid independent NET artifacts; native rejection is exposed."
+    },
+    {
+      "id": "import.net-function-evaluation",
+      "sources": [
+        "cpp/io/NetReader.cpp",
+        "cpp/engine/OdeIntegrator.cpp"
+      ],
+      "tests": [
+        "tests/validation/test_diagnostic_probes.py::test_net_reload_preserves_dynamic_rate_function_trajectory"
+      ],
+      "issues": [
+        143,
+        163,
+        275
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Observable-dependent rate evaluation after reload has a separately observed cdat discrepancy."
+    },
+    {
+      "id": "export.cdat-species-identity",
+      "sources": [
+        "cpp/engine/OdeIntegrator.cpp"
+      ],
+      "tests": [
+        "tests/validation/test_diagnostic_probes.py::test_cdat_identifies_constant_species_without_discarding_its_marker",
+        "tests/validation/test_diagnostic_probes.py::test_cdat_identifies_compartments_when_graph_labels_are_shared"
+      ],
+      "issues": [
+        142,
+        163,
+        276
+      ],
+      "reference": "bionetgen",
+      "support": "partial",
+      "notes": "Constant markers and compartments cannot be discarded or guessed from position during species alignment."
+    },
+    {
+      "id": "simulation.ode-analytic",
+      "sources": [
+        "cpp/engine/OdeIntegrator.cpp"
+      ],
+      "tests": [
+        "tests/validation/test_diagnostic_probes.py::test_first_order_trajectory_satisfies_independent_analytic_solution"
+      ],
+      "issues": [
+        144,
+        167
+      ],
+      "reference": "mathematical-first-order-ODE",
+      "support": "partial",
+      "notes": "A(t)=10*exp(-0.5*t) checks both engines independently; this qualifies only the named first-order probe."
+    },
+    {
+      "id": "simulation.ode-conservation",
+      "sources": [
+        "cpp/engine/OdeIntegrator.cpp"
+      ],
+      "tests": [
+        "tests/validation/test_diagnostic_probes.py::test_first_order_species_total_is_conserved_at_every_sample"
+      ],
+      "issues": [
+        144,
+        167
+      ],
+      "reference": "declared-probe-stoichiometry",
+      "support": "partial",
+      "notes": "A+B=13 at every requested time; no conservation law is inferred for unrelated models."
+    },
+    {
+      "id": "simulation.ode-positivity",
+      "sources": [
+        "cpp/engine/OdeIntegrator.cpp"
+      ],
+      "tests": [
+        "tests/validation/test_diagnostic_probes.py::test_first_order_species_remain_nonnegative_at_every_sample"
+      ],
+      "issues": [
+        144,
+        167
+      ],
+      "reference": "nonnegative-species-amounts",
+      "support": "partial",
+      "notes": "Explicit per-species/sample positivity check for the first-order probe with declared absolute tolerance."
+    },
+    {
+      "id": "simulation.observable-reconstruction",
+      "sources": [
+        "cpp/engine/ObservableProjection.cpp",
+        "cpp/engine/OdeIntegrator.cpp"
+      ],
+      "tests": [
+        "tests/validation/test_diagnostic_probes.py::test_declared_observables_reconstruct_from_species_at_every_sample"
+      ],
+      "issues": [
+        143,
+        163
+      ],
+      "reference": "independent-weighted-NET-group-sum",
+      "support": "partial",
+      "notes": "Reconstruct each declared observable from cdat and NET weights; does not qualify undeclared function columns."
+    },
+    {
+      "id": "network.symmetric-dimer",
+      "sources": [
+        "cpp/ast/ReactionRule.cpp",
+        "cpp/io/NetWriter.cpp"
+      ],
+      "tests": [
+        "tests/validation/test_diagnostic_probes.py::test_identical_reactant_symmetry_has_one_half_statistical_factor",
+        "tests/validation/test_diagnostic_probes.py::test_dimer_observable_counts_molecules_and_species_with_distinct_weights",
+        "tests/validation/test_diagnostic_probes.py::test_symmetric_dimer_species_trajectory_matches_independent_reference",
+        "tests/validation/test_diagnostic_probes.py::test_symmetric_dimer_conserves_molecular_units_at_every_sample"
+      ],
+      "issues": [
+        139,
+        142,
+        143
+      ],
+      "reference": "bionetgen-and-molecular-unit-conservation",
+      "support": "partial",
+      "notes": "A named identical-reactant dimer probe checks k/2, distinct Molecules/Species weights, full cdat agreement and conservation; does not qualify arbitrary automorphisms."
+    },
+    {
+      "id": "integration.cross-component",
+      "sources": [
+        "python/bionetgen/sbml.py",
+        "python/bionetgen/model.py",
+        "python/bionetgen/compat/runner.py",
+        "cpp/actions/ActionDispatch.cpp",
+        "cpp/nfsim/NFinput/NFinput_fromAst.cpp"
+      ],
+      "tests": [],
+      "issues": [],
+      "reference": "generated-analytic-source-and-independent-BNG2-PyBioNetGen-NFsim",
+      "support": "partial",
+      "notes": "Executed only by tests.validation.integrated. Its bounded first-order generated cases test linked handoffs; harness self-tests do not establish scientific execution or complete upstream equivalence."
+    }
   ]
 }
