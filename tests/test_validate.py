@@ -67,10 +67,10 @@ def test_cross_validation_stages_explicit_validation_companions_only(tmp_path):
     models_dir.mkdir()
     model = models_dir / "fixture.bngl"
     model.write_text(
-        'begin actions\n'
+        "begin actions\n"
         '  readFile({file=>"INPUT_FILES/source.xml"})\n'
         '  readFile({file=>"fixture.net"})\n'
-        'end actions\n',
+        "end actions\n",
         encoding="utf-8",
     )
     support_root = tmp_path / "Validate"
