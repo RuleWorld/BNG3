@@ -461,6 +461,27 @@ def test_native_builder_refuses_malformed_state_transition_references(edit, mess
         _cpp._model_from_bngir_v02(document["model"])
 
 
+def test_native_import_refuses_binding_only_components_explicitly():
+    document = _independent_state_transition_bngir_document()
+    document["model"]["molecule_types"][0]["components"][0]["states"] = []
+    for rule in document["model"]["rules"]:
+        for pattern in rule["forward"]["reactants"] + rule["forward"]["products"]:
+            for molecule in pattern["molecules"]:
+                for site in molecule["sites"]:
+                    site["state"] = {"kind": "any"}
+    for seed in document["model"]["seeds"]:
+        for site in seed["pattern"]["molecules"][0]["sites"]:
+            site["state"] = {"kind": "any"}
+    with pytest.raises(
+        ValueError, match="native BNGIR binding-only components are unsupported"
+    ):
+        bionetgen.from_bngir(document, native=True)
+    with pytest.raises(
+        RuntimeError, match="native BNGIR binding-only components are unsupported"
+    ):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
 @pytest.mark.parametrize(
     ("field", "value", "message"),
     [

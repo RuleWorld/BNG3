@@ -1990,6 +1990,8 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             )
             component_name = component["name"]
             states = component["states"]
+            if isinstance(states, list) and not states:
+                raise ValueError("native BNGIR binding-only components are unsupported")
             if (
                 component["index"] != 0
                 or isinstance(component["index"], bool)
