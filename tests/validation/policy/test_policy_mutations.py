@@ -64,6 +64,44 @@ def _change(root: Path, rel: str, content: str) -> None:
     _git(root, "commit", "-qm", f"change {rel}")
 
 
+def _mutation_report(rows: list[dict], revision: str = "candidate") -> dict:
+    statuses = ("killed", "survived", "invalid", "equivalent", "infrastructure_error")
+    classes = ("non_equivalent", "equivalent")
+    return {
+        "schema": 1,
+        "revision": revision,
+        "mutants": rows,
+        "denominator": sum(row["classification"] == "non_equivalent" for row in rows),
+        "caught": sum(
+            row["classification"] == "non_equivalent" and row["status"] == "killed"
+            for row in rows
+        ),
+        "status_counts": {
+            status: sum(row["status"] == status for row in rows) for status in statuses
+        },
+        "classification_counts": {
+            kind: sum(row["classification"] == kind for row in rows) for kind in classes
+        },
+    }
+
+
+def _mutation_baseline(rows: list[dict]) -> dict:
+    return {
+        "schema": 1,
+        "status": "verified",
+        "revision": "scheduled-baseline",
+        "artifact_sha256": "a" * 64,
+        "mutants": [
+            {"id": row["id"], "classification": row["classification"]} for row in rows
+        ],
+        "denominator": sum(row["classification"] == "non_equivalent" for row in rows),
+        "caught": sum(
+            row["classification"] == "non_equivalent" and row["status"] == "killed"
+            for row in rows
+        ),
+    }
+
+
 @pytest.mark.parametrize(
     "protected_path",
     [
@@ -212,25 +250,29 @@ def test_comment_only_workflow_policy_text_is_not_accepted_as_wiring(tmp_path):
 def test_disabled_workflow_policy_step_is_rejected(tmp_path):
     checker = _load_policy()
     workflows = {
-        ".github/workflows/ci.yml": """jobs:
+        ".github/workflows/ci.yml": """on:
+  pull_request: {}
+jobs:
   lint:
     steps:
       - name: Run anti-gaming checks from the PR base revision
-        if: false
-        run: python run_antigaming.py --base BASE_REVISION
+        run: python "$RUNNER_TEMP/base-policy/run_antigaming.py" --base "$BASE_REVISION" --check release-protected-expectations
   python-integration:
     steps:
       - name: Generate and execute a fresh seeded source case
-        run: python run_antigaming.py --check release-independent-seeds --seed-manifest seed.json
+        run: python "$RUNNER_TEMP/base-policy/run_antigaming.py" --check release-independent-seeds --seed-manifest seed.json
 """,
-        ".github/workflows/weekly.yml": """jobs:
+        ".github/workflows/weekly.yml": """on:
+  schedule:
+    - cron: '0 0 * * *'
+jobs:
   release-mutation-ratchet:
     steps:
       - name: Run isolated curated product mutants
-        run: python run_antigaming.py --check release-scheduled-mutation-ratchet --mutation-output report.json
+        run: python tests/validation/policy/run_antigaming.py --check release-scheduled-mutation-ratchet --mutation-output report.json
 """,
         ".github/workflows/release-policy.yml": """on:
-  pull_request_target:
+  pull_request_target: {}
 permissions:
   contents: read
   pull-requests: read
@@ -238,10 +280,14 @@ jobs:
   anti-gaming:
     steps:
       - name: Fetch PR head as data
-        run: git fetch
+        run: |
+          git fetch --no-tags origin refs/pull/$PR_NUMBER/head:refs/remotes/pull/$PR_NUMBER/head
+          fetched=$(git rev-parse refs/remotes/pull/$PR_NUMBER/head)
+          [[ "$fetched" == "$PR_HEAD" ]]
       - name: Run trusted base policy against candidate tree
-        run: python run_antigaming.py --base trusted --head candidate
+        run: python tests/validation/policy/run_antigaming.py --base "$BASE_REVISION" --head "$HEAD_REVISION"
       - name: Check out trusted base revision
+        uses: actions/checkout@v4
         with:
           ref: "${{ github.event.pull_request.base.sha }}"
           persist-credentials: "false"
@@ -250,17 +296,27 @@ jobs:
   qualify:
     steps:
       - name: Require the exact-main weekly mutation artifact and ratchet
-        run: python run_antigaming.py --check release-scheduled-mutation-ratchet
+        run: python tests/validation/policy/run_antigaming.py --check release-scheduled-mutation-ratchet
   build-binaries:
     needs: qualify
 """,
     }
-    root, base = _repo(tmp_path, workflows)
-    assert base == _git(root, "rev-parse", "HEAD").strip()
+    root, _ = _repo(tmp_path, workflows)
+
+    # Positive control: this complete CI wiring passes before a single policy
+    # step is disabled.
+    assert checker.check_ci_wiring(root, "HEAD") == []
+
+    ci = root / ".github/workflows/ci.yml"
+    content = ci.read_text().replace(
+        "      - name: Run anti-gaming checks from the PR base revision\n",
+        "      - name: Run anti-gaming checks from the PR base revision\n        if: false\n",
+    )
+    _change(root, ".github/workflows/ci.yml", content)
 
     errors = checker.check_ci_wiring(root, "HEAD")
 
-    assert errors and any("may be disabled or ignored" in error for error in errors)
+    assert errors == ["ci.yml: anti-gaming checks may be disabled or ignored"]
 
 
 def test_seeded_source_manifest_records_and_replays_the_executed_source(
@@ -417,30 +473,20 @@ def test_missing_or_uncollected_mutation_contract_is_infrastructure_error(
 
 def test_mutation_count_drop_fails_scheduled_ratchet(tmp_path):
     checker = _load_policy()
-    digest = "a" * 64
-    baseline = {
-        "status": "verified",
-        "artifact_sha256": digest,
-        "mutants": [
-            {"id": "mutant.one", "classification": "non_equivalent"},
-            {"id": "mutant.two", "classification": "non_equivalent"},
-        ],
-        "denominator": 2,
-        "caught": 2,
-    }
-    dropped = {
-        "schema": 1,
-        "revision": "candidate",
-        "denominator": 1,
-        "caught": 1,
-        "mutants": [
-            {"id": "mutant.one", "classification": "non_equivalent", "status": "killed"}
-        ],
-    }
+    baseline_rows = [
+        {"id": "mutant.one", "classification": "non_equivalent", "status": "killed"},
+        {"id": "mutant.two", "classification": "non_equivalent", "status": "killed"},
+    ]
+    baseline = _mutation_baseline(baseline_rows)
     baseline_path = tmp_path / "baseline.json"
     report_path = tmp_path / "report.json"
     baseline_path.write_text(json.dumps(baseline))
-    report_path.write_text(json.dumps(dropped))
+    report_path.write_text(json.dumps(_mutation_report(baseline_rows)))
+
+    assert checker.verify_mutation_ratchet(report_path, baseline_path) == []
+
+    dropped_rows = [baseline_rows[0]]
+    report_path.write_text(json.dumps(_mutation_report(dropped_rows)))
 
     errors = checker.verify_mutation_ratchet(report_path, baseline_path)
 
@@ -451,42 +497,26 @@ def test_mutation_infrastructure_failure_fails_scheduled_ratchet(tmp_path):
     checker = _load_policy()
     baseline_path = tmp_path / "baseline.json"
     report_path = tmp_path / "report.json"
-    baseline_path.write_text(
-        json.dumps(
-            {
-                "status": "verified",
-                "artifact_sha256": "a" * 64,
-                "mutants": [{"id": "mutant.one", "classification": "non_equivalent"}],
-                "denominator": 1,
-                "caught": 1,
-            }
-        )
-    )
-    report_path.write_text(
-        json.dumps(
-            {
-                "schema": 1,
-                "revision": "candidate",
-                "denominator": 1,
-                "caught": 0,
-                "mutants": [
-                    {
-                        "id": "mutant.one",
-                        "classification": "non_equivalent",
-                        "status": "infrastructure_error",
-                    }
-                ],
-            }
-        )
-    )
+    baseline_rows = [
+        {"id": "mutant.one", "classification": "non_equivalent", "status": "killed"}
+    ]
+    report_rows = [
+        {
+            "id": "mutant.one",
+            "classification": "non_equivalent",
+            "status": "infrastructure_error",
+        }
+    ]
+    baseline_path.write_text(json.dumps(_mutation_baseline(baseline_rows)))
+    report_path.write_text(json.dumps(_mutation_report(report_rows)))
 
     errors = checker.verify_mutation_ratchet(report_path, baseline_path)
 
-    assert errors
+    assert errors and "score dropped" in errors[0]
 
 
 @pytest.mark.parametrize(
-    ("rows", "denominator", "caught"),
+    ("rows", "expected_message"),
     [
         (
             [
@@ -496,8 +526,7 @@ def test_mutation_infrastructure_failure_fails_scheduled_ratchet(tmp_path):
                     "status": "mysterious-kill",
                 }
             ],
-            1,
-            1,
+            "unknown status",
         ),
         (
             [
@@ -507,43 +536,25 @@ def test_mutation_infrastructure_failure_fails_scheduled_ratchet(tmp_path):
                     "status": "killed",
                 }
             ],
-            1,
-            1,
+            "classification",
         ),
     ],
 )
 def test_unknown_mutant_status_or_classification_is_rejected(
-    tmp_path, rows, denominator, caught
+    tmp_path, rows, expected_message
 ):
     checker = _load_policy()
     baseline_path = tmp_path / "baseline.json"
     report_path = tmp_path / "report.json"
-    baseline_path.write_text(
-        json.dumps(
-            {
-                "status": "verified",
-                "artifact_sha256": "a" * 64,
-                "mutants": [{"id": "mutant.one", "classification": "non_equivalent"}],
-                "denominator": 1,
-                "caught": 1,
-            }
-        )
-    )
-    report_path.write_text(
-        json.dumps(
-            {
-                "schema": 1,
-                "revision": "candidate",
-                "denominator": denominator,
-                "caught": caught,
-                "mutants": rows,
-            }
-        )
-    )
+    baseline_rows = [
+        {"id": "mutant.one", "classification": "non_equivalent", "status": "killed"}
+    ]
+    baseline_path.write_text(json.dumps(_mutation_baseline(baseline_rows)))
+    report_path.write_text(json.dumps(_mutation_report(rows)))
 
     errors = checker.verify_mutation_ratchet(report_path, baseline_path)
 
-    assert errors
+    assert errors and expected_message in errors[0]
 
 
 def test_duplicate_mutant_ids_are_rejected_even_when_unique_set_matches_baseline(
@@ -552,86 +563,49 @@ def test_duplicate_mutant_ids_are_rejected_even_when_unique_set_matches_baseline
     checker = _load_policy()
     baseline_path = tmp_path / "baseline.json"
     report_path = tmp_path / "report.json"
-    baseline_path.write_text(
-        json.dumps(
-            {
-                "status": "verified",
-                "artifact_sha256": "a" * 64,
-                "mutants": [
-                    {"id": "mutant.one", "classification": "non_equivalent"},
-                    {"id": "mutant.two", "classification": "non_equivalent"},
-                ],
-                "denominator": 2,
-                "caught": 2,
-            }
-        )
-    )
-    row = {"classification": "non_equivalent", "status": "killed"}
-    report_path.write_text(
-        json.dumps(
-            {
-                "schema": 1,
-                "revision": "candidate",
-                "denominator": 2,
-                "caught": 2,
-                "mutants": [
-                    {**row, "id": "mutant.one"},
-                    {**row, "id": "mutant.one"},
-                    {**row, "id": "mutant.two"},
-                ],
-            }
-        )
-    )
+    baseline_rows = [
+        {"id": "mutant.one", "classification": "non_equivalent", "status": "killed"},
+        {"id": "mutant.two", "classification": "non_equivalent", "status": "killed"},
+    ]
+    report_rows = [
+        baseline_rows[0],
+        baseline_rows[0],
+        baseline_rows[1],
+    ]
+    baseline_path.write_text(json.dumps(_mutation_baseline(baseline_rows)))
+    report_path.write_text(json.dumps(_mutation_report(report_rows)))
 
+    # Equal sets alone are insufficient: the duplicate candidate ID must fail.
+    assert set(row["id"] for row in report_rows) == set(
+        row["id"] for row in baseline_rows
+    )
     errors = checker.verify_mutation_ratchet(report_path, baseline_path)
 
-    assert errors
+    assert errors and "duplicated" in errors[0]
 
 
 def test_summary_counts_must_match_classified_mutant_records(tmp_path):
     checker = _load_policy()
     baseline_path = tmp_path / "baseline.json"
     report_path = tmp_path / "report.json"
-    baseline_path.write_text(
-        json.dumps(
-            {
-                "status": "verified",
-                "artifact_sha256": "a" * 64,
-                "mutants": [
-                    {"id": "mutant.one", "classification": "non_equivalent"},
-                    {"id": "mutant.two", "classification": "equivalent"},
-                ],
-                "denominator": 1,
-                "caught": 1,
-            }
-        )
-    )
-    report_path.write_text(
-        json.dumps(
-            {
-                "schema": 1,
-                "revision": "candidate",
-                "denominator": 2,
-                "caught": 2,
-                "mutants": [
-                    {
-                        "id": "mutant.one",
-                        "classification": "non_equivalent",
-                        "status": "killed",
-                    },
-                    {
-                        "id": "mutant.two",
-                        "classification": "equivalent",
-                        "status": "killed",
-                    },
-                ],
-            }
-        )
-    )
+    rows = [
+        {"id": "mutant.one", "classification": "non_equivalent", "status": "killed"},
+        {"id": "mutant.two", "classification": "equivalent", "status": "equivalent"},
+    ]
+    baseline_path.write_text(json.dumps(_mutation_baseline(rows)))
+    valid_report = _mutation_report(rows)
+    report_path.write_text(json.dumps(valid_report))
 
+    # Positive control establishes that the otherwise identical report is valid.
+    assert checker.verify_mutation_ratchet(report_path, baseline_path) == []
+
+    forged = dict(valid_report)
+    forged["denominator"] = 2
+    forged["caught"] = 2
+    report_path.write_text(json.dumps(forged))
     errors = checker.verify_mutation_ratchet(report_path, baseline_path)
 
-    assert errors
+    assert errors and "summary counts" in errors[0]
 
 
 def test_mutation_infrastructure_campaign_failure_is_reported(tmp_path):
