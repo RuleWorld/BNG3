@@ -2364,6 +2364,25 @@ bool lowerDirection(const CompiledModel& model,
                 reaction->volumeConversionFactor = 1.0;
             }
         }
+    } else if (compiledRate.unit.has_value()) {
+        bng::units::ConversionContext context;
+        if (system.getNumberPerQuantityUnit() > 0.0)
+            context.numberPerQuantityUnit = system.getNumberPerQuantityUnit();
+        const auto conversion = bng::units::stochasticRateFactor(
+            *compiledRate.unit, direction.reactantPatterns.size(), context);
+        if (!conversion || !conversion.factor.has_value() ||
+            !std::isfinite(*conversion.factor) || *conversion.factor < 0.0) {
+            diagnostic = "physical unimolecular rate unit cannot be converted to a count rate: " +
+                         conversion.error;
+            delete reaction;
+            return false;
+        }
+        reaction->volumeConversionFactor = 1.0;
+        if (compiledRate.resolvedExpression().kind ==
+            bng::compile::ResolvedExpressionKind::ParameterRef)
+            reaction->setBaseRateParameterConversionFactor(*conversion.factor);
+        else
+            reaction->setBaseRate(reaction->getBaseRate() * *conversion.factor, "");
     } else if (!compiledRate.unit.has_value()) {
         // Reactant-bearing bare rate. NFsim's default propensity is the
         // mass-action count law, which already carries BNG2's identical-reactant

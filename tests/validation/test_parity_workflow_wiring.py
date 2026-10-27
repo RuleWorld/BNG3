@@ -49,6 +49,7 @@ PARITY_WORKFLOW = REPO / ".github" / "workflows" / "parity.yml"
 PARITY_MODULES = (
     "tests/validation/test_parity_nfsim.py",
     "tests/validation/test_parity_nfsim_seed.py",
+    "tests/validation/test_nfsim_physical_unimolecular.py",
 )
 
 
@@ -185,6 +186,26 @@ def test_each_parity_module_is_run_by_a_step_named_for_what_it_runs():
             f"the step running test_parity_nfsim_seed.py is named {name!r}, "
             "which does not identify it"
         )
+
+
+def test_physical_unimolecular_oracle_control_runs_with_both_locked_oracles():
+    steps = _parse_workflow()["jobs"]["nfsim-parity"]["steps"]
+    step = next(
+        (
+            item
+            for item in steps
+            if item.get("name") == "Run physical unimolecular source-law control"
+        ),
+        None,
+    )
+    assert step is not None
+    assert "test_nfsim_physical_unimolecular.py" in step["run"]
+    assert "set -euo pipefail" in step["run"]
+    assert step.get("continue-on-error", False) is False
+    env = step.get("env", {})
+    assert env.get("BNG2_PERL", "").endswith("/oracle-bionetgen/bng2/BNG2.pl")
+    assert env.get("BNGPATH", "").endswith("/oracle-bionetgen/bng2")
+    assert env.get("NFSIM_BIN", "").endswith("/oracle-nfsim/build/NFsim")
 
 
 def test_parity_workflow_env_still_pins_the_strict_oracle_flag():
