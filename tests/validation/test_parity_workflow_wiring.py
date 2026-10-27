@@ -314,15 +314,17 @@ def test_scheduled_nfsim_reports_are_retained_on_failure():
 def test_historical_nfsim_failure_evidence_is_retained_without_masking_failure():
     job = _parse_workflow()["jobs"]["nfsim-source-validation"]
     run = next(
-        step for step in job["steps"]
+        step
+        for step in job["steps"]
         if step.get("name") == "Run the source NFsim validation framework"
     )
     assert "set -euo pipefail" in run["run"]
-    assert "2>&1 | tee \"$RUNNER_TEMP/nfsim-historical-validation.log\"" in run["run"]
+    assert '2>&1 | tee "$RUNNER_TEMP/nfsim-historical-validation.log"' in run["run"]
     assert run.get("continue-on-error", False) is False
 
     upload = next(
-        step for step in job["steps"]
+        step
+        for step in job["steps"]
         if step.get("name") == "Retain NFsim historical validation evidence"
     )
     assert upload["if"] == "always()"
