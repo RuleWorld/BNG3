@@ -7551,13 +7551,13 @@ def generate_bngl(
         write_reaction_rules_atomized if atomize else write_reaction_rules_flat_v2
     )
     reaction_rule_section = reaction_rules(
-            model,
-            augmented_sct,
-            observable_converted_rules=observable_rule_variables,
-            time_rate_functions=time_rate_functions,
-            replace_loc_params=replace_loc_params,
-            species_compartment_prefix=True,
-        )
+        model,
+        augmented_sct,
+        observable_converted_rules=observable_rule_variables,
+        time_rate_functions=time_rate_functions,
+        replace_loc_params=replace_loc_params,
+        species_compartment_prefix=True,
+    )
     sections.append(reaction_rule_section)
     # The generated kinetic laws are SBML extent fluxes.  Retain that source
     # law per rule so BNG3's finite-network TotalRate handling does not apply

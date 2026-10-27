@@ -50,8 +50,12 @@ def test_totalrate_reaction_cannot_fire_without_finite_network_reactants():
     assert min(ode["observables"]["rib_elong"]) >= -1e-8
     assert max(ode["observables"]["rib_elong"]) <= 1.0 + 1e-8
     for row in ode["concentrations"]:
-        assert _molecule_total(ode_network.species_names, row, "mrna") == pytest.approx(1.0)
-        assert _molecule_total(ode_network.species_names, row, "ribosome") == pytest.approx(5.0)
+        assert _molecule_total(ode_network.species_names, row, "mrna") == pytest.approx(
+            1.0
+        )
+        assert _molecule_total(
+            ode_network.species_names, row, "ribosome"
+        ) == pytest.approx(5.0)
 
     ssa_model = cpp.parse_string(MODEL)
     ssa_network = cpp.generate_network(ssa_model)
@@ -62,7 +66,7 @@ def test_totalrate_reaction_cannot_fire_without_finite_network_reactants():
 
 
 def test_absolute_flux_ssa_still_requires_stoichiometric_availability():
-    source = '''setOption("BNG3AbsoluteFluxRules", "r")
+    source = """setOption("BNG3AbsoluteFluxRules", "r")
 begin model
 begin parameters
   k 1
@@ -78,19 +82,24 @@ end seed species
 begin reaction rules
   r: A() + A() -> B() k TotalRate
 end reaction rules
-end model'''
+end model"""
     model = cpp.parse_string(source)
     network = cpp.generate_network(model)
     result = cpp.simulate_ssa(model, network, t_end=5.0, n_steps=10, seed=21001)
 
-    assert max(result["concentrations"][i][network.species_names.index("B()")]
-               for i in range(len(result["concentrations"]))) == 0.0
+    assert (
+        max(
+            result["concentrations"][i][network.species_names.index("B()")]
+            for i in range(len(result["concentrations"]))
+        )
+        == 0.0
+    )
 
 
 def test_atomizer_full_flux_metadata_reaches_native_execution():
     from bionetgen.atomizer.modern import Atomizer
 
-    source = '''<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+    source = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
       <model id="absolute_flux">
         <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
         <listOfSpecies>
@@ -105,7 +114,7 @@ def test_atomizer_full_flux_metadata_reaches_native_execution():
           </reaction>
         </listOfReactions>
       </model>
-    </sbml>'''
+    </sbml>"""
     result = Atomizer(atomize=False, quiet_mode=True).atomize(source)
     assert result.success, result.error
     assert 'setOption("BNG3AbsoluteFluxRules","J")' in result.bngl
@@ -122,7 +131,7 @@ def test_atomizer_full_flux_metadata_reaches_native_execution():
 def test_absolute_flux_metadata_survives_native_bngir_roundtrip():
     import bionetgen
 
-    source = '''setOption("BNG3AbsoluteFluxRules", "J")
+    source = """setOption("BNG3AbsoluteFluxRules", "J")
 begin model
 begin parameters
   k 1
@@ -137,7 +146,7 @@ end seed species
 begin reaction rules
   J: A() -> B() k TotalRate
 end reaction rules
-end model'''
+end model"""
     parsed = bionetgen.BioNetGenModel(cpp.parse_string(source))
 
     import json
@@ -162,7 +171,8 @@ def test_imported_sbml_flux_survives_sbml_and_net_channel_roundtrips(tmp_path):
     import bionetgen
 
     source = tmp_path / "absolute.xml"
-    source.write_text('''<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+    source.write_text(
+        """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
         xmlns:bng="https://bionetgen.org/sbml" level="3" version="2">
       <model id="absolute_flux">
         <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
@@ -179,10 +189,13 @@ def test_imported_sbml_flux_survives_sbml_and_net_channel_roundtrips(tmp_path):
           </reaction>
         </listOfReactions>
       </model>
-    </sbml>''', encoding="utf-8")
+    </sbml>""",
+        encoding="utf-8",
+    )
 
     imported = tmp_path / "import.bngl"
-    imported.write_text('''begin model
+    imported.write_text(
+        """begin model
 end model
 begin actions
   readFile({file=>"absolute.xml"})
@@ -190,7 +203,9 @@ begin actions
   writeNetwork({prefix=>"absolute",overwrite=>1})
   simulate_ode({prefix=>"sbml_import",t_start=>0,t_end=>0.1,n_steps=>1,print_CDAT=>1})
 end actions
-''', encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
     bionetgen.load(str(imported)).execute()
 
     net_path = tmp_path / "absolute.net"
@@ -199,13 +214,16 @@ end actions
     assert "bng:absoluteFlux" in roundtrip_sbml.read_text()
 
     reimported = tmp_path / "reimport.bngl"
-    reimported.write_text('''begin model
+    reimported.write_text(
+        """begin model
 end model
 begin actions
   readFile({file=>"absolute.net"})
   simulate_ode({prefix=>"net_import",t_start=>0,t_end=>0.1,n_steps=>1,print_CDAT=>1})
 end actions
-''', encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
     bionetgen.load(str(reimported)).execute()
 
     def final_species(prefix):
@@ -227,7 +245,8 @@ end actions
 def test_net_absolute_flux_indices_fail_closed(tmp_path, indices, message):
     import bionetgen
 
-    (tmp_path / "invalid.net").write_text(f'''setOption("BNG3AbsoluteFluxReactionIndices","{indices}")
+    (tmp_path / "invalid.net").write_text(
+        f"""setOption("BNG3AbsoluteFluxReactionIndices","{indices}")
 begin species
     1 A() 1
     2 B() 0
@@ -235,15 +254,19 @@ end species
 begin reactions
     1 1 2 1
 end reactions
-''', encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
     protocol = tmp_path / "invalid.bngl"
-    protocol.write_text('''begin model
+    protocol.write_text(
+        """begin model
 end model
 begin actions
   readFile({file=>"invalid.net"})
 end actions
-''', encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
 
     with pytest.raises(RuntimeError, match=message):
         bionetgen.load(str(protocol)).execute()
-
