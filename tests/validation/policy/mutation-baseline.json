@@ -3,8 +3,11 @@
   "status": "unavailable",
   "revision": null,
   "artifact_sha256": null,
-  "mutant_ids": [
-    "python.set-parameter-scale"
+  "mutants": [
+    {
+      "id": "python.set-parameter-scale",
+      "classification": "non_equivalent"
+    }
   ],
   "denominator": 1,
   "caught": null,

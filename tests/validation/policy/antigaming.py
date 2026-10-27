@@ -25,6 +25,7 @@ PRODUCT_PREFIXES = ("cpp/", "python/", "bng3/", "src/", "scripts/")
 PROTECTED_WORDS = ("expected", "golden", "tolerance", "exception", "skip", "exclude")
 ID_RE = re.compile(r'''(?ix)(?:case[_ -]?id|"id"|\bid\b|\bids\b)["']?\s*[=:]\s*[\["']*([A-Za-z0-9][A-Za-z0-9_.:/-]{2,})''')
 CASE_TOKEN_RE = re.compile(r'''(?i)["']((?:case|model|check)[_:/.-][A-Za-z0-9][A-Za-z0-9_.:/-]{1,})["']''')
+GENERIC_FIXTURE_NAMES = {"continue", "strict", "pytest", "__init__", "models", "model", "test", "simple", "readme"}
 
 
 def git(root: Path, *args: str) -> str:
@@ -47,7 +48,7 @@ def check_protected_changes(root: Path, base: str, head: str = "HEAD") -> list[s
     """Reject a PR combining product edits and public expectation/policy edits."""
     paths = changed_paths(root, base, head)
     product = [p for p in paths if p.startswith(PRODUCT_PREFIXES)]
-    protected = [p for p in paths if any(w in p.lower() for w in PROTECTED_WORDS) or p.startswith(("tests/", "fixtures/", "expected/", "provenance/", ".github/workflows/"))]
+    protected = [p for p in paths if any(w in p.lower() for w in PROTECTED_WORDS) or p.startswith(("tests/", "fixtures/", "expected/", "provenance/", ".github/workflows/")) or p in {"docs/CAPABILITY_UNION_INVENTORY.md", "docs/DECISIONS.md"}]
     return [f"product changes mixed with protected acceptance data: {product} + {protected}"] if product and protected else []
 
 
@@ -71,22 +72,48 @@ def _manifest_ids(text: str) -> set[str]:
 
 
 def check_case_ids(root: Path, base: str, head: str = "HEAD") -> list[str]:
-    """Reject deleted/renamed declared IDs from JSON, YAML, and Python fixtures."""
-    patch = git(root, "diff", "--unified=0", f"{base}...{head}", "--", "tests/", "provenance/")
+    """Reject deleted/renamed manifest, parameter, and selected pytest node IDs."""
+    patch = git(root, "diff", "--unified=0", f"{base}...{head}", "--", "tests/", "provenance/", "docs/CAPABILITY_UNION_INVENTORY.md", "docs/DECISIONS.md")
     deleted: set[str] = set()
     added: set[str] = set()
+    selected_files: set[str] = set()
+    try:
+        plan = json.loads(_base_text(root, base, "provenance/validation-plan.json"))
+    except (ValueError, TypeError):
+        plan = {}
+    def collect_tests(value):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                if key in {"tests", "test"}:
+                    collect_tests(child)
+                elif isinstance(child, (dict, list)):
+                    collect_tests(child)
+        elif isinstance(value, list):
+            for child in value:
+                collect_tests(child)
+        elif isinstance(value, str) and value.startswith("tests/"):
+            selected_files.add(value.split("::", 1)[0])
+    collect_tests(plan)
+    current_file = ""
     for line in patch.splitlines():
+        if line.startswith("diff --git a/"):
+            current_file = line.split(" b/", 1)[-1]
         if line.startswith(("---", "+++")) or not line or line[0] not in "+-":
             continue
         target = deleted if line[0] == "-" else added
-        target.update(ID_RE.findall(line[1:]))
-        target.update(CASE_TOKEN_RE.findall(line[1:]))
+        body = line[1:]
+        target.update(ID_RE.findall(body))
+        target.update(CASE_TOKEN_RE.findall(body))
+        if current_file in selected_files:
+            match = re.match(r"\s*def\s+(test_[A-Za-z0-9_]+)\s*\(", body)
+            if match:
+                target.add(f"{current_file}::{match.group(1)}")
     lost = sorted(deleted - added)
     return [f"removed or renamed stable test/case IDs: {lost}"] if lost else []
 
 
 def check_product_fixture_names(root: Path, base: str, head: str = "HEAD") -> list[str]:
-    """Detect fixture basenames, declared model IDs, and test paths in product source."""
+    """Detect newly introduced fixture names, declared case IDs, and test paths."""
     paths = changed_paths(root, base, head)
     tree_paths = git(root, "ls-tree", "-r", "--name-only", base).splitlines()
     candidate_paths = git(root, "ls-tree", "-r", "--name-only", head).splitlines()
@@ -99,9 +126,8 @@ def check_product_fixture_names(root: Path, base: str, head: str = "HEAD") -> li
                      )]
     manifest_paths = [p for p in test_paths if p.startswith(("tests/", "fixtures/")) and Path(p).suffix in {".json", ".yaml", ".yml"} and ("manifest" in Path(p).name or "case" in Path(p).name)]
     manifest_paths += [p for p in paths if p.startswith(("tests/", "fixtures/")) and Path(p).suffix in {".json", ".yaml", ".yml"}]
-    needles = {Path(p).stem for p in fixture_paths}
+    needles = {Path(p).stem for p in fixture_paths if Path(p).stem.lower() not in GENERIC_FIXTURE_NAMES and len(Path(p).stem) >= 6}
     needles.update(Path(p).as_posix() for p in fixture_paths)
-    needles.update(Path(p).stem for p in test_paths)
     needles.update(Path(p).as_posix() for p in test_paths)
     for rel in set(manifest_paths):
         text = _base_text(root, base, rel)
@@ -111,6 +137,13 @@ def check_product_fixture_names(root: Path, base: str, head: str = "HEAD") -> li
             pass
         needles.update(ID_RE.findall(text))
         needles.update(CASE_TOKEN_RE.findall(text))
+    python_case_ids = subprocess.run(
+        ("git", "grep", "-I", "-nE", r"case[_ -]?id|\bids\b", base, "--", "tests/"),
+        cwd=root, text=True, capture_output=True,
+    )
+    for line in python_case_ids.stdout.splitlines():
+        needles.update(ID_RE.findall(line))
+        needles.update(CASE_TOKEN_RE.findall(line))
     for rel in paths:
         if rel.startswith(("tests/", "fixtures/")) and Path(rel).suffix in {".bngl", ".xml", ".json", ".yaml", ".yml"}:
             try:
@@ -120,16 +153,22 @@ def check_product_fixture_names(root: Path, base: str, head: str = "HEAD") -> li
             needles.update(ID_RE.findall(text))
             needles.update(CASE_TOKEN_RE.findall(text))
     errors = []
-    for rel in paths:
-        if not rel.startswith(PRODUCT_PREFIXES):
-            continue
-        try:
-            text = _head_text(root, head, rel)
-        except subprocess.CalledProcessError:
-            continue
-        hits = sorted(n for n in needles if len(n) >= 5 and n in text)
+    product_paths = [p for p in paths if p.startswith(PRODUCT_PREFIXES)]
+    if not product_paths:
+        return errors
+    patch = git(root, "diff", "--unified=0", f"{base}...{head}", "--", *product_paths)
+    current_file = ""
+    additions: dict[str, list[str]] = {}
+    for line in patch.splitlines():
+        if line.startswith("+++ b/"):
+            current_file = line[6:]
+        elif line.startswith("+") and not line.startswith("+++") and current_file:
+            additions.setdefault(current_file, []).append(line[1:])
+    for rel, lines in additions.items():
+        text = "\n".join(lines)
+        hits = sorted(needle for needle in needles if needle in text)
         if hits:
-            errors.append(f"{rel}: contains acceptance fixture identifiers/paths: {hits[:10]}")
+            errors.append(f"{rel}: newly added product text contains acceptance fixture identifiers/paths: {hits[:10]}")
     return errors
 
 
@@ -202,48 +241,42 @@ def run_product_mutations(root: Path, output: Path, *, timeout: int = 300) -> di
         if build_dir is not None and (build_dir / "cpp").is_dir():
             (checkout / "build").symlink_to(build_dir, target_is_directory=True)
         rows = []
-        try:
-            source = checkout / "python/bionetgen/model.py"
-            original = source.read_text()
-            old = "self._model.set_parameter(name, value)"
-            new = "self._model.set_parameter(name, value * 1.01)"
-            mutant = {"id": "python.set-parameter-scale", "classification": "non_equivalent", "file": "python/bionetgen/model.py", "test": "tests/python/test_cpp_backend.py -k parameter_value_is_read_only_and_refreshes_dependents"}
-            if original.count(old) != 1:
-                rows.append({**mutant, "status": "infrastructure_error", "detail": f"expected exactly one mutation site, found {original.count(old)}"})
+        source = checkout / "python/bionetgen/model.py"
+        original = source.read_text()
+        old = "self._model.set_parameter(name, value)"
+        new = "self._model.set_parameter(name, value * 1.01)"
+        mutant = {"id": "python.set-parameter-scale", "classification": "non_equivalent", "file": "python/bionetgen/model.py", "test": "tests/python/test_cpp_backend.py -k parameter_value_is_read_only_and_refreshes_dependents"}
+        if original.count(old) != 1:
+            rows.append({**mutant, "status": "infrastructure_error", "detail": f"expected exactly one mutation site, found {original.count(old)}"})
+        else:
+            mutated = original.replace(old, new, 1)
+            env = dict(os.environ)
+            if native_origin is None:
+                rows.append({**mutant, "status": "infrastructure_error", "detail": "compiled BNG3 extension is unavailable"})
             else:
-                mutated = original.replace(old, new, 1)
-                env = dict(os.environ)
-                if native_origin is None:
-                    rows.append({**mutant, "status": "infrastructure_error", "detail": "compiled BNG3 extension is unavailable"})
-                else:
-                    extension = checkout / "python/bionetgen" / native_origin.name
-                    extension.symlink_to(native_origin)
-                    env["PYTHONPATH"] = os.pathsep.join((str(checkout / "python"), str(checkout / "tests"), env.get("PYTHONPATH", "")))
-                    env["BNG3_PYTHON_TEST_MODE"] = "source"
-                    command = (sys.executable, "-m", "pytest", "-q", "tests/python/test_cpp_backend.py", "-k", "parameter_value_is_read_only_and_refreshes_dependents")
-                    try:
-                        source.write_text(original)
-                        baseline = subprocess.run(command, cwd=checkout, env=env, capture_output=True, text=True, timeout=timeout)
-                        if baseline.returncode != 0 or " passed" not in baseline.stdout:
-                            rows.append({**mutant, "status": "infrastructure_error", "detail": "unchanged contract suite did not pass/collect", "output": (baseline.stdout + baseline.stderr)[-4000:]})
+                extension = checkout / "python/bionetgen" / native_origin.name
+                extension.symlink_to(native_origin)
+                env["PYTHONPATH"] = os.pathsep.join((str(checkout / "python"), str(checkout / "tests"), env.get("PYTHONPATH", "")))
+                env["BNG3_PYTHON_TEST_MODE"] = "source"
+                command = (sys.executable, "-m", "pytest", "-q", "tests/python/test_cpp_backend.py", "-k", "parameter_value_is_read_only_and_refreshes_dependents")
+                try:
+                    source.write_text(original)
+                    baseline_run = subprocess.run(command, cwd=checkout, env=env, capture_output=True, text=True, timeout=timeout)
+                    if baseline_run.returncode != 0 or " passed" not in baseline_run.stdout:
+                        rows.append({**mutant, "status": "infrastructure_error", "detail": "unchanged contract suite did not pass/collect", "output": (baseline_run.stdout + baseline_run.stderr)[-4000:]})
+                    else:
+                        source.write_text(mutated)
+                        mutant_run = subprocess.run(command, cwd=checkout, env=env, capture_output=True, text=True, timeout=timeout)
+                        output_text = mutant_run.stdout + mutant_run.stderr
+                        if mutant_run.returncode == 0:
+                            status = "survived"
+                        elif " failed" in mutant_run.stdout and " error" not in mutant_run.stdout and "ERROR collecting" not in output_text:
+                            status = "killed"
                         else:
-                            source.write_text(mutated)
-                            proc = subprocess.run(command, cwd=checkout, env=env, capture_output=True, text=True, timeout=timeout)
-                            output_text = proc.stdout + proc.stderr
-                            if proc.returncode == 0:
-                                status = "survived"
-                            elif " failed" in proc.stdout and " error" not in proc.stdout and "ERROR collecting" not in output_text:
-                                status = "killed"
-                            else:
-                                status = "infrastructure_error"
-                            rows.append({**mutant, "status": status, "exit_code": proc.returncode, "output": output_text[-4000:]})
-                    except subprocess.TimeoutExpired as exc:
-                        rows.append({**mutant, "status": "infrastructure_error", "detail": f"timeout after {exc.timeout}s"})
-                    finally:
-                        source.write_text(original)
-                source.write_text(original)
-        finally:
-            pass
+                            status = "infrastructure_error"
+                        rows.append({**mutant, "status": status, "exit_code": mutant_run.returncode, "output": output_text[-4000:]})
+                except subprocess.TimeoutExpired as exc:
+                    rows.append({**mutant, "status": "infrastructure_error", "detail": f"timeout after {exc.timeout}s"})
     statuses = ("killed", "survived", "invalid", "equivalent", "infrastructure_error")
     result = {"schema": 1, "revision": revision, "mutants": rows,
               "denominator": sum(r["classification"] == "non_equivalent" for r in rows),
@@ -259,6 +292,8 @@ def verify_mutation_ratchet(report_path: Path, baseline_path: Path, expected_rev
     """Compare a scheduled report with its independently recorded baseline."""
     report = json.loads(report_path.read_text())
     baseline = json.loads(baseline_path.read_text())
+    if report.get("schema") != 1 or not isinstance(report.get("revision"), str) or baseline.get("schema") != 1:
+        return ["mutation report or baseline schema/revision is invalid"]
     if expected_revision and report.get("revision") != expected_revision:
         return [f"scheduled mutation report revision mismatch: expected {expected_revision}, observed {report.get('revision')}"]
     if baseline.get("status") != "verified":
@@ -266,14 +301,39 @@ def verify_mutation_ratchet(report_path: Path, baseline_path: Path, expected_rev
     expected_digest = baseline.get("artifact_sha256")
     if not isinstance(expected_digest, str) or not re.fullmatch(r"[a-f0-9]{64}", expected_digest):
         return ["recorded mutation baseline lacks a valid source artifact digest"]
-    expected_ids = set(baseline.get("mutant_ids", []))
-    observed_ids = {row.get("id") for row in report.get("mutants", [])}
-    if observed_ids != expected_ids:
+    expected_rows = baseline.get("mutants", [])
+    if not isinstance(expected_rows, list) or any(not isinstance(row, dict) for row in expected_rows):
+        return ["mutation baseline mutant rows are invalid"]
+    expected_ids = [row.get("id") for row in expected_rows]
+    if any(not isinstance(value, str) or not value for value in expected_ids) or len(set(expected_ids)) != len(expected_ids):
+        return ["mutation baseline IDs are missing or duplicated"]
+    rows = report.get("mutants")
+    if not isinstance(rows, list) or not rows or any(not isinstance(row, dict) for row in rows):
+        return ["mutation report has no valid mutant rows"]
+    observed_ids = [row.get("id") for row in rows]
+    if any(not isinstance(value, str) or not value for value in observed_ids) or len(set(observed_ids)) != len(observed_ids):
+        return ["mutation report IDs are missing or duplicated"]
+    if set(observed_ids) != set(expected_ids):
         return [f"curated mutant set differs from baseline: expected {sorted(expected_ids)}, observed {sorted(observed_ids)}"]
-    denominator = report.get("denominator", 0)
-    caught = report.get("caught", 0)
+    expected_classes = {row["id"]: row.get("classification") for row in expected_rows}
+    valid_classes = {"non_equivalent", "equivalent"}
+    valid_statuses = {"killed", "survived", "invalid", "equivalent", "infrastructure_error"}
+    if any(row.get("classification") not in valid_classes or expected_classes[row["id"]] != row.get("classification") for row in rows):
+        return ["mutation report classification differs from the reviewed baseline"]
+    if any(row.get("status") not in valid_statuses for row in rows):
+        return ["mutation report contains an unknown status"]
+    denominator = sum(row["classification"] == "non_equivalent" for row in rows)
+    caught = sum(row["classification"] == "non_equivalent" and row["status"] == "killed" for row in rows)
+    if report.get("denominator") != denominator or report.get("caught") != caught:
+        return ["mutation report summary counts do not match per-mutant rows"]
+    status_counts = {status: sum(row["status"] == status for row in rows) for status in ("killed", "survived", "invalid", "equivalent", "infrastructure_error")}
+    class_counts = {kind: sum(row["classification"] == kind for row in rows) for kind in valid_classes}
+    if report.get("status_counts") != status_counts or report.get("classification_counts") != class_counts:
+        return ["mutation report status/classification totals do not match per-mutant rows"]
     baseline_denominator = baseline.get("denominator", 0)
     baseline_caught = baseline.get("caught", 0)
+    if not isinstance(baseline_denominator, int) or baseline_denominator != sum(row.get("classification") == "non_equivalent" for row in expected_rows) or not isinstance(baseline_caught, int) or not 0 <= baseline_caught <= baseline_denominator:
+        return ["recorded mutation baseline counts do not match its reviewed mutant rows"]
     if not denominator or not baseline_denominator or caught * baseline_denominator < baseline_caught * denominator:
         return [f"mutation detection score dropped: {caught}/{denominator} versus recorded {baseline_caught}/{baseline_denominator}"]
     if any(row.get("status") in {"survived", "invalid", "infrastructure_error"} for row in report.get("mutants", [])):
@@ -303,6 +363,9 @@ def check_ci_wiring(root: Path, head: str = "HEAD") -> list[str]:
     def disabled(value):
         return bool(value.get("if", "")) or str(value.get("continue-on-error", "false")).lower() == "true"
 
+    def command_starts(run, prefix):
+        return any(line.strip().startswith(prefix) for line in executable(run).splitlines())
+
     errors = []
     try:
         ci = workflow(".github/workflows/ci.yml")
@@ -321,7 +384,7 @@ def check_ci_wiring(root: Path, head: str = "HEAD") -> list[str]:
     lint = ci.get("jobs", {}).get("lint", {})
     policy_step = step(lint, "Run anti-gaming checks from the PR base revision")
     policy_run = executable(policy_step.get("run", "")) if policy_step else ""
-    if lint.get("if", "") or not policy_step or "run_antigaming.py" not in policy_run or "BASE_REVISION" not in policy_run:
+    if disabled(lint) or not policy_step or not command_starts(policy_run, "python \"$RUNNER_TEMP/base-policy/run_antigaming.py\"") or "BASE_REVISION" not in policy_run:
         errors.append("ci.yml: base-revision protected-expectations and fixture checks are not executable in lint")
     elif disabled(policy_step):
         errors.append("ci.yml: anti-gaming checks may be disabled or ignored")
@@ -329,7 +392,7 @@ def check_ci_wiring(root: Path, head: str = "HEAD") -> list[str]:
     integration = ci.get("jobs", {}).get("python-integration", {})
     seed_step = step(integration, "Generate and execute a fresh seeded source case")
     seed_run = executable(seed_step.get("run", "")) if seed_step else ""
-    if integration.get("if", "") or not seed_step or "release-independent-seeds" not in seed_run or "seed-manifest" not in seed_run:
+    if disabled(integration) or not seed_step or not command_starts(seed_run, "python \"$RUNNER_TEMP/base-policy/run_antigaming.py\"") or "release-independent-seeds" not in seed_run or "seed-manifest" not in seed_run:
         errors.append("ci.yml: seeded generated source case is not executed and recorded")
     elif disabled(seed_step):
         errors.append("ci.yml: seeded source execution may be disabled or ignored")
@@ -337,7 +400,7 @@ def check_ci_wiring(root: Path, head: str = "HEAD") -> list[str]:
     mutation_job = weekly.get("jobs", {}).get("release-mutation-ratchet", {})
     mutation_step = step(mutation_job, "Run isolated curated product mutants")
     mutation_run = executable(mutation_step.get("run", "")) if mutation_step else ""
-    if mutation_job.get("if", "") or not mutation_step or "release-scheduled-mutation-ratchet" not in mutation_run or "mutation-output" not in mutation_run:
+    if disabled(mutation_job) or not mutation_step or not command_starts(mutation_run, "python tests/validation/policy/run_antigaming.py") or "release-scheduled-mutation-ratchet" not in mutation_run or "mutation-output" not in mutation_run:
         errors.append("weekly.yml: scheduled product mutation campaign is missing")
     elif disabled(mutation_step):
         errors.append("weekly.yml: scheduled mutation campaign may be disabled or ignored")
@@ -345,14 +408,15 @@ def check_ci_wiring(root: Path, head: str = "HEAD") -> list[str]:
     trigger = trusted.get("on", {})
     if not isinstance(trigger, dict) or "pull_request_target" not in trigger:
         errors.append("release-policy.yml: trusted pull_request_target guard is missing")
-    if trusted.get("permissions", {}).get("contents") != "read" or trusted.get("permissions", {}).get("pull-requests") != "read":
+    if trusted.get("permissions", {}) != {"contents": "read", "pull-requests": "read"}:
         errors.append("release-policy.yml: trusted guard permissions must remain read-only")
     fetch = step(trusted.get("jobs", {}).get("anti-gaming", {}), "Fetch PR head as data")
     guard = step(trusted.get("jobs", {}).get("anti-gaming", {}), "Run trusted base policy against candidate tree")
     checkout = step(trusted.get("jobs", {}).get("anti-gaming", {}), "Check out trusted base revision")
     trusted_job = trusted.get("jobs", {}).get("anti-gaming", {})
     guard_run = executable(guard.get("run", "")) if guard else ""
-    if not fetch or not guard or "--head" not in guard_run or "--base" not in guard_run:
+    fetch_run = executable(fetch.get("run", "")) if fetch else ""
+    if not fetch or not guard or not command_starts(fetch_run, "git fetch --no-tags origin") or not command_starts(fetch_run, 'fetched=$(git rev-parse refs/remotes/pull/$PR_NUMBER/head)') or not command_starts(fetch_run, '[[ "$fetched" == "$PR_HEAD" ]]') or not command_starts(guard_run, "python tests/validation/policy/run_antigaming.py") or "--head \"$HEAD_REVISION\"" not in guard_run or "--base \"$BASE_REVISION\"" not in guard_run:
         errors.append("release-policy.yml: PR head must be inspected as data by the base policy")
     if not checkout or checkout.get("with", {}).get("ref") != "${{ github.event.pull_request.base.sha }}" or checkout.get("with", {}).get("persist-credentials") != "false":
         errors.append("release-policy.yml: guard must check out the trusted base without persisted credentials")
@@ -365,7 +429,7 @@ def check_ci_wiring(root: Path, head: str = "HEAD") -> list[str]:
     qualify_job = release.get("jobs", {}).get("qualify", {})
     release_gate = next((s for s in release_steps if s.get("name") == "Require the exact-main weekly mutation artifact and ratchet"), None)
     release_run = executable(release_gate.get("run", "")) if release_gate else ""
-    if not release_gate or "release-scheduled-mutation-ratchet" not in release_run:
+    if not release_gate or not command_starts(release_run, "python tests/validation/policy/run_antigaming.py") or "release-scheduled-mutation-ratchet" not in release_run:
         errors.append("release.yml: release qualification is not gated on the scheduled mutation ratchet")
     elif disabled(release_gate) or disabled(qualify_job):
         errors.append("release.yml: mutation ratchet release gate may be disabled or ignored")
