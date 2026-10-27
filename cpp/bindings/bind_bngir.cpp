@@ -447,11 +447,8 @@ Expression expressionFromBngir(const py::dict& value, const BngirScope& scope) {
 void requireNativeStateTransition(const py::dict& rule,
                                  const py::dict& direction,
                                  const Model& model,
-                                 const std::string& where) {
-    if (py::cast<bool>(rule["bidirectional"])) {
-        throw std::runtime_error(
-            "native BNGIR " + where + " does not support bidirectional state transitions");
-    }
+                                 const std::string& where,
+                                 bool validateMappings) {
     if (!model.getCompartments().empty()) {
         throw std::runtime_error(
             "native BNGIR state transitions do not support compartments");
@@ -531,31 +528,33 @@ void requireNativeStateTransition(const py::dict& rule,
         }
     };
 
-    const auto moleculeMappings = py::cast<py::list>(rule["molecule_mappings"]);
-    if (moleculeMappings.size() != 1) {
-        throw std::runtime_error(
-            "native BNGIR state transitions require one explicit molecule mapping");
-    }
-    const auto moleculeMapping = py::cast<py::dict>(moleculeMappings[0]);
-    requireObjectKeys(moleculeMapping, {"product", "reactant"},
-                      {"product", "reactant"}, "molecule mapping");
-    checkReference(moleculeMapping["product"], "product", false,
-                   "product molecule mapping");
-    checkReference(moleculeMapping["reactant"], "reactant", false,
-                   "reactant molecule mapping");
+    if (validateMappings) {
+        const auto moleculeMappings = py::cast<py::list>(rule["molecule_mappings"]);
+        if (moleculeMappings.size() != 1) {
+            throw std::runtime_error(
+                "native BNGIR state transitions require one explicit molecule mapping");
+        }
+        const auto moleculeMapping = py::cast<py::dict>(moleculeMappings[0]);
+        requireObjectKeys(moleculeMapping, {"product", "reactant"},
+                          {"product", "reactant"}, "molecule mapping");
+        checkReference(moleculeMapping["product"], "product", false,
+                       "product molecule mapping");
+        checkReference(moleculeMapping["reactant"], "reactant", false,
+                       "reactant molecule mapping");
 
-    const auto componentMappings = py::cast<py::list>(rule["component_mappings"]);
-    if (componentMappings.size() != 1) {
-        throw std::runtime_error(
-            "native BNGIR state transitions require one explicit site mapping");
+        const auto componentMappings = py::cast<py::list>(rule["component_mappings"]);
+        if (componentMappings.size() != 1) {
+            throw std::runtime_error(
+                "native BNGIR state transitions require one explicit site mapping");
+        }
+        const auto componentMapping = py::cast<py::dict>(componentMappings[0]);
+        requireObjectKeys(componentMapping, {"product", "reactant"},
+                          {"product", "reactant"}, "component mapping");
+        checkReference(componentMapping["product"], "product", true,
+                       "product site mapping");
+        checkReference(componentMapping["reactant"], "reactant", true,
+                       "reactant site mapping");
     }
-    const auto componentMapping = py::cast<py::dict>(componentMappings[0]);
-    requireObjectKeys(componentMapping, {"product", "reactant"},
-                      {"product", "reactant"}, "component mapping");
-    checkReference(componentMapping["product"], "product", true,
-                   "product site mapping");
-    checkReference(componentMapping["reactant"], "reactant", true,
-                   "reactant site mapping");
 
     const auto mutations = py::cast<py::list>(direction["mutations"]);
     if (mutations.size() != 1) {
@@ -1178,9 +1177,9 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
         if (hasStateSites) {
             requireNativeStateTransition(
                 rule, direction, *model,
-                "rule " + py::cast<std::string>(rule["name"]));
+                "rule " + py::cast<std::string>(rule["name"]), true);
         }
-        if (isBidirectional) {
+        if (isBidirectional && !hasStateSites) {
             requireReversibleDirectionMutations(
                 direction, reactantGraphs, productGraphs, "forward rule direction");
         }
@@ -1262,8 +1261,14 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
                 throw std::runtime_error(
                     "native BNGIR reverse direction must invert forward patterns");
             }
-            requireReversibleDirectionMutations(
-                reverse, productGraphs, reactantGraphs, "reverse rule direction");
+            if (hasStateSites) {
+                requireNativeStateTransition(
+                    rule, reverse, *model,
+                    "reverse rule " + py::cast<std::string>(rule["name"]), false);
+            } else {
+                requireReversibleDirectionMutations(
+                    reverse, productGraphs, reactantGraphs, "reverse rule direction");
+            }
             const auto reverseRate = py::cast<py::dict>(reverse["rate"]);
             static const std::vector<std::string> rateKeys = {"kind", "expression"};
             requireObjectKeys(reverseRate, rateKeys, rateKeys,
