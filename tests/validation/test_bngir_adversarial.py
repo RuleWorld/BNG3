@@ -187,6 +187,58 @@ def test_optional_supported_structure_refusal_is_unsupported_not_pass():
     assert row["supported_execution"] is False
 
 
+def test_bonded_complex_boundary_refusal_is_unsupported():
+    case = next(
+        c for c in adversarial.generated_cases() if c["id"] == "bonded-complex-boundary"
+    )
+    row = adversarial.evaluate_case(
+        case,
+        native_import=lambda _: (_ for _ in ()).throw(
+            adversarial.NativeRefusal(
+                "native BNGIR pattern requires exactly one molecule"
+            )
+        ),
+        wrap_model=lambda x: x,
+    )
+    assert row["status"] == "UNSUPPORTED"
+    assert row["evidence_kind"] == "unsupported-boundary"
+    assert row["supported_execution"] is False
+
+
+def test_bonded_complex_refusal_does_not_pass_other_controls():
+    accepted_case = next(
+        c for c in adversarial.generated_cases() if c["oracle"] == "accept"
+    )
+    row = adversarial.evaluate_case(
+        accepted_case,
+        native_import=lambda _: (_ for _ in ()).throw(
+            adversarial.NativeRefusal(
+                "native BNGIR pattern requires exactly one molecule"
+            )
+        ),
+        wrap_model=lambda x: x,
+    )
+    assert row["status"] == "FAIL"
+    assert row["supported_execution"] is True
+
+
+def test_bonded_complex_boundary_requires_its_specific_refusal():
+    case = next(
+        c for c in adversarial.generated_cases() if c["id"] == "bonded-complex-boundary"
+    )
+    row = adversarial.evaluate_case(
+        case,
+        native_import=lambda _: (_ for _ in ()).throw(
+            adversarial.NativeRefusal(
+                "native BNGIR multi-molecule reconstruction failed"
+            )
+        ),
+        wrap_model=lambda x: x,
+    )
+    assert row["status"] == "FAIL"
+    assert row["evidence_kind"] == "diagnostic-only"
+
+
 def test_positive_structure_does_not_hide_unexpected_native_refusal():
     case = next(c for c in adversarial.CASES if c["id"] == "compartment-suffix")
     row = adversarial.evaluate_case(
