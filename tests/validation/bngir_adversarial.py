@@ -537,6 +537,7 @@ def evaluate_case(case, *, native_import, wrap_model, output=None):
         if case["oracle"] in {"unsupported", "accept-or-unsupported"} and (
             str(exc) == "native BNGIR model.compartments is not supported"
             or str(exc) == "native BNGIR molecule type components are unsupported"
+            or str(exc) == "native BNGIR binding-only components are unsupported"
             or str(exc) == "native BNGIR does not support compartments"
         ):
             row.update(

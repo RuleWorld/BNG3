@@ -234,6 +234,132 @@ def _independent_reversible_bngir_document() -> dict:
     }
 
 
+def _independent_state_transition_bngir_document() -> dict:
+    """Hand-author the structural form of A(s~u) -> A(s~p)."""
+
+    def pattern(state: str, state_index: int) -> dict:
+        return {
+            "compartment_prefix": False,
+            "molecules": [
+                {
+                    "occurrence": 0,
+                    "type": "A",
+                    "type_id": 0,
+                    "sites": [
+                        {
+                            "occurrence": 0,
+                            "component": "s",
+                            "component_index": 0,
+                            "state": {
+                                "kind": "exact",
+                                "value": state,
+                                "index": state_index,
+                            },
+                            "bond": {"kind": "unbound"},
+                        }
+                    ],
+                }
+            ],
+        }
+
+    before = pattern("u", 0)
+    after = pattern("p", 1)
+    molecule_reference = {
+        "product": {"side": "product", "pattern": 0, "molecule": 0},
+        "reactant": {"side": "reactant", "pattern": 0, "molecule": 0},
+    }
+    component_reference = {
+        "product": {"side": "product", "pattern": 0, "molecule": 0, "site": 0},
+        "reactant": {"side": "reactant", "pattern": 0, "molecule": 0, "site": 0},
+    }
+    return {
+        "format": "BNGIR",
+        "version": "0.2",
+        "features": {
+            "required": ["structured_patterns", "structured_expressions"],
+            "used": ["rules", "seeds", "structured_expressions", "structured_patterns"],
+        },
+        "model": {
+            "metadata": {
+                "name": "independent_state_transition",
+                "options": {},
+                "substance_units": "",
+                "version": "2.2",
+            },
+            "parameters": [
+                {
+                    "id": 0,
+                    "name": "k",
+                    "expression": {"kind": "number", "value": 0.1},
+                    "constant_value": 0.1,
+                }
+            ],
+            "molecule_types": [
+                {
+                    "id": 0,
+                    "name": "A",
+                    "population": False,
+                    "components": [{"index": 0, "name": "s", "states": ["u", "p"]}],
+                }
+            ],
+            "compartments": [],
+            "seeds": [
+                {
+                    "id": 0,
+                    "pattern": copy.deepcopy(before),
+                    "amount": {"kind": "number", "value": 10.0},
+                    "constant": False,
+                }
+            ],
+            "observables": [],
+            "functions": [],
+            "rules": [
+                {
+                    "id": 0,
+                    "name": "R1",
+                    "label": "advance:",
+                    "bidirectional": False,
+                    "forward": {
+                        "reactants": [before],
+                        "products": [after],
+                        "rate": {
+                            "kind": 0,
+                            "expression": {
+                                "kind": "parameter_ref",
+                                "symbol": {"kind": "parameter", "index": 0},
+                            },
+                        },
+                        "mutations": [
+                            {
+                                "kind": "change_state",
+                                "source": {
+                                    "side": "reactant",
+                                    "pattern": 0,
+                                    "molecule": 0,
+                                    "site": 0,
+                                },
+                                "state": "p",
+                                "state_index": 1,
+                            }
+                        ],
+                        "filters": [],
+                        "local_scopes": [],
+                        "transformations_complete": True,
+                    },
+                    "modifiers": [],
+                    "molecule_mappings": [molecule_reference],
+                    "component_mappings": [component_reference],
+                }
+            ],
+            "energy_patterns": [],
+            "barrier_patterns": [],
+            "population_types": [],
+            "population_maps": [],
+        },
+        "protocol": {"actions": []},
+    }
+
+
 def test_native_import_executes_independently_authored_reversible_rule():
     document = _independent_reversible_bngir_document()
     schema_path = (
@@ -262,6 +388,119 @@ def test_native_import_executes_independently_authored_reversible_rule():
         expected_b = equilibrium_b * (1.0 - math.exp(-total_rate * time))
         expected = {"A()": 100.0 - expected_b, "B()": expected_b}
         assert dict(zip(network.species_names, row)) == pytest.approx(expected)
+
+
+def test_native_import_executes_independently_authored_internal_state_transition(
+    monkeypatch,
+):
+    document = _independent_state_transition_bngir_document()
+    schema_path = (
+        Path(__file__).parents[2] / "provenance" / "schemas" / "bngir-0.2.schema.json"
+    )
+    jsonschema.validate(document, json.loads(schema_path.read_text()))
+
+    bngir_module = importlib.import_module("bionetgen.bngir")
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("native BNGIR import rendered or parsed BNGL")
+
+    monkeypatch.setattr(_cpp, "parse_string", forbidden)
+    monkeypatch.setattr(bngir_module, "_as_bngl_v02", forbidden)
+    restored = bionetgen.from_bngir(document, native=True)
+
+    assert json.loads(restored.to_bngir(version="0.2")) == document
+    network = restored.generate_network()
+    assert network.num_species == 2
+    assert network.num_reactions == 1
+    assert set(network.species_names) == {"A(s~u)", "A(s~p)"}
+
+    initial = [10.0 if name == "A(s~u)" else 0.0 for name in network.species_names]
+    derivative = _cpp._validation_ode_rhs(restored._model, network, 0.0, initial)
+    assert dict(zip(network.species_names, derivative)) == pytest.approx(
+        {"A(s~u)": -1.0, "A(s~p)": 1.0}
+    )
+
+    result = restored.simulate(method="ode", t_end=2.0, n_steps=4)
+    for time, row in zip(result.time, result.concentrations):
+        expected_unphosphorylated = 10.0 * math.exp(-0.1 * time)
+        values = dict(zip(network.species_names, row))
+        assert values["A(s~u)"] == pytest.approx(expected_unphosphorylated)
+        assert values["A(s~p)"] == pytest.approx(10.0 - expected_unphosphorylated)
+        assert sum(values.values()) == pytest.approx(10.0)
+
+
+@pytest.mark.parametrize(
+    ("edit", "message"),
+    [
+        (
+            lambda document: document["model"]["rules"][0]["forward"]["products"][0][
+                "molecules"
+            ][0]["sites"][0]["state"].update(index=9),
+            "unknown finite state",
+        ),
+        (
+            lambda document: document["model"]["rules"][0]["component_mappings"][0][
+                "product"
+            ].update(site=1),
+            "out-of-slice mapping reference",
+        ),
+        (
+            lambda document: document["model"]["rules"][0]["forward"]["mutations"][0][
+                "source"
+            ].update(side="product"),
+            "out-of-slice mapping reference",
+        ),
+    ],
+)
+def test_native_builder_refuses_malformed_state_transition_references(edit, message):
+    document = _independent_state_transition_bngir_document()
+    edit(document)
+    with pytest.raises(ValueError):
+        bionetgen.from_bngir(document, native=True)
+    with pytest.raises(RuntimeError, match=message):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+def test_native_import_refuses_binding_only_components_explicitly():
+    document = _independent_state_transition_bngir_document()
+    document["model"]["molecule_types"][0]["components"][0]["states"] = []
+    for rule in document["model"]["rules"]:
+        for pattern in rule["forward"]["reactants"] + rule["forward"]["products"]:
+            for molecule in pattern["molecules"]:
+                for site in molecule["sites"]:
+                    site["state"] = {"kind": "any"}
+    for seed in document["model"]["seeds"]:
+        for site in seed["pattern"]["molecules"][0]["sites"]:
+            site["state"] = {"kind": "any"}
+    with pytest.raises(
+        ValueError, match="native BNGIR binding-only components are unsupported"
+    ):
+        bionetgen.from_bngir(document, native=True)
+    with pytest.raises(
+        RuntimeError, match="native BNGIR binding-only components are unsupported"
+    ):
+        _cpp._model_from_bngir_v02(document["model"])
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "message"),
+    [
+        ("name", "site-name", "component name must be a valid identifier"),
+        ("state", "state-name", "finite-state labels must be valid identifiers"),
+    ],
+)
+def test_native_builder_refuses_non_bngl_component_identifiers(field, value, message):
+    document = _independent_state_transition_bngir_document()
+    component = document["model"]["molecule_types"][0]["components"][0]
+    if field == "name":
+        component["name"] = value
+    else:
+        component["states"][0] = value
+
+    with pytest.raises(ValueError):
+        bionetgen.from_bngir(document, native=True)
+    with pytest.raises(RuntimeError, match=message):
+        _cpp._model_from_bngir_v02(document["model"])
 
 
 def test_native_import_executes_independently_authored_reversible_association(
@@ -627,7 +866,9 @@ def test_direct_native_builder_rejects_molecule_type_components():
         {"index": 0, "name": "x", "states": ["u", "p"]}
     ]
 
-    with pytest.raises(RuntimeError, match="molecule type components are unsupported"):
+    with pytest.raises(
+        RuntimeError, match="molecule site count does not match its type"
+    ):
         _cpp._model_from_bngir_v02(document["model"])
 
 
@@ -649,7 +890,9 @@ def test_direct_native_builder_rejects_molecule_sites(location):
         pattern["molecules"][0]["sites"] = []
     patterns[location]["molecules"][0]["sites"] = selected_sites
 
-    with pytest.raises(RuntimeError, match="does not support molecule sites"):
+    with pytest.raises(
+        RuntimeError, match="molecule site count does not match its type"
+    ):
         _cpp._model_from_bngir_v02(model)
 
 
