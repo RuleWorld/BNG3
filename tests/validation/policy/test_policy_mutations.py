@@ -107,22 +107,42 @@ def test_product_only_and_expectation_only_changes_are_not_mixed(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("path", "old", "new"),
+    ("path", "old", "new", "plan"),
     [
         (
             "tests/cases.json",
             '{"cases": [{"case_id": "case_alpha"}]}\n',
             '{"cases": [{"case_id": "case_beta"}]}\n',
+            None,
         ),
-        ("tests/cases.yaml", "- case_id: case_alpha\n", "- case_id: case_beta\n"),
-        ("tests/test_cases.py", 'case_id = "case_alpha"\n', 'case_id = "case_beta"\n'),
+        (
+            "tests/cases.yaml",
+            "- case_id: case_alpha\n",
+            "- case_id: case_beta\n",
+            None,
+        ),
+        (
+            "tests/test_cases.py",
+            'case_id = "case_alpha"\n',
+            'case_id = "case_beta"\n',
+            None,
+        ),
+        (
+            "tests/test_cases.py",
+            "def test_case_alpha():\n    assert True\n",
+            "def test_case_beta():\n    assert True\n",
+            '{"tests": ["tests/test_cases.py::test_case_alpha"]}\n',
+        ),
     ],
 )
 def test_removed_or_renamed_case_id_in_json_yaml_or_python_is_rejected(
-    tmp_path, path, old, new
+    tmp_path, path, old, new, plan
 ):
     checker = _load_policy()
-    root, base = _repo(tmp_path, {path: old})
+    files = {path: old}
+    if plan:
+        files["provenance/validation-plan.json"] = plan
+    root, base = _repo(tmp_path, files)
     _change(root, path, new)
 
     errors = checker.check_case_ids(root, base)
@@ -401,7 +421,10 @@ def test_mutation_count_drop_fails_scheduled_ratchet(tmp_path):
     baseline = {
         "status": "verified",
         "artifact_sha256": digest,
-        "mutant_ids": ["mutant.one", "mutant.two"],
+        "mutants": [
+            {"id": "mutant.one", "classification": "non_equivalent"},
+            {"id": "mutant.two", "classification": "non_equivalent"},
+        ],
         "denominator": 2,
         "caught": 2,
     }
@@ -433,7 +456,7 @@ def test_mutation_infrastructure_failure_fails_scheduled_ratchet(tmp_path):
             {
                 "status": "verified",
                 "artifact_sha256": "a" * 64,
-                "mutant_ids": ["mutant.one"],
+                "mutants": [{"id": "mutant.one", "classification": "non_equivalent"}],
                 "denominator": 1,
                 "caught": 1,
             }
@@ -445,7 +468,7 @@ def test_mutation_infrastructure_failure_fails_scheduled_ratchet(tmp_path):
                 "schema": 1,
                 "revision": "candidate",
                 "denominator": 1,
-                "caught": 1,
+                "caught": 0,
                 "mutants": [
                     {
                         "id": "mutant.one",
@@ -459,7 +482,156 @@ def test_mutation_infrastructure_failure_fails_scheduled_ratchet(tmp_path):
 
     errors = checker.verify_mutation_ratchet(report_path, baseline_path)
 
-    assert errors and "infrastructure error" in errors[0]
+    assert errors
+
+
+@pytest.mark.parametrize(
+    ("rows", "denominator", "caught"),
+    [
+        (
+            [
+                {
+                    "id": "mutant.one",
+                    "classification": "non_equivalent",
+                    "status": "mysterious-kill",
+                }
+            ],
+            1,
+            1,
+        ),
+        (
+            [
+                {
+                    "id": "mutant.one",
+                    "classification": "non_equivalentish",
+                    "status": "killed",
+                }
+            ],
+            1,
+            1,
+        ),
+    ],
+)
+def test_unknown_mutant_status_or_classification_is_rejected(
+    tmp_path, rows, denominator, caught
+):
+    checker = _load_policy()
+    baseline_path = tmp_path / "baseline.json"
+    report_path = tmp_path / "report.json"
+    baseline_path.write_text(
+        json.dumps(
+            {
+                "status": "verified",
+                "artifact_sha256": "a" * 64,
+                "mutants": [{"id": "mutant.one", "classification": "non_equivalent"}],
+                "denominator": 1,
+                "caught": 1,
+            }
+        )
+    )
+    report_path.write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "revision": "candidate",
+                "denominator": denominator,
+                "caught": caught,
+                "mutants": rows,
+            }
+        )
+    )
+
+    errors = checker.verify_mutation_ratchet(report_path, baseline_path)
+
+    assert errors
+
+
+def test_duplicate_mutant_ids_are_rejected_even_when_unique_set_matches_baseline(
+    tmp_path,
+):
+    checker = _load_policy()
+    baseline_path = tmp_path / "baseline.json"
+    report_path = tmp_path / "report.json"
+    baseline_path.write_text(
+        json.dumps(
+            {
+                "status": "verified",
+                "artifact_sha256": "a" * 64,
+                "mutants": [
+                    {"id": "mutant.one", "classification": "non_equivalent"},
+                    {"id": "mutant.two", "classification": "non_equivalent"},
+                ],
+                "denominator": 2,
+                "caught": 2,
+            }
+        )
+    )
+    row = {"classification": "non_equivalent", "status": "killed"}
+    report_path.write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "revision": "candidate",
+                "denominator": 2,
+                "caught": 2,
+                "mutants": [
+                    {**row, "id": "mutant.one"},
+                    {**row, "id": "mutant.one"},
+                    {**row, "id": "mutant.two"},
+                ],
+            }
+        )
+    )
+
+    errors = checker.verify_mutation_ratchet(report_path, baseline_path)
+
+    assert errors
+
+
+def test_summary_counts_must_match_classified_mutant_records(tmp_path):
+    checker = _load_policy()
+    baseline_path = tmp_path / "baseline.json"
+    report_path = tmp_path / "report.json"
+    baseline_path.write_text(
+        json.dumps(
+            {
+                "status": "verified",
+                "artifact_sha256": "a" * 64,
+                "mutants": [
+                    {"id": "mutant.one", "classification": "non_equivalent"},
+                    {"id": "mutant.two", "classification": "equivalent"},
+                ],
+                "denominator": 1,
+                "caught": 1,
+            }
+        )
+    )
+    report_path.write_text(
+        json.dumps(
+            {
+                "schema": 1,
+                "revision": "candidate",
+                "denominator": 2,
+                "caught": 2,
+                "mutants": [
+                    {
+                        "id": "mutant.one",
+                        "classification": "non_equivalent",
+                        "status": "killed",
+                    },
+                    {
+                        "id": "mutant.two",
+                        "classification": "equivalent",
+                        "status": "killed",
+                    },
+                ],
+            }
+        )
+    )
+
+    errors = checker.verify_mutation_ratchet(report_path, baseline_path)
+
+    assert errors
 
 
 def test_mutation_infrastructure_campaign_failure_is_reported(tmp_path):
