@@ -18,7 +18,7 @@ BNGL decay source, executes it through the installed package, and uploads the
 seed, case ID, source digest and revision with the source. This artifact is a
 replay record for this generated case.
 
-The scheduled mutation campaign uses a disposable Git worktree and mutates the
+The scheduled mutation campaign uses a disposable shared-object Git clone and mutates the
 production `BioNetGenModel.set_parameter` call by 1%. It first runs the
 unchanged independent compiled-backend contract test to establish the test
 environment. The mutant is killed only when that test fails; collection,
@@ -26,4 +26,7 @@ import, setup and timeout failures are infrastructure errors. A surviving
 mutant or infrastructure error fails the scheduled job. The report records
 the mutant classification, denominator and caught count. The initial curated
 set requires 100% detection; adding curated non-equivalent mutants increases
-the denominator and cannot lower that requirement.
+the denominator and cannot lower that requirement. The initial baseline record
+is explicitly unavailable until an exact-main scheduled artifact is reviewed.
+Release qualification fails while it remains unavailable; no score is inferred
+from the local or PR-branch run.
