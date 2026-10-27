@@ -360,6 +360,44 @@ def _independent_state_transition_bngir_document() -> dict:
     }
 
 
+def _independent_reversible_state_transition_bngir_document() -> dict:
+    """Hand-author both directions of A(s~u) <-> A(s~p)."""
+    document = _independent_state_transition_bngir_document()
+    model = document["model"]
+    model["metadata"]["name"] = "independent_reversible_state_transition"
+    model["parameters"].append(
+        {
+            "id": 1,
+            "name": "k_reverse",
+            "expression": {"kind": "number", "value": 0.2},
+            "constant_value": 0.2,
+        }
+    )
+    rule = model["rules"][0]
+    forward = rule["forward"]
+    reverse = copy.deepcopy(forward)
+    reverse["reactants"] = copy.deepcopy(forward["products"])
+    reverse["products"] = copy.deepcopy(forward["reactants"])
+    reverse["rate"] = {
+        "kind": 0,
+        "expression": {
+            "kind": "parameter_ref",
+            "symbol": {"kind": "parameter", "index": 1},
+        },
+    }
+    reverse["mutations"] = [
+        {
+            "kind": "change_state",
+            "source": {"side": "reactant", "pattern": 0, "molecule": 0, "site": 0},
+            "state": "u",
+            "state_index": 0,
+        }
+    ]
+    rule["bidirectional"] = True
+    rule["reverse"] = reverse
+    return document
+
+
 def test_native_import_executes_independently_authored_reversible_rule():
     document = _independent_reversible_bngir_document()
     schema_path = (
@@ -427,6 +465,92 @@ def test_native_import_executes_independently_authored_internal_state_transition
         assert values["A(s~u)"] == pytest.approx(expected_unphosphorylated)
         assert values["A(s~p)"] == pytest.approx(10.0 - expected_unphosphorylated)
         assert sum(values.values()) == pytest.approx(10.0)
+
+
+def test_native_import_executes_independently_authored_reversible_state_transition(
+    monkeypatch,
+):
+    document = _independent_reversible_state_transition_bngir_document()
+    schema_path = (
+        Path(__file__).parents[2] / "provenance" / "schemas" / "bngir-0.2.schema.json"
+    )
+    jsonschema.validate(document, json.loads(schema_path.read_text()))
+
+    bngir_module = importlib.import_module("bionetgen.bngir")
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("native BNGIR import rendered or parsed BNGL")
+
+    monkeypatch.setattr(_cpp, "parse_string", forbidden)
+    monkeypatch.setattr(bngir_module, "_as_bngl_v02", forbidden)
+    restored = bionetgen.from_bngir(document, native=True)
+
+    assert json.loads(restored.to_bngir(version="0.2")) == document
+    network = restored.generate_network()
+    assert network.num_species == 2
+    assert network.num_reactions == 2
+    assert set(network.species_names) == {"A(s~u)", "A(s~p)"}
+
+    initial = [10.0 if name == "A(s~u)" else 0.0 for name in network.species_names]
+    derivative = _cpp._validation_ode_rhs(restored._model, network, 0.0, initial)
+    assert dict(zip(network.species_names, derivative)) == pytest.approx(
+        {"A(s~u)": -1.0, "A(s~p)": 1.0}
+    )
+
+    k_forward, k_reverse = 0.1, 0.2
+    total_rate = k_forward + k_reverse
+    equilibrium_u = 10.0 * k_reverse / total_rate
+    equilibrium_p = 10.0 * k_forward / total_rate
+    equilibrium_state = [
+        equilibrium_u if name == "A(s~u)" else equilibrium_p
+        for name in network.species_names
+    ]
+    equilibrium_derivative = _cpp._validation_ode_rhs(
+        restored._model, network, 2.0, equilibrium_state
+    )
+    assert equilibrium_derivative == pytest.approx([0.0, 0.0], abs=1e-12)
+
+    result = restored.simulate(method="ode", t_end=2.0, n_steps=8)
+    for time, row in zip(result.time, result.concentrations):
+        deviation = 10.0 * math.exp(-total_rate * time)
+        expected = {
+            "A(s~u)": equilibrium_u + k_forward / total_rate * deviation,
+            "A(s~p)": equilibrium_p - k_forward / total_rate * deviation,
+        }
+        values = dict(zip(network.species_names, row))
+        assert values == pytest.approx(expected)
+        assert sum(values.values()) == pytest.approx(10.0)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("side", "product"),
+        ("state", "p"),
+        ("state_index", 1),
+        ("bond", "bound"),
+        ("extra_site", "s"),
+    ],
+)
+def test_reversible_state_transition_refuses_malformed_reverse_direction(field, value):
+    document = _independent_reversible_state_transition_bngir_document()
+    reverse = document["model"]["rules"][0]["reverse"]
+    mutation = reverse["mutations"][0]
+    if field == "side":
+        mutation["source"][field] = value
+    elif field == "bond":
+        reverse["reactants"][0]["molecules"][0]["sites"][0]["bond"]["kind"] = value
+    elif field == "extra_site":
+        extra_site = copy.deepcopy(reverse["reactants"][0]["molecules"][0]["sites"][0])
+        extra_site["occurrence"] = 1
+        reverse["reactants"][0]["molecules"][0]["sites"].append(extra_site)
+    else:
+        mutation[field] = value
+
+    with pytest.raises(ValueError):
+        bionetgen.from_bngir(document, native=True)
+    with pytest.raises(RuntimeError):
+        _cpp._model_from_bngir_v02(document["model"])
 
 
 @pytest.mark.parametrize(
