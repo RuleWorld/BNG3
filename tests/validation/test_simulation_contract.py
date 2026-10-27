@@ -112,6 +112,7 @@ def test_net_reload_loads_source_context_without_replaying_model_actions(
     work = tmp_path / "model"
     source_dir = work / "input"
     source_dir.mkdir(parents=True)
+    (source_dir / "test_data.tfun").write_text("0 1\n1 2\n", encoding="utf-8")
     source_dir.joinpath("x.bngl").write_text(
         """begin model
 begin parameters
@@ -120,6 +121,9 @@ end parameters
 begin compartments
     cell 3 volume
 end compartments
+begin functions
+    rate() = tfun('test_data.tfun', time)
+end functions
 begin molecule types
     A()
 end molecule types
@@ -155,6 +159,9 @@ end reactions
     protocols = []
 
     def stop_after_recording(command, cwd, timeout, **kwargs):
+        assert (Path(cwd) / "test_data.tfun").read_text(encoding="utf-8") == (
+            "0 1\n1 2\n"
+        )
         protocols.append(Path(command[-1]).read_text(encoding="utf-8"))
         return {"status": "FAIL", "detail": "intentional test stop"}
 
@@ -174,6 +181,7 @@ end reactions
     )
     assert "begin parameters" in context
     assert "begin compartments" in context
+    assert "begin functions" not in context
     assert "begin molecule types" not in context
     assert "begin seed species" not in context
     assert "generate_network" not in context

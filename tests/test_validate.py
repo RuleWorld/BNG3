@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from scripts.cross_validate import _stage_model
 from scripts.validate import copy_referenced_support_files
 
@@ -58,3 +60,92 @@ def test_cross_validation_stages_the_tfun_corpus_sidecar(tmp_path):
 
     staged_table = staged_model.parent / "test_data.tfun"
     assert staged_table.read_bytes() == (models_dir / "test_data.tfun").read_bytes()
+
+
+def test_cross_validation_stages_explicit_validation_companions_only(tmp_path):
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    model = models_dir / "fixture.bngl"
+    model.write_text(
+        "begin actions\n"
+        '  readFile({file=>"INPUT_FILES/source.xml"})\n'
+        '  readFile({file=>"fixture.net"})\n'
+        "end actions\n",
+        encoding="utf-8",
+    )
+    support_root = tmp_path / "Validate"
+    xml = support_root / "INPUT_FILES" / "source.xml"
+    net = support_root / "DAT_validate" / "fixture.net"
+    unrelated = support_root / "DAT_validate" / "unreferenced.net"
+    xml.parent.mkdir(parents=True)
+    net.parent.mkdir(parents=True)
+    xml.write_text("<sbml/>", encoding="utf-8")
+    net.write_text("begin species\nend species\n", encoding="utf-8")
+    unrelated.write_text("not referenced", encoding="utf-8")
+
+    staged = _stage_model(
+        model,
+        models_dir,
+        tmp_path / "staged",
+        support_roots=(support_root,),
+    )
+
+    assert (staged.parent / "INPUT_FILES/source.xml").read_text() == "<sbml/>"
+    assert (staged.parent / "fixture.net").read_text() == (
+        "begin species\nend species\n"
+    )
+    assert not (staged.parent / "unreferenced.net").exists()
+
+
+def test_cross_validation_rejects_conflicting_companion_sources(tmp_path):
+    models_dir = tmp_path / "models"
+    models_dir.mkdir()
+    model = models_dir / "fixture.bngl"
+    model.write_text('readFile({file=>"INPUT_FILES/source.xml"})\n', encoding="utf-8")
+    primary = models_dir / "INPUT_FILES" / "source.xml"
+    primary.parent.mkdir()
+    primary.write_text("<sbml id='primary'/>", encoding="utf-8")
+    support_root = tmp_path / "Validate"
+    fallback = support_root / "INPUT_FILES" / "source.xml"
+    fallback.parent.mkdir(parents=True)
+    fallback.write_text("<sbml id='fallback'/>", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="conflicting staged support file"):
+        _stage_model(
+            model,
+            models_dir,
+            tmp_path / "staged",
+            support_roots=(support_root,),
+        )
+
+
+@pytest.mark.parametrize(
+    ("model_name", "support_file"),
+    [
+        ("test_sbml_flat", "INPUT_FILES/test_sbml_flat_SBML.xml"),
+        ("test_sbml_structured", "INPUT_FILES/test_sbml_structured_SBML.xml"),
+        ("michment_cont", "michment_cont.net"),
+        ("test_sat_cont", "test_sat_cont.net"),
+    ],
+)
+def test_conformance_models_stage_validation_fixture_companions(
+    tmp_path, model_name, support_file
+):
+    repository = Path(__file__).resolve().parents[1]
+    models_dir = repository / "models"
+    support_root = repository / "tests" / "validation" / "Validate"
+    source = models_dir / f"{model_name}.bngl"
+
+    staged = _stage_model(
+        source,
+        models_dir,
+        tmp_path / model_name,
+        support_roots=(support_root,),
+    )
+
+    actual = staged.parent / support_file
+    if support_file.startswith("INPUT_FILES/"):
+        expected = support_root / support_file
+    else:
+        expected = support_root / "DAT_validate" / support_file
+    assert actual.read_bytes() == expected.read_bytes()
