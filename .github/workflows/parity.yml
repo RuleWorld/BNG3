@@ -672,8 +672,15 @@ jobs:
       - name: Install build and validation dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build
+          sudo apt-get install -y cmake ninja-build perl
           python -m pip install pytest numpy scipy
+
+      - name: Checkout locked BNG2 translation oracle
+        run: |
+          python scripts/ci/checkout_oracle.py \
+            --name bionetgen \
+            --destination "$RUNNER_TEMP/oracle-bionetgen" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
 
       - name: Checkout locked NFsim oracle
         run: |
@@ -757,6 +764,18 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
         env:
           BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Run physical unimolecular source-law control
+        shell: bash
+        env:
+          BNG2_PERL: ${{ runner.temp }}/oracle-bionetgen/bng2/BNG2.pl
+          BNGPATH: ${{ runner.temp }}/oracle-bionetgen/bng2
+          NFSIM_BIN: ${{ runner.temp }}/oracle-nfsim/build/NFsim
+        run: |
+          set -euo pipefail
+          pytest -c tests/validation/pytest.ini \
+            tests/validation/test_nfsim_physical_unimolecular.py \
+            -q -ra --junitxml="$RUNNER_TEMP/nfsim-physical-unimolecular.xml"
 
       - name: Run all Tier-NF native ensembles (scheduled)
         if: (success() || failure()) && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')
