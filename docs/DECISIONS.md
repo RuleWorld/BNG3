@@ -1,0 +1,40 @@
+# BNG3 release decisions
+
+Owner: **@akutuva21**. These decisions were made by the maintainer in the Phase 1 task. They supersede conflicting approval, scope, backend and retirement statements in issues, documentation and provenance. Recording these decisions is work; requesting them again is not. An issue closes when every listed acceptance check passes on `main`; no further decision or closure approval is required.
+
+1. **[A06 / #137](https://github.com/RuleWorld/BNG3/issues/137): release scope.** BNG3 will implement every user-facing capability of canonical BNG2, canonical NFsim and PyBioNetGen, plus BNG3's additions. The capability inventory is the primary scope document. JAX and GPU are supported optional installs. All inventory rows are release requirements.
+2. **[H01 / #179](https://github.com/RuleWorld/BNG3/issues/179): provenance.** All sources, the baseline, both oracle builds, compiler images and Python dependency lock are accepted at their current pins. Record acceptance without changing hashes or rewriting historical receipts. Preserve the strict release qualification gate. The authoritative pin values are the existing `provenance/upstreams.lock.yml`, copied into this review bundle as `evidence/upstreams.lock.yml`.
+3. **[B07 / #144](https://github.com/RuleWorld/BNG3/issues/144): finite solvers.** Native BNG3 solvers are the default. BNGsim is a supported optional backend. Rewrite ADR 0003 accordingly. Every simulator uses one common backend interface, consumes the compiled model and returns the common result type; backend selection and capability reporting will use that interface.
+4. **[C04 / #149](https://github.com/RuleWorld/BNG3/issues/149): network-free engines.** NFnext is the single next-generation engine. Consolidate NFcore2 into NFnext, retaining `lowerPatternToNFsim` for NFcore input. NFcore remains production/default and the in-repo comparator until NFnext matches NFcore and pinned native NFsim on the full network-free corpus. Then `method="nf"` defaults to NFnext; NFcore remains selectable through the common interface.
+5. **[C02 / #147](https://github.com/RuleWorld/BNG3/issues/147): NFnext semantics.** Implement dynamic rates, include/exclude filters, every modifier, energy factors, population maps and compartments. Complete representation, execution and independent checks for each.
+6. **[D04 / #156](https://github.com/RuleWorld/BNG3/issues/156): BNGIR.** BNGIR is BNGL as JSON. Version 0.2 becomes default, contains everything 0.1 contains, and represents every BNGL construct without loss. Fix 0.1 physical-unit representation, 0.2 observable-kind gaps and both versions' delayed-rule gaps. Equality means process equality up to consistent molecule/site/state renaming, preserving initial state, observables, functions and protocol. Rule splitting/merging with equal summed transition rates preserves equality. Implement exact algorithms and certificate methods described in `semantic-equal-design.md`; numerical similarity is not the definition.
+7. **[C05 / #150](https://github.com/RuleWorld/BNG3/issues/150): hybrid execution.** Implement actual particle-population simulation and verify it against BNG2 and native NFsim, including conversion, rate, observable and compartment semantics.
+8. **[G06 / #176](https://github.com/RuleWorld/BNG3/issues/176): performance.** Complete CPU performance work, isolated ensemble execution and GPU network-free execution. Measure correctness, startup, memory and throughput together.
+9. **[F06 / #170](https://github.com/RuleWorld/BNG3/issues/170): CRN API.** Expose species, complexes, reactions, stoichiometric matrix and rate-law structure through a public API backed by the compiled model/generated network. The separate `crnt-lean` repository consumes the API and owns proofs.
+10. **[G08 / #178](https://github.com/RuleWorld/BNG3/issues/178): consolidation.** Put existing tools behind common interfaces and centralize option, rate and capability decisions. Reuse current abstractions rather than build a second framework.
+11. **[H03 / #181](https://github.com/RuleWorld/BNG3/issues/181): CI/corpora.** Job submissions and corpus size are unlimited. Runner queue latency is uncontrolled. Submit independent work freely, keep fast required feedback, and preserve partial per-case artifacts. No budget approval is required.
+12. **[E01–E08 / #157–#164](https://github.com/RuleWorld/BNG3/issues/160): SBML.** Implement all Level 3 Core, Multi and comp semantics, including events, delay, assignment/rate/algebraic rules and fast reactions (the L3V1 construct). Every translation preserves source semantics exactly. fbc is not imported: bounds/objectives describe flux optimization rather than kinetic simulation. Recommendations for the remaining packages are in `sbml-packages.md` for review; they do not change the already-decided Core/Multi/comp commitment.
+13. **[G01/G02 / #171](https://github.com/RuleWorld/BNG3/issues/171), [#172](https://github.com/RuleWorld/BNG3/issues/172): Python API.** BNG3 provides all PyBioNetGen functionality under the new API; names may differ (for example `bionetgen.load()` replaces `bngmodel()`); the API follows scanpy-style conventions.
+14. **[H07 / #185](https://github.com/RuleWorld/BNG3/issues/185): ownership.** @akutuva21 owns every review area. Add `.github/CODEOWNERS` with `* @akutuva21`, including product code, expected outputs, tolerances, provenance and formal artifacts.
+15. **[H08 / #186](https://github.com/RuleWorld/BNG3/issues/186): release and maintenance.** Install with `pip install bionetgen`. BNG3 replaces the old BioNetGen, NFsim and PyBioNetGen repositories; those repositories retire and receive no maintenance. BNG3 provides all PyBioNetGen functionality under the new API (item 13).
+16. **[C07/G07 / #152](https://github.com/RuleWorld/BNG3/issues/152), [#177](https://github.com/RuleWorld/BNG3/issues/177): energy additions.** Barrier patterns and driven reservoirs are release features. Verify them with analytic solutions, detailed balance where applicable, cycle affinities and invariants; canonical tools cannot serve as execution oracles for extensions they do not implement.
+
+## Required NFnext consolidation order
+
+1. Make `CompiledModel → NFIR` the only NFnext input path. Use NFcore2's native NFsim reader only as a validation oracle.
+2. Port matching/transformation tests first, then missing binding/unbinding, creation/deletion, symmetry, compartments, local/DOR rates and observables. Do not copy NFcore2's scheduler, arena or matcher.
+3. Complete one general execution loop: initialize real models, enumerate embeddings, compute propensities, transform state, update dependencies and emit observables. Lattice/population kernels share these semantics. A trajectory uses one engine throughout.
+4. Compare pinned native NFsim on elementary, binding/symmetry, signaling-complex, polymer, scaffold and genome-scale cases. Use shared random draws when event-level comparison is valid, distributions otherwise; compare propensity, observables, startup, memory and events/second.
+5. Implement compile-once/many-trajectories with immutable shared models and independent state; then rule-family updates, specialized scaffold/genome representations, then GPU execution.
+6. After capability coverage transfers, remove NFcore2 from the default build and retire it. Preserve commits, fixtures and a capability destination map. Retain `lowerPatternToNFsim` for NFcore.
+7. After the full independent corpus passes, switch the NF default to NFnext and retain NFcore selection.
+
+## Accepted canonical pins
+
+| Source | Revision |
+|---|---|
+| RuleWorld/bionetgen | `9601746f8884ed19ab2acea49fe87fc4660ace46` |
+| RuleWorld/NFsim | `9b00d42f734dcc3e695205600f12cae5b44d1daa` |
+| RuleWorld/PyBioNetGen | `28bf351a9bbfc197e19487c26dedda683716bb64` |
+
+All other existing lock entries retain their recorded values and are accepted too. Acceptance of a provenance input is distinct from a claim that BNG3 has passed a comparison against it. This review audits BNG3 `918a5fb1`; it does not silently replace the lock's historical baseline with that commit.

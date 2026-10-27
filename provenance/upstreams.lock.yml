@@ -3,18 +3,19 @@
   "schema_version": 1,
   "baseline": {
     "date": "2026-10-08",
-    "status": "pending-maintainer-approval",
-    "approved_by": null,
-    "approved_at": null,
+    "status": "approved",
+    "approved_by": "akutuva21",
+    "approved_at": "2026-10-27T00:00:00-04:00",
     "notes": [
-      "Revisions remain observed snapshots, not accepted import cutoffs; maintainer approval, oracle recipes, artifact digests, and compiler images remain pending.",
-      "On 2026-10-03, gh verified the BNG3 main remote head and the source row was refreshed. The RuleWorld/bionetgen, RuleWorld/nfsim, and RuleWorld/PyBioNetGen rows retain their 2026-09-23 observations.",
-      "Locked BNG2 Network3 and NFsim builds now have reproducible local recipes and sha256 artifact digests; their statuses remain pending maintainer approval.",
-      "Other source rows retain their earlier observation dates and were not refreshed in this pass.",
-      "The 2026-09-23 per-commit triage is recorded in provenance/reconciliation/ and docs/UPSTREAM_RECONCILIATION_2026-09-23.md.",
-      "2026-10-08: all nine recorded source commit objects verified through the GitHub API. The destination reference is refreshed to audited main e1836c3274e685996d5e86883761e00e98257e09; upstream cutoffs remain unchanged. Historical Rasi/Playground branch names no longer resolve, but their pinned commits remain reachable. Approval is still pending.",
-      "2026-10-08: both clean pinned native oracle builds were rerun with executable smoke checks. NFsim reproduced its prior 7621bb85 digest; the documented clean-tree BNG2 Makefile.cmake recipe produced 9f39d22e. Prior BNG2 artifact 73761b79 remains historical evidence, not the output of this verified recipe. Neither oracle is approved yet.",
-      "2026-10-08: proposed Linux CPython 3.12 full/dev/JAX dependency bytes and manylinux_2_28 image manifest digest are independently checked. Linux runtime/image execution and other platform dependency locks remain separate qualification scope; approval status is unchanged."
+      "All existing pins accepted by maintainer in docs/DECISIONS.md; historical notes below describe earlier states.",
+      "Historical: Revisions remain observed snapshots, not accepted import cutoffs; maintainer approval, oracle recipes, artifact digests, and compiler images remain pending.",
+      "Historical: On 2026-10-03, gh verified the BNG3 main remote head and the source row was refreshed. The RuleWorld/bionetgen, RuleWorld/nfsim, and RuleWorld/PyBioNetGen rows retain their 2026-09-23 observations.",
+      "Historical: Locked BNG2 Network3 and NFsim builds now have reproducible local recipes and sha256 artifact digests; their statuses remain pending maintainer approval.",
+      "Historical: Other source rows retain their earlier observation dates and were not refreshed in this pass.",
+      "Historical: The 2026-09-23 per-commit triage is recorded in provenance/reconciliation/ and docs/UPSTREAM_RECONCILIATION_2026-09-23.md.",
+      "Historical: 2026-10-08: all nine recorded source commit objects verified through the GitHub API. The destination reference is refreshed to audited main e1836c3274e685996d5e86883761e00e98257e09; upstream cutoffs remain unchanged. Historical Rasi/Playground branch names no longer resolve, but their pinned commits remain reachable. Approval is still pending.",
+      "Historical: 2026-10-08: both clean pinned native oracle builds were rerun with executable smoke checks. NFsim reproduced its prior 7621bb85 digest; the documented clean-tree BNG2 Makefile.cmake recipe produced 9f39d22e. Prior BNG2 artifact 73761b79 remains historical evidence, not the output of this verified recipe. Neither oracle is approved yet.",
+      "Historical: 2026-10-08: proposed Linux CPython 3.12 full/dev/JAX dependency bytes and manylinux_2_28 image manifest digest are independently checked. Linux runtime/image execution and other platform dependency locks remain separate qualification scope; approval status is unchanged."
     ]
   },
   "sources": {
@@ -23,7 +24,7 @@
       "branch": "main",
       "revision": "e1836c3274e685996d5e86883761e00e98257e09",
       "role": "destination-and-future-authority",
-      "status": "observed",
+      "status": "accepted",
       "evidence": {
         "kind": "remote-commit",
         "checked_at": "2026-10-08"
@@ -34,7 +35,7 @@
       "branch": "master",
       "revision": "9601746f8884ed19ab2acea49fe87fc4660ace46",
       "role": "reconciliation-source-and-bng2-oracle-lineage",
-      "status": "observed",
+      "status": "accepted",
       "evidence": {
         "kind": "remote-commit",
         "checked_at": "2026-10-08"
@@ -45,7 +46,7 @@
       "branch": "master",
       "revision": "9b00d42f734dcc3e695205600f12cae5b44d1daa",
       "role": "reconciliation-source-and-native-oracle-lineage",
-      "status": "observed",
+      "status": "accepted",
       "evidence": {
         "kind": "remote-commit",
         "checked_at": "2026-10-08"
@@ -56,7 +57,7 @@
       "branch": "perf/rasi-translation-optimization",
       "revision": "d13086bd3cf2fd268be5efea4d83089301479de3",
       "role": "Rasi translation and performance reconciliation source",
-      "status": "observed",
+      "status": "accepted",
       "evidence": {
         "kind": "remote-commit",
         "checked_at": "2026-10-08"
@@ -67,7 +68,7 @@
       "branch": "main",
       "revision": "49dc939035f5a272da663f8c9586e3c9f0e1c041",
       "role": "intended-canonical-finite-network-backend (ADR 0003)",
-      "status": "observed",
+      "status": "accepted",
       "evidence": {
         "kind": "remote-commit",
         "checked_at": "2026-10-08"
@@ -78,7 +79,7 @@
       "branch": "main",
       "revision": "28bf351a9bbfc197e19487c26dedda683716bb64",
       "role": "python-and-atomizer-reconciliation-source",
-      "status": "observed",
+      "status": "accepted",
       "evidence": {
         "kind": "remote-commit",
         "checked_at": "2026-10-08"
@@ -89,7 +90,7 @@
       "branch": "codex/atomizer-roundtrip-parity",
       "revision": "ba781d690512b964711a3ca2df059be95e01561d",
       "role": "independent Atomizer and Playground implementation reference",
-      "status": "observed",
+      "status": "accepted",
       "evidence": {
         "kind": "remote-commit",
         "checked_at": "2026-10-08"
@@ -100,7 +101,7 @@
       "branch": "3.5.0",
       "revision": "cf38585fac5de8e0e90112febb62851ee2181816",
       "role": "official-validation-corpus-not-oracle",
-      "status": "observed",
+      "status": "accepted",
       "evidence": {
         "kind": "remote-commit",
         "checked_at": "2026-10-08"
@@ -111,7 +112,7 @@
       "branch": "master",
       "revision": "b84f0a72ad21dc70cb99d4880b49a40f17046357",
       "role": "validation-corpus-and-metadata",
-      "status": "observed",
+      "status": "accepted",
       "evidence": {
         "kind": "remote-commit",
         "checked_at": "2026-10-08"
@@ -121,26 +122,26 @@
   "oracles": {
     "bng2": {
       "source": "bionetgen",
-      "status": "pending",
+      "status": "locked",
       "build_recipe": "PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin make -C bng2/Network3 -f Makefile.cmake --jobs=1 (AppleClang 21.0.0.21000334, macOS arm64).",
       "artifact_digest": "sha256:9f39d22ebdad7aefc38f8ceddf287799f0f262ed0e914b42b1f7cb640a7ffa39"
     },
     "nfsim": {
       "source": "nfsim",
-      "status": "pending",
+      "status": "locked",
       "build_recipe": "cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DNFSIM_BUILD_EXECUTABLE=ON -DNFSIM_BUILD_LIBRARY=OFF; cmake --build build --target NFsim --parallel 1 (AppleClang 21.0.0.21000334, macOS arm64).",
       "artifact_digest": "sha256:7621bb850efc6cf203ec2c42004c2cffcc0115af7e3ce03d62aabab100bf31a1"
     }
   },
   "dependencies": {
     "compiler_images": {
-      "status": "pending",
+      "status": "locked",
       "images": [
         "quay.io/pypa/manylinux_2_28_x86_64@sha256:53390351aeb4688114b02c36a23b3e6ce1166ee9b7afc5df1a4f776354fc764c"
       ]
     },
     "python_lock": {
-      "status": "pending",
+      "status": "locked",
       "path": "provenance/dependencies/python-3.12-linux-x86_64-manylinux_2_28-full-dev-jax.txt",
       "digest": "sha256:e952cd2d30cddf9c8ec506b34e5d3f168eb3543abc828211a0a9cfa6cf572322"
     }

@@ -10,7 +10,9 @@ BNG3 is the modern BioNetGen implementation: one maintained C++/Python system fo
 
 Correct semantics matter more than feature count.
 
-A model that is explicitly unsupported is better than a model that silently runs with changed semantics.
+The first release implements the complete capability inventory in `docs/CAPABILITY_UNION_INVENTORY.md`, including canonical BNG2, canonical NFsim, PyBioNetGen and BNG3 additions. Optional installs do not reduce support. During implementation, report missing semantics explicitly rather than silently changing them; implement and qualify every required row before release.
+
+`docs/DECISIONS.md` records final maintainer decisions. Apply them without requesting the same decision again. Every issue closes when all its listed acceptance checks pass on `main`; record the commit and artifacts. No additional closure approval is required.
 
 ## Read before changing code
 
@@ -46,9 +48,7 @@ Know which repository answers which question.
 - **RuleWorld/BNG3** — target implementation. Change code here.
 - **RuleWorld/bionetgen** — canonical BioNetGen / BNG2 behavior and historical implementation. Use it to understand established BNGL semantics and compatibility.
 - **RuleWorld/nfsim** — canonical NFsim reference implementation.
-- **akutuva21/nfsim** — newer NFsim development fork containing performance and energy-modeling work that may be relevant to BNG3. Treat it as a source input, not automatically authoritative over canonical NFsim behavior.
 - **RuleWorld/PyBioNetGen** — existing Python-facing BioNetGen behavior and compatibility reference.
-- **RuleWorld/bngplayground** — independent modern BNGL implementation and useful compatibility/reference corpus. It is not a replacement for canonical BioNetGen or NFsim as a semantic oracle.
 
 Also use authoritative upstream specifications and independent implementations where appropriate, especially:
 
@@ -258,7 +258,6 @@ BNG3 embeds NFsim behavior but must remain independently checkable against nativ
 For NFsim-related work:
 
 - inspect **RuleWorld/nfsim**;
-- inspect **akutuva21/nfsim** when newer energy/performance work is relevant;
 - identify exact source commits when behavior depends on a specific fork revision;
 - add focused parity tests;
 - preserve deterministic seeds when comparing stochastic implementations;
@@ -270,28 +269,11 @@ Do not use the embedded BNG3 NFsim implementation as its own parity oracle.
 
 ## Atomizer / SBML
 
-The Atomizer should translate the subset of SBML whose semantics BNG3 can represent faithfully.
+The Atomizer implements all SBML Level 3 Core, Multi and comp constructs, including events, delays, assignment/rate/algebraic rules, fast reactions and hierarchical composition. The fbc package is not imported because it describes flux-balance optimization rather than kinetic simulation. Other package decisions are recorded in `docs/DECISIONS.md` and the capability inventory.
 
-Do not aim for "all SBML" by approximation.
+For each construct, establish the source specification, implement an exact representation and execution in BNGL/BNG3, state the transformation conditions and add independent semantic tests. Extend the compiled model and engine where necessary. Do not substitute static values for dynamic rules, delays, stoichiometry, event assignments or compartment sizes. A diagnostic for valid required input identifies work to complete; it is not release acceptance.
 
-For every newly supported SBML class, answer:
-
-```text
-What does SBML require?
-Can BNGL/BNG3 represent it exactly?
-What transformation is being applied?
-Under what conditions is that transformation valid?
-What independent test demonstrates this?
-```
-
-Prefer explicit, narrow supported subclasses over broad but incorrect feature claims.
-
-Examples:
-
-- static expressions may be foldable;
-- dynamic assignment rules require dynamic semantics;
-- static integer stoichiometry differs from state-dependent/fractional stoichiometry;
-- events, delays, algebraic rules, constraints, and SBML packages require their own semantics rather than parser-only support.
+Use official SBML expected results, independent source simulation, and analytic laws where no simulator supplies the needed oracle. Parsing, conversion and valid output alone do not prove preserved execution.
 
 ## Performance
 
@@ -378,9 +360,9 @@ Python validation tooling may prepare, run, compare, classify, and preserve evid
 
 Prefer broad generated or parameterized regression coverage in CI so regressions are repeatable and shared across contributors. Use local checks to validate the harness or a narrowly reduced reproducer; do not replace the CI matrix with one-off local cases. Preserve each stage boundary and classify unsupported, invalid input, timeout, harness error, and semantic failure separately.
 
-Use an isolated worktree and branch for sustained integration-validation work. Commit coherent checkpoints after review and appropriate focused validation; do not mix regression detection with a product fix unless the user explicitly asks for both. Delegation is optional. When using subagents in this repository, use at most one or two Luna agents, with no further delegation, unless the user explicitly authorizes a different model or scale.
+Use an isolated worktree and branch for sustained integration-validation work. Commit coherent checkpoints after review and appropriate focused validation; do not mix regression detection with a product fix unless the user explicitly asks for both. Delegation is optional. When using subagents in this repository, use the number of Luna agents set in the Phase 2 plan, with no further delegation, unless the user explicitly authorizes a different model or scale.
 
-Issue mappings and source test references are triage hints, not closure evidence or proof of execution. Declare required semantic check identities independently of process execution, consume exported artifacts in the intended downstream component, and retain bounded replay packets. Do not count a producer artifact as a successful consumer check. Reject stale, conflicting, dirty, or unverifiable revision evidence when assembling a current issue queue; source approvals and scope decisions remain explicit maintainer decisions.
+Issue mappings identify the required work. An issue closes when all named acceptance checks pass on `main`; a file reference alone does not prove a check ran. Declare required semantic check identities independently of process execution, consume exported artifacts in the intended downstream component, and retain bounded replay packets. Do not count a producer artifact as a successful consumer check. Reject stale, conflicting, dirty, or unverifiable revision evidence when assembling a current issue queue; the approvals and scope decisions recorded in `docs/DECISIONS.md` are final and satisfy those obligations. Do not request them again or add a separate closure approval.
 
 Equal stochastic seeds establish pathwise parity only when construction and draw ordering are comparable. Otherwise use a justified distributional comparison, or label invariant-only checks with their narrower scope; deterministic ODE agreement and conservation do not establish stochastic equivalence.
 
