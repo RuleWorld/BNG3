@@ -1658,6 +1658,15 @@ def _native_state_transition_v02(
         raise ValueError(
             f"native BNGIR model.rules[{index}] state transitions require one reactant and product"
         )
+    if any(
+        not isinstance(pattern, Mapping)
+        or not isinstance(pattern.get("molecules"), list)
+        or len(pattern["molecules"]) != 1
+        for pattern in (reactants[0], products[0])
+    ):
+        raise ValueError(
+            f"native BNGIR model.rules[{index}] state transitions require one molecule per pattern"
+        )
     reactant = reactants[0]["molecules"][0]
     product = products[0]["molecules"][0]
     for pattern in (reactants[0], products[0]):

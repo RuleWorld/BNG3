@@ -553,6 +553,17 @@ def test_reversible_state_transition_refuses_malformed_reverse_direction(field, 
         _cpp._model_from_bngir_v02(document["model"])
 
 
+def test_native_state_transition_guard_reports_empty_pattern_without_index_error():
+    document = _independent_reversible_state_transition_bngir_document()
+    rule = document["model"]["rules"][0]
+    direction = rule["forward"]
+    direction["reactants"][0]["molecules"] = []
+    bngir_module = importlib.import_module("bionetgen.bngir")
+
+    with pytest.raises(ValueError, match="one molecule per pattern"):
+        bngir_module._native_state_transition_v02(rule, direction, 0, document["model"])
+
+
 @pytest.mark.parametrize(
     ("edit", "message"),
     [
