@@ -1644,12 +1644,10 @@ def _native_state_transition_v02(
     direction: Mapping[str, Any],
     index: int,
     model: Mapping[str, Any],
+    *,
+    validate_mappings: bool = True,
 ) -> None:
     """Require the explicit one-site correspondence and mutation for this slice."""
-    if rule["bidirectional"]:
-        raise ValueError(
-            f"native BNGIR model.rules[{index}] does not support bidirectional state transitions"
-        )
     if model["compartments"]:
         raise ValueError(
             f"native BNGIR model.rules[{index}] state transitions do not support compartments"
@@ -1659,6 +1657,15 @@ def _native_state_transition_v02(
     if len(reactants) != 1 or len(products) != 1:
         raise ValueError(
             f"native BNGIR model.rules[{index}] state transitions require one reactant and product"
+        )
+    if any(
+        not isinstance(pattern, Mapping)
+        or not isinstance(pattern.get("molecules"), list)
+        or len(pattern["molecules"]) != 1
+        for pattern in (reactants[0], products[0])
+    ):
+        raise ValueError(
+            f"native BNGIR model.rules[{index}] state transitions require one molecule per pattern"
         )
     reactant = reactants[0]["molecules"][0]
     product = products[0]["molecules"][0]
@@ -1678,22 +1685,23 @@ def _native_state_transition_v02(
         raise ValueError(
             f"native BNGIR model.rules[{index}] state transition must preserve molecule type"
         )
-    expected_molecule = {
-        "product": {"side": "product", "pattern": 0, "molecule": 0},
-        "reactant": {"side": "reactant", "pattern": 0, "molecule": 0},
-    }
-    if rule["molecule_mappings"] != [expected_molecule]:
-        raise ValueError(
-            f"native BNGIR model.rules[{index}] state transition requires its explicit molecule mapping"
-        )
-    expected_component = {
-        "product": {"side": "product", "pattern": 0, "molecule": 0, "site": 0},
-        "reactant": {"side": "reactant", "pattern": 0, "molecule": 0, "site": 0},
-    }
-    if rule["component_mappings"] != [expected_component]:
-        raise ValueError(
-            f"native BNGIR model.rules[{index}] state transition requires its explicit site mapping"
-        )
+    if validate_mappings:
+        expected_molecule = {
+            "product": {"side": "product", "pattern": 0, "molecule": 0},
+            "reactant": {"side": "reactant", "pattern": 0, "molecule": 0},
+        }
+        if rule["molecule_mappings"] != [expected_molecule]:
+            raise ValueError(
+                f"native BNGIR model.rules[{index}] state transition requires its explicit molecule mapping"
+            )
+        expected_component = {
+            "product": {"side": "product", "pattern": 0, "molecule": 0, "site": 0},
+            "reactant": {"side": "reactant", "pattern": 0, "molecule": 0, "site": 0},
+        }
+        if rule["component_mappings"] != [expected_component]:
+            raise ValueError(
+                f"native BNGIR model.rules[{index}] state transition requires its explicit site mapping"
+            )
     before = reactant["sites"][0]["state"]
     after = product["sites"][0]["state"]
     if before["value"] == after["value"]:
@@ -2446,50 +2454,57 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                 raise ValueError(
                     f"native BNGIR model.rules[{index}].reverse.mutations must be an array"
                 )
-            for mutation_index, raw_mutation in enumerate(reverse["mutations"]):
-                mutation = _require_mapping(
-                    raw_mutation,
-                    f"model.rules[{index}].reverse.mutations[{mutation_index}]",
+            if has_state_sites:
+                _native_state_transition_v02(
+                    rule, reverse, index, model, validate_mappings=False
                 )
-                if mutation.get("kind") not in {"add_molecule", "delete_molecule"}:
-                    raise ValueError(
-                        f"native BNGIR model.rules[{index}] has unsupported reverse mutation kind {mutation.get('kind')!r}"
+            else:
+                for mutation_index, raw_mutation in enumerate(reverse["mutations"]):
+                    mutation = _require_mapping(
+                        raw_mutation,
+                        f"model.rules[{index}].reverse.mutations[{mutation_index}]",
                     )
-                _native_exact_keys(
-                    mutation,
-                    {"kind", "molecule"},
-                    f"model.rules[{index}].reverse.mutations[{mutation_index}]",
-                )
-                reference = _require_mapping(
-                    mutation["molecule"],
-                    f"model.rules[{index}].reverse.mutations[{mutation_index}].molecule",
-                )
-                _native_exact_keys(
-                    reference,
-                    {"side", "pattern", "molecule"},
-                    f"model.rules[{index}].reverse.mutations[{mutation_index}].molecule",
-                )
-                mutation_side = (
-                    "reactant" if mutation["kind"] == "delete_molecule" else "product"
-                )
-                side_patterns = (
-                    reverse["reactants"]
-                    if mutation_side == "reactant"
-                    else reverse["products"]
-                )
-                if (
-                    reference["side"] != mutation_side
-                    or isinstance(reference["pattern"], bool)
-                    or not isinstance(reference["pattern"], int)
-                    or not 0 <= reference["pattern"] < len(side_patterns)
-                    or isinstance(reference["molecule"], bool)
-                    or reference["molecule"] != 0
-                ):
-                    raise ValueError(
-                        f"native BNGIR model.rules[{index}] has a contradictory reverse molecule mutation reference"
+                    if mutation.get("kind") not in {"add_molecule", "delete_molecule"}:
+                        raise ValueError(
+                            f"native BNGIR model.rules[{index}] has unsupported reverse mutation kind {mutation.get('kind')!r}"
+                        )
+                    _native_exact_keys(
+                        mutation,
+                        {"kind", "molecule"},
+                        f"model.rules[{index}].reverse.mutations[{mutation_index}]",
                     )
-            _native_reversible_direction_v02(direction, index, "forward")
-            _native_reversible_direction_v02(reverse, index, "reverse")
+                    reference = _require_mapping(
+                        mutation["molecule"],
+                        f"model.rules[{index}].reverse.mutations[{mutation_index}].molecule",
+                    )
+                    _native_exact_keys(
+                        reference,
+                        {"side", "pattern", "molecule"},
+                        f"model.rules[{index}].reverse.mutations[{mutation_index}].molecule",
+                    )
+                    mutation_side = (
+                        "reactant"
+                        if mutation["kind"] == "delete_molecule"
+                        else "product"
+                    )
+                    side_patterns = (
+                        reverse["reactants"]
+                        if mutation_side == "reactant"
+                        else reverse["products"]
+                    )
+                    if (
+                        reference["side"] != mutation_side
+                        or isinstance(reference["pattern"], bool)
+                        or not isinstance(reference["pattern"], int)
+                        or not 0 <= reference["pattern"] < len(side_patterns)
+                        or isinstance(reference["molecule"], bool)
+                        or reference["molecule"] != 0
+                    ):
+                        raise ValueError(
+                            f"native BNGIR model.rules[{index}] has a contradictory reverse molecule mutation reference"
+                        )
+                _native_reversible_direction_v02(direction, index, "forward")
+                _native_reversible_direction_v02(reverse, index, "reverse")
 
     protocol = _require_mapping(root["protocol"], "protocol")
     _native_exact_keys(protocol, {"actions"}, "protocol")
