@@ -194,7 +194,7 @@ def test_physical_unimolecular_oracle_control_runs_with_both_locked_oracles():
         (
             item
             for item in steps
-            if item.get("name") == "Run physical unimolecular source-law control"
+            if item.get("name") == "Run physical NFsim source-law controls"
         ),
         None,
     )

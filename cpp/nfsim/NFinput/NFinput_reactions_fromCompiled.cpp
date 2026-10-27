@@ -2368,21 +2368,58 @@ bool lowerDirection(const CompiledModel& model,
         bng::units::ConversionContext context;
         if (system.getNumberPerQuantityUnit() > 0.0)
             context.numberPerQuantityUnit = system.getNumberPerQuantityUnit();
+        if (direction.reactantPatterns.size() == 2) {
+            const auto* declaration = reactantCompartmentDeclaration(
+                model, direction.reactantPatterns.front());
+            if (declaration == nullptr || !declaration->declaredUnit.has_value()) {
+                diagnostic = "physical bimolecular rate requires one declared reactant volume";
+                delete reaction;
+                return false;
+            }
+            // Leave the numeric compartment size to NFsim's existing
+            // reactant-volume scaling so parameter updates refresh 1/V.
+            // Converting at one declared volume then multiplying by the
+            // number-per-quantity scale factors out the runtime 1/(N_A*V)
+            // term exactly once.
+            context.compartmentVolume = 1.0;
+            context.volumeUnit = declaration->declaredUnit;
+        }
         const auto conversion = bng::units::stochasticRateFactor(
             *compiledRate.unit, direction.reactantPatterns.size(), context);
         if (!conversion || !conversion.factor.has_value() ||
             !std::isfinite(*conversion.factor) || *conversion.factor < 0.0) {
-            diagnostic = "physical unimolecular rate unit cannot be converted to a count rate: " +
+            diagnostic = "physical reactant-bearing rate unit cannot be converted to a count rate: " +
                          conversion.error;
             delete reaction;
             return false;
         }
+        double parameterConversion = *conversion.factor;
+        if (direction.reactantPatterns.size() == 2) {
+            parameterConversion *= system.getNumberPerQuantityUnit();
+            if (!std::isfinite(parameterConversion) || parameterConversion < 0.0) {
+                diagnostic = "physical bimolecular rate conversion factor is not finite";
+                delete reaction;
+                return false;
+            }
+        }
         reaction->volumeConversionFactor = 1.0;
         if (compiledRate.resolvedExpression().kind ==
             bng::compile::ResolvedExpressionKind::ParameterRef)
-            reaction->setBaseRateParameterConversionFactor(*conversion.factor);
+            reaction->setBaseRateParameterConversionFactor(parameterConversion);
         else
-            reaction->setBaseRate(reaction->getBaseRate() * *conversion.factor, "");
+            reaction->setBaseRate(reaction->getBaseRate() * parameterConversion, "");
+        if (direction.reactantPatterns.size() == 2) {
+            const auto* declaration = reactantCompartmentDeclaration(
+                model, direction.reactantPatterns.front());
+            auto* compartment = declaration == nullptr
+                                    ? nullptr : system.getCompartment(declaration->name);
+            if (compartment == nullptr) {
+                diagnostic = "physical bimolecular rate compartment is unavailable in NFsim";
+                delete reaction;
+                return false;
+            }
+            reaction->setReactantVolumeCompartments({compartment});
+        }
     } else if (!compiledRate.unit.has_value()) {
         // Reactant-bearing bare rate. NFsim's default propensity is the
         // mass-action count law, which already carries BNG2's identical-reactant

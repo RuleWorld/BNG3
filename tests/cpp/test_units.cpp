@@ -120,3 +120,21 @@ TEST_CASE("context-dependent conversion fails closed without a volume") {
     CHECK_FALSE(result);
     CHECK(result.error.find("compartment volume") != std::string::npos);
 }
+
+TEST_CASE("bimolecular count-rate conversion rejects incompatible dimensions") {
+    UnitSystem units;
+    const auto molarZeroOrderRate = units.parse("M/second");
+    const auto volume = units.parse("fL");
+    REQUIRE(molarZeroOrderRate);
+    REQUIRE(volume);
+
+    ConversionContext context;
+    context.numberPerQuantityUnit = 6.02214076e23;
+    context.compartmentVolume = 1.0;
+    context.volumeUnit = *volume.unit;
+
+    const auto result =
+        bng::units::stochasticRateFactor(*molarZeroOrderRate.unit, 2, context);
+    CHECK_FALSE(result);
+    CHECK(result.error.find("incompatible dimensions") != std::string::npos);
+}
