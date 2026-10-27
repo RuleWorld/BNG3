@@ -21,7 +21,7 @@ its prior source locks, the live RuleWorld heads add 29 BioNetGen, 4 NFsim,
 and 2 PyBioNetGen commits. Applicable Perl compatibility fixes and the
 explicit `packaging` dependency were ported; equivalent BNG3-native behavior,
 source-specific documentation/assets, and repository workflows are recorded
-per commit in [`UPSTREAM_RECONCILIATION_2026-09-23.md`](UPSTREAM_RECONCILIATION_2026-09-23.md)
+per commit in [`archive/reports/UPSTREAM_RECONCILIATION_2026-09-23.md`](archive/reports/UPSTREAM_RECONCILIATION_2026-09-23.md)
 and `provenance/reconciliation/`.
 
 This source snapshot is not an approved import cutoff. Phase 0 remains open

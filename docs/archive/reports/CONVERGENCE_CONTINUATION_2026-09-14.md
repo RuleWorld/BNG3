@@ -1,3 +1,5 @@
+> Historical report retained for provenance. Active documentation: [documentation index](../../index.md) and [current progress](../../CURRENT_PROGRESS.md).
+
 # Convergence continuation note
 
 This dated continuation note has been merged into the current operational
@@ -6,17 +8,17 @@ archive remain useful; the live facts belong in the documents below.
 
 ## Canonical homes
 
-- [`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md) — current implementation,
+- [`CURRENT_PROGRESS.md`](../../CURRENT_PROGRESS.md) — current implementation,
   local evidence, and remaining work.
-- [`BNG3_CONVERGENCE_DONE_CHECKLIST.md`](BNG3_CONVERGENCE_DONE_CHECKLIST.md) —
+- [`BNG3_CONVERGENCE_DONE_CHECKLIST.md`](../../BNG3_CONVERGENCE_DONE_CHECKLIST.md) —
   auditable completion criteria and exact-head evidence.
-- [`CI_PARITY.md`](CI_PARITY.md) — independent-oracle contracts and hosted CI
+- [`CI_PARITY.md`](../../CI_PARITY.md) — independent-oracle contracts and hosted CI
   parity rules.
-- [`BNG3_HANDOFF_PORT_STATUS.md`](BNG3_HANDOFF_PORT_STATUS.md) — imported
+- [`BNG3_HANDOFF_PORT_STATUS.md`](../../BNG3_HANDOFF_PORT_STATUS.md) — imported
   handoff scope and implementation dispositions.
-- [`BNG3_INTEGRATION_PLAN.md`](BNG3_INTEGRATION_PLAN.md) — backlog, phases,
+- [`BNG3_INTEGRATION_PLAN.md`](../../BNG3_INTEGRATION_PLAN.md) — backlog, phases,
   and definition of done.
-- [`../formal/lean/VALIDATION.md`](../formal/lean/VALIDATION.md) — Lean and
+- [`../formal/lean/VALIDATION.md`](../../../formal/lean/VALIDATION.md) — Lean and
   NFnext validation boundary.
 
 ## Merged continuation scope
@@ -42,6 +44,6 @@ The continuation added three related evidence and documentation themes:
 
 These themes are now summarized once in the current docs rather than being
 maintained as a second, potentially stale status narrative. Historical reports
-under [`archive/reports/`](archive/reports/) and
-[`architecture_handoffs/`](architecture_handoffs/) remain historical records
+under [`archive/reports/`](./) and
+[`architecture_handoffs/`](../architecture_handoffs/) remain historical records
 and are intentionally not rewritten as current evidence.

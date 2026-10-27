@@ -1,7 +1,9 @@
+> Historical report retained for provenance. Active documentation: [documentation index](../../index.md) and [current progress](../../CURRENT_PROGRESS.md).
+
 # NFcore2 semantic expansion checkpoint
 
 > Historical checkpoint dated 2026-09-08. The live branch and current
-> verification state are in [`../CURRENT_PROGRESS.md`](../CURRENT_PROGRESS.md);
+> verification state are in [`../../CURRENT_PROGRESS.md`](../../CURRENT_PROGRESS.md);
 > the counts and “main” references below do not qualify the active branch.
 
 This checkpoint extends the tests-first NFsim/NFcore2 port on

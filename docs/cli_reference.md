@@ -1,3 +1,8 @@
+> The [capability inventory](CAPABILITY_UNION_INVENTORY.md) defines release
+> scope and [DECISIONS.md](DECISIONS.md) records final policy. CLI availability
+> is not a claim of complete semantic qualification; see
+> [current progress](CURRENT_PROGRESS.md).
+
 # CLI Reference
 
 The live implementation and final verification state are tracked in

@@ -1,15 +1,17 @@
+> Historical report retained for provenance. Active documentation: [documentation index](../../index.md) and [current progress](../../CURRENT_PROGRESS.md).
+
 # Upstream source reconciliation — 2026-09-23
 
 This record reconciles the three live RuleWorld source heads observed with
 `gh` on 2026-09-23 against the revisions previously recorded in
-[`../provenance/upstreams.lock.yml`](../provenance/upstreams.lock.yml). The
+[`../../../provenance/upstreams.lock.yml`](../../../provenance/upstreams.lock.yml). The
 per-commit ledgers are the detailed record:
 
-- [BioNetGen](../provenance/reconciliation/bionetgen.yml): 29 commits from
+- [BioNetGen](../../../provenance/reconciliation/bionetgen.yml): 29 commits from
   `e0a5c6d9` through `9601746f`.
-- [NFsim](../provenance/reconciliation/nfsim.yml): 4 commits from
+- [NFsim](../../../provenance/reconciliation/nfsim.yml): 4 commits from
   `a6f9fa94` through `9b00d42f`.
-- [PyBioNetGen](../provenance/reconciliation/pybionetgen.yml): 2 commits from
+- [PyBioNetGen](../../../provenance/reconciliation/pybionetgen.yml): 2 commits from
   `43b09a53` through `28bf351a`.
 
 The recorded revisions are observed snapshots and proposed reconciliation

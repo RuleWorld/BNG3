@@ -1,3 +1,5 @@
+> Historical report retained for provenance. Active documentation: [documentation index](../../index.md) and [current progress](../../CURRENT_PROGRESS.md).
+
 # BNG3 offline convergence pass — 2026-09-17
 
 Static audit and low-risk convergence fixes performed in a restricted

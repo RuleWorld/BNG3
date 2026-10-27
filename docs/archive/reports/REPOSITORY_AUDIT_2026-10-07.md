@@ -1,3 +1,5 @@
+> Historical report retained for provenance. Active documentation: [documentation index](../../index.md) and [current progress](../../CURRENT_PROGRESS.md).
+
 # BNG3 repository audit and outstanding work — 2026-10-07
 
 BNG3 already combines the main codebases and has a substantial native C++ implementation. It has not yet completed the semantic consolidation, capability union, independent qualification, or formal refinement required to call that integration finished. The best next step is to finish and qualify the shared semantic boundary, rather than start another wholesale rewrite.
@@ -9,8 +11,8 @@ This is a broad source, documentation, test-selection, and live GitHub audit, wi
 **Verified state at the 2026-10-07 audit baseline.**
 
 This historical snapshot predates the issue backlog and subsequent integrations.
-Use the [issue-linked checklist](BNG3_CONVERGENCE_DONE_CHECKLIST.md) and
-[current progress](CURRENT_PROGRESS.md) for current disposition and evidence.
+Use the [issue-linked checklist](../../BNG3_CONVERGENCE_DONE_CHECKLIST.md) and
+[current progress](../../CURRENT_PROGRESS.md) for current disposition and evidence.
 
 | Check | Result and boundary |
 | --- | --- |

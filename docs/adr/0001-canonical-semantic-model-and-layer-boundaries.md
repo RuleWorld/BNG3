@@ -1,3 +1,7 @@
+> The [capability inventory](../CAPABILITY_UNION_INVENTORY.md) defines complete
+> release scope; [DECISIONS.md](../DECISIONS.md) records final policy. This ADR
+> specifies architecture boundaries, not qualification completion.
+
 # ADR 0001: Canonical semantic model and layer boundaries
 
 - Status: Accepted for staged migration

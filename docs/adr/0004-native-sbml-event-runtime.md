@@ -1,3 +1,7 @@
+> SBML release scope is defined by the [capability inventory](../CAPABILITY_UNION_INVENTORY.md)
+> and [maintainer decisions](../DECISIONS.md). The status of event checks is
+> tracked in [current progress](../CURRENT_PROGRESS.md).
+
 # ADR 0004: Native BNG3 runtime for dynamic SBML events
 
 - Status: Accepted for staged implementation

@@ -1,14 +1,12 @@
 # BNG3 convergence checklist
 
-**Release requirements:** [Capability inventory](CAPABILITY_UNION_INVENTORY.md) · [Maintainer decisions](DECISIONS.md). Every inventory row is required for the first public release.
+**Release scope:** [Capability inventory](CAPABILITY_UNION_INVENTORY.md). **Final policy:** [Maintainer decisions](DECISIONS.md). Every inventory row is a release requirement; completion requires the issue acceptance checks and exact-main evidence recorded in [current progress](CURRENT_PROGRESS.md).
 
-**Status:** incomplete; 44 of 55 audit issues are open. #132/#133/#134/#135/#136/#145/#165/#169/#173/#182/#183 are closed. #146/#154 remain reopened because their broader acceptance criteria are unmet.
-**Refreshed:** 2026-10-12 against live main
-`3ec99904afed69631808556c5646fed99328bb26` (tree
-`cd18d2682d8c62216e247e74045f415252d74421`). See
-[current progress](CURRENT_PROGRESS.md) for scoped integrations, exact evidence
-boundaries and candidates. The original audited qualification baseline was
-`e1836c3274e685996d5e86883761e00e98257e09`.
+**Status:** task index only. Issue state and exact-main check evidence are tracked in
+[current progress](CURRENT_PROGRESS.md) and each live issue. The historical audit
+baseline (`e1836c3274e685996d5e86883761e00e98257e09`) is preserved in the
+[archived audit](archive/reports/REPOSITORY_AUDIT_2026-10-07.md); it is not a
+current qualification snapshot.
 
 The target is one maintained C++/Python project containing the approved capability
 union of BioNetGen, PyBioNetGen, NFsim and Atomizer. C++ owns performance-critical
@@ -18,7 +16,7 @@ reject constructs they cannot preserve.
 
 This is the current task index. Issues own scope, acceptance criteria, sequencing,
 assignees and closure evidence. [Current progress](CURRENT_PROGRESS.md) records
-verification boundaries; the [audit](REPOSITORY_AUDIT_2026-10-07.md) explains the
+verification boundaries; the [audit](archive/reports/REPOSITORY_AUDIT_2026-10-07.md) explains the
 55 tasks. The former append-only checklist is preserved at its
 [audited revision](https://github.com/RuleWorld/BNG3/blob/e1836c3274e685996d5e86883761e00e98257e09/docs/BNG3_CONVERGENCE_DONE_CHECKLIST.md).
 Historical unchecked boxes are not current defects.

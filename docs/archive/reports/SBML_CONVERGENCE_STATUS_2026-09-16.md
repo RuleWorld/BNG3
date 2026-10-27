@@ -1,3 +1,5 @@
+> Historical report retained for provenance. Active documentation: [documentation index](../../index.md) and [current progress](../../CURRENT_PROGRESS.md).
+
 # BNG3 SBML convergence status
 
 Date: 2026-09-16
