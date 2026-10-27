@@ -159,6 +159,39 @@ jobs:
       - name: Run full test suite
         run: pytest tests/python/ -v --tb=long
 
+  release-mutation-ratchet:
+    name: Release product mutation ratchet
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Build native extension and install test dependencies
+        run: |
+          sudo apt-get update && sudo apt-get install -y cmake ninja-build
+          python -m pip install scikit-build-core pybind11 pytest numpy scipy
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON_BINDINGS=ON -DBUILD_CLI=OFF -DBUILD_TESTS=OFF
+          cmake --build build --parallel 2
+          python -m pip install -e .[full,dev]
+        env:
+          CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
+      - name: Run isolated curated product mutants
+        run: |
+          mkdir -p "$RUNNER_TEMP/antigaming-mutations"
+          python tests/validation/policy/run_antigaming.py --root "$GITHUB_WORKSPACE" \
+            --check release-scheduled-mutation-ratchet \
+            --mutation-output "$RUNNER_TEMP/antigaming-mutations/mutation-report.json"
+      - name: Publish mutation classifications and score
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-product-mutation-ratchet-${{ github.sha }}
+          path: ${{ runner.temp }}/antigaming-mutations/
+          if-no-files-found: error
+          retention-days: 90
+
   benchmarks:
     name: Performance Benchmarks
     runs-on: ubuntu-22.04

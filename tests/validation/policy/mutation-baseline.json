@@ -1,0 +1,12 @@
+{
+  "schema": 1,
+  "status": "unavailable",
+  "revision": null,
+  "artifact_sha256": null,
+  "mutant_ids": [
+    "python.set-parameter-scale"
+  ],
+  "denominator": 1,
+  "caught": null,
+  "note": "Populate only from a completed exact-main scheduled campaign whose unchanged contract suite passed and whose non-equivalent mutant was killed. Until then, release qualification must fail."
+}
