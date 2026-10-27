@@ -791,7 +791,7 @@ end model
         assert result["time"][-1] == pytest.approx(10.0)
 
     def test_total_rate_does_not_apply_reactant_symmetry_factor(self):
-        """A complete SBML flux must not be divided by repeated-reactant symmetry."""
+        """TotalRate removes symmetry division but retains reactant availability."""
         model = _cpp.parse_string("""
 begin model
 begin parameters
@@ -814,7 +814,14 @@ end model
         network = _cpp.generate_network(model)
         result = _cpp.simulate_ode(model, network, t_end=1.0, n_steps=1)
 
-        assert result["observables"]["Atot"][-1] == pytest.approx(7.0)
+        # BNG2's finite-network law keeps all three reactant factors for this
+        # authored BNGL rule, while TotalRate omits only the 1/3! symmetry
+        # factor. The continuous ODE is therefore dA/dt = -3*k*A**3.
+        expected_total_rate = 10.0 / (1.0 + 6.0 * 1.0 * 10.0**2) ** 0.5
+        expected_with_symmetry = 10.0 / (1.0 + 1.0 * 10.0**2) ** 0.5
+        observed = result["observables"]["Atot"][-1]
+        assert observed == pytest.approx(expected_total_rate, rel=1e-6)
+        assert observed != pytest.approx(expected_with_symmetry, rel=1e-3)
 
     def test_ssa_simulation(self, tmp_path):
         bngl = tmp_path / "ssa.bngl"
