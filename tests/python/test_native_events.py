@@ -189,6 +189,78 @@ def test_recurring_native_event_matches_independent_roadrunner(tmp_path):
     )
 
 
+def test_dynamic_native_event_priorities_match_independent_roadrunner(tmp_path):
+    roadrunner = pytest.importorskip("roadrunner")
+    path = tmp_path / "dynamic-priorities.bngl"
+    path.write_text("""begin molecule types
+  S()
+  O()
+end molecule types
+begin seed species
+  S() 0
+  O() 0
+end seed species
+begin observables
+  Molecules Signal S()
+  Molecules Result O()
+end observables
+begin bng3_events version 1
+  event "raise_signal"
+    trigger: time >= 1
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: false
+    delay: 1
+    priority: 100
+    assignment: Signal = 10
+  end event
+  event "set_first"
+    trigger: time >= 1
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: false
+    delay: 1
+    priority: 10 - Signal + time
+    assignment: Result = 1
+  end event
+  event "set_last"
+    trigger: time >= 1
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: false
+    delay: 1
+    priority: 5 + Signal - time
+    assignment: Result = 2
+  end event
+end bng3_events
+""")
+    actual = bionetgen.load(str(path)).simulate(method="ode", t_end=3, n_steps=3)
+
+    sbml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+<model id="dynamic_priority"><listOfCompartments><compartment id="c" size="1" constant="true"/></listOfCompartments>
+<listOfSpecies>
+<species id="Signal" compartment="c" initialAmount="0" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+<species id="Result" compartment="c" initialAmount="0" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+</listOfSpecies><listOfEvents>
+<event id="raise_signal" useValuesFromTriggerTime="false"><trigger initialValue="false" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><geq/><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>1</cn></apply></math></trigger><delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></delay><priority><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>100</cn></math></priority><listOfEventAssignments><eventAssignment variable="Signal"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>10</cn></math></eventAssignment></listOfEventAssignments></event>
+<event id="set_first" useValuesFromTriggerTime="false"><trigger initialValue="false" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><geq/><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>1</cn></apply></math></trigger><delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></delay><priority><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><plus/><apply><minus/><cn>10</cn><ci>Signal</ci></apply><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol></apply></math></priority><listOfEventAssignments><eventAssignment variable="Result"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></eventAssignment></listOfEventAssignments></event>
+<event id="set_last" useValuesFromTriggerTime="false"><trigger initialValue="false" persistent="true"><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><geq/><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>1</cn></apply></math></trigger><delay><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></delay><priority><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><minus/><apply><plus/><cn>5</cn><ci>Signal</ci></apply><csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol></apply></math></priority><listOfEventAssignments><eventAssignment variable="Result"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math></eventAssignment></listOfEventAssignments></event>
+</listOfEvents></model></sbml>"""
+    oracle = roadrunner.RoadRunner(sbml)
+    oracle.integrator.relative_tolerance = 1e-10
+    oracle.integrator.absolute_tolerance = 1e-12
+    expected = oracle.simulate(
+        0, 3, 4, selections=["time", "Signal", "Result"]
+    )
+    assert expected[2, 2] == pytest.approx(1.0)
+    np.testing.assert_allclose(
+        actual.observables["Signal"], expected[:, 1], rtol=0, atol=1e-12
+    )
+    np.testing.assert_allclose(
+        actual.observables["Result"], expected[:, 2], rtol=0, atol=1e-12
+    )
+
+
 def test_simultaneous_assignments_refuse_two_aliases_for_same_species(tmp_path):
     model(tmp_path, assignments="X = 1; Y = 2")
     path = tmp_path / "events.bngl"

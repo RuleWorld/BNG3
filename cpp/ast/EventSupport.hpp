@@ -20,21 +20,6 @@ inline void validateNativeEventSubset(const Model& model) {
     if (model.getEvents().empty()) fail("at least one event is required");
     const ModelFunctionEvaluator functionEvaluator(model);
     for (const auto& event : model.getEvents()) {
-    if (event.priority) {
-        // The priority orders the assignments of events that are executed
-        // simultaneously.  It has to be a static value, because the order
-        // of two simultaneous events has to be decided before either of them
-        // runs.
-        for (const auto& name : event.priority->getDependencies()) {
-            if (name == "time") fail("event priority must be static");
-            for (const auto& observable : model.getObservables()) {
-                if (observable.getName() == name) fail("event priority must be static");
-            }
-            try {
-                if (model.getParameters().isTimeDependent(name)) fail("event priority must be static");
-            } catch (const std::exception&) { fail("event priority requires static parameters"); }
-        }
-    }
     const auto trigger = functionEvaluator.expandFunctions(event.trigger);
     // A trigger is a strict inequality or a conjunction of them.  A
     // conjunction holds only where every conjunct holds, so its root function
@@ -157,6 +142,56 @@ inline void validateNativeEventSubset(const Model& model) {
         }
         fail("only continuous polynomial event expressions are supported");
     };
+    if (event.priority) {
+        const auto& priority = *event.priority;
+        bool dynamic = false;
+        std::function<void(const Expression&)> inspectPriority = [&](const Expression& expression) {
+            if (expression.kind() == ExpressionKind::ObservableRef) dynamic = true;
+            if (expression.kind() == ExpressionKind::Identifier) {
+                if (expression.name() == "time" || expression.name() == "t") {
+                    dynamic = true;
+                }
+                for (const auto& observable : model.getObservables()) {
+                    if (observable.getName() == expression.name()) dynamic = true;
+                }
+            }
+            for (const auto& child : expression.args()) inspectPriority(child);
+        };
+        inspectPriority(priority);
+        if (dynamic) {
+            // This bounded subclass uses the same continuous polynomial
+            // arithmetic already supported for event triggers and assignment
+            // values. Priority expressions may depend on time, species
+            // observables, and static parameters only.
+            continuous(priority);
+            for (const auto& name : priority.getDependencies()) {
+                if (name == "time" || name == "t") continue;
+                bool observableReference = false;
+                for (const auto& observable : model.getObservables()) {
+                    observableReference = observableReference ||
+                                          observable.getName() == name;
+                }
+                if (observableReference) continue;
+                try {
+                    if (model.getParameters().isTimeDependent(name)) {
+                        fail("dynamic event priority requires static parameters");
+                    }
+                } catch (const std::exception&) {
+                    fail("dynamic event priority requires static parameters");
+                }
+            }
+        } else {
+            for (const auto& name : priority.getDependencies()) {
+                try {
+                    if (model.getParameters().isTimeDependent(name)) {
+                        fail("event priority must use static parameters or dynamic state");
+                    }
+                } catch (const std::exception&) {
+                    fail("event priority requires static parameters");
+                }
+            }
+        }
+    }
     // Every conjunct of the trigger is a continuous polynomial expression.
     std::function<void(const Expression&)> continuousTrigger = [&](const Expression& expression) {
         if (expression.kind() == ExpressionKind::Binary && expression.name() == "&&") {

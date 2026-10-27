@@ -207,6 +207,7 @@ private:
         bool useValuesFromTriggerTime = true;
         double delay = 0.0;
         double priority = 0.0;
+        std::optional<ast::Expression> dynamicPriority;
         std::vector<ast::EventAssignment> assignments;
         // The species each assignment writes, in the order of `assignments`.
         std::vector<std::size_t> targets;

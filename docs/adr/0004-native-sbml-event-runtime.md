@@ -47,9 +47,14 @@ observable state, whose assignments write observable state, and whose delay is
 a constant. Several events may share the block: the runtime registers one root
 function per trigger, orders the events that are executed simultaneously by
 their priority, re-tests every trigger after an execution, and does not
-execute a non-persistent event whose trigger has become false again. It does
-not run under the stochastic backend, and the Atomizer refuses the remaining
-constructs explicitly instead of lowering them approximately.
+execute a non-persistent event whose trigger has become false again. Priorities
+may be constants or continuous polynomial arithmetic over time, species
+observables, and static parameters; pending priorities are evaluated at the
+execution instant and reevaluated after each event assignment. Equal priorities
+retain deterministic queue insertion order, which is not SBML's required random
+tie behavior and remains unqualified. The runtime does not run under the
+stochastic backend, and the Atomizer refuses the remaining constructs
+explicitly instead of lowering them approximately.
 
 Implementation proceeds in slices, while this complete semantic contract
 remains the acceptance target. A supported ODE slice does not imply support
@@ -108,18 +113,15 @@ ODE solver, event queue, stochastic engine, and conformance tests.
   re-test of every trigger after an execution, and the priority ordering of
   the events that are executed simultaneously; a model whose events cannot be
   ordered is refused rather than approximated.
-- A same-priority event set that requires random ordering must not be
-  serialized as one arbitrarily ordered deterministic action sequence.  SBML
-  4.12 defines simultaneous execution as several events with the same
+- SBML 4.12 defines simultaneous execution as several events with the same
   execution instant: without a `Priority` the order is undefined and any
   order is allowed, with different `Priority` values the higher one runs
   first, and with equal `Priority` values the specification requires a
-  random order.  A model that reaches the last case therefore has no
-  deterministic execution and must stay explicitly unsupported rather than
-  take an arbitrary order.  Two events with different triggers can still be
-  triggered at the same instant and nothing in the model proves that they
-  cannot, so the native lowering requires every event of a model with more
-  than one event to carry a static priority of its own.
+  random order. The native ODE queue retains stable insertion order for exact
+  ties, so those ties are not qualified as SBML-equivalent. It also does not
+  claim a random-order implementation for SSA. The ODE subset accepts both
+  static priorities and a bounded dynamic expression subclass; cascades,
+  recurrence, stochastic transitions, and general priority ties remain open.
 - The *scheduled action* path orders a simultaneous group by evaluating the
   priorities at the execution instant, which the specification prescribes
   (Sec. 4.12.3).  A priority that reads the model state is therefore usable
@@ -142,8 +144,10 @@ ODE solver, event queue, stochastic engine, and conformance tests.
    priority tests grounded in official SBML cases. The trigger transition,
    the delayed execution, both snapshot choices, the single-event priority,
    the persistence rule, the priority ordering between simultaneous events
-   and the re-test of every trigger after an execution are covered; the
-   stochastic backend is not.
+   and the re-test of every trigger after an execution are covered. Dynamic
+   native ODE priorities are now checked with a three-event delayed ordering
+   regression and an independent RoadRunner comparison; the stochastic
+   backend and official-case end-to-end import remain unqualified.
 4. [ ] Add stochastic event-queue semantics and seeded random ordering.
 5. [x] Round-trip the event block through the BNGL parser/writer. The public
    Python CVODE path executes one immediate event with simultaneous species
