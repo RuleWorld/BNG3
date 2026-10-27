@@ -539,6 +539,7 @@ def evaluate_case(case, *, native_import, wrap_model, output=None):
             or str(exc) == "native BNGIR molecule type components are unsupported"
             or str(exc) == "native BNGIR binding-only components are unsupported"
             or str(exc) == "native BNGIR does not support compartments"
+            or str(exc) == "native BNGIR pattern requires exactly one molecule"
         ):
             row.update(
                 status="UNSUPPORTED",
