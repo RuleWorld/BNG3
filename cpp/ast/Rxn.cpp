@@ -13,7 +13,8 @@ Rxn::Rxn(
     std::string originRuleName,
     std::optional<Expression> rateExpression,
     std::optional<Expression> delayExpression,
-    bool nonConsuming)
+    bool nonConsuming,
+    bool absoluteFlux)
     : label_(std::move(label)),
       reactants_(std::move(reactants)),
       products_(std::move(products)),
@@ -22,7 +23,8 @@ Rxn::Rxn(
       originRuleName_(std::move(originRuleName)),
       rateExpression_(std::move(rateExpression)),
       delayExpression_(std::move(delayExpression)),
-      nonConsuming_(nonConsuming) {}
+      nonConsuming_(nonConsuming),
+      absoluteFlux_(absoluteFlux) {}
 
 const std::string& Rxn::getLabel() const {
     return label_;
@@ -62,6 +64,10 @@ const std::optional<Expression>& Rxn::getDelayExpression() const {
 
 bool Rxn::isNonConsuming() const {
     return nonConsuming_;
+}
+
+bool Rxn::isAbsoluteFlux() const {
+    return absoluteFlux_;
 }
 
 } // namespace bng::ast

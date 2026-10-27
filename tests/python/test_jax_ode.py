@@ -77,7 +77,7 @@ def test_rate_underflowing_jax_state_dtype_is_rejected():
         ("A() -> B() k", "A() 20\nB() 0", [20.0, 0.0], [-4.0, 4.0]),
         # The compiled coefficient includes the identical-reactant factor 1/2.
         ("A() + A() -> B() k", "A() 20\nB() 0", [20.0, 0.0], [-80.0, 40.0]),
-        ("A() -> B() k TotalRate", "A() 20\nB() 0", [20.0, 0.0], [-0.2, 0.2]),
+        ("A() -> B() k TotalRate", "A() 20\nB() 0", [20.0, 0.0], [-4.0, 4.0]),
         ("A() -> B() k", "$A() 20\nB() 0", [20.0, 0.0], [0.0, 4.0]),
         ("0 -> A() k", "A() 0\nB() 0", [0.0, 0.0], [0.2, 0.0]),
         ("A() -> 0 k", "A() 20\nB() 0", [-2.0, 0.0], [0.4, 0.0]),
@@ -90,6 +90,31 @@ def test_rhs_matches_analytic_and_native(rule, seeds, state, expected):
     actual = np.asarray(rhs(0.0, jax.numpy.asarray(state)))
     np.testing.assert_allclose(actual, expected, rtol=1e-6, atol=1e-6)
     native = cpp._validation_ode_rhs(model, network, 0.0, state)
+    np.testing.assert_allclose(actual, native, rtol=1e-6, atol=1e-6)
+
+
+def test_absolute_flux_metadata_omits_reactant_population_factor():
+    model = cpp.parse_string("""setOption("BNG3AbsoluteFluxRules", "r")
+begin model
+begin parameters
+k 0.2
+end parameters
+begin molecule types
+A()
+B()
+end molecule types
+begin seed species
+A() 20
+B() 0
+end seed species
+begin reaction rules
+r: A() -> B() k TotalRate
+end reaction rules
+end model""")
+    network = cpp.generate_network(model)
+    actual = np.asarray(jax_ode.compile_rhs(model)(0.0, jax.numpy.asarray([20.0, 0.0])))
+    np.testing.assert_allclose(actual, [-0.2, 0.2], rtol=1e-6, atol=1e-6)
+    native = cpp._validation_ode_rhs(model, network, 0.0, [20.0, 0.0])
     np.testing.assert_allclose(actual, native, rtol=1e-6, atol=1e-6)
 
 

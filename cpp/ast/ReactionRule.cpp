@@ -1887,7 +1887,7 @@ std::size_t ReactionRule::expandRule(
                 1.0,
                 ruleName_,
                 rates_.empty() ? std::nullopt : std::optional<Expression>(rates_.front()),
-                delayExpression_, nonConsuming_));
+                delayExpression_, nonConsuming_, absoluteFlux_));
             return 1;
         }
         return 0;
@@ -3254,7 +3254,7 @@ bool ReactionRule::buildReaction(
         factor,
         ruleName_,
         rates_.empty() ? std::nullopt : std::optional<Expression>(rates_.front()),
-        delayExpression_, nonConsuming_));
+        delayExpression_, nonConsuming_, absoluteFlux_));
     return added;
 }
 

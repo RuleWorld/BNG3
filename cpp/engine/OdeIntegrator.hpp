@@ -130,7 +130,8 @@ public:
         // rateConstant. Delayed completion may evaluate this expression at a
         // historical parameter snapshot after a continuation intervention.
         std::optional<ast::Expression> sourceRateExpr;
-        bool isTotalRate = false;     // true if rate is total (not multiplied by reactant conc)
+        bool isTotalRate = false;     // no statistical/unit conversion factor
+        bool isAbsoluteFlux = false;  // source law already includes reactant dependence
         double delay = 0.0;           // constant reaction delay (0 = ordinary reaction)
         bool nonConsuming = false;    // defer net stoichiometry until completion
     };
@@ -157,6 +158,7 @@ private:
         std::size_t productCount = 0;
         double rateConstant = 0.0;
         bool isTotalRate = false;
+        bool isAbsoluteFlux = false;
     };
 
     std::vector<CompiledReaction> compiledRxns_;

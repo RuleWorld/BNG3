@@ -58,6 +58,47 @@ NetReader::ParseResult NetReader::parse(const std::filesystem::path& filepath) {
             line = trim(line);
             if (line.empty()) continue;
 
+            if (currentSection.empty() &&
+                line.find("BNG3AbsoluteFluxReactionIndices") != std::string::npos) {
+                const auto firstQuote = line.find('"');
+                const auto secondQuote = firstQuote == std::string::npos
+                    ? std::string::npos : line.find('"', firstQuote + 1);
+                const auto thirdQuote = secondQuote == std::string::npos
+                    ? std::string::npos : line.find('"', secondQuote + 1);
+                const auto fourthQuote = thirdQuote == std::string::npos
+                    ? std::string::npos : line.find('"', thirdQuote + 1);
+                if (line.rfind("setOption(", 0) != 0 ||
+                    firstQuote == std::string::npos ||
+                    secondQuote == std::string::npos ||
+                    thirdQuote == std::string::npos ||
+                    fourthQuote == std::string::npos ||
+                    secondQuote <= firstQuote || thirdQuote <= secondQuote ||
+                    fourthQuote <= thirdQuote ||
+                    trim(line.substr(fourthQuote + 1)) != ")") {
+                    throw std::runtime_error(
+                        "malformed BNG3AbsoluteFluxReactionIndices option");
+                }
+                const auto key = line.substr(firstQuote + 1,
+                                             secondQuote - firstQuote - 1);
+                if (key != "BNG3AbsoluteFluxReactionIndices") {
+                    throw std::runtime_error(
+                        "malformed BNG3AbsoluteFluxReactionIndices option");
+                }
+                const auto value = line.substr(thirdQuote + 1,
+                                               fourthQuote - thirdQuote - 1);
+                for (const auto& rawToken : split(value, ',')) {
+                    const auto token = trim(rawToken);
+                    std::size_t parsedLength = 0;
+                    const auto index = std::stoull(token, &parsedLength);
+                    if (parsedLength != token.size() || index == 0 ||
+                        !result.absoluteFluxReactionIndices.insert(
+                            static_cast<std::size_t>(index)).second) {
+                        throw std::runtime_error(
+                            "invalid or duplicate absolute-flux reaction index");
+                    }
+                }
+            }
+
             // Check for section headers
             if (line.find("begin") == 0) {
                 auto tokens = split(line, ' ');
@@ -114,6 +155,19 @@ NetReader::ParseResult NetReader::parse(const std::filesystem::path& filepath) {
             } else if (currentSection == "reaction") {
                 // "reaction rules" section - store raw lines for passthrough
                 result.rawReactionRuleLines.push_back(line);
+            }
+        }
+
+        for (const auto index : result.absoluteFluxReactionIndices) {
+            if (index > result.reactions.size()) {
+                throw std::runtime_error(
+                    "absolute-flux reaction index is outside the reaction table");
+            }
+            std::istringstream row(result.reactions[index - 1]);
+            std::size_t rowIndex = 0;
+            if (!(row >> rowIndex) || rowIndex != index) {
+                throw std::runtime_error(
+                    "absolute-flux reaction index does not match its channel row");
             }
         }
 

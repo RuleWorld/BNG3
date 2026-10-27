@@ -14,6 +14,7 @@
 #include "BNGParser.h"
 #include "parser/PatternGraphBuilder.hpp"
 #include "core/Ullmann.hpp"
+#include "compile/TotalRate.hpp"
 
 namespace bng::engine {
 
@@ -167,6 +168,12 @@ void PlaSimulator::compile() {
 
     compiledRxns_.clear();
     for (const auto& rxn : network_.reactions.all()) {
+        if (bng::compile::isTotalRateReaction(model_, rxn.getOriginRuleName()) ||
+            bng::compile::isAbsoluteFluxReaction(model_, rxn)) {
+            throw std::runtime_error(
+                "PLA does not support TotalRate or absolute-flux reactions; "
+                "failing closed.");
+        }
         CompiledReaction crxn;
         crxn.reactantIndices = rxn.getReactants();
         crxn.productIndices = rxn.getProducts();

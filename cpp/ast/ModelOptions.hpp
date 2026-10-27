@@ -162,6 +162,13 @@ inline Validation validate(const std::string& key, const std::string& value) {
         return accepted();
     }
 
+    if (key == "BNG3AbsoluteFluxRules") {
+        // Private BNG3 provenance emitted by the SBML atomizer.  BNG2 stores
+        // unknown options without changing model behavior, so this marker does
+        // not alter established external BNGL execution.
+        return accepted();
+    }
+
     // Recognized-by-shape: BNG2 treats any *Units key as a unit assignment.
     if (key.size() > 5 && key.compare(key.size() - 5, 5, "Units") == 0) {
         return accepted();

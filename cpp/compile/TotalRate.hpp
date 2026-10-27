@@ -5,22 +5,17 @@
 
 namespace bng::ast {
 class Model;
+class Rxn;
 class ReactionRule;
 } // namespace bng::ast
 
 namespace bng::compile {
 
-// The TotalRate capability: a rule whose rate law states the complete
-// macroscopic reaction rate.
-//
-// A TotalRate reaction carries neither the reaction centre's symmetry factor
-// nor the reactant concentration factors: the rate is already the complete
-// flux.  The decision therefore has to be made once, and every consumer of
-// it - the network writer, the SBML writer, the BNG-XML writer and the ODE
-// and SSA engines - has to ask the same owner.  A consumer that re-derives
-// the decision from the rule name alone cannot see the reverse direction of a
-// rule, and then reports a different rate for a reaction that the engine
-// executes as a total rate.
+// The TotalRate capability: a rule uses a rate coefficient without the
+// reaction-centre symmetry factor.  In finite networks, canonical BNG2 still
+// multiplies authored BNGL TotalRate coefficients by available reactant
+// counts.  Atomizer-lowered SBML laws are separately marked as absolute fluxes
+// because their expressions already include that dependence.
 //
 // This header is the single owner of the capability.  The spelling of the
 // modifier belongs here as well: no other translation unit may compare a
@@ -60,13 +55,21 @@ struct OriginRule {
 // Resolve an origin rule name to the rule it names.
 OriginRule resolveOriginRule(const std::string& originRuleName);
 
-// Is the reaction's rate a macroscopic total rate?
+// Does the reaction originate from a rule carrying the TotalRate modifier?
 //
-// The reverse direction of a TotalRate rule is a total rate as well: the
-// rule states the complete rate of the reversible step, and both directions
-// inherit it.  A rule the model declares decides the capability by its own
-// modifiers, so a rule whose own name ends in "_reverse" keeps the
-// capability it declares.
+// Reverse directions inherit the modifier.  TotalRate affects symmetry and
+// unit conversion; `isAbsoluteFluxReaction` separately identifies source
+// laws that already include reactant dependence.
 bool isTotalRateReaction(const ast::Model& model, const std::string& originRuleName);
+
+// Is this TotalRate reaction an Atomizer-lowered SBML absolute flux?  These
+// laws already contain their reactant dependence and must not get finite
+// network count factors applied a second time.
+bool isAbsoluteFluxReaction(const ast::Model& model,
+                            const std::string& originRuleName);
+bool isAbsoluteFluxReaction(const ast::Model& model, const ast::Rxn& reaction);
+
+// Serialize the current per-rule provenance list for BNGL and .net round trips.
+std::string absoluteFluxRuleNames(const ast::Model& model);
 
 } // namespace bng::compile

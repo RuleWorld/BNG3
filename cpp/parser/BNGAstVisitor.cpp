@@ -1507,6 +1507,7 @@ std::any BNGAstVisitor::visitProg(BNGParser::ProgContext* ctx) {
     predeclareMoleculeTypes(ctx);
     visitChildren(ctx);
     currentModel_->refreshParameterDependentCompartments();
+    currentModel_->validateAbsoluteFluxRuleMetadata();
     return {};
 }
 

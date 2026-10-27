@@ -69,6 +69,7 @@ private:
         double rateConstant;    // evaluated base rate (k)
         double statFactor;      // statistical factor
         bool isTotalRate = false;
+        bool isAbsoluteFlux = false;
     };
 
     struct CompiledGroup {

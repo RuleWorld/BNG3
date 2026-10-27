@@ -998,17 +998,31 @@ NetReader::ParseResult SbmlReader::parse(
                     throw std::runtime_error("reaction has no kinetic law");
                 }
                 bool totalRate = false;
+                bool absoluteFlux = false;
                 const auto* annotation = reaction->FirstChildElement("annotation");
                 if (annotation != nullptr) {
                     for (auto* marker = annotation->FirstChildElement(); marker != nullptr;
                          marker = marker->NextSiblingElement()) {
                         if (bng::compile::isTotalRateMarkerName(marker->Value())) {
                             totalRate = true;
-                            break;
+                            // SBML kinetic laws are complete reaction fluxes.
+                            // Historical BNG exports used only bng:totalRate
+                            // to preserve that fact; retain their semantics
+                            // even when the newer absoluteFlux marker is absent.
+                            absoluteFlux = true;
+                        }
+                        if (std::string(marker->Value()) == "bng:absoluteFlux" ||
+                            std::string(marker->Value()) == "absoluteFlux") {
+                            absoluteFlux = true;
                         }
                     }
                 }
-                const auto expression = totalRate
+                if (absoluteFlux) {
+                    result.absoluteFluxReactionIndices.insert(
+                        static_cast<std::size_t>(index));
+                    totalRate = true;
+                }
+                const auto expression = (absoluteFlux || totalRate)
                     ? mathExpression(math)
                     : stripReactantFactors(mathExpression(math), reactantIds);
                 std::ostringstream line;

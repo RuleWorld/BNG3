@@ -19,7 +19,8 @@ public:
         std::string originRuleName = {},
         std::optional<Expression> rateExpression = std::nullopt,
         std::optional<Expression> delayExpression = std::nullopt,
-        bool nonConsuming = false);
+        bool nonConsuming = false,
+        bool absoluteFlux = false);
 
     const std::string& getLabel() const;
     const std::vector<std::size_t>& getReactants() const;
@@ -31,6 +32,7 @@ public:
     const std::optional<Expression>& getRateExpression() const;
     const std::optional<Expression>& getDelayExpression() const;
     bool isNonConsuming() const;
+    bool isAbsoluteFlux() const;
 
 private:
     std::string label_;
@@ -42,6 +44,7 @@ private:
     std::optional<Expression> rateExpression_;
     std::optional<Expression> delayExpression_;
     bool nonConsuming_;
+    bool absoluteFlux_;
 };
 
 } // namespace bng::ast

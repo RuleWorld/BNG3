@@ -150,6 +150,11 @@ public:
     const std::vector<Expression>& getRates() const;
     const std::vector<std::string>& getModifiers() const;
     bool isBidirectional() const;
+    // Atomizer-lowered SBML rules can carry a complete absolute flux even
+    // though their BNGL rule is annotated TotalRate.  This provenance is
+    // restored from the BNG3AbsoluteFluxRules model option.
+    bool isAbsoluteFlux() const noexcept { return absoluteFlux_; }
+    void setAbsoluteFlux(bool value) noexcept { absoluteFlux_ = value; }
     const std::optional<Expression>& getDelayExpression() const;
     bool isNonConsuming() const;
     void setDelay(Expression expression, bool nonConsuming);
@@ -262,6 +267,7 @@ private:
     std::vector<std::string> products_;
     std::vector<Expression> rates_;
     std::vector<std::string> modifiers_;
+    bool absoluteFlux_ = false;
     bool bidirectional_;
     Expression drivingWork_;
     bool hasDrivingWork_ = false;

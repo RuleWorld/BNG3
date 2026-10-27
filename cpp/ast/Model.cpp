@@ -3,6 +3,8 @@
 #include "ModelOptions.hpp"
 
 #include <algorithm>
+#include <sstream>
+#include <unordered_set>
 #include <cmath>
 #include <iostream>
 #include <utility>
@@ -10,6 +12,16 @@
 
 namespace bng {
 namespace ast {
+
+namespace {
+
+std::string absoluteFluxRuleKey(const ReactionRule& rule) {
+    auto key = rule.getLabel().empty() ? rule.getRuleName() : rule.getLabel();
+    if (!key.empty() && key.back() == ':') key.pop_back();
+    return key;
+}
+
+} // namespace
 
 Model::Model() = default;
 Model::~Model() = default;
@@ -68,6 +80,17 @@ void Model::addSeedSpecies(SeedSpecies seedSpecies) {
 }
 
 void Model::addReactionRule(ReactionRule reactionRule) {
+    const auto provenance = options_.find("BNG3AbsoluteFluxRules");
+    if (provenance != options_.end()) {
+        std::istringstream names(provenance->second);
+        std::string name;
+        while (std::getline(names, name, ',')) {
+            if (name == absoluteFluxRuleKey(reactionRule)) {
+                reactionRule.setAbsoluteFlux(true);
+                break;
+            }
+        }
+    }
     reactionRules_.push_back(std::move(reactionRule));
 }
 
@@ -130,7 +153,68 @@ void Model::setOption(std::string key, std::string value) {
         std::cerr << "WARNING: setOption(\"" << key << "\",\"" << value
                   << "\"): " << validation.message << "\n";
     }
-    options_[std::move(key)] = std::move(value);
+    options_[key] = std::move(value);
+    if (key == "BNG3AbsoluteFluxRules") {
+        for (auto& rule : reactionRules_) {
+            rule.setAbsoluteFlux(false);
+        }
+        std::istringstream names(options_.at(key));
+        std::string name;
+        while (std::getline(names, name, ',')) {
+            for (auto& rule : reactionRules_) {
+                if (absoluteFluxRuleKey(rule) == name) {
+                    rule.setAbsoluteFlux(true);
+                }
+            }
+        }
+    }
+}
+
+void Model::validateAbsoluteFluxRuleMetadata() const {
+    if (options_.count("BNG3AbsoluteFluxReactionIndices") != 0) {
+        throw std::runtime_error(
+            "BNG3AbsoluteFluxReactionIndices is .net-only metadata and cannot "
+            "be used in a BNGL model");
+    }
+    const auto provenance = options_.find("BNG3AbsoluteFluxRules");
+    if (provenance == options_.end()) return;
+    std::istringstream names(provenance->second);
+    std::unordered_set<std::string> seen;
+    std::string name;
+    while (std::getline(names, name, ',')) {
+        if (name.empty() || !seen.insert(name).second) {
+            throw std::runtime_error(
+                "BNG3AbsoluteFluxRules contains an empty or duplicate rule name");
+        }
+        const auto matches = std::count_if(
+            reactionRules_.begin(), reactionRules_.end(),
+            [&](const auto& candidate) {
+                return absoluteFluxRuleKey(candidate) == name;
+            });
+        if (matches == 0) {
+            throw std::runtime_error(
+                "BNG3AbsoluteFluxRules names missing reaction label '" + name + "'");
+        }
+        if (matches > 1) {
+            throw std::runtime_error(
+                "BNG3AbsoluteFluxRules reaction label is ambiguous: '" + name + "'");
+        }
+        const auto rule = std::find_if(
+            reactionRules_.begin(), reactionRules_.end(),
+            [&](const auto& candidate) {
+                return absoluteFluxRuleKey(candidate) == name;
+            });
+        if (rule == reactionRules_.end()) {
+            throw std::runtime_error("internal absolute-flux rule lookup failed");
+        }
+        if (!rule->isAbsoluteFlux() ||
+            std::find(rule->getModifiers().begin(), rule->getModifiers().end(),
+                      "TotalRate") == rule->getModifiers().end()) {
+            throw std::runtime_error(
+                "BNG3AbsoluteFluxRules rule '" + name +
+                "' must carry the TotalRate modifier");
+        }
+    }
 }
 
 void Model::defineUnit(std::string id, std::string expression) {

@@ -83,6 +83,38 @@ double evaluateRateString(const std::string& rateStr,
     return resolve(s);
 }
 
+bool isParameterOnlyExpression(const ast::Expression& expression,
+                               const ast::Model& model,
+                               std::set<std::string>& visiting) {
+    switch (expression.kind()) {
+        case ast::ExpressionKind::Number:
+            return true;
+        case ast::ExpressionKind::Identifier: {
+            const auto& name = expression.name();
+            if (!model.getParameters().contains(name) ||
+                !visiting.insert(name).second) {
+                return false;
+            }
+            const auto result = isParameterOnlyExpression(
+                model.getParameters().get(name).getExpression(), model, visiting);
+            visiting.erase(name);
+            return result;
+        }
+        case ast::ExpressionKind::Unary:
+        case ast::ExpressionKind::Binary:
+            return std::all_of(
+                expression.args().begin(), expression.args().end(),
+                [&](const auto& child) {
+                    return isParameterOnlyExpression(child, model, visiting);
+                });
+        case ast::ExpressionKind::Function:
+        case ast::ExpressionKind::ObservableRef:
+        case ast::ExpressionKind::TableFunction:
+            return false;
+    }
+    return false;
+}
+
 } // anonymous namespace
 
 
@@ -151,10 +183,34 @@ void PsaSimulator::compile() {
         CompiledReaction crxn;
         crxn.reactantIndices = rxn.getReactants();
         crxn.productIndices = rxn.getProducts();
-        crxn.statFactor = rxn.getFactor();
 
         const auto& originRuleName = rxn.getOriginRuleName();
-        crxn.isTotalRate = bng::compile::isTotalRateReaction(model_, originRuleName);
+        crxn.isAbsoluteFlux = bng::compile::isAbsoluteFluxReaction(model_, rxn);
+        crxn.isTotalRate = bng::compile::isTotalRateReaction(model_, originRuleName) ||
+                           crxn.isAbsoluteFlux;
+        crxn.statFactor = crxn.isTotalRate ? 1.0 : rxn.getFactor();
+
+        if (crxn.isAbsoluteFlux) {
+            std::optional<ast::Expression> expression = rxn.getRateExpression();
+            if (!expression.has_value()) {
+                auto rateLaw = rxn.getRateLaw();
+                const auto local = rateLaw.find("|local:");
+                if (local != std::string::npos) rateLaw.erase(local);
+                try {
+                    expression = parser::parseExpression(rateLaw);
+                } catch (const std::exception&) {
+                    throw std::runtime_error(
+                        "PSA does not support non-constant absolute-flux rate laws; "
+                        "failing closed.");
+                }
+            }
+            std::set<std::string> visiting;
+            if (!isParameterOnlyExpression(*expression, model_, visiting)) {
+                throw std::runtime_error(
+                    "PSA does not support state/time-dependent absolute-flux rate "
+                    "laws; failing closed.");
+            }
+        }
 
         // Build rate string (same logic as OdeIntegrator::compile)
         std::ostringstream rateStrBuilder;
@@ -175,11 +231,16 @@ void PsaSimulator::compile() {
             try {
                 paramResolver(derivedParamName);
                 foundDerived = true;
-                const auto unitFactor = bng::io::NetWriter::computeUnitConversionFactor(rxn, model_, network_);
-                if (unitFactor.has_value()) {
-                    rateStrBuilder << *unitFactor << "*";
+                if (!crxn.isTotalRate) {
+                    const auto unitFactor =
+                        bng::io::NetWriter::computeUnitConversionFactor(
+                            rxn, model_, network_);
+                    if (unitFactor.has_value()) {
+                        rateStrBuilder << *unitFactor << "*";
+                    }
                 }
-                if (std::abs(rxn.getFactor() - 1.0) >= 1e-9) {
+                if (!crxn.isTotalRate &&
+                    std::abs(rxn.getFactor() - 1.0) >= 1e-9) {
                     rateStrBuilder << rxn.getFactor() << "*";
                 }
                 rateStrBuilder << derivedParamName;
@@ -197,7 +258,8 @@ void PsaSimulator::compile() {
                     rateStrBuilder << *unitFactor << "*";
                 }
             }
-            if (std::abs(rxn.getFactor() - 1.0) >= 1e-9) {
+            if (!crxn.isTotalRate &&
+                std::abs(rxn.getFactor() - 1.0) >= 1e-9) {
                 rateStrBuilder << rxn.getFactor() << "*";
             }
             rateStrBuilder << rxn.getRateLaw();
@@ -361,9 +423,17 @@ double PsaSimulator::rxnRateScaled(std::size_t rxnIdx,
     const auto& products = rxn.productIndices;
     const std::size_t nReactants = reactants.size();
 
-    // TotalRate reactions: propensity = rate constant, no scaling
-    if (rxn.isTotalRate) {
+    // Absolute SBML fluxes already include reactant dependence.  Authored
+    // TotalRate rules still use finite-network reactant counts, with their
+    // symmetry factor set to one during compilation.
+    if (rxn.isAbsoluteFlux) {
         scaling = 1.0;
+        for (std::size_t i = 0; i < nReactants; ++i) {
+            const auto required = static_cast<double>(
+                std::count(reactants.begin(), reactants.begin() + i,
+                           reactants[i]) + 1);
+            if (state[reactants[i]] < required) return 0.0;
+        }
         return rxn.rateConstant;
     }
 
