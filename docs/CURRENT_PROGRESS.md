@@ -45,8 +45,14 @@ Current family dispositions:
   in the ODE event queue; selected delayed trajectories compare with
   libRoadRunner. Nonpersistent cancellation is implemented by retesting before
   execution and has focused action-lowering coverage, but no broad independent
-  queue qualification. Runtime priorities are constant-only; unorderable
-  simultaneous groups are refused. Assignment-triggered retesting exists, but
+  queue qualification. A 2026-10-27 native ODE candidate accepts continuous
+  polynomial priorities over time, species observables, and static parameters;
+  it evaluates pending priorities at execution time and reevaluates them after
+  each event assignment. Two focused C++ tests and the RoadRunner-backed Python
+  regression passed on exact base `45eaa0298bdfa1adf8f04fe397817330b7a5dd42`
+  with the candidate patch applied. Exact priority ties still use deterministic
+  insertion order, and this slice has no broad independent queue qualification.
+  Assignment-triggered retesting exists, but
   general cascades/recurrence lack an independent conformance matrix. State
   triggered events under SSA are refused because stochastic jump scheduling is
   not implemented.

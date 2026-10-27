@@ -1225,6 +1225,118 @@ TEST_CASE("CVODE keeps a delayed native event on its trigger-time values",
     CHECK_THAT(result.observables.back()[0], Catch::Matchers::WithinAbs(0.0, 1e-12));
 }
 
+TEST_CASE("CVODE reevaluates pending native event priorities at execution time",
+          "[OdeOptions][Events]") {
+    auto model = parser::parseModel(R"(
+begin molecule types
+    S()
+    O()
+end molecule types
+begin seed species
+    S() 0
+    O() 0
+end seed species
+begin observables
+    Molecules Signal S()
+    Molecules Result O()
+end observables
+begin bng3_events version 1
+    event "raise_signal"
+        trigger: time >= 1
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: false
+        delay: 1
+        priority: 100
+        assignment: Signal = 10
+    end event
+    event "set_first"
+        trigger: time >= 1
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: false
+        delay: 1
+        priority: 10 - Signal + time
+        assignment: Result = 1
+    end event
+    event "set_last"
+        trigger: time >= 1
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: false
+        delay: 1
+        priority: 5 + Signal - time
+        assignment: Result = 2
+    end event
+end bng3_events
+)");
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 3.0;
+    options.nSteps = 3;
+
+    const auto result = integrator.integrate(options);
+
+    REQUIRE(result.observables.back().size() == 2);
+    // All three events are due at t=2.  raise_signal executes first and
+    // changes the remaining priorities to 2 and 13, so set_last precedes
+    // set_first.  Evaluating priorities at trigger time or only once before
+    // the first assignment would instead leave set_first ahead of set_last.
+    CHECK_THAT(result.observables.back()[1], Catch::Matchers::WithinAbs(1.0, 1e-12));
+}
+
+TEST_CASE("CVODE rejects a nonfinite dynamic native event priority",
+          "[OdeOptions][Events]") {
+    auto model = parser::parseModel(R"(
+begin molecule types
+    S()
+    O()
+end molecule types
+begin seed species
+    S() 1e200
+    O() 0
+end seed species
+begin observables
+    Molecules Signal S()
+    Molecules Result O()
+end observables
+begin bng3_events version 1
+    event "overflowing_priority"
+        trigger: time > 1
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: false
+        delay: 1
+        priority: Signal * Signal
+        assignment: Result = 1
+    end event
+    event "finite_priority"
+        trigger: time > 1
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: false
+        delay: 1
+        priority: 1
+        assignment: Result = 2
+    end event
+end bng3_events
+)");
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 3.0;
+    options.nSteps = 3;
+
+    REQUIRE_THROWS_WITH(
+        integrator.integrate(options),
+        Catch::Matchers::ContainsSubstring("bng3_events expression is nonfinite"));
+}
+
 TEST_CASE("CVODE refuses a native trigger that rises at the first instant",
           "[OdeOptions][Events]") {
     auto model = parseDecayModel();

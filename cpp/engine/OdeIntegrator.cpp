@@ -297,14 +297,35 @@ OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& ne
                 native.delay = value;
             }
             if (event.priority) {
-                const auto priority = compile::lowerResolvedExpressionToAst(*event.priority, compiled);
-                const double value = priority.evaluate([&](const std::string& name) {
-                    return model_.getParameters().evaluate(name, 0.0);
-                }, 0.0);
-                if (!std::isfinite(value)) {
-                    throw std::runtime_error("bng3_events priority must be a finite constant");
+                auto priority = compile::lowerResolvedExpressionToAst(
+                    *event.priority, compiled);
+                bool dynamic = false;
+                std::function<void(const ast::Expression&)> inspectPriority =
+                    [&](const ast::Expression& expression) {
+                        if (expression.kind() == ast::ExpressionKind::ObservableRef) {
+                            dynamic = true;
+                        }
+                        if (expression.kind() == ast::ExpressionKind::Identifier &&
+                            (expression.name() == "time" || expression.name() == "t")) {
+                            dynamic = true;
+                        }
+                        for (const auto& child : expression.args()) {
+                            inspectPriority(child);
+                        }
+                    };
+                inspectPriority(priority);
+                if (dynamic) {
+                    native.dynamicPriority = std::move(priority);
+                } else {
+                    const double value = priority.evaluate([&](const std::string& name) {
+                        return model_.getParameters().evaluate(name, 0.0);
+                    }, 0.0);
+                    if (!std::isfinite(value)) {
+                        throw std::runtime_error(
+                            "bng3_events priority must be a finite constant");
+                    }
+                    native.priority = value;
                 }
-                native.priority = value;
             }
             for (const auto& assignment : event.assignments) {
                 auto value = compile::lowerResolvedExpressionToAst(
@@ -2376,13 +2397,21 @@ bool OdeIntegrator::applyDueEvents(double time, std::vector<double>& state) {
         }
         if (!std::isfinite(earliest)) break;
         auto selected = pendingEvents_.end();
+        double selectedPriority = -std::numeric_limits<double>::infinity();
         for (auto candidate = pendingEvents_.begin();
              candidate != pendingEvents_.end(); ++candidate) {
             if (candidate->executionTime > earliest + 1e-12) continue;
-            if (selected == pendingEvents_.end() ||
-                nativeEvents_[candidate->event].priority >
-                    nativeEvents_[selected->event].priority) {
+            const auto& event = nativeEvents_[candidate->event];
+            const double priority = event.dynamicPriority
+                ? eventValue(*event.dynamicPriority, candidate->executionTime,
+                             state.data())
+                : event.priority;
+            // Keep the existing queue insertion order for exact ties. SBML
+            // requires randomized ordering for equal defined priorities;
+            // that behavior remains outside this deterministic native slice.
+            if (selected == pendingEvents_.end() || priority > selectedPriority) {
                 selected = candidate;
+                selectedPriority = priority;
             }
         }
         const PendingEvent pending = *selected;
