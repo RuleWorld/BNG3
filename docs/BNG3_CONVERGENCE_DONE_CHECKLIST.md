@@ -1,5 +1,7 @@
 # BNG3 convergence checklist
 
+**Release requirements:** [Capability inventory](CAPABILITY_UNION_INVENTORY.md) · [Maintainer decisions](DECISIONS.md). Every inventory row is required for the first public release.
+
 **Status:** incomplete; 44 of 55 audit issues are open. #132/#133/#134/#135/#136/#145/#165/#169/#173/#182/#183 are closed. #146/#154 remain reopened because their broader acceptance criteria are unmet.
 **Refreshed:** 2026-10-12 against live main
 `3ec99904afed69631808556c5646fed99328bb26` (tree
