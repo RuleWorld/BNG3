@@ -3397,6 +3397,112 @@ end model
     delete system;
 }
 
+TEST_CASE("NFsim maps static unimolecular physical rates to per-molecule hazards") {
+    auto model = bng::parser::parseModel(R"BNGL(
+begin model
+  setOption("units", "strict")
+  begin units
+    timeunits second
+  end units
+  begin parameters
+    k = 0.5 [second^-1]
+    Vc = 1 [fL]
+  end parameters
+  begin compartments
+    cell 3 Vc [fL]
+  end compartments
+  begin molecule types
+    A()
+    B()
+  end molecule types
+  begin seed species
+    A()@cell 100
+    B()@cell 0
+  end seed species
+  begin observables
+    Molecules A_count A()@cell
+    Molecules B_count B()@cell
+  end observables
+  begin reaction rules
+    convert: A()@cell -> B()@cell k
+  end reaction rules
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+    const bng::compile::CompiledModel compiled(*model);
+    REQUIRE(compiled.valid());
+    const auto capability = bng::compile::capabilitiesFor(
+        *model, bng::compile::BackendKind::NFsim);
+    CHECK(capability.state(bng::compile::Feature::Units) ==
+          bng::compile::CapabilityState::ExactLowering);
+
+    int traversalLimit = 0;
+    std::string unavailableReason;
+    auto* system = NFinput::buildSystemFromAst(
+        *model, false, 100, false, traversalLimit, {}, &unavailableReason);
+    REQUIRE(system != nullptr);
+    REQUIRE(system->getAllReactions().size() == 1);
+    system->prepareForSimulation();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(50.0));
+    system->setParameter("Vc", 3.0);
+    system->updateSystemWithNewParameters();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(50.0));
+    system->setParameter("k", 0.75);
+    system->updateSystemWithNewParameters();
+    CHECK(system->getReaction(0)->get_a() == Catch::Approx(75.0));
+    system->singleStep();
+    CHECK(system->getObservableByName("A_count")->getCount() == 99);
+    CHECK(system->getObservableByName("B_count")->getCount() == 1);
+    delete system;
+}
+
+TEST_CASE("NFsim physical first-order capability keeps unsupported shapes explicit") {
+    const auto modelFor = [](const std::string& unitsBlock,
+                             const std::string& parameters,
+                             const std::string& reactants,
+                             const std::string& products) {
+        return bng::parser::parseModel(
+            "begin model\n"
+            "  setOption(\"units\", \"strict\")\n" + unitsBlock +
+            "  setOption(\"NumberPerQuantityUnit\", 6.02214076e23)\n"
+            "begin parameters\n" + parameters +
+            "end parameters\n"
+            "begin compartments\n"
+            "  cell 3 1 [fL]\n"
+            "end compartments\n"
+            "begin molecule types\n"
+            "  A()\n"
+            "  B()\n"
+            "  C()\n"
+            "end molecule types\n"
+            "begin reaction rules\n"
+            "  convert: " + reactants + " -> " + products + " k\n"
+            "end reaction rules\n"
+            "end model\n");
+    };
+    const std::string secondBasis = "begin units\n  timeunits second\nend units\n";
+    const std::vector<std::shared_ptr<bng::ast::Model>> unsupportedModels {
+        modelFor("", "  k = 0.5 [second^-1]\n", "A()@cell", "B()@cell"),
+        modelFor(secondBasis, "  k = 0.5 [M^-1/second]\n", "A()@cell + B()@cell", "C()@cell"),
+        modelFor(secondBasis,
+                 "  kbase = 0.5 [second^-1]\n  k = 2*kbase [second^-1]\n",
+                 "A()@cell", "B()@cell"),
+        modelFor("begin units\n  timeunits minute\nend units\n",
+                 "  k = 0.5 [minute^-1]\n", "A()@cell", "B()@cell"),
+    };
+    for (std::size_t index = 0; index < unsupportedModels.size(); ++index) {
+        CAPTURE(index);
+        const auto& model = unsupportedModels[index];
+        REQUIRE(model != nullptr);
+        const bng::compile::CompiledModel compiled(*model);
+        REQUIRE(compiled.valid());
+        const auto capability = bng::compile::capabilitiesFor(
+            *model, bng::compile::BackendKind::NFsim);
+        CHECK(capability.state(bng::compile::Feature::Units) ==
+              bng::compile::CapabilityState::Unsupported);
+    }
+}
+
 TEST_CASE("NFsim XML initialization refuses unit-bearing models") {
     auto model = bng::parser::parseModel(R"BNGL(
 begin model

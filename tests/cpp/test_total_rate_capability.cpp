@@ -1,16 +1,10 @@
 // The TotalRate capability must be decided once, for every consumer.
 //
-// A ``TotalRate`` rule states the complete macroscopic flux: neither the
-// reactant population nor the reaction centre's symmetry factor multiplies
-// it.  The engine, the network writer and the SBML writer each decided the
-// capability for themselves, from the origin rule name, and they did not
-// agree.  In particular, a consumer that derived the decision by stripping a
-// trailing ``_reverse`` from the rule name lost the capability for a rule
-// whose *own* name ends in ``_reverse`` -- a shape the Atomizer emits for the
-// two directions of a reversible step with mixed rate semantics.  The engine
-// then executed that rule as a total rate while the network writer wrote it
-// as an ordinary elementary reaction: one model, two meanings, and the
-// exported network no longer reproduced the engine's own trajectory.
+// Authored BNGL TotalRate keeps the canonical BNG2 symmetry-factor convention
+// while finite-network ODE/SSA still multiply by reactant availability.
+// Atomizer SBML laws whose expressions already include reactant dependence are
+// separately marked as absolute fluxes.  These tests keep both source laws
+// consistent across the engine and writers.
 //
 // The rule name is the model's own identity, so the name is set explicitly
 // here rather than left to the parser's positional naming.
@@ -28,7 +22,9 @@
 #include "engine/OdeIntegrator.hpp"
 #include "compile/TotalRate.hpp"
 #include "io/NetWriter.hpp"
+#include "io/BnglWriter.hpp"
 #include "io/SbmlWriter.hpp"
+#include "ast/RxnList.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
 using namespace bng;
@@ -89,20 +85,20 @@ TEST_CASE("the engine and the network writer agree about a rule named reverse",
     auto network = generator.generateNative();
     REQUIRE(network.reactions.size() == 1);
 
-    // The complete flux is 1 per unit time and every event consumes two B,
-    // so B(t) = 10 - 2t.  An ordinary elementary reaction would instead
-    // apply the symmetry factor 1/2 and the reactant population.
+    // BNG2's finite-network convention removes the repeated-reactant
+    // symmetry factor for TotalRate, but still multiplies by each reactant
+    // amount: dB/dt = -2*k*B^2.  A small horizon keeps this RK4 check stable.
     engine::OdeOptions options;
     options.method = "rk4";
     options.tStart = 0.0;
-    options.tEnd = 2.0;
-    options.nSteps = 2;
+    options.tEnd = 0.001;
+    options.nSteps = 1;
     const auto result = engine::OdeIntegrator(*model, network).integrate(options);
-    REQUIRE(result.observables.size() == 3);
+    REQUIRE(result.observables.size() == 2);
     REQUIRE(result.observables.front().size() == 1);
     CHECK(result.observables[0][0] == Catch::Approx(10.0));
-    CHECK(result.observables[1][0] == Catch::Approx(8.0));
-    CHECK(result.observables[2][0] == Catch::Approx(6.0));
+    CHECK(result.observables[1][0] == Catch::Approx(
+        10.0 / (1.0 + 20.0 * options.tEnd)).epsilon(1e-7));
 
     // The network writer applies the symmetry factor of identical reactants
     // to an ordinary reaction and not to a total rate, exactly as the engine
@@ -113,6 +109,65 @@ TEST_CASE("the engine and the network writer agree about a rule named reverse",
     std::filesystem::remove(netPath);
     CHECK_THAT(netText, Catch::Matchers::ContainsSubstring("begin reactions"));
     CHECK(netText.find("0.5*") == std::string::npos);
+}
+
+TEST_CASE("Atomizer absolute flux provenance is per rule and round-trips",
+          "[TotalRate][AbsoluteFlux]") {
+    auto model = parser::parseModel(R"(
+begin model
+setOption("BNG3AbsoluteFluxRules","r1")
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 0
+    B() 10
+end seed species
+begin reaction rules
+    r1: B() + B() -> A() k TotalRate
+    r2: B() -> A() k TotalRate
+end reaction rules
+end model
+)");
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getReactionRules().size() == 2);
+    CHECK(model->getReactionRules()[0].isAbsoluteFlux());
+    CHECK_FALSE(model->getReactionRules()[1].isAbsoluteFlux());
+    CHECK(compile::isAbsoluteFluxReaction(
+        *model, model->getReactionRules()[0].getRuleName()));
+    CHECK_FALSE(compile::isAbsoluteFluxReaction(
+        *model, model->getReactionRules()[1].getRuleName()));
+
+    const std::string source = io::BnglWriter::write(*model);
+    CHECK(source.find("setOption(\"BNG3AbsoluteFluxRules\",\"r1\")") !=
+          std::string::npos);
+    CHECK(source.find("setOption(\"BNG3AbsoluteFluxRules\",\"r1\")") <
+          source.find("begin model"));
+    auto roundTrip = parser::parseModel(source);
+    REQUIRE(roundTrip != nullptr);
+    REQUIRE(roundTrip->getReactionRules().size() == 2);
+    CHECK(roundTrip->getReactionRules()[0].isAbsoluteFlux());
+    CHECK_FALSE(roundTrip->getReactionRules()[1].isAbsoluteFlux());
+
+    roundTrip->setOption("BNG3AbsoluteFluxRules", "r2");
+    CHECK_FALSE(roundTrip->getReactionRules()[0].isAbsoluteFlux());
+    CHECK(roundTrip->getReactionRules()[1].isAbsoluteFlux());
+}
+
+TEST_CASE("reaction deduplication keeps distinct source-law provenance",
+          "[TotalRate][AbsoluteFlux]") {
+    ast::RxnList reactions;
+    CHECK(reactions.add(ast::Rxn("ordinary", {0}, {1}, "k")));
+    CHECK(reactions.add(ast::Rxn(
+        "absolute", {0}, {1}, "k", 1.0, {}, std::nullopt, std::nullopt,
+        false, true)));
+    REQUIRE(reactions.size() == 2);
+    CHECK_FALSE(reactions.all()[0].isAbsoluteFlux());
+    CHECK(reactions.all()[1].isAbsoluteFlux());
 }
 
 TEST_CASE("the engine and the SBML writer agree about a rule named reverse",

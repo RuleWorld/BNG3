@@ -38,7 +38,10 @@ def test_export_forward_function_call_that_shares_a_compartment_name(tmp_path):
     roadrunner = pytest.importorskip("roadrunner")
     model = cpp.parse_string(MODEL)
     actual = BioNetGenModel(model).simulate(method="ode", t_end=2, n_steps=20)
-    expected = 10 * np.exp(-np.asarray(actual.time))
+    # C()*concentration() evaluates to the current A amount. Under the
+    # finite-network TotalRate convention, the reactant amount is also applied
+    # by the reaction law, giving dA/dt = -A**2.
+    expected = 10.0 / (1.0 + 10.0 * np.asarray(actual.time))
     np.testing.assert_allclose(actual.observables["amount"], expected, rtol=1e-6)
     exported = tmp_path / "forward.xml"
     cpp.io.write_sbml(model, cpp.generate_network(model), str(exported))

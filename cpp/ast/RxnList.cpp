@@ -32,6 +32,7 @@ std::string reactionSignature(const Rxn& reaction) {
         out << sortedProducts[i];
     }
     out << "@" << reaction.getRateLaw();
+    out << "@absoluteFlux=" << reaction.isAbsoluteFlux();
     if (reaction.getDelayExpression()) {
         out << "@delay=" << reaction.getDelayExpression()->toString()
             << (reaction.isNonConsuming() ? ":nonconsuming" : ":consuming");

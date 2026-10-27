@@ -81,6 +81,8 @@ void bind_io(py::module_& m) {
         value["error"] = result.error;
         value["species_count"] = result.species.size();
         value["reaction_count"] = result.reactions.size();
+        value["absolute_flux_reaction_count"] =
+            result.absoluteFluxReactionIndices.size();
         return value;
     }, py::arg("path"), py::arg("atomize") = false,
        "Read flattened SBML and return native parser status and network counts");

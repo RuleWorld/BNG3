@@ -121,18 +121,25 @@ class Species:
 
     def extend(self, species, update=True):
         if len(self.molecules) == len(species.molecules):
-            list1 = sorted(self.molecules, key=lambda x: len(x.components))
-            list1 = sorted(list1, key=lambda x: x.name)
-            list2 = sorted(species.molecules, key=lambda x: len(x.components))
-            list2 = sorted(list2, key=lambda x: x.name)
+            # ⚡ Bolt: Combine sorted calls and sort by (name, len) directly
+            list1 = sorted(self.molecules, key=lambda x: (x.name, len(x.components)))
+            list2 = sorted(species.molecules, key=lambda x: (x.name, len(x.components)))
 
             for selement, oelement in zip(list1, list2):
-                cocomponents = Counter([x.name for x in oelement.components])
+                # ⚡ Bolt: Compute Counter mapping outside the inner loop using generator to prevent O(N^2) allocations
+                cocomponents = Counter(x.name for x in oelement.components)
+                refcomponents = Counter(x.name for x in selement.components)
                 for component in oelement.components:
-                    refcomponents = Counter([x.name for x in selement.components])
                     # theres not enough components in the base molecule of type 'component'
-                    if refcomponents[component.name] < cocomponents[component.name]:
+                    if (
+                        refcomponents.get(component.name, 0)
+                        < cocomponents[component.name]
+                    ):
                         selement.components.append(component)
+                        # ⚡ Bolt: Update cached counter to avoid over-appending since selement.components was modified
+                        refcomponents[component.name] = (
+                            refcomponents.get(component.name, 0) + 1
+                        )
                     else:
                         for element in selement.components:
                             if element.name == component.name:

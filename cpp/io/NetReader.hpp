@@ -3,6 +3,7 @@
 #include <string>
 #include <filesystem>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 #include "ast/Model.hpp"
 #include "engine/NetworkGenerator.hpp"
@@ -33,6 +34,7 @@ public:
         // Parsed network data (if successful)
         std::vector<std::pair<std::string, std::string>> species;  // pattern, concentration (as string - can be number or parameter ref)
         std::vector<std::string> reactions;
+        std::unordered_set<std::size_t> absoluteFluxReactionIndices;
         std::unordered_map<std::string, double> parameters;
         std::unordered_map<std::string, std::string> parameterComments;
         // SBML Core unit metadata.  These maps preserve authored UnitSIds so

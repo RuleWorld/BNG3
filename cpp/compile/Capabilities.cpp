@@ -185,8 +185,53 @@ std::optional<std::string> nfSimPhysicalUnitBridgeRejection(
         if (rule.isBidirectional() || rule.reverse().has_value())
             return "bidirectional rules have multiple directions outside the supported subset";
         const auto& direction = rule.forward();
-        if (!direction.reactantPatterns.empty())
-            return "only elementary zero-order physical rate directions are supported";
+        const bool zeroOrder = direction.reactantPatterns.empty();
+        std::optional<CompartmentId> unimolecularCompartmentId;
+        if (!zeroOrder) {
+            if (direction.reactantPatterns.size() != 1 ||
+                direction.reactantPatterns.front().molecules().size() != 1 ||
+                direction.productPatterns.size() != 1 ||
+                direction.productPatterns.front().molecules().size() != 1)
+                return "only elementary zero-order or one-molecule-to-one-molecule physical rate directions are supported";
+
+            const auto& reactant = direction.reactantPatterns.front();
+            const auto& product = direction.productPatterns.front();
+            const auto& reactantMolecule = reactant.molecules().front();
+            const auto& productMolecule = product.molecules().front();
+            if (!reactantMolecule.moleculeTypeId.has_value() ||
+                !productMolecule.moleculeTypeId.has_value())
+                return "unimolecular physical rates require resolved molecule types";
+            const auto* reactantType = model.moleculeType(*reactantMolecule.moleculeTypeId);
+            const auto* productType = model.moleculeType(*productMolecule.moleculeTypeId);
+            if (reactantType == nullptr || productType == nullptr ||
+                reactantType->population || productType->population)
+                return "unimolecular physical rates require item-count molecule reactants and products";
+
+            unimolecularCompartmentId = reactantMolecule.compartmentId.has_value()
+                                            ? reactantMolecule.compartmentId
+                                            : reactant.compartmentId();
+            const auto productCompartmentId = productMolecule.compartmentId.has_value()
+                                                  ? productMolecule.compartmentId
+                                                  : product.compartmentId();
+            if (unimolecularCompartmentId != productCompartmentId)
+                return "unimolecular physical rates require one shared reactant/product compartment";
+            if (!model.compartments().empty() && !unimolecularCompartmentId.has_value())
+                return "unimolecular physical rates require an explicit compartment when compartments are declared";
+            if (unimolecularCompartmentId.has_value()) {
+                const auto* compartment = model.compartment(*unimolecularCompartmentId);
+                if (compartment == nullptr || compartment->dimension != 3 ||
+                    compartment->volumeTimeDependent ||
+                    !std::isfinite(compartment->volume) || compartment->volume <= 0.0 ||
+                    !compartment->declaredUnit.has_value() ||
+                    compartment->declaredUnit->dimension.length != 3 ||
+                    compartment->declaredUnit->dimension.substance != 0 ||
+                    compartment->declaredUnit->dimension.time != 0)
+                    return "unimolecular physical rates require a positive static declared 3D compartment";
+            }
+            if (model.metadata().unitDefaults.find("timeUnits") ==
+                model.metadata().unitDefaults.end())
+                return "unimolecular physical rates require an explicitly declared second time basis";
+        }
         if (!direction.transformationsComplete || !direction.rateLaw.has_value() ||
             direction.rateLaw->kind != RateLawKind::Expression)
             return "only complete elementary expression rate laws are supported";
@@ -225,41 +270,43 @@ std::optional<std::string> nfSimPhysicalUnitBridgeRejection(
                 return "physical rates may depend only on finite constant parameters";
         }
 
-        std::optional<CompartmentId> productCompartmentId;
-        std::size_t productMoleculeCount = 0;
-        for (const auto& pattern : direction.productPatterns) {
-            for (const auto& molecule : pattern.molecules()) {
-                ++productMoleculeCount;
-                auto compartmentId = molecule.compartmentId;
-                if (!compartmentId.has_value()) compartmentId = pattern.compartmentId();
-                if (!compartmentId.has_value())
-                    return "zero-order products require one explicit declared 3D compartment";
-                if (productCompartmentId.has_value() &&
-                    *productCompartmentId != *compartmentId)
-                    return "zero-order products in multiple compartments are ambiguous";
-                productCompartmentId = *compartmentId;
-            }
-        }
-        if (productMoleculeCount == 0 || !productCompartmentId.has_value())
-            return "zero-order physical rates require at least one product molecule";
-
-        const auto* compartment = model.compartment(*productCompartmentId);
-        if (compartment == nullptr || compartment->dimension != 3 ||
-            compartment->volumeTimeDependent ||
-            !std::isfinite(compartment->volume) || compartment->volume <= 0.0 ||
-            !compartment->declaredUnit.has_value() ||
-            compartment->declaredUnit->dimension.length != 3 ||
-            compartment->declaredUnit->dimension.substance != 0 ||
-            compartment->declaredUnit->dimension.time != 0)
-            return "zero-order products require a positive static declared 3D volume with volume units";
-
         auto context = baseContext;
-        context.compartmentVolume = compartment->volume;
-        context.volumeUnit = compartment->declaredUnit;
+        if (zeroOrder) {
+            std::optional<CompartmentId> productCompartmentId;
+            std::size_t productMoleculeCount = 0;
+            for (const auto& pattern : direction.productPatterns) {
+                for (const auto& molecule : pattern.molecules()) {
+                    ++productMoleculeCount;
+                    auto compartmentId = molecule.compartmentId;
+                    if (!compartmentId.has_value()) compartmentId = pattern.compartmentId();
+                    if (!compartmentId.has_value())
+                        return "zero-order products require one explicit declared 3D compartment";
+                    if (productCompartmentId.has_value() &&
+                        *productCompartmentId != *compartmentId)
+                        return "zero-order products in multiple compartments are ambiguous";
+                    productCompartmentId = *compartmentId;
+                }
+            }
+            if (productMoleculeCount == 0 || !productCompartmentId.has_value())
+                return "zero-order physical rates require at least one product molecule";
+
+            const auto* compartment = model.compartment(*productCompartmentId);
+            if (compartment == nullptr || compartment->dimension != 3 ||
+                compartment->volumeTimeDependent ||
+                !std::isfinite(compartment->volume) || compartment->volume <= 0.0 ||
+                !compartment->declaredUnit.has_value() ||
+                compartment->declaredUnit->dimension.length != 3 ||
+                compartment->declaredUnit->dimension.substance != 0 ||
+                compartment->declaredUnit->dimension.time != 0)
+                return "zero-order products require a positive static declared 3D volume with volume units";
+
+            context.compartmentVolume = compartment->volume;
+            context.volumeUnit = compartment->declaredUnit;
+        }
         const auto factor = units::stochasticRateFactor(
-            *rate.unit, direction.reactantPatterns.size(), context);
+            *rate.unit, zeroOrder ? 0 : 1, context);
         if (!factor || !factor.factor.has_value() || !std::isfinite(*factor.factor))
-            return "zero-order rate unit cannot be converted to a count rate: " + factor.error;
+            return "physical rate unit cannot be converted to a count rate: " + factor.error;
         double authoredRate = resolvedRate.numberValue;
         if (resolvedRate.kind == ResolvedExpressionKind::ParameterRef) {
             const auto* parameter = model.parameter(
@@ -275,7 +322,7 @@ std::optional<std::string> nfSimPhysicalUnitBridgeRejection(
     }
 
     if (!foundPhysicalRate)
-        return "no static elementary zero-order physical rate is present";
+        return "no supported static elementary physical rate is present";
     return std::nullopt;
 }
 

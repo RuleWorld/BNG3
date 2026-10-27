@@ -112,6 +112,54 @@ end bng3_events
         Catch::Matchers::ContainsSubstring("BNG3 native event execution is not implemented"));
 }
 
+TEST_CASE("PLA fails closed on unsupported TotalRate source laws",
+          "[PlaSimulator][TotalRate]") {
+    const std::vector<std::string> sources = {
+        R"(begin parameters
+    k 1
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 2
+    B() 0
+end seed species
+begin reaction rules
+    r: A() + A() -> B() k TotalRate
+end reaction rules
+)",
+        R"(setOption("BNG3AbsoluteFluxRules","r")
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 2
+    B() 0
+end seed species
+begin reaction rules
+    r: A() + A() -> B() k TotalRate
+end reaction rules
+)",
+    };
+
+    for (const auto& source : sources) {
+        const auto model = bng::parser::parseModel(source);
+        REQUIRE(model != nullptr);
+        NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+        REQUIRE_THROWS_WITH(
+            PlaSimulator(*model, network),
+            Catch::Matchers::ContainsSubstring(
+                "PLA does not support TotalRate or absolute-flux"));
+    }
+}
+
 TEST_CASE("evaluateRateString error path", "[PlaSimulator]") {
     auto resolve = [](const std::string& s) {
         if (s == "valid_var") return 42.0;

@@ -7550,16 +7550,31 @@ def generate_bngl(
     reaction_rules = (
         write_reaction_rules_atomized if atomize else write_reaction_rules_flat_v2
     )
-    sections.append(
-        reaction_rules(
-            model,
-            augmented_sct,
-            observable_converted_rules=observable_rule_variables,
-            time_rate_functions=time_rate_functions,
-            replace_loc_params=replace_loc_params,
-            species_compartment_prefix=True,
-        )
+    reaction_rule_section = reaction_rules(
+        model,
+        augmented_sct,
+        observable_converted_rules=observable_rule_variables,
+        time_rate_functions=time_rate_functions,
+        replace_loc_params=replace_loc_params,
+        species_compartment_prefix=True,
     )
+    sections.append(reaction_rule_section)
+    # The generated kinetic laws are SBML extent fluxes.  Retain that source
+    # law per rule so BNG3's finite-network TotalRate handling does not apply
+    # reactant-count factors a second time. This encoding is BNG3-specific:
+    # BNG2 ignores the marker and retains its own finite-network TotalRate law.
+    absolute_flux_rules = []
+    for line in reaction_rule_section.splitlines():
+        match = re.match(r"\s*([A-Za-z_][A-Za-z0-9_]*):.*\sTotalRate\s*$", line)
+        if match:
+            absolute_flux_rules.append(match.group(1))
+    if absolute_flux_rules:
+        sections.insert(
+            5,
+            'setOption("BNG3AbsoluteFluxRules","'
+            + ",".join(absolute_flux_rules)
+            + '")',
+        )
     function_lines.extend(time_rate_functions)
     if function_lines:
         sections.insert(-1, _section("functions", function_lines))

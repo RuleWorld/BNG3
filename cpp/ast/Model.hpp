@@ -76,6 +76,7 @@ public:
     void setSubstanceUnits(std::string units);
     void setModelName(std::string modelName);
     void setOption(std::string key, std::string value);
+    void validateAbsoluteFluxRuleMetadata() const;
     void defineUnit(std::string id, std::string expression);
     void setUnitDefault(std::string role, std::string unit);
     void setParameterUnit(std::string parameter, std::string unit);

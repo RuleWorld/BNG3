@@ -1,8 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <cstddef>
 #include <cstdint>
+#include <cmath>
 
 #include "engine/NetworkGenerator.hpp"
 #include "engine/PsaSimulator.hpp"
@@ -116,10 +118,114 @@ end reaction rules
         consumed += static_cast<std::size_t>(100.0 - result.concentrations.back()[1]);
     }
 
-    // A total rate of 1000 events/time over 0.001 time units fires about once
-    // per trajectory.  Elementary mass action would multiply by B=100 and
-    // fire roughly one hundred times per trajectory.
-    CHECK(consumed < 4 * 64);
+    // BNG2 finite-network TotalRate multiplies by each available B count and
+    // omits only the symmetry factor.  Here the expected consumed population
+    // is 100 * (1 - exp(-1000 * 0.001)) per trajectory.
+    CHECK(consumed == Catch::Approx(
+        100.0 * (1.0 - std::exp(-1.0)) * 64.0).margin(500.0));
+}
+
+TEST_CASE("PSA preserves repeated-reactant TotalRate factors by source law",
+          "[PsaSimulator][TotalRate][AbsoluteFlux]") {
+    const auto eventFraction = [](const std::string& source) {
+        const auto model = bng::parser::parseModel(source);
+        REQUIRE(model != nullptr);
+        bng::engine::NetworkGenerator generator(*model);
+        const auto network = generator.generateNative();
+        bng::engine::PsaSimulator simulator(*model, network);
+        bng::engine::OdeOptions options;
+        options.method = "psa";
+        options.tEnd = 0.1;
+        options.nSteps = 1;
+
+        constexpr std::size_t trajectories = 4096;
+        std::size_t fired = 0;
+        for (std::uint64_t seed = 1; seed <= trajectories; ++seed) {
+            options.seed = seed;
+            const auto result = simulator.simulate(options, 0.0);
+            REQUIRE(result.observables.size() == 2);
+            REQUIRE(result.observables.back().size() == 1);
+            fired += static_cast<std::size_t>(result.observables.back()[0]);
+        }
+        return static_cast<double>(fired) / trajectories;
+    };
+
+    const std::string authored = R"BNGL(
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A()
+    D()
+end molecule types
+begin seed species
+    A() 2
+    D() 0
+end seed species
+begin observables
+    Molecules Dtot D()
+end observables
+begin reaction rules
+    A() + A() -> D() k TotalRate
+end reaction rules
+)BNGL";
+    const std::string absolute = R"BNGL(
+setOption("BNG3AbsoluteFluxRules","r")
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A()
+    D()
+end molecule types
+begin seed species
+    A() 2
+    D() 0
+end seed species
+begin observables
+    Molecules Dtot D()
+end observables
+begin reaction rules
+    r: A() + A() -> D() k TotalRate
+end reaction rules
+)BNGL";
+
+    CHECK(eventFraction(authored) == Catch::Approx(1.0 - std::exp(-0.2)).margin(0.025));
+    CHECK(eventFraction(absolute) == Catch::Approx(1.0 - std::exp(-0.1)).margin(0.018));
+}
+
+TEST_CASE("PSA rejects dynamic absolute-flux rate laws",
+          "[PsaSimulator][AbsoluteFlux]") {
+    for (const auto* dynamicRate : {"k*time", "k*Atot"}) {
+    const auto model = bng::parser::parseModel(std::string(R"BNGL(
+setOption("BNG3AbsoluteFluxRules","r")
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+    B() 0
+end seed species
+begin observables
+    Molecules Atot A()
+end observables
+begin reaction rules
+    r: A() -> B() )BNGL") + dynamicRate + R"BNGL( TotalRate
+end reaction rules
+)BNGL");
+    REQUIRE(model != nullptr);
+    bng::engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+
+    REQUIRE_THROWS_WITH(
+        bng::engine::PsaSimulator(*model, network),
+        Catch::Matchers::ContainsSubstring(
+            "PSA does not support state/time-dependent absolute-flux rate laws"));
+    }
 }
 
 TEST_CASE("PSA does not resolve an exact reverse-shaped rule as a marker",

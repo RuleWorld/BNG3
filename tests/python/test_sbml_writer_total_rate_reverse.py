@@ -1,19 +1,16 @@
-"""The SBML writer must carry a reversible ``TotalRate`` rule into both directions.
+"""The SBML writer must preserve finite-network TotalRate fluxes both ways.
 
-A BNGL reaction rule with the ``TotalRate`` modifier states the *total* rate
-of the reaction: the rate law already is the complete flux and carries no
-reactant population factor.  The modifier belongs to the rule, so **both**
+A BNGL reaction rule with the ``TotalRate`` modifier omits the reaction-center
+symmetry factor.  In BNG2 finite-network simulation it still multiplies the
+reactant populations, and the modifier belongs to the rule, so **both**
 directions of a reversible rule carry it.
 
 The SBML writer used to recognise the modifier only in the forward direction.
 The reverse reaction of a reversible ``TotalRate`` rule was therefore written
-as an ordinary mass-action law: it gained an extra factor of the species that
-the forward rule produced, and it lost the ``bng:totalRate`` annotation that
-tells a reader that the kinetic law is the complete flux.  The written SBML
-then no longer reproduced the model it came from -- for the reversible
-polyamine/glycine reaction of ``BIOMD0000000674`` the written model moved
-``m_gly`` by 2836 while the generated model and the source SBML agreed to
-1e-10.
+as an ordinary mass-action law: it gained a symmetry factor and lost the
+source-rate annotation. The writer now emits both reactant factors and a
+single ``bng:totalRate`` annotation, which tells the reader that the SBML law
+already contains the complete flux.
 """
 
 from __future__ import annotations
@@ -87,10 +84,10 @@ def test_the_reverse_direction_of_a_total_rate_rule_keeps_the_modifier(tmp_path)
         ), f"reaction {reaction.attrib['id']} lost the bng:totalRate annotation"
 
 
-def test_the_reverse_direction_of_a_total_rate_rule_carries_no_reactant_factor(
+def test_the_reverse_direction_of_a_total_rate_rule_serializes_reactant_flux(
     tmp_path,
 ):
-    """The reverse kinetic law is the complete flux, not a mass-action law."""
+    """The SBML law contains the finite-network reactant factor exactly once."""
 
     output, _ = _written_sbml(tmp_path)
     ids = _species_ids_by_name(output)
@@ -115,10 +112,58 @@ def test_the_reverse_direction_of_a_total_rate_rule_carries_no_reactant_factor(
     referenced = {
         (element.text or "").strip() for element in kinetic_law.iter(MATHML_NS + "ci")
     }
-    assert reactant_id not in referenced, (
-        "the reverse kinetic law carries an extra factor of the species the "
-        "forward rule produced"
-    )
+    assert reactant_id in referenced
+    annotation = reverse.find(SBML_NS + "annotation")
+    assert annotation is not None
+    # The legacy totalRate marker also tells the SBML reader that this kinetic
+    # law is already a complete flux.
+    assert any("totalRate" in (element.tag or "") for element in annotation)
+
+
+def test_absolute_flux_annotation_survives_sbml_reparse(tmp_path):
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    output, _ = _written_sbml(tmp_path)
+    parsed = cpp.io.read_sbml(str(output))
+    assert parsed["success"], parsed["error"]
+    assert parsed["absolute_flux_reaction_count"] == 2
+
+
+def test_total_rate_sbml_annotation_is_valid_for_one_namespace_element(tmp_path):
+    libsbml = pytest.importorskip("libsbml")
+    output, _ = _written_sbml(tmp_path)
+    root = ET.parse(output).getroot()
+    bng_namespace = "{https://bionetgen.org/sbml}"
+    for reaction in root.iter(SBML_NS + "reaction"):
+        annotation = reaction.find(SBML_NS + "annotation")
+        if annotation is None:
+            continue
+        bng_elements = [
+            element for element in annotation if element.tag.startswith(bng_namespace)
+        ]
+        assert len(bng_elements) <= 1
+
+    document = libsbml.readSBMLFromFile(str(output))
+    duplicate_namespace_errors = [
+        document.getError(index).getMessage()
+        for index in range(document.getNumErrors())
+        if "more than one top-level element" in document.getError(index).getMessage()
+    ]
+    assert not duplicate_namespace_errors, duplicate_namespace_errors
+
+
+def test_legacy_total_rate_sbml_is_still_read_as_a_complete_flux(tmp_path):
+    """Older exports lack bng:absoluteFlux but their SBML law is still full flux."""
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    output, _ = _written_sbml(tmp_path)
+    legacy = tmp_path / "legacy-total-rate.xml"
+    written = output.read_text()
+    assert "<bng:totalRate" in written
+    assert "<bng:absoluteFlux" not in written
+    legacy.write_text(written)
+
+    parsed = cpp.io.read_sbml(str(legacy))
+    assert parsed["success"], parsed["error"]
+    assert parsed["absolute_flux_reaction_count"] == 2
 
 
 def test_the_written_total_rate_model_reproduces_the_generated_model(tmp_path):

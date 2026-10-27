@@ -890,6 +890,10 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
                     "native BNGIR component name must be a valid identifier");
             }
             const auto states = py::cast<py::list>(component["states"]);
+            if (states.empty()) {
+                throw std::runtime_error(
+                    "native BNGIR binding-only components are unsupported");
+            }
             if (states.size() < 2) {
                 throw std::runtime_error(
                     "native BNGIR finite-state component requires at least two states");
