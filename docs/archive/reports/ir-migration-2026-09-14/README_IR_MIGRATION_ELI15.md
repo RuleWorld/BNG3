@@ -1,3 +1,5 @@
+> Historical migration report from 2026-09-14. Current implementation and qualification state are in the [issue-keyed progress table](../../../CURRENT_PROGRESS.md); see [final maintainer decisions](../../../DECISIONS.md).
+
 # BNG3 IR Migration — ELI15 Guide
 
 ## What this branch is trying to do

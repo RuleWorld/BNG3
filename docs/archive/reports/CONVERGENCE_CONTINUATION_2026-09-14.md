@@ -45,5 +45,5 @@ The continuation added three related evidence and documentation themes:
 These themes are now summarized once in the current docs rather than being
 maintained as a second, potentially stale status narrative. Historical reports
 under [`archive/reports/`](./) and
-[`architecture_handoffs/`](../architecture_handoffs/) remain historical records
+[`architecture_handoffs/`](../../architecture_handoffs/) remain historical records
 and are intentionally not rewritten as current evidence.
