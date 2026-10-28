@@ -18,23 +18,17 @@ def test_expected_ids_are_independent_and_cover_variants():
     ids = boundaries.expected_check_ids()
     expected_negative = {
         f"sbml-boundary:{case_id}:unsupported-boundary-contract"
-        for case_id in (
-            "event_dynamic_delay_a",
-            "event_dynamic_delay_b",
-            "delay_state_history_a",
-            "delay_state_history_b",
-            "algebraic_species_product",
-            "algebraic_species_square",
-            "variable_stoich_state_a",
-            "variable_stoich_state_b",
-        )
+        for case_id, *_ in boundaries.CASES
+        if case_id != "delay_state_history_a"
     }
     expected_positive = {
+        "sbml-boundary:delay_state_history_a:static-delay-execution",
         "sbml-event:event_state_nonlinear_a:source-trajectory",
         "sbml-event:event_state_nonlinear_b:source-trajectory",
     }
     assert len(ids) == len(set(ids))
     assert set(ids) == expected_negative | expected_positive
+    assert len(ids) == len(boundaries.CASES) + len(boundaries.SUPPORTED_EVENT_CASES)
     assert {case[1] for case in boundaries.CASES} == {
         "event-delay",
         "delay",
@@ -171,6 +165,22 @@ def test_diagnostic_only_rows_cannot_be_counted_as_rejection_or_support():
     assert row["supported_execution"] is False
     assert row["labels"]["rejected_feature"] is False
     assert row["labels"]["boundary_diagnostic"] is True
+
+
+def test_static_delay_control_records_analytic_execution():
+    case = next(case for case in boundaries.CASES if case[0] == "delay_state_history_a")
+    row = boundaries._row(
+        case,
+        "PASS",
+        "analytic trajectory comparison passed",
+        check="static-delay-analytic-execution",
+        expected_behavior="execute-static-delay-history",
+        evidence_kind="analytic-execution",
+        supported_execution=True,
+    )
+    assert row["id"] in boundaries.expected_check_ids()
+    assert row["supported_execution"] is True
+    assert row["evidence_kind"] == "analytic-execution"
 
 
 def test_mapping_warnings_preserve_category_and_severity_for_classification():

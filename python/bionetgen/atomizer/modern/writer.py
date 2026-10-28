@@ -3214,10 +3214,17 @@ def _report_unspellable_identifiers(model: SBMLModel) -> None:
                 )
 
 
-def _unrepresentable_math_function_reason(function_name: str) -> str:
+def _unrepresentable_math_function_reason(
+    function_name: str, *, dynamic_delay: bool = False
+) -> str:
     """Return the reason an SBML math function has no executable equivalent."""
 
     if function_name == "delay":
+        if dynamic_delay:
+            return (
+                "BNG3 CVODE requires delay durations to be static; "
+                "libRoadRunner cannot load an SBML model containing delay"
+            )
         return (
             "BNG3 CVODE evaluates delay calls with static durations from its "
             "recorded simulation history; libRoadRunner cannot load an SBML "
@@ -3231,7 +3238,9 @@ def _unrepresentable_math_function_reason(function_name: str) -> str:
     return "BNGL has no built-in function with those semantics"
 
 
-def _unrepresentable_math_function_message(function_name: str) -> str:
+def _unrepresentable_math_function_message(
+    function_name: str, *, dynamic_delay: bool = False
+) -> str:
     """Describe why an SBML math function has no complete execution path.
 
     The C++ SBML writer can serialize the SBML Level 3 Version 2 spelling of
@@ -3243,11 +3252,112 @@ def _unrepresentable_math_function_message(function_name: str) -> str:
     unsupported by BNG3.
     """
 
+    if function_name == "delay" and not dynamic_delay:
+        return (
+            "SBML delay calls with static durations are executable in BNG3; "
+            "libRoadRunner cannot load a written model that still uses delay, "
+            "so the independent comparison is unavailable."
+        )
     return (
         f'SBML math function "{function_name}" is not losslessly representable '
         "in the BNG3 engine/libRoadRunner path: "
-        f"{_unrepresentable_math_function_reason(function_name)}."
+        f"{_unrepresentable_math_function_reason(function_name, dynamic_delay=dynamic_delay)}."
     )
+
+
+def _delay_arguments(expression: str) -> List[Optional[List[str]]]:
+    """Return parsed argument lists for each delay call in one expression."""
+
+    calls = []
+    pattern = re.compile(r"\bdelay\s*\(", re.IGNORECASE)
+    for match in pattern.finditer(expression):
+        opening = match.end() - 1
+        depth = 1
+        closing = opening + 1
+        while closing < len(expression) and depth:
+            if expression[closing] == "(":
+                depth += 1
+            elif expression[closing] == ")":
+                depth -= 1
+            closing += 1
+        if depth:
+            calls.append(None)
+            continue
+        arguments = _split_arguments(expression[opening + 1 : closing - 1])
+        calls.append(arguments if len(arguments) == 2 else None)
+    return calls
+
+
+def _delay_duration_is_static(expression: str, model: SBMLModel) -> bool:
+    """Prove that a delay duration has no mutable or time-dependent inputs."""
+
+    initial_assignment_targets = {
+        str(assignment.symbol)
+        for assignment in model.initial_assignments
+        if assignment.symbol
+    }
+    changing_symbols = {str(rule.variable) for rule in model.rules if rule.variable} | {
+        str(getattr(assignment, "variable", "") or "")
+        for event in model.events
+        for assignment in event.assignments
+        if getattr(assignment, "variable", None)
+    }
+    expanded = inline_sbml_functions(expression, model.function_definitions)
+
+    def resolve(identifier: str) -> Optional[float]:
+        lowered = identifier.lower()
+        if lowered == "pi":
+            return math.pi
+        if lowered == "exponentiale":
+            return math.e
+        if identifier in changing_symbols or identifier in initial_assignment_targets:
+            return None
+        parameter = model.parameters.get(identifier)
+        if parameter is not None:
+            if parameter.constant or identifier not in changing_symbols:
+                try:
+                    return float(parameter.value)
+                except (TypeError, ValueError):
+                    return None
+        compartment = model.compartments.get(identifier)
+        if compartment is not None:
+            if compartment.constant or identifier not in changing_symbols:
+                try:
+                    return float(compartment.size)
+                except (TypeError, ValueError):
+                    return None
+        species = model.species.get(identifier)
+        if species is not None and species.constant:
+            try:
+                compartment = model.compartments.get(species.compartment or "")
+                volume = float(compartment.size) if compartment is not None else 1.0
+                if species.has_only_substance_units:
+                    return (
+                        float(species.initial_amount)
+                        if species.initial_amount_set
+                        else float(species.initial_concentration) * volume
+                    )
+                if species.initial_concentration_set:
+                    return float(species.initial_concentration)
+                return float(species.initial_amount) / volume
+            except (TypeError, ValueError, ZeroDivisionError):
+                return None
+        return None
+
+    try:
+        return fold_numeric(expanded, resolve) is not None
+    except (TypeError, ValueError):
+        return False
+
+
+def _model_has_dynamic_delay(model: SBMLModel, expressions: Iterable[str]) -> bool:
+    """Return whether any retained delay call has an unproven duration."""
+
+    for expression in expressions:
+        for arguments in _delay_arguments(str(expression or "")):
+            if arguments is None or not _delay_duration_is_static(arguments[1], model):
+                return True
+    return False
 
 
 def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
@@ -7330,7 +7440,18 @@ def generate_bngl(
         ),
         *(str(rule.math or "") for rule in model.rules),
         *(str(function.math or "") for function in model.function_definitions.values()),
+        *(str(assignment.math or "") for assignment in model.initial_assignments),
+        *(
+            str(expression or "")
+            for event in model.events
+            for expression in (
+                event.trigger,
+                event.priority,
+                *(assignment.math for assignment in event.assignments),
+            )
+        ),
     ]
+    dynamic_delay = _model_has_dynamic_delay(model, math_sources)
     for function_name in unsupported_functions:
         if any(
             re.search(rf"\b{re.escape(function_name)}\s*\(", expression, re.IGNORECASE)
@@ -7338,9 +7459,16 @@ def generate_bngl(
         ):
             _record_import_warning(
                 model,
-                _unrepresentable_math_function_message(function_name),
+                _unrepresentable_math_function_message(
+                    function_name,
+                    dynamic_delay=dynamic_delay if function_name == "delay" else False,
+                ),
                 category="mathml",
-                severity="info" if function_name == "delay" else "dropped",
+                severity=(
+                    ("dropped" if dynamic_delay else "info")
+                    if function_name == "delay"
+                    else "dropped"
+                ),
             )
 
     _report_identifier_collisions(model)
@@ -11470,13 +11598,30 @@ def generate_bngl(
         ):
             # The source-level diagnostic already reported this construct.
             continue
+        dynamic_delay = (
+            _model_has_dynamic_delay(model, [model_text])
+            if function_name == "delay"
+            else False
+        )
+        if function_name == "delay":
+            message = _unrepresentable_math_function_message(
+                function_name, dynamic_delay=dynamic_delay
+            )
+        else:
+            message = (
+                f'Generated BNGL math function "{function_name}" is not '
+                "losslessly representable in the C++ SBML writer/libRoadRunner "
+                f"path: {_unrepresentable_math_function_reason(function_name)}."
+            )
         _record_import_warning(
             model,
-            f'Generated BNGL math function "{function_name}" is not '
-            "losslessly representable in the C++ SBML writer/libRoadRunner "
-            f"path: {_unrepresentable_math_function_reason(function_name)}.",
+            message,
             category="mathml",
-            severity="info" if function_name == "delay" else "dropped",
+            severity=(
+                ("dropped" if dynamic_delay else "info")
+                if function_name == "delay"
+                else "dropped"
+            ),
         )
 
     has_multi = bool(

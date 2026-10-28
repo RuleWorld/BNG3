@@ -3969,7 +3969,10 @@ def test_nested_delay_uses_zero_lag_from_bounded_assignment_rule():
         and 'math function "delay"' in warning["message"]
     ]
     assert delay_warnings
-    assert all(warning["severity"] == "info" for warning in delay_warnings)
+    assert all(warning["severity"] == "dropped" for warning in delay_warnings)
+    assert all(
+        "durations to be static" in warning["message"] for warning in delay_warnings
+    )
 
 
 def test_fixed_time_event_lag_uses_piecewise_affine_delay_history():

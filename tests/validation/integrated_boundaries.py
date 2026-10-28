@@ -63,12 +63,23 @@ _REGISTRY_NAME = "unsupported-boundary-contract"
 def expected_check_ids() -> list[str]:
     """Declare expected worker evidence independently of runtime execution."""
     return [
-        *(f"sbml-boundary:{case_id}:{_REGISTRY_NAME}" for case_id, *_ in CASES),
+        *(
+            f"sbml-boundary:{case_id}:{_registry_name(case_id)}"
+            for case_id, *_ in CASES
+        ),
         *(
             f"sbml-event:{case_id}:source-trajectory"
             for case_id, *_ in SUPPORTED_EVENT_CASES
         ),
     ]
+
+
+def _registry_name(case_id: str) -> str:
+    return (
+        "static-delay-execution"
+        if case_id == "delay_state_history_a"
+        else _REGISTRY_NAME
+    )
 
 
 def _source(libsbml: Any, case: tuple[str, str, str, str]) -> str:
@@ -402,6 +413,7 @@ def run(directory: Path) -> list[dict[str, Any]]:
     directory.mkdir(parents=True, exist_ok=True)
     try:
         import libsbml  # type: ignore
+        import bionetgen
         from bionetgen.atomizer.modern import Atomizer
     except Exception as exc:
         return [
@@ -445,35 +457,59 @@ def run(directory: Path) -> list[dict[str, Any]]:
             from bionetgen.atomizer.modern.helpers import logger
 
             logger.clear()
-            atomizer = Atomizer({"quietMode": True, "logLevel": "INFO", "t_end": 10})
+            t_end = 1 if case_id == "delay_state_history_a" else 10
+            atomizer = Atomizer({"quietMode": True, "logLevel": "INFO", "t_end": t_end})
             result = atomizer.atomize(xml, source_path=source_path)
             diagnostics = _diagnostics(result, atomizer)
             diagnostic_path = directory / f"{case_id}.diagnostics.json"
             diagnostic_path.write_text(
                 json.dumps(diagnostics, indent=2) + "\n", encoding="utf-8"
             )
-            explicit_diagnostics = classify_boundary_evidence(
-                feature, diagnostics, result_success=bool(result.success)
-            )
-            if result.success:
-                check = _CHECK_NAME
-                expected_behavior = "explicit-loss-diagnostic"
-                evidence_kind = "diagnostic-only"
+            if case_id == "delay_state_history_a":
+                execution = _verify_static_delay_history(
+                    bionetgen, result.bngl if result.success else "", directory, case_id
+                )
+                explicit_diagnostics = []
+                check = "static-delay-analytic-execution"
+                expected_behavior = "execute-static-delay-history"
+                evidence_kind = "analytic-execution"
+                supported_execution = execution["passed"]
+                status = "PASS" if execution["passed"] else "FAIL"
+                reason = (
+                    "BNG3 trajectory matches the analytic pre-simulation delay history"
+                    if execution["passed"]
+                    else "BNG3 trajectory did not match the analytic delay history"
+                )
+                detail = (
+                    f"{reason}; source={source_path}; diagnostics={diagnostic_path}; "
+                    f"atomizer_success={bool(result.success)}; "
+                    f"execution={json.dumps(execution, separators=(',', ':'))}; "
+                    f"diagnostics={json.dumps(diagnostics, separators=(',', ':'))}"
+                )
             else:
-                check = "unsupported-boundary-contract"
-                expected_behavior = "reject-with-diagnostic"
-                evidence_kind = "atomizer-rejection"
-            if explicit_diagnostics:
-                status = "PASS"
-                reason = "structured loss diagnostic records this unsupported semantic boundary"
-            else:
-                status = "FAIL"
-                reason = f"valid source lacks a matching structured {feature} loss diagnostic"
-            detail = (
-                f"{reason}; source={source_path}; diagnostics={diagnostic_path}; "
-                f"atomizer_success={bool(result.success)}; "
-                f"diagnostics={json.dumps(diagnostics, separators=(',', ':'))}"
-            )
+                explicit_diagnostics = classify_boundary_evidence(
+                    feature, diagnostics, result_success=bool(result.success)
+                )
+                if result.success:
+                    check = _CHECK_NAME
+                    expected_behavior = "explicit-loss-diagnostic"
+                    evidence_kind = "diagnostic-only"
+                else:
+                    check = "unsupported-boundary-contract"
+                    expected_behavior = "reject-with-diagnostic"
+                    evidence_kind = "atomizer-rejection"
+                if explicit_diagnostics:
+                    status = "PASS"
+                    reason = "structured loss diagnostic records this unsupported semantic boundary"
+                else:
+                    status = "FAIL"
+                    reason = f"valid source lacks a matching structured {feature} loss diagnostic"
+                supported_execution = False
+                detail = (
+                    f"{reason}; source={source_path}; diagnostics={diagnostic_path}; "
+                    f"atomizer_success={bool(result.success)}; "
+                    f"diagnostics={json.dumps(diagnostics, separators=(',', ':'))}"
+                )
             output.append(
                 _row(
                     case,
@@ -483,6 +519,7 @@ def run(directory: Path) -> list[dict[str, Any]]:
                     check=check,
                     expected_behavior=expected_behavior,
                     evidence_kind=evidence_kind,
+                    supported_execution=supported_execution,
                 )
             )
         except Exception as exc:
@@ -499,6 +536,50 @@ def run(directory: Path) -> list[dict[str, Any]]:
     return output
 
 
+def _verify_static_delay_history(
+    bionetgen: Any, bngl: str, directory: Path, case_id: str
+) -> dict[str, Any]:
+    """Compare a bounded static-delay trajectory with its analytic source law."""
+
+    if not bngl:
+        return {"passed": False, "reason": "Atomizer produced no executable BNGL"}
+    model_path = directory / f"{case_id}.bngl"
+    model_path.write_text(bngl, encoding="utf-8")
+    model = bionetgen.load(model_path)
+    simulation = model.simulate(
+        method="ode",
+        t_start=0.0,
+        t_end=1.0,
+        n_steps=10,
+        rtol=1e-9,
+        atol=1e-12,
+    )
+    times = [float(value) for value in simulation.time]
+    values = simulation.observables.get("A_amt")
+    if values is None:
+        values = simulation.observables.get("A")
+    if values is None or len(values) != len(times) or len(times) != 11:
+        return {
+            "passed": False,
+            "reason": "expected 11 time points and observable A_amt or A",
+            "time_count": len(times),
+            "observable_count": len(values) if values is not None else 0,
+        }
+    errors = [
+        abs(float(value) - (10.0 + 10.0 * time)) for time, value in zip(times, values)
+    ]
+    max_error = max(errors, default=float("inf"))
+    return {
+        "passed": max_error <= 1e-8
+        and all(abs(time - index / 10.0) <= 1e-12 for index, time in enumerate(times)),
+        "reference": "A(t)=10+10*t on 0<=t<=1 from delay(A,1) and A(0)=10",
+        "method": "BNG3 CVODE",
+        "time_count": len(times),
+        "observable": "A_amt" if "A_amt" in simulation.observables else "A",
+        "max_abs_error": max_error,
+    }
+
+
 def _row(
     case: tuple[str, str, str, str],
     status: str,
@@ -508,13 +589,14 @@ def _row(
     check: str = _CHECK_NAME,
     expected_behavior: str = "explicit-loss-diagnostic",
     evidence_kind: str | None = None,
+    supported_execution: bool = False,
 ) -> dict[str, Any]:
     case_id, feature, *_ = case
     evidence_kind = evidence_kind or ("diagnostic-only" if explicit else "none")
     return {
         # Keep the original registry keys stable while the named check now
         # distinguishes diagnostic evidence from actual Atomizer rejection.
-        "id": f"sbml-boundary:{case_id}:{_REGISTRY_NAME}",
+        "id": f"sbml-boundary:{case_id}:{_registry_name(case_id)}",
         "stage": "atomizer-boundary",
         "check": check,
         "status": status,
@@ -524,7 +606,7 @@ def _row(
         "question": check,
         "expected_behavior": expected_behavior,
         "evidence_kind": evidence_kind,
-        "supported_execution": False,
+        "supported_execution": supported_execution,
         "labels": {
             "rejected_feature": evidence_kind == "atomizer-rejection",
             "boundary_diagnostic": bool(explicit),
