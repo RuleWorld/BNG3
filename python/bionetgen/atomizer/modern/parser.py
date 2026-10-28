@@ -1957,13 +1957,11 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
         return ast.parse(safe_source, mode="eval")
 
     function_definitions = {
-        standardize_name(str(identifier)): function
+        standardize_name(identifier): function
         for identifier, function in model.function_definitions.items()
     }
 
-    def inline_user_functions(
-        node: ast.AST, stack: tuple[str, ...] = ()
-    ) -> ast.AST:
+    def inline_user_functions(node: ast.AST, stack: tuple[str, ...] = ()) -> ast.AST:
         """Inline pure SBML functions so exact linearity can be established."""
 
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
@@ -1981,7 +1979,7 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
                     body = None
                 if body is not None:
                     arguments = {
-                        standardize_name(str(name)): inline_user_functions(
+                        standardize_name(name): inline_user_functions(
                             value, (*stack, function_key)
                         )
                         for name, value in zip(function.arguments, node.args)
@@ -1989,30 +1987,26 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
 
                     class SubstituteArguments(ast.NodeTransformer):
                         def visit_Name(self, name_node: ast.Name) -> ast.AST:
-                            replacement = arguments.get(
-                                standardize_name(name_node.id)
+                            replacement = arguments.get(standardize_name(name_node.id))
+                            return (
+                                copy.deepcopy(replacement) if replacement else name_node
                             )
-                            return copy.deepcopy(replacement) if replacement else name_node
 
                     substituted = SubstituteArguments().visit(body)
-                    return inline_user_functions(
-                        substituted, (*stack, function_key)
-                    )
+                    return inline_user_functions(substituted, (*stack, function_key))
         copied = copy.deepcopy(node)
         for field, value in ast.iter_fields(copied):
             if isinstance(value, ast.AST):
-                setattr(copied, field, inline_user_functions(value, stack))
+                vars(copied)[field] = inline_user_functions(value, stack)
             elif isinstance(value, list):
-                setattr(
-                    copied,
-                    field,
-                    [
+                vars(copied)[field] = [
+                    (
                         inline_user_functions(item, stack)
                         if isinstance(item, ast.AST)
                         else item
-                        for item in value
-                    ],
-                )
+                    )
+                    for item in value
+                ]
         return copied
 
     def render(node: ast.AST) -> str:
@@ -2027,9 +2021,7 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
             expression = parse_expression(str(rule.math))
         except (SyntaxError, ValueError):
             continue
-        expression = ast.Expression(
-            body=inline_user_functions(expression.body)
-        )
+        expression = ast.Expression(body=inline_user_functions(expression.body))
         parsed[id(rule)] = expression
         names = {node.id for node in ast.walk(expression) if isinstance(node, ast.Name)}
         matching_symbols = {
