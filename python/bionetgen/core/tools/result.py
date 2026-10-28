@@ -1,6 +1,7 @@
 import os
 import numpy as np
 
+from bionetgen.core.exc import BNGFileError
 from bionetgen.core.utils.logging import BNGLogger
 
 
@@ -9,15 +10,15 @@ class BNGResult:
     Class that loads in gdat/cdat/scan files
 
     Usage: BNGResult(path="/path/to/folder") OR
-           BNGResult(direct_path="/path/to/file.gdat")
+           BNGResult(path="/path/to/file.gdat")
 
     Arguments
     ---------
     path : str
         path that points to a folder containing files to be
-        loaded by the class
+        loaded by the class, or a direct path to a file
     direct_path : str
-        path that directly points to a file to load
+        (Deprecated) path that directly points to a file to load
 
     Methods
     -------
@@ -26,7 +27,7 @@ class BNGResult:
         numpy.recarray
     """
 
-    def __init__(self, path=None, direct_path=None, app=None):
+    def __init__(self, path=None, direct_path=None, ext=None, app=None):
         self.app = app
         self.logger = BNGLogger(app=self.app)
         self.logger.debug(
@@ -35,8 +36,14 @@ class BNGResult:
         # defaults
         self.process_return = None
         self.output = None
-        # TODO Make it so that with path you can supply an
-        # extension or a list of extensions to load in
+        if ext is not None:
+            if isinstance(ext, str):
+                self.ext = [ext]
+            else:
+                self.ext = list(ext)
+        else:
+            self.ext = None
+
         self.gdats = {}
         self.cdats = {}
         self.scans = {}
@@ -44,22 +51,29 @@ class BNGResult:
         self.snames = {}
         self.gnames = {}
         if direct_path is not None:
-            path, fname = os.path.split(direct_path)
-            fnoext, fext = os.path.splitext(fname)
-            self.direct_path = direct_path
-            self.file_name = fnoext
-            self.file_extension = fext
-            self.gnames[fnoext] = direct_path
-            self.gdats[fnoext] = self.load(direct_path)
-        elif path is not None:
-            # TODO change this pattern so that each method
-            # is stand alone and usable.
-            self.path = path
-            self.find_dat_files()
-            self.load_results()
+            path = direct_path
+
+        if path is not None:
+            if os.path.isfile(path):
+                dpath, fname = os.path.split(path)
+                fnoext, fext = os.path.splitext(fname)
+                self.direct_path = path
+                self.file_name = fnoext
+                self.file_extension = fext
+                self.gnames[fnoext] = path
+                self.gdats[fnoext] = self.load(path)
+            elif os.path.isdir(path):
+                self.path = path
+                self.find_dat_files()
+                self.load_results()
+            else:
+                self.logger.info(
+                    f"BNGResult path {path} is neither a file nor a directory",
+                    loc=f"{__file__} : BNGResult.__init__()",
+                )
         else:
             self.logger.info(
-                "BNGResult needs either a path or a direct path kwarg to load gdat/cdat/scan files from",
+                "BNGResult needs a path kwarg to load gdat/cdat/scan files from",
                 loc=f"{__file__} : BNGResult.__init__()",
             )
 
@@ -102,73 +116,94 @@ class BNGResult:
     def _load_scan(self, fpath):
         return self._load_dat(fpath)
 
-    def find_dat_files(self):
+    def find_dat_files(self, folder_path=None):
+        folder_path = folder_path or getattr(self, "path", None)
+        if folder_path is None:
+            self.logger.info(
+                "BNGResult.find_dat_files needs a folder path.",
+                loc=f"{__file__} : BNGResult.find_dat_files()",
+            )
+            return
+
         self.logger.debug(
-            f"Scanning for valid files in folder {self.path}",
+            f"Scanning for valid files in folder {folder_path}",
             loc=f"{__file__} : BNGResult.find_dat_files()",
         )
-        files = os.listdir(self.path)
-        ext = "gdat"
-        gdat_files = filter(lambda x: x.endswith(f".{ext}"), files)
-        for dat_file in gdat_files:
-            name = dat_file.replace(f".{ext}", "")
-            self.gnames[name] = dat_file
+        files = os.listdir(folder_path)
 
-        ext = "cdat"
-        cdat_files = filter(lambda x: x.endswith(f".{ext}"), files)
-        for dat_file in cdat_files:
-            name = dat_file.replace(f".{ext}", "")
-            self.cnames[name] = dat_file
+        exts_to_load = ["gdat", "cdat", "scan"]
+        if self.ext is not None:
+            exts_to_load = [e for e in self.ext if e in exts_to_load]
 
-        ext = "scan"
-        scan_files = filter(lambda x: x.endswith(f".{ext}"), files)
-        for dat_file in scan_files:
-            name = dat_file.replace(f".{ext}", "")
-            self.snames[name] = dat_file
+        if "gdat" in exts_to_load:
+            ext = "gdat"
+            gdat_files = filter(lambda x: x.endswith(f".{ext}"), files)
+            for dat_file in gdat_files:
+                name = dat_file.replace(f".{ext}", "")
+                self.gnames[name] = dat_file
 
-    def load_results(self):
+        if "cdat" in exts_to_load:
+            ext = "cdat"
+            cdat_files = filter(lambda x: x.endswith(f".{ext}"), files)
+            for dat_file in cdat_files:
+                name = dat_file.replace(f".{ext}", "")
+                self.cnames[name] = dat_file
+
+        if "scan" in exts_to_load:
+            ext = "scan"
+            scan_files = filter(lambda x: x.endswith(f".{ext}"), files)
+            for dat_file in scan_files:
+                name = dat_file.replace(f".{ext}", "")
+                self.snames[name] = dat_file
+
+    def load_results(self, folder_path=None):
+        folder_path = folder_path or getattr(self, "path", None)
+        if folder_path is None:
+            self.logger.info(
+                "BNGResult.load_results needs a folder path.",
+                loc=f"{__file__} : BNGResult.load_results()",
+            )
+            return
+
         self.logger.debug(
-            f"Loading results from {self.path}",
+            f"Loading results from {folder_path}",
             loc=f"{__file__} : BNGResult.load_results()",
         )
         # load gdat files
         for name in self.gnames:
-            gdat_path = os.path.join(self.path, self.gnames[name])
+            gdat_path = os.path.join(folder_path, self.gnames[name])
             self.gdats[name] = self.load(gdat_path)
-        # load gdat files
+        # load cdat files
         for name in self.cnames:
-            cdat_path = os.path.join(self.path, self.cnames[name])
+            cdat_path = os.path.join(folder_path, self.cnames[name])
             self.cdats[name] = self.load(cdat_path)
         # load scan files
         for name in self.snames:
-            scan_path = os.path.join(self.path, self.snames[name])
+            scan_path = os.path.join(folder_path, self.snames[name])
             self.scans[name] = self.load(scan_path)
 
     def _load_dat(self, path, dformat="f8"):
         """
         This function takes a path to a gdat/cdat file as a string and loads that
         file into a numpy structured array, including the correct header info.
-        TODO: Add link
 
         Optional argument allows you to set the data type for every column. See
-        numpy dtype/data type strings for what's allowed. TODO: Add link
+        numpy dtype/data type strings for what's allowed. Note: https://numpy.org/doc/stable/reference/arrays.dtypes.html
         """
         # First step is to read the header,
         # we gotta open the file and pull that line in
         with open(path, "r") as f:
             header = f.readline()
-        # Now turn it into a list of names for our struct array
-        if header.startswith("#"):
-            header = header.replace("#", "")
-            headers = header.split()
-        else:
-            # No header line, auto-generate column names
-            headers = [f"col_{i}" for i in range(len(header.split()))]
-            self.logger.warning(
-                "No header line starting with # in file {}, "
-                "auto-generated column names: {}".format(path, headers),
+        # Ensure the header info is actually there
+        if not header.startswith("#"):
+            self.logger.error(
+                "No header line that starts with # in file {}".format(path),
                 loc=f"{__file__} : BNGResult._load_dat()",
             )
+            raise BNGFileError(path, "No header line that starts with #")
+        # Now turn it into a list of names for our struct array
+        header = header.replace("#", "")
+        headers = header.split()
         # For a magical reason this is how numpy.loadtxt wants it,
         # in tuples passed as a dictionary with names/formats as keys
         names = tuple(headers)

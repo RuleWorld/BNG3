@@ -172,6 +172,16 @@ builder.add_rule("A(b!1).B(a!1) -> A(b) + B(a)", "k_off")
 model = builder.build()
 ```
 
+## PyBioNetGen API Differences
+
+docs/PYBIONETGEN_API_AUDIT.md compares every public symbol of pinned PyBioNetGen 28bf351 with BNG3. The differences that affect callers:
+
+- `bionetgen.modelapi.runner.run` accepts PyBioNetGen's `simulator`, `format`, `method`, `t_span` and `n_points` arguments. Passing `method`, `t_span` or `n_points` runs one simulation instead of the model's actions. `simulator="bngsim"` uses the BNGsim backend; `simulator="subprocess"` forces the BNG2.pl route. Only BNGL input is accepted; convert SBML with the Atomizer first.
+- The BNGsim helper and bridge modules (`core.tools.bngsim_backend_helper`, `core.tools.bngsim_bridge`, `core.tools.bngsim_parameter_scan`) are replaced by the native BNGsim backend: `bionetgen.load(path).simulate(..., backend="bngsim")`. `BNGCLI(..., bngsim_backend=True)` raises `BNGSimError` with that replacement.
+- `simulator.csimulator` (compile-to-C simulation) is replaced by native simulation; its classes are not provided.
+- `network.*` (the Python `.net` object model) is not provided. BNG3 reads `.net` files natively.
+- `BNGFormatError` and `BNGSimError` are available in `bionetgen.core.exc`.
+
 ## Removed Dependencies
 
 The default path no longer depends on:
