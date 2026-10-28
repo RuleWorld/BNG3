@@ -1961,7 +1961,7 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
         for identifier, function in model.function_definitions.items()
     }
 
-    def inline_user_functions(node: ast.AST, stack: tuple[str, ...] = ()) -> ast.AST:
+    def inline_user_functions(node: ast.AST, stack: tuple = ()) -> ast.AST:
         """Inline pure SBML functions so exact linearity can be established."""
 
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
