@@ -125,6 +125,24 @@ def test_delay_in_written_sbml_is_excluded_from_roadrunner_comparison(tmp_path):
     assert not runner._written_sbml_uses_delay(ordinary)
 
 
+def test_informational_delay_warning_does_not_block_official_reference():
+    delay_notice = {
+        "category": "mathml",
+        "severity": "info",
+        "message": (
+            'SBML math function "delay" is not losslessly representable in the '
+            "BNG3 engine/libRoadRunner path: RoadRunner cannot load delay models."
+        ),
+    }
+    unsupported = {
+        **delay_notice,
+        "severity": "dropped",
+    }
+
+    assert runner._warning_limitations([delay_notice]) == []
+    assert runner._warning_limitations([unsupported]) == [delay_notice["message"]]
+
+
 #: The existing assertions this suite calls rather than duplicates.
 validation_contracts = _load_test_module(
     "tests/python/test_sbml_validation_contracts.py", "_contract_validation_contracts"

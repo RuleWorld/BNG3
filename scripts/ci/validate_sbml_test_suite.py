@@ -1321,6 +1321,7 @@ def _warning_limitations(warnings: list[dict[str, Any]]) -> list[str]:
     return [
         str(warning["message"])
         for warning in warnings
+        if warning.get("severity") != "info"
         if any(
             marker in str(warning["message"]).lower() for marker in UNSUPPORTED_MARKERS
         )
