@@ -43,9 +43,11 @@ def _native_algebraic_rules(model) -> list[tuple[str, str]]:
         and str(identifier).casefold() not in controlled
         and str(identifier).casefold() not in reaction_species
     }
+    from bionetgen.atomizer.modern.writer import algebraic_residual_name
+
     result = []
     assigned = set()
-    for rule in algebraic:
+    for index, rule in enumerate(algebraic):
         symbols = {
             name.casefold()
             for name in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", rule.math)
@@ -62,7 +64,10 @@ def _native_algebraic_rules(model) -> list[tuple[str, str]]:
                 "SBML algebraic rules constrain the same species more than once"
             )
         assigned.add(target)
-        result.append((candidates[target], rule.math))
+        # The generated model carries the rule's math as a BNGL function with
+        # the SBML symbols translated, so the residual reads concentrations
+        # where the SBML math does.
+        result.append((candidates[target], f"{algebraic_residual_name(index)}()"))
     if len(result) > len(model.species):
         raise BioNetGenError("SBML model has more algebraic rules than species states")
     return result

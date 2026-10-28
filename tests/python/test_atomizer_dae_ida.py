@@ -92,3 +92,50 @@ def test_underdetermined_algebraic_target_fails_explicitly(tmp_path):
     source.write_text(_dae_sbml(ambiguous=True), encoding="utf-8")
     with pytest.raises(bionetgen.BioNetGenError, match="unambiguous free species"):
         bionetgen.from_sbml(str(source))
+
+
+def _concentration_dae_sbml():
+    """The same index-1 DAE with concentration-valued species in C = 2."""
+
+    return _dae_sbml().replace('size="1"', 'size="2"').replace(
+        'hasOnlySubstanceUnits="true"', 'hasOnlySubstanceUnits="false"'
+    )
+
+
+def test_algebraic_residual_reads_the_sbml_quantity_of_each_species():
+    """SBML math names a species' concentration unless it has only substance units.
+
+    The residual the native DAE runtime evaluates is the rule's math with the
+    SBML symbols translated as in an assignment rule, so ``Z^2 - X`` reads
+    the concentration functions, not the amount observables.
+    """
+
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.atomizer.modern.parser import SBMLParser
+    from bionetgen.sbml import _native_algebraic_rules
+
+    source = _concentration_dae_sbml()
+    bngl = Atomizer(atomize=False, quiet_mode=True, native_dae_runtime=True).atomize(
+        source
+    ).bngl
+    assert "__algebraic_residual_0() = (_c_Z()) ^ (2) - _c_X()" in bngl
+    assert _native_algebraic_rules(SBMLParser().parse(source)) == [
+        ("Z", "__algebraic_residual_0()")
+    ]
+    amounts = Atomizer(atomize=False, quiet_mode=True, native_dae_runtime=True).atomize(
+        _dae_sbml()
+    ).bngl
+    assert "__algebraic_residual_0() = (Z_amt) ^ (2) - X_amt" in amounts
+
+
+def test_concentration_algebraic_rule_is_enforced_in_its_compartment(tmp_path):
+    # [Z]^2 = [X] and d n_X/dt = -k [Z] with n = 2 [.], so
+    # d sqrt([X])/dt = -1/4 from [X](0) = 0.5; amounts are reported.
+    source = tmp_path / "concentration-dae.xml"
+    source.write_text(_concentration_dae_sbml(), encoding="utf-8")
+    model = bionetgen.from_sbml(str(source))
+    result = model.simulate(method="ode", t_end=0.5, n_steps=1)
+    values = _by_time_and_species(model, result)
+    root = 0.5**0.5 - 0.125
+    assert values[(0.5, "@C::M_X()")] == pytest.approx(2 * root**2, abs=1e-6)
+    assert values[(0.5, "@C::M_Z()")] == pytest.approx(2 * root, abs=1e-6)
