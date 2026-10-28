@@ -2005,9 +2005,7 @@ end actions
             return values[0]
 
         assert amount(tmp_path / "net_snapshot.net") == pytest.approx(100)
-        assert amount(tmp_path / "current_state.net") == pytest.approx(
-            current_amount
-        )
+        assert amount(tmp_path / "current_state.net") == pytest.approx(current_amount)
 
     @pytest.mark.parametrize(
         "route", ["readFile", "include_network", "generate_network"]
