@@ -88,6 +88,7 @@ UNSUPPORTED_MARKERS = (
     "dropped",
     "cannot be represented",
     "not losslessly representable",
+    "delay expression duration must be static",
     "gcd(",
     "lcm(",
     "notanumber",
@@ -1073,26 +1074,11 @@ def _simulate_and_compare(
     function_names: set[str] | None = None,
 ) -> dict[str, Any]:
     """Compare BNG3/CVODE observables with libRoadRunner on one time grid."""
-
-    if _written_sbml_uses_delay(output_path):
-        return {
-            "status": "not-tested",
-            "skipped": True,
-            "reason": (
-                "The written SBML contains delay, which libRoadRunner cannot "
-                "load. The official SBML Test Suite reference comparison ran "
-                "separately."
-            ),
-            "method_bngl": "BNG3 CVODE (simulate method='ode')",
-            "method_sbml": "libRoadRunner CVODE",
-        }
-
     try:
-        import roadrunner
         from bionetgen import BioNetGenModel
     except ImportError as exc:
         raise RuntimeError(
-            "libRoadRunner is required for direct numerical comparison"
+            "BNG3 Python API is required for direct numerical comparison"
         ) from exc
     with _case_phase_scope("independent-bng3-cvode"):
         bng_result = BioNetGenModel(cpp_model).simulate(
@@ -1103,6 +1089,26 @@ def _simulate_and_compare(
             rtol=rtol,
             atol=atol,
         )
+
+    if _written_sbml_uses_delay(output_path):
+        return {
+            "status": "not-tested",
+            "skipped": True,
+            "reason": (
+                "The written SBML contains delay, which libRoadRunner cannot "
+                "load. BNG3 CVODE completed its independent run, and the "
+                "official SBML Test Suite reference comparison ran separately."
+            ),
+            "method_bngl": "BNG3 CVODE (simulate method='ode')",
+            "method_sbml": "libRoadRunner CVODE",
+        }
+
+    try:
+        import roadrunner
+    except ImportError as exc:
+        raise RuntimeError(
+            "libRoadRunner is required for direct numerical comparison"
+        ) from exc
     series = dict(bng_result.observables)
     function_values = getattr(bng_result, "functions", {}) or {}
     if function_names is None:
@@ -1253,9 +1259,7 @@ def _written_sbml_uses_delay(output_path: Path) -> bool:
     root = ET.parse(output_path).getroot()
     return any(
         element.tag.rsplit("}", 1)[-1] == "csymbol"
-        and str(element.attrib.get("definitionURL", "")).rstrip("/").endswith(
-            "/delay"
-        )
+        and str(element.attrib.get("definitionURL", "")).rstrip("/").endswith("/delay")
         for element in root.iter()
     )
 
@@ -3773,9 +3777,7 @@ def _validate_case(
                 },
             )
         record["simulation_comparison"] = comparison
-        if not comparison.get("passed", False) and not comparison.get(
-            "skipped", False
-        ):
+        if not comparison.get("passed", False) and not comparison.get("skipped", False):
             record["status"] = "failed"
             record["error"] = comparison.get("error", "numerical comparison failed")
         record["core_passed"] = record["status"] == "passed"

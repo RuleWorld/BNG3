@@ -143,6 +143,40 @@ def test_informational_delay_warning_does_not_block_official_reference():
     assert runner._warning_limitations([unsupported]) == [delay_notice["message"]]
 
 
+def test_dynamic_delay_refusal_is_classified_as_unsupported():
+    assert (
+        runner._classify_error("RuntimeError: delay expression duration must be static")
+        == "unsupported"
+    )
+
+
+def test_delay_roadrunner_skip_runs_bng3_cvode_first(tmp_path, monkeypatch):
+    calls = []
+
+    class Result:
+        time = [0.0, 1.0]
+        functions = {}
+
+    class Model:
+        def simulate(self, **kwargs):
+            calls.append(kwargs)
+            return Result()
+
+    monkeypatch.setattr(runner, "_written_sbml_uses_delay", lambda _path: True)
+    monkeypatch.setattr("bionetgen.BioNetGenModel", lambda _model: Model())
+    output = tmp_path / "delayed.xml"
+    output.touch()
+
+    comparison = runner._simulate_and_compare(
+        object(), output, t_end=1.0, n_steps=1, rtol=1e-7, atol=1e-12
+    )
+
+    assert len(calls) == 1
+    assert comparison["status"] == "not-tested"
+    assert comparison["skipped"] is True
+    assert "BNG3 CVODE completed" in comparison["reason"]
+
+
 #: The existing assertions this suite calls rather than duplicates.
 validation_contracts = _load_test_module(
     "tests/python/test_sbml_validation_contracts.py", "_contract_validation_contracts"
