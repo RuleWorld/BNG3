@@ -3592,6 +3592,33 @@ class SBMLParser:
                 )
         for compartment_id, compartment in compartments.items():
             dimension = compartment.spatial_dimensions
+            if (
+                result.level != 2
+                and math.isfinite(dimension)
+                and dimension > 3
+                and float(dimension).is_integer()
+            ):
+                # SBML Level 3 permits any spatialDimensions value. BNG3 keeps
+                # an integer value in the BNGL compartment declaration, and
+                # the writer keeps each reaction's explicit SBML flux whenever
+                # a compartment's dimension is not 2 or 3, so no rate depends
+                # on the declared dimension. Geometry-specific cBNGL behavior
+                # (surface/volume adjacency) applies only to dimensions 2 and
+                # 3, which SBML core does not define for other values either.
+                result.import_warnings.append(
+                    {
+                        "category": "compartment",
+                        "message": (
+                            f'Compartment "{compartment_id}" has spatialDimensions '
+                            f"{dimension:g}; the value and the compartment size "
+                            "are preserved, and reactions in it keep their "
+                            "explicit SBML flux."
+                        ),
+                        "count": 1,
+                        "severity": "info",
+                    }
+                )
+                continue
             if not math.isfinite(dimension) or dimension < 0 or dimension > 3:
                 if not math.isfinite(dimension) or dimension < 0:
                     reason = (
