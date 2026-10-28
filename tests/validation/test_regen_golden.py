@@ -72,6 +72,21 @@ def test_manifest_records_actual_seed_schedule(tmp_path, monkeypatch):
     assert "seed_range" not in generation
 
 
+def test_golden_regeneration_rejects_unpinned_bng2(monkeypatch, tmp_path, capsys):
+    from scripts import regen_golden
+
+    monkeypatch.setattr(
+        regen_golden,
+        "_bng2_oracle_identity",
+        lambda: (_ for _ in ()).throw(RuntimeError("BNG2 revision is not locked")),
+    )
+    monkeypatch.setattr(regen_golden, "GOLDEN", tmp_path / "golden")
+
+    assert regen_golden.regen(["simple_system"], 0) == 2
+    assert "revision is not locked" in capsys.readouterr().err
+    assert not (tmp_path / "golden").exists()
+
+
 def test_live_ensemble_uses_the_fingerprinted_bng2_root(tmp_path, monkeypatch):
     import numpy as np
     from scripts import regen_golden

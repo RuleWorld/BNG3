@@ -11,7 +11,10 @@ Usage:
     python scripts/regen_golden.py --models blbr egfr_net
     python scripts/regen_golden.py --tier s                  # deterministic goldens
 
-Requires a working Perl BNG2 (set BNG2_PERL, or have legacy/perl/BNG2.pl present).
+Requires BNG2_PERL to point into an explicitly checked-out, locked BNG2 oracle.
+Create it with `python scripts/ci/checkout_oracle.py --name bionetgen
+--destination /tmp/oracle-bionetgen`, then set BNG2_PERL to
+`/tmp/oracle-bionetgen/bng2/BNG2.pl`.
 """
 
 from __future__ import annotations
@@ -31,6 +34,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tests.validation import corpus, oracle_perl  # noqa: E402
+from scripts.ci.oracle_sources import load_lock, load_oracle_source  # noqa: E402
 
 GOLDEN = corpus.REPO / "tests" / "validation" / "golden"
 ENSEMBLE_EVIDENCE = (
@@ -103,15 +107,16 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _ensemble_oracle_identity() -> dict:
+def _bng2_oracle_identity(*, require_network: bool = False) -> dict:
     bng2 = oracle_perl._bng2_path()
     if bng2 is None:
         raise RuntimeError("Perl BNG2 not available (set BNG2_PERL)")
     helper_paths = {
         "BNG2.pl": bng2,
         "Perl2/BNGAction.pm": bng2.parent / "Perl2" / "BNGAction.pm",
-        "bin/run_network": bng2.parent / "bin" / "run_network",
     }
+    if require_network:
+        helper_paths["bin/run_network"] = bng2.parent / "bin" / "run_network"
     revision = None
     try:
         revision = subprocess.run(
@@ -123,6 +128,13 @@ def _ensemble_oracle_identity() -> dict:
         ).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         pass
+    expected_revision = load_oracle_source(load_lock(), "bionetgen")["revision"]
+    if revision != expected_revision:
+        raise RuntimeError(
+            f"BNG2 oracle revision {revision or 'unknown'} does not match locked "
+            f"revision {expected_revision}; run scripts/ci/checkout_oracle.py "
+            "--name bionetgen and set BNG2_PERL to that checkout"
+        )
     missing = [str(path) for path in helper_paths.values() if not path.is_file()]
     if missing:
         raise RuntimeError("missing BNG2 oracle files: " + ", ".join(missing))
@@ -309,6 +321,11 @@ def _write_ensemble_manifest(models: dict, identity: dict, n_runs: int) -> None:
 
 
 def regen(models: list[str], ensemble: int) -> int:
+    try:
+        identity = _bng2_oracle_identity()
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     if ensemble:
         if ensemble < ENSEMBLE_MIN_RUNS:
             print(
@@ -319,12 +336,12 @@ def regen(models: list[str], ensemble: int) -> int:
         if not oracle_perl.perl_available():
             print("ERROR: Perl BNG2 not available (set BNG2_PERL).", file=sys.stderr)
             return 2
+        results = {}
         try:
-            identity = _ensemble_oracle_identity()
+            identity = _bng2_oracle_identity(require_network=True)
         except RuntimeError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
-        results = {}
         for name in models:
             stem = Path(name).stem
             try:
