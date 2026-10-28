@@ -81,6 +81,18 @@ std::string builtinName(BuiltinFunction function) {
     case BuiltinFunction::FunctionProduct: return "FunctionProduct";
     case BuiltinFunction::Hybrid: return "Hybrid";
     case BuiltinFunction::TableFunction: return "TFUN";
+    case BuiltinFunction::DistribBernoulli: return "distrib_bernoulli";
+    case BuiltinFunction::DistribBinomial: return "distrib_binomial";
+    case BuiltinFunction::DistribCauchy: return "distrib_cauchy";
+    case BuiltinFunction::DistribChisquare: return "distrib_chisquare";
+    case BuiltinFunction::DistribExponential: return "distrib_exponential";
+    case BuiltinFunction::DistribGamma: return "distrib_gamma";
+    case BuiltinFunction::DistribLaplace: return "distrib_laplace";
+    case BuiltinFunction::DistribLognormal: return "distrib_lognormal";
+    case BuiltinFunction::DistribNormal: return "distrib_normal";
+    case BuiltinFunction::DistribPoisson: return "distrib_poisson";
+    case BuiltinFunction::DistribRayleigh: return "distrib_rayleigh";
+    case BuiltinFunction::DistribUniform: return "distrib_uniform";
     case BuiltinFunction::Unknown: break;
     }
     throw std::invalid_argument("cannot lower unresolved builtin function");

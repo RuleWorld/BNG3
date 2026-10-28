@@ -3228,6 +3228,21 @@ def _native_term_expression(
         return (
             f"({_format_number(value)} * " f"({_format_number(target.amount_factor)}))"
         )
+    # SBML distrib csymbols are only executable as native event
+    # assignments, where the seeded event runtime samples each call.
+    # Keep the call intact so C++ can draw it at trigger or execution
+    # time according to useValuesFromTriggerTime.
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id.startswith("distrib_")
+    ):
+        expression = ast.unparse(node)
+        if sign < 0:
+            expression = f"-({expression})"
+        if target.amount_factor != 1.0:
+            expression = f"({expression}) * ({_format_number(target.amount_factor)})"
+        return expression
     factors = _native_multiplicative_factors(node)
     if factors is None:
         return None
@@ -3551,6 +3566,23 @@ def synthesize_event_actions(
     ] = []
     scheduled_values: List[Tuple[float, str, float]] = []
     horizon_limited = 0
+    distribution_events: List[SBMLEvent] = []
+    remaining_events: List[SBMLEvent] = []
+    for event in events:
+        has_distribution_draw = any(
+            re.search(r"\bdistrib_[A-Za-z0-9_]+\s*\(", _event_assignment(item)[1])
+            for item in event.assignments
+        )
+        if has_distribution_draw:
+            distribution_events.append(event)
+        else:
+            remaining_events.append(event)
+    if distribution_events:
+        untranslated.extend(
+            (event, "SBML distrib draws require native event execution")
+            for event in distribution_events
+        )
+    events = remaining_events
     # Deterministic crossings cannot stand in for state changes caused by
     # stochastic reaction jumps.
     if context.method.lower() == "ssa" and not context.static_event_state:

@@ -293,6 +293,54 @@ end model
     CHECK_THAT(result.observables.back()[0], Catch::Matchers::WithinAbs(0.0, 1e-8));
 }
 
+TEST_CASE("native event distribution draws use the simulation seed",
+          "[OdeOptions][Events][Distribution]") {
+    auto model = parser::parseModel(R"(
+begin molecule types
+    A()
+    B()
+    X()
+end molecule types
+begin seed species
+    A() 1
+    X() 0
+end seed species
+begin observables
+    Molecules x X()
+    Molecules b B()
+end observables
+begin reaction rules
+    fire: A() -> B() 1000000
+end reaction rules
+begin bng3_events version 1
+    event "draw"
+        trigger: b > 0
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: true
+        assignment: x = distrib_normal(-1, 0.01)
+    end event
+end bng3_events
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "ssa";
+    options.seed = 173;
+    options.tEnd = 1.0;
+    options.nSteps = 1;
+
+    const auto first = integrator.integrate(options);
+    const auto repeated = integrator.integrate(options);
+
+    REQUIRE(first.eventCount == 1);
+    REQUIRE(repeated.eventCount == 1);
+    CHECK(first.observables.back()[0] == repeated.observables.back()[0]);
+    CHECK(first.observables.back()[0] < 0.0);
+}
+
+
 TEST_CASE("OdeIntegrator evaluates user-defined function rates", "[OdeOptions]") {
     // Source-derived from akutuva21/bionetgen PR #508 head e67850cf and
     // PR #509 head 5cf5cd47: function-name matching is an allocation-sensitive

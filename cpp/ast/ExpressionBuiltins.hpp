@@ -88,15 +88,13 @@ struct Builtin {
     int              arity;
     Oracle           oracle;
     NfsimBackend     nfsim;
-    /// True when cpp/ast/Expression.cpp evaluates this name. Every entry is
-    /// currently implemented there; the field exists so that a future addition
-    /// on the NFsim side cannot be recorded as shared without the shared
-    /// evaluator actually growing an implementation.
+    /// True when cpp/ast/Expression.cpp evaluates this name. The SBML distrib
+    /// entries are false because they require the seeded event-assignment RNG.
     bool             sharedEvaluator;
 };
 
 /// The table. Keep alphabetical; keep it the only list.
-inline constexpr std::array<Builtin, 27> kBuiltins{{
+inline constexpr std::array<Builtin, 39> kBuiltins{{
     {"abs",   1,         Oracle::Bng2Builtin,   NfsimBackend::ExprTkNative, true},
     {"acos",  1,         Oracle::Bng2Builtin,   NfsimBackend::ExprTkNative, true},
     {"acosh", 1,         Oracle::Bng2Builtin,   NfsimBackend::ExprTkNative, true},
@@ -110,6 +108,22 @@ inline constexpr std::array<Builtin, 27> kBuiltins{{
     {"ceil",  1,         Oracle::Bng3Extension, NfsimBackend::ExprTkNative, true},
     {"cos",   1,         Oracle::Bng2Builtin,   NfsimBackend::ExprTkNative, true},
     {"cosh",  1,         Oracle::Bng2Builtin,   NfsimBackend::ExprTkNative, true},
+    // SBML distrib functions are event-assignment draws. They are parsed as
+    // builtins so they cannot be mistaken for unresolved user functions, but
+    // are sampled by the seeded event runtime rather than this deterministic
+    // shared evaluator.
+    {"distrib_bernoulli", kVariadic, Oracle::Bng3Extension, NfsimBackend::Unavailable, false},
+    {"distrib_binomial",  kVariadic, Oracle::Bng3Extension, NfsimBackend::Unavailable, false},
+    {"distrib_cauchy",    kVariadic, Oracle::Bng3Extension, NfsimBackend::Unavailable, false},
+    {"distrib_chisquare", kVariadic, Oracle::Bng3Extension, NfsimBackend::Unavailable, false},
+    {"distrib_exponential", kVariadic, Oracle::Bng3Extension, NfsimBackend::Unavailable, false},
+    {"distrib_gamma",     kVariadic, Oracle::Bng3Extension, NfsimBackend::Unavailable, false},
+    {"distrib_laplace",   kVariadic, Oracle::Bng3Extension, NfsimBackend::Unavailable, false},
+    {"distrib_lognormal", kVariadic, Oracle::Bng3Extension, NfsimBackend::Unavailable, false},
+    {"distrib_normal",    kVariadic, Oracle::Bng3Extension, NfsimBackend::Unavailable, false},
+    {"distrib_poisson",   kVariadic, Oracle::Bng3Extension, NfsimBackend::Unavailable, false},
+    {"distrib_rayleigh",  kVariadic, Oracle::Bng3Extension, NfsimBackend::Unavailable, false},
+    {"distrib_uniform",   kVariadic, Oracle::Bng3Extension, NfsimBackend::Unavailable, false},
     {"exp",   1,         Oracle::Bng2Builtin,   NfsimBackend::ExprTkNative, true},
     {"floor", 1,         Oracle::Bng3Extension, NfsimBackend::ExprTkNative, true},
     // ExprTk parses `if` as a built-in keyword; both it and BNG2 use `!= 0`

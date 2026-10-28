@@ -77,6 +77,18 @@ BuiltinFunction builtinFunction(const std::string& rawName) {
     if (name == "functionproduct") return BuiltinFunction::FunctionProduct;
     if (name == "hybrid") return BuiltinFunction::Hybrid;
     if (name == "tfun") return BuiltinFunction::TableFunction;
+    if (name == "distrib_bernoulli") return BuiltinFunction::DistribBernoulli;
+    if (name == "distrib_binomial") return BuiltinFunction::DistribBinomial;
+    if (name == "distrib_cauchy") return BuiltinFunction::DistribCauchy;
+    if (name == "distrib_chisquare") return BuiltinFunction::DistribChisquare;
+    if (name == "distrib_exponential") return BuiltinFunction::DistribExponential;
+    if (name == "distrib_gamma") return BuiltinFunction::DistribGamma;
+    if (name == "distrib_laplace") return BuiltinFunction::DistribLaplace;
+    if (name == "distrib_lognormal") return BuiltinFunction::DistribLognormal;
+    if (name == "distrib_normal") return BuiltinFunction::DistribNormal;
+    if (name == "distrib_poisson") return BuiltinFunction::DistribPoisson;
+    if (name == "distrib_rayleigh") return BuiltinFunction::DistribRayleigh;
+    if (name == "distrib_uniform") return BuiltinFunction::DistribUniform;
     return BuiltinFunction::Unknown;
 }
 
