@@ -5,7 +5,11 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from tests.validation import integrated_consumers, integrated_protocol as protocol, reporting
+from tests.validation import (
+    integrated_consumers,
+    integrated_protocol as protocol,
+    reporting,
+)
 from tests.validation.reproduce_issue141_lifecycle import _native_extension_path
 
 
@@ -126,9 +130,7 @@ def test_out_of_slice_lifecycle_checks_are_non_gating_but_remain_not_tested():
 
     missing_source = [
         dict(row, id=row["check"])
-        for row in protocol._lifecycle_not_tested_rows(
-            "missing-source", None
-        )
+        for row in protocol._lifecycle_not_tested_rows("missing-source", None)
     ]
     assert all("applicability" not in row for row in missing_source)
     assert reporting.gate_failures(missing_source) == missing_source
