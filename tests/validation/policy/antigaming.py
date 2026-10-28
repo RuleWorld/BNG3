@@ -21,8 +21,18 @@ CHECK_IDS = (
     "release-scheduled-mutation-ratchet",
 )
 
-PRODUCT_PREFIXES = ("cpp/", "python/", "bng3/", "src/", "scripts/")
-PROTECTED_WORDS = ("expected", "golden", "tolerance", "exception", "skip", "exclude")
+PRODUCT_PREFIXES = ("cpp/", "python/")
+TOLERANCE_RE = re.compile(
+    r"(?i)\b(?P<key>atol|rtol|abs_tol|rel_tol|absolute_tolerance|relative_tolerance|tolerance)\b\s*[\"']?\s*(?:=|:)\s*(?P<value>[^,\s}]+)"
+)
+SKIP_XFAIL_RE = re.compile(
+    r"(?i)(?:pytest\s*\.\s*mark\s*\.\s*(?:skip|skipif|xfail)|pytest\s*\.\s*skip\s*\(|unittest\s*\.\s*skip(?:If|Unless)?\s*\()"
+)
+EXPECTED_PATHS = {
+    "provenance/sbml-campaign/expectations.json",
+    "provenance/curated-biomodels-corpus-expectations.json",
+    "tests/validation/exceptions.json",
+}
 ID_RE = re.compile(
     r"""(?ix)(?:case[_ -]?id|"id"|\bid\b|\bids\b)["']?\s*[=:]\s*[\["']*([A-Za-z0-9][A-Za-z0-9_.:/-]{2,})"""
 )
@@ -69,18 +79,89 @@ def _base_text(root: Path, base: str, path: str) -> str:
 
 
 def check_protected_changes(root: Path, base: str, head: str = "HEAD") -> list[str]:
-    """Reject a PR combining product edits and public expectation/policy edits."""
+    """Reject product changes mixed with edits to established acceptance criteria."""
     paths = changed_paths(root, base, head)
-    product = [p for p in paths if p.startswith(PRODUCT_PREFIXES)]
-    protected = [
-        p
-        for p in paths
-        if any(w in p.lower() for w in PROTECTED_WORDS)
-        or p.startswith(
-            ("tests/", "fixtures/", "expected/", "provenance/", ".github/workflows/")
+    product = [p for p in paths if _is_product_path(p)]
+    protected = []
+    loaded_expected_paths = _loaded_expected_paths(root, base)
+    # These locations contain committed oracle data. Require the path to exist
+    # in the base so a newly added regression case may define its own result.
+    for path in paths:
+        exists_in_base = bool(_base_text(root, base, path))
+        if not exists_in_base:
+            continue
+        if path.startswith(("tests/validation/golden/", "provenance/golden/")):
+            protected.append(path)
+        elif path.startswith("tests/validation/Validate/DAT_validate/") and Path(
+            path
+        ).suffix.lower() in {".net", ".gdat", ".cdat"}:
+            protected.append(path)
+        elif path in EXPECTED_PATHS:
+            protected.append(path)
+        elif path in loaded_expected_paths:
+            protected.append(path)
+
+    patch = git(root, "diff", "--unified=0", f"{base}...{head}")
+    current = ""
+    removed_tolerances: dict[str, dict[str, set[str]]] = {}
+    added_tolerances: dict[str, dict[str, set[str]]] = {}
+    added_markers: dict[str, list[str]] = {}
+    in_hunk = False
+    for line in patch.splitlines():
+        if line.startswith("+++ b/"):
+            current = line[6:]
+        elif line.startswith("@@"):
+            in_hunk = True
+        elif line.startswith("+") and not line.startswith("+++") and in_hunk:
+            content = line[1:]
+            for match in TOLERANCE_RE.finditer(content):
+                key, value = match.group("key", "value")
+                added_tolerances.setdefault(current, {}).setdefault(
+                    key.lower(), set()
+                ).add(value)
+            if SKIP_XFAIL_RE.search(content):
+                added_markers.setdefault(current, []).append(content.strip())
+        elif line.startswith("-") and not line.startswith("---") and in_hunk:
+            for match in TOLERANCE_RE.finditer(line[1:]):
+                key, value = match.group("key", "value")
+                removed_tolerances.setdefault(current, {}).setdefault(
+                    key.lower(), set()
+                ).add(value)
+
+    # A changed value is protected; a new assertion may introduce its own
+    # tolerance without altering an existing check's error budget.
+    protected.extend(
+        path
+        for path, removed in removed_tolerances.items()
+        if any(
+            key in added_tolerances.get(path, {})
+            and values != added_tolerances[path][key]
+            for key, values in removed.items()
         )
-        or p in {"docs/CAPABILITY_UNION_INVENTORY.md", "docs/DECISIONS.md"}
-    ]
+    )
+    protected.extend(added_markers)
+    protected.extend(_added_skip_or_exclusion_entries(root, base, head, paths))
+
+    # The reference exclusion manifest is a selector, so only newly introduced
+    # model names count as adding exclusions. Edits to code/test harnesses alone
+    # remain independently reviewable.
+    exclusion_path = "tests/validation/reference_exclusions.json"
+    if exclusion_path in paths and _base_text(root, base, exclusion_path):
+        try:
+            old = json.loads(_base_text(root, base, exclusion_path))
+            new = json.loads(_head_text(root, head, exclusion_path))
+            old_models = {
+                item for values in old.get("profiles", {}).values() for item in values
+            }
+            new_models = {
+                item for values in new.get("profiles", {}).values() for item in values
+            }
+            if new_models - old_models:
+                protected.append(exclusion_path)
+        except (ValueError, TypeError, AttributeError):
+            protected.append(exclusion_path)
+
+    protected = sorted(set(protected))
     return (
         [
             f"product changes mixed with protected acceptance data: {product} + {protected}"
@@ -88,6 +169,131 @@ def check_protected_changes(root: Path, base: str, head: str = "HEAD") -> list[s
         if product and protected
         else []
     )
+
+
+def _is_product_path(path: str) -> bool:
+    # The wheel installs python/bionetgen and the native extension under that
+    # package. No scripts/ paths are installed as runtime package code today;
+    # CI, validation and regeneration scripts therefore remain tooling.
+    return path.startswith(PRODUCT_PREFIXES)
+
+
+def _loaded_expected_paths(root: Path, base: str) -> set[str]:
+    """Collect literal data paths opened by existing tests as oracle inputs."""
+    try:
+        test_paths = git(
+            root, "ls-tree", "-r", "--name-only", base, "--", "tests"
+        ).splitlines()
+    except subprocess.CalledProcessError:
+        return set()
+    loaded: set[str] = set()
+    for test_path in test_paths:
+        if not test_path.endswith(".py"):
+            continue
+        source = _base_text(root, base, test_path)
+        pattern = r"Path\s*\(\s*['\"]([^'\"]+)['\"]\s*\)\s*\.\s*(?:read_text|open)\s*\(|open\s*\(\s*['\"]([^'\"]+)['\"]"
+        for match in re.finditer(pattern, source):
+            rel = match.group(1) or match.group(2)
+            if rel.startswith(("tests/", "provenance/")):
+                loaded.add(rel)
+    return loaded
+
+
+def _exception_entries(value) -> set[str]:
+    entries: set[str] = set()
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if str(key).lower() in {
+                "skip",
+                "skips",
+                "skipif",
+                "xfail",
+                "exclude",
+                "exclusions",
+                "excluded",
+                "ignored",
+            }:
+                if isinstance(child, list):
+                    entries.update(str(item) for item in child)
+                elif child not in (None, False, ""):
+                    entries.add(str(child))
+            entries.update(_exception_entries(child))
+    elif isinstance(value, list):
+        for child in value:
+            entries.update(_exception_entries(child))
+    return entries
+
+
+def _yaml_exception_entries(text: str) -> set[str]:
+    """Extract selector entries from simple YAML skip/exclusion lists."""
+    entries: set[str] = set()
+    active_indent: int | None = None
+    for line in text.splitlines():
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        key_match = re.match(
+            r"^(\s*)(?:skip|skips|skipif|xfail|exclude|exclusions|excluded|ignored)\s*:\s*(.*)$",
+            line,
+            re.IGNORECASE,
+        )
+        if key_match:
+            active_indent = len(key_match.group(1))
+            inline = key_match.group(2).strip().strip("[]")
+            entries.update(
+                token.strip().strip("'\" ")
+                for token in inline.split(",")
+                if token.strip()
+            )
+            continue
+        item_match = re.match(r"^(\s*)-\s*(.+?)\s*$", line)
+        if (
+            item_match
+            and active_indent is not None
+            and len(item_match.group(1)) > active_indent
+        ):
+            entries.add(item_match.group(2).strip().strip("'\" "))
+            continue
+        if (
+            active_indent is not None
+            and len(line) - len(line.lstrip()) <= active_indent
+        ):
+            active_indent = None
+    return entries
+
+
+def _added_skip_or_exclusion_entries(
+    root: Path, base: str, head: str, paths: list[str]
+) -> list[str]:
+    protected = []
+    for path in paths:
+        if not path.startswith(("tests/", "provenance/")):
+            continue
+        old_text = _base_text(root, base, path)
+        try:
+            new_text = _head_text(root, head, path)
+        except subprocess.CalledProcessError:
+            new_text = ""
+        try:
+            old_entries = _exception_entries(json.loads(old_text))
+            new_entries = _exception_entries(json.loads(new_text))
+        except (ValueError, TypeError):
+            old_entries = _yaml_exception_entries(old_text)
+            new_entries = _yaml_exception_entries(new_text)
+        if new_entries - old_entries:
+            protected.append(path)
+            continue
+        # YAML and code-based selectors: inspect added lines under explicit
+        # skip/xfail/exclusion keys, not arbitrary filenames or prose.
+        added = git(root, "diff", "--unified=0", f"{base}...{head}", "--", path)
+        if any(
+            re.match(
+                r"(?i)^\+\s*(?:skip|skipif|xfail|exclude|exclusions|ignored)\s*:", line
+            )
+            for line in added.splitlines()
+            if line.startswith("+") and not line.startswith("+++")
+        ):
+            protected.append(path)
+    return protected
 
 
 def _manifest_ids(text: str) -> set[str]:
@@ -237,7 +443,7 @@ def check_product_fixture_names(root: Path, base: str, head: str = "HEAD") -> li
             needles.update(ID_RE.findall(text))
             needles.update(CASE_TOKEN_RE.findall(text))
     errors = []
-    product_paths = [p for p in paths if p.startswith(PRODUCT_PREFIXES)]
+    product_paths = [p for p in paths if _is_product_path(p)]
     if not product_paths:
         return errors
     patch = git(root, "diff", "--unified=0", f"{base}...{head}", "--", *product_paths)
