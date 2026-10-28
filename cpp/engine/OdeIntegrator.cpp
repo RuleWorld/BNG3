@@ -4032,8 +4032,15 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                         std::vector<double> derivatives(nSpecies_);
                         derivs(t, state.data(), derivatives.data());
                         bool conjunctionHolds = true;
+                        const auto* risingConjunct = nativeEventRoots_[rootIndex].second;
                         for (const auto* conjunct : triggerConjuncts(
                                  nativeEventGroups_[group].trigger)) {
+                            // CVODE reported this conjunct's root with an
+                            // increasing direction, so it is rising here even
+                            // where its slope has no analytic form (a user
+                            // function or delay() side has no derivative in
+                            // eventSideDerivative).
+                            if (conjunct == risingConjunct) continue;
                             const double value = eventRootValue(*conjunct, t, state.data());
                             const double tolerance = 1e-9 * (1.0 + std::abs(value));
                             if (value < -tolerance ||
