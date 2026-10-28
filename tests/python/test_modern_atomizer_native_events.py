@@ -178,7 +178,10 @@ def test_stochastic_run_lowers_state_events_to_native_execution():
 
     assert result.success, result.error
     assert "begin bng3_events version 1" in result.bngl
-    assert "state-triggered SBML events require stochastic jump scheduling" not in result.bngl
+    assert (
+        "state-triggered SBML events require stochastic jump scheduling"
+        not in result.bngl
+    )
 
 
 def test_two_state_trigger_is_lowered_to_the_native_event_block():

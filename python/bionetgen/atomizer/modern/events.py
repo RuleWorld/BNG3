@@ -3413,7 +3413,10 @@ def lower_native_events(
         # the trigger cannot be evaluated on it.
         return NativeEventLowering(None)
     if str(context.method or "ode").lower() not in {
-        "ode", "cvode", "ssa", "stochastic"
+        "ode",
+        "cvode",
+        "ssa",
+        "stochastic",
     }:
         # Native trigger checks are implemented for continuous ODE roots and
         # stochastic state jumps, not for the partitioned simulators.
