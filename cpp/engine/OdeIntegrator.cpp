@@ -3047,11 +3047,23 @@ OdeResult OdeIntegrator::integrateCore(const OdeOptions& options) {
         if (options.batchSize > 0) {
             return integrateBatchSSA(options);
         }
-        if (!nativeEvents_.empty() &&
-            std::all_of(compiledRxns_.begin(), compiledRxns_.end(),
-                        [](const CompiledReaction& reaction) {
-                            return reaction.isAbsoluteFlux;
-                        })) {
+        bool allRateRuleStateChannels = !compiledRxns_.empty();
+        {
+            auto rxnIt = network_.reactions.all().begin();
+            for (const auto& reaction : compiledRxns_) {
+                if (!reaction.isAbsoluteFlux) { allRateRuleStateChannels = false; break; }
+                std::string originName;
+                if (rxnIt != network_.reactions.all().end()) {
+                    originName = rxnIt->getOriginRuleName();
+                    ++rxnIt;
+                }
+                if (originName.rfind("__rate_rule", 0) != 0) {
+                    allRateRuleStateChannels = false;
+                    break;
+                }
+            }
+        }
+        if (!nativeEvents_.empty() && allRateRuleStateChannels) {
             // A model with no stochastic reaction channels can still have
             // continuous SBML rate-rule states that drive discrete events.
             // Preserve those trajectories with the deterministic solver and

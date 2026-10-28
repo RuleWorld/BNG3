@@ -248,6 +248,55 @@ end bng3_events
     CHECK_THAT(result.observables.back()[1], Catch::Matchers::WithinAbs(0.0, 1e-12));
 }
 
+TEST_CASE("SSA keeps absolute-flux reaction channels stochastic with native events",
+          "[OdeOptions][Events][SSA]") {
+    auto model = parser::parseModel(R"(
+begin model
+setOption("BNG3AbsoluteFluxRules", "birth")
+begin molecule types
+    X()
+    Marker()
+end molecule types
+begin seed species
+    X() 0
+    Marker() 0
+end seed species
+begin observables
+    Molecules x X()
+    Molecules marker Marker()
+end observables
+begin reaction rules
+    birth: 0 -> X() 2 TotalRate
+end reaction rules
+begin bng3_events version 1
+    event "mark_first_birth"
+        trigger: x > 0.5
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: true
+        assignment: marker = 1
+    end event
+end bng3_events
+end model
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "ssa";
+    options.seed = 17;
+    options.tEnd = 1.0;
+    options.nSteps = 4;
+
+    const auto result = integrator.integrate(options);
+
+    REQUIRE(result.eventCount > 0);
+    for (const auto& row : result.observables) {
+        CHECK(row[0] == std::round(row[0]));
+        CHECK(row[1] == (row[0] > 0 ? 1.0 : 0.0));
+    }
+}
+
 TEST_CASE("SSA keeps event-only absolute-flux states continuous",
           "[OdeOptions][Events][SSA]") {
     auto model = parser::parseModel(R"(
