@@ -16,14 +16,59 @@ def _warning(category, severity, message):
 
 def test_expected_ids_are_independent_and_cover_variants():
     ids = boundaries.expected_check_ids()
-    assert len(ids) == len(set(ids)) == len(boundaries.CASES)
+    expected_negative = {
+        f"sbml-boundary:{case_id}:unsupported-boundary-contract"
+        for case_id in (
+            "event_dynamic_delay_a",
+            "event_dynamic_delay_b",
+            "delay_state_history_a",
+            "delay_state_history_b",
+            "algebraic_species_product",
+            "algebraic_species_square",
+            "variable_stoich_state_a",
+            "variable_stoich_state_b",
+        )
+    }
+    expected_positive = {
+        "sbml-event:event_state_nonlinear_a:source-trajectory",
+        "sbml-event:event_state_nonlinear_b:source-trajectory",
+    }
+    assert len(ids) == len(set(ids))
+    assert set(ids) == expected_negative | expected_positive
     assert {case[1] for case in boundaries.CASES} == {
-        "event",
+        "event-delay",
         "delay",
         "algebraic",
         "stoichiometry",
     }
-    assert all(check_id.endswith(":unsupported-boundary-contract") for check_id in ids)
+    assert all(
+        check_id.endswith(":unsupported-boundary-contract")
+        for check_id in expected_negative
+    )
+    assert all(
+        check_id.endswith(":source-trajectory") for check_id in expected_positive
+    )
+
+
+def test_supported_event_rows_require_independent_execution_evidence():
+    case = boundaries.SUPPORTED_EVENT_CASES[0]
+    row = boundaries._supported_event_row(case)
+    assert row["status"] == "NOT_TESTED"
+    assert row["evidence_kind"] == "supported-execution"
+    assert row["supported_execution"] is False
+    assert boundaries._valid_supported_event_row(row)
+
+    row.update(
+        status="PASS",
+        supported_execution=True,
+        source_engine="libRoadRunner",
+        time_points=101,
+        compared_observables=["A", "B"],
+    )
+    assert boundaries._valid_supported_event_row(row)
+
+    row["supported_execution"] = False
+    assert not boundaries._valid_supported_event_row(row)
 
 
 @pytest.mark.parametrize(

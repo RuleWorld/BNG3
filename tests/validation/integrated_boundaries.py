@@ -161,6 +161,43 @@ def _validate_source(libsbml: Any, xml: str) -> list[str]:
     return errors
 
 
+def _supported_event_row(case: tuple[str, str, str, str]) -> dict[str, Any]:
+    """Create an unqualified positive-control row until execution is proven."""
+    case_id = case[0]
+    return {
+        "id": f"sbml-event:{case_id}:source-trajectory",
+        "stage": "sbml-native-event",
+        "check": "source-trajectory",
+        "status": "NOT_TESTED",
+        "detail": "source validation or independent comparison did not complete",
+        "related_issues": list(ISSUES),
+        "case_id": case_id,
+        "question": "source-trajectory",
+        "expected_behavior": "native-event-matches-independent-sbml-execution",
+        "evidence_kind": "supported-execution",
+        "supported_execution": False,
+        "labels": {"feature_class": "event", "native_event": True},
+    }
+
+
+def _valid_supported_event_row(row: dict[str, Any]) -> bool:
+    """Require each positive event PASS to carry independent trajectory evidence."""
+    if (
+        row.get("evidence_kind") != "supported-execution"
+        or row.get("expected_behavior")
+        != "native-event-matches-independent-sbml-execution"
+    ):
+        return False
+    if row.get("status") != "PASS":
+        return row.get("supported_execution") is False
+    return (
+        row.get("supported_execution") is True
+        and row.get("source_engine") == "libRoadRunner"
+        and row.get("time_points") == 101
+        and set(row.get("compared_observables", [])) == {"A", "B"}
+    )
+
+
 def _diagnostics(result: Any, atomizer: Any) -> list[dict[str, str]]:
     rows = []
     for warning in getattr(atomizer.model, "import_warnings", []) or []:
@@ -194,20 +231,7 @@ def _run_supported_event_case(
 ) -> dict[str, Any]:
     """Compare a newly supported event model with its raw SBML execution."""
     case_id = case[0]
-    row: dict[str, Any] = {
-        "id": f"sbml-event:{case_id}:source-trajectory",
-        "stage": "sbml-native-event",
-        "check": "source-trajectory",
-        "status": "NOT_TESTED",
-        "detail": "source validation or independent comparison did not complete",
-        "related_issues": list(ISSUES),
-        "case_id": case_id,
-        "question": "source-trajectory",
-        "expected_behavior": "native-event-matches-independent-sbml-execution",
-        "evidence_kind": "supported-execution",
-        "supported_execution": False,
-        "labels": {"feature_class": "event", "native_event": True},
-    }
+    row = _supported_event_row(case)
     try:
         import libsbml  # type: ignore
         import numpy as np
@@ -463,9 +487,15 @@ def run(directory: Path) -> list[dict[str, Any]]:
             )
         except Exception as exc:
             output.append(_row(case, "HARNESS_ERROR", f"{type(exc).__name__}: {exc}"))
-    output.extend(
-        _run_supported_event_case(directory, case) for case in SUPPORTED_EVENT_CASES
-    )
+    for case in SUPPORTED_EVENT_CASES:
+        row = _run_supported_event_case(directory, case)
+        if not _valid_supported_event_row(row):
+            row.update(
+                status="HARNESS_ERROR",
+                supported_execution=False,
+                detail="positive event evidence row violated its independent-execution contract",
+            )
+        output.append(row)
     return output
 
 
