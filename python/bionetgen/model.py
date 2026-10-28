@@ -60,10 +60,12 @@ class BioNetGenModel:
         cpp_model: _cpp.Model,
         source_path: Optional[str] = None,
         source_metadata: Optional[str] = None,
+        algebraic_rules=None,
     ):
         self._model = cpp_model
         self._source_path = source_path
         self._source_metadata = source_metadata or ""
+        self._algebraic_rules = list(algebraic_rules or [])
         self._network: Optional[_cpp.GeneratedNetwork] = None
         self._continuation_network: Optional[_cpp.GeneratedNetwork] = None
         self._network_from_continuation = False
@@ -554,6 +556,8 @@ class BioNetGenModel:
                 "Unknown simulation method: "
                 f"{method!r}. Use 'ode', 'ssa', 'nf', 'pla', or 'psa'."
             )
+        if self._algebraic_rules and method != "ode":
+            raise ValueError("SBML algebraic rules require method='ode'")
         if continue_simulation and method not in {"ode", "ssa"}:
             raise ValueError(
                 "continue_simulation is supported only for native ODE and SSA"
@@ -783,6 +787,10 @@ class BioNetGenModel:
                 use_bngsim = False
 
             if use_bngsim:
+                if self._algebraic_rules:
+                    raise RuntimeError(
+                        "SBML algebraic rules require the native IDA solver"
+                    )
                 if continue_simulation:
                     raise RuntimeError(
                         "continue_simulation requires the native ODE or SSA backend"
@@ -867,6 +875,7 @@ class BioNetGenModel:
                             fresh_from_initial_state=native_fresh_run,
                             sparse=sparse,
                             check_product_scale=check_product_scale,
+                            algebraic_rules=self._algebraic_rules,
                         )
                     except Exception:
                         restore_failed_fresh_run()

@@ -27,6 +27,7 @@ from typing import (
 from urllib.parse import quote
 
 from .events import (
+    EventTranslationResult,
     EventTranslationContext,
     NativeStateTarget,
     _event_assignment,
@@ -7278,6 +7279,7 @@ def generate_bngl(
     replace_loc_params: bool = True,
     _promoted_event_parameters: Optional[Set[str]] = None,
     _allow_event_parameter_promotion: bool = True,
+    native_dae_runtime: bool = False,
 ) -> BNGLGenerationResult:
     import_warnings_before_generation = copy.deepcopy(model.import_warnings)
     promoted_event_parameters = set(_promoted_event_parameters or ())
@@ -11370,8 +11372,9 @@ def generate_bngl(
             ),
             resolve_species_concentration_volume=(resolve_species_concentration_volume),
             is_compile_time_constant=is_compile_time_constant,
-            unapplied_algebraic_rule=any(
-                rule.type == "algebraic" for rule in model.rules
+            unapplied_algebraic_rule=(
+                any(rule.type == "algebraic" for rule in model.rules)
+                and not native_dae_runtime
             ),
             resolve_constant=resolve_constant,
             expand_functions=lambda expression: extend_function(
@@ -11459,10 +11462,20 @@ def generate_bngl(
             static_event_state=static_event_state,
             resolve_native_state=resolve_native_state,
         )
-        event_result = synthesize_event_actions(
-            event_translation_events,
-            event_context,
-        )
+        if native_dae_runtime and any(rule.type == "algebraic" for rule in model.rules):
+            event_result = EventTranslationResult(
+                None,
+                0,
+                [
+                    (event, "state event routed to native DAE event runtime")
+                    for event in event_translation_events
+                ],
+            )
+        else:
+            event_result = synthesize_event_actions(
+                event_translation_events,
+                event_context,
+            )
         native_event_block = None
         native_event_refusal = None
         native_event_count = 0
@@ -11528,6 +11541,7 @@ def generate_bngl(
                         replace_loc_params=replace_loc_params,
                         _promoted_event_parameters=assigned_parameters,
                         _allow_event_parameter_promotion=False,
+                        native_dae_runtime=native_dae_runtime,
                     )
                     if "begin bng3_events version 1" in promoted.bngl:
                         model.import_warnings = promoted_model.import_warnings
