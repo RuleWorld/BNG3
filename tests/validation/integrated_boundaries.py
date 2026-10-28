@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import re
 from pathlib import Path
 from typing import Any
@@ -19,8 +20,6 @@ ISSUES = (157, 158, 160, 161, 164)
 # Variant formulas stay inside each unsupported semantic subclass. Nearby
 # constant/simple cases are deliberately not included as rejection controls.
 CASES = (
-    ("event_dynamic_delay_a", "event-delay", "time > 1", "k = A * A"),
-    ("event_dynamic_delay_b", "event-delay", "time > 2", "k = A * B"),
     ("delay_state_history_a", "delay", "delay(A, 1)", "rate"),
     ("delay_state_history_b", "delay", "delay(A, time / 2)", "rate"),
     ("algebraic_species_product", "algebraic", "A * B - 1", "algebraic"),
@@ -29,9 +28,10 @@ CASES = (
     ("variable_stoich_state_b", "stoichiometry", "A * B", "stoichiometry"),
 )
 
-# These were formerly diagnostic-only controls. Native state events now have
-# an executable lowering and are compared below against raw SBML in RoadRunner.
+# These source trajectories are independent positive controls.
 SUPPORTED_EVENT_CASES = (
+    ("event_dynamic_delay_a", "event-delay", "time > 1", "k = A * A"),
+    ("event_dynamic_delay_b", "event-delay", "time > 2", "k = A * B"),
     ("event_state_nonlinear_a", "event", "time > 1", "k = A * A"),
     ("event_state_nonlinear_b", "event", "B > A", "k = A * B"),
 )
@@ -75,11 +75,11 @@ def expected_check_ids() -> list[str]:
 
 
 def _registry_name(case_id: str) -> str:
-    return (
-        "static-delay-execution"
-        if case_id == "delay_state_history_a"
-        else _REGISTRY_NAME
-    )
+    if case_id == "delay_state_history_a":
+        return "static-delay-execution"
+    if case_id == "delay_state_history_b":
+        return "dynamic-delay-execution"
+    return _REGISTRY_NAME
 
 
 def _source(libsbml: Any, case: tuple[str, str, str, str]) -> str:
@@ -465,18 +465,49 @@ def run(directory: Path) -> list[dict[str, Any]]:
             diagnostic_path.write_text(
                 json.dumps(diagnostics, indent=2) + "\n", encoding="utf-8"
             )
-            if case_id == "delay_state_history_a":
-                execution = _verify_static_delay_history(
-                    bionetgen, result.bngl if result.success else "", directory, case_id
-                )
+            if case_id in {"delay_state_history_a", "delay_state_history_b"}:
+                delay_losses = [
+                    item
+                    for item in diagnostics
+                    if item.get("category") == "mathml"
+                    and item.get("severity", "").lower() in _LOSS_SEVERITIES
+                    and "delay" in item.get("message", "").lower()
+                ]
+                if not result.success or delay_losses:
+                    execution = {
+                        "passed": False,
+                        "reason": (
+                            "Atomizer rejected the source"
+                            if not result.success
+                            else "Atomizer retained a delay loss diagnostic"
+                        ),
+                        "diagnostics": delay_losses,
+                    }
+                elif case_id == "delay_state_history_a":
+                    execution = _verify_static_delay_history(
+                        bionetgen, result.bngl, directory, case_id
+                    )
+                else:
+                    execution = _verify_dynamic_delay_history(
+                        bionetgen, result.bngl, directory, case_id
+                    )
                 explicit_diagnostics = []
-                check = "static-delay-analytic-execution"
-                expected_behavior = "execute-static-delay-history"
+                static_delay = case_id == "delay_state_history_a"
+                check = (
+                    "static-delay-analytic-execution"
+                    if static_delay
+                    else "dynamic-delay-analytic-execution"
+                )
+                expected_behavior = (
+                    "execute-static-delay-history"
+                    if static_delay
+                    else "execute-state-dependent-delay-history"
+                )
                 evidence_kind = "analytic-execution"
                 supported_execution = execution["passed"]
                 status = "PASS" if execution["passed"] else "FAIL"
                 reason = (
-                    "BNG3 trajectory matches the analytic pre-simulation delay history"
+                    "BNG3 trajectory matches the analytic delay-history law"
                     if execution["passed"]
                     else "BNG3 trajectory did not match the analytic delay history"
                 )
@@ -574,6 +605,67 @@ def _verify_static_delay_history(
         and all(abs(time - index / 10.0) <= 1e-12 for index, time in enumerate(times)),
         "reference": "A(t)=10+10*t on 0<=t<=1 from delay(A,1) and A(0)=10",
         "method": "BNG3 CVODE",
+        "time_count": len(times),
+        "observable": "A_amt" if "A_amt" in simulation.observables else "A",
+        "max_abs_error": max_error,
+    }
+
+
+def _verify_dynamic_delay_history(
+    bionetgen: Any, bngl: str, directory: Path, case_id: str
+) -> dict[str, Any]:
+    """Compare ``A' = delay(A, time/2)`` with its analytic power series."""
+
+    if not bngl:
+        return {"passed": False, "reason": "Atomizer produced no executable BNGL"}
+    model_path = directory / f"{case_id}.bngl"
+    model_path.write_text(bngl, encoding="utf-8")
+    model = bionetgen.load(model_path)
+    simulation = model.simulate(
+        method="ode",
+        t_start=0.0,
+        t_end=10.0,
+        n_steps=100,
+        rtol=1e-10,
+        atol=1e-12,
+    )
+    times = [float(value) for value in simulation.time]
+    values = simulation.observables.get("A_amt")
+    if values is None:
+        values = simulation.observables.get("A")
+    if values is None or len(values) != len(times) or len(times) != 101:
+        return {
+            "passed": False,
+            "reason": "expected 101 time points and observable A_amt or A",
+            "time_count": len(times),
+            "observable_count": len(values) if values is not None else 0,
+        }
+
+    expected = []
+    for time in times:
+        terms = [10.0]
+        for order in range(40):
+            terms.append(terms[-1] * time / ((order + 1) * (2**order)))
+        expected.append(math.fsum(terms))
+    horizon_terms = [10.0]
+    for order in range(40):
+        horizon_terms.append(horizon_terms[-1] * 10.0 / ((order + 1) * (2**order)))
+    largest_next_term_ratio = 10.0 / (41 * (2**40))
+    series_tail_bound = (
+        horizon_terms[-1] * largest_next_term_ratio / (1.0 - largest_next_term_ratio)
+    )
+    errors = [
+        abs(float(value) - reference) for value, reference in zip(values, expected)
+    ]
+    max_error = max(errors, default=float("inf"))
+    return {
+        "passed": max_error <= 1e-5
+        and series_tail_bound <= 1e-12
+        and all(abs(time - index / 10.0) <= 1e-12 for index, time in enumerate(times)),
+        "reference": "A(t)=sum(a_n*t^n), a_0=10, a_(n+1)=a_n/((n+1)*2^n), from A'=A(t/2)",
+        "series_terms": 41,
+        "series_truncation_tail_bound_at_t_10": series_tail_bound,
+        "method": "BNG3 CVODE vs analytic series",
         "time_count": len(times),
         "observable": "A_amt" if "A_amt" in simulation.observables else "A",
         "max_abs_error": max_error,

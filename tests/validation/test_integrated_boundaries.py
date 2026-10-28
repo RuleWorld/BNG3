@@ -19,10 +19,13 @@ def test_expected_ids_are_independent_and_cover_variants():
     expected_negative = {
         f"sbml-boundary:{case_id}:unsupported-boundary-contract"
         for case_id, *_ in boundaries.CASES
-        if case_id != "delay_state_history_a"
+        if case_id not in {"delay_state_history_a", "delay_state_history_b"}
     }
     expected_positive = {
         "sbml-boundary:delay_state_history_a:static-delay-execution",
+        "sbml-boundary:delay_state_history_b:dynamic-delay-execution",
+        "sbml-event:event_dynamic_delay_a:source-trajectory",
+        "sbml-event:event_dynamic_delay_b:source-trajectory",
         "sbml-event:event_state_nonlinear_a:source-trajectory",
         "sbml-event:event_state_nonlinear_b:source-trajectory",
     }
@@ -30,7 +33,6 @@ def test_expected_ids_are_independent_and_cover_variants():
     assert set(ids) == expected_negative | expected_positive
     assert len(ids) == len(boundaries.CASES) + len(boundaries.SUPPORTED_EVENT_CASES)
     assert {case[1] for case in boundaries.CASES} == {
-        "event-delay",
         "delay",
         "algebraic",
         "stoichiometry",
@@ -181,6 +183,22 @@ def test_static_delay_control_records_analytic_execution():
         "analytic trajectory comparison passed",
         check="static-delay-analytic-execution",
         expected_behavior="execute-static-delay-history",
+        evidence_kind="analytic-execution",
+        supported_execution=True,
+    )
+    assert row["id"] in boundaries.expected_check_ids()
+    assert row["supported_execution"] is True
+    assert row["evidence_kind"] == "analytic-execution"
+
+
+def test_dynamic_delay_control_records_analytic_execution():
+    case = next(case for case in boundaries.CASES if case[0] == "delay_state_history_b")
+    row = boundaries._row(
+        case,
+        "PASS",
+        "analytic variable-duration delay trajectory comparison passed",
+        check="dynamic-delay-analytic-execution",
+        expected_behavior="execute-state-dependent-delay-history",
         evidence_kind="analytic-execution",
         supported_execution=True,
     )

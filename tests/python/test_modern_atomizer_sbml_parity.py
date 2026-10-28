@@ -3951,6 +3951,7 @@ def test_delay_of_affine_species_uses_initial_history_before_delay_boundary():
 
 
 def test_nested_delay_uses_zero_lag_from_bounded_assignment_rule():
+    import numpy as np
     from bionetgen.atomizer.modern import Atomizer
 
     # SBML Test Suite semantic/00985: with x(0)=0 and dx/dt=1, z=delay(x, 1)
@@ -3998,10 +3999,25 @@ def test_nested_delay_uses_zero_lag_from_bounded_assignment_rule():
         if warning["category"] == "mathml"
         and 'math function "delay"' in warning["message"]
     ]
-    assert delay_warnings
-    assert all(warning["severity"] == "dropped" for warning in delay_warnings)
-    assert all(
-        "durations to be static" in warning["message"] for warning in delay_warnings
+    assert not any(warning["severity"] == "dropped" for warning in delay_warnings)
+
+    from bionetgen import BioNetGenModel, _bionetgen_cpp as cpp
+
+    model = BioNetGenModel(cpp.parse_string(longer_horizon.bngl))
+    result = model.simulate(
+        method="ode",
+        t_start=0,
+        t_end=2,
+        n_steps=0,
+        sample_times=[0, 0.5, 1, 1.5, 2],
+        rtol=1e-9,
+        atol=1e-12,
+    )
+    np.testing.assert_allclose(
+        result.functions["z"], [0, 0, 0, 0.5, 1], rtol=0, atol=1e-9
+    )
+    np.testing.assert_allclose(
+        result.functions["y"], [0, 0.5, 1, 1, 1], rtol=0, atol=1e-9
     )
 
 

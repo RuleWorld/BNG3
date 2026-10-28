@@ -147,6 +147,8 @@ def test_boundary_receipt_accepts_only_named_static_delay_execution(tmp_path):
             checks = []
             for case_id, *_ in integrated_boundaries.CASES:
                 static = case_id == "delay_state_history_a"
+                dynamic = case_id == "delay_state_history_b"
+                delay_execution = static or dynamic
                 checks.append(
                     {
                         "id": f"sbml-boundary:{case_id}:"
@@ -154,24 +156,37 @@ def test_boundary_receipt_accepts_only_named_static_delay_execution(tmp_path):
                         "check": (
                             "static-delay-analytic-execution"
                             if static
-                            else "explicit-loss-diagnostic"
+                            else (
+                                "dynamic-delay-analytic-execution"
+                                if dynamic
+                                else "explicit-loss-diagnostic"
+                            )
                         ),
                         "status": "PASS",
                         "detail": (
-                            "analytic trajectory" if static else "loss diagnostic"
+                            "analytic trajectory"
+                            if delay_execution
+                            else "loss diagnostic"
                         ),
                         "related_issues": [157],
-                        "supported_execution": static
+                        "supported_execution": delay_execution
                         or (
-                            mark_other_supported and case_id == "event_dynamic_delay_a"
+                            mark_other_supported
+                            and case_id == "algebraic_species_product"
                         ),
                         "evidence_kind": (
-                            "analytic-execution" if static else "diagnostic-only"
+                            "analytic-execution"
+                            if delay_execution
+                            else "diagnostic-only"
                         ),
                         "expected_behavior": (
                             "execute-static-delay-history"
                             if static
-                            else "explicit-loss-diagnostic"
+                            else (
+                                "execute-state-dependent-delay-history"
+                                if dynamic
+                                else "explicit-loss-diagnostic"
+                            )
                         ),
                     }
                 )
@@ -197,6 +212,9 @@ def test_boundary_receipt_accepts_only_named_static_delay_execution(tmp_path):
                 (directory / f"{case_id}.diagnostics.json").write_text("[]")
                 (directory / f"{case_id}.bngl").write_text("begin model\nend model\n")
             (directory / "delay_state_history_a.bngl").write_text(
+                "begin model\nend model\n"
+            )
+            (directory / "delay_state_history_b.bngl").write_text(
                 "begin model\nend model\n"
             )
             (directory / "checks.json").write_text(json.dumps(checks))

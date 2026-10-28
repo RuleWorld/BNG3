@@ -88,7 +88,6 @@ UNSUPPORTED_MARKERS = (
     "dropped",
     "cannot be represented",
     "not losslessly representable",
-    "delay expression duration must be static",
     "gcd(",
     "lcm(",
     "notanumber",

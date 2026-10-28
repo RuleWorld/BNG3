@@ -3221,7 +3221,8 @@ def _unrepresentable_math_function_reason(
     if function_name == "delay":
         if dynamic_delay:
             return (
-                "BNG3 CVODE requires delay durations to be static; "
+                "BNG3 CVODE evaluates variable delay durations against recorded "
+                "simulation history; "
                 "libRoadRunner cannot load an SBML model containing delay"
             )
         return (
@@ -3251,9 +3252,10 @@ def _unrepresentable_math_function_message(
     unsupported by BNG3.
     """
 
-    if function_name == "delay" and not dynamic_delay:
+    if function_name == "delay":
         return (
-            "SBML delay calls with static durations are executable in BNG3; "
+            "SBML delay calls with static or variable durations are executable "
+            "in BNG3 CVODE using recorded simulation history; "
             "libRoadRunner cannot load a written model that still uses delay, "
             "so the independent comparison is unavailable."
         )
@@ -7445,11 +7447,7 @@ def generate_bngl(
                     dynamic_delay=dynamic_delay if function_name == "delay" else False,
                 ),
                 category="mathml",
-                severity=(
-                    ("dropped" if dynamic_delay else "info")
-                    if function_name == "delay"
-                    else "dropped"
-                ),
+                severity="info" if function_name == "delay" else "dropped",
             )
 
     _report_identifier_collisions(model)
@@ -11654,11 +11652,7 @@ def generate_bngl(
             model,
             message,
             category="mathml",
-            severity=(
-                ("dropped" if dynamic_delay else "info")
-                if function_name == "delay"
-                else "dropped"
-            ),
+            severity="info" if function_name == "delay" else "dropped",
         )
 
     has_multi = bool(

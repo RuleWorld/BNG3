@@ -293,14 +293,8 @@ OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& ne
             native.persistent = event.persistent;
             native.useValuesFromTriggerTime = event.useValuesFromTriggerTime;
             if (event.delay) {
-                const auto delay = compile::lowerResolvedExpressionToAst(*event.delay, compiled);
-                const double value = delay.evaluate([&](const std::string& name) {
-                    return model_.getParameters().evaluate(name, 0.0);
-                }, 0.0);
-                if (!std::isfinite(value) || value < 0) {
-                    throw std::runtime_error("bng3_events delay must be a finite nonnegative constant");
-                }
-                native.delay = value;
+                native.delay = compile::lowerResolvedExpressionToAst(
+                    *event.delay, compiled);
             }
             if (event.priority) {
                 auto priority = compile::lowerResolvedExpressionToAst(
@@ -2659,7 +2653,7 @@ void OdeIntegrator::queueTriggeredGroup(std::size_t groupIndex, double time,
         const auto& event = nativeEvents_[index];
         PendingEvent pending;
         pending.event = index;
-        pending.executionTime = time + event.delay;
+        pending.executionTime = time + eventDelay(event, time, state.data());
         if (event.useValuesFromTriggerTime) {
             pending.values = eventValues(event, time, state.data());
         }
@@ -2679,13 +2673,23 @@ void OdeIntegrator::retestTriggers(double time, std::vector<double>& state,
         const auto& event = nativeEvents_[index];
         PendingEvent pending;
         pending.event = index;
-        pending.executionTime = time + event.delay;
+        pending.executionTime = time + eventDelay(event, time, state.data());
         if (event.useValuesFromTriggerTime) {
             pending.values = eventValues(event, time, state.data());
         }
         triggerRoseAt_[index] = time;
         pendingEvents_.push_back(std::move(pending));
     }
+}
+
+double OdeIntegrator::eventDelay(const NativeEvent& event, double time,
+                                 const double* state) const {
+    const double delay = event.delay ? eventValue(*event.delay, time, state) : 0.0;
+    if (!std::isfinite(delay) || delay < 0.0) {
+        throw std::runtime_error(
+            "bng3_events delay must be a finite nonnegative value at trigger time");
+    }
+    return delay;
 }
 
 bool OdeIntegrator::applyDueEvents(double time, std::vector<double>& state) {
@@ -4012,7 +4016,8 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                 // immediately (SBML L3V2 Core Sec. 4.12.2).
                 PendingEvent pending;
                 pending.event = index;
-                pending.executionTime = opts.tStart + event.delay;
+                pending.executionTime =
+                    opts.tStart + eventDelay(event, opts.tStart, initialState.data());
                 if (event.useValuesFromTriggerTime) {
                     pending.values = eventValues(event, opts.tStart, initialState.data());
                 }
@@ -4692,7 +4697,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                 triggerHolds(event.trigger, opts.tStart, y.data())) {
                 PendingEvent pending;
                 pending.event = index;
-                pending.executionTime = opts.tStart + event.delay;
+                pending.executionTime = opts.tStart + eventDelay(event, opts.tStart, y.data());
                 if (event.useValuesFromTriggerTime) {
                     pending.values = eventValues(event, opts.tStart, y.data());
                 }

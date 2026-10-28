@@ -701,7 +701,7 @@ class NativeEventEntry:
     initial_value: bool
     persistent: bool
     use_values_from_trigger_time: bool
-    delay: float
+    delay: Optional[str]
     priority: Optional[float]
     assignments: Tuple[Tuple[str, str], ...]
 
@@ -3568,11 +3568,19 @@ def _lower_native_event(
         priority = _native_fold_term_text(event.priority, context)
         if priority is None or not math.isfinite(priority):
             return None
-    delay = 0.0
+    delay: Optional[str] = None
     if event.delay:
-        delay = _native_fold_term_text(event.delay, context)
-        if delay is None or not math.isfinite(delay) or delay < 0:
-            return None
+        static_delay = _native_fold_term_text(event.delay, context)
+        if static_delay is not None:
+            if not math.isfinite(static_delay) or static_delay < 0:
+                return None
+            if static_delay > 0:
+                delay = _format_number(static_delay)
+        else:
+            dynamic_delay = _native_continuous_expression(event.delay, context)
+            if dynamic_delay is None:
+                return None
+            delay = dynamic_delay[0]
     trigger = _native_trigger_expression(event, context)
     if trigger is None:
         return None
@@ -3666,7 +3674,7 @@ def lower_native_events(
             + ("true" if entry.use_values_from_trigger_time else "false")
         )
         if entry.delay:
-            lines.append(f"    delay: {_format_number(entry.delay)}")
+            lines.append(f"    delay: {entry.delay}")
         if entry.priority is not None:
             lines.append(f"    priority: {_format_number(entry.priority)}")
         for observable, value in entry.assignments:
@@ -3684,8 +3692,8 @@ def synthesize_native_event_block(
     The native runtime detects the trigger's rising edge with continuous root
     finding, so it executes a state-dependent trigger that no finite list of
     scheduled actions can express.  The supported subclass is deliberately
-    narrow: a continuous trigger, a constant delay, a static priority, and
-    assignments to observable state.
+    narrow: a continuous trigger, a finite nonnegative delay evaluated at its
+    trigger time, a static priority, and assignments to observable state.
     """
 
     return lower_native_events(events, context).block

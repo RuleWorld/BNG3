@@ -211,7 +211,7 @@ private:
         bool initialValue = true;
         bool persistent = true;
         bool useValuesFromTriggerTime = true;
-        double delay = 0.0;
+        std::optional<ast::Expression> delay;
         double priority = 0.0;
         std::optional<ast::Expression> dynamicPriority;
         std::vector<ast::EventAssignment> assignments;
@@ -265,6 +265,8 @@ private:
                                   const std::vector<double>& derivatives) const;
     std::vector<double> eventValues(const NativeEvent& event, double time,
                                     const double* state) const;
+    double eventDelay(const NativeEvent& event, double time,
+                      const double* state) const;
     void assignEventValues(const NativeEvent& event, std::vector<double>& state,
                             const std::vector<double>& values) const;
     // True when the trigger expression holds at the given instant.
