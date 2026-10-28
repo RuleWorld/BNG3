@@ -593,6 +593,41 @@ The refused cases name the construct that blocks the reduction, and the
 diagnostic keeps the `is marked fast` wording the campaign's gap taxonomy
 matches, so the construct they are filed under does not change.
 
+### Rate constants and stoichiometries that change during the run
+
+The refusals in the last four rows of the table above are no longer reached.
+The table records the outcome measured when this section was written; the
+official-reference verdicts of these cases after the change below have not
+been measured yet.
+
+* **A rate constant an event or a rule sets** (00987, 00988, 01568, 01570):
+  the fast subsystem's pool `T = nu_P*n_R + nu_R*n_P` (amounts) is the state,
+  and only the slow reactions change it.  The two species are the closed-form
+  functions of `T` and the current rate constants that the steady state
+  defines: for a rate `c*R^a*P^b` the reactant is held at zero while `c > 0`
+  and the product while `c < 0`, and for a balance `a*x_R - b*x_P` the
+  amounts are `b*T/(nu_P*b + nu_R*a)` and `a*T/(nu_P*b + nu_R*a)`.  An event
+  that sets the constant then moves the steady state at once, and is lowered
+  as an ordinary scheduled parameter change.
+* **A stoichiometry an event changes** (01398): the amounts do not jump when
+  the stoichiometry changes, but the pool does, so with constant rate
+  constants one species keeps its amount as the state (the one not held at
+  zero, or the reactant of a balance) and the other follows the steady state.
+* **Still refused**, each with its reason: a rate of one species whose rate
+  constant cannot be proven to keep the sign that runs the reaction away from
+  it; an event that sets a switching rate constant to zero; an unstable
+  balance; a stoichiometry event combined with rate constants that change
+  (it needs an event assignment computed from the state, which the event
+  lowering drops); and `delay` of a converted species (01539), whose value
+  before the delay elapses depends on whether the history is the declared
+  initial value or the equilibrated one.  00988 also carries a state-triggered
+  event that is refused on its own (Section 10).
+
+`tests/python/test_atomizer_fast_reaction_time_varying.py` checks each shape
+against closed-form solutions derived from the source models; the unreduced
+source ODEs, with the fast rate multiplied by 1e5 to 1e8, converge to the same
+values.
+
 ### Numbers
 
 Against the published references, with the suite's own tolerance
