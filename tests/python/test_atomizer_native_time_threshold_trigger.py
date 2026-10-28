@@ -95,3 +95,29 @@ def test_native_engine_executes_the_non_strict_time_threshold(tmp_path):
         assert rows[round(time, 9)]["S1_amt"] == pytest.approx(
             expected, rel=1e-6, abs=1e-8
         )
+
+
+def test_non_strict_time_threshold_stays_untranslated_beside_scheduled_events():
+    """A fixed-time native event could coincide with a scheduled phase boundary.
+
+    The second event's constant assignment is lowered to a scheduled action,
+    which splits the run at t = 1.5; the native runtime and the phase split
+    do not share an order at that instant, so the state-dependent event at
+    the same time stays untranslated.
+    """
+
+    constant_event = (
+        '<event id="E2" useValuesFromTriggerTime="true">'
+        '<trigger initialValue="true" persistent="true">'
+        '<math xmlns="http://www.w3.org/1998/Math/MathML"><apply><geq/>'
+        '<csymbol encoding="text" '
+        'definitionURL="http://www.sbml.org/sbml/symbols/time">t</csymbol>'
+        "<cn>1.5</cn></apply></math></trigger><listOfEventAssignments>"
+        '<eventAssignment variable="S2">'
+        '<math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0</cn></math>'
+        "</eventAssignment></listOfEventAssignments></event>"
+    )
+    source = SOURCE.replace("</listOfEvents>", constant_event + "</listOfEvents>")
+    bngl = _convert(source)
+    assert 'setConcentration("@C:M_S2()", "0")' in bngl
+    assert "begin bng3_events version 1" not in bngl

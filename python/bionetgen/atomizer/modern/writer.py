@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import copy
+import dataclasses
 import json
 import math
 import os
@@ -11488,7 +11489,12 @@ def generate_bngl(
         native_event_count = 0
         if event_result.untranslated:
             native_events = [event for event, _reason in event_result.untranslated]
-            native_lowering = lower_native_events(native_events, event_context)
+            native_context = event_context
+            if event_result.actions_block:
+                native_context = dataclasses.replace(
+                    event_context, scheduled_events_present=True
+                )
+            native_lowering = lower_native_events(native_events, native_context)
             native_event_block = native_lowering.block
             native_event_refusal = native_lowering.reason
             if native_event_block:

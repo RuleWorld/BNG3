@@ -457,6 +457,11 @@ class EventTranslationContext:
     resolve_param: Callable[[str], Optional[float]]
     is_param: Callable[[str], bool]
     method: str = "ode"
+    # True when some of the model's events were lowered to scheduled actions.
+    # A native event that fires at a fixed time could then coincide with a
+    # scheduled phase boundary, whose relative order the two mechanisms do
+    # not share.
+    scheduled_events_present: bool = False
     # The seed the caller asked for.  A generated schedule must carry it into
     # every generated ``simulate`` phase, otherwise the seed the caller asked
     # for is silently dropped and the run is no longer reproducible.
@@ -3055,6 +3060,11 @@ def _native_time_against_static(
     if str(context.method or "ode").lower() in {"ssa", "stochastic"}:
         # The native SSA runtime detects triggers after jumps and refuses
         # one that reads the clock, so such an event stays untranslated.
+        return False
+    if context.scheduled_events_present:
+        # The other events are scheduled actions, which split the run into
+        # phases at fixed times; a native fixed-time trigger at a phase
+        # boundary has no defined order relative to them.
         return False
     if is_time(left_text):
         return _native_static_text(right_text, context) is not None
