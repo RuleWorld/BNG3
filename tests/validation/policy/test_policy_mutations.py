@@ -103,34 +103,69 @@ def _mutation_baseline(rows: list[dict]) -> dict:
 
 
 @pytest.mark.parametrize(
-    "protected_path",
+    ("files", "protected_path", "protected_content"),
     [
-        "tests/data/expected_values.json",
-        "tests/data/model_tolerance.yaml",
-        "tests/data/skip_cases.json",
-        "tests/data/exclusions.yaml",
+        (
+            {"tests/validation/golden/expected.json": '{"value": 1}\n'},
+            "tests/validation/golden/expected.json",
+            '{"value": 2}\n',
+        ),
+        (
+            {"provenance/golden/expected.json": '{"value": 1}\n'},
+            "provenance/golden/expected.json",
+            '{"value": 2}\n',
+        ),
+        (
+            {
+                "provenance/sbml-campaign/expectations.json": '{"value": 1}\n',
+            },
+            "provenance/sbml-campaign/expectations.json",
+            '{"value": 2}\n',
+        ),
+        (
+            {"tests/test_tolerance.py": "assert_close(actual, expected, atol=1e-6)\n"},
+            "tests/test_tolerance.py",
+            "assert_close(actual, expected, atol=1e-5)\n",
+        ),
+        (
+            {"tests/test_skip.py": "def test_case():\n    assert True\n"},
+            "tests/test_skip.py",
+            "import pytest\n\n@pytest.mark.skip(reason='new exclusion')\ndef test_case():\n    assert True\n",
+        ),
+        (
+            {
+                "tests/validation/reference_exclusions.json": (
+                    '{"profiles": {"default": ["case_a"]}}\n'
+                )
+            },
+            "tests/validation/reference_exclusions.json",
+            '{"profiles": {"default": ["case_a", "case_b"]}}\n',
+        ),
+        (
+            {"tests/test_contract.py": "def test_contract():\n    assert True\n"},
+            "tests/test_contract.py",
+            "import pytest\n\n@pytest.mark.xfail\ndef test_contract():\n    assert True\n",
+        ),
     ],
 )
 def test_product_change_mixed_with_expectations_skips_or_exclusions_is_rejected(
-    tmp_path, protected_path
+    tmp_path, files, protected_path, protected_content
 ):
     checker = _load_policy()
     root, base = _repo(
         tmp_path,
-        {"python/engine.py": "VALUE = 1\n", "tests/data/contract.json": "{}\n"},
+        {"python/engine.py": "VALUE = 1\n", **files},
     )
     _change(root, "python/engine.py", "VALUE = 2\n")
     path = root / protected_path
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("changed: true\n")
+    path.write_text(protected_content)
     _git(root, "add", ".")
     _git(root, "commit", "-qm", "mix product and acceptance data")
 
     errors = checker.check_protected_changes(root, base)
 
-    assert (
-        errors and "product changes mixed with protected acceptance data" in errors[0]
-    )
+    assert errors
 
 
 def test_product_only_and_expectation_only_changes_are_not_mixed(tmp_path):
@@ -142,6 +177,74 @@ def test_product_only_and_expectation_only_changes_are_not_mixed(tmp_path):
     root2, base2 = _repo(tmp_path / "second", {"tests/data/expected.json": "{}\n"})
     _change(root2, "tests/data/expected.json", '{"expected": 2}\n')
     assert checker.check_protected_changes(root2, base2) == []
+
+
+def test_product_fix_with_new_regression_test_is_allowed(tmp_path):
+    checker = _load_policy()
+    root, base = _repo(
+        tmp_path,
+        {
+            "python/engine.py": "def solve():\n    return 1\n",
+            "tests/test_engine.py": "def test_existing_behavior():\n    assert True\n",
+        },
+    )
+    _change(root, "python/engine.py", "def solve():\n    return 2\n")
+    _change(
+        root,
+        "tests/test_engine.py",
+        "def test_existing_behavior():\n    assert True\n\ndef test_regression_case():\n    assert True\n",
+    )
+
+    assert checker.check_protected_changes(root, base) == []
+
+
+def test_provenance_lock_and_validator_change_are_allowed_together(tmp_path):
+    checker = _load_policy()
+    root, base = _repo(
+        tmp_path,
+        {
+            "provenance/upstreams.lock.yml": "schema: 1\nrevision: old\n",
+            "scripts/validate_provenance.py": "def validate():\n    return True\n",
+        },
+    )
+    _change(root, "provenance/upstreams.lock.yml", "schema: 1\nrevision: new\n")
+    _change(
+        root,
+        "scripts/validate_provenance.py",
+        "def validate():\n    return True\n\n# accepts the updated lock\n",
+    )
+
+    assert checker.check_protected_changes(root, base) == []
+
+
+def test_golden_regeneration_script_and_golden_data_are_allowed_together(tmp_path):
+    checker = _load_policy()
+    root, base = _repo(
+        tmp_path,
+        {
+            "scripts/regen_golden.py": "def regenerate():\n    return None\n",
+            "tests/validation/golden/expected.json": '{"value": 1}\n',
+        },
+    )
+    _change(
+        root,
+        "scripts/regen_golden.py",
+        "def regenerate():\n    return {'value': 2}\n",
+    )
+    _change(root, "tests/validation/golden/expected.json", '{"value": 2}\n')
+
+    assert checker.check_protected_changes(root, base) == []
+
+
+@pytest.mark.parametrize(
+    "script", ["scripts/regen_golden.py", "scripts/validate_golden_manifest.py"]
+)
+def test_golden_named_harness_script_alone_is_allowed(tmp_path, script):
+    checker = _load_policy()
+    root, base = _repo(tmp_path, {script: "def run():\n    return True\n"})
+    _change(root, script, "def run():\n    return False\n")
+
+    assert checker.check_protected_changes(root, base) == []
 
 
 @pytest.mark.parametrize(
