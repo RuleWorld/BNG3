@@ -91,9 +91,9 @@ def test_non_finite_parameter_values_are_emitted_exactly():
         '<parameter id="R" value="NaN" constant="true"/>'
     )
 
-    parameters = result.bngl.split("begin parameters", 1)[1].split(
-        "end parameters", 1
-    )[0]
+    parameters = result.bngl.split("begin parameters", 1)[1].split("end parameters", 1)[
+        0
+    ]
     assert "P exp(1000)" in parameters
     assert "Q -exp(1000)" in parameters
     assert "R sqrt(-1)" in parameters
