@@ -504,7 +504,11 @@ def _lowered_amounts(model, times, breakpoints=()):
             changes[reference.species] = changes.get(reference.species, 0.0) + float(
                 reference.stoichiometry
             )
-        laws.append((_compile(reaction.kinetic_law.math), changes))
+        local = {
+            str(parameter.id): float(parameter.value)
+            for parameter in reaction.kinetic_law.local_parameters
+        }
+        laws.append((_compile(reaction.kinetic_law.math), changes, local))
 
     def species_volume(name):
         return volume[model.species[name].compartment]
@@ -527,8 +531,8 @@ def _lowered_amounts(model, times, breakpoints=()):
         scope = namespace(time, values)
         index = {name: position for position, name in enumerate(state)}
         result = np.zeros(len(values))
-        for code, changes in laws:
-            rate = eval(code, {"__builtins__": {}}, scope)
+        for code, changes, local in laws:
+            rate = eval(code, {"__builtins__": {}}, {**scope, **local})
             for name, change in changes.items():
                 if name in index:
                     result[index[name]] += change * rate
@@ -663,6 +667,50 @@ def test_local_parameter_of_the_fast_law_is_replaced_by_its_value():
     for time, row in zip(TIMES, lowered):
         for species, expected in reference_sign_switching(time).items():
             assert row[species] == pytest.approx(expected, rel=1e-9, abs=1e-9)
+
+
+def test_constant_balance_replaces_a_slow_law_local_parameter():
+    """The constant-coefficient balance copies the slow laws into rate rules.
+
+    A local parameter of a slow law used to be copied by name, and the
+    writer then dropped the rules because the name has no global scope.
+    """
+
+    law = _apply(
+        "minus",
+        _apply("times", _ci("kf"), _ci("S1")),
+        _apply("times", _ci("kr"), _ci("S2")),
+    )
+    slow = (
+        f"<kineticLaw>{_math(_apply('times', _ci('kl'), _ci('S2')))}"
+        '<listOfLocalParameters><localParameter id="kl" value="0.5"/>'
+        "</listOfLocalParameters></kineticLaw>"
+    )
+    xml = _model(
+        1,
+        [_species("S1", 1), _species("S2", 3), _species("S3", 0)],
+        [("kf", 1, True), ("kr", 2, True)],
+        [],
+        [
+            _reaction("fast", [_reference("S1")], [_reference("S2")], law, fast=True),
+            _reaction("slow", [_reference("S2")], [_reference("S3")], _cn(0)).replace(
+                f"<kineticLaw>{_math(_cn(0))}</kineticLaw>", slow
+            ),
+        ],
+    )
+    model = SBMLParser().parse(xml)
+    assert _fast_warning(model).severity == "info"
+    for rule in model.rules:
+        assert not re.search(r"\bkl\b", rule.math), rule.math
+    atomized = Atomizer(atomize=False, quiet_mode=True).atomize(xml)
+    assert "[dropped]" not in atomized.bngl
+    # kf*S1 = kr*S2 holds with T = S1 + S2 = 4 and dT/dt = -0.5*S2 = -T/6.
+    lowered = _lowered_amounts(model, TIMES)
+    for time, row in zip(TIMES, lowered):
+        pool = 4 * math.exp(-time / 6)
+        expected = {"S1": 2 * pool / 3, "S2": pool / 3, "S3": 4 - pool}
+        for species, value in expected.items():
+            assert row[species] == pytest.approx(value, rel=1e-9, abs=1e-9)
 
 
 def test_event_changed_stoichiometry_keeps_the_amounts_continuous():

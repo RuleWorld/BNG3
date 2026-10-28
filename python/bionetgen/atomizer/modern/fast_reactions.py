@@ -660,7 +660,9 @@ def _slow_invariant_expression(
         weight = pinned_signed * other_coefficient - other_signed * pinned_coefficient
         if weight == 0:
             continue
-        rate = _kinetic_law_math(other).strip()
+        # The law becomes part of a global rate rule, so its local
+        # parameters are replaced by their values.
+        rate = _global_kinetic_law(other)
         if not rate:
             return None
         if weight == 1:
