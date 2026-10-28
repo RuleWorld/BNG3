@@ -4,7 +4,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[4]
 FIXTURE = ROOT / "tests/energy/fixtures/semantic/nfcore2_semantic_expansion.json"
 PROVENANCE = ROOT / "provenance/semantic-expansion-2026-09-08.json"
-STATUS = ROOT / "docs/architecture_handoffs/SEMANTIC_EXPANSION_STATUS_2026-09-08.md"
+STATUS = ROOT / "docs/archive/reports/SEMANTIC_EXPANSION_STATUS_2026-09-08.md"
 
 
 def load_cases():
