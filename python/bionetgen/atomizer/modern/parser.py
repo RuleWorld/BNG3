@@ -1957,11 +1957,11 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
         return ast.parse(safe_source, mode="eval")
 
     function_definitions = {
-        standardize_name(identifier): function
+        standardize_name(str(identifier)): function
         for identifier, function in model.function_definitions.items()
     }
 
-    def inline_user_functions(node: ast.AST, stack: tuple = ()) -> ast.AST:
+    def inline_user_functions(node: ast.AST, stack: tuple[str, ...] = ()) -> ast.AST:
         """Inline pure SBML functions so exact linearity can be established."""
 
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
@@ -1979,7 +1979,7 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
                     body = None
                 if body is not None:
                     arguments = {
-                        standardize_name(name): inline_user_functions(
+                        standardize_name(str(name)): inline_user_functions(
                             value, (*stack, function_key)
                         )
                         for name, value in zip(function.arguments, node.args)
@@ -1997,16 +1997,20 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
         copied = copy.deepcopy(node)
         for field, value in ast.iter_fields(copied):
             if isinstance(value, ast.AST):
-                vars(copied)[field] = inline_user_functions(value, stack)
+                setattr(copied, field, inline_user_functions(value, stack))
             elif isinstance(value, list):
-                vars(copied)[field] = [
-                    (
-                        inline_user_functions(item, stack)
-                        if isinstance(item, ast.AST)
-                        else item
-                    )
-                    for item in value
-                ]
+                setattr(
+                    copied,
+                    field,
+                    [
+                        (
+                            inline_user_functions(item, stack)
+                            if isinstance(item, ast.AST)
+                            else item
+                        )
+                        for item in value
+                    ],
+                )
         return copied
 
     def render(node: ast.AST) -> str:
