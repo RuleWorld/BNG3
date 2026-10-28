@@ -110,7 +110,8 @@ inline void validateNativeEventSubset(const Model& model) {
     std::set<std::string> visiting;
     std::function<void(const Expression&)> continuous = [&](const Expression& expression) {
         if (expression.kind() == ExpressionKind::Function &&
-            expression.name() == "abs" && expression.args().size() == 1) {
+            (expression.name() == "abs" || expression.name() == "floor") &&
+            expression.args().size() == 1) {
             continuous(expression.args().front());
             return;
         }
@@ -133,7 +134,9 @@ inline void validateNativeEventSubset(const Model& model) {
         if ((expression.kind() == ExpressionKind::Unary &&
              (expression.name() == "+" || expression.name() == "-")) ||
             (expression.kind() == ExpressionKind::Binary &&
-             (expression.name() == "+" || expression.name() == "-" || expression.name() == "*"))) {
+             (expression.name() == "+" || expression.name() == "-" ||
+              expression.name() == "*" || expression.name() == "/" ||
+              expression.name() == "^" || expression.name() == "**"))) {
             for (const auto& child : expression.args()) continuous(child);
             return;
         }
@@ -157,7 +160,7 @@ inline void validateNativeEventSubset(const Model& model) {
             continuous(expression.args()[1]);
             return;
         }
-        fail("only continuous polynomial event expressions are supported");
+        fail("only continuous arithmetic event expressions are supported");
     };
     if (event.priority) {
         const auto& priority = *event.priority;
@@ -209,7 +212,7 @@ inline void validateNativeEventSubset(const Model& model) {
             }
         }
     }
-    // Every conjunct of the trigger is a continuous polynomial expression.
+    // Every conjunct of the trigger is a continuous arithmetic expression.
     std::function<void(const Expression&)> continuousTrigger = [&](const Expression& expression) {
         if (expression.kind() == ExpressionKind::Binary && expression.name() == "&&") {
             for (const auto& child : expression.args()) continuousTrigger(child);

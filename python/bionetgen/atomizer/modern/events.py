@@ -1317,8 +1317,9 @@ def _parse_scaled_time_threshold(trigger: str) -> Optional[Tuple[str, str]]:
 # every resolver; a second copy is how a spelling ends up accepted by one
 # lowering path and silently refused by another.  ``eq`` and ``neq`` are
 # deliberately absent: they are not order comparisons, and these resolvers
-# only lower a threshold the trigger crosses monotonically.
+# lower order comparisons and equality gates used inside a conjunction.
 _COMPARISON_ALIASES = {
+    "eq": "eq",
     "gt": "gt",
     "greaterthan": "gt",
     "geq": "geq",
@@ -2985,6 +2986,10 @@ def _native_continuous_expression(
 ) -> Optional[Tuple[str, bool, bool]]:
     """Render a continuous SBML expression over native state and constants."""
     expanded = context.expand_functions(str(expression or "").strip())
+    # SBML's ``^`` denotes power; Python parses it as low-precedence XOR.
+    # Normalize before building the AST so the emitted expression keeps the
+    # source MathML grouping (for example, ``(x - a)^2 / a``).
+    expanded = expanded.replace("^", "**")
     if not expanded:
         return None
     try:
@@ -3014,7 +3019,10 @@ def _native_continuous_expression(
             raise ValueError(f"non-static identifier {node.id}")
 
         def visit_Call(self, node: ast.Call) -> ast.AST:
-            if not isinstance(node.func, ast.Name) or node.func.id.lower() != "abs":
+            if not isinstance(node.func, ast.Name) or node.func.id.lower() not in {
+                "abs",
+                "floor",
+            }:
                 raise ValueError("unsupported continuous trigger function")
             node.args = [self.visit(argument) for argument in node.args]
             return node
@@ -3142,14 +3150,6 @@ def _native_comparison_expression(
     symbol = _NATIVE_COMPARISON_OPERATORS[operator]
     left_state = _native_state_target(left_text, context)
     right_state = _native_state_target(right_text, context)
-    if symbol in {"<=", ">="}:
-        # A non-strict comparison holds at a tangential contact, so the
-        # crossing has to be provably transversal.
-        for state, text in ((left_state, left_text), (right_state, right_text)):
-            if state is None:
-                continue
-            if not _native_state_is_monotone(text, event, context):
-                return None
     if left_state is not None and right_state is not None:
         # Two states compare directly only when they share their units; a
         # difference of two species in different compartments would need a
@@ -3236,16 +3236,73 @@ def _native_trigger_expression(
     if comparison is None:
         return None
     operator, arguments_text = comparison
-    # Only a strict inequality has a crossing that the continuous root
-    # finder can attribute to exactly one trigger edge.  A non-strict
-    # inequality is also true at a tangential contact, which leaves the
-    # crossing unclassified, so it stays with the analytic lowering path.
+    # A standalone non-strict inequality can fire on a tangential contact,
+    # which the root finder cannot distinguish from a crossing.  Keep those
+    # on the analytic path.  Inside a conjunction the other continuous
+    # surfaces provide the rising edge while the non-strict term is an exact
+    # state gate.
     if operator not in _NATIVE_COMPARISON_OPERATORS:
         return None
     arguments = _split_arguments(arguments_text)
     if arguments is None or len(arguments) != 2:
         return None
     left_text, right_text = (_strip_outer_parens(arg) for arg in arguments)
+    if operator == "geq":
+        try:
+            left_node = ast.parse(context.expand_functions(left_text), mode="eval").body
+        except (TypeError, ValueError, SyntaxError):
+            left_node = None
+        if (
+            isinstance(left_node, ast.Call)
+            and isinstance(left_node.func, ast.Name)
+            and left_node.func.id.lower() == "floor"
+            and len(left_node.args) == 1
+        ):
+            threshold = _native_fold_term_text(right_text, context)
+            inner = _native_continuous_expression(
+                ast.unparse(left_node.args[0]), context
+            )
+            if (
+                threshold is not None
+                and math.isfinite(threshold)
+                and threshold.is_integer()
+                and inner is not None
+                and (inner[1] or inner[2])
+            ):
+                static_threshold = _native_static_text(right_text, context)
+                if static_threshold is not None:
+                    return f"{inner[0]} >= {static_threshold}"
+    if (
+        operator in {"leq", "geq"}
+        and _native_time_minus_state_comparison(
+            left_text,
+            right_text,
+            _NATIVE_COMPARISON_OPERATORS[operator],
+            context,
+        )
+        is None
+    ):
+        # A promoted, event-assigned SBML parameter with zero rate changes
+        # only at event execution points. The native runtime reevaluates all
+        # triggers after each assignment, so its non-strict comparison is an
+        # exact state gate even though no continuous root exists for it.
+        try:
+            left_state = ast.parse(left_text, mode="eval").body
+            right_state = ast.parse(right_text, mode="eval").body
+        except (TypeError, ValueError, SyntaxError):
+            left_state = right_state = None
+        event_only_parameter = None
+        if isinstance(left_state, ast.Name) and context.is_param(left_state.id):
+            event_only_parameter = left_state.id
+        elif isinstance(right_state, ast.Name) and context.is_param(right_state.id):
+            event_only_parameter = right_state.id
+        rate = (
+            context.resolve_rate_rule_expression_for_event(event_only_parameter, event)
+            if event_only_parameter is not None
+            else None
+        )
+        if rate is None or _native_fold_term_text(rate, context) != 0.0:
+            return None
     return _native_comparison_expression(
         left_text, right_text, operator, event, context
     )
@@ -3414,6 +3471,15 @@ def _native_value_expression(
     text = str(expression or "").strip()
     if not text:
         return None
+    # Keep the narrow linear lowering above for simple expressions.  When a
+    # source value is nonlinear, render the full continuous expression and
+    # convert from SBML units to the native amount units exactly once.
+    continuous = _native_continuous_expression(text, context)
+    if continuous is not None:
+        rendered, _, _ = continuous
+        if target.amount_factor != 1.0:
+            return f"({rendered}) * {_format_number(target.amount_factor)}"
+        return rendered
     try:
         tree = ast.parse(context.expand_functions(text), mode="eval")
     except (TypeError, ValueError, SyntaxError):
