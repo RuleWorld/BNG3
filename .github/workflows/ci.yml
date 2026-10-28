@@ -52,15 +52,13 @@ jobs:
           if git cat-file -e "$BASE_REVISION:tests/validation/policy/antigaming.py" 2>/dev/null && git cat-file -e "$BASE_REVISION:tests/validation/policy/run_antigaming.py" 2>/dev/null; then
             git show "$BASE_REVISION:tests/validation/policy/antigaming.py" > "$RUNNER_TEMP/base-policy/antigaming.py"
             git show "$BASE_REVISION:tests/validation/policy/run_antigaming.py" > "$RUNNER_TEMP/base-policy/run_antigaming.py"
-          elif [[ "$BASE_REVISION" == "3ef3ac00645dc894133a8755a1499ca86711d286" ]] && ! git cat-file -e "$BASE_REVISION:tests/validation/policy/antigaming.py" 2>/dev/null && ! git cat-file -e "$BASE_REVISION:tests/validation/policy/run_antigaming.py" 2>/dev/null; then
-            changed=$(git diff --name-only "$BASE_REVISION...$HEAD_REVISION" | sort)
-            expected=$(printf '%s\n' .github/workflows/ci.yml .github/workflows/weekly.yml .github/workflows/release-policy.yml .github/workflows/release.yml tests/validation/policy/README.md tests/validation/policy/antigaming.py tests/validation/policy/run_antigaming.py tests/validation/policy/mutation-baseline.json | sort)
-            [[ "$changed" == "$expected" ]] || { echo "bootstrap candidate contains unexpected paths"; exit 1; }
+          elif ! git cat-file -e "$BASE_REVISION:tests/validation/policy/antigaming.py" 2>/dev/null && ! git cat-file -e "$BASE_REVISION:tests/validation/policy/run_antigaming.py" 2>/dev/null; then
+            python tests/validation/policy/run_antigaming.py --root "$GITHUB_WORKSPACE" --base "$BASE_REVISION" --head "$HEAD_REVISION" --bootstrap-check
             cp tests/validation/policy/antigaming.py tests/validation/policy/run_antigaming.py "$RUNNER_TEMP/base-policy/"
-            echo "::warning::BOOTSTRAP SETUP ONLY: pinned baseline has no anti-gaming checker; candidate checker is exercised, but this is not a base-revision acceptance PASS."
+            echo "::warning::BOOTSTRAP SETUP ONLY: base revision has no anti-gaming checker; candidate checker is exercised, but this is not a base-revision acceptance PASS."
             export ANTIGAMING_BOOTSTRAP=1
           else
-            echo "base anti-gaming checker missing or incomplete outside the exact bootstrap baseline"; exit 1
+            echo "base anti-gaming checker is incomplete; bootstrap requires both checker files to be absent"; exit 1
           fi
           python "$RUNNER_TEMP/base-policy/run_antigaming.py" --root "$GITHUB_WORKSPACE" --base "$BASE_REVISION" --head "$HEAD_REVISION" \
             --check release-protected-expectations --check release-no-product-fixture-names
@@ -927,15 +925,13 @@ jobs:
           if git cat-file -e "$BASE_REVISION:tests/validation/policy/antigaming.py" 2>/dev/null && git cat-file -e "$BASE_REVISION:tests/validation/policy/run_antigaming.py" 2>/dev/null; then
             git show "$BASE_REVISION:tests/validation/policy/antigaming.py" > "$RUNNER_TEMP/base-policy/antigaming.py"
             git show "$BASE_REVISION:tests/validation/policy/run_antigaming.py" > "$RUNNER_TEMP/base-policy/run_antigaming.py"
-          elif [[ "$BASE_REVISION" == "3ef3ac00645dc894133a8755a1499ca86711d286" ]] && ! git cat-file -e "$BASE_REVISION:tests/validation/policy/antigaming.py" 2>/dev/null && ! git cat-file -e "$BASE_REVISION:tests/validation/policy/run_antigaming.py" 2>/dev/null; then
-            changed=$(git diff --name-only "$BASE_REVISION...HEAD" | sort)
-            expected=$(printf '%s\n' .github/workflows/ci.yml .github/workflows/weekly.yml .github/workflows/release-policy.yml .github/workflows/release.yml tests/validation/policy/README.md tests/validation/policy/antigaming.py tests/validation/policy/run_antigaming.py tests/validation/policy/mutation-baseline.json | sort)
-            [[ "$changed" == "$expected" ]] || { echo "bootstrap candidate contains unexpected paths"; exit 1; }
+          elif ! git cat-file -e "$BASE_REVISION:tests/validation/policy/antigaming.py" 2>/dev/null && ! git cat-file -e "$BASE_REVISION:tests/validation/policy/run_antigaming.py" 2>/dev/null; then
+            python tests/validation/policy/run_antigaming.py --root "$GITHUB_WORKSPACE" --base "$BASE_REVISION" --head HEAD --bootstrap-check
             cp tests/validation/policy/antigaming.py tests/validation/policy/run_antigaming.py "$RUNNER_TEMP/base-policy/"
             echo "::warning::BOOTSTRAP SETUP ONLY: the base revision has no checker; this seeded execution is not a base-revision acceptance PASS."
             export ANTIGAMING_BOOTSTRAP=1
           else
-            echo "base anti-gaming checker missing or incomplete outside the exact bootstrap baseline"; exit 1
+            echo "base anti-gaming checker is incomplete; bootstrap requires both checker files to be absent"; exit 1
           fi
           python "$RUNNER_TEMP/base-policy/run_antigaming.py" --root "$GITHUB_WORKSPACE" --base "$BASE_REVISION" \
             --check release-independent-seeds --seed-manifest "$RUNNER_TEMP/antigaming-seed/manifest.json"

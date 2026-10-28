@@ -33,6 +33,16 @@ EXPECTED_PATHS = {
     "provenance/curated-biomodels-corpus-expectations.json",
     "tests/validation/exceptions.json",
 }
+BOOTSTRAP_PATHS = {
+    ".github/workflows/ci.yml",
+    ".github/workflows/release-policy.yml",
+    ".github/workflows/release.yml",
+    ".github/workflows/weekly.yml",
+    "tests/validation/policy/README.md",
+    "tests/validation/policy/antigaming.py",
+    "tests/validation/policy/mutation-baseline.json",
+    "tests/validation/policy/run_antigaming.py",
+}
 ID_RE = re.compile(
     r"""(?ix)(?:case[_ -]?id|"id"|\bid\b|\bids\b)["']?\s*[=:]\s*[\["']*([A-Za-z0-9][A-Za-z0-9_.:/-]{2,})"""
 )
@@ -76,6 +86,45 @@ def _base_text(root: Path, base: str, path: str) -> str:
         return raw.decode("utf-8", errors="replace")
     except subprocess.CalledProcessError:
         return ""
+
+
+def _base_path_exists(root: Path, base: str, path: str) -> bool:
+    return (
+        subprocess.run(
+            ("git", "cat-file", "-e", f"{base}:{path}"),
+            cwd=root,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        ).returncode
+        == 0
+    )
+
+
+def check_bootstrap_candidate(root: Path, base: str, head: str = "HEAD") -> list[str]:
+    """Allow one-time bootstrap only when the base lacks the checker and the
+    candidate diff is exactly the anti-gaming policy package.
+
+    This covers the initial policy merge and the push-to-main run that follows
+    it. The caller still labels the run as setup, never as a base-revision
+    acceptance pass.
+    """
+    checker_paths = (
+        "tests/validation/policy/antigaming.py",
+        "tests/validation/policy/run_antigaming.py",
+    )
+    if any(_base_path_exists(root, base, path) for path in checker_paths):
+        return [
+            "bootstrap is only allowed when the base revision lacks both anti-gaming checker files"
+        ]
+    changed = set(changed_paths(root, base, head))
+    unexpected = sorted(changed - BOOTSTRAP_PATHS)
+    missing = sorted(BOOTSTRAP_PATHS - changed)
+    if unexpected or missing:
+        return [
+            "bootstrap candidate must change exactly the anti-gaming policy package: "
+            f"unexpected={unexpected} missing={missing}"
+        ]
+    return []
 
 
 def check_protected_changes(root: Path, base: str, head: str = "HEAD") -> list[str]:
@@ -129,17 +178,20 @@ def check_protected_changes(root: Path, base: str, head: str = "HEAD") -> list[s
                 ).add(value)
 
     # A changed value is protected; a new assertion may introduce its own
-    # tolerance without altering an existing check's error budget.
+    # tolerance without altering an existing check's error budget. Product
+    # files are excluded because a solver may legitimately change its own
+    # numerical tolerance; only acceptance tests and fixtures are protected.
     protected.extend(
         path
         for path, removed in removed_tolerances.items()
-        if any(
+        if not _is_product_path(path)
+        and any(
             key in added_tolerances.get(path, {})
             and values != added_tolerances[path][key]
             for key, values in removed.items()
         )
     )
-    protected.extend(added_markers)
+    protected.extend(path for path in added_markers if not _is_product_path(path))
     protected.extend(_added_skip_or_exclusion_entries(root, base, head, paths))
 
     # The reference exclusion manifest is a selector, so only newly introduced

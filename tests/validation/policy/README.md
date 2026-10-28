@@ -3,10 +3,10 @@
 The stable public check IDs are declared in `antigaming.py`. PR workflow checks
 load both checker files with `git show BASE:path`, validate the base revision,
 then inspect the proposed tree. Missing or partial checker files fail closed.
-The one-time bootstrap is restricted to baseline
-`3ef3ac00645dc894133a8755a1499ca86711d286`, verifies both checker files are
-absent there and limits changed paths to this package. Its log label is
-`BOOTSTRAP SETUP (not base-revision PASS)`.
+The one-time bootstrap is allowed only when the base revision lacks both
+checker files and the diff from that base contains exactly this policy
+package. This also covers the push-to-main run after the initial policy merge.
+Its log label is `BOOTSTRAP SETUP (not base-revision PASS)`.
 
 `run_pr_checks(root, base)` returns errors keyed by stable check ID. The
 individual pure checks accept a Git checkout path and base commit, so mutation

@@ -12,6 +12,7 @@ from pathlib import Path
 
 from antigaming import (
     CHECK_IDS,
+    check_bootstrap_candidate,
     fresh_seed,
     generate_seeded_case,
     run_pr_checks,
@@ -32,9 +33,16 @@ def main() -> int:
     parser.add_argument("--mutation-report", type=Path)
     parser.add_argument("--mutation-baseline", type=Path)
     parser.add_argument("--expected-mutation-revision")
+    parser.add_argument("--bootstrap-check", action="store_true")
     parser.add_argument("--check", action="append", choices=CHECK_IDS)
     args = parser.parse_args()
     root = args.root.resolve()
+    if args.bootstrap_check:
+        bootstrap_errors = check_bootstrap_candidate(root, args.base, args.head)
+        if bootstrap_errors:
+            print("\n".join(bootstrap_errors))
+            return 1
+        return 0
     checks = set(args.check or CHECK_IDS)
     errors: dict[str, list[str]] = {}
     if (
