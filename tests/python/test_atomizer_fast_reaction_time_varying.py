@@ -644,6 +644,27 @@ def test_sign_switching_follows_the_sign_of_the_rule():
     assert not model.reactions["slow3"].products
 
 
+def test_local_parameter_of_the_fast_law_is_replaced_by_its_value():
+    """A local parameter is scoped to its kinetic law, so its value replaces it."""
+
+    law = _apply("times", _ci("k"), _ci("S1"), _ci("S2"), _ci("C"))
+    local = _apply("times", _ci("kl"), _ci("k"), _ci("S1"), _ci("S2"), _ci("C"))
+    xml = sign_switching_rule().replace(
+        f"<kineticLaw>{_math(law)}</kineticLaw>",
+        f"<kineticLaw>{_math(local)}<listOfLocalParameters>"
+        '<localParameter id="kl" value="2"/></listOfLocalParameters></kineticLaw>',
+    )
+    assert 'localParameter id="kl"' in xml
+    model = SBMLParser().parse(xml)
+    assert _fast_warning(model).severity == "info"
+    for rule in model.rules:
+        assert not re.search(r"\bkl\b", rule.math), rule.math
+    lowered = _lowered_amounts(model, TIMES, (1.2,))
+    for time, row in zip(TIMES, lowered):
+        for species, expected in reference_sign_switching(time).items():
+            assert row[species] == pytest.approx(expected, rel=1e-9, abs=1e-9)
+
+
 def test_event_changed_stoichiometry_keeps_the_amounts_continuous():
     model = SBMLParser().parse(event_changes_balance_stoichiometry())
     # The stoichiometry is a parameter that the event assigns; the reactant

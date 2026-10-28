@@ -1453,6 +1453,16 @@ def _reduce_with_pool(
     if expression is None:
         return refuse("the fast reaction's kinetic law is not a supported expression")
     expression = _inline_function_calls(expression, model.function_definitions)
+    # A local parameter is scoped to this kinetic law, so its value replaces
+    # it before the coefficients become global rules.
+    local = {
+        str(parameter.id): ast.Constant(value=float(getattr(parameter, "value", 0.0)))
+        for parameter in list(
+            getattr(reaction.kinetic_law, "local_parameters", []) or []
+        )
+    }
+    if local:
+        expression = _Substituter(local).visit(expression)
     resolver = _ConstantResolver(model, reaction)
     analysis = _SymbolAnalysis(model, reaction, resolver, {reactant_id, product_id})
     terms = _symbolic_terms(expression.body, resolver, analysis)
