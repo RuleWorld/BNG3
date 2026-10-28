@@ -39,7 +39,10 @@ def test_expected_ids_are_independent_and_cover_variants():
         check_id.endswith(":unsupported-boundary-contract")
         for check_id in expected_negative
     )
-    assert "sbml-boundary:delay_state_history_a:static-delay-execution" in expected_positive
+    assert (
+        "sbml-boundary:delay_state_history_a:static-delay-execution"
+        in expected_positive
+    )
     assert all(
         check_id.endswith(":source-trajectory")
         for check_id in expected_positive
