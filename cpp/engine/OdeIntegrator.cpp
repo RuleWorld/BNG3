@@ -2612,6 +2612,15 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
     }
     activeSimulationSession_ = &working;
     try {
+        if (!working.rngInitialized) {
+            const std::mt19937_64::result_type seedValue =
+                options.seed > 0
+                    ? static_cast<std::mt19937_64::result_type>(options.seed)
+                    : static_cast<std::mt19937_64::result_type>(
+                          std::random_device{}());
+            working.rng.seed(seedValue);
+            working.rngInitialized = true;
+        }
         if (hasNetworkIntervention) {
             recordHistoryJump(options.tStart, stateBeforeIntervention);
             recordHistoryJump(options.tStart, stateAfterIntervention);
@@ -2782,6 +2791,17 @@ OdeResult OdeIntegrator::integrateCore(const OdeOptions& options) {
     } else if (options.method == "ssa") {
         if (options.batchSize > 0) {
             return integrateBatchSSA(options);
+        }
+        if (!nativeEvents_.empty() &&
+            std::all_of(compiledRxns_.begin(), compiledRxns_.end(),
+                        [](const CompiledReaction& reaction) {
+                            return reaction.isAbsoluteFlux;
+                        })) {
+            // A model with no stochastic reaction channels can still have
+            // continuous SBML rate-rule states that drive discrete events.
+            // Preserve those trajectories with the deterministic solver and
+            // let the event assignments consume the seeded session RNG.
+            return integrateCvode(options);
         }
         return integrateSSA(options);
     } else {

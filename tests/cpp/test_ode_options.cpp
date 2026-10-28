@@ -248,6 +248,51 @@ end bng3_events
     CHECK_THAT(result.observables.back()[1], Catch::Matchers::WithinAbs(0.0, 1e-12));
 }
 
+TEST_CASE("SSA keeps event-only absolute-flux states continuous",
+          "[OdeOptions][Events][SSA]") {
+    auto model = parser::parseModel(R"(
+begin model
+setOption("BNG3AbsoluteFluxRules", "__rate_rule_x")
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 0
+end seed species
+begin observables
+    Molecules x_amt X()
+end observables
+begin functions
+    __rate_rule__x() = 1
+end functions
+begin reaction rules
+    __rate_rule_x: 0 -> X() __rate_rule__x() TotalRate
+end reaction rules
+begin bng3_events version 1
+    event "reset"
+        trigger: x_amt >= 1
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: true
+        assignment: x_amt = 0
+    end event
+end bng3_events
+end model
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "ssa";
+    options.seed = 29;
+    options.tEnd = 2.0;
+    options.nSteps = 2;
+
+    const auto result = integrator.integrate(options);
+
+    CHECK_THAT(result.observables.back()[0], Catch::Matchers::WithinAbs(0.0, 1e-8));
+}
+
 TEST_CASE("OdeIntegrator evaluates user-defined function rates", "[OdeOptions]") {
     // Source-derived from akutuva21/bionetgen PR #508 head e67850cf and
     // PR #509 head 5cf5cd47: function-name matching is an allocation-sensitive
