@@ -260,10 +260,9 @@ jobs:
 
       - name: Provide sbmlTranslator
         run: |
-          mkdir -p "$HOME/.local/bin"
-          printf '%s\n' '#!/bin/sh' 'PYTHONPATH="$GITHUB_WORKSPACE/python${PYTHONPATH:+:$PYTHONPATH}" exec python "$GITHUB_WORKSPACE/python/bionetgen/atomizer/sbmlTranslator.py" "$@"' > "$HOME/.local/bin/sbmlTranslator"
-          chmod +x "$HOME/.local/bin/sbmlTranslator"
-          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+          mkdir -p legacy/perl/bin
+          printf '%s\n' '#!/bin/sh' 'PYTHONPATH="$GITHUB_WORKSPACE/python${PYTHONPATH:+:$PYTHONPATH}" exec python "$GITHUB_WORKSPACE/python/bionetgen/atomizer/sbmlTranslator.py" "$@"' > legacy/perl/bin/sbmlTranslator
+          chmod +x legacy/perl/bin/sbmlTranslator
 
       - name: Build bng_cpp
         run: |
