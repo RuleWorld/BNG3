@@ -47,35 +47,22 @@ def _parameter_warnings(atomizer: Atomizer) -> list[dict]:
     ]
 
 
-def test_infinite_parameter_value_is_reported_as_an_approximation():
+def test_infinite_parameter_value_is_not_reported_as_an_approximation():
     atomizer, _ = _atomize('<parameter id="P" value="INF" constant="true"/>')
 
-    warnings = _parameter_warnings(atomizer)
-    assert warnings, atomizer.model.import_warnings
-    assert any(
-        warning.severity == "approximated" and "infinite" in warning.message
-        for warning in warnings
-    ), warnings
+    assert not _parameter_warnings(atomizer)
 
 
-def test_negative_infinite_parameter_value_is_reported_as_an_approximation():
+def test_negative_infinite_parameter_value_is_not_reported_as_an_approximation():
     atomizer, _ = _atomize('<parameter id="Q" value="-INF" constant="true"/>')
 
-    warnings = _parameter_warnings(atomizer)
-    assert any(
-        warning.severity == "approximated" and "infinite" in warning.message
-        for warning in warnings
-    ), warnings
+    assert not _parameter_warnings(atomizer)
 
 
-def test_nan_parameter_value_is_reported_as_an_approximation():
+def test_nan_parameter_value_is_not_reported_as_an_approximation():
     atomizer, _ = _atomize('<parameter id="R" value="NaN" constant="true"/>')
 
-    warnings = _parameter_warnings(atomizer)
-    assert any(
-        warning.severity == "approximated" and "NaN" in warning.message
-        for warning in warnings
-    ), warnings
+    assert not _parameter_warnings(atomizer)
 
 
 def test_non_finite_parameter_value_is_kept_in_the_model():
@@ -93,6 +80,27 @@ def test_non_finite_parameter_value_is_kept_in_the_model():
     assert math.isinf(atomizer.model.parameters["Q"].value)
     assert atomizer.model.parameters["Q"].value < 0
     assert math.isnan(atomizer.model.parameters["R"].value)
+
+
+def test_non_finite_parameter_values_are_emitted_exactly():
+    import pytest
+
+    _, result = _atomize(
+        '<parameter id="P" value="INF" constant="true"/>'
+        '<parameter id="Q" value="-INF" constant="true"/>'
+        '<parameter id="R" value="NaN" constant="true"/>'
+    )
+
+    parameters = result.bngl.split("begin parameters", 1)[1].split(
+        "end parameters", 1
+    )[0]
+    assert "P exp(1000)" in parameters
+    assert "Q -exp(1000)" in parameters
+    assert "R sqrt(-1)" in parameters
+    assert "1e20" not in parameters
+    assert " R 0" not in parameters
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    cpp.parse_string(result.bngl)
 
 
 def test_a_parameter_named_time_is_emitted_under_a_non_reserved_spelling():

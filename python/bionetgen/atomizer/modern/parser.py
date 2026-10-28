@@ -80,11 +80,9 @@ def _declared_value(value: Any) -> float:
     """Return a declared attribute value, keeping a non-finite declaration.
 
     SBML's ``double`` type admits ``INF``, ``-INF`` and ``NaN`` (SBML Level 3
-    Version 2 Core, Sec. 3.1.5 "Type double").  BNGL has no spelling for
-    those, so the
-    writer reports the approximation it makes.  Replacing a non-finite
-    declaration with a finite number here would instead make the model
-    silently disagree with its source.
+    Version 2 Core, Sec. 3.1.5 "Type double"). Replacing a non-finite
+    declaration with a finite number here would make the model disagree with
+    its source before BNGL generation.
     """
 
     try:
@@ -811,9 +809,9 @@ def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> st
     if tag == "exponentiale":
         return "2.718281828459045"
     if tag == "infinity":
-        return "1e308"
+        return "exp(1000)"
     if tag == "notanumber":
-        return "0"
+        return "sqrt(-1)"
     if tag == "lambda":
         # SBML function bodies are lambda(bvar..., body).  Bound-variable
         # declarations are metadata; the final non-bvar child is the body.
@@ -3217,22 +3215,6 @@ class SBMLParser:
                             "model names no such function, so the rate expression "
                             "cannot be represented."
                         )
-                elif tag == "infinity":
-                    add(
-                        "<infinity> constant encountered in math; the source is "
-                        "valid SBML (validation rule 10202 permits <infinity>), "
-                        "but an infinite value cannot be represented in BNG3's "
-                        "finite-double model, so it is emitted as a large finite "
-                        "value and the model is not claimed to be supported."
-                    )
-                elif tag == "notanumber":
-                    add(
-                        "<notanumber> constant encountered in math; the source is "
-                        "valid SBML (validation rule 10202 permits "
-                        "<notanumber>), but a not-a-number value cannot be "
-                        "represented in BNG3's finite-double model, so the model "
-                        "is not claimed to be supported."
-                    )
                 elif tag == "logbase":
                     if _mathml_to_formula(element).strip() not in _DECIMAL_LOG_BASES:
                         add(

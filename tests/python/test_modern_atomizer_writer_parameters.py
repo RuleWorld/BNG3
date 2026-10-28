@@ -16,7 +16,7 @@ from bionetgen.atomizer.modern import (
 from bionetgen.atomizer.modern.helpers import logger
 
 
-def test_curate_parameters_rewrites_nonfinite_values_and_standardizes_ids():
+def test_curate_parameters_preserves_nonfinite_values_and_standardizes_ids():
     parameters = OrderedDict(
         [
             ("kInf", SBMLParameter(id="kInf", value=float("inf"))),
@@ -30,14 +30,11 @@ def test_curate_parameters_rewrites_nonfinite_values_and_standardizes_ids():
     curated = curate_parameters(parameters)
 
     assert list(curated) == ["kInf", "kNegInf", "kNaN", "time_id"]
-    assert curated["kInf"] == "1e20"
-    assert curated["kNegInf"] == "-1e20"
-    assert curated["kNaN"] == "0"
+    assert curated["kInf"] == "exp(1000)"
+    assert curated["kNegInf"] == "-exp(1000)"
+    assert curated["kNaN"] == "sqrt(-1)"
     assert curated["time_id"] == "2.5"
-    assert any(
-        message.code == "BNW001" and "kNaN" in message.message
-        for message in logger.getMessages()
-    )
+    assert not any(message.code == "BNW001" for message in logger.getMessages())
     logger.clear()
 
 
