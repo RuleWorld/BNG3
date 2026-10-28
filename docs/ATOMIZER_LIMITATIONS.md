@@ -10,7 +10,7 @@ A limitation is **not** a defect. It is a case the Atomizer refuses, and a refus
 
 | Field | Value |
 | --- | --- |
-| Generated on | 2026-10-23 |
+| Generated on | 2026-10-28 |
 | Tree described | `31ae76c19fdd03c9d4af788f58dd5187726e14a1` |
 | Measured at commit | `31ae76c19fdd03c9d4af788f58dd5187726e14a1` |
 | Official suite revision | `cf38585fac5de8e0e90112febb62851ee2181816` (https://github.com/sbmlteam/sbml-test-suite.git) |
@@ -52,14 +52,14 @@ Every limitation below carries the date it was recorded. A limitation that is cl
 | `fast-reaction:no-fast-equilibrium-solve` | atomizer | 5 | A fast reaction whose pseudo steady state cannot be used | 2026-10-20 |
 | `mathml:non-finite-parameter-approximation` | atomizer | 5 | A non-finite parameter value is replaced by a finite diagnostic placeholder | 2026-10-22 |
 | `events:state-trigger-not-schedulable` | atomizer | 4 | A state trigger the runtime cannot schedule | 2026-10-20 |
-| `compartment:unsupported-spatial-dimensions` | atomizer | 2 | A compartment with more than three spatial dimensions | 2026-10-20 |
+| `compartment:unsupported-spatial-dimensions` | atomizer | 1 | A compartment dimension the Atomizer cannot preserve | 2026-10-20 |
 | `mathml:not-a-number` | atomizer | 1 | A not-a-number constant | 2026-10-20 |
 | `harness:random-event-execution` | harness | 12 | The official reference is one draw of a random execution order | 2026-10-21 |
 | `harness:scheduled-action-phase-boundary` | harness | 2 | The official reference samples a scheduled-action phase boundary | 2026-10-22 |
 | `harness:stochastic-ensemble-budget-not-comparable` | harness | 2 | Projected stochastic work exceeds the comparison-planning threshold | 2026-10-22 |
 | `reference:not-applicable` | not-applicable | 34 | The suite says the case has no official time-course reference | 2026-10-20 |
 
-Cases with a recorded gap: 125 atomizer-side, 16 harness-side, 34 not-applicable-side. A case may carry a gap at more than one stage, so the counts above count distinct cases per construct.
+Cases with a recorded gap: 124 atomizer-side, 16 harness-side, 34 not-applicable-side. A case may carry a gap at more than one stage, so the counts above count distinct cases per construct.
 
 ## The Atomizer's limitations
 
@@ -135,15 +135,15 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 - **What BNG3 does instead**: The Atomizer refuses the event and says why: "trigger is not a simple time threshold (state-dependent triggers cannot be scheduled)", or, when the trigger names an identifier that is not a legal SBML SId, that the identifier "contains a character outside the SBML SId class and cannot be matched".
 - **Reducible?**: Yes, in two directions. A trigger the native event runtime can evaluate is lowered rather than refused (PR #328, 2026-10-21); an identifier that is not a legal SId is a source defect the user can fix by renaming it, and the diagnostic says so.
 
-### A compartment with more than three spatial dimensions
+### A compartment dimension the Atomizer cannot preserve
 
 - **Construct**: `compartment:unsupported-spatial-dimensions`
-- **Cases**: 2 — semantic/01133 semantic/01197
+- **Cases**: 1 — semantic/01197
 - **First recorded**: 2026-10-20
 - **What SBML requires**: SBML Level 3 Version 2 Core Sec. 4.5.2 lets a compartment declare any floating-point spatialDimensions value, and Sec. 4.5.4 uses that value to choose between the model's volumeUnits, areaUnits and lengthUnits.
 - **Citation**: SBML Level 3 Version 2 Core Sec. 4.5.2, Sec. 4.5.4
-- **What BNG3 does instead**: The Atomizer refuses the compartment and says why: "Compartment \"C\" has spatialDimensions 7; BNG3 does not support spatialDimensions values greater than 3." It also refuses a negative dimension and, for a Level 2 model, any value outside 0 through 3.
-- **Reducible?**: No, not as a compartment. BNGL compartments carry a volume; a compartment with a fractal or higher dimension has no BNGL counterpart, and the unit selection Sec. 4.5.4 describes cannot be expressed.
+- **What BNG3 does instead**: For SBML Level 3, BNG3 preserves integer spatialDimensions values above 3 and keeps reactions' explicit SBML flux. It still refuses non-integer values above 3 (for example, 3.5), negative or non-finite values, and Level 2 values outside 0 through 3.
+- **Reducible?**: Partly reduced: integer Level 3 dimensions above 3 are now preserved when reactions retain their explicit SBML flux. Non-integer values above 3 remain unsupported because BNGL compartment declarations store an integer dimension; Level 2 is limited by the specification to values 0 through 3.
 
 ### A not-a-number constant
 
