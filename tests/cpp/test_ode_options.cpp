@@ -8,6 +8,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <sstream>
 
 #include "engine/NetworkGenerator.hpp"
@@ -1621,6 +1622,31 @@ TEST_CASE("CVODE refuses a native trigger that rises at the first instant",
         engine::OdeIntegrator(*model, network).integrate(options),
         Catch::Matchers::ContainsSubstring(
             "strict trigger equals its threshold at the initial time"));
+}
+
+TEST_CASE("CVODE carries a non-finite native event assignment to output",
+          "[OdeOptions][Events]") {
+    auto model = parseDecayModel();
+    ast::Event event;
+    event.id = "assign_nan";
+    event.trigger = ast::Expression::binary(
+        ">=", ast::Expression::identifier("time"), ast::Expression::number(1.0));
+    event.useValuesFromTriggerTime = false;
+    event.assignments.push_back(
+        {"Xtot", ast::Expression::number(std::numeric_limits<double>::quiet_NaN())});
+    model->setEventFormatVersion(1);
+    model->addEvent(std::move(event));
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 1.0;
+    options.nSteps = 2;
+
+    const auto result = engine::OdeIntegrator(*model, network).integrate(options);
+
+    REQUIRE(result.observables.size() == 3);
+    CHECK(std::isnan(result.observables.back().front()));
 }
 
 TEST_CASE("OdeIntegrator recovers after late stop condition failure", "[OdeOptions][Lifecycle]") {

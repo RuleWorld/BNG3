@@ -75,6 +75,126 @@ def _change(root: Path, rel: str, content: str) -> None:
     _git(root, "commit", "-qm", f"change {rel}")
 
 
+def _sbml_improvement_repo(
+    tmp_path: Path,
+    *,
+    target_status: str = "passed",
+    include_evidence: bool = True,
+    evidence_target: str = "passed",
+    change_product_after_measurement: bool = False,
+) -> tuple[Path, str]:
+    expectation_path = "provenance/sbml-campaign/expectations.json"
+    evidence_path = "provenance/sbml-campaign/expectation-improvements.json"
+    suite_revision = "a" * 40
+    report_sha256 = "b" * 64
+    old_note = "Full-suite baseline measurement."
+    base_case = {
+        "conversion": "unsupported",
+        "roundtrip_structure": "not_tested",
+        "independent_comparison": "not_tested",
+        "official_reference": "unsupported",
+        "gap": {
+            "conversion": {"construct": "compartment:unsupported-spatial-dimensions"},
+            "official_reference": {
+                "construct": "compartment:unsupported-spatial-dimensions"
+            },
+        },
+    }
+    base_manifest = {
+        "schema_version": 1,
+        "note": "Each entry records its full-suite verdict.",
+        "provenance": {"note": old_note},
+        "suite": {"revision": suite_revision},
+        "cases": {"semantic/00001": base_case},
+    }
+    root, base = _repo(
+        tmp_path,
+        {
+            "python/engine.py": "VALUE = 1\n",
+            expectation_path: json.dumps(base_manifest, sort_keys=True) + "\n",
+        },
+    )
+    _change(root, "python/engine.py", "VALUE = 2\n")
+    tested_commit = _git(root, "rev-parse", "HEAD").strip()
+    if change_product_after_measurement:
+        _change(root, "python/engine.py", "VALUE = 3\n")
+
+    updated_manifest = json.loads(json.dumps(base_manifest))
+    updated_case = updated_manifest["cases"]["semantic/00001"]
+    if target_status == "passed":
+        for stage in (
+            "conversion",
+            "roundtrip_structure",
+            "independent_comparison",
+            "official_reference",
+        ):
+            updated_case[stage] = "passed"
+        updated_case.pop("gap")
+    else:
+        for stage in (
+            "conversion",
+            "roundtrip_structure",
+            "independent_comparison",
+            "official_reference",
+        ):
+            updated_case[stage] = target_status
+        updated_case.pop("gap")
+    updated_manifest["note"] = (
+        "Each entry records its full-suite verdict unless a scoped measurement "
+        "is recorded in provenance.note as a scoped supplemental measurement."
+    )
+    run_id, job_id, artifact_id = 123, 456, 789
+    updated_manifest["provenance"]["note"] = (
+        f"{old_note} Scoped supplemental measurement {tested_commit} {report_sha256} "
+        f"{run_id} {job_id} {artifact_id}."
+    )
+
+    evidence = {
+        "schema_version": 1,
+        "measurements": [
+            {
+                "suite_revision": suite_revision,
+                "tested_commit": tested_commit,
+                "report_sha256": report_sha256,
+                "workflow_run_id": run_id,
+                "job_id": job_id,
+                "artifact_id": artifact_id,
+                "cases": {
+                    "semantic/00001": {
+                        "stages": {
+                            "conversion": {
+                                "from": "unsupported",
+                                "to": evidence_target,
+                            },
+                            "roundtrip_structure": {
+                                "from": "not_tested",
+                                "to": evidence_target,
+                            },
+                            "independent_comparison": {
+                                "from": "not_tested",
+                                "to": evidence_target,
+                            },
+                            "official_reference": {
+                                "from": "unsupported",
+                                "to": evidence_target,
+                            },
+                        }
+                    }
+                },
+            }
+        ],
+    }
+    path = root / expectation_path
+    path.write_text(json.dumps(updated_manifest, sort_keys=True) + "\n")
+    if include_evidence:
+        evidence_file = root / evidence_path
+        evidence_file.parent.mkdir(parents=True, exist_ok=True)
+        evidence_file.write_text(json.dumps(evidence, sort_keys=True) + "\n")
+    _git(root, "add", ".")
+    _git(root, "commit", "-qm", "record measured SBML improvement")
+    return root, base
+
+
 def _mutation_report(rows: list[dict], revision: str = "candidate") -> dict:
     statuses = ("killed", "survived", "invalid", "equivalent", "infrastructure_error")
     classes = ("non_equivalent", "equivalent")
@@ -198,6 +318,53 @@ def test_product_only_and_expectation_only_changes_are_not_mixed(tmp_path):
     root2, base2 = _repo(tmp_path / "second", {"tests/data/expected.json": "{}\n"})
     _change(root2, "tests/data/expected.json", '{"expected": 2}\n')
     assert checker.check_protected_changes(root2, base2) == []
+
+
+def test_evidence_backed_sbml_expectation_improvements_are_allowed(tmp_path):
+    checker = _load_policy()
+    root, base = _sbml_improvement_repo(tmp_path)
+
+    assert checker.check_protected_changes(root, base) == []
+
+
+def test_sbml_expectation_improvement_requires_evidence(tmp_path):
+    checker = _load_policy()
+    root, base = _sbml_improvement_repo(tmp_path, include_evidence=False)
+
+    errors = checker.check_protected_changes(root, base)
+
+    assert errors and "protected acceptance data" in errors[0]
+
+
+def test_sbml_expectation_improvement_rejects_unpassed_verdicts(tmp_path):
+    checker = _load_policy()
+    root, base = _sbml_improvement_repo(
+        tmp_path, target_status="failed", evidence_target="failed"
+    )
+
+    errors = checker.check_protected_changes(root, base)
+
+    assert errors and "protected acceptance data" in errors[0]
+
+
+def test_sbml_expectation_improvement_rejects_product_changes_after_measurement(
+    tmp_path,
+):
+    checker = _load_policy()
+    root, base = _sbml_improvement_repo(tmp_path, change_product_after_measurement=True)
+
+    errors = checker.check_protected_changes(root, base)
+
+    assert errors and "protected acceptance data" in errors[0]
+
+
+def test_sbml_expectation_improvement_rejects_evidence_verdict_mismatch(tmp_path):
+    checker = _load_policy()
+    root, base = _sbml_improvement_repo(tmp_path, evidence_target="failed")
+
+    errors = checker.check_protected_changes(root, base)
+
+    assert errors and "protected acceptance data" in errors[0]
 
 
 def test_product_solver_tolerance_change_is_not_protected(tmp_path):

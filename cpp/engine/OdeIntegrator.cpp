@@ -234,8 +234,14 @@ OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& ne
                     return true;
                 };
                 if (!isStaticDuration(duration)) {
-                    throw std::runtime_error(
-                        "delay expression duration must be static");
+                    // A duration that depends on time or state is evaluated
+                    // at every use (Expression checks it is finite and
+                    // nonnegative). It has no fixed breakpoints, so the full
+                    // trajectory history is recorded at every solver step.
+                    hasDynamicExpressionDelay_ = true;
+                    hasPositiveExpressionDelay_ = true;
+                    for (const auto& child : expression.args()) visit(child);
+                    return;
                 }
                 const double delay = delayedTime(duration, model_);
                 if (!std::isfinite(delay) || delay < 0.0) {
@@ -2228,9 +2234,7 @@ void OdeIntegrator::validateEventTargets() {
 
 double OdeIntegrator::eventValue(const ast::Expression& expression,
                                  double time, const double* state) const {
-    const double value = evaluateExpressionWithHistory(expression, time, state);
-    if (!std::isfinite(value)) throw std::runtime_error("bng3_events expression is nonfinite");
-    return value;
+    return evaluateExpressionWithHistory(expression, time, state);
 }
 
 namespace {
@@ -2661,6 +2665,9 @@ bool OdeIntegrator::applyDueEvents(double time, std::vector<double>& state) {
                 ? eventValue(*event.dynamicPriority, candidate->executionTime,
                              state.data())
                 : event.priority;
+            if (!std::isfinite(priority)) {
+                throw std::runtime_error("bng3_events expression is nonfinite");
+            }
             // Keep the existing queue insertion order for exact ties. SBML
             // requires randomized ordering for equal defined priorities;
             // that behavior remains outside this deterministic native slice.
@@ -4218,7 +4225,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                     }
                     continue;
                 }
-                if (target < tOut - 1e-12 || !historyDelays_.empty()) {
+                if (target < tOut - 1e-12 || recordsHistory()) {
                     // CV_NORMAL may step past a returned output/root time.
                     // If target is already inside that step, CVode interpolates
                     // to it; a stop behind the internal time is invalid.
@@ -4235,7 +4242,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                 // history. Keep CV_NORMAL for ordinary simulations so this
                 // feature does not change their established CVODE path.
                 flag = CVode(cvode_mem, target, y, &t,
-                             historyDelays_.empty() ? CV_NORMAL : CV_ONE_STEP);
+                             recordsHistory() ? CV_ONE_STEP : CV_NORMAL);
 
                 if (flag == CV_ROOT_RETURN) {
                     // CVodeGetRootInfo writes one entry per registered root
@@ -4333,7 +4340,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                         // A method-of-steps kink (including a sum-generated
                         // breakpoint) becomes a source discontinuity for each
                         // other delay in the model.
-                        if (activeSimulationSession_ && !historyDelays_.empty()) {
+                        if (activeSimulationSession_ && recordsHistory()) {
                             auto& discontinuities =
                                 activeSimulationSession_->discontinuities;
                             if (discontinuities.empty() ||
@@ -4466,9 +4473,16 @@ double OdeIntegrator::computePropensity(const CompiledReaction& rxn,
     // Atomizer absolute fluxes already contain reactant dependence. Authored
     // BNGL TotalRate laws follow BNG2's finite-network convention: omit the
     // symmetry factor but still multiply by the reactant counts.
+    //
+    // The availability check stops an absolute flux from consuming molecules
+    // that are not there. A constant ($ or SBML boundaryCondition) reactant is
+    // never consumed, so it is not checked: an SBML zero-order source such as
+    // `$Source() -> X()` with Source at 0 fires at its full rate, matching the
+    // deterministic reading.
     if (rxn.isAbsoluteFlux) {
         for (std::size_t i = 0; i < rxn.reactantIndices.size(); ++i) {
             const auto index = rxn.reactantIndices[i];
+            if (index < fixedSpecies_.size() && fixedSpecies_[index]) continue;
             const auto required = static_cast<double>(
                 std::count(rxn.reactantIndices.begin(),
                            rxn.reactantIndices.begin() + i, index) + 1);

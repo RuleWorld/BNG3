@@ -26,20 +26,66 @@ def _load_cpp_backend():
     return cpp
 
 
-def run(inp, out=None, suppress=False, timeout=None):
+def run(
+    inp,
+    out=None,
+    suppress=False,
+    timeout=None,
+    simulator="auto",
+    format=None,
+    method=None,
+    t_span=None,
+    n_points=None,
+):
     """
-    Convenience function to run BNG2.pl as a library
+    Convenience function to run a BNGL model as a library
 
     Usage: run(path_to_input_file, output_folder)
 
     Arguments
     ---------
-    path_to_input_file : str
-        this has to point to a BNGL file
-    output_folder : str
-        (optional) this points to a folder to put the results
-        into. If it doesn't exist, it will be created.
+    inp : str
+        Path to a BNGL file.
+    out : str, optional
+        Folder for the results of the model's actions.
+    simulator : str
+        'auto' or 'native' runs the BNG3 engine; 'subprocess' forces the
+        legacy BNG2.pl route; 'bngsim' runs one simulation with the BNGsim
+        backend and needs ``method``.
+    format : str, optional
+        Input format hint. Only 'bngl' is accepted; convert SBML with the
+        Atomizer first.
+    method, t_span, n_points : optional
+        When any is given, run one simulation of the model with this method
+        (default 'ode'), time span (t_start, t_end) (default (0, 100)) and
+        number of output points (default 100), instead of the model's
+        actions, and return its result.
     """
+    from bionetgen.core.exc import BNGFormatError
+
+    if format is not None and str(format).lower() != "bngl":
+        raise BNGFormatError(
+            inp,
+            f"run() accepts BNGL input only, not format={format!r}; convert "
+            "SBML with bionetgen.atomizer first",
+        )
+    if simulator not in {"auto", "native", "subprocess", "bngsim"}:
+        raise ValueError("simulator must be 'auto', 'native', 'subprocess' or 'bngsim'")
+    if simulator == "bngsim" or any(
+        value is not None for value in (method, t_span, n_points)
+    ):
+        from bionetgen.model import load
+
+        t_start, t_end = (0.0, 100.0) if t_span is None else t_span
+        return load(inp).simulate(
+            method=method or "ode",
+            t_start=float(t_start),
+            t_end=float(t_end),
+            n_steps=int(n_points if n_points is not None else 100),
+            backend="bngsim" if simulator == "bngsim" else "native",
+        )
+    if simulator == "subprocess":
+        return _run_subprocess(inp, out, suppress, timeout)
     # Try C++ backend first.  Only an unavailable extension permits the
     # legacy subprocess path; backend failures are product failures.
     cpp = _load_cpp_backend()
@@ -47,6 +93,11 @@ def run(inp, out=None, suppress=False, timeout=None):
         model = cpp.parse_file(inp)
         return cpp.execute(model, inp)
 
+    return _run_subprocess(inp, out, suppress, timeout)
+
+
+def _run_subprocess(inp, out, suppress, timeout):
+    """Run the model's actions through the legacy BNG2.pl subprocess route."""
     # Fall back to the existing BNGCLI subprocess approach
     cur_dir = os.getcwd()
     if out is None:
