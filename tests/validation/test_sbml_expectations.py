@@ -25,6 +25,7 @@ from scripts.ci import sbml_campaign_inventory as inventory
 REPO = Path(__file__).resolve().parents[2]
 MANIFEST = REPO / "provenance" / "sbml-campaign" / "expectations.json"
 INVENTORY = REPO / "provenance" / "sbml-campaign" / "current-2026-10-22.json"
+IMPROVEMENTS = REPO / "provenance" / "sbml-campaign" / "expectation-improvements.json"
 LIMITATIONS = REPO / "provenance" / "sbml-campaign" / "atomizer-limitations.json"
 LOCK = REPO / "provenance" / "upstreams.lock.yml"
 TOOL = REPO / "scripts" / "ci" / "sbml_campaign_inventory.py"
@@ -33,11 +34,6 @@ GATE = REPO / "scripts" / "ci" / "validate_sbml_test_suite.py"
 
 def _manifest() -> dict[str, Any]:
     return json.loads(MANIFEST.read_text(encoding="utf-8"))
-
-
-def _inventory_rows() -> dict[str, dict[str, Any]]:
-    committed = json.loads(INVENTORY.read_text(encoding="utf-8"))
-    return {row["ref"]: row for row in committed["sbml_test_suite"]["cases"]}
 
 
 # The inventory records the harness's own status vocabulary; the manifest
@@ -51,10 +47,52 @@ INVENTORY_TO_EXPECTATION = {
     "timed-out": "failed",
     "not-tested": "not_tested",
 }
+EXPECTATION_TO_INVENTORY = {
+    "passed": "passed",
+    "unsupported": "unsupported",
+    "failed": "failed",
+    "not_tested": "not-tested",
+}
+
+
+def _inventory_rows() -> dict[str, dict[str, Any]]:
+    """Return baseline rows with each recorded supplemental improvement applied."""
+
+    committed = json.loads(INVENTORY.read_text(encoding="utf-8"))
+    rows = {row["ref"]: dict(row) for row in committed["sbml_test_suite"]["cases"]}
+    manifest = _manifest()
+    improvements = json.loads(IMPROVEMENTS.read_text(encoding="utf-8"))
+
+    assert improvements["schema_version"] == 1
+    for measurement in improvements["measurements"]:
+        assert measurement["suite_revision"] == manifest["suite"]["revision"]
+        assert re.fullmatch(r"[0-9a-f]{40}", measurement["tested_commit"])
+        assert re.fullmatch(r"[0-9a-f]{64}", measurement["report_sha256"])
+        for identity, case in measurement["cases"].items():
+            assert identity in rows, identity
+            for stage, transition in case["stages"].items():
+                assert stage in inventory.EXPECTATION_STAGES, (identity, stage)
+                assert transition["from"] in EXPECTATION_TO_INVENTORY, (
+                    identity,
+                    stage,
+                    transition["from"],
+                )
+                assert transition["to"] in EXPECTATION_TO_INVENTORY, (
+                    identity,
+                    stage,
+                    transition["to"],
+                )
+                assert (
+                    INVENTORY_TO_EXPECTATION[rows[identity][stage]]
+                    == transition["from"]
+                ), (identity, stage)
+                rows[identity][stage] = EXPECTATION_TO_INVENTORY[transition["to"]]
+
+    return rows
 
 
 def _report_from_inventory() -> dict[str, Any]:
-    """Build a report whose observed verdicts are the committed inventory."""
+    """Build a report from the inventory and its recorded improvements."""
 
     records = []
     for identity, row in sorted(_inventory_rows().items()):
@@ -271,7 +309,7 @@ def test_committed_manifest_agrees_with_the_committed_inventory():
                 stage,
             )
 
-    # The same disagreement, read through the comparator, is a per-case diff.
+    # The same data, read through the comparator, has no per-case diff.
     comparison = inventory.compare_expectations(manifest, _report_from_inventory())
     assert comparison["differences"] == [], "\n".join(
         inventory.format_difference(diff) for diff in comparison["differences"]
