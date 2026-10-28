@@ -2976,10 +2976,14 @@ def test_native_import_reconstructs_symmetric_dimer_binding_and_unbinding():
     assert source_network.species_names == restored_network.species_names
     assert source_network.num_reactions == restored_network.num_reactions == 2
     initial = [10.0 if name == "A(b)" else 0.0 for name in source_network.species_names]
-    source_rhs = _cpp._validation_ode_rhs(
-        source_model._model, source_network, 0.0, initial
-    )
-    restored_rhs = _cpp._validation_ode_rhs(
-        restored._model, restored_network, 0.0, initial
-    )
-    assert restored_rhs == pytest.approx(source_rhs)
+    # A state with the dimer present exercises the unbinding direction and
+    # its symmetry factor as well as the association.
+    mixed = [10.0 if name == "A(b)" else 3.0 for name in source_network.species_names]
+    for state in (initial, mixed):
+        source_rhs = _cpp._validation_ode_rhs(
+            source_model._model, source_network, 0.0, state
+        )
+        restored_rhs = _cpp._validation_ode_rhs(
+            restored._model, restored_network, 0.0, state
+        )
+        assert restored_rhs == pytest.approx(source_rhs)
