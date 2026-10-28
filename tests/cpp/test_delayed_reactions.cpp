@@ -191,7 +191,7 @@ end model
 )"), Catch::Matchers::ContainsSubstring("event-assigned parameter 'tau'"));
 }
 
-TEST_CASE("delay expression durations must be static across a run") {
+TEST_CASE("delay expression durations may depend on time and state") {
     const auto makeModel = [](const std::string& duration, const std::string& event) {
         return parser::parseModel(R"(
 begin model
@@ -218,11 +218,20 @@ end model
 )");
     };
     {
+        // delay(Aobs, time()) always reads the initial history, Aobs(0) = 1,
+        // so dA/dt = -k * 1 * A and A(t) = exp(-t) with k = 1.
         auto model = makeModel("time()", "");
         engine::NetworkGenerator generator(*model);
         const auto network = generator.generateNative();
-        CHECK_THROWS_WITH(engine::OdeIntegrator(*model, network),
-                          Catch::Matchers::ContainsSubstring("duration must be static"));
+        const auto a = speciesIndex(network, "A");
+        engine::OdeIntegrator integrator(*model, network);
+        engine::OdeOptions options;
+        options.method = "cvode";
+        options.tEnd = 0.5;
+        options.nSteps = 5;
+        const auto result = integrator.integrate(options);
+        CHECK(result.concentrations.back()[a] ==
+              Catch::Approx(std::exp(-0.5)).epsilon(1e-6));
     }
     {
         CHECK_THROWS_WITH(makeModel("tauAlias", R"(
