@@ -426,9 +426,12 @@ double PsaSimulator::rxnRateScaled(std::size_t rxnIdx,
     // Absolute SBML fluxes already include reactant dependence.  Authored
     // TotalRate rules still use finite-network reactant counts, with their
     // symmetry factor set to one during compilation.
+    // A constant reactant is never consumed, so it does not limit an absolute
+    // flux (see OdeIntegrator::computePropensity).
     if (rxn.isAbsoluteFlux) {
         scaling = 1.0;
         for (std::size_t i = 0; i < nReactants; ++i) {
+            if (reactants[i] < fixedSpecies_.size() && fixedSpecies_[reactants[i]]) continue;
             const auto required = static_cast<double>(
                 std::count(reactants.begin(), reactants.begin() + i,
                            reactants[i]) + 1);
