@@ -3237,7 +3237,28 @@ def _native_term_expression(
         and isinstance(node.func, ast.Name)
         and node.func.id.startswith("distrib_")
     ):
-        expression = ast.unparse(node)
+
+        class LowerDistributionRoots(ast.NodeTransformer):
+            def visit_Call(self, call: ast.Call) -> ast.AST:
+                call = self.generic_visit(call)
+                if (
+                    isinstance(call.func, ast.Name)
+                    and call.func.id == "root"
+                    and len(call.args) == 2
+                    and isinstance(call.args[0], ast.Constant)
+                    and call.args[0].value == 2
+                ):
+                    return ast.copy_location(
+                        ast.Call(
+                            func=ast.Name(id="sqrt", ctx=ast.Load()),
+                            args=[call.args[1]],
+                            keywords=[],
+                        ),
+                        call,
+                    )
+                return call
+
+        expression = ast.unparse(LowerDistributionRoots().visit(node))
         if sign < 0:
             expression = f"-({expression})"
         if target.amount_factor != 1.0:

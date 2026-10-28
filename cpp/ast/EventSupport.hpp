@@ -147,6 +147,12 @@ inline void validateNativeEventSubset(const Model& model) {
             for (const auto& argument : expression.args()) continuous(argument);
             return;
         }
+        if (allowDistributionAssignment &&
+            expression.kind() == ExpressionKind::Function &&
+            expression.name() == "sqrt" && expression.args().size() == 1) {
+            continuous(expression.args().front());
+            return;
+        }
         fail("only continuous polynomial event expressions are supported");
     };
     if (event.priority) {
