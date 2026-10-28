@@ -1090,19 +1090,6 @@ def _simulate_and_compare(
             atol=atol,
         )
 
-    if _written_sbml_uses_delay(output_path):
-        return {
-            "status": "not-tested",
-            "skipped": True,
-            "reason": (
-                "The written SBML contains delay, which libRoadRunner cannot "
-                "load. BNG3 CVODE completed its independent run, and the "
-                "official SBML Test Suite reference comparison ran separately."
-            ),
-            "method_bngl": "BNG3 CVODE (simulate method='ode')",
-            "method_sbml": "libRoadRunner CVODE",
-        }
-
     try:
         import roadrunner
     except ImportError as exc:
@@ -1124,8 +1111,27 @@ def _simulate_and_compare(
     names = list(series)
     bng_time = np.asarray(bng_result.time, dtype=float)
     bng_values = {name: np.asarray(series[name], dtype=float) for name in names}
-    with _case_phase_scope("independent-libroadrunner-load"):
-        rr = roadrunner.RoadRunner(str(output_path))
+    try:
+        with _case_phase_scope("independent-libroadrunner-load"):
+            rr = roadrunner.RoadRunner(str(output_path))
+    except Exception as exc:
+        if _written_sbml_uses_delay(output_path) and _is_roadrunner_delay_load_error(
+            exc
+        ):
+            return {
+                "status": "not-tested",
+                "skipped": True,
+                "reason": (
+                    "libRoadRunner rejected the written SBML specifically "
+                    "because of its delay equation: "
+                    f"{type(exc).__name__}: {exc}. BNG3 CVODE completed its "
+                    "independent run, and the official SBML Test Suite "
+                    "reference comparison ran separately."
+                ),
+                "method_bngl": "BNG3 CVODE (simulate method='ode')",
+                "method_sbml": "libRoadRunner CVODE",
+            }
+        raise
     integrator = rr.integrator
     if integrator.hasValue("relative_tolerance"):
         integrator.setValue("relative_tolerance", rtol)
@@ -1262,6 +1268,13 @@ def _written_sbml_uses_delay(output_path: Path) -> bool:
         and str(element.attrib.get("definitionURL", "")).rstrip("/").endswith("/delay")
         for element in root.iter()
     )
+
+
+def _is_roadrunner_delay_load_error(error: BaseException) -> bool:
+    """Recognize RoadRunner's explicit rejection of delay differential equations."""
+
+    message = str(error).casefold()
+    return "delay differential equations" in message and "not supported" in message
 
 
 def _case_files(suite_dir: Path, categories: list[str]) -> list[dict[str, Any]]:

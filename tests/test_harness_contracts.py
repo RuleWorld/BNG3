@@ -61,6 +61,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 from pathlib import Path
 from typing import Any
 
@@ -150,11 +151,14 @@ def test_dynamic_delay_refusal_is_classified_as_unsupported():
     )
 
 
-def test_delay_roadrunner_skip_runs_bng3_cvode_first(tmp_path, monkeypatch):
+def test_delay_roadrunner_skip_requires_actual_delay_load_failure(
+    tmp_path, monkeypatch
+):
     calls = []
 
     class Result:
         time = [0.0, 1.0]
+        observables = {}
         functions = {}
 
     class Model:
@@ -162,10 +166,25 @@ def test_delay_roadrunner_skip_runs_bng3_cvode_first(tmp_path, monkeypatch):
             calls.append(kwargs)
             return Result()
 
-    monkeypatch.setattr(runner, "_written_sbml_uses_delay", lambda _path: True)
+    class RoadRunner:
+        def __init__(self, _path):
+            raise RuntimeError(
+                "Unable to support delay differential equations. The function "
+                "'delay(x, 1)' is not supported."
+            )
+
+    monkeypatch.setitem(
+        sys.modules, "roadrunner", SimpleNamespace(RoadRunner=RoadRunner)
+    )
+
     monkeypatch.setattr("bionetgen.BioNetGenModel", lambda _model: Model())
     output = tmp_path / "delayed.xml"
-    output.touch()
+    output.write_text(
+        '<math xmlns="http://www.w3.org/1998/Math/MathML">'
+        '<apply><csymbol definitionURL="http://www.sbml.org/sbml/symbols/delay">'
+        "delay</csymbol><ci>x</ci><cn>1</cn></apply></math>",
+        encoding="utf-8",
+    )
 
     comparison = runner._simulate_and_compare(
         object(), output, t_end=1.0, n_steps=1, rtol=1e-7, atol=1e-12
@@ -174,7 +193,40 @@ def test_delay_roadrunner_skip_runs_bng3_cvode_first(tmp_path, monkeypatch):
     assert len(calls) == 1
     assert comparison["status"] == "not-tested"
     assert comparison["skipped"] is True
+    assert "rejected the written SBML specifically" in comparison["reason"]
     assert "BNG3 CVODE completed" in comparison["reason"]
+
+
+def test_delay_does_not_hide_other_roadrunner_load_errors(tmp_path, monkeypatch):
+    class Result:
+        time = [0.0, 1.0]
+        observables = {}
+        functions = {}
+
+    class Model:
+        def simulate(self, **kwargs):
+            return Result()
+
+    class RoadRunner:
+        def __init__(self, _path):
+            raise RuntimeError("Unknown SBML function customFunction")
+
+    monkeypatch.setitem(
+        sys.modules, "roadrunner", SimpleNamespace(RoadRunner=RoadRunner)
+    )
+    monkeypatch.setattr("bionetgen.BioNetGenModel", lambda _model: Model())
+    output = tmp_path / "delayed.xml"
+    output.write_text(
+        '<math xmlns="http://www.w3.org/1998/Math/MathML">'
+        '<apply><csymbol definitionURL="http://www.sbml.org/sbml/symbols/delay">'
+        "delay</csymbol><ci>x</ci><cn>1</cn></apply></math>",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="Unknown SBML function"):
+        runner._simulate_and_compare(
+            object(), output, t_end=1.0, n_steps=1, rtol=1e-7, atol=1e-12
+        )
 
 
 #: The existing assertions this suite calls rather than duplicates.
