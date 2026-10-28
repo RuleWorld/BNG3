@@ -1,8 +1,8 @@
-"""Generated Atomizer semantic-boundary controls for selected SBML classes.
+"""Generated source-validated SBML boundary and execution controls.
 
-Each control is a valid SBML source model. A PASS means Atomizer emitted a
-matching structured loss diagnostic. This is diagnostic evidence only; it does
-not establish consumer refusal, execution, or support.
+Unsupported cases pass only with matching structured loss diagnostics. The
+native-event cases are positive semantic checks: raw SBML runs in libRoadRunner
+and must match BNG3 execution at the declared sample points.
 """
 
 from __future__ import annotations
@@ -19,8 +19,8 @@ ISSUES = (157, 158, 160, 161, 164)
 # Variant formulas stay inside each unsupported semantic subclass. Nearby
 # constant/simple cases are deliberately not included as rejection controls.
 CASES = (
-    ("event_state_nonlinear_a", "event", "time > 1", "k = A * A"),
-    ("event_state_nonlinear_b", "event", "B > A", "k = A * B"),
+    ("event_dynamic_delay_a", "event-delay", "time > 1", "k = A * A"),
+    ("event_dynamic_delay_b", "event-delay", "time > 2", "k = A * B"),
     ("delay_state_history_a", "delay", "delay(A, 1)", "rate"),
     ("delay_state_history_b", "delay", "delay(A, time / 2)", "rate"),
     ("algebraic_species_product", "algebraic", "A * B - 1", "algebraic"),
@@ -29,8 +29,19 @@ CASES = (
     ("variable_stoich_state_b", "stoichiometry", "A * B", "stoichiometry"),
 )
 
+# These were formerly diagnostic-only controls. Native state events now have
+# an executable lowering and are compared below against raw SBML in RoadRunner.
+SUPPORTED_EVENT_CASES = (
+    ("event_state_nonlinear_a", "event", "time > 1", "k = A * A"),
+    ("event_state_nonlinear_b", "event", "B > A", "k = A * B"),
+)
+
 _DIAGNOSTIC_MATCHERS = {
     "event": (
+        frozenset({"event"}),
+        re.compile(r"untranslated|state-dependent|not simulated", re.I),
+    ),
+    "event-delay": (
         frozenset({"event"}),
         re.compile(r"untranslated|state-dependent|not simulated", re.I),
     ),
@@ -51,7 +62,13 @@ _REGISTRY_NAME = "unsupported-boundary-contract"
 
 def expected_check_ids() -> list[str]:
     """Declare expected worker evidence independently of runtime execution."""
-    return [f"sbml-boundary:{case_id}:{_REGISTRY_NAME}" for case_id, *_ in CASES]
+    return [
+        *(f"sbml-boundary:{case_id}:{_REGISTRY_NAME}" for case_id, *_ in CASES),
+        *(
+            f"sbml-event:{case_id}:source-trajectory"
+            for case_id, *_ in SUPPORTED_EVENT_CASES
+        ),
+    ]
 
 
 def _source(libsbml: Any, case: tuple[str, str, str, str]) -> str:
@@ -77,7 +94,7 @@ def _source(libsbml: Any, case: tuple[str, str, str, str]) -> str:
     rate.setValue(1.0)
     rate.setConstant(False)
 
-    if feature == "event":
+    if feature in {"event", "event-delay"}:
         rule = model.createRateRule()
         rule.setVariable("B")
         rule.setMath(libsbml.parseL3Formula("1"))
@@ -91,6 +108,9 @@ def _source(libsbml: Any, case: tuple[str, str, str, str]) -> str:
         assignment = event.createEventAssignment()
         assignment.setVariable("k")
         assignment.setMath(libsbml.parseL3Formula(second.split("=", 1)[1].strip()))
+        if feature == "event-delay":
+            delay = event.createDelay()
+            delay.setMath(libsbml.parseL3Formula("A / 2"))
         # Couple a nonlinear mutable rate rule to a state-dependent event.
         nonlinear = model.createRateRule()
         nonlinear.setVariable("A")
@@ -169,6 +189,160 @@ def _diagnostics(result: Any, atomizer: Any) -> list[dict[str, str]]:
     return rows
 
 
+def _run_supported_event_case(
+    directory: Path, case: tuple[str, str, str, str]
+) -> dict[str, Any]:
+    """Compare a newly supported event model with its raw SBML execution."""
+    case_id = case[0]
+    row: dict[str, Any] = {
+        "id": f"sbml-event:{case_id}:source-trajectory",
+        "stage": "sbml-native-event",
+        "check": "source-trajectory",
+        "status": "NOT_TESTED",
+        "detail": "source validation or independent comparison did not complete",
+        "related_issues": list(ISSUES),
+        "case_id": case_id,
+        "question": "source-trajectory",
+        "expected_behavior": "native-event-matches-independent-sbml-execution",
+        "evidence_kind": "supported-execution",
+        "supported_execution": False,
+        "labels": {"feature_class": "event", "native_event": True},
+    }
+    try:
+        import libsbml  # type: ignore
+        import numpy as np
+        import roadrunner  # type: ignore
+        import bionetgen
+        from bionetgen.atomizer.modern import Atomizer
+
+        xml = _source(libsbml, case)
+        source_path = directory / f"{case_id}.xml"
+        source_path.write_text(xml, encoding="utf-8")
+        source_errors = _validate_source(libsbml, xml)
+        if source_errors:
+            row.update(
+                status="INVALID_INPUT",
+                detail="libSBML rejected generated source: "
+                + " | ".join(source_errors),
+            )
+            return row
+
+        times = np.linspace(0.0, 10.0, 101)
+        reference = roadrunner.RoadRunner(str(source_path.resolve()))
+        reference.integrator.relative_tolerance = 1e-10
+        reference.integrator.absolute_tolerance = 1e-12
+        source_values = np.asarray(
+            reference.simulate(times=times, selections=["time", "A", "B"]),
+            dtype=float,
+        )
+
+        atomizer = Atomizer({"quietMode": True, "logLevel": "INFO", "t_end": 10})
+        result = atomizer.atomize(xml, source_path=source_path)
+        if not result.success:
+            row.update(
+                status="FAIL",
+                detail=f"Atomizer rejected a supported event source: {result.error}",
+            )
+            return row
+        event_losses = [
+            item
+            for item in _diagnostics(result, atomizer)
+            if item.get("category") == "event"
+            and item.get("severity", "").lower() in _LOSS_SEVERITIES
+        ]
+        if event_losses:
+            row.update(
+                status="FAIL",
+                detail="native event source retained a structured event loss diagnostic",
+                first_difference=event_losses,
+            )
+            return row
+
+        bngl_path = directory / f"{case_id}.bngl"
+        bngl_path.write_text(result.bngl, encoding="utf-8")
+        model = bionetgen.load(str(bngl_path))
+        compiled = model.simulate(
+            method="ode", t_end=10.0, n_steps=100, rtol=1e-10, atol=1e-12
+        )
+        observables = compiled.observables
+        names = {}
+        for symbol in ("A", "B"):
+            # SBML models with hasOnlySubstanceUnits=false expose concentration
+            # selectors under the source id. Prefer that exact source symbol;
+            # the amount alias is a fallback only when no concentration output
+            # was created.
+            observable_name = symbol if symbol in observables else f"{symbol}_amt"
+            if observable_name not in observables:
+                row.update(
+                    status="UNSUPPORTED",
+                    detail=(
+                        f"could not uniquely map SBML species {symbol} to a BNG3 "
+                        f"observable; available={list(observables)}"
+                    ),
+                )
+                return row
+            names[symbol] = observable_name
+        actual = np.column_stack(
+            (
+                np.asarray(compiled.time, dtype=float),
+                np.asarray(observables[names["A"]], dtype=float),
+                np.asarray(observables[names["B"]], dtype=float),
+            )
+        )
+        # The continuous root for B > A is independently located by each
+        # solver; allow a few nanounits of state drift after that root while
+        # keeping the comparison two orders tighter than the SBML suite gate.
+        rtol, atol = 1e-8, 1e-9
+        if source_values.shape != actual.shape or not np.allclose(
+            source_values, actual, rtol=rtol, atol=atol
+        ):
+            difference: dict[str, Any] = {
+                "source_shape": list(source_values.shape),
+                "bng3_shape": list(actual.shape),
+            }
+            if source_values.shape == actual.shape:
+                mismatches = np.argwhere(
+                    ~np.isclose(source_values, actual, rtol=rtol, atol=atol)
+                )
+                if len(mismatches):
+                    time_index, column = map(int, mismatches[0])
+                    difference.update(
+                        time_index=time_index,
+                        variable=("time", "A", "B")[column],
+                        source=float(source_values[time_index, column]),
+                        bng3=float(actual[time_index, column]),
+                    )
+            row.update(
+                status="FAIL",
+                detail="BNG3 native-event trajectory differs from raw SBML in libRoadRunner",
+                first_difference=difference,
+            )
+            return row
+
+        row.update(
+            status="PASS",
+            detail=(
+                "libSBML validated the source; BNG3 native-event ODE trajectory matched "
+                "independent libRoadRunner for A, B, and time on 101 points"
+            ),
+            supported_execution=True,
+            source_engine="libRoadRunner",
+            source_engine_version=getattr(roadrunner, "__version__", None),
+            time_points=101,
+            compared_observables=["A", "B"],
+            relative_tolerance=rtol,
+            absolute_tolerance=atol,
+        )
+    except ImportError as exc:
+        row.update(
+            status="HARNESS_ERROR",
+            detail=f"required independent event comparison dependency unavailable: {exc}",
+        )
+    except Exception as exc:
+        row.update(status="FAIL", detail=f"{type(exc).__name__}: {exc}")
+    return row
+
+
 def classify_boundary_evidence(
     feature: str,
     diagnostics: list[dict[str, str]],
@@ -213,6 +387,21 @@ def run(directory: Path) -> list[dict[str, Any]]:
                 f"required Atomizer/libSBML dependency unavailable: {exc}",
             )
             for case in CASES
+        ] + [
+            {
+                "id": f"sbml-event:{case[0]}:source-trajectory",
+                "stage": "sbml-native-event",
+                "check": "source-trajectory",
+                "status": "NOT_TESTED",
+                "detail": f"required Atomizer/libSBML dependency unavailable: {exc}",
+                "related_issues": list(ISSUES),
+                "case_id": case[0],
+                "question": "source-trajectory",
+                "expected_behavior": "native-event-matches-independent-sbml-execution",
+                "evidence_kind": "supported-execution",
+                "supported_execution": False,
+            }
+            for case in SUPPORTED_EVENT_CASES
         ]
 
     output = []
@@ -274,6 +463,9 @@ def run(directory: Path) -> list[dict[str, Any]]:
             )
         except Exception as exc:
             output.append(_row(case, "HARNESS_ERROR", f"{type(exc).__name__}: {exc}"))
+    output.extend(
+        _run_supported_event_case(directory, case) for case in SUPPORTED_EVENT_CASES
+    )
     return output
 
 
