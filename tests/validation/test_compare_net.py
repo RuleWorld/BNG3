@@ -224,6 +224,124 @@ def test_function_definitions_strip_call_suffix_for_rate_resolution(tmp_path):
     assert compare_net(parsed_reference, parsed_generated).ok
 
 
+def test_legacy_tfun_call_canonicalizes_to_modern_file_first_spelling():
+    legacy = "TFUN(mctr,'DAT_validate/test.dat')"
+    modern = "tfun('DAT_validate/test.dat', mctr)"
+
+    assert _canon_expr(legacy) == _canon_expr(modern)
+
+
+def test_bng2_tfun_xml_recovers_lossy_net_wrappers_without_ignoring_scaling(
+    tmp_path,
+):
+    reference = tmp_path / "reference.net"
+    reference.write_text(
+        """begin parameters
+    1 k_t 2
+end parameters
+begin functions
+    mctr() dum/1e4
+    k1() TFUN(mctr,'DAT_validate/test.dat')
+    k2() TFUN(mctr,'DAT_validate/test.dat')
+    k3() TFUN(mctr,'DAT_validate/test.dat')
+    k4() TFUN(mctr,'DAT_validate/test.dat')
+end functions
+begin species
+    1 A() 1000
+    2 B() 1000
+    3 C() 1000
+    4 D() 1000
+end species
+begin reactions
+    1 1 0 k1
+    2 2 0 k2
+    3 3 0 k3
+    4 4 0 k4
+end reactions
+""",
+        encoding="utf-8",
+    )
+    generated = tmp_path / "generated.net"
+    generated.write_text(
+        """begin parameters
+    1 k_t 2
+end parameters
+begin functions
+    mctr() (dum / 10000)
+    k1() tfun('DAT_validate/test.dat', mctr)
+    k2() (tfun('DAT_validate/test.dat', mctr) / 10)
+    k3() (tfun('DAT_validate/test.dat', mctr) / k_t)
+    k4() (tfun('DAT_validate/test.dat', mctr) / mctr)
+end functions
+begin species
+    1 A() 1000
+    2 B() 1000
+    3 C() 1000
+    4 D() 1000
+end species
+begin reactions
+    1 1 0 k1
+    2 2 0 k2
+    3 3 0 k3
+    4 4 0 k4
+end reactions
+""",
+        encoding="utf-8",
+    )
+    reference_xml = tmp_path / "reference.xml"
+    reference_xml.write_text(
+        """<model><ListOfFunctions>
+<Function id="k1" type="TFUN" file="DAT_validate/test.dat" ctrName="mctr"><Expression>__TFUN_VAL__</Expression></Function>
+<Function id="k2" type="TFUN" file="DAT_validate/test.dat" ctrName="mctr"><Expression>__TFUN_VAL__/1e1</Expression></Function>
+<Function id="k3" type="TFUN" file="DAT_validate/test.dat" ctrName="mctr"><Expression>__TFUN_VAL__/k_t</Expression></Function>
+<Function id="k4" type="TFUN" file="DAT_validate/test.dat" ctrName="mctr"><Expression>__TFUN_VAL__/mctr</Expression></Function>
+</ListOfFunctions></model>""",
+        encoding="utf-8",
+    )
+
+    parsed_reference = parse_net(reference)
+    parsed_generated = parse_net(generated)
+    assert parsed_reference is not None
+    assert parsed_generated is not None
+
+    # The .net-only comparison remains lossy; the independent BNG2 XML restores
+    # the expression wrappers and must still detect changed BNG3 scaling.
+    assert not compare_net(parsed_reference, parsed_generated).ok
+    assert compare_net(
+        parsed_reference, parsed_generated, reference_tfun_xml=reference_xml
+    ).ok
+
+    changed_path = tmp_path / "changed.net"
+    changed_path.write_text(
+        generated.read_text(encoding="utf-8").replace("/ 10)", "/ 11)"),
+        encoding="utf-8",
+    )
+    changed = parse_net(changed_path)
+    assert changed is not None
+    assert not compare_net(
+        parsed_reference, changed, reference_tfun_xml=reference_xml
+    ).ok
+
+
+@pytest.mark.parametrize(
+    "xml_text",
+    [
+        '<model><Function id="k1" type="TFUN" file="x" ctrName="x"><Expression>1</Expression></Function></model>',
+        '<model><Function id="other" type="TFUN" file="x" ctrName="x"><Expression>__TFUN_VAL__</Expression></Function></model>',
+    ],
+)
+def test_bng2_tfun_xml_rejects_incomplete_or_conflicting_sidecar(tmp_path, xml_text):
+    reference = parse_net(_net(tmp_path / "reference.net", "TFUN(x,'x')"))
+    generated = parse_net(_net(tmp_path / "generated.net", "TFUN(x,'x')"))
+    xml_path = tmp_path / "reference.xml"
+    xml_path.write_text(xml_text, encoding="utf-8")
+    assert reference is not None
+    assert generated is not None
+
+    with pytest.raises(ValueError, match="TFUN"):
+        compare_net(reference, generated, reference_tfun_xml=xml_path)
+
+
 def test_function_rate_normalizes_negative_product_parentheses(tmp_path):
     def write(path: Path, expression: str) -> Path:
         path.write_text(
@@ -294,8 +412,10 @@ def test_function_rate_comparison_keeps_nonempty_calls_structural():
 
     bng2_stub = _resolve_rate("TFUN(x,'data')", {}, "value")
     bng3_call = _resolve_rate("tfun('data',x)", {}, "value")
+    different_table = _resolve_rate("tfun('other',x)", {}, "value")
 
-    assert bng2_stub != bng3_call
+    assert bng2_stub == bng3_call
+    assert bng2_stub != different_table
 
 
 def test_motor_rate_comparison_accepts_equivalent_numeric_and_observable_syntax(
