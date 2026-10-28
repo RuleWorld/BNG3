@@ -81,7 +81,7 @@ human to read two large reports side by side.
   labels for it (`causes`):
 
   ```json
-  "semantic/01133": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"construct": "compartment:unsupported-spatial-dimensions", "causes": ["constraints"], "side": "atomizer"}}}
+  "semantic/01197": {"conversion": "unsupported", "roundtrip_structure": "not_tested", "independent_comparison": "not_tested", "official_reference": "unsupported", "gap": {"conversion": {"construct": "compartment:unsupported-spatial-dimensions", "causes": ["compartments"], "side": "atomizer"}, "official_reference": {"construct": "compartment:unsupported-spatial-dimensions", "causes": ["compartments"], "side": "atomizer"}}}
   ```
 
   The `side` says which boundary the gap sits on. A **harness-side** gap is a
