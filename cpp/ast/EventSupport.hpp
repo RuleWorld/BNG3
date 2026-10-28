@@ -137,6 +137,20 @@ inline void validateNativeEventSubset(const Model& model) {
              (expression.name() == "+" || expression.name() == "-" ||
               expression.name() == "*" || expression.name() == "/" ||
               expression.name() == "^" || expression.name() == "**"))) {
+            if (expression.kind() == ExpressionKind::Binary &&
+                expression.name() == "/") {
+                const auto& denominator = expression.args()[1];
+                if (dynamicSide(denominator) ||
+                    model.getParameters().expressionIsTimeDependent(denominator)) {
+                    fail("event division requires a static nonzero denominator");
+                }
+                const double value = denominator.evaluate([&](const std::string& name) {
+                    return model.getParameters().evaluate(name);
+                });
+                if (!std::isfinite(value) || value == 0.0) {
+                    fail("event division requires a static nonzero denominator");
+                }
+            }
             for (const auto& child : expression.args()) continuous(child);
             return;
         }
