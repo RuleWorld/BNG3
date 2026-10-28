@@ -1660,6 +1660,41 @@ def test_structural_xml_comparator_normalizes_export_defaults_and_expression_tex
     assert differences == []
 
 
+def test_structural_xml_comparator_treats_omitted_empty_sections_as_empty(
+    tmp_path,
+):
+    reference = tmp_path / "reference-empty-section.xml"
+    generated = tmp_path / "generated-empty-section.xml"
+    reference.write_text(
+        "<sbml><model><ListOfSpecies/><ListOfFunctions/></model></sbml>",
+        encoding="utf-8",
+    )
+    generated.write_text(
+        "<sbml><model><ListOfSpecies/></model></sbml>", encoding="utf-8"
+    )
+
+    equal, differences = compare_structural_xml(
+        reference,
+        generated,
+        sections=("ListOfSpecies", "ListOfFunctions"),
+    )
+
+    assert equal is True
+    assert differences == []
+
+    reference.write_text(
+        '<sbml><model><ListOfSpecies/><ListOfFunctions><Function id="f"/></ListOfFunctions></model></sbml>',
+        encoding="utf-8",
+    )
+    equal, differences = compare_structural_xml(
+        reference,
+        generated,
+        sections=("ListOfSpecies", "ListOfFunctions"),
+    )
+    assert equal is False
+    assert differences == ["ListOfFunctions"]
+
+
 def test_structural_xml_comparator_normalizes_ids_and_references(tmp_path):
     reference = tmp_path / "reference-ids.xml"
     generated = tmp_path / "generated-ids.xml"

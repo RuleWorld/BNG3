@@ -414,11 +414,8 @@ def _structural_xml_signature(path: Path, sections: Iterable[str]) -> dict[str, 
                 )
             )
 
-    missing = sorted(requested - set(observed))
-    if missing:
-        raise ValueError(
-            f"{path.name} is missing structural section(s): {', '.join(missing)}"
-        )
+    for name in requested - set(observed):
+        observed[name] = ()
     return observed
 
 
