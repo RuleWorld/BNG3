@@ -43,6 +43,65 @@ end reaction rules
 
 } // namespace
 
+TEST_CASE("CVODE randomizes equal-priority native event execution with its seed",
+          "[OdeOptions][Events]") {
+    auto model = parser::parseModel(R"(
+begin molecule types
+    A()
+    B()
+    X()
+end molecule types
+begin seed species
+    A() 1
+    X() 0
+end seed species
+begin observables
+    Molecules b B()
+    Molecules x X()
+end observables
+begin reaction rules
+    fire: A() -> B() 10
+end reaction rules
+begin bng3_events version 1
+    event "first"
+        trigger: b > 0.25
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: true
+        priority: 5
+        assignment: x = 1
+    end event
+    event "second"
+        trigger: b >= 0.25
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: true
+        priority: 5
+        assignment: x = 2
+    end event
+end bng3_events
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 1.0;
+    options.nSteps = 10;
+    std::vector<double> finalValues;
+    for (std::uint64_t seed = 0; seed < 24; ++seed) {
+        options.seed = seed;
+        const auto result = integrator.integrate(options);
+        finalValues.push_back(result.observables.back()[1]);
+    }
+    CHECK(std::all_of(finalValues.begin(), finalValues.end(), [](double value) {
+        return value == 1.0 || value == 2.0;
+    }));
+    CHECK(std::find(finalValues.begin(), finalValues.end(), 1.0) != finalValues.end());
+    CHECK(std::find(finalValues.begin(), finalValues.end(), 2.0) != finalValues.end());
+}
+
+
 TEST_CASE("OdeIntegrator honors explicit nonuniform sample times", "[OdeOptions]") {
     auto model = parseDecayModel();
     engine::NetworkGenerator generator(*model);
@@ -1287,6 +1346,49 @@ end bng3_events
     // set_first.  Evaluating priorities at trigger time or only once before
     // the first assignment would instead leave set_first ahead of set_last.
     CHECK_THAT(result.observables.back()[1], Catch::Matchers::WithinAbs(1.0, 1e-12));
+}
+
+TEST_CASE("CVODE executes a delayed event for a conjunction of state roots",
+          "[OdeOptions][Events]") {
+    auto model = parser::parseModel(R"(
+begin molecule types
+    K()
+end molecule types
+begin seed species
+    K() 1
+end seed species
+begin observables
+    Molecules k1_amt K()
+end observables
+begin functions
+    __rate_rule__k1() = 1
+end functions
+begin reaction rules
+    __rate_rule_k1: 0 -> K() __rate_rule__k1() TotalRate
+end reaction rules
+begin bng3_events version 1
+    event "reset"
+        trigger: (k1_amt > 3.5) && (k1_amt < 4)
+        initial_value: true
+        persistent: true
+        use_values_from_trigger_time: true
+        delay: 1.1
+        assignment: k1_amt = 1
+    end event
+end bng3_events
+)");
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 10.0;
+    options.nSteps = 10;
+
+    const auto result = integrator.integrate(options);
+
+    REQUIRE(result.observables.size() == 11);
+    CHECK_THAT(result.observables[4][0], Catch::Matchers::WithinAbs(1.4, 1e-8));
 }
 
 TEST_CASE("CVODE rejects a nonfinite dynamic native event priority",

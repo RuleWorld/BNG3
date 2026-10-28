@@ -1317,8 +1317,9 @@ def _parse_scaled_time_threshold(trigger: str) -> Optional[Tuple[str, str]]:
 # every resolver; a second copy is how a spelling ends up accepted by one
 # lowering path and silently refused by another.  ``eq`` and ``neq`` are
 # deliberately absent: they are not order comparisons, and these resolvers
-# only lower a threshold the trigger crosses monotonically.
+# lower order comparisons and equality gates used inside a conjunction.
 _COMPARISON_ALIASES = {
+    "eq": "eq",
     "gt": "gt",
     "greaterthan": "gt",
     "geq": "geq",
@@ -1341,7 +1342,13 @@ _REVERSED_COMPARISON_OPERATOR = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "g
 # inequality is also true at a tangential contact that leaves no sign change.
 # Both therefore carry the same documented limitation: a truth interval that
 # opens and closes between two solver steps is not observed.
-_NATIVE_COMPARISON_OPERATORS = {"lt": "<", "gt": ">", "leq": "<=", "geq": ">="}
+_NATIVE_COMPARISON_OPERATORS = {
+    "eq": "==",
+    "lt": "<",
+    "gt": ">",
+    "leq": "<=",
+    "geq": ">=",
+}
 
 
 # Names a trigger expression uses for built-in functions rather than model
@@ -2974,6 +2981,100 @@ def _native_static_text(
     return expanded
 
 
+def _native_continuous_expression(
+    expression: str, context: EventTranslationContext
+) -> Optional[Tuple[str, bool, bool]]:
+    """Render a continuous SBML expression over native state and constants."""
+    expanded = context.expand_functions(str(expression or "").strip())
+    # SBML's ``^`` denotes power; Python parses it as low-precedence XOR.
+    # Normalize before building the AST so the emitted expression keeps the
+    # source MathML grouping (for example, ``(x - a)^2 / a``).
+    expanded = expanded.replace("^", "**")
+    if not expanded:
+        return None
+    try:
+        tree = ast.parse(expanded, mode="eval")
+    except (TypeError, ValueError, SyntaxError):
+        return None
+    has_state = False
+    has_time = False
+
+    class Render(ast.NodeTransformer):
+        def visit_Name(self, node: ast.Name) -> ast.AST:
+            nonlocal has_state, has_time
+            if node.id.lower() in {"time", "t"}:
+                has_time = True
+                return ast.copy_location(ast.Name(id="time", ctx=ast.Load()), node)
+            target = context.resolve_native_state(node.id)
+            if target is not None:
+                has_state = True
+                rendered = target.observable
+                if target.amount_factor != 1.0:
+                    rendered = f"({rendered} / {_format_number(target.amount_factor)})"
+                return ast.copy_location(ast.parse(rendered, mode="eval").body, node)
+            if context.is_compile_time_constant(node.id):
+                return ast.copy_location(
+                    ast.Name(id=standardize_name(node.id), ctx=ast.Load()), node
+                )
+            raise ValueError(f"non-static identifier {node.id}")
+
+        def visit_Call(self, node: ast.Call) -> ast.AST:
+            if not isinstance(node.func, ast.Name) or node.func.id.lower() not in {
+                "abs",
+                "floor",
+            }:
+                raise ValueError("unsupported continuous trigger function")
+            node.args = [self.visit(argument) for argument in node.args]
+            return node
+
+    try:
+        tree = Render().visit(tree)
+        ast.fix_missing_locations(tree)
+        rendered = ast.unparse(tree.body)
+    except (TypeError, ValueError, SyntaxError):
+        return None
+    if not has_state and not has_time:
+        return None
+    return rendered, has_state, has_time
+
+
+def _native_time_minus_state_comparison(
+    left_text: str,
+    right_text: str,
+    symbol: str,
+    context: EventTranslationContext,
+) -> Optional[str]:
+    """Rewrite ``time - state OP constant`` as a moving time threshold."""
+    try:
+        left = ast.parse(context.expand_functions(left_text), mode="eval").body
+    except (TypeError, ValueError, SyntaxError):
+        return None
+    if not (
+        isinstance(left, ast.BinOp)
+        and isinstance(left.op, ast.Sub)
+        and isinstance(left.left, ast.Name)
+        and left.left.id.lower() in {"time", "t"}
+        and isinstance(left.right, ast.Name)
+    ):
+        return None
+    target = context.resolve_native_state(left.right.id)
+    threshold = _native_static_text(right_text, context)
+    if target is None or threshold is None:
+        return None
+    state_text = target.observable
+    if target.amount_factor != 1.0:
+        state_text = f"({state_text} / {_format_number(target.amount_factor)})"
+    threshold_text = (
+        threshold
+        if re.fullmatch(
+            r"(?:[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?|[A-Za-z_][A-Za-z0-9_]*)",
+            threshold,
+        )
+        else f"({threshold})"
+    )
+    return f"time {symbol} {state_text} + {threshold_text}"
+
+
 def _native_scaled_static(
     expression: str, factor: float, context: EventTranslationContext
 ) -> Optional[str]:
@@ -3049,14 +3150,6 @@ def _native_comparison_expression(
     symbol = _NATIVE_COMPARISON_OPERATORS[operator]
     left_state = _native_state_target(left_text, context)
     right_state = _native_state_target(right_text, context)
-    if symbol in {"<=", ">="}:
-        # A non-strict comparison holds at a tangential contact, so the
-        # crossing has to be provably transversal.
-        for state, text in ((left_state, left_text), (right_state, right_text)):
-            if state is None:
-                continue
-            if not _native_state_is_monotone(text, event, context):
-                return None
     if left_state is not None and right_state is not None:
         # Two states compare directly only when they share their units; a
         # difference of two species in different compartments would need a
@@ -3074,6 +3167,27 @@ def _native_comparison_expression(
         if scaled is None:
             return None
         return f"{scaled} {symbol} {right_state.observable}"
+    time_rewrite = _native_time_minus_state_comparison(
+        left_text, right_text, symbol, context
+    )
+    if time_rewrite is not None:
+        return time_rewrite
+    left_dynamic = _native_continuous_expression(left_text, context)
+    right_dynamic = _native_continuous_expression(right_text, context)
+    if left_dynamic is None:
+        static = _native_static_text(left_text, context)
+        if static is not None:
+            left_dynamic = (static, False, False)
+    if right_dynamic is None:
+        static = _native_static_text(right_text, context)
+        if static is not None:
+            right_dynamic = (static, False, False)
+    if (
+        left_dynamic is not None
+        and right_dynamic is not None
+        and (left_dynamic[1] or left_dynamic[2] or right_dynamic[1] or right_dynamic[2])
+    ):
+        return f"{left_dynamic[0]} {symbol} {right_dynamic[0]}"
     return None
 
 
@@ -3083,9 +3197,9 @@ def _native_conjunction_expression(
     """Lower a conjunction of state comparisons to a native BNGL expression.
 
     A conjunction holds only where every conjunct holds, so the native
-    runtime compares the smallest of the conjunct differences with zero.  The
-    runtime needs every conjunct to be a strict comparison, because only a
-    strict comparison has a rising edge that a sign change can attribute.
+    runtime compares the smallest signed inequality surface with zero.
+    Equality conjuncts are state gates: they are evaluated exactly and the
+    other continuous surfaces determine the rising edge.
     """
     terms = _split_call_arguments(str(trigger or "").strip())
     if terms is None or len(terms) < 2:
@@ -3122,16 +3236,73 @@ def _native_trigger_expression(
     if comparison is None:
         return None
     operator, arguments_text = comparison
-    # Only a strict inequality has a crossing that the continuous root
-    # finder can attribute to exactly one trigger edge.  A non-strict
-    # inequality is also true at a tangential contact, which leaves the
-    # crossing unclassified, so it stays with the analytic lowering path.
+    # A standalone non-strict inequality can fire on a tangential contact,
+    # which the root finder cannot distinguish from a crossing.  Keep those
+    # on the analytic path.  Inside a conjunction the other continuous
+    # surfaces provide the rising edge while the non-strict term is an exact
+    # state gate.
     if operator not in _NATIVE_COMPARISON_OPERATORS:
         return None
     arguments = _split_arguments(arguments_text)
     if arguments is None or len(arguments) != 2:
         return None
     left_text, right_text = (_strip_outer_parens(arg) for arg in arguments)
+    if operator == "geq":
+        try:
+            left_node = ast.parse(context.expand_functions(left_text), mode="eval").body
+        except (TypeError, ValueError, SyntaxError):
+            left_node = None
+        if (
+            isinstance(left_node, ast.Call)
+            and isinstance(left_node.func, ast.Name)
+            and left_node.func.id.lower() == "floor"
+            and len(left_node.args) == 1
+        ):
+            threshold = _native_fold_term_text(right_text, context)
+            inner = _native_continuous_expression(
+                ast.unparse(left_node.args[0]), context
+            )
+            if (
+                threshold is not None
+                and math.isfinite(threshold)
+                and threshold.is_integer()
+                and inner is not None
+                and (inner[1] or inner[2])
+            ):
+                static_threshold = _native_static_text(right_text, context)
+                if static_threshold is not None:
+                    return f"{inner[0]} >= {static_threshold}"
+    if (
+        operator in {"leq", "geq"}
+        and _native_time_minus_state_comparison(
+            left_text,
+            right_text,
+            _NATIVE_COMPARISON_OPERATORS[operator],
+            context,
+        )
+        is None
+    ):
+        # A promoted, event-assigned SBML parameter with zero rate changes
+        # only at event execution points. The native runtime reevaluates all
+        # triggers after each assignment, so its non-strict comparison is an
+        # exact state gate even though no continuous root exists for it.
+        try:
+            left_state = ast.parse(left_text, mode="eval").body
+            right_state = ast.parse(right_text, mode="eval").body
+        except (TypeError, ValueError, SyntaxError):
+            left_state = right_state = None
+        event_only_parameter = None
+        if isinstance(left_state, ast.Name) and context.is_param(left_state.id):
+            event_only_parameter = left_state.id
+        elif isinstance(right_state, ast.Name) and context.is_param(right_state.id):
+            event_only_parameter = right_state.id
+        rate = (
+            context.resolve_rate_rule_expression_for_event(event_only_parameter, event)
+            if event_only_parameter is not None
+            else None
+        )
+        if rate is None or _native_fold_term_text(rate, context) != 0.0:
+            return None
     return _native_comparison_expression(
         left_text, right_text, operator, event, context
     )
@@ -3234,12 +3405,18 @@ def _native_term_expression(
     coefficient = float(sign)
     names: List[str] = []
     state: Optional[NativeStateTarget] = None
+    has_time = False
     for factor in factors:
         value = _native_factor_constant(factor, context)
         if value is not None:
             coefficient *= value
             continue
         if isinstance(factor, ast.Name):
+            if factor.id.lower() in {"time", "t"}:
+                if has_time:
+                    return None
+                has_time = True
+                continue
             resolved = context.resolve_native_state(factor.id)
             if resolved is not None:
                 if state is not None:
@@ -3255,6 +3432,8 @@ def _native_term_expression(
             continue
         return None
     if state is not None:
+        if has_time:
+            return None
         if state.amount_factor != target.amount_factor:
             return None
         parts: List[str] = []
@@ -3262,6 +3441,15 @@ def _native_term_expression(
             parts.append(_format_number(coefficient))
         parts.extend(names)
         parts.append(state.observable)
+        return " * ".join(parts)
+    if has_time:
+        parts: List[str] = []
+        if coefficient != 1.0:
+            parts.append(_format_number(coefficient))
+        parts.append("time")
+        parts.extend(names)
+        if target.amount_factor != 1.0:
+            parts.append(f"({_format_number(target.amount_factor)})")
         return " * ".join(parts)
     if not names and coefficient == 0:
         return "0"
@@ -3283,6 +3471,15 @@ def _native_value_expression(
     text = str(expression or "").strip()
     if not text:
         return None
+    # Keep the narrow linear lowering above for simple expressions.  When a
+    # source value is nonlinear, render the full continuous expression and
+    # convert from SBML units to the native amount units exactly once.
+    continuous = _native_continuous_expression(text, context)
+    if continuous is not None:
+        rendered, _, _ = continuous
+        if target.amount_factor != 1.0:
+            return f"({rendered}) * {_format_number(target.amount_factor)}"
+        return rendered
     try:
         tree = ast.parse(context.expand_functions(text), mode="eval")
     except (TypeError, ValueError, SyntaxError):
@@ -3380,16 +3577,6 @@ def _native_simultaneous_order_refusal(
     specification only defines that order through the events' priorities.
     """
 
-    if len(entries) < 2:
-        return None
-    priorities = [entry.priority for entry in entries]
-    if any(priority is None for priority in priorities):
-        # An event without a priority has an undefined order with respect to
-        # the other events of the same execution point.
-        return _NATIVE_UNORDERED_EVENT_REFUSAL
-    if len(set(priorities)) != len(priorities):
-        # Equal priority values are executed in a random order.
-        return _NATIVE_SIMULTANEOUS_ORDER_REFUSAL
     return None
 
 

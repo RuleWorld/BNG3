@@ -320,31 +320,17 @@ def test_linear_algebraic_rule_with_constant_user_function_is_solved_exactly():
     assert "3.5" in rule.math
 
 
-def test_persistent_event_over_an_algebraic_rule_is_refused_as_unsupported(tmp_path):
-    """``semantic/01575`` must be refused, not executed without its event.
-
-    The official reference shows the event firing: ``k1`` is reset to 1 at
-    ``t = 3.6``, so the reference value at ``t = 4`` is 1.4 and not the 5.0
-    that the un-evented trajectory produces.  A model that reports the
-    un-evented trajectory is a wrong number, so the case has to be reported
-    as ``unsupported`` rather than ``failed``.
-    """
+def test_persistent_event_over_an_algebraic_rule_matches_official_reference(tmp_path):
+    """The exact 01575 reference trajectory includes its delayed reset."""
 
     validator = _load_validator("validate_sbml_test_suite")
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
     case = _write_case(tmp_path, "01575", _01575_MODEL, _01575_SETTINGS, _01575_RESULTS)
 
     record = validator._validate_case(case, cpp, tmp_path, 10.0, 10, 1e-9, 1e-14, None)
-    validator._unsupported_summary([record])
 
-    assert record["status"] == "unsupported"
-    assert record["official_conformance"]["status"] == "unsupported"
-    # The refusal names the event, which is the construct the BNGL action
-    # engine cannot schedule.
-    assert "events" in record["unsupported_causes"]
-    assert record["unsupported_subcauses"]["events"] == [
-        "state_trigger_not_schedulable"
-    ]
+    assert record["official_conformance"]["status"] == "passed"
+    assert record["official_conformance"]["comparison"]["passed_points"] == 22
 
 
 def test_linear_algebraic_species_rule_and_state_event_match_official_case(tmp_path):

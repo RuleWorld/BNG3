@@ -68,10 +68,10 @@ def _atomize():
     return atomizer, result
 
 
-def test_event_over_an_assignment_rule_is_not_reported_as_inactive():
-    """The trigger of ``semantic/01575`` does become true during the run."""
+def test_event_over_an_assignment_rule_is_lowered_to_native_execution():
+    """A dynamic event parameter is represented by a zero-rate native state."""
 
-    atomizer, _result = _atomize()
+    atomizer, result = _atomize()
 
     messages = [
         warning.message
@@ -80,11 +80,13 @@ def test_event_over_an_assignment_rule_is_not_reported_as_inactive():
     ]
     assert messages, "the event produced no diagnostic"
     assert not any("proven not to fire" in message for message in messages), messages
-    assert any("untranslated" in message for message in messages), messages
+    assert any("native BNG3 event runtime" in message for message in messages), messages
+    assert "M___rate_rule_state__k1()" in result.bngl
+    assert 'event "E0"' in result.bngl
 
 
-def test_event_over_an_assignment_rule_is_reported_as_unsupported():
-    """An untranslated event is an explicit refusal, not a silent omission."""
+def test_event_over_an_assignment_rule_is_not_reported_as_unsupported():
+    """The promoted state permits executable event lowering."""
 
     atomizer, result = _atomize()
 
@@ -93,5 +95,5 @@ def test_event_over_an_assignment_rule_is_reported_as_unsupported():
         for warning in atomizer.model.import_warnings
         if warning.category == "event"
     }
-    assert "dropped" in severities, severities
-    assert "Events NOT simulated" in result.bngl
+    assert "dropped" not in severities, severities
+    assert 'event "E0"' in result.bngl

@@ -2125,8 +2125,14 @@ def test_quadratic_state_events_ignore_unrelated_event_assignments(tmp_path):
         assert float(np.max(np.abs(bng_values - rr_values))) <= max(5e-12, 1e-5 * scale)
 
 
-def test_quadratic_state_events_keep_cross_component_controls_unsupported():
+def test_quadratic_state_events_with_cross_component_controls_match_roadrunner(
+    tmp_path,
+):
+    import numpy as np
+
+    roadrunner = pytest.importorskip("roadrunner")
     from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
 
     xml = _independent_quadratic_event_pair_model().replace(
         "<apply><times/><ci>kf</ci><ci>S1</ci></apply>",
@@ -2135,8 +2141,34 @@ def test_quadratic_state_events_keep_cross_component_controls_unsupported():
     result = Atomizer(quiet_mode=True, t_end=5, n_steps=500).atomize(xml)
 
     assert result.success, result.error
-    assert "state-dependent or non-constant event" in result.bngl
-    assert "Events NOT simulated" in result.bngl
+    assert "Events NOT simulated" not in result.bngl
+    assert "begin bng3_events version 1" in result.bngl
+    assert "begin actions" in result.bngl
+
+    path = tmp_path / "coupled_event_pair.bngl"
+    path.write_text(result.bngl, encoding="utf-8")
+    load(path).execute()
+    lines = path.with_suffix(".gdat").read_text().splitlines()
+    columns = lines[0].lstrip("# ").split()
+    data = np.loadtxt(lines[1:])
+    times = data[:, columns.index("time")]
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-9)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "[S1]", "[S2]", "[S3]", "[S4]"]
+    reference = rr.simulate(times=times)
+    # Scheduled actions emit their pre-assignment boundary row; RoadRunner
+    # returns the post-assignment value there. Compare their shared open phases.
+    equilibrium = 2.5 * 0.15 / (0.75 + 0.15)
+    scheduled_time = np.log((1 - equilibrium) / (0.75 - equilibrium)) / 0.9
+    compare = np.abs(times - scheduled_time) > 1e-8
+    for species in ("S1", "S2", "S3", "S4"):
+        np.testing.assert_allclose(
+            data[compare, columns.index(species)],
+            reference[compare, reference.colnames.index(f"[{species}]")],
+            rtol=1e-5,
+            atol=5e-12,
+        )
 
 
 def _first_order_cycle_reentrant_event_model(
@@ -3957,10 +3989,22 @@ def test_nested_delay_uses_zero_lag_from_bounded_assignment_rule():
     assert "delay(" not in result.bngl.lower()
     assert 'math function "delay"' not in result.bngl
 
-    longer_horizon = Atomizer(quiet_mode=True, t_end=2, n_steps=20).atomize(xml)
+    longer_atomizer = Atomizer(quiet_mode=True, t_end=2, n_steps=20)
+    longer_horizon = longer_atomizer.atomize(xml)
 
     assert longer_horizon.success, longer_horizon.error
     assert "delay(" in longer_horizon.bngl.lower()
+    delay_warnings = [
+        warning
+        for warning in longer_atomizer.model.import_warnings
+        if warning["category"] == "mathml"
+        and 'math function "delay"' in warning["message"]
+    ]
+    assert delay_warnings
+    assert all(warning["severity"] == "dropped" for warning in delay_warnings)
+    assert all(
+        "durations to be static" in warning["message"] for warning in delay_warnings
+    )
 
 
 def test_fixed_time_event_lag_uses_piecewise_affine_delay_history():

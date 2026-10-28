@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import copy
 import json
 import math
 import os
@@ -3212,33 +3213,150 @@ def _report_unspellable_identifiers(model: SBMLModel) -> None:
                 )
 
 
-def _unrepresentable_math_function_reason(function_name: str) -> str:
+def _unrepresentable_math_function_reason(
+    function_name: str, *, dynamic_delay: bool = False
+) -> str:
     """Return the reason an SBML math function has no executable equivalent."""
 
-    if function_name in {"delay", "rateOf"}:
+    if function_name == "delay":
+        if dynamic_delay:
+            return (
+                "BNG3 CVODE requires delay durations to be static; "
+                "libRoadRunner cannot load an SBML model containing delay"
+            )
+        return (
+            "BNG3 CVODE evaluates delay calls with static durations from its "
+            "recorded simulation history; libRoadRunner cannot load an SBML "
+            "model containing delay"
+        )
+    if function_name == "rateOf":
         return (
             "the C++ SBML writer serializes the call, but neither the BNG3 "
-            "engine nor libRoadRunner can evaluate SBML "
-            f"{function_name} semantics"
+            "engine nor libRoadRunner can evaluate SBML rateOf semantics"
         )
     return "BNGL has no built-in function with those semantics"
 
 
-def _unrepresentable_math_function_message(function_name: str) -> str:
-    """Describe why an SBML math function has no executable BNG3 equivalent.
+def _unrepresentable_math_function_message(
+    function_name: str, *, dynamic_delay: bool = False
+) -> str:
+    """Describe why an SBML math function has no complete execution path.
 
     The C++ SBML writer can serialize the SBML Level 3 Version 2 spelling of
     ``delay`` and ``rateOf`` (Core Sec. 3.4.6, "Use of csymbol elements in
     MathML expressions in SBML"), so the remaining boundary is the execution
-    path: the BNG3 engine has no delayed-history or derivative semantics for
-    these calls, and libRoadRunner rejects a model that uses ``delay`` at all.
+    path: BNG3 CVODE evaluates delayed history for static durations, while
+    libRoadRunner rejects a written model that still uses ``delay``. The
+    latter limits independent comparison only; it does not make a delay call
+    unsupported by BNG3.
     """
 
+    if function_name == "delay" and not dynamic_delay:
+        return (
+            "SBML delay calls with static durations are executable in BNG3; "
+            "libRoadRunner cannot load a written model that still uses delay, "
+            "so the independent comparison is unavailable."
+        )
     return (
         f'SBML math function "{function_name}" is not losslessly representable '
         "in the BNG3 engine/libRoadRunner path: "
-        f"{_unrepresentable_math_function_reason(function_name)}."
+        f"{_unrepresentable_math_function_reason(function_name, dynamic_delay=dynamic_delay)}."
     )
+
+
+def _delay_arguments(expression: str) -> List[Optional[List[str]]]:
+    """Return parsed argument lists for each delay call in one expression."""
+
+    calls = []
+    pattern = re.compile(r"\bdelay\s*\(", re.IGNORECASE)
+    for match in pattern.finditer(expression):
+        opening = match.end() - 1
+        depth = 1
+        closing = opening + 1
+        while closing < len(expression) and depth:
+            if expression[closing] == "(":
+                depth += 1
+            elif expression[closing] == ")":
+                depth -= 1
+            closing += 1
+        if depth:
+            calls.append(None)
+            continue
+        arguments = _split_arguments(expression[opening + 1 : closing - 1])
+        calls.append(arguments if len(arguments) == 2 else None)
+    return calls
+
+
+def _delay_duration_is_static(expression: str, model: SBMLModel) -> bool:
+    """Prove that a delay duration has no mutable or time-dependent inputs."""
+
+    initial_assignment_targets = {
+        str(assignment.symbol)
+        for assignment in model.initial_assignments
+        if assignment.symbol
+    }
+    changing_symbols = {str(rule.variable) for rule in model.rules if rule.variable} | {
+        str(getattr(assignment, "variable", "") or "")
+        for event in model.events
+        for assignment in event.assignments
+        if getattr(assignment, "variable", None)
+    }
+    expanded = inline_sbml_functions(expression, model.function_definitions)
+
+    def resolve(identifier: str) -> Optional[float]:
+        lowered = identifier.lower()
+        if lowered == "pi":
+            return math.pi
+        if lowered == "exponentiale":
+            return math.e
+        if identifier in changing_symbols or identifier in initial_assignment_targets:
+            return None
+        parameter = model.parameters.get(identifier)
+        if parameter is not None:
+            if parameter.constant or identifier not in changing_symbols:
+                try:
+                    return float(parameter.value)
+                except (TypeError, ValueError):
+                    return None
+        compartment = model.compartments.get(identifier)
+        if compartment is not None:
+            if compartment.constant or identifier not in changing_symbols:
+                try:
+                    return float(compartment.size)
+                except (TypeError, ValueError):
+                    return None
+        species = model.species.get(identifier)
+        if species is not None and species.constant:
+            try:
+                compartment = model.compartments.get(species.compartment or "")
+                volume = float(compartment.size) if compartment is not None else 1.0
+                if species.has_only_substance_units:
+                    return (
+                        float(species.initial_amount)
+                        if species.initial_amount_set
+                        else float(species.initial_concentration) * volume
+                    )
+                if species.initial_concentration_set:
+                    return float(species.initial_concentration)
+                return float(species.initial_amount) / volume
+            except (TypeError, ValueError, ZeroDivisionError):
+                return None
+        return None
+
+    try:
+        return fold_numeric(expanded, resolve) is not None
+    except (TypeError, ValueError):
+        return False
+
+
+def _model_has_dynamic_delay(model: SBMLModel, expressions: Iterable[str]) -> bool:
+    """Return whether any retained delay call has an unproven duration."""
+
+    for expression in expressions:
+        for arguments in _delay_arguments(str(expression or "")):
+            if arguments is None or not _delay_duration_is_static(arguments[1], model):
+                return True
+    return False
 
 
 def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
@@ -4074,7 +4192,10 @@ def _lowerable_species_assignment_rules(
 
 
 def _update_event_translation_warning(
-    model: SBMLModel, event_result: object, native_event_block: object = None
+    model: SBMLModel,
+    event_result: object,
+    native_event_block: object = None,
+    native_event_count: int = 0,
 ) -> None:
     """Make the event diagnostic reflect the executable lowering result."""
 
@@ -4082,11 +4203,12 @@ def _update_event_translation_warning(
     untranslated = list(getattr(event_result, "untranslated", []) or [])
     horizon_limited = int(getattr(event_result, "horizon_limited", 0) or 0)
     if native_event_block:
-        message = (
-            f"{len(model.events)} SBML event(s) lowered to the native BNG3 "
-            "event runtime, which detects the trigger's rising edge with "
-            "continuous root finding and applies the assignments at that "
-            "instant."
+        message = f"{native_event_count} SBML event(s) lowered to the native BNG3 event runtime"
+        if converted:
+            message += f"; {converted} event(s) lowered to scheduled actions"
+        message += (
+            ", which detects the trigger's rising edge with continuous root "
+            "finding and applies the assignments at that instant."
         )
         for warning in getattr(model, "import_warnings", []) or []:
             if warning.get("category") != "event":
@@ -7154,7 +7276,11 @@ def generate_bngl(
     t_end: float = 10,
     n_steps: int = 100,
     replace_loc_params: bool = True,
+    _promoted_event_parameters: Optional[Set[str]] = None,
+    _allow_event_parameter_promotion: bool = True,
 ) -> BNGLGenerationResult:
+    import_warnings_before_generation = copy.deepcopy(model.import_warnings)
+    promoted_event_parameters = set(_promoted_event_parameters or ())
     _lower_bounded_event_state_delays(model, float(t_end))
     lowerable_species_assignment_rules = _lowerable_species_assignment_rules(model)
     algebraic_reaction_species = set(lowerable_species_assignment_rules) & {
@@ -7295,7 +7421,18 @@ def generate_bngl(
         ),
         *(str(rule.math or "") for rule in model.rules),
         *(str(function.math or "") for function in model.function_definitions.values()),
+        *(str(assignment.math or "") for assignment in model.initial_assignments),
+        *(
+            str(expression or "")
+            for event in model.events
+            for expression in (
+                event.trigger,
+                event.priority,
+                *(assignment.math for assignment in event.assignments),
+            )
+        ),
     ]
+    dynamic_delay = _model_has_dynamic_delay(model, math_sources)
     for function_name in unsupported_functions:
         if any(
             re.search(rf"\b{re.escape(function_name)}\s*\(", expression, re.IGNORECASE)
@@ -7303,9 +7440,16 @@ def generate_bngl(
         ):
             _record_import_warning(
                 model,
-                _unrepresentable_math_function_message(function_name),
+                _unrepresentable_math_function_message(
+                    function_name,
+                    dynamic_delay=dynamic_delay if function_name == "delay" else False,
+                ),
                 category="mathml",
-                severity="dropped",
+                severity=(
+                    ("dropped" if dynamic_delay else "info")
+                    if function_name == "delay"
+                    else "dropped"
+                ),
             )
 
     _report_identifier_collisions(model)
@@ -7336,6 +7480,9 @@ def generate_bngl(
         for rule in _assignment_rules_for_writer(model)
         if rule.variable and str(rule.variable) not in species_assignment_variables
     }
+    assignment_variables.update(
+        standardize_name(variable) for variable in promoted_event_parameters
+    )
 
     # SBML rate rules may target a parameter or another model variable that
     # has no listOfSpecies entry.  BNGL can only evolve molecule populations,
@@ -7401,8 +7548,11 @@ def generate_bngl(
 
         structure = Species()
         structure.add_molecule(Molecule(molecule_name))
-        if default_compartment:
-            structure.add_compartment(default_compartment)
+        state_compartment = (
+            "" if variable in promoted_event_parameters else default_compartment
+        )
+        if state_compartment:
+            structure.add_compartment(state_compartment)
         structure.renumber_bonds()
         parameter = model.parameters.get(variable) or model.parameters.get(target)
         initial_value = seed_symbol_values.get(variable)
@@ -7438,7 +7588,7 @@ def generate_bngl(
             SeedSpeciesEntry(
                 species=structure.copy(),
                 concentration=_number(initial),
-                compartment=default_compartment,
+                compartment=state_compartment,
                 sbml_id=variable,
             )
         )
@@ -7749,7 +7899,7 @@ def generate_bngl(
                 # A rate-rule parameter becomes a state species whose seed is
                 # its SBML value; a compartment would rescale that seed, so
                 # only a unit-sized default compartment preserves the value.
-                if default_compartment:
+                if default_compartment and identifier not in promoted_event_parameters:
                     compartment = model.compartments.get(default_compartment)
                     if compartment is None or not compartment.constant:
                         return None
@@ -7765,6 +7915,35 @@ def generate_bngl(
                     amount_factor=1.0,
                     compartment="",
                 )
+            assignment_rules = [
+                rule
+                for rule in model.rules
+                if rule.type == "assignment"
+                and rule.variable
+                and standardize_name(str(rule.variable)) == standardize_name(identifier)
+            ]
+            if (
+                len(assignment_rules) == 1
+                and identifier not in assignment_rule_stack
+                and not any(
+                    standardize_name(str(assignment.variable))
+                    == standardize_name(identifier)
+                    for event in model.events
+                    for assignment in event.assignments
+                )
+            ):
+                assignment_rule_stack.add(identifier)
+                expression = extend_function(
+                    str(assignment_rules[0].math or ""),
+                    {},
+                    model.function_definitions,
+                ).strip()
+                if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", expression):
+                    target = resolve_native_state(expression)
+                    if target is not None:
+                        assignment_rule_stack.remove(identifier)
+                        return target
+                assignment_rule_stack.remove(identifier)
             return None
 
         def resolve_event_parameter(identifier: str) -> Optional[float]:
@@ -11239,17 +11418,79 @@ def generate_bngl(
         )
         native_event_block = None
         native_event_refusal = None
-        if (
-            not event_result.actions_block
-            and not event_result.converted
-            and not event_result.horizon_limited
-            and len(event_result.untranslated) == len(model.events)
-            and model.events
-        ):
-            native_lowering = lower_native_events(model.events, event_context)
+        native_event_count = 0
+        if event_result.untranslated:
+            native_events = [event for event, _reason in event_result.untranslated]
+            native_lowering = lower_native_events(native_events, event_context)
             native_event_block = native_lowering.block
             native_event_refusal = native_lowering.reason
-        _update_event_translation_warning(model, event_result, native_event_block)
+            if native_event_block:
+                native_event_count = len(native_events)
+            elif _allow_event_parameter_promotion:
+
+                def is_promotable_parameter(identifier: str) -> bool:
+                    standardized = standardize_name(identifier)
+                    parameter = next(
+                        (
+                            value
+                            for parameter_id, value in model.parameters.items()
+                            if standardize_name(str(parameter_id)) == standardized
+                        ),
+                        None,
+                    )
+                    if parameter is None or getattr(parameter, "constant", True):
+                        return False
+                    return not any(
+                        rule.variable
+                        and standardize_name(str(rule.variable)) == standardized
+                        and rule.type in {"assignment", "rate"}
+                        for rule in model.rules
+                    )
+
+                assigned_parameters = {
+                    str(assignment.variable)
+                    for event in native_events
+                    for assignment in event.assignments
+                    if getattr(assignment, "variable", None)
+                    and is_promotable_parameter(str(assignment.variable))
+                }
+                already_promoted = {
+                    standardize_name(variable) for variable in promoted_event_parameters
+                }
+                assigned_parameters = {
+                    variable
+                    for variable in assigned_parameters
+                    if standardize_name(variable) not in already_promoted
+                }
+                if assigned_parameters:
+                    promoted_model = copy.deepcopy(model)
+                    promoted_model.import_warnings = import_warnings_before_generation
+                    for variable in sorted(assigned_parameters):
+                        promoted_model.rules.append(
+                            SBMLRule(type="rate", variable=variable, math="0")
+                        )
+                    promoted = generate_bngl(
+                        promoted_model,
+                        sct,
+                        molecule_types,
+                        seed_species,
+                        atomize=atomize,
+                        actions=actions,
+                        t_end=t_end,
+                        n_steps=n_steps,
+                        replace_loc_params=replace_loc_params,
+                        _promoted_event_parameters=assigned_parameters,
+                        _allow_event_parameter_promotion=False,
+                    )
+                    if "begin bng3_events version 1" in promoted.bngl:
+                        model.import_warnings = promoted_model.import_warnings
+                        model.reaction_rate_functions = (
+                            promoted_model.reaction_rate_functions
+                        )
+                        return promoted
+        _update_event_translation_warning(
+            model, event_result, native_event_block, native_event_count
+        )
 
     if native_event_block:
         # The native event block belongs inside the model block: the grammar
@@ -11302,10 +11543,19 @@ def generate_bngl(
         model_text += "\n" + "".join(notes)
 
     if event_result is not None and event_result.actions_block:
+        action_lines = event_result.actions_block.splitlines()
+        if native_event_block:
+            # simulate generates its network in memory. A .net export cannot
+            # preserve native events, so mixed schedules must not request one.
+            action_lines = [
+                line
+                for line in action_lines
+                if line.strip() != "generate_network({overwrite=>1})"
+            ]
         model_text += "\nbegin actions\n"
         model_text += "\n".join(
             "  " + line if line and not line.startswith("#") else line
-            for line in event_result.actions_block.splitlines()
+            for line in action_lines
         )
         model_text += "\nend actions\n"
     elif actions:
@@ -11338,13 +11588,30 @@ def generate_bngl(
         ):
             # The source-level diagnostic already reported this construct.
             continue
+        dynamic_delay = (
+            _model_has_dynamic_delay(model, [model_text])
+            if function_name == "delay"
+            else False
+        )
+        if function_name == "delay":
+            message = _unrepresentable_math_function_message(
+                function_name, dynamic_delay=dynamic_delay
+            )
+        else:
+            message = (
+                f'Generated BNGL math function "{function_name}" is not '
+                "losslessly representable in the C++ SBML writer/libRoadRunner "
+                f"path: {_unrepresentable_math_function_reason(function_name)}."
+            )
         _record_import_warning(
             model,
-            f'Generated BNGL math function "{function_name}" is not '
-            "losslessly representable in the C++ SBML writer/libRoadRunner "
-            f"path: {_unrepresentable_math_function_reason(function_name)}.",
+            message,
             category="mathml",
-            severity="dropped",
+            severity=(
+                ("dropped" if dynamic_delay else "info")
+                if function_name == "delay"
+                else "dropped"
+            ),
         )
 
     has_multi = bool(

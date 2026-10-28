@@ -2162,7 +2162,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
     const auto ensureNetwork = [&]() {
         if (!network.has_value()) {
-            network = generator.generate(sourcePath);
+            // Native events remain in the compiled model. Implicit generation
+            // for simulation must not export a .net file that loses them.
+            network = generator.generate(
+                model.getEvents().empty() ? sourcePath : std::filesystem::path{});
         }
     };
 

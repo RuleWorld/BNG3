@@ -237,8 +237,10 @@ private:
     // true when the state changed.
     bool applyDueEvents(double time, std::vector<double>& state);
     double eventSideDerivative(const ast::Expression& expression, double time,
+                               const double* state,
                                const std::vector<double>& derivatives) const;
     double eventRootDerivative(const ast::Expression& trigger, double time,
+                               const double* state,
                                const std::vector<double>& derivatives) const;
     // The trigger's signed root function: positive exactly where the trigger
     // holds.  A conjunction is the conjunction of its conjuncts, so its root
@@ -278,6 +280,10 @@ private:
                         const std::vector<bool>& heldBefore);
     std::vector<NativeEvent> nativeEvents_;
     std::vector<NativeEventGroup> nativeEventGroups_;
+    // CVODE needs a monotonic root function for each conjunct. A minimum of
+    // several surfaces can enter and leave a narrow conjunction between two
+    // accepted solver states without changing sign.
+    std::vector<std::pair<std::size_t, const ast::Expression*>> nativeEventRoots_;
     std::vector<PendingEvent> pendingEvents_;
     // The root function value of every group at the last instant the events
     // were processed.  A group whose value changed its sign since then
