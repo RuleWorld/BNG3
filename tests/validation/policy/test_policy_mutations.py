@@ -18,6 +18,17 @@ from types import SimpleNamespace
 
 import pytest
 
+BOOTSTRAP_FILES = {
+    ".github/workflows/ci.yml": "name: CI\n",
+    ".github/workflows/release-policy.yml": "name: Release policy\n",
+    ".github/workflows/release.yml": "name: Release\n",
+    ".github/workflows/weekly.yml": "name: Weekly\n",
+    "tests/validation/policy/README.md": "# Anti-gaming policy\n",
+    "tests/validation/policy/antigaming.py": "# checker\n",
+    "tests/validation/policy/mutation-baseline.json": "{}\n",
+    "tests/validation/policy/run_antigaming.py": "# runner\n",
+}
+
 
 def _policy_dir() -> Path:
     return Path(
@@ -187,6 +198,85 @@ def test_product_only_and_expectation_only_changes_are_not_mixed(tmp_path):
     root2, base2 = _repo(tmp_path / "second", {"tests/data/expected.json": "{}\n"})
     _change(root2, "tests/data/expected.json", '{"expected": 2}\n')
     assert checker.check_protected_changes(root2, base2) == []
+
+
+def test_product_solver_tolerance_change_is_not_protected(tmp_path):
+    checker = _load_policy()
+    root, base = _repo(tmp_path, {"cpp/solver.cpp": "const double rtol = 1e-6;\n"})
+    _change(root, "cpp/solver.cpp", "const double rtol = 1e-8;\n")
+
+    assert checker.check_protected_changes(root, base) == []
+
+
+def test_product_skip_marker_change_is_not_protected(tmp_path):
+    checker = _load_policy()
+    root, base = _repo(tmp_path, {"python/runtime.py": "def run():\n    return 1\n"})
+    _change(
+        root,
+        "python/runtime.py",
+        "import pytest\n\n@pytest.mark.skip\ndef run():\n    return 1\n",
+    )
+
+    assert checker.check_protected_changes(root, base) == []
+
+
+def test_changed_tolerance_in_existing_test_remains_protected(tmp_path):
+    checker = _load_policy()
+    root, base = _repo(
+        tmp_path,
+        {
+            "python/engine.py": "VALUE = 1\n",
+            "tests/test_tolerance.py": "assert_close(actual, expected, rtol=1e-6)\n",
+        },
+    )
+    _change(root, "python/engine.py", "VALUE = 2\n")
+    _change(
+        root,
+        "tests/test_tolerance.py",
+        "assert_close(actual, expected, rtol=1e-5)\n",
+    )
+
+    errors = checker.check_protected_changes(root, base)
+
+    assert errors and "tests/test_tolerance.py" in errors[0]
+
+
+def test_bootstrap_succeeds_from_any_base_revision_without_checker(tmp_path):
+    checker = _load_policy()
+    base_revisions = []
+    for marker in ("first-base", "second-base"):
+        root, base = _repo(
+            tmp_path / marker,
+            {
+                "README.md": f"{marker}\n",
+                ".github/workflows/ci.yml": "name: Old CI\n",
+            },
+        )
+        for rel, content in BOOTSTRAP_FILES.items():
+            _change(root, rel, content)
+
+        assert checker.check_bootstrap_candidate(root, base) == []
+        base_revisions.append(base)
+
+    assert len(set(base_revisions)) == 2
+
+
+def test_bootstrap_rejects_extra_changed_paths(tmp_path):
+    checker = _load_policy()
+    root, base = _repo(
+        tmp_path,
+        {
+            "README.md": "base\n",
+            ".github/workflows/ci.yml": "name: Old CI\n",
+        },
+    )
+    for rel, content in BOOTSTRAP_FILES.items():
+        _change(root, rel, content)
+    _change(root, "cpp/solver.cpp", "const double rtol = 1e-8;\n")
+
+    errors = checker.check_bootstrap_candidate(root, base)
+
+    assert errors and "cpp/solver.cpp" in errors[0]
 
 
 def test_product_fix_with_new_regression_test_is_allowed(tmp_path):
@@ -413,7 +503,7 @@ jobs:
   lint:
     steps:
       - name: Run anti-gaming checks from the PR base revision
-        run: python "$RUNNER_TEMP/base-policy/run_antigaming.py" --base "$BASE_REVISION" --check release-protected-expectations
+        run: python "$RUNNER_TEMP/base-policy/run_antigaming.py" --base "$BASE_REVISION" --head "$HEAD_REVISION" --check release-protected-expectations
   python-integration:
     steps:
       - name: Generate and execute a fresh seeded source case
