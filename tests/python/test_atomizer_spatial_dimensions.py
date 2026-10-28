@@ -54,7 +54,9 @@ def test_integer_dimension_above_three_is_preserved():
     result = atomizer.atomize(_model("7"))
 
     assert result.success, result.error
-    assert not _compartment_warnings(atomizer, "dropped"), atomizer.model.import_warnings
+    assert not _compartment_warnings(
+        atomizer, "dropped"
+    ), atomizer.model.import_warnings
     assert _compartment_warnings(atomizer, "info"), atomizer.model.import_warnings
     compartments = result.bngl.split("begin compartments", 1)[1].split(
         "end compartments", 1
