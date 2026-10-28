@@ -2233,13 +2233,268 @@ double OdeIntegrator::eventValue(const ast::Expression& expression,
     return value;
 }
 
+namespace {
+
+double drawSbmlDistribution(const std::string& name,
+                           const std::vector<double>& args,
+                           std::mt19937_64& rng) {
+    const auto requireCount = [&](std::initializer_list<std::size_t> allowed) {
+        if (std::find(allowed.begin(), allowed.end(), args.size()) == allowed.end()) {
+            throw std::runtime_error("SBML distrib function '" + name +
+                                     "' has an invalid argument count");
+        }
+    };
+    const auto requireFinite = [&](std::size_t index) {
+        if (!std::isfinite(args[index])) {
+            throw std::runtime_error("SBML distrib function '" + name +
+                                     "' requires finite parameters");
+        }
+    };
+    const auto sampleBounded = [&](const std::function<double()>& sample,
+                                   double minimum, double maximum,
+                                   bool discrete) {
+        if (!(minimum <= maximum) ||
+            (!discrete && !(minimum < maximum)) ||
+            (discrete && std::ceil(minimum) > std::floor(maximum))) {
+            throw std::runtime_error("SBML distrib function '" + name +
+                                     "' has invalid truncation bounds");
+        }
+        for (std::size_t attempt = 0; attempt < 1000000; ++attempt) {
+            const double value = sample();
+            if (value >= minimum && (discrete ? value <= maximum : value < maximum)) {
+                return value;
+            }
+        }
+        throw std::runtime_error("SBML distrib function '" + name +
+                                 "' could not draw within its truncation bounds");
+    };
+    const auto bounds = [&](std::size_t index) {
+        return std::pair<double, double>{
+            args.size() > index ? args[index] : -std::numeric_limits<double>::infinity(),
+            args.size() > index + 1 ? args[index + 1]
+                                    : std::numeric_limits<double>::infinity()};
+    };
+    const auto unit = [&]() {
+        std::uniform_real_distribution<double> distribution(0.0, 1.0);
+        double value = distribution(rng);
+        while (value == 0.0) value = distribution(rng);
+        return value;
+    };
+
+    if (name == "distrib_normal") {
+        requireCount({2, 4});
+        requireFinite(0);
+        requireFinite(1);
+        if (!(args[1] > 0.0)) {
+            throw std::runtime_error("SBML normal stdev must be positive");
+        }
+        const auto [minimum, maximum] = bounds(2);
+        std::normal_distribution<double> distribution(args[0], args[1]);
+        return sampleBounded([&]() { return distribution(rng); }, minimum,
+                             maximum, false);
+    }
+    if (name == "distrib_uniform") {
+        requireCount({2});
+        requireFinite(0);
+        requireFinite(1);
+        if (!(args[0] < args[1])) {
+            throw std::runtime_error("SBML uniform minimum must be less than maximum");
+        }
+        std::uniform_real_distribution<double> distribution(args[0], args[1]);
+        return distribution(rng);
+    }
+    if (name == "distrib_bernoulli") {
+        requireCount({1});
+        requireFinite(0);
+        if (args[0] < 0.0 || args[0] > 1.0) {
+            throw std::runtime_error("SBML Bernoulli probability must be in [0, 1]");
+        }
+        std::bernoulli_distribution distribution(args[0]);
+        return distribution(rng) ? 1.0 : 0.0;
+    }
+    if (name == "distrib_binomial") {
+        requireCount({2, 4});
+        requireFinite(0);
+        requireFinite(1);
+        if (args[0] < 0.0 || std::floor(args[0]) != args[0] ||
+            args[0] > static_cast<double>(std::numeric_limits<int>::max()) ||
+            args[1] < 0.0 || args[1] > 1.0) {
+            throw std::runtime_error("SBML binomial parameters are invalid");
+        }
+        const auto [minimum, maximum] = bounds(2);
+        std::binomial_distribution<int> distribution(
+            static_cast<int>(args[0]), args[1]);
+        return sampleBounded([&]() { return distribution(rng); }, minimum,
+                             maximum, true);
+    }
+    if (name == "distrib_cauchy") {
+        requireCount({1, 2, 4});
+        const double location = args.size() == 1 ? 0.0 : args[0];
+        const double scale = args.size() == 1 ? args[0] : args[1];
+        if (!std::isfinite(location) || !std::isfinite(scale) || !(scale > 0.0)) {
+            throw std::runtime_error("SBML Cauchy parameters are invalid");
+        }
+        const auto [minimum, maximum] = bounds(2);
+        std::cauchy_distribution<double> distribution(location, scale);
+        return sampleBounded([&]() { return distribution(rng); }, minimum,
+                             maximum, false);
+    }
+    if (name == "distrib_chisquare") {
+        requireCount({1, 3});
+        requireFinite(0);
+        if (!(args[0] > 0.0)) {
+            throw std::runtime_error("SBML chi-square degrees of freedom must be positive");
+        }
+        const auto [minimum, maximum] = bounds(1);
+        std::chi_squared_distribution<double> distribution(args[0]);
+        return sampleBounded([&]() { return distribution(rng); }, minimum,
+                             maximum, false);
+    }
+    if (name == "distrib_exponential") {
+        requireCount({1, 3});
+        requireFinite(0);
+        if (!(args[0] > 0.0)) {
+            throw std::runtime_error("SBML exponential rate must be positive");
+        }
+        const auto [minimum, maximum] = bounds(1);
+        std::exponential_distribution<double> distribution(args[0]);
+        return sampleBounded([&]() { return distribution(rng); }, minimum,
+                             maximum, false);
+    }
+    if (name == "distrib_gamma") {
+        requireCount({2, 4});
+        requireFinite(0);
+        requireFinite(1);
+        if (!(args[0] > 0.0) || !(args[1] > 0.0)) {
+            throw std::runtime_error("SBML gamma shape and scale must be positive");
+        }
+        const auto [minimum, maximum] = bounds(2);
+        std::gamma_distribution<double> distribution(args[0], args[1]);
+        return sampleBounded([&]() { return distribution(rng); }, minimum,
+                             maximum, false);
+    }
+    if (name == "distrib_laplace") {
+        requireCount({1, 2, 4});
+        const double location = args.size() == 1 ? 0.0 : args[0];
+        const double scale = args.size() == 1 ? args[0] : args[1];
+        if (!std::isfinite(location) || !std::isfinite(scale) || !(scale > 0.0)) {
+            throw std::runtime_error("SBML Laplace parameters are invalid");
+        }
+        const auto [minimum, maximum] = bounds(2);
+        const auto sample = [&]() {
+            const double u = unit();
+            return u < 0.5 ? location + scale * std::log(2.0 * u)
+                           : location - scale * std::log(2.0 * (1.0 - u));
+        };
+        return sampleBounded(sample, minimum, maximum, false);
+    }
+    if (name == "distrib_lognormal") {
+        requireCount({2, 4});
+        requireFinite(0);
+        requireFinite(1);
+        if (!(args[1] > 0.0)) {
+            throw std::runtime_error("SBML lognormal stdev must be positive");
+        }
+        const auto [minimum, maximum] = bounds(2);
+        std::lognormal_distribution<double> distribution(args[0], args[1]);
+        return sampleBounded([&]() { return distribution(rng); }, minimum,
+                             maximum, false);
+    }
+    if (name == "distrib_poisson") {
+        requireCount({1, 3});
+        requireFinite(0);
+        if (args[0] < 0.0) {
+            throw std::runtime_error("SBML Poisson rate must be nonnegative");
+        }
+        const auto [minimum, maximum] = bounds(1);
+        std::poisson_distribution<unsigned long long> distribution(args[0]);
+        return sampleBounded(
+            [&]() { return static_cast<double>(distribution(rng)); }, minimum,
+            maximum, true);
+    }
+    if (name == "distrib_rayleigh") {
+        requireCount({1, 3});
+        requireFinite(0);
+        if (!(args[0] > 0.0)) {
+            throw std::runtime_error("SBML Rayleigh scale must be positive");
+        }
+        const auto [minimum, maximum] = bounds(1);
+        const auto sample = [&]() { return args[0] * std::sqrt(-2.0 * std::log(1.0 - unit())); };
+        return sampleBounded(sample, minimum, maximum, false);
+    }
+    throw std::runtime_error("Unsupported SBML distrib function '" + name + "'");
+}
+
+}  // namespace
+
+double OdeIntegrator::eventAssignmentValue(const ast::Expression& expression,
+                                            double time,
+                                            const double* state) const {
+    auto expanded = functionEvaluator_.expandFunctions(expression);
+    std::function<bool(const ast::Expression&)> hasDraw;
+    hasDraw = [&](const ast::Expression& current) {
+        if (current.kind() == ast::ExpressionKind::Function &&
+            current.name().rfind("distrib_", 0) == 0) {
+            return true;
+        }
+        return std::any_of(current.args().begin(), current.args().end(), hasDraw);
+    };
+    if (hasDraw(expanded) &&
+        (activeSimulationSession_ == nullptr ||
+         !activeSimulationSession_->rngInitialized)) {
+        throw std::runtime_error(
+            "SBML distrib draws require a seeded simulation session");
+    }
+    std::function<ast::Expression(const ast::Expression&)> sampleDraws;
+    sampleDraws = [&](const ast::Expression& current) -> ast::Expression {
+        const auto& args = current.args();
+        if (current.kind() == ast::ExpressionKind::Function &&
+            current.name().rfind("distrib_", 0) == 0) {
+            std::vector<double> parameters;
+            parameters.reserve(args.size());
+            for (const auto& argument : args) {
+                const auto sampledArgument = sampleDraws(argument);
+                parameters.push_back(eventValue(sampledArgument, time, state));
+            }
+            return ast::Expression::number(drawSbmlDistribution(
+                current.name(), parameters, activeSimulationSession_->rng));
+        }
+        switch (current.kind()) {
+        case ast::ExpressionKind::Number:
+        case ast::ExpressionKind::Identifier:
+            return current;
+        case ast::ExpressionKind::Unary:
+            return ast::Expression::unary(current.name(), sampleDraws(args.front()));
+        case ast::ExpressionKind::Binary:
+            return ast::Expression::binary(current.name(), sampleDraws(args[0]),
+                                           sampleDraws(args[1]));
+        case ast::ExpressionKind::Function:
+        case ast::ExpressionKind::ObservableRef: {
+            std::vector<ast::Expression> sampled;
+            sampled.reserve(args.size());
+            for (const auto& argument : args) sampled.push_back(sampleDraws(argument));
+            return current.kind() == ast::ExpressionKind::Function
+                ? ast::Expression::function(current.name(), std::move(sampled))
+                : ast::Expression::observableRef(current.name(), std::move(sampled));
+        }
+        case ast::ExpressionKind::TableFunction:
+            return ast::Expression::tableFunction(
+                current.tableXValues(), current.tableYValues(),
+                current.tableFilePath(), sampleDraws(args.front()),
+                current.tableMethod());
+        }
+        throw std::runtime_error("Unsupported SBML event assignment expression");
+    };
+    const auto sampled = sampleDraws(expanded);
+    const double value = eventValue(sampled, time, state);
+    return value;
+}
+
 std::vector<double> OdeIntegrator::eventValues(const NativeEvent& event, double time,
                                                 const double* state) const {
     std::vector<double> values;
     for (const auto& assignment : event.assignments) {
-        const double value = eventValue(assignment.value, time, state);
-        if (value < 0) throw std::runtime_error("bng3_events assignment amount must be nonnegative");
-        values.push_back(value);
+        values.push_back(eventAssignmentValue(assignment.value, time, state));
     }
     return values;
 }
@@ -3602,6 +3857,13 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
     if (!eventSession) {
         fallbackSession = network_.snapshotSimulationSession();
         eventSession = &*fallbackSession;
+    }
+    if (eventSession && !eventSession->rngInitialized) {
+        const auto seed = opts.seed > 0
+            ? static_cast<std::mt19937_64::result_type>(opts.seed)
+            : static_cast<std::mt19937_64::result_type>(std::random_device{}());
+        eventSession->rng.seed(seed);
+        eventSession->rngInitialized = true;
     }
     if (opts.continueSimulation && eventSession) {
         for (const auto& pending : eventSession->pendingNativeEvents) {

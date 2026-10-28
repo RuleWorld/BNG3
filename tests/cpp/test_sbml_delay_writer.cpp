@@ -87,6 +87,39 @@ end model
     CHECK(xml.find("<rateOf/>") == std::string::npos);
 }
 
+TEST_CASE("SBML writer declares distrib and emits distribution csymbols",
+          "[SbmlWriter][distrib]") {
+    auto model = std::make_unique<ast::Model>();
+    model->setModelName("distribution_function");
+    model->addFunction(ast::Function(
+        "sample", {},
+        ast::Expression::function(
+            "distrib_exponential", {ast::Expression::number(2.0)})));
+    engine::GeneratedNetwork network;
+    const std::string xml = io::SbmlWriter::write(*model, &network);
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "xmlns:distrib=\"http://www.sbml.org/sbml/level3/version1/distrib/version1\""));
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring("distrib:required=\"true\""));
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<csymbol encoding=\"text\" "
+        "definitionURL=\"http://www.sbml.org/sbml/symbols/distrib/exponential\">"
+        " exponential </csymbol>"));
+    CHECK(xml.find("<ci> distrib_exponential </ci>") == std::string::npos);
+}
+
+TEST_CASE("SBML writer omits distrib package when no distribution calls are used",
+          "[SbmlWriter][distrib]") {
+    const std::string xml = writeSbml(R"(
+begin model
+begin parameters
+  x 1
+end parameters
+end model
+)");
+    CHECK(xml.find("xmlns:distrib=") == std::string::npos);
+    CHECK(xml.find("distrib:required=") == std::string::npos);
+}
+
 TEST_CASE("SBML writer rejects a delay csymbol with the wrong arity", "[SbmlWriter][delay]") {
     auto model = parser::parseModel(R"(
 begin model
@@ -173,13 +206,15 @@ end model
         "definitionURL=\"http://www.sbml.org/sbml/symbols/delay\"> delay </csymbol>"));
 }
 
-TEST_CASE("Native SBML reader accepts the delay and rateOf csymbols", "[SbmlReader][delay]") {
+TEST_CASE("Native SBML reader accepts history and distrib csymbols", "[SbmlReader][delay][distrib]") {
     const auto path = std::filesystem::temp_directory_path() /
         "bng3_sbml_delay_reader_test.xml";
     {
         std::ofstream out(path);
         out << R"xml(<?xml version="1.0"?>
-<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+      xmlns:distrib="http://www.sbml.org/sbml/level3/version1/distrib/version1"
+      distrib:required="true" level="3" version="2">
   <model id="delayed">
     <listOfCompartments><compartment id="cell" size="1"/></listOfCompartments>
     <listOfSpecies>
@@ -204,6 +239,14 @@ TEST_CASE("Native SBML reader accepts the delay and rateOf csymbols", "[SbmlRead
           </apply>
         </math>
       </assignmentRule>
+      <assignmentRule variable="r">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply>
+            <csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/distrib/exponential"> exponential </csymbol>
+            <ci> k </ci>
+          </apply>
+        </math>
+      </assignmentRule>
     </listOfRules>
     <listOfReactions>
       <reaction id="R1" reversible="false">
@@ -221,7 +264,8 @@ TEST_CASE("Native SBML reader accepts the delay and rateOf csymbols", "[SbmlRead
     std::filesystem::remove(path);
 
     REQUIRE(parsed.success);
-    REQUIRE(parsed.functions.size() == 2);
+    REQUIRE(parsed.functions.size() == 3);
     CHECK(parsed.functions[0].second == "delay(k,1)");
     CHECK(parsed.functions[1].second == "rateOf(k)");
+    CHECK(parsed.functions[2].second == "distrib_exponential(k)");
 }

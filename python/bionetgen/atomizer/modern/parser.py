@@ -131,6 +131,18 @@ _SBML_CSYMBOL_URLS = {
     "symbols/avogadro": "avogadro",
     "symbols/delay": "delay",
     "symbols/rateof": "rateOf",
+    "symbols/distrib/normal": "distrib_normal",
+    "symbols/distrib/uniform": "distrib_uniform",
+    "symbols/distrib/bernoulli": "distrib_bernoulli",
+    "symbols/distrib/binomial": "distrib_binomial",
+    "symbols/distrib/cauchy": "distrib_cauchy",
+    "symbols/distrib/chisquare": "distrib_chisquare",
+    "symbols/distrib/exponential": "distrib_exponential",
+    "symbols/distrib/gamma": "distrib_gamma",
+    "symbols/distrib/laplace": "distrib_laplace",
+    "symbols/distrib/lognormal": "distrib_lognormal",
+    "symbols/distrib/poisson": "distrib_poisson",
+    "symbols/distrib/rayleigh": "distrib_rayleigh",
 }
 
 # The SBML ``time`` csymbol denotes the current simulation time, and its
@@ -160,6 +172,18 @@ _INTRINSIC_FUNCTIONS = (
             "min",
             "not",
             "or",
+            "distrib_normal",
+            "distrib_uniform",
+            "distrib_bernoulli",
+            "distrib_binomial",
+            "distrib_cauchy",
+            "distrib_chisquare",
+            "distrib_exponential",
+            "distrib_gamma",
+            "distrib_laplace",
+            "distrib_lognormal",
+            "distrib_poisson",
+            "distrib_rayleigh",
         }
     )
     | frozenset(MATH_BUILTIN_BY_NAME)
@@ -769,6 +793,8 @@ def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> st
                 return "delay"
             if kind == "rateOf":
                 return "rateOf"
+            if kind.startswith("distrib_"):
+                return kind
         if "symbols/time" in definition_url:
             return _TIME_CSYMBOL_TOKEN
         if "symbols/avogadro" in definition_url:
@@ -3458,6 +3484,7 @@ class SBMLParser:
         # annotate core objects and contribute no kinetics, so an
         # annotation-only namespace leaves the mathematical model intact.
         package_structure_counts: Dict[str, int] = {}
+        supported_distrib_csymbol_count = 0
         element_parents = {child: parent for parent in root.iter() for child in parent}
         core_namespace_uri = re.compile(
             r"^https?://www\.sbml\.org/sbml/level3/version\d+/core$",
@@ -3504,6 +3531,10 @@ class SBMLParser:
                 package = match.group(1).lower()
                 if package in package_counts:
                     package_counts[package] += 1
+                    if package == "distrib" and _csymbol_kind(element).startswith(
+                        "distrib_"
+                    ):
+                        supported_distrib_csymbol_count += 1
 
         model_metadata = _source_metadata(model)
         result = SBMLModel(
@@ -3740,6 +3771,23 @@ class SBMLParser:
                             "unaffected."
                         ),
                         "count": 1,
+                        "severity": "info",
+                    }
+                )
+                continue
+            if (
+                package == "distrib"
+                and not package_structure_counts.get(package)
+                and count == supported_distrib_csymbol_count
+            ):
+                result.import_warnings.append(
+                    {
+                        "category": "package:distrib",
+                        "message": (
+                            f"{count} SBML distrib draw expression(s) are "
+                            "lowered to seeded native event assignments."
+                        ),
+                        "count": count,
                         "severity": "info",
                     }
                 )

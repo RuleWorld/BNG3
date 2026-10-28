@@ -227,6 +227,8 @@ private:
 
     void validateEventTargets();
     double eventValue(const ast::Expression& expression, double time, const double* state) const;
+    double eventAssignmentValue(const ast::Expression& expression, double time,
+                                const double* state) const;
     // Execute the queued events whose execution instant has arrived.  Returns
     // true when the state changed.
     bool applyDueEvents(double time, std::vector<double>& state);

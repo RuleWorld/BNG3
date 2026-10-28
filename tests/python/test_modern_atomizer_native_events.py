@@ -117,6 +117,40 @@ def test_state_dependent_trigger_is_lowered_to_the_native_event_block():
     assert "setConcentration(" not in result.bngl
 
 
+def test_distrib_csymbol_is_preserved_in_native_event_assignments():
+    assignment = """<eventAssignment variable="S2">
+      <math xmlns="http://www.w3.org/1998/Math/MathML">
+        <apply>
+          <csymbol definitionURL="http://www.sbml.org/sbml/symbols/distrib/normal">normal</csymbol>
+          <cn>0</cn><cn>1.5</cn>
+        </apply>
+      </math>
+    </eventAssignment>"""
+
+    result = atomize(coupled_event_model(assignment=assignment))
+
+    assert result.success, result.error
+    assert "assignment: S2_amt = distrib_normal(0, 1.5)" in result.bngl
+    assert "# Events NOT simulated" not in result.bngl
+
+
+def test_square_root_distribution_parameter_lowers_to_native_sqrt():
+    assignment = """<eventAssignment variable="S2">
+      <math xmlns="http://www.w3.org/1998/Math/MathML">
+        <apply>
+          <csymbol definitionURL="http://www.sbml.org/sbml/symbols/distrib/normal">normal</csymbol>
+          <cn>0</cn>
+          <apply><root/><degree><cn>2</cn></degree><ci>k1</ci></apply>
+        </apply>
+      </math>
+    </eventAssignment>"""
+
+    result = atomize(coupled_event_model(assignment=assignment))
+
+    assert result.success, result.error
+    assert "assignment: S2_amt = distrib_normal(0, sqrt(k1))" in result.bngl
+
+
 def test_native_event_lowering_reports_an_informational_diagnostic():
     result = atomize(coupled_event_model())
 
