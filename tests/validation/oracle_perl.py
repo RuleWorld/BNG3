@@ -218,7 +218,8 @@ def ensemble(
         from scripts import regen_golden
         import json
 
-        identity = regen_golden._bng2_oracle_identity()
+        identity = regen_golden._bng2_oracle_identity(require_network=True)
+        regen_golden.check_seed_first_draws(regen_golden.ensemble_seeds(min_runs))
         receipt = regen_golden._generate_ensemble(
             model_name, min_runs, identity, destination_root=work_dir
         )
