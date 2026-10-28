@@ -34,12 +34,24 @@ class BNGCLI:
         log_file=None,
         timeout=None,
         app=None,
+        bngsim_backend=False,
+        bngsim_backend_helper=None,
+        bngsim_backend_method=None,
     ):
         self.app = app
         self.logger = BNGLogger(app=self.app)
         self.logger.debug(
             "Setting up BNGCLI object", loc=f"{__file__} : BNGCLI.__init__()"
         )
+        if bngsim_backend or bngsim_backend_helper or bngsim_backend_method:
+            # PyBioNetGen routed BNGCLI through a BNGsim helper process. BNG3
+            # runs BNGsim as a native backend of the modern API instead.
+            from bionetgen.core.exc import BNGSimError
+
+            raise BNGSimError(
+                "BNGCLI does not route through BNGsim in BNG3; use "
+                "bionetgen.load(path).simulate(..., backend='bngsim')"
+            )
         self.inp_file = inp_file
         import bionetgen.modelapi.model as mdl
 
