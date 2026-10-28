@@ -60,11 +60,12 @@ _SKIP_ACTIONS = {
 }
 
 
-def _network_only_text(source: str) -> str:
-    """Keep model construction actions and append one deterministic net build."""
+def _network_only_text(source: str, *, preserve_network_writer: bool = False) -> str:
+    """Keep model setup and generation actions; remove simulation/output actions."""
 
     kept_lines: list[str] = []
     kept_actions: list[str] = []
+    has_network_action = False
     section: Optional[str] = None
     for line in source.splitlines():
         stripped = line.strip()
@@ -88,6 +89,17 @@ def _network_only_text(source: str) -> str:
         if section == "protocol":
             continue
         if section == "actions" or (section is None and match):
+            if match and match.group(1) == "generate_network":
+                kept_actions.append(line.strip())
+                has_network_action = True
+                continue
+            if (
+                preserve_network_writer
+                and match
+                and match.group(1) in {"resetConcentrations", "writeNetwork"}
+            ):
+                kept_actions.append(line.strip())
+                continue
             if match and match.group(1) not in _SKIP_ACTIONS:
                 # Declarations such as setOption are legal at top level but
                 # not inside BNG3's action grammar. Preserve their scope.
@@ -109,7 +121,9 @@ def _network_only_text(source: str) -> str:
     kept_lines.extend(f"  {line.strip()}" for line in kept_actions)
     # Continuation/readFile models carry their own network; generating one
     # again makes the Perl oracle fail with "Nothing to do".
-    if not any("readFile" in action for action in kept_actions):
+    if not has_network_action and not any(
+        "readFile" in action for action in kept_actions
+    ):
         kept_lines.append("  generate_network({overwrite=>1})")
     kept_lines.append("end actions")
     return "\n".join(kept_lines) + "\n"
@@ -121,13 +135,18 @@ def _stage_model(
     work_dir: Path,
     *,
     support_roots: Iterable[Path] = (),
+    preserve_network_writer: bool = False,
 ) -> Path:
     """Copy one network-only model and its explicitly referenced support files."""
 
     work_dir.mkdir(parents=True, exist_ok=True)
     staged_model = work_dir / model.name
     staged_model.write_text(
-        _network_only_text(model.read_text(encoding="utf-8")), encoding="utf-8"
+        _network_only_text(
+            model.read_text(encoding="utf-8"),
+            preserve_network_writer=preserve_network_writer,
+        ),
+        encoding="utf-8",
     )
 
     input_dir = models_dir / "INPUT_FILES"

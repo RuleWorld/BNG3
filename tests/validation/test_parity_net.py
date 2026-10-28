@@ -70,3 +70,35 @@ def test_net_parity_full(model_name, bng_cpp, work_dir, request):
     entry = EXCEPTIONS.find(request.node.nodeid, model_name, "network_generation")
     with exception_ledger.strict_expected_failure(entry):
         _net_parity(model_name, bng_cpp, work_dir)
+
+
+@pytest.mark.parity
+@pytest.mark.parametrize(
+    ("model_name", "expected_counts"),
+    [("blbr", (20, 92)), ("tlbr", (19, 29))],
+)
+def test_network_generation_bounds_match_live_bng2_counts(
+    model_name, expected_counts, bng_cpp, work_dir
+):
+    """Generation bounds survive staging and match independent BNG2 counts."""
+
+    source = corpus.REPO / "tests" / "validation" / "Validate" / f"{model_name}.bngl"
+    require_oracle(source.is_file(), f"model {model_name!r} not on disk")
+    source_root = source.parent
+    staged = _stage_model(source, source_root, work_dir / "input")
+    reference_path, reference_source = oracle_perl.net(
+        model_name, work_dir / "bng2", source_path=staged
+    )
+    require_oracle(
+        reference_path is not None,
+        f"no live BNG2 reference for {model_name}: {reference_source}",
+    )
+    actual_path, _, error = runner.run_cli_path(bng_cpp, staged, work_dir / "bng3")
+    assert actual_path is not None, f"BNG3 produced no .net: {error}"
+    reference = compare.parse_net(reference_path)
+    actual = compare.parse_net(actual_path)
+    assert reference is not None, "could not parse independent BNG2 .net"
+    assert actual is not None, "could not parse BNG3 .net"
+    observed = (reference.n_species, reference.n_reactions)
+    assert observed == expected_counts, f"BNG2 oracle count changed: {observed}"
+    assert (actual.n_species, actual.n_reactions) == expected_counts
