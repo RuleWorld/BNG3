@@ -128,6 +128,11 @@ def _mutation_baseline(rows: list[dict]) -> dict:
             "assert_close(actual, expected, atol=1e-5)\n",
         ),
         (
+            {"tests/validation/tolerance.json": '{"rtol": 1e-6}\n'},
+            "tests/validation/tolerance.json",
+            '{"rtol": 1e-3}\n',
+        ),
+        (
             {"tests/test_skip.py": "def test_case():\n    assert True\n"},
             "tests/test_skip.py",
             "import pytest\n\n@pytest.mark.skip(reason='new exclusion')\ndef test_case():\n    assert True\n",
@@ -140,6 +145,11 @@ def _mutation_baseline(rows: list[dict]) -> dict:
             },
             "tests/validation/reference_exclusions.json",
             '{"profiles": {"default": ["case_a", "case_b"]}}\n',
+        ),
+        (
+            {"tests/validation/exclusions.yaml": "exclusions:\n  - case_a\n"},
+            "tests/validation/exclusions.yaml",
+            "exclusions:\n  - case_a\n  - case_b\n",
         ),
         (
             {"tests/test_contract.py": "def test_contract():\n    assert True\n"},
@@ -194,6 +204,50 @@ def test_product_fix_with_new_regression_test_is_allowed(tmp_path):
         "tests/test_engine.py",
         "def test_existing_behavior():\n    assert True\n\ndef test_regression_case():\n    assert True\n",
     )
+
+    assert checker.check_protected_changes(root, base) == []
+
+
+def test_product_and_test_that_reads_product_source_are_not_misclassified(
+    tmp_path,
+):
+    checker = _load_policy()
+    root, base = _repo(
+        tmp_path,
+        {
+            "python/engine.py": "VALUE = 1\n",
+            "tests/test_source_contract.py": (
+                "from pathlib import Path\n"
+                "SOURCE = Path('python/engine.py').read_text()\n"
+                "def test_source_contract():\n    assert 'VALUE' in SOURCE\n"
+            ),
+        },
+    )
+    _change(root, "python/engine.py", "VALUE = 2\n")
+    _change(
+        root,
+        "tests/test_source_contract.py",
+        "from pathlib import Path\n"
+        "SOURCE = Path('python/engine.py').read_text()\n"
+        "def test_source_contract():\n    assert 'VALUE = 2' in SOURCE\n",
+    )
+
+    assert checker.check_protected_changes(root, base) == []
+
+
+def test_product_change_with_deleted_unrelated_test_helper_is_allowed(tmp_path):
+    checker = _load_policy()
+    root, base = _repo(
+        tmp_path,
+        {
+            "python/engine.py": "VALUE = 1\n",
+            "tests/test_helpers.py": "def helper():\n    return 'plain helper'\n",
+        },
+    )
+    _change(root, "python/engine.py", "VALUE = 2\n")
+    (root / "tests/test_helpers.py").unlink()
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "remove unused test helper")
 
     assert checker.check_protected_changes(root, base) == []
 
