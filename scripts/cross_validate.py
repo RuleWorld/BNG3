@@ -107,7 +107,10 @@ def _network_only_text(source: str) -> str:
         kept_lines.pop()
     kept_lines.extend(("", "begin actions"))
     kept_lines.extend(f"  {line.strip()}" for line in kept_actions)
-    kept_lines.append("  generate_network({overwrite=>1})")
+    # Continuation/readFile models carry their own network; generating one
+    # again makes the Perl oracle fail with "Nothing to do".
+    if not any("readFile" in action for action in kept_actions):
+        kept_lines.append("  generate_network({overwrite=>1})")
     kept_lines.append("end actions")
     return "\n".join(kept_lines) + "\n"
 
