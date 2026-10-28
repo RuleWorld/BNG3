@@ -847,7 +847,6 @@ def test_playground_parser_surfaces_fast_and_reaction_conversion_diagnostics():
 @pytest.mark.parametrize(
     ("level", "spatial_dimensions", "message"),
     [
-        (3, 7, "BNG3"),
         (3, 3.5, "BNG3"),
         (2, 7, "SBML Level 2 permits only values 0 through 3"),
         (3, -1, "finite, non-negative"),

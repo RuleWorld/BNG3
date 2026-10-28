@@ -17,7 +17,7 @@ expected_check_names = (
     "lifecycle-construction-isolation",
     "lifecycle-mutation-baseline",
     "lifecycle-public-routes",
-    "lifecycle-topology-unavailable",
+    "lifecycle-topology-edits",
 )
 
 # Lifecycle work is deliberately bounded to a stable four-case slice. The
@@ -48,7 +48,7 @@ _ISSUES = {
     "lifecycle-construction-isolation": [141, 143],
     "lifecycle-mutation-baseline": [141, 143],
     "lifecycle-public-routes": [138, 139, 140],
-    "lifecycle-topology-unavailable": [141, 143],
+    "lifecycle-topology-edits": [141, 143, 171],
 }
 
 
@@ -60,6 +60,31 @@ def _row(case_id, name, status, detail, first_difference=None):
         "first_difference": first_difference,
         "related_issues": list(_ISSUES[name]),
     }
+
+
+def _lifecycle_not_tested_rows(case_id, case):
+    """Keep skipped lifecycle checks visible and classify only deliberate scope cuts."""
+    if case is None:
+        detail = "generated source case was not supplied"
+        applicability = None
+    elif case.get("id") not in _lifecycle_case_ids():
+        detail = "generated case is outside the declared four-case lifecycle slice"
+        applicability = "not-applicable"
+    else:
+        return []
+
+    rows = [
+        _row(case_id, name, "NOT_TESTED", detail)
+        for name in (
+            "lifecycle-construction-isolation",
+            "lifecycle-mutation-baseline",
+            "lifecycle-public-routes",
+        )
+    ]
+    if applicability:
+        for row in rows:
+            row["applicability"] = applicability
+    return rows
 
 
 def _write_protocol_progress(directory, case_id, check, stage, **context):
@@ -100,14 +125,93 @@ def _antlr_thread_local_cache_enabled(compile_command):
     return definitions[0] not in {"0", "false", "False"}
 
 
-def _topology_unavailable_row(case_id):
-    return _row(
-        case_id,
-        "lifecycle-topology-unavailable",
-        "UNSUPPORTED",
-        "runtime topology mutation is unsupported by the public Model API: no in-place edits for compartments, molecule types, seed species, or species compartment assignment; absent methods: "
-        + ", ".join(lifecycle_budget["topology_probes"]),
+_TOPOLOGY_PROBE = "BNG3TopologyProbe()"
+_TOPOLOGY_PROBE_COMPARTMENT = "BNG3TopologyProbeCompartment"
+
+
+def _insert_source_line(text, block, line):
+    """Insert one line into a BNGL block of the original source text.
+
+    This is written independently of the Model API's own edit code, so the
+    fresh source it builds is an independent comparator for the edited model.
+    """
+    words = r"[ \t]+".join(re.escape(word) for word in block.split())
+    end = re.search(rf"(?im)^[ \t]*end[ \t]+{words}[ \t]*$", text)
+    if end is not None:
+        return text[: end.start()] + "  " + line + "\n" + text[end.start() :]
+    seeds = re.search(r"(?im)^[ \t]*begin[ \t]+seed[ \t]+species[ \t]*$", text)
+    if block != "molecule types" or seeds is None:
+        raise ValueError(f"source has no {block} block")
+    insertion = f"begin {block}\n  {line}\nend {block}\n\n"
+    return text[: seeds.start()] + insertion + text[seeds.start() :]
+
+
+def _source_compartments(text):
+    match = re.search(
+        r"(?ims)^[ \t]*begin[ \t]+compartments[ \t]*$(.*?)^[ \t]*end[ \t]+compartments",
+        text,
     )
+    if match is None:
+        return []
+    names = []
+    for line in match.group(1).splitlines():
+        fields = line.split("#", 1)[0].split()
+        if fields:
+            names.append(fields[0])
+    return names
+
+
+def _topology_edit_contract(bionetgen, source, directory):
+    """Compare in-place topology edits with a fresh compilation of the edit."""
+    edited = bionetgen.load(source)
+    missing = [
+        name
+        for name in lifecycle_budget["topology_probes"]
+        if not callable(getattr(edited, name, None))
+    ]
+    if missing:
+        return {"field": "topology.methods", "missing": missing}
+    text = Path(source).read_text()
+    compartments = _source_compartments(text)
+    seed_compartment = compartments[0] if compartments else None
+    probe_compartment = seed_compartment
+    fresh = _insert_source_line(text, "molecule types", _TOPOLOGY_PROBE)
+
+    edited.add_molecule_type(_TOPOLOGY_PROBE)
+    edited.add_seed_species(_TOPOLOGY_PROBE, 3, compartment=seed_compartment)
+    if seed_compartment is not None:
+        probe_compartment = _TOPOLOGY_PROBE_COMPARTMENT
+        edited.add_compartment(probe_compartment, 3, 1)
+        edited.move_species_to_compartment(
+            _TOPOLOGY_PROBE, probe_compartment, from_compartment=seed_compartment
+        )
+        fresh = _insert_source_line(fresh, "compartments", f"{probe_compartment} 3 1")
+        seed_line = f"@{probe_compartment}:{_TOPOLOGY_PROBE} 3"
+    else:
+        seed_line = f"{_TOPOLOGY_PROBE} 3"
+    fresh = _insert_source_line(fresh, "seed species", seed_line)
+    fresh_path = directory / "topology-fresh.bngl"
+    fresh_path.write_text(fresh)
+
+    options = {"method": "ode", "t_end": 2.0, "n_steps": 10}
+    edited_result = edited.simulate(**options)
+    fresh_result = bionetgen.load(fresh_path).simulate(**options)
+    difference = _result_difference(edited_result, fresh_result)
+    runs = [
+        _result_receipt(edited_result, route="edited-model"),
+        _result_receipt(fresh_result, route="fresh-edited-source"),
+    ]
+    if not difference:
+        edited.remove_seed_species(_TOPOLOGY_PROBE, compartment=probe_compartment)
+        removed_result = edited.simulate(**options)
+        original_result = bionetgen.load(source).simulate(**options)
+        difference = _result_difference(removed_result, original_result)
+        runs += [
+            _result_receipt(removed_result, route="edited-model-after-removal"),
+            _result_receipt(original_result, route="fresh-original-source"),
+        ]
+    _write_lifecycle_receipt(directory, "lifecycle-topology-edits", runs)
+    return difference
 
 
 def _lifecycle_case_ids():
@@ -604,18 +708,9 @@ def run(source: Path, case_id: str, directory: Path, *, case=None) -> list[dict]
             )
         )
 
-    if case is None or case.get("id") not in _lifecycle_case_ids():
-        detail = (
-            "generated case is outside the declared four-case lifecycle slice"
-            if case is not None
-            else "generated source case was not supplied"
-        )
-        for name in (
-            "lifecycle-construction-isolation",
-            "lifecycle-mutation-baseline",
-            "lifecycle-public-routes",
-        ):
-            rows.append(_row(case_id, name, "NOT_TESTED", detail))
+    skipped_lifecycle_rows = _lifecycle_not_tested_rows(case_id, case)
+    if skipped_lifecycle_rows:
+        rows.extend(skipped_lifecycle_rows)
     else:
         for name, check in (
             ("lifecycle-construction-isolation", _lifecycle_construction_isolation),
@@ -644,34 +739,28 @@ def run(source: Path, case_id: str, directory: Path, *, case=None) -> list[dict]
                     )
                 )
 
+    _write_protocol_progress(directory, case_id, "lifecycle-topology-edits", "start")
     try:
         import bionetgen
 
-        topology_model = bionetgen.load(source)
-        probes = [
-            name
-            for name in lifecycle_budget["topology_probes"]
-            if hasattr(topology_model, name)
-        ]
-        if probes:
-            rows.append(
-                _row(
-                    case_id,
-                    "lifecycle-topology-unavailable",
-                    "FAIL",
-                    "runtime topology API appeared without a declared semantic contract: "
-                    + ", ".join(probes),
-                )
+        difference = _topology_edit_contract(bionetgen, source, directory)
+        rows.append(
+            _row(
+                case_id,
+                "lifecycle-topology-edits",
+                "FAIL" if difference else "PASS",
+                "in-place compartment, molecule type and seed species edits "
+                "matched fresh compilations of independently edited sources",
+                difference,
             )
-        else:
-            rows.append(_topology_unavailable_row(case_id))
+        )
     except Exception as exc:
         rows.append(
             _row(
                 case_id,
-                "lifecycle-topology-unavailable",
+                "lifecycle-topology-edits",
                 "FAIL",
-                f"topology capability probe raised {type(exc).__name__}: {exc}",
+                f"topology edit contract raised {type(exc).__name__}: {exc}",
             )
         )
 
@@ -703,7 +792,6 @@ def run(source: Path, case_id: str, directory: Path, *, case=None) -> list[dict]
         for row in rows
         if row["status"] == "PASS"
         and row["check"].rsplit(":", 1)[-1].startswith("lifecycle-")
-        and row["check"].rsplit(":", 1)[-1] != "lifecycle-topology-unavailable"
     }
     if successful_lifecycle:
         receipt_path = directory / "lifecycle-results.json"

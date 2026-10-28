@@ -22,15 +22,12 @@ only two whose recorded gap is an algebraic rule that BNG3 does not apply:
 
 ``semantic/00761``
     An algebraic rule over two species (``(1 + k3) * S1 - T = 0``) and an
-    event whose trigger reads a species produced by a reaction.  The Atomizer
-    does not apply the rule, so the source dynamics are unknown.  No
-    conclusion about the event may then be drawn from the generated model
-    either -- in particular the event must not be reported as "lowered to
-    scheduled actions" when no action was scheduled at all.
+    event whose trigger reads a species produced by a reaction. Its unique
+    linear species constraint is solved exactly before lowering the event.
 
-Both cases must be *refused*, and the refusal must name the construct that
-BNG3 cannot represent.  The tests assert the harness's verdict and its cause
-classification, not a diagnostic string.
+The first case must still be refused because its persistent delayed event is
+not representable. The second must match its official trajectory. The tests
+assert the harness verdict, not a diagnostic string.
 """
 
 from __future__ import annotations
@@ -305,8 +302,27 @@ def _write_case(tmp_path: Path, case_id: str, model: str, settings: str, results
     }
 
 
+def test_linear_algebraic_rule_with_constant_user_function_is_solved_exactly():
+    """The unique algebraic species variable can use an SBML helper function."""
+
+    from bionetgen.atomizer.modern import SBMLParser
+
+    model = SBMLParser().parse(_00761_MODEL)
+    rule = next(
+        rule
+        for rule in model.rules
+        if rule.type == "assignment" and rule.variable == "S1"
+    )
+
+    assert rule.type == "assignment"
+    assert "T" in rule.math
+    assert "S1" not in rule.math
+    assert "3.5" in rule.math
+
+
 def test_persistent_event_over_an_algebraic_rule_matches_official_reference(tmp_path):
     """The exact 01575 reference trajectory includes its delayed reset."""
+
 
     validator = _load_validator("validate_sbml_test_suite")
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
@@ -318,14 +334,8 @@ def test_persistent_event_over_an_algebraic_rule_matches_official_reference(tmp_
     assert record["official_conformance"]["comparison"]["passed_points"] == 22
 
 
-def test_algebraic_rule_over_species_is_refused_with_its_event_named(tmp_path):
-    """``semantic/00761`` must name the event it cannot evaluate.
-
-    The Atomizer does not apply the algebraic rule, so the generated model
-    does not reproduce the source dynamics.  The event's trigger therefore
-    cannot be evaluated, and the event must not be reported as "lowered to
-    scheduled actions" when no action was scheduled.
-    """
+def test_linear_algebraic_species_rule_and_state_event_match_official_case(tmp_path):
+    """``semantic/00761`` must retain the algebraic species and event behavior."""
 
     validator = _load_validator("validate_sbml_test_suite")
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
@@ -334,30 +344,26 @@ def test_algebraic_rule_over_species_is_refused_with_its_event_named(tmp_path):
     record = validator._validate_case(case, cpp, tmp_path, 40.0, 50, 1e-9, 1e-14, None)
     validator._unsupported_summary([record])
 
-    assert record["status"] == "unsupported"
-    assert record["official_conformance"]["status"] == "unsupported"
-    # Both constructs are named: the algebraic rule that BNG3 does not apply
-    # and the event whose trigger cannot be evaluated without it.
-    assert "algebraic_rules" in record["unsupported_causes"]
-    assert "events" in record["unsupported_causes"]
-    assert record["unsupported_subcauses"]["events"] == ["algebraic_rule_blocks_event"]
+    assert record["status"] == "passed"
+    assert record["official_conformance"]["status"] == "passed"
 
 
-def test_unapplied_algebraic_rule_does_not_schedule_a_state_event():
-    """The event of ``semantic/00761`` is never claimed to be scheduled.
-
-    ``synthesize_event_actions`` reports an event it certified inactive as a
-    converted event, and the summary then claimed that it had been "lowered to
-    scheduled BNGL actions" although the generated model contains no action at
-    all.  A model with an unapplied algebraic rule has unknown dynamics, so
-    the event must be reported as untranslated instead.
-    """
+def test_solved_algebraic_rule_allows_event_action_lowering():
+    """The event is lowered only after its dependent algebraic rule is solved."""
 
     from bionetgen.atomizer.modern import Atomizer
 
-    result = Atomizer(atomize=False, quiet_mode=True).atomize(_00761_MODEL)
+    atomizer = Atomizer(atomize=False, quiet_mode=True)
+    parsed = atomizer.parser.parse(_00761_MODEL)
+    assert any(
+        rule.type == "assignment" and rule.variable == "S1" for rule in parsed.rules
+    )
+    result = atomizer.atomize(_00761_MODEL)
     assert result.success, result.error
 
-    # The generated model carries the refusal, and no scheduled action.
-    assert "# Events NOT simulated" in result.bngl
-    assert "begin actions" not in result.bngl
+    assert "algebraic rule(s) present" not in result.bngl
+    assert "# Events NOT simulated" not in result.bngl
+    assert (
+        "trigger-time semantics are represented by explicit simulation phase boundaries"
+        in result.bngl
+    )

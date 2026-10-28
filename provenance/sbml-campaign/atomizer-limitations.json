@@ -35,13 +35,13 @@
   ],
   "constructs": {
     "compartment:unsupported-spatial-dimensions": {
-      "bng3_does": "The Atomizer refuses the compartment and says why: \"Compartment \\\"C\\\" has spatialDimensions 7; BNG3 does not support spatialDimensions values greater than 3.\" It also refuses a negative dimension and, for a Level 2 model, any value outside 0 through 3.",
+      "bng3_does": "For SBML Level 3, BNG3 preserves integer spatialDimensions values above 3 and keeps reactions' explicit SBML flux. It still refuses non-integer values above 3 (for example, 3.5), negative or non-finite values, and Level 2 values outside 0 through 3.",
       "citation": "SBML Level 3 Version 2 Core Sec. 4.5.2, Sec. 4.5.4",
       "first_recorded": "2026-10-20",
-      "reducible": "No, not as a compartment. BNGL compartments carry a volume; a compartment with a fractal or higher dimension has no BNGL counterpart, and the unit selection Sec. 4.5.4 describes cannot be expressed.",
+      "reducible": "Partly reduced: integer Level 3 dimensions above 3 are now preserved when reactions retain their explicit SBML flux. Non-integer values above 3 remain unsupported because BNGL compartment declarations store an integer dimension; Level 2 is limited by the specification to values 0 through 3.",
       "sbml_requires": "SBML Level 3 Version 2 Core Sec. 4.5.2 lets a compartment declare any floating-point spatialDimensions value, and Sec. 4.5.4 uses that value to choose between the model's volumeUnits, areaUnits and lengthUnits.",
       "status": "open",
-      "title": "A compartment with more than three spatial dimensions"
+      "title": "A compartment dimension the Atomizer cannot preserve"
     },
     "events:state-trigger-not-schedulable": {
       "bng3_does": "The Atomizer refuses the event and says why: \"trigger is not a simple time threshold (state-dependent triggers cannot be scheduled)\", or, when the trigger names an identifier that is not a legal SBML SId, that the identifier \"contains a character outside the SBML SId class and cannot be matched\".",

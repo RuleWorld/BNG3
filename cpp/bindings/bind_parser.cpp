@@ -49,9 +49,11 @@ void bind_parser(py::module_& m) {
     }, py::arg("path"),
        "Parse a BNGL file and return a Model object");
 
-    m.def("parse_string", [](const std::string& text) {
+    m.def("parse_string", [](const std::string& text, const std::string& source_path) {
         py::gil_scoped_release release;
-        return do_parse(text, "<string>");
-    }, py::arg("text"),
+        // A source path keeps file-relative references (TFUN tables, model
+        // names) identical to parsing the same text from that file.
+        return do_parse(text, source_path.empty() ? std::string("<string>") : source_path);
+    }, py::arg("text"), py::arg("source_path") = std::string(),
        "Parse a BNGL string and return a Model object");
 }

@@ -4257,9 +4257,16 @@ double OdeIntegrator::computePropensity(const CompiledReaction& rxn,
     // Atomizer absolute fluxes already contain reactant dependence. Authored
     // BNGL TotalRate laws follow BNG2's finite-network convention: omit the
     // symmetry factor but still multiply by the reactant counts.
+    //
+    // The availability check stops an absolute flux from consuming molecules
+    // that are not there. A constant ($ or SBML boundaryCondition) reactant is
+    // never consumed, so it is not checked: an SBML zero-order source such as
+    // `$Source() -> X()` with Source at 0 fires at its full rate, matching the
+    // deterministic reading.
     if (rxn.isAbsoluteFlux) {
         for (std::size_t i = 0; i < rxn.reactantIndices.size(); ++i) {
             const auto index = rxn.reactantIndices[i];
+            if (index < fixedSpecies_.size() && fixedSpecies_[index]) continue;
             const auto required = static_cast<double>(
                 std::count(rxn.reactantIndices.begin(),
                            rxn.reactantIndices.begin() + i, index) + 1);

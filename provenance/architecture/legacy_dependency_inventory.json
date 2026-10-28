@@ -13,6 +13,7 @@
           "tests.python.test_bng_parsing",
           "tests.python.test_bngfile_compat",
           "tests.python.test_get_rule_mod",
+          "tests.python.test_pybionetgen_api_compat",
           "tests.python.test_regression",
           "tests.python.test_runner",
           "tests.python.test_sympy_odes",

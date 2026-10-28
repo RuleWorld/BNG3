@@ -277,3 +277,49 @@ end reaction rules
     // TotalRate capability from the marker-shaped prefix.
     CHECK(consumed > 4 * 64);
 }
+
+TEST_CASE("PSA absolute flux from a constant zero-count source fires",
+          "[PsaSimulator][AbsoluteFlux]") {
+    // SBML zero-order immigration lowered by the Atomizer: the constant
+    // source is never consumed, so its count of 0 must not block the flux.
+    const auto model = bng::parser::parseModel(R"BNGL(
+setOption("BNG3AbsoluteFluxRules","Immigration")
+begin parameters
+    Alpha 10
+end parameters
+begin molecule types
+    X()
+    Source()
+end molecule types
+begin seed species
+    X() 0
+    $Source() 0
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    Immigration: Source() -> X() Alpha TotalRate
+end reaction rules
+)BNGL");
+    REQUIRE(model != nullptr);
+    bng::engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    bng::engine::PsaSimulator simulator(*model, network);
+    bng::engine::OdeOptions options;
+    options.method = "psa";
+    options.tEnd = 1.0;
+    options.nSteps = 1;
+
+    constexpr std::size_t trajectories = 1024;
+    double total = 0.0;
+    for (std::uint64_t seed = 1; seed <= trajectories; ++seed) {
+        options.seed = seed;
+        const auto result = simulator.simulate(options, 0.0);
+        REQUIRE(result.observables.size() == 2);
+        total += result.observables.back()[0];
+    }
+    // X(1) is Poisson with mean Alpha * 1 = 10; the ensemble mean has
+    // standard error sqrt(10 / 1024) ~ 0.1.
+    CHECK(total / trajectories == Catch::Approx(10.0).margin(0.5));
+}

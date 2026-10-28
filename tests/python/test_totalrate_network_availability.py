@@ -270,3 +270,80 @@ end actions
 
     with pytest.raises(RuntimeError, match=message):
         bionetgen.load(str(protocol)).execute()
+
+
+IMMIGRATION_DEATH = """setOption("BNG3AbsoluteFluxRules","Immigration")
+begin model
+begin parameters
+  Alpha 10
+  Mu 0.1
+end parameters
+begin compartments
+  Cell 3 1
+end compartments
+begin molecule types
+  X()
+  Source()
+  Sink()
+end molecule types
+begin seed species
+  @Cell:X() 0
+  @Cell:$Source() 0
+  @Cell:$Sink() 0
+end seed species
+begin observables
+  Species X_amt @Cell:X()
+  Species Source_amt @Cell:Source()
+end observables
+begin reaction rules
+  Immigration: @Cell:Source() -> @Cell:X() Alpha TotalRate
+  Death: @Cell:X() -> @Cell:Sink() Mu
+end reaction rules
+end model"""
+
+
+def _immigration_death_mean(t):
+    # Immigration-death from X=0: X(t) is Poisson with mean
+    # (Alpha/Mu) * (1 - exp(-Mu * t)).
+    import math
+
+    return 100.0 * (1.0 - math.exp(-0.1 * t))
+
+
+def test_absolute_flux_from_a_constant_zero_count_source_fires_in_direct_ssa():
+    # SBML Test Suite stochastic/00024-00026: the Atomizer lowers a zero-order
+    # immigration to a TotalRate rule from a constant source species held at
+    # 0. The source is never consumed, so it must not block the flux.
+    model = cpp.parse_string(IMMIGRATION_DEATH)
+    network = cpp.generate_network(model)
+    result = cpp.simulate_ssa(model, network, t_end=10.0, n_steps=10, seed=24001)
+    # P(X(10) == 0) = exp(-63.2); a correct engine never reports zero here.
+    assert result["observables"]["X_amt"][-1] > 0.0
+    assert all(value == 0.0 for value in result["observables"]["Source_amt"])
+
+
+def test_absolute_flux_from_a_constant_zero_count_source_matches_the_analytic_law():
+    import math
+
+    model = cpp.parse_string(IMMIGRATION_DEATH)
+    network = cpp.generate_network(model)
+    batch = 4000
+    result = cpp.simulate_batch_ssa_cpu(
+        model,
+        network,
+        batch_size=batch,
+        t_end=10.0,
+        n_steps=10,
+        t_start=0.0,
+        base_seed=24002,
+        max_sim_steps=0,
+        threads=1,
+    )
+    means = result["observable_means"]["X_amt"]
+    stds = result["observable_stds"]["X_amt"]
+    for step in (1, 5, 10):
+        expected = _immigration_death_mean(float(step))
+        # Poisson: variance equals the mean. Allow 5 standard errors.
+        tolerance = 5.0 * math.sqrt(expected / batch)
+        assert abs(means[step] - expected) <= tolerance
+        assert stds[step] == pytest.approx(math.sqrt(expected), rel=0.1)

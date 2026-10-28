@@ -5,7 +5,11 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from tests.validation import integrated_protocol as protocol
+from tests.validation import (
+    integrated_consumers,
+    integrated_protocol as protocol,
+    reporting,
+)
 from tests.validation.reproduce_issue141_lifecycle import _native_extension_path
 
 
@@ -19,7 +23,7 @@ def test_expected_protocol_checks_are_explicit_and_issue_linked():
         "lifecycle-construction-isolation",
         "lifecycle-mutation-baseline",
         "lifecycle-public-routes",
-        "lifecycle-topology-unavailable",
+        "lifecycle-topology-edits",
     )
     assert set(protocol._ISSUES) == set(protocol.expected_check_names)
     assert {issue for issues in protocol._ISSUES.values() for issue in issues} == {
@@ -58,16 +62,95 @@ def test_lifecycle_protocol_declares_bounded_work_and_explicit_topology_gap():
             "move_species_to_compartment",
         ),
     }
-    row = protocol._topology_unavailable_row("case")
-    assert row["status"] == "UNSUPPORTED"
-    assert row["check"] == "case:protocol:lifecycle-topology-unavailable"
-    assert "runtime topology mutation" in row["detail"]
+    assert "lifecycle-topology-edits" in protocol.expected_check_names
+    # The former unavailability row is retired now that the edits exist.
+    retired = "case:protocol:lifecycle-topology-unavailable"
+    assert retired not in {f"case:protocol:{n}" for n in protocol.expected_check_names}
+    assert protocol._ISSUES["lifecycle-topology-edits"] == [141, 143, 171]
+
+
+def test_topology_contract_builds_an_independent_fresh_source():
+    source = (
+        "begin model\nbegin compartments\n  C 3 1\nend compartments\n"
+        "begin molecule types\n  A()\nend molecule types\n"
+        "begin seed species\n  @C:A() 10\nend seed species\nend model\n"
+    )
+    assert protocol._source_compartments(source) == ["C"]
+    edited = protocol._insert_source_line(source, "molecule types", "P()")
+    edited = protocol._insert_source_line(edited, "seed species", "@C:P() 3")
+    assert "  A()\n  P()\nend molecule types" in edited
+    assert "  @C:A() 10\n  @C:P() 3\nend seed species" in edited
+    without = "begin model\nbegin seed species\n  A() 1\nend seed species\nend model\n"
+    added = protocol._insert_source_line(without, "molecule types", "A()")
+    assert added.index("begin molecule types") < added.index("begin seed species")
 
 
 def test_lifecycle_case_slice_respects_declared_budget():
     selected = protocol._lifecycle_case_ids()
     assert len(selected) == protocol.lifecycle_budget["max_cases"] == 4
     assert len(set(selected)) == 4
+
+
+def test_out_of_slice_lifecycle_checks_are_non_gating_but_remain_not_tested():
+    from tests.validation.integrated_cases import generated_cases
+
+    selected_ids = set(protocol._lifecycle_case_ids())
+    outside_case = next(
+        case for case in generated_cases(full=True) if case["id"] not in selected_ids
+    )
+    rows = protocol._lifecycle_not_tested_rows(
+        outside_case["id"],
+        outside_case,
+    )
+    assert [row["check"].rsplit(":", 1)[-1] for row in rows] == [
+        "lifecycle-construction-isolation",
+        "lifecycle-mutation-baseline",
+        "lifecycle-public-routes",
+    ]
+    assert [row["status"] for row in rows] == ["NOT_TESTED"] * 3
+    assert all(
+        row["detail"]
+        == "generated case is outside the declared four-case lifecycle slice"
+        for row in rows
+    )
+    assert all(row["applicability"] == "not-applicable" for row in rows)
+
+    report_rows = [dict(row, id=row["check"]) for row in rows]
+    worker_summary = {
+        "id": outside_case["id"] + ":protocol",
+        "status": "NOT_TESTED",
+        "detail": "protocol lifecycle slice was not selected",
+    }
+    integrated_consumers.mark_process_summary(worker_summary, report_rows)
+    assert worker_summary["aggregate"] is True
+    assert reporting.gate_failures([*report_rows, worker_summary]) == []
+
+    required = dict(report_rows[0], support_required=True)
+    assert reporting.gate_failures([required]) == [required]
+
+    missing_source = [
+        dict(row, id=row["check"])
+        for row in protocol._lifecycle_not_tested_rows("missing-source", None)
+    ]
+    assert all("applicability" not in row for row in missing_source)
+    assert reporting.gate_failures(missing_source) == missing_source
+
+    selected_case_ids = (
+        "v1-n20-r0-a0",
+        "reversible-v3-n80-r0-a0",
+        "dimerization-v1-n20-r0-a0",
+        "dimerization-v3-n80-r0-a0",
+    )
+    for case_id in selected_case_ids:
+        assert protocol._lifecycle_not_tested_rows(case_id, {"id": case_id}) == []
+        selected_failure = protocol._row(
+            case_id,
+            "lifecycle-mutation-baseline",
+            "FAIL",
+            "trajectory differed",
+        )
+        selected_failure["id"] = selected_failure["check"]
+        assert reporting.gate_failures([selected_failure]) == [selected_failure]
 
 
 def test_result_comparison_requires_exact_time_grid_and_observable_set():
