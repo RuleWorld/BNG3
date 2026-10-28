@@ -32,6 +32,34 @@ jobs:
             exit 1
           }
 
+      - name: Require the exact-main weekly mutation artifact and ratchet
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api --paginate --slurp \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/weekly.yml/runs?head_sha=${GITHUB_SHA}&branch=main&event=schedule&per_page=100" \
+            > "$RUNNER_TEMP/weekly-runs.json"
+          run_id=$(python - "$RUNNER_TEMP/weekly-runs.json" "$GITHUB_SHA" <<'PY'
+          import json, sys
+          pages = json.load(open(sys.argv[1]))
+          runs = [r for page in pages for r in page.get("workflow_runs", [])
+                  if r.get("head_sha") == sys.argv[2] and r.get("event") == "schedule"
+                  and r.get("status") == "completed"]
+          if not runs:
+              raise SystemExit("no completed exact-main scheduled mutation campaign")
+          print(max(runs, key=lambda r: r.get("run_number", 0))["id"])
+          PY
+          )
+          artifact="release-product-mutation-ratchet-${GITHUB_SHA}"
+          gh run download "$run_id" --name "$artifact" --dir "$RUNNER_TEMP/mutation-artifact"
+          python tests/validation/policy/run_antigaming.py --root "$GITHUB_WORKSPACE" \
+            --check release-scheduled-mutation-ratchet \
+            --mutation-report "$RUNNER_TEMP/mutation-artifact/mutation-report.json" \
+            --expected-mutation-revision "$GITHUB_SHA" \
+            --mutation-baseline tests/validation/policy/mutation-baseline.json
+
       - name: Read exact-SHA main push workflow results
         env:
           GH_TOKEN: ${{ github.token }}

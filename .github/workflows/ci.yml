@@ -28,6 +28,8 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - uses: actions/setup-python@v5
         with:
@@ -39,6 +41,27 @@ jobs:
         # Pinned: unpinned black floated 26.5.1 -> 26.10.0 overnight (2026-10-04/05)
         # and red-lit every PR branch whose content the old version accepted.
         run: pip install "black==26.10.0" "ruff==0.15.1" pytest numpy pyyaml
+
+      - name: Run anti-gaming checks from the PR base revision
+        env:
+          BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
+          HEAD_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/base-policy"
+          if git cat-file -e "$BASE_REVISION:tests/validation/policy/antigaming.py" 2>/dev/null && git cat-file -e "$BASE_REVISION:tests/validation/policy/run_antigaming.py" 2>/dev/null; then
+            git show "$BASE_REVISION:tests/validation/policy/antigaming.py" > "$RUNNER_TEMP/base-policy/antigaming.py"
+            git show "$BASE_REVISION:tests/validation/policy/run_antigaming.py" > "$RUNNER_TEMP/base-policy/run_antigaming.py"
+          elif ! git cat-file -e "$BASE_REVISION:tests/validation/policy/antigaming.py" 2>/dev/null && ! git cat-file -e "$BASE_REVISION:tests/validation/policy/run_antigaming.py" 2>/dev/null; then
+            python tests/validation/policy/run_antigaming.py --root "$GITHUB_WORKSPACE" --base "$BASE_REVISION" --head "$HEAD_REVISION" --bootstrap-check
+            cp tests/validation/policy/antigaming.py tests/validation/policy/run_antigaming.py "$RUNNER_TEMP/base-policy/"
+            echo "::warning::BOOTSTRAP SETUP ONLY: base revision has no anti-gaming checker; candidate checker is exercised, but this is not a base-revision acceptance PASS."
+            export ANTIGAMING_BOOTSTRAP=1
+          else
+            echo "base anti-gaming checker is incomplete; bootstrap requires both checker files to be absent"; exit 1
+          fi
+          python "$RUNNER_TEMP/base-policy/run_antigaming.py" --root "$GITHUB_WORKSPACE" --base "$BASE_REVISION" --head "$HEAD_REVISION" \
+            --check release-protected-expectations --check release-no-product-fixture-names
 
       - name: Check Python formatting (Black)
         # The whole repository, not a path allowlist: an ungated file is a
@@ -860,6 +883,8 @@ jobs:
       BNG_CPP: ${{ github.workspace }}/build/cpp/bng_cpp
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Download bng_cpp artifact
         uses: actions/download-artifact@v4
@@ -890,6 +915,34 @@ jobs:
         env:
           BNG3_SOURCE_REVISION: ${{ github.sha }}
           BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Generate and execute a fresh seeded source case
+        env:
+          BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/base-policy" "$RUNNER_TEMP/antigaming-seed"
+          if git cat-file -e "$BASE_REVISION:tests/validation/policy/antigaming.py" 2>/dev/null && git cat-file -e "$BASE_REVISION:tests/validation/policy/run_antigaming.py" 2>/dev/null; then
+            git show "$BASE_REVISION:tests/validation/policy/antigaming.py" > "$RUNNER_TEMP/base-policy/antigaming.py"
+            git show "$BASE_REVISION:tests/validation/policy/run_antigaming.py" > "$RUNNER_TEMP/base-policy/run_antigaming.py"
+          elif ! git cat-file -e "$BASE_REVISION:tests/validation/policy/antigaming.py" 2>/dev/null && ! git cat-file -e "$BASE_REVISION:tests/validation/policy/run_antigaming.py" 2>/dev/null; then
+            python tests/validation/policy/run_antigaming.py --root "$GITHUB_WORKSPACE" --base "$BASE_REVISION" --head HEAD --bootstrap-check
+            cp tests/validation/policy/antigaming.py tests/validation/policy/run_antigaming.py "$RUNNER_TEMP/base-policy/"
+            echo "::warning::BOOTSTRAP SETUP ONLY: the base revision has no checker; this seeded execution is not a base-revision acceptance PASS."
+            export ANTIGAMING_BOOTSTRAP=1
+          else
+            echo "base anti-gaming checker is incomplete; bootstrap requires both checker files to be absent"; exit 1
+          fi
+          python "$RUNNER_TEMP/base-policy/run_antigaming.py" --root "$GITHUB_WORKSPACE" --base "$BASE_REVISION" \
+            --check release-independent-seeds --seed-manifest "$RUNNER_TEMP/antigaming-seed/manifest.json"
+      - name: Retain fresh generated case and seed
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: antigaming-seeded-case-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/antigaming-seed/
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Run atomizer tests
         run: pytest tests/python/ -v -k "atomizer" --tb=short --maxfail=1 --junitxml=atomizer-results.xml
