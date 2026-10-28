@@ -7,6 +7,7 @@ import importlib
 import operator
 import os
 from pathlib import Path
+import re
 import sys
 from typing import Optional, Union
 
@@ -67,6 +68,9 @@ class BioNetGenModel:
         self._continuation_network: Optional[_cpp.GeneratedNetwork] = None
         self._network_from_continuation = False
         self._simulation_has_run = False
+        # Parameter values set through set_parameter, in the order they were
+        # set, so a topology edit can rebuild the model and keep them.
+        self._parameter_overrides: dict = {}
 
     @property
     def parameters(self) -> list:
@@ -123,6 +127,9 @@ class BioNetGenModel:
         can_continue = self._simulation_has_run and previous_network is not None
         try:
             self._model.set_parameter(name, value)
+            overrides = self.__dict__.setdefault("_parameter_overrides", {})
+            overrides.pop(name, None)
+            overrides[name] = value
         finally:
             # Generated networks contain evaluated seed amounts and other
             # parameter-dependent compile results. Also discard the cache if
@@ -195,6 +202,255 @@ class BioNetGenModel:
         from bionetgen.viz import write_sbml_multi
 
         return write_sbml_multi(self, path)
+
+    # ------------------------------------------------------------------
+    # Topology edits
+    #
+    # Each edit regenerates the model's BNGL, changes one block, and parses
+    # the result again, so an edited model behaves exactly like a model
+    # written with that change in BNGL. The edit is atomic: if the edited
+    # model does not parse, the model is left unchanged. Parameter values set
+    # with set_parameter are kept. An edit discards any generated network and
+    # simulation continuation state, because the species set may change.
+    # ------------------------------------------------------------------
+
+    _IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+    _BLOCK_ORDER = (
+        "parameters",
+        "compartments",
+        "molecule types",
+        "seed species",
+        "observables",
+        "functions",
+        "energy patterns",
+        "barrier patterns",
+        "reaction rules",
+    )
+
+    @staticmethod
+    def _block_line(block: str, kind: str) -> re.Pattern:
+        words = r"[ \t]+".join(re.escape(word) for word in block.split())
+        return re.compile(rf"(?im)^[ \t]*{kind}[ \t]+{words}[ \t]*$")
+
+    @classmethod
+    def _insert_block_line(cls, text: str, block: str, line: str) -> str:
+        end = cls._block_line(block, "end").search(text)
+        if end is not None:
+            return text[: end.start()] + "  " + line + "\n" + text[end.start() :]
+        position = None
+        for later in cls._BLOCK_ORDER[cls._BLOCK_ORDER.index(block) + 1 :]:
+            begin = cls._block_line(later, "begin").search(text)
+            if begin is not None:
+                position = begin.start()
+                break
+        if position is None:
+            end_model = cls._block_line("model", "end").search(text)
+            if end_model is None:
+                raise ValueError("model BNGL has no 'end model' line")
+            position = end_model.start()
+        return (
+            text[:position]
+            + f"begin {block}\n  {line}\nend {block}\n\n"
+            + text[position:]
+        )
+
+    @classmethod
+    def _block_body(cls, text: str, block: str):
+        begin = cls._block_line(block, "begin").search(text)
+        end = cls._block_line(block, "end").search(text)
+        if begin is None or end is None or end.start() < begin.end():
+            return None
+        return begin.end(), end.start()
+
+    @staticmethod
+    def _split_seed_line(line: str):
+        """Return (constant, compartment, pattern, rest) for one seed line."""
+        stripped = line.split("#", 1)[0].strip()
+        if not stripped:
+            return None
+        parts = stripped.split(None, 1)
+        token = parts[0]
+        rest = parts[1] if len(parts) > 1 else ""
+        constant = token.startswith("$")
+        token = token[1:] if constant else token
+        compartment = None
+        match = re.match(r"^@([A-Za-z_][A-Za-z0-9_]*)::?(.*)$", token)
+        if match:
+            compartment, token = match.group(1), match.group(2)
+        return constant, compartment, token, rest
+
+    def _seed_line_indices(self, text: str, pattern: str, compartment):
+        span = self._block_body(text, "seed species")
+        if span is None:
+            return span, []
+        wanted = re.sub(r"\s+", "", pattern)
+        lines = text[span[0] : span[1]].split("\n")
+        matches = []
+        for index, line in enumerate(lines):
+            parsed = self._split_seed_line(line)
+            if parsed is None:
+                continue
+            _constant, seed_compartment, seed_pattern, _rest = parsed
+            if re.sub(r"\s+", "", seed_pattern) != wanted:
+                continue
+            if compartment is not None and seed_compartment != compartment:
+                continue
+            matches.append(index)
+        return span, matches
+
+    def _replace_seed_line(self, operation, pattern, compartment, replace):
+        def edit(text: str) -> str:
+            span, matches = self._seed_line_indices(text, pattern, compartment)
+            where = f" in compartment {compartment!r}" if compartment else ""
+            if not matches:
+                raise ValueError(f"no seed species {pattern!r}{where}")
+            if len(matches) > 1:
+                raise ValueError(
+                    f"seed species {pattern!r}{where} matches {len(matches)} "
+                    "entries; pass compartment= to choose one"
+                )
+            lines = text[span[0] : span[1]].split("\n")
+            replacement = replace(self._split_seed_line(lines[matches[0]]))
+            if replacement is None:
+                del lines[matches[0]]
+            else:
+                lines[matches[0]] = "  " + replacement
+            return text[: span[0]] + "\n".join(lines) + text[span[1] :]
+
+        self._edit_topology(operation, edit)
+
+    @staticmethod
+    def _format_amount(amount) -> str:
+        if isinstance(amount, bool):
+            raise TypeError("amount must be a number or a BNGL expression")
+        if isinstance(amount, (int, float)):
+            if not math.isfinite(float(amount)) or float(amount) < 0:
+                raise ValueError("amount must be finite and nonnegative")
+            return repr(float(amount)) if isinstance(amount, float) else str(amount)
+        text = str(amount).strip()
+        if not text or "\n" in text:
+            raise ValueError("amount expression must be one nonempty line")
+        return text
+
+    def _edit_topology(self, operation: str, edit) -> None:
+        self._require_export_supported(operation)
+        if _cpp is None:
+            raise RuntimeError("the BNG3 native extension is not available")
+        edited = edit(_cpp.io.write_bngl_string(self._model))
+        try:
+            model = _cpp.parse_string(edited, source_path=self._source_path or "")
+        except TypeError:
+            # An extension built before parse_string accepted a source path.
+            model = _cpp.parse_string(edited)
+        except Exception as exc:
+            raise ValueError(f"{operation} produced an invalid model: {exc}") from exc
+        for name, value in self.__dict__.get("_parameter_overrides", {}).items():
+            model.set_parameter(name, value)
+        self._model = model
+        self._network = None
+        self._continuation_network = None
+        self._network_from_continuation = False
+        self._simulation_has_run = False
+
+    def add_compartment(
+        self,
+        name: str,
+        dimension: int,
+        volume,
+        parent: Optional[str] = None,
+    ) -> None:
+        """Add a compartment, as a line in the BNGL compartments block."""
+        if not self._IDENTIFIER.match(str(name)):
+            raise ValueError(f"invalid compartment name {name!r}")
+        if isinstance(dimension, bool) or int(dimension) != dimension or dimension < 0:
+            raise ValueError("dimension must be a nonnegative integer")
+        if parent is not None and not self._IDENTIFIER.match(str(parent)):
+            raise ValueError(f"invalid parent compartment name {parent!r}")
+        line = f"{name} {int(dimension)} {self._format_amount(volume)}"
+        if parent is not None:
+            line += f" {parent}"
+        self._edit_topology(
+            "add_compartment",
+            lambda text: self._insert_block_line(text, "compartments", line),
+        )
+
+    def add_molecule_type(self, definition: str) -> None:
+        """Add a molecule type, for example ``"A(b,s~U~P)"``."""
+        text = str(definition).strip()
+        if not text or "\n" in text or not re.match(r"^[A-Za-z_][A-Za-z0-9_]*\(", text):
+            raise ValueError(f"invalid molecule type definition {definition!r}")
+        self._edit_topology(
+            "add_molecule_type",
+            lambda model: self._insert_block_line(model, "molecule types", text),
+        )
+
+    def add_seed_species(
+        self,
+        pattern: str,
+        amount,
+        compartment: Optional[str] = None,
+        constant: bool = False,
+    ) -> None:
+        """Add a seed species with an initial amount (a number or expression)."""
+        text = re.sub(r"\s+", "", str(pattern))
+        if not text:
+            raise ValueError("pattern must be nonempty")
+        if compartment is not None and not self._IDENTIFIER.match(str(compartment)):
+            raise ValueError(f"invalid compartment name {compartment!r}")
+        line = ("$" if constant else "") + (
+            f"@{compartment}:" if compartment is not None else ""
+        )
+        line += f"{text} {self._format_amount(amount)}"
+        self._edit_topology(
+            "add_seed_species",
+            lambda model: self._insert_block_line(model, "seed species", line),
+        )
+
+    def remove_seed_species(
+        self, pattern: str, compartment: Optional[str] = None
+    ) -> None:
+        """Remove one seed species, matched by pattern and compartment."""
+        self._replace_seed_line(
+            "remove_seed_species", pattern, compartment, lambda _parsed: None
+        )
+
+    def set_seed_species_amount(
+        self, pattern: str, amount, compartment: Optional[str] = None
+    ) -> None:
+        """Set the initial amount of one seed species."""
+        formatted = self._format_amount(amount)
+
+        def replace(parsed):
+            constant, seed_compartment, seed_pattern, rest = parsed
+            unit = re.search(r"\[[^\]]*\]\s*$", rest)
+            prefix = ("$" if constant else "") + (
+                f"@{seed_compartment}:" if seed_compartment else ""
+            )
+            return f"{prefix}{seed_pattern} {formatted}" + (
+                f" {unit.group(0).strip()}" if unit else ""
+            )
+
+        self._replace_seed_line(
+            "set_seed_species_amount", pattern, compartment, replace
+        )
+
+    def move_species_to_compartment(
+        self,
+        pattern: str,
+        compartment: str,
+        from_compartment: Optional[str] = None,
+    ) -> None:
+        """Move one seed species to another compartment, keeping its amount."""
+        if not self._IDENTIFIER.match(str(compartment)):
+            raise ValueError(f"invalid compartment name {compartment!r}")
+
+        def replace(parsed):
+            constant, _old, seed_pattern, rest = parsed
+            return ("$" if constant else "") + f"@{compartment}:{seed_pattern} {rest}"
+
+        self._replace_seed_line(
+            "move_species_to_compartment", pattern, from_compartment, replace
+        )
 
     def generate_network(self, max_iter: int = 100) -> _cpp.GeneratedNetwork:
         carrying_session = self._continuation_network is not None
