@@ -6979,8 +6979,28 @@ def write_reaction_rules(
                     replace_loc_params=replace_loc_params,
                     complete_flux=True,
                 )
+        # A participant removed from the pattern above (a rate-rule or
+        # assignment-rule species) is still an operand of the kinetic law, so
+        # the mass-action conversion must not divide its factor out: the rule
+        # owns its value, and the law's flux still depends on it.
+        rate_reaction = reaction
+        if any(
+            reference.species in non_reaction_state_species
+            for reference in [*reaction.reactants, *reaction.products]
+        ):
+            rate_reaction = copy.copy(reaction)
+            rate_reaction.reactants = [
+                reference
+                for reference in reaction.reactants
+                if reference.species not in non_reaction_state_species
+            ]
+            rate_reaction.products = [
+                reference
+                for reference in reaction.products
+                if reference.species not in non_reaction_state_species
+            ]
         processed = process_reaction_rate(
-            reaction,
+            rate_reaction,
             reaction_id,
             model,
             observable_converted_rules=observable_converted_rules,
