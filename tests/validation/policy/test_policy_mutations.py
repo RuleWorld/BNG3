@@ -889,3 +889,65 @@ def test_mutation_infrastructure_campaign_failure_is_reported(tmp_path):
 
     assert proc.returncode != 0
     assert "mutation campaign/ratchet infrastructure error" in proc.stdout
+
+
+@pytest.mark.parametrize(
+    "declaration",
+    [
+        "def compare(case_id: str, row: dict):\n    return row\n",
+        "case_id = make_id(row)\n",
+        "ids = [str(row) for row in rows]\n",
+        'cases = [pytest.param(1, id="nan"), {"id": "str"}]\n',
+        'ids = ["nan", "positive", "str"]\n',
+    ],
+)
+def test_fixture_id_extraction_ignores_python_types_and_expressions(
+    tmp_path, declaration
+):
+    checker = _load_policy()
+    root, base = _repo(
+        tmp_path,
+        {
+            "tests/test_contract.py": declaration,
+            "python/runtime.py": "VALUE = 1\n",
+        },
+    )
+    _change(root, "python/runtime.py", "value = str(row)\nvalue = positive(nan)\n")
+    assert checker.check_product_fixture_names(root, base) == []
+
+
+def test_fixture_id_matches_whole_identifier_not_substring(tmp_path):
+    checker = _load_policy()
+    root, base = _repo(
+        tmp_path,
+        {
+            "tests/test_contract.py": 'case_id = "row"\n',
+            "cpp/runtime.cpp": "int value = 1;\n",
+        },
+    )
+    _change(root, "cpp/runtime.cpp", 'throw std::runtime_error("invalid");\n')
+    assert checker.check_product_fixture_names(root, base) == []
+    _change(root, "cpp/runtime.cpp", 'if (name == "row") return 42;\n')
+    assert checker.check_product_fixture_names(root, base)
+
+
+@pytest.mark.parametrize(
+    "declaration",
+    [
+        'case_id: str = "oracle_decay_42"\n',
+        'ids = ["oracle_decay_42", "other_case"]\n',
+        'cases = [pytest.param(1, id="oracle_decay_42")]\n',
+        'cases = [{"case_id": "oracle_decay_42"}]\n',
+    ],
+)
+def test_literal_python_fixture_ids_still_rejected(tmp_path, declaration):
+    checker = _load_policy()
+    root, base = _repo(
+        tmp_path,
+        {
+            "tests/test_contract.py": declaration,
+            "python/runtime.py": "VALUE = 1\n",
+        },
+    )
+    _change(root, "python/runtime.py", 'if name == "oracle_decay_42": return 42\n')
+    assert checker.check_product_fixture_names(root, base)

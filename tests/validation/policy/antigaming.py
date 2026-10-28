@@ -6,6 +6,7 @@ from the PR base before checking the proposed tree.
 
 from __future__ import annotations
 
+import ast
 import json
 import os
 import hashlib
@@ -424,6 +425,50 @@ def check_case_ids(root: Path, base: str, head: str = "HEAD") -> list[str]:
     return [f"removed or renamed stable test/case IDs: {lost}"] if lost else []
 
 
+def _python_fixture_ids(text: str) -> set[str]:
+    """Collect declared literal IDs without interpreting types or executing tests."""
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return set()
+    found: set[str] = set()
+    fields = {"case_id", "caseid"}
+
+    def collect(value, *, distinctive=False):
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            if not distinctive or re.search(r"[_:/.-]", value.value):
+                found.add(value.value)
+        elif isinstance(value, (ast.List, ast.Tuple, ast.Set)):
+            for child in value.elts:
+                collect(child, distinctive=distinctive)
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.Assign, ast.AnnAssign)):
+            targets = node.targets if isinstance(node, ast.Assign) else [node.target]
+            for target in targets:
+                name = (
+                    target.id
+                    if isinstance(target, ast.Name)
+                    else target.attr if isinstance(target, ast.Attribute) else ""
+                ).lower()
+                if name in fields:
+                    collect(node.value)
+                elif name in {"id", "ids"}:
+                    collect(node.value, distinctive=True)
+        elif isinstance(node, ast.keyword) and node.arg in fields:
+            collect(node.value)
+        elif isinstance(node, ast.keyword) and node.arg in {"id", "ids"}:
+            # Pytest display labels such as "nan" or "positive" also name
+            # ordinary scientific concepts. Only distinctive compound labels
+            # identify fixtures; explicit case_id declarations remain exact.
+            collect(node.value, distinctive=True)
+        elif isinstance(node, ast.Dict):
+            for key, value in zip(node.keys, node.values):
+                if isinstance(key, ast.Constant) and key.value in fields:
+                    collect(value)
+    return found
+
+
 def check_product_fixture_names(root: Path, base: str, head: str = "HEAD") -> list[str]:
     """Detect newly introduced fixture names, declared case IDs, and test paths."""
     paths = changed_paths(root, base, head)
@@ -471,15 +516,16 @@ def check_product_fixture_names(root: Path, base: str, head: str = "HEAD") -> li
             pass
         needles.update(ID_RE.findall(text))
         needles.update(CASE_TOKEN_RE.findall(text))
-    python_case_ids = subprocess.run(
-        ("git", "grep", "-I", "-nE", r"case[_ -]?id|\bids\b", base, "--", "tests/"),
-        cwd=root,
-        text=True,
-        capture_output=True,
-    )
-    for line in python_case_ids.stdout.splitlines():
-        needles.update(ID_RE.findall(line))
-        needles.update(CASE_TOKEN_RE.findall(line))
+    # Read complete Python modules: a line regex mistakes annotations such as
+    # case_id: str for a declared ID and misses lists and annotated assignments.
+    for rel in sorted(p for p in test_paths if p.endswith(".py")):
+        for revision in (base, head):
+            try:
+                text = _head_text(root, revision, rel)
+            except subprocess.CalledProcessError:
+                continue
+            needles.update(_python_fixture_ids(text))
+            needles.update(CASE_TOKEN_RE.findall(text))
     for rel in paths:
         if rel.startswith(("tests/", "fixtures/")) and Path(rel).suffix in {
             ".bngl",
@@ -508,7 +554,14 @@ def check_product_fixture_names(root: Path, base: str, head: str = "HEAD") -> li
             additions.setdefault(current_file, []).append(line[1:])
     for rel, lines in additions.items():
         text = "\n".join(lines)
-        hits = sorted(needle for needle in needles if needle in text)
+        hits = sorted(
+            needle
+            for needle in needles
+            if needle
+            and re.search(
+                rf"(?<![A-Za-z0-9_]){re.escape(needle)}(?![A-Za-z0-9_])", text
+            )
+        )
         if hits:
             errors.append(
                 f"{rel}: newly added product text contains acceptance fixture identifiers/paths: {hits[:10]}"
