@@ -275,9 +275,9 @@ jobs:
 
       - name: Provide sbmlTranslator
         run: |
-          mkdir -p legacy/perl/bin
-          printf '%s\n' '#!/bin/sh' 'PYTHONPATH="$GITHUB_WORKSPACE/python${PYTHONPATH:+:$PYTHONPATH}" exec python "$GITHUB_WORKSPACE/python/bionetgen/atomizer/sbmlTranslator.py" "$@"' > legacy/perl/bin/sbmlTranslator
-          chmod +x legacy/perl/bin/sbmlTranslator
+          mkdir -p "$RUNNER_TEMP/oracle-bionetgen/bng2/bin"
+          printf '%s\n' '#!/bin/sh' 'PYTHONPATH="$GITHUB_WORKSPACE/python${PYTHONPATH:+:$PYTHONPATH}" exec python "$GITHUB_WORKSPACE/python/bionetgen/atomizer/sbmlTranslator.py" "$@"' > "$RUNNER_TEMP/oracle-bionetgen/bng2/bin/sbmlTranslator"
+          chmod +x "$RUNNER_TEMP/oracle-bionetgen/bng2/bin/sbmlTranslator"
 
       - name: Build bng_cpp
         run: |

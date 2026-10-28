@@ -224,5 +224,5 @@ def test_weekly_sbml_translator_is_installed_in_bng2_lookup_directory():
         encoding="utf-8"
     )
 
-    assert "mkdir -p legacy/perl/bin" in workflow
-    assert "> legacy/perl/bin/sbmlTranslator" in workflow
+    assert 'mkdir -p "$RUNNER_TEMP/oracle-bionetgen/bng2/bin"' in workflow
+    assert '> "$RUNNER_TEMP/oracle-bionetgen/bng2/bin/sbmlTranslator"' in workflow
