@@ -17,9 +17,7 @@
 
 namespace bng::engine {
 
-HybridModelGenerator::HybridModelGenerator(ast::Model& model, const GeneratedNetwork& network)
-    : model_(model), network_(network) {
-}
+HybridModelGenerator::HybridModelGenerator(ast::Model& model) : model_(model) {}
 
 bool HybridModelGenerator::isIsomorphic(const std::string& pattern1,
                                           const std::string& pattern2) const {

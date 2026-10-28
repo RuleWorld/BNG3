@@ -134,6 +134,19 @@ def test_net_roundtrip_idempotent(model_name, bng_cpp, work_dir):
 
 
 @pytest.mark.export
+def test_hybrid_authored_xml_action_does_not_expand_original_network(bng_cpp, tmp_path):
+    """The hybrid XML action transforms model definitions without netgen."""
+
+    source = Path(__file__).parent / "Validate" / "hybrid_test.bngl"
+    _, _, err = runner.run_cli_path(bng_cpp, source, tmp_path, timeout=20)
+
+    assert (
+        tmp_path / "hybrid_test_hpp.xml"
+    ).is_file(), f"hybrid model XML was not written within the bounded run: {err}"
+    assert not (tmp_path / "hybrid_test.net").exists()
+
+
+@pytest.mark.export
 def test_net_reload_preserves_outer_species_compartment(bng_cpp, work_dir):
     """A canonical @comp:: NET species keeps its compartment on rewrite."""
     net_input = work_dir / "compartmented.net"

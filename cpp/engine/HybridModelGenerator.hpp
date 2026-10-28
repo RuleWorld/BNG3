@@ -5,7 +5,6 @@
 #include <vector>
 
 #include "ast/Model.hpp"
-#include "NetworkGenerator.hpp"
 
 namespace bng::engine {
 
@@ -64,7 +63,7 @@ public:
         std::size_t nPopulationMaps = 0; // Number of population mapping rules added
     };
 
-    HybridModelGenerator(ast::Model& model, const GeneratedNetwork& network);
+    explicit HybridModelGenerator(ast::Model& model);
 
     /**
      * Generate the hybrid model.
@@ -91,7 +90,6 @@ private:
     std::size_t countMatches(const std::string& obsPattern, const std::string& speciesPattern) const;
 
     ast::Model& model_;
-    const GeneratedNetwork& network_;
 };
 
 } // namespace bng::engine
