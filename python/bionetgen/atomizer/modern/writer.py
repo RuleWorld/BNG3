@@ -7783,10 +7783,7 @@ def generate_bngl(
                 # A rate-rule parameter becomes a state species whose seed is
                 # its SBML value; a compartment would rescale that seed, so
                 # only a unit-sized default compartment preserves the value.
-                if (
-                    default_compartment
-                    and identifier not in promoted_event_parameters
-                ):
+                if default_compartment and identifier not in promoted_event_parameters:
                     compartment = model.compartments.get(default_compartment)
                     if compartment is None or not compartment.constant:
                         return None
@@ -7807,8 +7804,7 @@ def generate_bngl(
                 for rule in model.rules
                 if rule.type == "assignment"
                 and rule.variable
-                and standardize_name(str(rule.variable))
-                == standardize_name(identifier)
+                and standardize_name(str(rule.variable)) == standardize_name(identifier)
             ]
             if (
                 len(assignment_rules) == 1
@@ -11315,6 +11311,7 @@ def generate_bngl(
             if native_event_block:
                 native_event_count = len(native_events)
             elif _allow_event_parameter_promotion:
+
                 def is_promotable_parameter(identifier: str) -> bool:
                     standardized = standardize_name(identifier)
                     parameter = next(
@@ -11342,8 +11339,7 @@ def generate_bngl(
                     and is_promotable_parameter(str(assignment.variable))
                 }
                 already_promoted = {
-                    standardize_name(variable)
-                    for variable in promoted_event_parameters
+                    standardize_name(variable) for variable in promoted_event_parameters
                 }
                 assigned_parameters = {
                     variable
