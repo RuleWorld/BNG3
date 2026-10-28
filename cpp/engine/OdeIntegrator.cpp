@@ -358,6 +358,11 @@ OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& ne
                 group->events.push_back(index);
             }
         }
+        for (std::size_t group = 0; group < nativeEventGroups_.size(); ++group) {
+            for (const auto* conjunct : triggerConjuncts(nativeEventGroups_[group].trigger)) {
+                nativeEventRoots_.emplace_back(group, conjunct);
+            }
+        }
     }
     compile();
     validateEventTargets();
@@ -2457,8 +2462,8 @@ void OdeIntegrator::cvodeEventRoots(double time, const double* scaledState,
                                     double* roots) const {
     std::vector<double> state(nSpecies_);
     for (std::size_t i = 0; i < nSpecies_; ++i) state[i] = scaledState[i] * cvodeStateScale_[i];
-    for (std::size_t group = 0; group < nativeEventGroups_.size(); ++group) {
-        roots[group] = eventRootValue(nativeEventGroups_[group].trigger, time, state.data());
+    for (std::size_t root = 0; root < nativeEventRoots_.size(); ++root) {
+        roots[root] = eventRootValue(*nativeEventRoots_[root].second, time, state.data());
     }
 }
 
@@ -3787,7 +3792,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
         // One root per trigger group.  The root function is positive exactly
         // where the trigger holds, so an increasing crossing is the trigger's
         // rising edge.
-        const auto roots = static_cast<int>(nativeEventGroups_.size());
+        const auto roots = static_cast<int>(nativeEventRoots_.size());
         if (CVodeRootInit(cvode_mem, roots, cvodeEventRootWrapper) != CV_SUCCESS) {
             throw std::runtime_error("bng3_events CVodeRootInit failed");
         }
@@ -3940,8 +3945,8 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                 if (flag == CV_ROOT_RETURN) {
                     // CVodeGetRootInfo writes one entry per registered root
                     // function, not a single root index. Keep the buffer sized
-                    // to the groups passed to CVodeRootInit above.
-                    std::vector<int> rootsFound(nativeEventGroups_.size());
+                    // to the conjunct roots passed to CVodeRootInit above.
+                    std::vector<int> rootsFound(nativeEventRoots_.size());
                     if (CVodeGetRootInfo(cvode_mem, rootsFound.data()) != CV_SUCCESS) {
                         throw std::runtime_error("bng3_events CVodeGetRootInfo failed");
                     }
@@ -3957,11 +3962,27 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                         // session releases the linear solver, the matrix,
                         // the solver memory, the vector and the context
                         // exactly once.
-                        const auto group = static_cast<std::size_t>(
+                        const auto rootIndex = static_cast<std::size_t>(
                             root - rootsFound.begin());
-                        // The events of the group share the trigger, so they
-                        // are triggered together.
-                        queueTriggeredGroup(group, t, state);
+                        const auto group = nativeEventRoots_[rootIndex].first;
+                        // A conjunction rises only when every surface holds.
+                        // At this root, the selected surface is exactly zero;
+                        // its positive direction makes it conceptually true.
+                        std::vector<double> derivatives(nSpecies_);
+                        derivs(t, state.data(), derivatives.data());
+                        bool conjunctionHolds = true;
+                        for (const auto* conjunct : triggerConjuncts(
+                                 nativeEventGroups_[group].trigger)) {
+                            const double value = eventRootValue(*conjunct, t, state.data());
+                            const double tolerance = 1e-9 * (1.0 + std::abs(value));
+                            if (value < -tolerance ||
+                                (std::abs(value) <= tolerance &&
+                                 eventRootDerivative(*conjunct, t, derivatives) <= 0.0)) {
+                                conjunctionHolds = false;
+                                break;
+                            }
+                        }
+                        if (conjunctionHolds) queueTriggeredGroup(group, t, state);
                         // Another group may have crossed in the same step:
                         // the solver reports one crossing per step, so the
                         // other groups are compared against the value their

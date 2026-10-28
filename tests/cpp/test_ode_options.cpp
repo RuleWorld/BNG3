@@ -1288,6 +1288,49 @@ end bng3_events
     CHECK_THAT(result.observables.back()[1], Catch::Matchers::WithinAbs(1.0, 1e-12));
 }
 
+TEST_CASE("CVODE executes a delayed event for a conjunction of state roots",
+          "[OdeOptions][Events]") {
+    auto model = parser::parseModel(R"(
+begin molecule types
+    K()
+end molecule types
+begin seed species
+    K() 1
+end seed species
+begin observables
+    Molecules k1_amt K()
+end observables
+begin functions
+    __rate_rule__k1() = 1
+end functions
+begin reaction rules
+    __rate_rule_k1: 0 -> K() __rate_rule__k1() TotalRate
+end reaction rules
+begin bng3_events version 1
+    event "reset"
+        trigger: (k1_amt > 3.5) && (k1_amt < 4)
+        initial_value: true
+        persistent: true
+        use_values_from_trigger_time: true
+        delay: 1.1
+        assignment: k1_amt = 1
+    end event
+end bng3_events
+)");
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 10.0;
+    options.nSteps = 10;
+
+    const auto result = integrator.integrate(options);
+
+    REQUIRE(result.observables.size() == 11);
+    CHECK_THAT(result.observables[4][0], Catch::Matchers::WithinAbs(1.4, 1e-8));
+}
+
 TEST_CASE("CVODE rejects a nonfinite dynamic native event priority",
           "[OdeOptions][Events]") {
     auto model = parser::parseModel(R"(

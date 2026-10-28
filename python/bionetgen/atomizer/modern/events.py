@@ -2974,6 +2974,95 @@ def _native_static_text(
     return expanded
 
 
+def _native_continuous_expression(
+    expression: str, context: EventTranslationContext
+) -> Optional[Tuple[str, bool, bool]]:
+    """Render a continuous SBML expression over native state and constants."""
+    expanded = context.expand_functions(str(expression or "").strip())
+    if not expanded:
+        return None
+    try:
+        tree = ast.parse(expanded, mode="eval")
+    except (TypeError, ValueError, SyntaxError):
+        return None
+    has_state = False
+    has_time = False
+
+    class Render(ast.NodeTransformer):
+        def visit_Name(self, node: ast.Name) -> ast.AST:
+            nonlocal has_state, has_time
+            if node.id.lower() in {"time", "t"}:
+                has_time = True
+                return ast.copy_location(ast.Name(id="time", ctx=ast.Load()), node)
+            target = context.resolve_native_state(node.id)
+            if target is not None:
+                has_state = True
+                rendered = target.observable
+                if target.amount_factor != 1.0:
+                    rendered = f"({rendered} / {_format_number(target.amount_factor)})"
+                return ast.copy_location(
+                    ast.parse(rendered, mode="eval").body, node
+                )
+            if context.is_compile_time_constant(node.id):
+                return ast.copy_location(
+                    ast.Name(id=standardize_name(node.id), ctx=ast.Load()), node
+                )
+            raise ValueError(f"non-static identifier {node.id}")
+
+        def visit_Call(self, node: ast.Call) -> ast.AST:
+            if not isinstance(node.func, ast.Name) or node.func.id.lower() != "abs":
+                raise ValueError("unsupported continuous trigger function")
+            node.args = [self.visit(argument) for argument in node.args]
+            return node
+
+    try:
+        tree = Render().visit(tree)
+        ast.fix_missing_locations(tree)
+        rendered = ast.unparse(tree.body)
+    except (TypeError, ValueError, SyntaxError):
+        return None
+    if not has_state and not has_time:
+        return None
+    return rendered, has_state, has_time
+
+
+def _native_time_minus_state_comparison(
+    left_text: str,
+    right_text: str,
+    symbol: str,
+    context: EventTranslationContext,
+) -> Optional[str]:
+    """Rewrite ``time - state OP constant`` as a moving time threshold."""
+    try:
+        left = ast.parse(context.expand_functions(left_text), mode="eval").body
+    except (TypeError, ValueError, SyntaxError):
+        return None
+    if not (
+        isinstance(left, ast.BinOp)
+        and isinstance(left.op, ast.Sub)
+        and isinstance(left.left, ast.Name)
+        and left.left.id.lower() in {"time", "t"}
+        and isinstance(left.right, ast.Name)
+    ):
+        return None
+    target = context.resolve_native_state(left.right.id)
+    threshold = _native_static_text(right_text, context)
+    if target is None or threshold is None:
+        return None
+    state_text = target.observable
+    if target.amount_factor != 1.0:
+        state_text = f"({state_text} / {_format_number(target.amount_factor)})"
+    threshold_text = (
+        threshold
+        if re.fullmatch(
+            r"(?:[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?|[A-Za-z_][A-Za-z0-9_]*)",
+            threshold,
+        )
+        else f"({threshold})"
+    )
+    return f"time {symbol} {state_text} + {threshold_text}"
+
+
 def _native_scaled_static(
     expression: str, factor: float, context: EventTranslationContext
 ) -> Optional[str]:
@@ -3074,6 +3163,27 @@ def _native_comparison_expression(
         if scaled is None:
             return None
         return f"{scaled} {symbol} {right_state.observable}"
+    time_rewrite = _native_time_minus_state_comparison(
+        left_text, right_text, symbol, context
+    )
+    if time_rewrite is not None:
+        return time_rewrite
+    left_dynamic = _native_continuous_expression(left_text, context)
+    right_dynamic = _native_continuous_expression(right_text, context)
+    if left_dynamic is None:
+        static = _native_static_text(left_text, context)
+        if static is not None:
+            left_dynamic = (static, False, False)
+    if right_dynamic is None:
+        static = _native_static_text(right_text, context)
+        if static is not None:
+            right_dynamic = (static, False, False)
+    if (
+        left_dynamic is not None
+        and right_dynamic is not None
+        and (left_dynamic[1] or left_dynamic[2] or right_dynamic[1] or right_dynamic[2])
+    ):
+        return f"{left_dynamic[0]} {symbol} {right_dynamic[0]}"
     return None
 
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import ast
+import copy
 import json
 import math
 import os
@@ -4075,7 +4076,10 @@ def _lowerable_species_assignment_rules(
 
 
 def _update_event_translation_warning(
-    model: SBMLModel, event_result: object, native_event_block: object = None
+    model: SBMLModel,
+    event_result: object,
+    native_event_block: object = None,
+    native_event_count: int = 0,
 ) -> None:
     """Make the event diagnostic reflect the executable lowering result."""
 
@@ -4083,11 +4087,12 @@ def _update_event_translation_warning(
     untranslated = list(getattr(event_result, "untranslated", []) or [])
     horizon_limited = int(getattr(event_result, "horizon_limited", 0) or 0)
     if native_event_block:
-        message = (
-            f"{len(model.events)} SBML event(s) lowered to the native BNG3 "
-            "event runtime, which detects the trigger's rising edge with "
-            "continuous root finding and applies the assignments at that "
-            "instant."
+        message = f"{native_event_count} SBML event(s) lowered to the native BNG3 event runtime"
+        if converted:
+            message += f"; {converted} event(s) lowered to scheduled actions"
+        message += (
+            ", which detects the trigger's rising edge with continuous root "
+            "finding and applies the assignments at that instant."
         )
         for warning in getattr(model, "import_warnings", []) or []:
             if warning.get("category") != "event":
@@ -7173,7 +7178,11 @@ def generate_bngl(
     t_end: float = 10,
     n_steps: int = 100,
     replace_loc_params: bool = True,
+    _promoted_event_parameters: Optional[Set[str]] = None,
+    _allow_event_parameter_promotion: bool = True,
 ) -> BNGLGenerationResult:
+    import_warnings_before_generation = copy.deepcopy(model.import_warnings)
+    promoted_event_parameters = set(_promoted_event_parameters or ())
     _lower_bounded_event_state_delays(model, float(t_end))
     lowerable_species_assignment_rules = _lowerable_species_assignment_rules(model)
     algebraic_reaction_species = set(lowerable_species_assignment_rules) & {
@@ -7355,6 +7364,9 @@ def generate_bngl(
         for rule in _assignment_rules_for_writer(model)
         if rule.variable and str(rule.variable) not in species_assignment_variables
     }
+    assignment_variables.update(
+        standardize_name(variable) for variable in promoted_event_parameters
+    )
 
     # SBML rate rules may target a parameter or another model variable that
     # has no listOfSpecies entry.  BNGL can only evolve molecule populations,
@@ -7420,8 +7432,11 @@ def generate_bngl(
 
         structure = Species()
         structure.add_molecule(Molecule(molecule_name))
-        if default_compartment:
-            structure.add_compartment(default_compartment)
+        state_compartment = (
+            "" if variable in promoted_event_parameters else default_compartment
+        )
+        if state_compartment:
+            structure.add_compartment(state_compartment)
         structure.renumber_bonds()
         parameter = model.parameters.get(variable) or model.parameters.get(target)
         initial_value = seed_symbol_values.get(variable)
@@ -7457,7 +7472,7 @@ def generate_bngl(
             SeedSpeciesEntry(
                 species=structure.copy(),
                 concentration=_number(initial),
-                compartment=default_compartment,
+                compartment=state_compartment,
                 sbml_id=variable,
             )
         )
@@ -7768,7 +7783,10 @@ def generate_bngl(
                 # A rate-rule parameter becomes a state species whose seed is
                 # its SBML value; a compartment would rescale that seed, so
                 # only a unit-sized default compartment preserves the value.
-                if default_compartment:
+                if (
+                    default_compartment
+                    and identifier not in promoted_event_parameters
+                ):
                     compartment = model.compartments.get(default_compartment)
                     if compartment is None or not compartment.constant:
                         return None
@@ -7784,6 +7802,36 @@ def generate_bngl(
                     amount_factor=1.0,
                     compartment="",
                 )
+            assignment_rules = [
+                rule
+                for rule in model.rules
+                if rule.type == "assignment"
+                and rule.variable
+                and standardize_name(str(rule.variable))
+                == standardize_name(identifier)
+            ]
+            if (
+                len(assignment_rules) == 1
+                and identifier not in assignment_rule_stack
+                and not any(
+                    standardize_name(str(assignment.variable))
+                    == standardize_name(identifier)
+                    for event in model.events
+                    for assignment in event.assignments
+                )
+            ):
+                assignment_rule_stack.add(identifier)
+                expression = extend_function(
+                    str(assignment_rules[0].math or ""),
+                    {},
+                    model.function_definitions,
+                ).strip()
+                if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", expression):
+                    target = resolve_native_state(expression)
+                    if target is not None:
+                        assignment_rule_stack.remove(identifier)
+                        return target
+                assignment_rule_stack.remove(identifier)
             return None
 
         def resolve_event_parameter(identifier: str) -> Optional[float]:
@@ -11258,17 +11306,79 @@ def generate_bngl(
         )
         native_event_block = None
         native_event_refusal = None
-        if (
-            not event_result.actions_block
-            and not event_result.converted
-            and not event_result.horizon_limited
-            and len(event_result.untranslated) == len(model.events)
-            and model.events
-        ):
-            native_lowering = lower_native_events(model.events, event_context)
+        native_event_count = 0
+        if event_result.untranslated:
+            native_events = [event for event, _reason in event_result.untranslated]
+            native_lowering = lower_native_events(native_events, event_context)
             native_event_block = native_lowering.block
             native_event_refusal = native_lowering.reason
-        _update_event_translation_warning(model, event_result, native_event_block)
+            if native_event_block:
+                native_event_count = len(native_events)
+            elif _allow_event_parameter_promotion:
+                def is_promotable_parameter(identifier: str) -> bool:
+                    standardized = standardize_name(identifier)
+                    parameter = next(
+                        (
+                            value
+                            for parameter_id, value in model.parameters.items()
+                            if standardize_name(str(parameter_id)) == standardized
+                        ),
+                        None,
+                    )
+                    if parameter is None or getattr(parameter, "constant", True):
+                        return False
+                    return not any(
+                        rule.variable
+                        and standardize_name(str(rule.variable)) == standardized
+                        and rule.type in {"assignment", "rate"}
+                        for rule in model.rules
+                    )
+
+                assigned_parameters = {
+                    str(assignment.variable)
+                    for event in native_events
+                    for assignment in event.assignments
+                    if getattr(assignment, "variable", None)
+                    and is_promotable_parameter(str(assignment.variable))
+                }
+                already_promoted = {
+                    standardize_name(variable)
+                    for variable in promoted_event_parameters
+                }
+                assigned_parameters = {
+                    variable
+                    for variable in assigned_parameters
+                    if standardize_name(variable) not in already_promoted
+                }
+                if assigned_parameters:
+                    promoted_model = copy.deepcopy(model)
+                    promoted_model.import_warnings = import_warnings_before_generation
+                    for variable in sorted(assigned_parameters):
+                        promoted_model.rules.append(
+                            SBMLRule(type="rate", variable=variable, math="0")
+                        )
+                    promoted = generate_bngl(
+                        promoted_model,
+                        sct,
+                        molecule_types,
+                        seed_species,
+                        atomize=atomize,
+                        actions=actions,
+                        t_end=t_end,
+                        n_steps=n_steps,
+                        replace_loc_params=replace_loc_params,
+                        _promoted_event_parameters=assigned_parameters,
+                        _allow_event_parameter_promotion=False,
+                    )
+                    if "begin bng3_events version 1" in promoted.bngl:
+                        model.import_warnings = promoted_model.import_warnings
+                        model.reaction_rate_functions = (
+                            promoted_model.reaction_rate_functions
+                        )
+                        return promoted
+        _update_event_translation_warning(
+            model, event_result, native_event_block, native_event_count
+        )
 
     if native_event_block:
         # The native event block belongs inside the model block: the grammar
