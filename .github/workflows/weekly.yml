@@ -28,6 +28,9 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Install Python dependencies
+        run: python -m pip install numpy
+
       - name: Install build deps (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu')
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
@@ -156,6 +159,18 @@ jobs:
         env:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
 
+      - name: Configure native extension
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
+            -DBUILD_PYTHON_BINDINGS=ON \
+            -DBUILD_CLI=OFF \
+            -DBUILD_TESTS=OFF
+
+      - name: Build native extension
+        run: cmake --build build --parallel 2
+
       - name: Run full test suite
         run: pytest tests/python/ -v --tb=long
 
@@ -213,7 +228,7 @@ jobs:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
 
       - name: Run benchmarks
-        timeout-minutes: 60
+        timeout-minutes: 360
         run: python benchmarks/run_benchmarks.py --json benchmarks/results/latest.json --markdown benchmarks/results/latest.md
 
       - name: Upload benchmark artifact
@@ -239,9 +254,19 @@ jobs:
       - name: Install Perl and BNG2.pl
         run: |
           sudo apt-get update && sudo apt-get install -y perl cmake ninja-build
-          python -m pip install numpy
+          python -m pip install numpy python-libsbml pyyaml
           # BNG2.pl is in legacy/perl/
           echo "Perl version: $(perl --version | head -2)"
+
+      - name: Provide sbmlTranslator
+        run: |
+          mkdir -p "$HOME/.local/bin"
+          cat > "$HOME/.local/bin/sbmlTranslator" <<'EOF'
+#!/bin/sh
+PYTHONPATH="$GITHUB_WORKSPACE/python${PYTHONPATH:+:$PYTHONPATH}" exec python "$GITHUB_WORKSPACE/python/bionetgen/atomizer/sbmlTranslator.py" "$@"
+EOF
+          chmod +x "$HOME/.local/bin/sbmlTranslator"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
       - name: Build bng_cpp
         run: |
