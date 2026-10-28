@@ -61,6 +61,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+from types import SimpleNamespace
 from pathlib import Path
 from typing import Any
 
@@ -105,6 +106,127 @@ def _load_test_module(relative_path: str, name: str):
     """Load an existing test module by its path in the repository."""
 
     return _load_module(REPO / relative_path, name)
+
+
+def test_delay_in_written_sbml_is_excluded_from_roadrunner_comparison(tmp_path):
+    delayed = tmp_path / "delayed.xml"
+    delayed.write_text(
+        '<math xmlns="http://www.w3.org/1998/Math/MathML">'
+        '<apply><csymbol definitionURL="http://www.sbml.org/sbml/symbols/delay">'
+        "delay</csymbol><ci>x</ci><cn>1</cn></apply></math>",
+        encoding="utf-8",
+    )
+    ordinary = tmp_path / "ordinary.xml"
+    ordinary.write_text(
+        '<math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>',
+        encoding="utf-8",
+    )
+
+    assert runner._written_sbml_uses_delay(delayed)
+    assert not runner._written_sbml_uses_delay(ordinary)
+
+
+def test_informational_delay_warning_does_not_block_official_reference():
+    delay_notice = {
+        "category": "mathml",
+        "severity": "info",
+        "message": (
+            'SBML math function "delay" is not losslessly representable in the '
+            "BNG3 engine/libRoadRunner path: RoadRunner cannot load delay models."
+        ),
+    }
+    unsupported = {
+        **delay_notice,
+        "severity": "dropped",
+    }
+
+    assert runner._warning_limitations([delay_notice]) == []
+    assert runner._warning_limitations([unsupported]) == [delay_notice["message"]]
+
+
+def test_dynamic_delay_refusal_is_classified_as_unsupported():
+    assert (
+        runner._classify_error("RuntimeError: delay expression duration must be static")
+        == "unsupported"
+    )
+
+
+def test_delay_roadrunner_skip_requires_actual_delay_load_failure(
+    tmp_path, monkeypatch
+):
+    calls = []
+
+    class Result:
+        time = [0.0, 1.0]
+        observables = {}
+        functions = {}
+
+    class Model:
+        def simulate(self, **kwargs):
+            calls.append(kwargs)
+            return Result()
+
+    class RoadRunner:
+        def __init__(self, _path):
+            raise RuntimeError(
+                "Unable to support delay differential equations. The function "
+                "'delay(x, 1)' is not supported."
+            )
+
+    monkeypatch.setitem(
+        sys.modules, "roadrunner", SimpleNamespace(RoadRunner=RoadRunner)
+    )
+
+    monkeypatch.setattr("bionetgen.BioNetGenModel", lambda _model: Model())
+    output = tmp_path / "delayed.xml"
+    output.write_text(
+        '<math xmlns="http://www.w3.org/1998/Math/MathML">'
+        '<apply><csymbol definitionURL="http://www.sbml.org/sbml/symbols/delay">'
+        "delay</csymbol><ci>x</ci><cn>1</cn></apply></math>",
+        encoding="utf-8",
+    )
+
+    comparison = runner._simulate_and_compare(
+        object(), output, t_end=1.0, n_steps=1, rtol=1e-7, atol=1e-12
+    )
+
+    assert len(calls) == 1
+    assert comparison["status"] == "not-tested"
+    assert comparison["skipped"] is True
+    assert "rejected the written SBML specifically" in comparison["reason"]
+    assert "BNG3 CVODE completed" in comparison["reason"]
+
+
+def test_delay_does_not_hide_other_roadrunner_load_errors(tmp_path, monkeypatch):
+    class Result:
+        time = [0.0, 1.0]
+        observables = {}
+        functions = {}
+
+    class Model:
+        def simulate(self, **kwargs):
+            return Result()
+
+    class RoadRunner:
+        def __init__(self, _path):
+            raise RuntimeError("Unknown SBML function customFunction")
+
+    monkeypatch.setitem(
+        sys.modules, "roadrunner", SimpleNamespace(RoadRunner=RoadRunner)
+    )
+    monkeypatch.setattr("bionetgen.BioNetGenModel", lambda _model: Model())
+    output = tmp_path / "delayed.xml"
+    output.write_text(
+        '<math xmlns="http://www.w3.org/1998/Math/MathML">'
+        '<apply><csymbol definitionURL="http://www.sbml.org/sbml/symbols/delay">'
+        "delay</csymbol><ci>x</ci><cn>1</cn></apply></math>",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="Unknown SBML function"):
+        runner._simulate_and_compare(
+            object(), output, t_end=1.0, n_steps=1, rtol=1e-7, atol=1e-12
+        )
 
 
 #: The existing assertions this suite calls rather than duplicates.

@@ -21,9 +21,10 @@ inline void validateNativeEventSubset(const Model& model) {
     const ModelFunctionEvaluator functionEvaluator(model);
     for (const auto& event : model.getEvents()) {
     const auto trigger = functionEvaluator.expandFunctions(event.trigger);
-    // A trigger is a strict inequality or a conjunction of them.  A
-    // conjunction holds only where every conjunct holds, so its root function
-    // is the smallest of the conjunct root functions.
+    // A trigger is a continuous inequality or a conjunction of comparisons.
+    // Equality is supported only as a discrete gate within a conjunction.
+    const bool hasConjunction = trigger.kind() == ExpressionKind::Binary &&
+                                trigger.name() == "&&";
     std::function<void(const Expression&)> checkTrigger = [&](const Expression& expression) {
         if (expression.kind() != ExpressionKind::Binary) {
             fail("trigger must be a continuous scalar inequality");
@@ -32,9 +33,13 @@ inline void validateNativeEventSubset(const Model& model) {
             for (const auto& child : expression.args()) checkTrigger(child);
             return;
         }
-        if (expression.name() != ">" && expression.name() != ">=" &&
+        if (expression.name() != "==" && expression.name() != ">" &&
+            expression.name() != ">=" &&
             expression.name() != "<" && expression.name() != "<=") {
             fail("trigger must be a continuous scalar inequality");
+        }
+        if (expression.name() == "==" && !hasConjunction) {
+            fail("standalone equality trigger is outside the native event subset");
         }
         if (expression.args().size() != 2) {
             fail("trigger must compare two quantities");
@@ -62,6 +67,15 @@ inline void validateNativeEventSubset(const Model& model) {
         }
         return false;
     };
+    std::function<bool(const Expression&)> dynamicSide = [&](const Expression& expression) {
+        if (dynamicIdentifier(expression) || dynamicDelayedExpression(expression)) {
+            return true;
+        }
+        for (const auto& child : expression.args()) {
+            if (dynamicSide(child)) return true;
+        }
+        return false;
+    };
     // Every conjunct of the trigger has to compare a time or species
     // observable against a static threshold or another observable.
     std::function<void(const Expression&)> checkSides = [&](const Expression& expression) {
@@ -69,10 +83,8 @@ inline void validateNativeEventSubset(const Model& model) {
             for (const auto& child : expression.args()) checkSides(child);
             return;
         }
-        const bool leftDynamic = dynamicIdentifier(expression.args()[0]) ||
-                                 dynamicDelayedExpression(expression.args()[0]);
-        const bool rightDynamic = dynamicIdentifier(expression.args()[1]) ||
-                                  dynamicDelayedExpression(expression.args()[1]);
+        const bool leftDynamic = dynamicSide(expression.args()[0]);
+        const bool rightDynamic = dynamicSide(expression.args()[1]);
         if (!leftDynamic && !rightDynamic) {
             fail("trigger requires one time or species observable against a static threshold");
         }
@@ -98,6 +110,12 @@ inline void validateNativeEventSubset(const Model& model) {
     std::set<std::string> visiting;
     bool allowDistributionAssignment = false;
     std::function<void(const Expression&)> continuous = [&](const Expression& expression) {
+        if (expression.kind() == ExpressionKind::Function &&
+            (expression.name() == "abs" || expression.name() == "floor") &&
+            expression.args().size() == 1) {
+            continuous(expression.args().front());
+            return;
+        }
         if (expression.kind() == ExpressionKind::Number) {
             if (!std::isfinite(expression.numberValue())) fail("nonfinite event expression");
             return;
@@ -117,7 +135,23 @@ inline void validateNativeEventSubset(const Model& model) {
         if ((expression.kind() == ExpressionKind::Unary &&
              (expression.name() == "+" || expression.name() == "-")) ||
             (expression.kind() == ExpressionKind::Binary &&
-             (expression.name() == "+" || expression.name() == "-" || expression.name() == "*"))) {
+             (expression.name() == "+" || expression.name() == "-" ||
+              expression.name() == "*" || expression.name() == "/" ||
+              expression.name() == "^" || expression.name() == "**"))) {
+            if (expression.kind() == ExpressionKind::Binary &&
+                expression.name() == "/") {
+                const auto& denominator = expression.args()[1];
+                if (dynamicSide(denominator) ||
+                    model.getParameters().expressionIsTimeDependent(denominator)) {
+                    fail("event division requires a static nonzero denominator");
+                }
+                const double value = denominator.evaluate([&](const std::string& name) {
+                    return model.getParameters().evaluate(name);
+                });
+                if (!std::isfinite(value) || value == 0.0) {
+                    fail("event division requires a static nonzero denominator");
+                }
+            }
             for (const auto& child : expression.args()) continuous(child);
             return;
         }
@@ -153,7 +187,7 @@ inline void validateNativeEventSubset(const Model& model) {
             continuous(expression.args().front());
             return;
         }
-        fail("only continuous polynomial event expressions are supported");
+        fail("only continuous arithmetic event expressions are supported");
     };
     if (event.priority) {
         const auto& priority = *event.priority;
@@ -205,7 +239,7 @@ inline void validateNativeEventSubset(const Model& model) {
             }
         }
     }
-    // Every conjunct of the trigger is a continuous polynomial expression.
+    // Every conjunct of the trigger is a continuous arithmetic expression.
     std::function<void(const Expression&)> continuousTrigger = [&](const Expression& expression) {
         if (expression.kind() == ExpressionKind::Binary && expression.name() == "&&") {
             for (const auto& child : expression.args()) continuousTrigger(child);

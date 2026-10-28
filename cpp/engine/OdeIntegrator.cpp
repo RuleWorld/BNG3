@@ -364,6 +364,11 @@ OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& ne
                 group->events.push_back(index);
             }
         }
+        for (std::size_t group = 0; group < nativeEventGroups_.size(); ++group) {
+            for (const auto* conjunct : triggerConjuncts(nativeEventGroups_[group].trigger)) {
+                nativeEventRoots_.emplace_back(group, conjunct);
+            }
+        }
     }
     compile();
     validateEventTargets();
@@ -2515,31 +2520,67 @@ bool OdeIntegrator::triggerHolds(const ast::Expression& trigger, double time,
 
 double OdeIntegrator::eventSideDerivative(const ast::Expression& expression,
                                            double time,
+                                           const double* state,
                                            const std::vector<double>& derivatives) const {
-    if (expression.kind() != ast::ExpressionKind::Identifier &&
-        expression.kind() != ast::ExpressionKind::ObservableRef) {
-        // A static threshold does not move with the model state.
+    switch (expression.kind()) {
+    case ast::ExpressionKind::Number:
+        return 0.0;
+    case ast::ExpressionKind::Identifier:
+    case ast::ExpressionKind::ObservableRef: {
+        if (expression.name() == "time" || expression.name() == "t") return 1.0;
+        const auto observable = observableIndex_.find(expression.name());
+        if (observable == observableIndex_.end()) return 0.0;
+        double total = 0.0;
+        for (const auto& entry : compiledGroups_[observable->second].entries) {
+            if (entry.first < derivatives.size()) {
+                total += entry.second * derivatives[entry.first];
+            }
+        }
+        return total;
+    }
+    case ast::ExpressionKind::Unary:
+        if (expression.name() == "-") {
+            return -eventSideDerivative(expression.args().front(), time, state,
+                                        derivatives);
+        }
+        return eventSideDerivative(expression.args().front(), time, state,
+                                   derivatives);
+    case ast::ExpressionKind::Binary: {
+        const auto& lhs = expression.args()[0];
+        const auto& rhs = expression.args()[1];
+        const double left = eventSideDerivative(lhs, time, state, derivatives);
+        const double right = eventSideDerivative(rhs, time, state, derivatives);
+        if (expression.name() == "+") return left + right;
+        if (expression.name() == "-") return left - right;
+        if (expression.name() == "*") {
+            return left * eventValue(rhs, time, state) +
+                   eventValue(lhs, time, state) * right;
+        }
         return 0.0;
     }
-    if (expression.name() == "time") return 1.0;
-    const auto observable = observableIndex_.find(expression.name());
-    if (observable == observableIndex_.end()) return 0.0;
-    double total = 0.0;
-    for (const auto& entry : compiledGroups_[observable->second].entries) {
-        if (entry.first < derivatives.size()) {
-            total += entry.second * derivatives[entry.first];
+    case ast::ExpressionKind::Function:
+        if (expression.name() == "abs" && expression.args().size() == 1) {
+            const auto& argument = expression.args().front();
+            const double value = eventValue(argument, time, state);
+            if (value == 0.0) return 0.0;
+            return std::copysign(1.0, value) *
+                   eventSideDerivative(argument, time, state, derivatives);
         }
+        return 0.0;
+    case ast::ExpressionKind::TableFunction:
+        return 0.0;
     }
-    return total;
+    return 0.0;
 }
 
 double OdeIntegrator::eventRootDerivative(const ast::Expression& trigger,
                                            double time,
+                                           const double* state,
                                            const std::vector<double>& derivatives) const {
     const auto& arguments = trigger.args();
     const double difference =
-        eventSideDerivative(arguments[0], time, derivatives) -
-        eventSideDerivative(arguments[1], time, derivatives);
+        eventSideDerivative(arguments[0], time, state, derivatives) -
+        eventSideDerivative(arguments[1], time, state, derivatives);
     // The root function is positive exactly where the trigger holds.
     return trigger.name()[0] == '<' ? -difference : difference;
 }
@@ -2571,6 +2612,12 @@ double OdeIntegrator::eventRootValue(const ast::Expression& trigger, double time
     const auto conjuncts = triggerConjuncts(trigger);
     if (conjuncts.size() == 1) {
         const auto& arguments = conjuncts.front()->args();
+        if (conjuncts.front()->name() == "==") {
+            return eventValue(arguments[0], time, state) ==
+                           eventValue(arguments[1], time, state)
+                       ? 1.0
+                       : -1.0;
+        }
         const double difference =
             eventValue(arguments[0], time, state) -
             eventValue(arguments[1], time, state);
@@ -2601,7 +2648,7 @@ OdeIntegrator::TriggerSurface OdeIntegrator::triggerSurface(
     }
     surface.difference = smallest;
     if (active != nullptr) {
-        surface.derivative = eventRootDerivative(*active, time, derivatives);
+        surface.derivative = eventRootDerivative(*active, time, state, derivatives);
     }
     return surface;
 }
@@ -2657,6 +2704,7 @@ bool OdeIntegrator::applyDueEvents(double time, std::vector<double>& state) {
         if (!std::isfinite(earliest)) break;
         auto selected = pendingEvents_.end();
         double selectedPriority = -std::numeric_limits<double>::infinity();
+        std::vector<std::vector<PendingEvent>::iterator> equalPriority;
         for (auto candidate = pendingEvents_.begin();
              candidate != pendingEvents_.end(); ++candidate) {
             if (candidate->executionTime > earliest + 1e-12) continue;
@@ -2668,13 +2716,24 @@ bool OdeIntegrator::applyDueEvents(double time, std::vector<double>& state) {
             if (!std::isfinite(priority)) {
                 throw std::runtime_error("bng3_events expression is nonfinite");
             }
-            // Keep the existing queue insertion order for exact ties. SBML
-            // requires randomized ordering for equal defined priorities;
-            // that behavior remains outside this deterministic native slice.
             if (selected == pendingEvents_.end() || priority > selectedPriority) {
                 selected = candidate;
                 selectedPriority = priority;
+                equalPriority.clear();
+                equalPriority.push_back(candidate);
+            } else if (priority == selectedPriority) {
+                equalPriority.push_back(candidate);
             }
+        }
+        if (equalPriority.size() > 1) {
+            if (activeSimulationSession_ == nullptr ||
+                !activeSimulationSession_->rngInitialized) {
+                throw std::runtime_error(
+                    "random native event ordering requires a seeded simulation session");
+            }
+            std::uniform_int_distribution<std::size_t> choose(
+                0, equalPriority.size() - 1);
+            selected = equalPriority[choose(activeSimulationSession_->rng)];
         }
         const PendingEvent pending = *selected;
         pendingEvents_.erase(selected);
@@ -2719,8 +2778,8 @@ void OdeIntegrator::cvodeEventRoots(double time, const double* scaledState,
                                     double* roots) const {
     std::vector<double> state(nSpecies_);
     for (std::size_t i = 0; i < nSpecies_; ++i) state[i] = scaledState[i] * cvodeStateScale_[i];
-    for (std::size_t group = 0; group < nativeEventGroups_.size(); ++group) {
-        roots[group] = eventRootValue(nativeEventGroups_[group].trigger, time, state.data());
+    for (std::size_t root = 0; root < nativeEventRoots_.size(); ++root) {
+        roots[root] = eventRootValue(*nativeEventRoots_[root].second, time, state.data());
     }
 }
 
@@ -4094,7 +4153,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
         // One root per trigger group.  The root function is positive exactly
         // where the trigger holds, so an increasing crossing is the trigger's
         // rising edge.
-        const auto roots = static_cast<int>(nativeEventGroups_.size());
+        const auto roots = static_cast<int>(nativeEventRoots_.size());
         if (CVodeRootInit(cvode_mem, roots, cvodeEventRootWrapper) != CV_SUCCESS) {
             throw std::runtime_error("bng3_events CVodeRootInit failed");
         }
@@ -4247,8 +4306,8 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                 if (flag == CV_ROOT_RETURN) {
                     // CVodeGetRootInfo writes one entry per registered root
                     // function, not a single root index. Keep the buffer sized
-                    // to the groups passed to CVodeRootInit above.
-                    std::vector<int> rootsFound(nativeEventGroups_.size());
+                    // to the conjunct roots passed to CVodeRootInit above.
+                    std::vector<int> rootsFound(nativeEventRoots_.size());
                     if (CVodeGetRootInfo(cvode_mem, rootsFound.data()) != CV_SUCCESS) {
                         throw std::runtime_error("bng3_events CVodeGetRootInfo failed");
                     }
@@ -4264,11 +4323,35 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                         // session releases the linear solver, the matrix,
                         // the solver memory, the vector and the context
                         // exactly once.
-                        const auto group = static_cast<std::size_t>(
+                        const auto rootIndex = static_cast<std::size_t>(
                             root - rootsFound.begin());
-                        // The events of the group share the trigger, so they
-                        // are triggered together.
-                        queueTriggeredGroup(group, t, state);
+                        const auto group = nativeEventRoots_[rootIndex].first;
+                        // A conjunction rises only when every surface holds.
+                        // At this root, the selected surface is exactly zero;
+                        // its positive direction makes it conceptually true.
+                        std::vector<double> derivatives(nSpecies_);
+                        derivs(t, state.data(), derivatives.data());
+                        bool conjunctionHolds = true;
+                        const auto* risingConjunct = nativeEventRoots_[rootIndex].second;
+                        for (const auto* conjunct : triggerConjuncts(
+                                 nativeEventGroups_[group].trigger)) {
+                            // CVODE reported this conjunct's root with an
+                            // increasing direction, so it is rising here even
+                            // where its slope has no analytic form (a user
+                            // function or delay() side has no derivative in
+                            // eventSideDerivative).
+                            if (conjunct == risingConjunct) continue;
+                            const double value = eventRootValue(*conjunct, t, state.data());
+                            const double tolerance = 1e-9 * (1.0 + std::abs(value));
+                            if (value < -tolerance ||
+                                (std::abs(value) <= tolerance &&
+                                 eventRootDerivative(*conjunct, t, state.data(),
+                                                     derivatives) <= 0.0)) {
+                                conjunctionHolds = false;
+                                break;
+                            }
+                        }
+                        if (conjunctionHolds) queueTriggeredGroup(group, t, state);
                         // Another group may have crossed in the same step:
                         // the solver reports one crossing per step, so the
                         // other groups are compared against the value their
@@ -4294,7 +4377,8 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                                 std::vector<double> derivatives(nSpecies_);
                                 derivs(t, state.data(), derivatives.data());
                                 crossed = eventRootDerivative(
-                                    nativeEventGroups_[other].trigger, t, derivatives) > 0.0;
+                                    nativeEventGroups_[other].trigger, t, state.data(),
+                                    derivatives) > 0.0;
                             }
                             if (crossed) queueTriggeredGroup(other, t, state);
                         }
@@ -4535,6 +4619,22 @@ struct SsaScratch {
 } // namespace
 
 OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
+    const auto readsClock = [&](const auto& self, const ast::Expression& expression) -> bool {
+        if ((expression.kind() == ast::ExpressionKind::Identifier ||
+             expression.kind() == ast::ExpressionKind::Function) &&
+            (expression.name() == "time" || expression.name() == "t" ||
+             model_.getParameters().isTimeDependent(expression.name()))) {
+            return true;
+        }
+        return std::any_of(expression.args().begin(), expression.args().end(),
+                           [&](const auto& child) { return self(self, child); });
+    };
+    for (const auto& event : nativeEvents_) {
+        if (readsClock(readsClock, functionEvaluator_.expandFunctions(event.trigger))) {
+            throw std::runtime_error(
+                "SSA does not support time-dependent native event triggers");
+        }
+    }
     // Direct Gillespie algorithm (matches BNG2 implementation)
     for (const auto& rxn : compiledRxns_) {
         if (rxn.isTimeDependent) {

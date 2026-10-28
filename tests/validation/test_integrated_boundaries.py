@@ -16,14 +16,59 @@ def _warning(category, severity, message):
 
 def test_expected_ids_are_independent_and_cover_variants():
     ids = boundaries.expected_check_ids()
-    assert len(ids) == len(set(ids)) == len(boundaries.CASES)
+    expected_negative = {
+        f"sbml-boundary:{case_id}:unsupported-boundary-contract"
+        for case_id, *_ in boundaries.CASES
+        if case_id != "delay_state_history_a"
+    }
+    expected_positive = {
+        "sbml-boundary:delay_state_history_a:static-delay-execution",
+        "sbml-event:event_state_nonlinear_a:source-trajectory",
+        "sbml-event:event_state_nonlinear_b:source-trajectory",
+    }
+    assert len(ids) == len(set(ids))
+    assert set(ids) == expected_negative | expected_positive
+    assert len(ids) == len(boundaries.CASES) + len(boundaries.SUPPORTED_EVENT_CASES)
     assert {case[1] for case in boundaries.CASES} == {
-        "event",
+        "event-delay",
         "delay",
         "algebraic",
         "stoichiometry",
     }
-    assert all(check_id.endswith(":unsupported-boundary-contract") for check_id in ids)
+    assert all(
+        check_id.endswith(":unsupported-boundary-contract")
+        for check_id in expected_negative
+    )
+    assert (
+        "sbml-boundary:delay_state_history_a:static-delay-execution"
+        in expected_positive
+    )
+    assert all(
+        check_id.endswith(":source-trajectory")
+        for check_id in expected_positive
+        if check_id.startswith("sbml-event:")
+    )
+
+
+def test_supported_event_rows_require_independent_execution_evidence():
+    case = boundaries.SUPPORTED_EVENT_CASES[0]
+    row = boundaries._supported_event_row(case)
+    assert row["status"] == "NOT_TESTED"
+    assert row["evidence_kind"] == "supported-execution"
+    assert row["supported_execution"] is False
+    assert boundaries._valid_supported_event_row(row)
+
+    row.update(
+        status="PASS",
+        supported_execution=True,
+        source_engine="libRoadRunner",
+        time_points=101,
+        compared_observables=["A", "B"],
+    )
+    assert boundaries._valid_supported_event_row(row)
+
+    row["supported_execution"] = False
+    assert not boundaries._valid_supported_event_row(row)
 
 
 @pytest.mark.parametrize(
@@ -126,6 +171,22 @@ def test_diagnostic_only_rows_cannot_be_counted_as_rejection_or_support():
     assert row["supported_execution"] is False
     assert row["labels"]["rejected_feature"] is False
     assert row["labels"]["boundary_diagnostic"] is True
+
+
+def test_static_delay_control_records_analytic_execution():
+    case = next(case for case in boundaries.CASES if case[0] == "delay_state_history_a")
+    row = boundaries._row(
+        case,
+        "PASS",
+        "analytic trajectory comparison passed",
+        check="static-delay-analytic-execution",
+        expected_behavior="execute-static-delay-history",
+        evidence_kind="analytic-execution",
+        supported_execution=True,
+    )
+    assert row["id"] in boundaries.expected_check_ids()
+    assert row["supported_execution"] is True
+    assert row["evidence_kind"] == "analytic-execution"
 
 
 def test_mapping_warnings_preserve_category_and_severity_for_classification():
