@@ -30,6 +30,7 @@ from scripts.validate import (
 from scripts.cross_validate import (
     compare_network_files,
     _network_only_text,
+    _stage_model,
     run_cross_validation,
     write_cross_validation_summary,
 )
@@ -1591,6 +1592,60 @@ end actions
         'begin actions\n  setParameter("k", 2)\n'
         "  generate_network({overwrite=>1})\nend actions\n"
     )
+
+
+def test_cross_validation_can_preserve_network_writer_for_continuations(tmp_path):
+    source = tmp_path / "continuation.bngl"
+    source.write_text(
+        "begin model\nend model\n"
+        "begin actions\n"
+        "generate_network({overwrite=>1})\n"
+        'setConcentration("A()", 2)\n'
+        'addConcentration("A()", 1)\n'
+        "resetConcentrations()\n"
+        'writeNetwork({suffix=>"cont",overwrite=>1})\n'
+        "end actions\n",
+        encoding="utf-8",
+    )
+
+    staged = _stage_model(
+        source,
+        tmp_path,
+        tmp_path / "staged",
+        preserve_network_writer=True,
+    )
+    text = staged.read_text(encoding="utf-8")
+    assert "generate_network({overwrite=>1})" in text
+    assert 'setConcentration("A()", 2)' in text
+    assert 'addConcentration("A()", 1)' in text
+    assert "resetConcentrations()" in text
+    assert 'writeNetwork({suffix=>"cont",overwrite=>1})' in text
+    assert text.index("generate_network") < text.index("setConcentration")
+    assert text.index("setConcentration") < text.index("addConcentration")
+    assert text.index("addConcentration") < text.index("resetConcentrations")
+    assert text.index("resetConcentrations") < text.index("writeNetwork")
+    assert "simulate" not in text
+
+
+def test_cross_validation_preserves_network_generation_bounds():
+    """Network-only staging must retain source max_iter and max_stoich."""
+
+    staged = _network_only_text("""begin model
+end model
+begin actions
+generate_network({overwrite=>1,max_iter=>3})
+setParameter("k", 2)
+generate_network({overwrite=>1,max_stoich=>{'R'=>5,'L'=>5}})
+simulate_ode({t_end=>10,n_steps=>10})
+end actions
+""")
+
+    assert "generate_network({overwrite=>1,max_iter=>3})" in staged
+    assert "generate_network({overwrite=>1,max_stoich=>{'R'=>5,'L'=>5}})" in staged
+    assert staged.count("generate_network(") == 2
+    assert "simulate_ode" not in staged
+    assert staged.index("max_iter=>3") < staged.index('setParameter("k", 2)')
+    assert staged.index('setParameter("k", 2)') < staged.index("max_stoich")
 
 
 def test_cross_validation_retains_top_level_option_declarations():

@@ -1948,6 +1948,68 @@ end actions
         )
 
     @pytest.mark.parametrize(
+        ("actions", "current_amount"),
+        [
+            ('setConcentration("S()", 25)', 25),
+            ('addConcentration("S()", 40)', 140),
+            (
+                'addConcentration("S()", 40)\n'
+                'saveConcentrations("checkpoint")\n'
+                'setConcentration("S()", 25)\n'
+                'resetConcentrations("checkpoint")',
+                140,
+            ),
+        ],
+    )
+    def test_concentration_changes_do_not_rewrite_generated_network(
+        self, tmp_path, actions, current_amount
+    ):
+        """Only an explicit network writer may replace a previous .net snapshot."""
+        bngl = tmp_path / "net_snapshot.bngl"
+        bngl.write_text(
+            """
+begin model
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    S()
+end molecule types
+begin seed species
+    S() 100
+end seed species
+begin reaction rules
+    S() -> 0 k
+end reaction rules
+end model
+begin actions
+    generate_network({overwrite=>1})
+__ACTIONS__
+    writeNetwork({prefix=>"current_state",overwrite=>1})
+end actions
+""".replace("__ACTIONS__", actions),
+            encoding="utf-8",
+        )
+
+        bionetgen.load(str(bngl)).execute()
+
+        def amount(path):
+            species = path.read_text(encoding="utf-8").split("begin species", 1)[1]
+            rows = species.split("end species", 1)[0].splitlines()
+            values = [
+                float(parts[2])
+                for line in rows
+                if (parts := line.split()) and len(parts) >= 3 and parts[1] == "S()"
+            ]
+            assert len(values) == 1
+            return values[0]
+
+        assert amount(tmp_path / "net_snapshot.net") == pytest.approx(100)
+        assert amount(tmp_path / "current_state.net") == pytest.approx(
+            current_amount
+        )
+
+    @pytest.mark.parametrize(
         "route", ["readFile", "include_network", "generate_network"]
     )
     def test_net_reload_preserves_compartmented_constant_species(self, tmp_path, route):

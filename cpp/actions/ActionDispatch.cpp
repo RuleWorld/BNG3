@@ -3163,7 +3163,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 throw std::runtime_error("setConcentration target species not found: " + stripQuotes(target));
             }
             network->species.get(*found).setAmount(value);
-            writeCurrentNetwork();
+            // Concentration changes affect the live state, not the network
+            // snapshot emitted by an earlier generate_network action.
             continue;
         }
 
@@ -3196,7 +3197,6 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     }
                 }
             }
-            writeCurrentNetwork();
             continue;
         }
 
@@ -3210,7 +3210,6 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 throw std::runtime_error("addConcentration target species not found: " + stripQuotes(target));
             }
             network->species.get(*found).setAmount(network->species.get(*found).getAmount() + value);
-            writeCurrentNetwork();
             continue;
         }
 
