@@ -62,6 +62,31 @@ def _row(case_id, name, status, detail, first_difference=None):
     }
 
 
+def _lifecycle_not_tested_rows(case_id, case):
+    """Keep skipped lifecycle checks visible and classify only deliberate scope cuts."""
+    if case is None:
+        detail = "generated source case was not supplied"
+        applicability = None
+    elif case.get("id") not in _lifecycle_case_ids():
+        detail = "generated case is outside the declared four-case lifecycle slice"
+        applicability = "not-applicable"
+    else:
+        return []
+
+    rows = [
+        _row(case_id, name, "NOT_TESTED", detail)
+        for name in (
+            "lifecycle-construction-isolation",
+            "lifecycle-mutation-baseline",
+            "lifecycle-public-routes",
+        )
+    ]
+    if applicability:
+        for row in rows:
+            row["applicability"] = applicability
+    return rows
+
+
 def _write_protocol_progress(directory, case_id, check, stage, **context):
     """Persist the last native operation reached before a worker exits."""
     import json
@@ -683,18 +708,9 @@ def run(source: Path, case_id: str, directory: Path, *, case=None) -> list[dict]
             )
         )
 
-    if case is None or case.get("id") not in _lifecycle_case_ids():
-        detail = (
-            "generated case is outside the declared four-case lifecycle slice"
-            if case is not None
-            else "generated source case was not supplied"
-        )
-        for name in (
-            "lifecycle-construction-isolation",
-            "lifecycle-mutation-baseline",
-            "lifecycle-public-routes",
-        ):
-            rows.append(_row(case_id, name, "NOT_TESTED", detail))
+    skipped_lifecycle_rows = _lifecycle_not_tested_rows(case_id, case)
+    if skipped_lifecycle_rows:
+        rows.extend(skipped_lifecycle_rows)
     else:
         for name, check in (
             ("lifecycle-construction-isolation", _lifecycle_construction_isolation),

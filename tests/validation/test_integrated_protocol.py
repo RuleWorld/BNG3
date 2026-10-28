@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from tests.validation import integrated_protocol as protocol
+from tests.validation import integrated_consumers, integrated_protocol as protocol, reporting
 from tests.validation.reproduce_issue141_lifecycle import _native_extension_path
 
 
@@ -85,6 +85,70 @@ def test_lifecycle_case_slice_respects_declared_budget():
     selected = protocol._lifecycle_case_ids()
     assert len(selected) == protocol.lifecycle_budget["max_cases"] == 4
     assert len(set(selected)) == 4
+
+
+def test_out_of_slice_lifecycle_checks_are_non_gating_but_remain_not_tested():
+    from tests.validation.integrated_cases import generated_cases
+
+    selected_ids = set(protocol._lifecycle_case_ids())
+    outside_case = next(
+        case for case in generated_cases(full=True) if case["id"] not in selected_ids
+    )
+    rows = protocol._lifecycle_not_tested_rows(
+        outside_case["id"],
+        outside_case,
+    )
+    assert [row["check"].rsplit(":", 1)[-1] for row in rows] == [
+        "lifecycle-construction-isolation",
+        "lifecycle-mutation-baseline",
+        "lifecycle-public-routes",
+    ]
+    assert [row["status"] for row in rows] == ["NOT_TESTED"] * 3
+    assert all(
+        row["detail"]
+        == "generated case is outside the declared four-case lifecycle slice"
+        for row in rows
+    )
+    assert all(row["applicability"] == "not-applicable" for row in rows)
+
+    report_rows = [dict(row, id=row["check"]) for row in rows]
+    worker_summary = {
+        "id": outside_case["id"] + ":protocol",
+        "status": "NOT_TESTED",
+        "detail": "protocol lifecycle slice was not selected",
+    }
+    integrated_consumers.mark_process_summary(worker_summary, report_rows)
+    assert worker_summary["aggregate"] is True
+    assert reporting.gate_failures([*report_rows, worker_summary]) == []
+
+    required = dict(report_rows[0], support_required=True)
+    assert reporting.gate_failures([required]) == [required]
+
+    missing_source = [
+        dict(row, id=row["check"])
+        for row in protocol._lifecycle_not_tested_rows(
+            "missing-source", None
+        )
+    ]
+    assert all("applicability" not in row for row in missing_source)
+    assert reporting.gate_failures(missing_source) == missing_source
+
+    selected_case_ids = (
+        "v1-n20-r0-a0",
+        "reversible-v3-n80-r0-a0",
+        "dimerization-v1-n20-r0-a0",
+        "dimerization-v3-n80-r0-a0",
+    )
+    for case_id in selected_case_ids:
+        assert protocol._lifecycle_not_tested_rows(case_id, {"id": case_id}) == []
+        selected_failure = protocol._row(
+            case_id,
+            "lifecycle-mutation-baseline",
+            "FAIL",
+            "trajectory differed",
+        )
+        selected_failure["id"] = selected_failure["check"]
+        assert reporting.gate_failures([selected_failure]) == [selected_failure]
 
 
 def test_result_comparison_requires_exact_time_grid_and_observable_set():
