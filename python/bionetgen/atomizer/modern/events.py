@@ -3038,6 +3038,31 @@ def _native_continuous_expression(
     return rendered, has_state, has_time
 
 
+def _native_time_against_static(
+    left_text: str, right_text: str, context: EventTranslationContext
+) -> bool:
+    """True when one side is the time symbol and the other a static value.
+
+    Time increases at rate one, so ``time >= c`` and ``time <= c`` cross
+    their threshold transversally: a non-strict comparison of time against
+    a static value has no tangential contact, and its rising edge is the
+    root of ``time - c``.
+    """
+
+    def is_time(text: str) -> bool:
+        return _strip_outer_parens(text).strip().lower() in {"time", "t"}
+
+    if str(context.method or "ode").lower() in {"ssa", "stochastic"}:
+        # The native SSA runtime detects triggers after jumps and refuses
+        # one that reads the clock, so such an event stays untranslated.
+        return False
+    if is_time(left_text):
+        return _native_static_text(right_text, context) is not None
+    if is_time(right_text):
+        return _native_static_text(left_text, context) is not None
+    return False
+
+
 def _native_time_minus_state_comparison(
     left_text: str,
     right_text: str,
@@ -3274,6 +3299,7 @@ def _native_trigger_expression(
                     return f"{inner[0]} >= {static_threshold}"
     if (
         operator in {"leq", "geq"}
+        and not _native_time_against_static(left_text, right_text, context)
         and _native_time_minus_state_comparison(
             left_text,
             right_text,
