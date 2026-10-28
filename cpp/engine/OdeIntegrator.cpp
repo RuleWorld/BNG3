@@ -2234,9 +2234,7 @@ void OdeIntegrator::validateEventTargets() {
 
 double OdeIntegrator::eventValue(const ast::Expression& expression,
                                  double time, const double* state) const {
-    const double value = evaluateExpressionWithHistory(expression, time, state);
-    if (!std::isfinite(value)) throw std::runtime_error("bng3_events expression is nonfinite");
-    return value;
+    return evaluateExpressionWithHistory(expression, time, state);
 }
 
 std::vector<double> OdeIntegrator::eventValues(const NativeEvent& event, double time,
@@ -2244,7 +2242,9 @@ std::vector<double> OdeIntegrator::eventValues(const NativeEvent& event, double 
     std::vector<double> values;
     for (const auto& assignment : event.assignments) {
         const double value = eventValue(assignment.value, time, state);
-        if (value < 0) throw std::runtime_error("bng3_events assignment amount must be nonnegative");
+        if (std::isfinite(value) && value < 0) {
+            throw std::runtime_error("bng3_events assignment amount must be nonnegative");
+        }
         values.push_back(value);
     }
     return values;
@@ -2412,6 +2412,9 @@ bool OdeIntegrator::applyDueEvents(double time, std::vector<double>& state) {
                 ? eventValue(*event.dynamicPriority, candidate->executionTime,
                              state.data())
                 : event.priority;
+            if (!std::isfinite(priority)) {
+                throw std::runtime_error("bng3_events expression is nonfinite");
+            }
             // Keep the existing queue insertion order for exact ties. SBML
             // requires randomized ordering for equal defined priorities;
             // that behavior remains outside this deterministic native slice.

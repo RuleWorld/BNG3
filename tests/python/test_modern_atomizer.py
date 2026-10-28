@@ -1027,7 +1027,7 @@ def test_playground_parser_preserves_mathml_numeric_and_function_semantics():
     )
 
 
-def test_playground_parser_reports_lossy_mathml_constants_and_operators():
+def test_playground_parser_preserves_nonfinite_mathml_constants():
     from bionetgen.atomizer.modern import SBMLParser
 
     sbml = """<?xml version="1.0"?>
@@ -1052,19 +1052,33 @@ def test_playground_parser_reports_lossy_mathml_constants_and_operators():
         warning for warning in model.import_warnings if warning.category == "mathml"
     ]
 
-    # The source document is valid SBML: validation rule 10202 permits the
-    # MathML <infinity> constant.  The limitation is BNG3's, so the diagnostic
-    # says so rather than reading like a malformed input.
-    assert {(warning.message, warning.severity) for warning in warnings} == {
-        (
-            "<infinity> constant encountered in math; the source is valid SBML "
-            "(validation rule 10202 permits <infinity>), but an infinite value "
-            "cannot be represented in BNG3's finite-double model, so it is "
-            "emitted as a large finite value and the model is not claimed to be "
-            "supported.",
-            "approximated",
-        ),
-    }
+    rules = {rule.variable: rule.math for rule in model.rules}
+    assert rules["infinite"] == "exp(1000)"
+    assert rules["factorial_value"] == "factorial(x)"
+    assert not warnings
+
+
+def test_infinity_mathml_is_emitted_as_an_exact_nonfinite_expression():
+    from bionetgen.atomizer.modern import Atomizer
+
+    xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="infinity_math">
+        <listOfParameters><parameter id="p" constant="false"/></listOfParameters>
+        <listOfRules><assignmentRule variable="p">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><infinity/></math>
+        </assignmentRule></listOfRules>
+      </model>
+    </sbml>"""
+    atomizer = Atomizer(atomize=False, quiet_mode=True)
+    result = atomizer.atomize(xml)
+
+    assert result.success, result.error
+    assert atomizer.model.rules[0].math == "exp(1000)"
+    assert "1e20" not in result.bngl
+    assert not any(
+        warning.category == "mathml" and warning.severity == "dropped"
+        for warning in atomizer.model.import_warnings
+    )
 
 
 def test_playground_sct_infers_complexes_and_named_modifications():
@@ -2491,8 +2505,9 @@ def test_playground_writer_curates_nonfinite_parameter_values():
         model, sct, get_molecule_types(sct), get_seed_species(sct, model)
     )
 
-    assert "kInf 1e20" in bngl
-    assert "kNaN 0" in bngl
+    assert "kInf exp(1000)" in bngl
+    assert "kNaN sqrt(-1)" in bngl
+    assert "1e20" not in bngl
     parameters = bngl.split("begin parameters", 1)[1].split("end parameters", 1)[0]
     assert " inf" not in parameters.lower()
     assert " nan" not in parameters.lower()

@@ -45,7 +45,9 @@ def test_playground_helpers_string_and_math_contract():
     assert convertMathFunction("gt(a, b)") == "(a > b)"
     assert convertMathFunction("and(a, b)") == "(a && b)"
     assert convertMathFunction("not(c)") == "(!c)"
-    assert cleanParameterValue("Infinity NaN 1E-3 Vmax_2E1") == ("1e20 0 1e-3 Vmax_2E1")
+    assert cleanParameterValue("Infinity NaN 1E-3 Vmax_2E1") == (
+        "exp(1000) sqrt(-1) 1e-3 Vmax_2E1"
+    )
 
 
 def test_playground_helpers_lower_the_mathml_builtins_from_the_shared_table():
