@@ -10,6 +10,7 @@ from tests.validation import (
     graph_identity,
     integrated_extensions as extensions,
     integrated_cases,
+    integrated_boundaries,
 )
 
 
@@ -133,6 +134,86 @@ def test_missing_qualification_checks_cannot_pass_after_successful_process(tmp_p
     assert "integration_case" not in parent
     assert parent["qualification"] == "boundaries"
     assert all(r["status"] == "NOT_TESTED" for r in rows[1:])
+
+
+def test_boundary_receipt_accepts_only_named_static_delay_execution(tmp_path):
+    def run_boundary_receipt(mark_other_supported=False):
+        report_dir = tmp_path / ("invalid" if mark_other_supported else "valid")
+        rows = []
+
+        def worker(case_id, operation, command, directory, results, **kwargs):
+            directory.mkdir(parents=True)
+            (directory / "identity.json").write_text("{}")
+            checks = []
+            for case_id, *_ in integrated_boundaries.CASES:
+                static = case_id == "delay_state_history_a"
+                checks.append(
+                    {
+                        "id": f"sbml-boundary:{case_id}:"
+                        f"{integrated_boundaries._registry_name(case_id)}",
+                        "check": (
+                            "static-delay-analytic-execution"
+                            if static
+                            else "explicit-loss-diagnostic"
+                        ),
+                        "status": "PASS",
+                        "detail": (
+                            "analytic trajectory" if static else "loss diagnostic"
+                        ),
+                        "related_issues": [157],
+                        "supported_execution": static
+                        or (
+                            mark_other_supported and case_id == "event_dynamic_delay_a"
+                        ),
+                        "evidence_kind": (
+                            "analytic-execution" if static else "diagnostic-only"
+                        ),
+                        "expected_behavior": (
+                            "execute-static-delay-history"
+                            if static
+                            else "explicit-loss-diagnostic"
+                        ),
+                    }
+                )
+                (directory / f"{case_id}.xml").write_text("<sbml/>")
+                (directory / f"{case_id}.diagnostics.json").write_text("[]")
+            for case_id, *_ in integrated_boundaries.SUPPORTED_EVENT_CASES:
+                checks.append(
+                    {
+                        "id": f"sbml-event:{case_id}:source-trajectory",
+                        "check": "source-trajectory",
+                        "status": "PASS",
+                        "detail": "source comparison passed",
+                        "related_issues": [157],
+                        "supported_execution": True,
+                        "evidence_kind": "supported-execution",
+                        "expected_behavior": (
+                            "native-event-matches-independent-sbml-execution"
+                        ),
+                        "source_engine": "libRoadRunner",
+                    }
+                )
+                (directory / f"{case_id}.xml").write_text("<sbml/>")
+                (directory / f"{case_id}.diagnostics.json").write_text("[]")
+                (directory / f"{case_id}.bngl").write_text("begin model\nend model\n")
+            (directory / "delay_state_history_a.bngl").write_text(
+                "begin model\nend model\n"
+            )
+            (directory / "checks.json").write_text(json.dumps(checks))
+            parent = {"id": f"{case_id}:{operation}", "status": "PASS"}
+            results.append(parent)
+            return parent
+
+        parent = extensions.invoke("boundaries", args(report_dir), rows, {}, worker)
+        return parent
+
+    assert run_boundary_receipt()["status"] == "PASS"
+    invalid = run_boundary_receipt(mark_other_supported=True)
+    assert invalid["status"] == "HARNESS_ERROR"
+    assert (
+        "unsupported boundary controls cannot claim supported execution"
+        in invalid["detail"]
+    )
 
 
 def test_ensemble_receipt_preserves_seed_budget_and_rejects_duplicate_evidence(

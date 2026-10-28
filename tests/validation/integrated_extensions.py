@@ -180,7 +180,12 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
                 if row.get("status") not in campaign.STATUSES:
                     raise ValueError("invalid qualification outcome")
                 expected_names = (
-                    {"explicit-loss-diagnostic", "unsupported-boundary-contract"}
+                    {
+                        "explicit-loss-diagnostic",
+                        "unsupported-boundary-contract",
+                        "static-delay-analytic-execution",
+                        "source-trajectory",
+                    }
                     if operation == "boundaries"
                     else {row["id"].rsplit(":", 1)[-1]}
                 )
@@ -197,13 +202,41 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
                     or any(type(n) is not int or n < 1 for n in issues)
                 ):
                     raise ValueError("qualification issue links are missing or invalid")
-                if (
-                    operation == "boundaries"
-                    and row.get("supported_execution") is not False
-                ):
-                    raise ValueError(
-                        "boundary controls cannot claim supported execution"
+                if operation == "boundaries":
+                    static_delay = row["id"] == (
+                        "sbml-boundary:delay_state_history_a:static-delay-execution"
                     )
+                    supported_event = row["id"] in {
+                        f"sbml-event:{case_id}:source-trajectory"
+                        for case_id, *_ in integrated_boundaries.SUPPORTED_EVENT_CASES
+                    }
+                    if static_delay:
+                        if (
+                            row.get("check") != "static-delay-analytic-execution"
+                            or row.get("supported_execution") is not True
+                            or row.get("evidence_kind") != "analytic-execution"
+                            or row.get("expected_behavior")
+                            != "execute-static-delay-history"
+                        ):
+                            raise ValueError(
+                                "static delay control lacks analytic execution evidence"
+                            )
+                    elif supported_event:
+                        if (
+                            row.get("check") != "source-trajectory"
+                            or row.get("supported_execution") is not True
+                            or row.get("evidence_kind") != "supported-execution"
+                            or row.get("expected_behavior")
+                            != "native-event-matches-independent-sbml-execution"
+                            or row.get("source_engine") != "libRoadRunner"
+                        ):
+                            raise ValueError(
+                                "native event control lacks independent source execution evidence"
+                            )
+                    elif row.get("supported_execution") is not False:
+                        raise ValueError(
+                            "unsupported boundary controls cannot claim supported execution"
+                        )
                 if row.get("first_difference") is not None and not isinstance(
                     row["first_difference"], dict
                 ):
@@ -236,6 +269,14 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
                         or not (directory / (case_id + ".diagnostics.json")).is_file()
                     ):
                         raise ValueError("boundary source/diagnostic artifact missing")
+                static_delay_artifact = directory / "delay_state_history_a.bngl"
+                if not static_delay_artifact.is_file():
+                    raise ValueError("static delay execution source artifact missing")
+                for case_id, *_ in integrated_boundaries.SUPPORTED_EVENT_CASES:
+                    if not (directory / f"{case_id}.bngl").is_file():
+                        raise ValueError(
+                            "native event execution source artifact missing"
+                        )
         elif parent["status"] == "PASS":
             raise ValueError("qualification worker emitted no named checks")
     except (OSError, ValueError, KeyError, TypeError) as exc:
