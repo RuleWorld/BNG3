@@ -3217,23 +3217,30 @@ def _report_unspellable_identifiers(model: SBMLModel) -> None:
 def _unrepresentable_math_function_reason(function_name: str) -> str:
     """Return the reason an SBML math function has no executable equivalent."""
 
-    if function_name in {"delay", "rateOf"}:
+    if function_name == "delay":
+        return (
+            "BNG3 CVODE evaluates delay calls with static durations from its "
+            "recorded simulation history; libRoadRunner cannot load an SBML "
+            "model containing delay"
+        )
+    if function_name == "rateOf":
         return (
             "the C++ SBML writer serializes the call, but neither the BNG3 "
-            "engine nor libRoadRunner can evaluate SBML "
-            f"{function_name} semantics"
+            "engine nor libRoadRunner can evaluate SBML rateOf semantics"
         )
     return "BNGL has no built-in function with those semantics"
 
 
 def _unrepresentable_math_function_message(function_name: str) -> str:
-    """Describe why an SBML math function has no executable BNG3 equivalent.
+    """Describe why an SBML math function has no complete execution path.
 
     The C++ SBML writer can serialize the SBML Level 3 Version 2 spelling of
     ``delay`` and ``rateOf`` (Core Sec. 3.4.6, "Use of csymbol elements in
     MathML expressions in SBML"), so the remaining boundary is the execution
-    path: the BNG3 engine has no delayed-history or derivative semantics for
-    these calls, and libRoadRunner rejects a model that uses ``delay`` at all.
+    path: BNG3 CVODE evaluates delayed history for static durations, while
+    libRoadRunner rejects a written model that still uses ``delay``. The
+    latter limits independent comparison only; it does not make a delay call
+    unsupported by BNG3.
     """
 
     return (
@@ -7333,7 +7340,7 @@ def generate_bngl(
                 model,
                 _unrepresentable_math_function_message(function_name),
                 category="mathml",
-                severity="dropped",
+                severity="info" if function_name == "delay" else "dropped",
             )
 
     _report_identifier_collisions(model)
@@ -11469,7 +11476,7 @@ def generate_bngl(
             "losslessly representable in the C++ SBML writer/libRoadRunner "
             f"path: {_unrepresentable_math_function_reason(function_name)}.",
             category="mathml",
-            severity="dropped",
+            severity="info" if function_name == "delay" else "dropped",
         )
 
     has_multi = bool(

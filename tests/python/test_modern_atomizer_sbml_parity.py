@@ -3957,10 +3957,19 @@ def test_nested_delay_uses_zero_lag_from_bounded_assignment_rule():
     assert "delay(" not in result.bngl.lower()
     assert 'math function "delay"' not in result.bngl
 
-    longer_horizon = Atomizer(quiet_mode=True, t_end=2, n_steps=20).atomize(xml)
+    longer_atomizer = Atomizer(quiet_mode=True, t_end=2, n_steps=20)
+    longer_horizon = longer_atomizer.atomize(xml)
 
     assert longer_horizon.success, longer_horizon.error
     assert "delay(" in longer_horizon.bngl.lower()
+    delay_warnings = [
+        warning
+        for warning in longer_atomizer.model.import_warnings
+        if warning["category"] == "mathml"
+        and 'math function "delay"' in warning["message"]
+    ]
+    assert delay_warnings
+    assert all(warning["severity"] == "info" for warning in delay_warnings)
 
 
 def test_fixed_time_event_lag_uses_piecewise_affine_delay_history():

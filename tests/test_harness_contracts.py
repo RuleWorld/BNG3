@@ -107,6 +107,24 @@ def _load_test_module(relative_path: str, name: str):
     return _load_module(REPO / relative_path, name)
 
 
+def test_delay_in_written_sbml_is_excluded_from_roadrunner_comparison(tmp_path):
+    delayed = tmp_path / "delayed.xml"
+    delayed.write_text(
+        '<math xmlns="http://www.w3.org/1998/Math/MathML">'
+        '<apply><csymbol definitionURL="http://www.sbml.org/sbml/symbols/delay">'
+        "delay</csymbol><ci>x</ci><cn>1</cn></apply></math>",
+        encoding="utf-8",
+    )
+    ordinary = tmp_path / "ordinary.xml"
+    ordinary.write_text(
+        '<math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>',
+        encoding="utf-8",
+    )
+
+    assert runner._written_sbml_uses_delay(delayed)
+    assert not runner._written_sbml_uses_delay(ordinary)
+
+
 #: The existing assertions this suite calls rather than duplicates.
 validation_contracts = _load_test_module(
     "tests/python/test_sbml_validation_contracts.py", "_contract_validation_contracts"
