@@ -323,7 +323,6 @@ def test_linear_algebraic_rule_with_constant_user_function_is_solved_exactly():
 def test_persistent_event_over_an_algebraic_rule_matches_official_reference(tmp_path):
     """The exact 01575 reference trajectory includes its delayed reset."""
 
-
     validator = _load_validator("validate_sbml_test_suite")
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
     case = _write_case(tmp_path, "01575", _01575_MODEL, _01575_SETTINGS, _01575_RESULTS)

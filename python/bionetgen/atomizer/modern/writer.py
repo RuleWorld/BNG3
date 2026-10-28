@@ -11543,10 +11543,19 @@ def generate_bngl(
         model_text += "\n" + "".join(notes)
 
     if event_result is not None and event_result.actions_block:
+        action_lines = event_result.actions_block.splitlines()
+        if native_event_block:
+            # simulate generates its network in memory. A .net export cannot
+            # preserve native events, so mixed schedules must not request one.
+            action_lines = [
+                line
+                for line in action_lines
+                if line.strip() != "generate_network({overwrite=>1})"
+            ]
         model_text += "\nbegin actions\n"
         model_text += "\n".join(
             "  " + line if line and not line.startswith("#") else line
-            for line in event_result.actions_block.splitlines()
+            for line in action_lines
         )
         model_text += "\nend actions\n"
     elif actions:

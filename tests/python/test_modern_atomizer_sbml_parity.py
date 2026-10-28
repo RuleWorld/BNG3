@@ -2125,7 +2125,9 @@ def test_quadratic_state_events_ignore_unrelated_event_assignments(tmp_path):
         assert float(np.max(np.abs(bng_values - rr_values))) <= max(5e-12, 1e-5 * scale)
 
 
-def test_quadratic_state_events_with_cross_component_controls_match_roadrunner(tmp_path):
+def test_quadratic_state_events_with_cross_component_controls_match_roadrunner(
+    tmp_path,
+):
     import numpy as np
 
     roadrunner = pytest.importorskip("roadrunner")
