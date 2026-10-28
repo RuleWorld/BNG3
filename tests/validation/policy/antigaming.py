@@ -898,6 +898,12 @@ def check_ci_wiring(root: Path, head: str = "HEAD") -> list[str]:
         )
     elif disabled(policy_step):
         errors.append("ci.yml: anti-gaming checks may be disabled or ignored")
+    elif (
+        "HEAD_REVISION" not in policy_run or '--head "$HEAD_REVISION"' not in policy_run
+    ):
+        errors.append(
+            "ci.yml: anti-gaming checks must inspect the PR head revision, not the synthetic merge ref"
+        )
 
     integration = ci.get("jobs", {}).get("python-integration", {})
     seed_step = step(integration, "Generate and execute a fresh seeded source case")

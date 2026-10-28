@@ -45,6 +45,7 @@ jobs:
       - name: Run anti-gaming checks from the PR base revision
         env:
           BASE_REVISION: ${{ github.event.pull_request.base.sha || github.event.before || github.sha }}
+          HEAD_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/base-policy"
@@ -52,7 +53,7 @@ jobs:
             git show "$BASE_REVISION:tests/validation/policy/antigaming.py" > "$RUNNER_TEMP/base-policy/antigaming.py"
             git show "$BASE_REVISION:tests/validation/policy/run_antigaming.py" > "$RUNNER_TEMP/base-policy/run_antigaming.py"
           elif [[ "$BASE_REVISION" == "3ef3ac00645dc894133a8755a1499ca86711d286" ]] && ! git cat-file -e "$BASE_REVISION:tests/validation/policy/antigaming.py" 2>/dev/null && ! git cat-file -e "$BASE_REVISION:tests/validation/policy/run_antigaming.py" 2>/dev/null; then
-            changed=$(git diff --name-only "$BASE_REVISION...HEAD" | sort)
+            changed=$(git diff --name-only "$BASE_REVISION...$HEAD_REVISION" | sort)
             expected=$(printf '%s\n' .github/workflows/ci.yml .github/workflows/weekly.yml .github/workflows/release-policy.yml .github/workflows/release.yml tests/validation/policy/README.md tests/validation/policy/antigaming.py tests/validation/policy/run_antigaming.py tests/validation/policy/mutation-baseline.json | sort)
             [[ "$changed" == "$expected" ]] || { echo "bootstrap candidate contains unexpected paths"; exit 1; }
             cp tests/validation/policy/antigaming.py tests/validation/policy/run_antigaming.py "$RUNNER_TEMP/base-policy/"
@@ -61,7 +62,7 @@ jobs:
           else
             echo "base anti-gaming checker missing or incomplete outside the exact bootstrap baseline"; exit 1
           fi
-          python "$RUNNER_TEMP/base-policy/run_antigaming.py" --root "$GITHUB_WORKSPACE" --base "$BASE_REVISION" \
+          python "$RUNNER_TEMP/base-policy/run_antigaming.py" --root "$GITHUB_WORKSPACE" --base "$BASE_REVISION" --head "$HEAD_REVISION" \
             --check release-protected-expectations --check release-no-product-fixture-names
 
       - name: Check Python formatting (Black)
