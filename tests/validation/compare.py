@@ -13,8 +13,9 @@ from __future__ import annotations
 
 import ast
 import re
+import xml.etree.ElementTree as ET
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from fractions import Fraction
 from functools import lru_cache
 from pathlib import Path
@@ -515,6 +516,25 @@ def _canon_expr(expr: str) -> str:
                 )
             return node
 
+    class NormalizeTfunCall(ast.NodeTransformer):
+        """Normalize legacy TFUN(counter, file) to modern tfun(file, counter)."""
+
+        def visit_Call(self, node: ast.Call) -> ast.AST:
+            node = self.generic_visit(node)
+            if (
+                isinstance(node.func, ast.Name)
+                and node.func.id.lower() == "tfun"
+                and len(node.args) == 2
+                and not node.keywords
+                and isinstance(node.args[1], ast.Constant)
+                and isinstance(node.args[1].value, str)
+            ):
+                node.func.id = "tfun"
+                node.args = [node.args[1], node.args[0]]
+            elif isinstance(node.func, ast.Name) and node.func.id.lower() == "tfun":
+                node.func.id = "tfun"
+            return node
+
     source = result.replace("^", "**").replace("&&", " and ").replace("||", " or ")
     source = re.sub(r"\bif\s*(?=\()", "_bng_if", source)
 
@@ -718,6 +738,7 @@ def _canon_expr(expr: str) -> str:
             normalized = NormalizeNegativeProduct().visit(tree)
             normalized = StripUnitMultiplications().visit(normalized)
             normalized = NormalizeProductOfQuotient().visit(normalized)
+            normalized = NormalizeTfunCall().visit(normalized)
             normalized = FoldNumericSubtrees().visit(normalized)
             result = re.sub(r"\s+", "", ast.unparse(normalized))
     except (SyntaxError, ValueError):
@@ -1677,6 +1698,89 @@ def _group_view(
     return view
 
 
+def _restore_legacy_tfun_net_rates(net: Network, xml_path: str | Path) -> Network:
+    """Recover BNG2 legacy-TFUN expressions omitted by its .net serializer.
+
+    BNG2's legacy ``TFUN(counter, file)`` expression stores the table as
+    function metadata. Its .net writer prints only that call and loses any
+    arithmetic surrounding it. BNG2 XML retains the full expression with a
+    ``__TFUN_VAL__`` placeholder, so this opt-in path restores only definitions
+    whose metadata agrees with the corresponding legacy call in the .net file.
+    """
+    try:
+        root = ET.parse(str(xml_path)).getroot()
+    except (ET.ParseError, OSError) as exc:
+        raise ValueError(f"could not read BNG2 TFUN XML sidecar: {exc}") from exc
+
+    legacy_defs: dict[str, tuple[str, str]] = {}
+    for name, expression in net.rate_defs.items():
+        if not re.search(r"\bTFUN\s*\(", expression):
+            continue
+        try:
+            call = ast.parse(expression.replace("^", "**"), mode="eval").body
+        except SyntaxError as exc:
+            raise ValueError(f"invalid legacy TFUN expression for {name}") from exc
+        if (
+            not isinstance(call, ast.Call)
+            or not isinstance(call.func, ast.Name)
+            or call.func.id != "TFUN"
+            or len(call.args) != 2
+            or call.keywords
+            or not isinstance(call.args[0], ast.Name)
+            or not isinstance(call.args[1], ast.Constant)
+            or not isinstance(call.args[1].value, str)
+        ):
+            raise ValueError(
+                f"legacy TFUN rate {name!r} is not a bare TFUN(counter, file) call"
+            )
+        legacy_defs[name] = (call.args[0].id, call.args[1].value)
+
+    def local_name(element: ET.Element) -> str:
+        return element.tag.rsplit("}", 1)[-1]
+
+    xml_defs: dict[str, tuple[str, str, str]] = {}
+    for function in (
+        element for element in root.iter() if local_name(element) == "Function"
+    ):
+        if function.get("type") != "TFUN":
+            continue
+        name = function.get("id")
+        file_name = function.get("file")
+        counter = function.get("ctrName")
+        expressions = [child for child in function if local_name(child) == "Expression"]
+        if (
+            not name
+            or not file_name
+            or not counter
+            or len(expressions) != 1
+            or expressions[0].text is None
+            or expressions[0].text.count("__TFUN_VAL__") != 1
+        ):
+            raise ValueError("incomplete or ambiguous BNG2 TFUN XML function data")
+        if name in xml_defs:
+            raise ValueError(f"duplicate BNG2 TFUN XML function {name!r}")
+        xml_defs[name] = (file_name, counter, expressions[0].text.strip())
+
+    if set(xml_defs) != set(legacy_defs):
+        missing = sorted(set(legacy_defs) - set(xml_defs))
+        extra = sorted(set(xml_defs) - set(legacy_defs))
+        raise ValueError(
+            "BNG2 TFUN XML sidecar does not correspond to reference .net "
+            f"functions (missing={missing}, extra={extra})"
+        )
+
+    restored = dict(net.rate_defs)
+    for name, (file_name, counter, expression) in xml_defs.items():
+        expected_counter, expected_file = legacy_defs[name]
+        if counter != expected_counter or file_name != expected_file:
+            raise ValueError(
+                f"BNG2 TFUN XML metadata conflicts with .net definition {name!r}"
+            )
+        table_call = f"tfun({file_name!r}, {counter})"
+        restored[name] = expression.replace("__TFUN_VAL__", table_call)
+    return replace(net, rate_defs=restored)
+
+
 def compare_net(
     ref: Network,
     test: Network,
@@ -1684,6 +1788,7 @@ def compare_net(
     compare_rates: bool = True,
     compare_initial_amounts: bool = False,
     molecule_name_aliases: dict[str, str] | None = None,
+    reference_tfun_xml: str | Path | None = None,
 ) -> NetDiff:
     """Compare networks by graph identity and reaction multiset.
 
@@ -1693,6 +1798,9 @@ def compare_net(
     explicit connectivity, stoichiometry, multiplicity, and (when enabled) rate
     values always remain significant.
     """
+    if reference_tfun_xml is not None:
+        ref = _restore_legacy_tfun_net_rates(ref, reference_tfun_xml)
+
     aliases = molecule_name_aliases or {}
     if len(set(aliases.values())) != len(aliases):
         raise ValueError("molecule name aliases must map to unique generated names")
