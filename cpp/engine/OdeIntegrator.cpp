@@ -4804,7 +4804,8 @@ OdeResult OdeIntegrator::integrateIda(const OdeOptions& opts) {
             triggerHolds(event.trigger, opts.tStart, initialState.data())) {
             PendingEvent pending;
             pending.event = index;
-            pending.executionTime = opts.tStart + event.delay;
+            pending.executionTime =
+                opts.tStart + eventDelay(event, opts.tStart, initialState.data());
             if (event.useValuesFromTriggerTime) {
                 pending.values = eventValues(event, opts.tStart, initialState.data());
             }
