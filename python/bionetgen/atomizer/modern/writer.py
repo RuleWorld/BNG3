@@ -1164,8 +1164,9 @@ def curate_parameters(parameters: Mapping[str, object]) -> Dict[str, str]:
     """Curate SBML parameter values for BNGL emission.
 
     This mirrors the Playground writer's public ``curateParameters`` helper:
-    non-finite literals are made parseable, NaN emits a warning and becomes
-    zero, and identifiers use the same BNGL-safe spelling as the writer.
+    IEEE non-finite values are emitted as BNGL expressions that evaluate to
+    infinity or NaN, and identifiers use the same BNGL-safe spelling as the
+    writer.
     """
 
     curated: Dict[str, str] = {}
@@ -1176,14 +1177,12 @@ def curate_parameters(parameters: Mapping[str, object]) -> Dict[str, str]:
             else getattr(parameter, "value", "")
         )
         value_text = str(value)
-        if re.search(r"inf", value_text, flags=re.IGNORECASE):
-            value_text = re.sub(r"inf", "1e20", value_text, flags=re.IGNORECASE)
-        if re.search(r"nan", value_text, flags=re.IGNORECASE):
-            logger.warning(
-                "BNW001",
-                f"Parameter {parameter_id} has NaN value, setting to 0",
-            )
-            value_text = "0"
+        if re.fullmatch(r"\+?(?:inf|infinity)", value_text, flags=re.IGNORECASE):
+            value_text = "exp(1000)"
+        elif re.fullmatch(r"-(?:inf|infinity)", value_text, flags=re.IGNORECASE):
+            value_text = "-exp(1000)"
+        elif re.fullmatch(r"[+-]?nan", value_text, flags=re.IGNORECASE):
+            value_text = "sqrt(-1)"
         curated[standardize_name(str(parameter_id))] = value_text
     return curated
 
@@ -4269,34 +4268,16 @@ def _update_event_translation_warning(
 
 
 def _curated_parameter_value(model: SBMLModel, parameter_id: str, value: object) -> str:
-    """Emit finite BNGL literals for SBML's non-finite parameter values."""
+    """Emit exact IEEE non-finite values as executable BNGL expressions."""
 
     try:
         number = float(value)
     except (TypeError, ValueError):
         return str(value)
     if math.isnan(number):
-        _record_import_warning(
-            model,
-            f'Parameter "{parameter_id}" has NaN value; emitted 0 as a finite '
-            "BNGL approximation.",
-            category="parameter",
-            severity="approximated",
-        )
-        return "0"
+        return "sqrt(-1)"
     if math.isinf(number):
-        # An infinite quantity has no finite BNGL spelling.  Report the
-        # approximation instead of silently substituting a large finite
-        # number, so the model is not presented as exact when it is not.
-        emitted = "-1e20" if number < 0 else "1e20"
-        _record_import_warning(
-            model,
-            f'Parameter "{parameter_id}" has an infinite value; emitted '
-            f"{emitted} as a finite BNGL approximation.",
-            category="parameter",
-            severity="approximated",
-        )
-        return emitted
+        return "-exp(1000)" if number < 0 else "exp(1000)"
     return _number(number)
 
 

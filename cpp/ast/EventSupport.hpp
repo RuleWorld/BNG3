@@ -249,6 +249,30 @@ inline void validateNativeEventSubset(const Model& model) {
         }
         continuous(*event.delay);
     }
+    const auto isStaticNonfinite = [&](const Expression& expression) {
+        std::function<bool(const Expression&)> referencesDynamicValue =
+            [&](const Expression& current) {
+                if (current.kind() == ExpressionKind::ObservableRef) return true;
+                if (current.kind() == ExpressionKind::Identifier) {
+                    if (current.name() == "time" || current.name() == "t") return true;
+                    for (const auto& observable : model.getObservables()) {
+                        if (observable.getName() == current.name()) return true;
+                    }
+                }
+                return std::any_of(
+                    current.args().begin(), current.args().end(),
+                    [&](const auto& child) { return referencesDynamicValue(child); });
+            };
+        if (referencesDynamicValue(expression)) return false;
+        try {
+            const double value = expression.evaluate([&](const std::string& name) {
+                return model.getParameters().evaluate(name);
+            });
+            return !std::isfinite(value);
+        } catch (...) {
+            return false;
+        }
+    };
     std::set<std::string> targets;
     for (const auto& assignment : event.assignments) {
         if (!targets.insert(assignment.target).second) fail("duplicate assignment target");
@@ -257,7 +281,8 @@ inline void validateNativeEventSubset(const Model& model) {
             found = found || observable.getName() == assignment.target;
         }
         if (!found) fail("assignment target must be a species observable");
-        continuous(functionEvaluator.expandFunctions(assignment.value));
+        const auto value = functionEvaluator.expandFunctions(assignment.value);
+        if (!isStaticNonfinite(value)) continuous(value);
     }
     if (targets.empty()) fail("event requires an assignment");
     }

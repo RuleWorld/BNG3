@@ -165,6 +165,12 @@ private:
     std::vector<std::size_t> delayedRxnIndices_;
     std::vector<double> historyDelays_;
     bool hasPositiveExpressionDelay_ = false;
+    // True when some delay() duration depends on time or state.
+    bool hasDynamicExpressionDelay_ = false;
+    // Whether the integration records trajectory history at every step.
+    bool recordsHistory() const {
+        return !historyDelays_.empty() || hasDynamicExpressionDelay_;
+    }
     std::vector<CompiledGroup> compiledGroups_;
     std::vector<bool> fixedSpecies_;    // true for $ (constant) species
     std::size_t nSpecies_ = 0;

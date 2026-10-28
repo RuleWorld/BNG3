@@ -297,7 +297,8 @@ def convertMathFunction(math_string: str) -> str:
         ),
     )
 
-    result = _RE_INF_SHORT.sub("1e20", result)
+    result = _RE_INF_SHORT.sub("exp(1000)", result)
+    result = _RE_NAN.sub("sqrt(-1)", result)
     result = _RE_PI.sub("3.14159265358979", result)
     result = _RE_E.sub("2.71828182845905", result)
     result = _RE_TRUE.sub("1", result)
@@ -316,8 +317,8 @@ _RE_FALSE = re.compile(r"\bfalse\b", flags=re.IGNORECASE)
 
 
 def cleanParameterValue(value: str) -> str:
-    result = _RE_INF_LONG.sub("1e20", str(value))
-    result = _RE_NAN.sub("0", result)
+    result = _RE_INF_LONG.sub("exp(1000)", str(value))
+    result = _RE_NAN.sub("sqrt(-1)", result)
     return _RE_EXP.sub(
         r"\1e\2",
         result,

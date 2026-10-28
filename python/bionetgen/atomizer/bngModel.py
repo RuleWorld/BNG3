@@ -586,6 +586,7 @@ class Function:
                 fdef = simplified
         except:
             pass
+        return fdef
 
     def extendFunction(self, function, subfunctionName, subfunction):
         def constructFromList(argList, optionList, subfunctionParam, subfunctionBody):
@@ -1629,7 +1630,12 @@ class bngModel:
         # make a time counter reaction
         for func in self.functions.values():
             # time
-            if re.search(r"(\W|^)(TIME_)(\W|$)", func.adjusted_def):
+            func_def = (
+                func.adjusted_def if func.adjusted_def is not None else func.definition
+            )
+            if isinstance(func_def, str) and re.search(
+                r"(\W|^)(TIME_)(\W|$)", func_def
+            ):
                 self.add_time = True
             if self.add_time:
                 break

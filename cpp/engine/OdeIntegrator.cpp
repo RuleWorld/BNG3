@@ -234,8 +234,14 @@ OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& ne
                     return true;
                 };
                 if (!isStaticDuration(duration)) {
-                    throw std::runtime_error(
-                        "delay expression duration must be static");
+                    // A duration that depends on time or state is evaluated
+                    // at every use (Expression checks it is finite and
+                    // nonnegative). It has no fixed breakpoints, so the full
+                    // trajectory history is recorded at every solver step.
+                    hasDynamicExpressionDelay_ = true;
+                    hasPositiveExpressionDelay_ = true;
+                    for (const auto& child : expression.args()) visit(child);
+                    return;
                 }
                 const double delay = delayedTime(duration, model_);
                 if (!std::isfinite(delay) || delay < 0.0) {
@@ -2233,9 +2239,7 @@ void OdeIntegrator::validateEventTargets() {
 
 double OdeIntegrator::eventValue(const ast::Expression& expression,
                                  double time, const double* state) const {
-    const double value = evaluateExpressionWithHistory(expression, time, state);
-    if (!std::isfinite(value)) throw std::runtime_error("bng3_events expression is nonfinite");
-    return value;
+    return evaluateExpressionWithHistory(expression, time, state);
 }
 
 std::vector<double> OdeIntegrator::eventValues(const NativeEvent& event, double time,
@@ -2243,7 +2247,9 @@ std::vector<double> OdeIntegrator::eventValues(const NativeEvent& event, double 
     std::vector<double> values;
     for (const auto& assignment : event.assignments) {
         const double value = eventValue(assignment.value, time, state);
-        if (value < 0) throw std::runtime_error("bng3_events assignment amount must be nonnegative");
+        if (std::isfinite(value) && value < 0) {
+            throw std::runtime_error("bng3_events assignment amount must be nonnegative");
+        }
         values.push_back(value);
     }
     return values;
@@ -2454,6 +2460,9 @@ bool OdeIntegrator::applyDueEvents(double time, std::vector<double>& state) {
                 ? eventValue(*event.dynamicPriority, candidate->executionTime,
                              state.data())
                 : event.priority;
+            if (!std::isfinite(priority)) {
+                throw std::runtime_error("bng3_events expression is nonfinite");
+            }
             if (selected == pendingEvents_.end() || priority > selectedPriority) {
                 selected = candidate;
                 selectedPriority = priority;
@@ -3984,7 +3993,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                     }
                     continue;
                 }
-                if (target < tOut - 1e-12 || !historyDelays_.empty()) {
+                if (target < tOut - 1e-12 || recordsHistory()) {
                     // CV_NORMAL may step past a returned output/root time.
                     // If target is already inside that step, CVode interpolates
                     // to it; a stop behind the internal time is invalid.
@@ -4001,7 +4010,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                 // history. Keep CV_NORMAL for ordinary simulations so this
                 // feature does not change their established CVODE path.
                 flag = CVode(cvode_mem, target, y, &t,
-                             historyDelays_.empty() ? CV_NORMAL : CV_ONE_STEP);
+                             recordsHistory() ? CV_ONE_STEP : CV_NORMAL);
 
                 if (flag == CV_ROOT_RETURN) {
                     // CVodeGetRootInfo writes one entry per registered root
@@ -4124,7 +4133,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                         // A method-of-steps kink (including a sum-generated
                         // breakpoint) becomes a source discontinuity for each
                         // other delay in the model.
-                        if (activeSimulationSession_ && !historyDelays_.empty()) {
+                        if (activeSimulationSession_ && recordsHistory()) {
                             auto& discontinuities =
                                 activeSimulationSession_->discontinuities;
                             if (discontinuities.empty() ||
