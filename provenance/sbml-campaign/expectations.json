@@ -42,21 +42,21 @@
   },
   "stage_counts": {
     "conversion": {
-      "passed": 1798,
-      "unsupported": 125
+      "passed": 1799,
+      "unsupported": 124
     },
     "independent_comparison": {
-      "not_tested": 125,
-      "passed": 1798
+      "not_tested": 124,
+      "passed": 1799
     },
     "official_reference": {
       "failed": 1,
-      "passed": 1781,
-      "unsupported": 141
+      "passed": 1782,
+      "unsupported": 140
     },
     "roundtrip_structure": {
-      "not_tested": 125,
-      "passed": 1798
+      "not_tested": 124,
+      "passed": 1799
     }
   },
   "stages": [
