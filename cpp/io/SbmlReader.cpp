@@ -4,12 +4,14 @@
 #include <cctype>
 #include <cmath>
 #include <iomanip>
+#include <initializer_list>
 #include <map>
 #include <limits>
 #include <set>
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -268,6 +270,38 @@ std::string mathExpression(const TiXmlElement* element) {
             }
             result += ")";
             return result;
+        }
+        constexpr std::string_view distribPrefix =
+            "http://www.sbml.org/sbml/symbols/distrib/";
+        if (definitionUrl.rfind(distribPrefix, 0) == 0) {
+            const auto distribution = definitionUrl.substr(distribPrefix.size());
+            if (name != distribution) {
+                throw std::runtime_error(
+                    "SBML distrib csymbol name does not match its definition URL");
+            }
+            const auto hasArity = [&](std::initializer_list<std::size_t> counts) {
+                return std::find(counts.begin(), counts.end(), args.size()) !=
+                       counts.end();
+            };
+            bool validArity = false;
+            if (distribution == "uniform") {
+                validArity = hasArity({2});
+            } else if (distribution == "bernoulli") {
+                validArity = hasArity({1});
+            } else if (distribution == "normal" || distribution == "binomial" ||
+                       distribution == "gamma" || distribution == "lognormal") {
+                validArity = hasArity({2, 4});
+            } else if (distribution == "cauchy" || distribution == "laplace") {
+                validArity = hasArity({1, 2, 4});
+            } else if (distribution == "chisquare" || distribution == "exponential" ||
+                       distribution == "poisson" || distribution == "rayleigh") {
+                validArity = hasArity({1, 3});
+            }
+            if (!validArity) {
+                throw std::runtime_error(
+                    "unsupported SBML distrib csymbol or argument count: " + distribution);
+            }
+            return "distrib_" + distribution + "(" + join(args, ",") + ")";
         }
         throw std::runtime_error("unsupported MathML csymbol operator: " + name);
     }

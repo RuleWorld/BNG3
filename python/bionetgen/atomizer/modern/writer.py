@@ -4207,8 +4207,8 @@ def _update_event_translation_warning(
         if converted:
             message += f"; {converted} event(s) lowered to scheduled actions"
         message += (
-            ", which detects the trigger's rising edge with continuous root "
-            "finding and applies the assignments at that instant."
+            ", which detects trigger rising edges and applies the assignments "
+            "at the corresponding execution instant."
         )
         for warning in getattr(model, "import_warnings", []) or []:
             if warning.get("category") != "event":
@@ -7790,9 +7790,22 @@ def generate_bngl(
         def is_compile_time_constant(identifier: str) -> bool:
             if identifier in {"__Avogadro__", "exponentiale", "pi"}:
                 return True
-            parameter = model.parameters.get(identifier)
+            parameter_id = next(
+                (
+                    candidate
+                    for candidate in model.parameters
+                    if standardize_name(candidate) == standardize_name(identifier)
+                ),
+                identifier,
+            )
+            parameter = model.parameters.get(parameter_id)
             if parameter is not None:
-                rules = [rule for rule in model.rules if rule.variable == identifier]
+                rules = [
+                    rule
+                    for rule in model.rules
+                    if rule.variable
+                    and standardize_name(rule.variable) == standardize_name(identifier)
+                ]
                 if rules:
                     if (
                         len(rules) != 1
@@ -7895,6 +7908,14 @@ def generate_bngl(
                     amount_factor=factor,
                     compartment=compartment_id,
                 )
+            if identifier not in synthetic_rate_rule_variables:
+                synthetic_aliases = [
+                    variable
+                    for variable in synthetic_rate_rule_variables
+                    if standardize_name(variable) == standardize_name(identifier)
+                ]
+                if len(synthetic_aliases) == 1:
+                    return resolve_native_state(synthetic_aliases[0])
             if identifier in synthetic_rate_rule_variables:
                 # A rate-rule parameter becomes a state species whose seed is
                 # its SBML value; a compartment would rescale that seed, so
@@ -8246,7 +8267,17 @@ def generate_bngl(
                 path.remove(normalized)
                 return controlled
 
-            parameter = model.parameters.get(identifier)
+            parameter_id = next(
+                (
+                    candidate
+                    for candidate in model.parameters
+                    if standardize_name(candidate) == standardize_name(identifier)
+                ),
+                identifier,
+            )
+            parameter = model.parameters.get(parameter_id)
+            if parameter is not None:
+                identifier = str(parameter_id)
             if parameter is None:
                 compartment_id = next(
                     (
@@ -8591,16 +8622,22 @@ def generate_bngl(
                     return None
                 return initial, net_amount_rate
             if any(
-                assignment.symbol == identifier
+                standardize_name(assignment.symbol) == standardize_name(identifier)
                 for assignment in model.initial_assignments
             ) or any(
-                event_assignment.variable == identifier
+                standardize_name(event_assignment.variable)
+                == standardize_name(identifier)
                 for event in model.events
                 if controls_before_event(event)
                 for event_assignment in event.assignments
             ):
                 return None
-            rules = [rule for rule in model.rules if rule.variable == identifier]
+            rules = [
+                rule
+                for rule in model.rules
+                if rule.variable
+                and standardize_name(rule.variable) == standardize_name(identifier)
+            ]
             if len(rules) != 1 or rules[0].type != "rate":
                 return None
             derivative = extend_function(rules[0].math, {}, model.function_definitions)
@@ -8621,7 +8658,17 @@ def generate_bngl(
             event_context: Optional[SBMLEvent] = None,
         ) -> Optional[Tuple[float, float]]:
             """Resolve an exact exponential species or parameter trajectory."""
-            parameter = model.parameters.get(identifier)
+            parameter_id = next(
+                (
+                    candidate
+                    for candidate in model.parameters
+                    if standardize_name(candidate) == standardize_name(identifier)
+                ),
+                identifier,
+            )
+            parameter = model.parameters.get(parameter_id)
+            if parameter is not None:
+                identifier = str(parameter_id)
             if parameter is not None:
                 rules = [rule for rule in model.rules if rule.variable == identifier]
                 if (

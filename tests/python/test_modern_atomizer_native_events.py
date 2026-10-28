@@ -1,11 +1,11 @@
 """Contracts for the native ``bng3_events`` lowering of SBML events.
 
 A state-dependent SBML trigger has no finite schedule of BNGL actions, so
-the modern Atomizer hands it to the native BNG3 event runtime, which locates
-the trigger's rising edge with continuous root finding.  These tests pin the
-lowered model, the unit conversion between an SBML value and the observable
-the runtime observes, the delay semantics, and the boundaries that stay
-explicitly unsupported.
+the modern Atomizer hands it to the native BNG3 event runtime, which detects
+continuous roots for ODE runs and state changes for SSA runs. These tests pin
+the lowered model, the unit conversion between an SBML value and the
+observable the runtime observes, the delay semantics, and unsupported
+boundaries.
 """
 
 import numpy as np
@@ -117,6 +117,40 @@ def test_state_dependent_trigger_is_lowered_to_the_native_event_block():
     assert "setConcentration(" not in result.bngl
 
 
+def test_distrib_csymbol_is_preserved_in_native_event_assignments():
+    assignment = """<eventAssignment variable="S2">
+      <math xmlns="http://www.w3.org/1998/Math/MathML">
+        <apply>
+          <csymbol definitionURL="http://www.sbml.org/sbml/symbols/distrib/normal">normal</csymbol>
+          <cn>0</cn><cn>1.5</cn>
+        </apply>
+      </math>
+    </eventAssignment>"""
+
+    result = atomize(coupled_event_model(assignment=assignment))
+
+    assert result.success, result.error
+    assert "assignment: S2_amt = distrib_normal(0, 1.5)" in result.bngl
+    assert "# Events NOT simulated" not in result.bngl
+
+
+def test_square_root_distribution_parameter_lowers_to_native_sqrt():
+    assignment = """<eventAssignment variable="S2">
+      <math xmlns="http://www.w3.org/1998/Math/MathML">
+        <apply>
+          <csymbol definitionURL="http://www.sbml.org/sbml/symbols/distrib/normal">normal</csymbol>
+          <cn>0</cn>
+          <apply><root/><degree><cn>2</cn></degree><ci>k1</ci></apply>
+        </apply>
+      </math>
+    </eventAssignment>"""
+
+    result = atomize(coupled_event_model(assignment=assignment))
+
+    assert result.success, result.error
+    assert "assignment: S2_amt = distrib_normal(0, sqrt(k1))" in result.bngl
+
+
 def test_native_event_lowering_reports_an_informational_diagnostic():
     result = atomize(coupled_event_model())
 
@@ -167,7 +201,7 @@ def test_non_persistent_trigger_is_lowered_to_the_native_event_block():
     assert "# Events NOT simulated" not in result.bngl
 
 
-def test_stochastic_run_keeps_the_explicit_refusal():
+def test_stochastic_run_lowers_state_events_to_native_execution():
     result = Atomizer(
         atomize=False,
         quiet_mode=True,
@@ -177,9 +211,10 @@ def test_stochastic_run_keeps_the_explicit_refusal():
     ).atomize(coupled_event_model())
 
     assert result.success, result.error
-    assert "begin bng3_events version 1" not in result.bngl
+    assert "begin bng3_events version 1" in result.bngl
     assert (
-        "state-triggered SBML events require stochastic jump scheduling" in result.bngl
+        "state-triggered SBML events require stochastic jump scheduling"
+        not in result.bngl
     )
 
 
@@ -942,3 +977,35 @@ end actions
     assert boundary.shape[0] == 2
     assert boundary[0, header.index("A_count")] == pytest.approx(1.0)
     assert boundary[-1, header.index("A_count")] == pytest.approx(5.0)
+
+
+def test_ssa_refuses_native_triggers_that_can_change_between_jumps(tmp_path):
+    """Jump-only event detection cannot schedule a continuous clock crossing."""
+    from bionetgen.model import load
+
+    path = tmp_path / "clock_event.bngl"
+    path.write_text("""begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 0
+end seed species
+begin observables
+    Molecules x X()
+end observables
+begin bng3_events version 1
+    event "clock"
+        trigger: time > 0.5
+        initial_value: true
+        persistent: true
+        use_values_from_trigger_time: true
+        assignment: x = 1
+    end event
+end bng3_events
+end model
+""")
+    with pytest.raises(
+        RuntimeError, match="SSA does not support time-dependent native event triggers"
+    ):
+        load(path).simulate(method="ssa", t_end=1, n_steps=2, seed=17)

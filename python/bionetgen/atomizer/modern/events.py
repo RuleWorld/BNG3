@@ -3399,6 +3399,42 @@ def _native_term_expression(
         return (
             f"({_format_number(value)} * " f"({_format_number(target.amount_factor)}))"
         )
+    # SBML distrib csymbols are only executable as native event
+    # assignments, where the seeded event runtime samples each call.
+    # Keep the call intact so C++ can draw it at trigger or execution
+    # time according to useValuesFromTriggerTime.
+    if (
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id.startswith("distrib_")
+    ):
+
+        class LowerDistributionRoots(ast.NodeTransformer):
+            def visit_Call(self, call: ast.Call) -> ast.AST:
+                call = self.generic_visit(call)
+                if (
+                    isinstance(call.func, ast.Name)
+                    and call.func.id == "root"
+                    and len(call.args) == 2
+                    and isinstance(call.args[0], ast.Constant)
+                    and call.args[0].value == 2
+                ):
+                    return ast.copy_location(
+                        ast.Call(
+                            func=ast.Name(id="sqrt", ctx=ast.Load()),
+                            args=[call.args[1]],
+                            keywords=[],
+                        ),
+                        call,
+                    )
+                return call
+
+        expression = ast.unparse(LowerDistributionRoots().visit(node))
+        if sign < 0:
+            expression = f"-({expression})"
+        if target.amount_factor != 1.0:
+            expression = f"({expression}) * ({_format_number(target.amount_factor)})"
+        return expression
     factors = _native_multiplicative_factors(node)
     if factors is None:
         return None
@@ -3585,11 +3621,11 @@ def lower_native_events(
 ) -> NativeEventLowering:
     """Lower the SBML events into the native ``bng3_events`` block.
 
-    The native runtime detects the trigger's rising edge with continuous root
-    finding, so it executes a state-dependent trigger that no finite list of
-    scheduled actions can express.  Several events may share the block: the
-    runtime orders the events that are executed simultaneously by their
-    priority, and re-tests every trigger after each execution.
+    The native runtime detects trigger rising edges at continuous ODE roots
+    or after stochastic jumps, so it executes a state-dependent trigger that
+    no finite list of scheduled actions can express. Several events may share
+    the block: the runtime orders simultaneous events by priority and
+    re-tests every trigger after each execution.
     """
 
     if not events:
@@ -3599,9 +3635,14 @@ def lower_native_events(
         # so the generated model does not reproduce the source dynamics and
         # the trigger cannot be evaluated on it.
         return NativeEventLowering(None)
-    if str(context.method or "ode").lower() not in {"ode", "cvode"}:
-        # The native runtime finds a trigger crossing with the continuous ODE
-        # solver; a stochastic run needs jump scheduling instead.
+    if str(context.method or "ode").lower() not in {
+        "ode",
+        "cvode",
+        "ssa",
+        "stochastic",
+    }:
+        # Native trigger checks are implemented for continuous ODE roots and
+        # stochastic state jumps, not for the partitioned simulators.
         return NativeEventLowering(None)
     entries: List[NativeEventEntry] = []
     for event in events:
@@ -3733,6 +3774,23 @@ def synthesize_event_actions(
     ] = []
     scheduled_values: List[Tuple[float, str, float]] = []
     horizon_limited = 0
+    distribution_events: List[SBMLEvent] = []
+    remaining_events: List[SBMLEvent] = []
+    for event in events:
+        has_distribution_draw = any(
+            re.search(r"\bdistrib_[A-Za-z0-9_]+\s*\(", _event_assignment(item)[1])
+            for item in event.assignments
+        )
+        if has_distribution_draw:
+            distribution_events.append(event)
+        else:
+            remaining_events.append(event)
+    if distribution_events:
+        untranslated.extend(
+            (event, "SBML distrib draws require native event execution")
+            for event in distribution_events
+        )
+    events = remaining_events
     # Deterministic crossings cannot stand in for state changes caused by
     # stochastic reaction jumps.
     if context.method.lower() == "ssa" and not context.static_event_state:

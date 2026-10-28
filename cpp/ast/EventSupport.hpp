@@ -108,6 +108,7 @@ inline void validateNativeEventSubset(const Model& model) {
     };
     checkSides(trigger);
     std::set<std::string> visiting;
+    bool allowDistributionAssignment = false;
     std::function<void(const Expression&)> continuous = [&](const Expression& expression) {
         if (expression.kind() == ExpressionKind::Function &&
             (expression.name() == "abs" || expression.name() == "floor") &&
@@ -172,6 +173,18 @@ inline void validateNativeEventSubset(const Model& model) {
             }
             continuous(expression.args()[0]);
             continuous(expression.args()[1]);
+            return;
+        }
+        if (allowDistributionAssignment &&
+            expression.kind() == ExpressionKind::Function &&
+            expression.name().rfind("distrib_", 0) == 0) {
+            for (const auto& argument : expression.args()) continuous(argument);
+            return;
+        }
+        if (allowDistributionAssignment &&
+            expression.kind() == ExpressionKind::Function &&
+            expression.name() == "sqrt" && expression.args().size() == 1) {
+            continuous(expression.args().front());
             return;
         }
         fail("only continuous arithmetic event expressions are supported");
@@ -281,8 +294,10 @@ inline void validateNativeEventSubset(const Model& model) {
             found = found || observable.getName() == assignment.target;
         }
         if (!found) fail("assignment target must be a species observable");
+        allowDistributionAssignment = true;
         const auto value = functionEvaluator.expandFunctions(assignment.value);
         if (!isStaticNonfinite(value)) continuous(value);
+        allowDistributionAssignment = false;
     }
     if (targets.empty()) fail("event requires an assignment");
     }

@@ -2242,15 +2242,268 @@ double OdeIntegrator::eventValue(const ast::Expression& expression,
     return evaluateExpressionWithHistory(expression, time, state);
 }
 
+namespace {
+
+double drawSbmlDistribution(const std::string& name,
+                           const std::vector<double>& args,
+                           std::mt19937_64& rng) {
+    const auto requireCount = [&](std::initializer_list<std::size_t> allowed) {
+        if (std::find(allowed.begin(), allowed.end(), args.size()) == allowed.end()) {
+            throw std::runtime_error("SBML distrib function '" + name +
+                                     "' has an invalid argument count");
+        }
+    };
+    const auto requireFinite = [&](std::size_t index) {
+        if (!std::isfinite(args[index])) {
+            throw std::runtime_error("SBML distrib function '" + name +
+                                     "' requires finite parameters");
+        }
+    };
+    const auto sampleBounded = [&](const std::function<double()>& sample,
+                                   double minimum, double maximum,
+                                   bool discrete) {
+        if (!(minimum <= maximum) ||
+            (!discrete && !(minimum < maximum)) ||
+            (discrete && std::ceil(minimum) > std::floor(maximum))) {
+            throw std::runtime_error("SBML distrib function '" + name +
+                                     "' has invalid truncation bounds");
+        }
+        for (std::size_t attempt = 0; attempt < 1000000; ++attempt) {
+            const double value = sample();
+            if (value >= minimum && (discrete ? value <= maximum : value < maximum)) {
+                return value;
+            }
+        }
+        throw std::runtime_error("SBML distrib function '" + name +
+                                 "' could not draw within its truncation bounds");
+    };
+    const auto bounds = [&](std::size_t index) {
+        return std::pair<double, double>{
+            args.size() > index ? args[index] : -std::numeric_limits<double>::infinity(),
+            args.size() > index + 1 ? args[index + 1]
+                                    : std::numeric_limits<double>::infinity()};
+    };
+    const auto unit = [&]() {
+        std::uniform_real_distribution<double> distribution(0.0, 1.0);
+        double value = distribution(rng);
+        while (value == 0.0) value = distribution(rng);
+        return value;
+    };
+
+    if (name == "distrib_normal") {
+        requireCount({2, 4});
+        requireFinite(0);
+        requireFinite(1);
+        if (!(args[1] > 0.0)) {
+            throw std::runtime_error("SBML normal stdev must be positive");
+        }
+        const auto [minimum, maximum] = bounds(2);
+        std::normal_distribution<double> distribution(args[0], args[1]);
+        return sampleBounded([&]() { return distribution(rng); }, minimum,
+                             maximum, false);
+    }
+    if (name == "distrib_uniform") {
+        requireCount({2});
+        requireFinite(0);
+        requireFinite(1);
+        if (!(args[0] < args[1])) {
+            throw std::runtime_error("SBML uniform minimum must be less than maximum");
+        }
+        std::uniform_real_distribution<double> distribution(args[0], args[1]);
+        return distribution(rng);
+    }
+    if (name == "distrib_bernoulli") {
+        requireCount({1});
+        requireFinite(0);
+        if (args[0] < 0.0 || args[0] > 1.0) {
+            throw std::runtime_error("SBML Bernoulli probability must be in [0, 1]");
+        }
+        std::bernoulli_distribution distribution(args[0]);
+        return distribution(rng) ? 1.0 : 0.0;
+    }
+    if (name == "distrib_binomial") {
+        requireCount({2, 4});
+        requireFinite(0);
+        requireFinite(1);
+        if (args[0] < 0.0 || std::floor(args[0]) != args[0] ||
+            args[0] > static_cast<double>(std::numeric_limits<int>::max()) ||
+            args[1] < 0.0 || args[1] > 1.0) {
+            throw std::runtime_error("SBML binomial parameters are invalid");
+        }
+        const auto [minimum, maximum] = bounds(2);
+        std::binomial_distribution<int> distribution(
+            static_cast<int>(args[0]), args[1]);
+        return sampleBounded([&]() { return distribution(rng); }, minimum,
+                             maximum, true);
+    }
+    if (name == "distrib_cauchy") {
+        requireCount({1, 2, 4});
+        const double location = args.size() == 1 ? 0.0 : args[0];
+        const double scale = args.size() == 1 ? args[0] : args[1];
+        if (!std::isfinite(location) || !std::isfinite(scale) || !(scale > 0.0)) {
+            throw std::runtime_error("SBML Cauchy parameters are invalid");
+        }
+        const auto [minimum, maximum] = bounds(2);
+        std::cauchy_distribution<double> distribution(location, scale);
+        return sampleBounded([&]() { return distribution(rng); }, minimum,
+                             maximum, false);
+    }
+    if (name == "distrib_chisquare") {
+        requireCount({1, 3});
+        requireFinite(0);
+        if (!(args[0] > 0.0)) {
+            throw std::runtime_error("SBML chi-square degrees of freedom must be positive");
+        }
+        const auto [minimum, maximum] = bounds(1);
+        std::chi_squared_distribution<double> distribution(args[0]);
+        return sampleBounded([&]() { return distribution(rng); }, minimum,
+                             maximum, false);
+    }
+    if (name == "distrib_exponential") {
+        requireCount({1, 3});
+        requireFinite(0);
+        if (!(args[0] > 0.0)) {
+            throw std::runtime_error("SBML exponential rate must be positive");
+        }
+        const auto [minimum, maximum] = bounds(1);
+        std::exponential_distribution<double> distribution(args[0]);
+        return sampleBounded([&]() { return distribution(rng); }, minimum,
+                             maximum, false);
+    }
+    if (name == "distrib_gamma") {
+        requireCount({2, 4});
+        requireFinite(0);
+        requireFinite(1);
+        if (!(args[0] > 0.0) || !(args[1] > 0.0)) {
+            throw std::runtime_error("SBML gamma shape and scale must be positive");
+        }
+        const auto [minimum, maximum] = bounds(2);
+        std::gamma_distribution<double> distribution(args[0], args[1]);
+        return sampleBounded([&]() { return distribution(rng); }, minimum,
+                             maximum, false);
+    }
+    if (name == "distrib_laplace") {
+        requireCount({1, 2, 4});
+        const double location = args.size() == 1 ? 0.0 : args[0];
+        const double scale = args.size() == 1 ? args[0] : args[1];
+        if (!std::isfinite(location) || !std::isfinite(scale) || !(scale > 0.0)) {
+            throw std::runtime_error("SBML Laplace parameters are invalid");
+        }
+        const auto [minimum, maximum] = bounds(2);
+        const auto sample = [&]() {
+            const double u = unit();
+            return u < 0.5 ? location + scale * std::log(2.0 * u)
+                           : location - scale * std::log(2.0 * (1.0 - u));
+        };
+        return sampleBounded(sample, minimum, maximum, false);
+    }
+    if (name == "distrib_lognormal") {
+        requireCount({2, 4});
+        requireFinite(0);
+        requireFinite(1);
+        if (!(args[1] > 0.0)) {
+            throw std::runtime_error("SBML lognormal stdev must be positive");
+        }
+        const auto [minimum, maximum] = bounds(2);
+        std::lognormal_distribution<double> distribution(args[0], args[1]);
+        return sampleBounded([&]() { return distribution(rng); }, minimum,
+                             maximum, false);
+    }
+    if (name == "distrib_poisson") {
+        requireCount({1, 3});
+        requireFinite(0);
+        if (args[0] < 0.0) {
+            throw std::runtime_error("SBML Poisson rate must be nonnegative");
+        }
+        const auto [minimum, maximum] = bounds(1);
+        std::poisson_distribution<unsigned long long> distribution(args[0]);
+        return sampleBounded(
+            [&]() { return static_cast<double>(distribution(rng)); }, minimum,
+            maximum, true);
+    }
+    if (name == "distrib_rayleigh") {
+        requireCount({1, 3});
+        requireFinite(0);
+        if (!(args[0] > 0.0)) {
+            throw std::runtime_error("SBML Rayleigh scale must be positive");
+        }
+        const auto [minimum, maximum] = bounds(1);
+        const auto sample = [&]() { return args[0] * std::sqrt(-2.0 * std::log(1.0 - unit())); };
+        return sampleBounded(sample, minimum, maximum, false);
+    }
+    throw std::runtime_error("Unsupported SBML distrib function '" + name + "'");
+}
+
+}  // namespace
+
+double OdeIntegrator::eventAssignmentValue(const ast::Expression& expression,
+                                            double time,
+                                            const double* state) const {
+    auto expanded = functionEvaluator_.expandFunctions(expression);
+    std::function<bool(const ast::Expression&)> hasDraw;
+    hasDraw = [&](const ast::Expression& current) {
+        if (current.kind() == ast::ExpressionKind::Function &&
+            current.name().rfind("distrib_", 0) == 0) {
+            return true;
+        }
+        return std::any_of(current.args().begin(), current.args().end(), hasDraw);
+    };
+    if (hasDraw(expanded) &&
+        (activeSimulationSession_ == nullptr ||
+         !activeSimulationSession_->rngInitialized)) {
+        throw std::runtime_error(
+            "SBML distrib draws require a seeded simulation session");
+    }
+    std::function<ast::Expression(const ast::Expression&)> sampleDraws;
+    sampleDraws = [&](const ast::Expression& current) -> ast::Expression {
+        const auto& args = current.args();
+        if (current.kind() == ast::ExpressionKind::Function &&
+            current.name().rfind("distrib_", 0) == 0) {
+            std::vector<double> parameters;
+            parameters.reserve(args.size());
+            for (const auto& argument : args) {
+                const auto sampledArgument = sampleDraws(argument);
+                parameters.push_back(eventValue(sampledArgument, time, state));
+            }
+            return ast::Expression::number(drawSbmlDistribution(
+                current.name(), parameters, activeSimulationSession_->rng));
+        }
+        switch (current.kind()) {
+        case ast::ExpressionKind::Number:
+        case ast::ExpressionKind::Identifier:
+            return current;
+        case ast::ExpressionKind::Unary:
+            return ast::Expression::unary(current.name(), sampleDraws(args.front()));
+        case ast::ExpressionKind::Binary:
+            return ast::Expression::binary(current.name(), sampleDraws(args[0]),
+                                           sampleDraws(args[1]));
+        case ast::ExpressionKind::Function:
+        case ast::ExpressionKind::ObservableRef: {
+            std::vector<ast::Expression> sampled;
+            sampled.reserve(args.size());
+            for (const auto& argument : args) sampled.push_back(sampleDraws(argument));
+            return current.kind() == ast::ExpressionKind::Function
+                ? ast::Expression::function(current.name(), std::move(sampled))
+                : ast::Expression::observableRef(current.name(), std::move(sampled));
+        }
+        case ast::ExpressionKind::TableFunction:
+            return ast::Expression::tableFunction(
+                current.tableXValues(), current.tableYValues(),
+                current.tableFilePath(), sampleDraws(args.front()),
+                current.tableMethod());
+        }
+        throw std::runtime_error("Unsupported SBML event assignment expression");
+    };
+    const auto sampled = sampleDraws(expanded);
+    const double value = eventValue(sampled, time, state);
+    return value;
+}
+
 std::vector<double> OdeIntegrator::eventValues(const NativeEvent& event, double time,
                                                 const double* state) const {
     std::vector<double> values;
     for (const auto& assignment : event.assignments) {
-        const double value = eventValue(assignment.value, time, state);
-        if (std::isfinite(value) && value < 0) {
-            throw std::runtime_error("bng3_events assignment amount must be nonnegative");
-        }
-        values.push_back(value);
+        values.push_back(eventAssignmentValue(assignment.value, time, state));
     }
     return values;
 }
@@ -2680,6 +2933,15 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
     }
     activeSimulationSession_ = &working;
     try {
+        if (!working.rngInitialized) {
+            const std::mt19937_64::result_type seedValue =
+                options.seed > 0
+                    ? static_cast<std::mt19937_64::result_type>(options.seed)
+                    : static_cast<std::mt19937_64::result_type>(
+                          std::random_device{}());
+            working.rng.seed(seedValue);
+            working.rngInitialized = true;
+        }
         if (hasNetworkIntervention) {
             recordHistoryJump(options.tStart, stateBeforeIntervention);
             recordHistoryJump(options.tStart, stateAfterIntervention);
@@ -2726,8 +2988,10 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
 }
 
 OdeResult OdeIntegrator::integrateCore(const OdeOptions& options) {
-    if (!nativeEvents_.empty() && options.method != "cvode") {
-        throw std::runtime_error("bng3_events require CVODE continuous root detection");
+    if (!nativeEvents_.empty() && options.method != "cvode" &&
+        options.method != "ssa") {
+        throw std::runtime_error(
+            "bng3_events require CVODE or SSA event detection");
     }
     if (options.method != "ssa" &&
         (options.maxSimSteps > 0 || options.outputStepInterval > 0)) {
@@ -2737,6 +3001,10 @@ OdeResult OdeIntegrator::integrateCore(const OdeOptions& options) {
     if (options.method == "ssa" && options.batchSize > 0 &&
         !options.stopIf.empty()) {
         throw std::runtime_error("batch SSA does not support stop_if");
+    }
+    if (options.method == "ssa" && options.batchSize > 0 &&
+        !nativeEvents_.empty()) {
+        throw std::runtime_error("batch SSA does not support native events");
     }
     if (nSpecies_ == 0 &&
         (options.method == "euler" || options.method == "rk4" ||
@@ -2844,6 +3112,29 @@ OdeResult OdeIntegrator::integrateCore(const OdeOptions& options) {
     } else if (options.method == "ssa") {
         if (options.batchSize > 0) {
             return integrateBatchSSA(options);
+        }
+        bool allRateRuleStateChannels = !compiledRxns_.empty();
+        {
+            auto rxnIt = network_.reactions.all().begin();
+            for (const auto& reaction : compiledRxns_) {
+                if (!reaction.isAbsoluteFlux) { allRateRuleStateChannels = false; break; }
+                std::string originName;
+                if (rxnIt != network_.reactions.all().end()) {
+                    originName = rxnIt->getOriginRuleName();
+                    ++rxnIt;
+                }
+                if (originName.rfind("__rate_rule", 0) != 0) {
+                    allRateRuleStateChannels = false;
+                    break;
+                }
+            }
+        }
+        if (!nativeEvents_.empty() && allRateRuleStateChannels) {
+            // A model with no stochastic reaction channels can still have
+            // continuous SBML rate-rule states that drive discrete events.
+            // Preserve those trajectories with the deterministic solver and
+            // let the event assignments consume the seeded session RNG.
+            return integrateCvode(options);
         }
         return integrateSSA(options);
     } else {
@@ -4328,6 +4619,22 @@ struct SsaScratch {
 } // namespace
 
 OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
+    const auto readsClock = [&](const auto& self, const ast::Expression& expression) -> bool {
+        if ((expression.kind() == ast::ExpressionKind::Identifier ||
+             expression.kind() == ast::ExpressionKind::Function) &&
+            (expression.name() == "time" || expression.name() == "t" ||
+             model_.getParameters().isTimeDependent(expression.name()))) {
+            return true;
+        }
+        return std::any_of(expression.args().begin(), expression.args().end(),
+                           [&](const auto& child) { return self(self, child); });
+    };
+    for (const auto& event : nativeEvents_) {
+        if (readsClock(readsClock, functionEvaluator_.expandFunctions(event.trigger))) {
+            throw std::runtime_error(
+                "SSA does not support time-dependent native event triggers");
+        }
+    }
     // Direct Gillespie algorithm (matches BNG2 implementation)
     for (const auto& rxn : compiledRxns_) {
         if (rxn.isTimeDependent) {
@@ -4338,6 +4645,19 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     auto times = outputTimes(opts);
     const auto stopIfExpr = parseStopIf(opts);
     const bool explicitTimes = !opts.sampleTimes.empty();
+    pendingEvents_.clear();
+    auto* eventSession = activeSimulationSession_;
+    if (opts.continueSimulation && eventSession) {
+        for (const auto& pending : eventSession->pendingNativeEvents) {
+            pendingEvents_.push_back({pending.event, pending.executionTime,
+                                      pending.values});
+        }
+        triggerRoseAt_ = eventSession->eventTriggerRoseAt;
+    }
+    if (!opts.continueSimulation || triggerRoseAt_.size() != nativeEvents_.size()) {
+        triggerRoseAt_.assign(nativeEvents_.size(),
+                              -std::numeric_limits<double>::infinity());
+    }
     // Constructing with the value seeds the engine once.  Declaring the engine
     // and then calling seed() runs the 312-word state initialisation twice per
     // trajectory and throws the first result away; a pool run pays that on
@@ -4364,6 +4684,23 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         const double state = session && session->state.size() == nSpecies_
             ? session->state[i] : network_.species.get(i).getAmount();
         y[i] = std::round(state);
+    }
+    if (!opts.continueSimulation) {
+        for (std::size_t index = 0; index < nativeEvents_.size(); ++index) {
+            const auto& event = nativeEvents_[index];
+            if (!event.initialValue &&
+                triggerHolds(event.trigger, opts.tStart, y.data())) {
+                PendingEvent pending;
+                pending.event = index;
+                pending.executionTime = opts.tStart + event.delay;
+                if (event.useValuesFromTriggerTime) {
+                    pending.values = eventValues(event, opts.tStart, y.data());
+                }
+                triggerRoseAt_[index] = opts.tStart;
+                pendingEvents_.push_back(std::move(pending));
+            }
+        }
+        applyDueEvents(opts.tStart, y);
     }
     const bool stopAtInitial =
         stopIfExpr.has_value() && stopConditionMet(*stopIfExpr, opts.tStart, y);
@@ -4594,6 +4931,9 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                 nextCompletion = std::min(nextCompletion, pending.time);
             }
         }
+        for (const auto& pending : pendingEvents_) {
+            nextCompletion = std::min(nextCompletion, pending.executionTime);
+        }
         double nextReaction = std::numeric_limits<double>::infinity();
         if (totalPropensity > 0.0) {
             if (session) {
@@ -4621,16 +4961,29 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                 appendScheduledBefore(nextCompletion);
             }
             t = nextCompletion;
+            std::vector<bool> heldBefore;
+            if (!nativeEvents_.empty()) {
+                heldBefore.reserve(nativeEvents_.size());
+                for (const auto& event : nativeEvents_) {
+                    heldBefore.push_back(
+                        triggerHolds(event.trigger, t, y.data()));
+                }
+            }
+            bool reactionCompletionApplied = false;
             std::vector<std::size_t> completed;
-            for (std::size_t i = 0; i < session->pendingCompletions.size(); ++i) {
-                if (std::abs(session->pendingCompletions[i].time - t) <= 1e-12) {
-                    completed.push_back(i);
+            if (session) {
+                for (std::size_t i = 0;
+                     i < session->pendingCompletions.size(); ++i) {
+                    if (std::abs(session->pendingCompletions[i].time - t) <= 1e-12) {
+                        completed.push_back(i);
+                    }
                 }
             }
             std::sort(completed.rbegin(), completed.rend());
             for (const auto index : completed) {
                 const auto pending = session->pendingCompletions[index];
                 const auto& reaction = compiledRxns_[pending.reaction];
+                reactionCompletionApplied = true;
                 if (reaction.nonConsuming) {
                     for (const auto idx : reaction.reactantIndices) {
                         if (!fixedSpecies_[idx]) y[idx] -= 1.0;
@@ -4643,7 +4996,13 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                     session->pendingCompletions.begin() +
                     static_cast<std::ptrdiff_t>(index));
             }
-            recomputeAll();
+            if (reactionCompletionApplied && !nativeEvents_.empty()) {
+                retestTriggers(t, y, heldBefore);
+            }
+            const bool eventApplied = applyDueEvents(t, y);
+            if (reactionCompletionApplied || eventApplied) {
+                recomputeAll();
+            }
             if (opts.outputStepInterval == 0 || explicitTimes) {
                 appendScheduledThrough(t);
             } else if ((ssaStepCount % opts.outputStepInterval) == 0) {
@@ -4723,6 +5082,13 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         // depending on which engine simulates it.  The propensity is
         // untouched - a constant species still contributes its amount to the
         // rate law it appears in - only the state update skips it.
+        std::vector<bool> heldBefore;
+        if (!nativeEvents_.empty()) {
+            heldBefore.reserve(nativeEvents_.size());
+            for (const auto& event : nativeEvents_) {
+                heldBefore.push_back(triggerHolds(event.trigger, t, y.data()));
+            }
+        }
         const auto& rxn = compiledRxns_[selectedRxn];
         if (rxn.delay > 0.0) {
             if (!rxn.nonConsuming) {
@@ -4746,12 +5112,21 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             }
         }
 
+        if (!nativeEvents_.empty()) {
+            retestTriggers(t, y, heldBefore);
+        }
+        const bool eventApplied = applyDueEvents(t, y);
+
         // Recompute propensities.  On a network with a dependency graph only
         // reactions that read a species whose amount this event changed can
         // differ from the previous step, and the total is rebuilt over all
         // reactions in the original order; on a small network the whole table
         // is re-derived instead.  Both are bit-identical to each other.
-        if (useDependencyGraph) {
+        if (eventApplied) {
+            // Event assignments can write species unrelated to the reaction
+            // that triggered them, so refresh the complete propensity table.
+            recomputeAll();
+        } else if (useDependencyGraph) {
             refreshAffected(selectedRxn);
         } else {
             recomputeAll();

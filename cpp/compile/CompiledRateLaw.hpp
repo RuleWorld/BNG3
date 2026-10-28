@@ -106,6 +106,18 @@ enum class BuiltinFunction {
     FunctionProduct,
     Hybrid,
     TableFunction,
+    DistribBernoulli,
+    DistribBinomial,
+    DistribCauchy,
+    DistribChisquare,
+    DistribExponential,
+    DistribGamma,
+    DistribLaplace,
+    DistribLognormal,
+    DistribNormal,
+    DistribPoisson,
+    DistribRayleigh,
+    DistribUniform,
     Unknown,
 };
 

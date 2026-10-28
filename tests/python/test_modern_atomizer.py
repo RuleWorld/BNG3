@@ -940,7 +940,7 @@ def test_playground_parser_reports_unsupported_packages_events_and_constraints()
     )
 
 
-def test_playground_parser_detects_distrib_math_symbols_as_package_elements():
+def test_playground_parser_lowers_distrib_math_symbols_to_seeded_event_calls():
     from bionetgen.atomizer.modern import SBMLParser
 
     sbml = """<?xml version="1.0"?>
@@ -981,9 +981,9 @@ def test_playground_parser_detects_distrib_math_symbols_as_package_elements():
         for warning in model.import_warnings
         if warning["category"] == "package:distrib"
     )
-    assert warning["severity"] == "dropped"
-    assert "detected (1 element(s))" in warning["message"]
-    assert "distributions and uncertainty" in warning["message"]
+    assert warning["severity"] == "info"
+    assert "lowered to seeded native event assignments" in warning["message"]
+    assert model.events[0].assignments[0].math == "distrib_normal(0, 1.5)"
 
 
 def test_playground_parser_preserves_mathml_numeric_and_function_semantics():

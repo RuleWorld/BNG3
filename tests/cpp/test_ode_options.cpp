@@ -215,26 +215,288 @@ TEST_CASE("OdeIntegrator rejects malformed stop conditions", "[OdeOptions]") {
         Catch::Matchers::ContainsSubstring("stop_if"));
 }
 
-TEST_CASE("OdeIntegrator rejects BNG3 events until event execution is implemented",
-          "[OdeOptions][Events]") {
+TEST_CASE("SSA evaluates native event triggers after reaction firings",
+          "[OdeOptions][Events][SSA]") {
     auto model = parser::parseModel(R"(
+begin molecule types
+    A()
+    B()
+    C()
+    D()
+end molecule types
+begin seed species
+    A() 1
+    C() 1
+end seed species
+begin observables
+    Species a A()
+    Species b B()
+    Species c C()
+    Species d D()
+end observables
+begin reaction rules
+    fire: A() -> B() 1000000
+    consume_c: C() -> D() 1
+end reaction rules
 begin bng3_events version 1
-  event "later"
-    trigger: time >= 1
-    initial_value: false
-    persistent: true
-    use_values_from_trigger_time: true
-    assignment: A = 0
-  end event
+    event "reset"
+        trigger: b > 0
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: true
+        assignment: c = 0
+    end event
 end bng3_events
 )");
-    REQUIRE(model != nullptr);
-    engine::GeneratedNetwork network;
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "ssa";
+    options.seed = 17;
+    options.tEnd = 0.1;
+    options.nSteps = 1;
 
-    REQUIRE_THROWS_WITH(
-        engine::OdeIntegrator(*model, network),
-        Catch::Matchers::ContainsSubstring("BNG3 native event execution is not implemented"));
+    const auto result = integrator.integrate(options);
+
+    REQUIRE(result.eventCount == 1);
+    CHECK_THAT(result.observables.back()[1], Catch::Matchers::WithinAbs(1.0, 1e-12));
+    CHECK_THAT(result.observables.back()[2], Catch::Matchers::WithinAbs(0.0, 1e-12));
+    CHECK_THAT(result.observables.back()[3], Catch::Matchers::WithinAbs(0.0, 1e-12));
 }
+
+TEST_CASE("SSA checks native event triggers after delayed reaction completions",
+          "[OdeOptions][Events][SSA]") {
+    auto model = parser::parseModel(R"(
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Species a A()
+    Species b B()
+end observables
+begin reaction rules
+    fire: A() -> B() 100 delay=0.01
+end reaction rules
+begin bng3_events version 1
+    event "reset"
+        trigger: b > 0
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: true
+        delay: 0.05
+        assignment: b = 0
+    end event
+end bng3_events
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "ssa";
+    options.seed = 17;
+    options.tEnd = 0.2;
+    options.nSteps = 2;
+
+    const auto result = integrator.integrate(options);
+
+    REQUIRE(result.eventCount == 1);
+    CHECK_THAT(result.observables.back()[1], Catch::Matchers::WithinAbs(0.0, 1e-12));
+}
+
+TEST_CASE("SSA keeps absolute-flux reaction channels stochastic with native events",
+          "[OdeOptions][Events][SSA]") {
+    auto model = parser::parseModel(R"(
+begin model
+setOption("BNG3AbsoluteFluxRules", "birth")
+begin molecule types
+    X()
+    Marker()
+end molecule types
+begin seed species
+    X() 0
+    Marker() 0
+end seed species
+begin observables
+    Molecules x X()
+    Molecules marker Marker()
+end observables
+begin reaction rules
+    birth: 0 -> X() 2 TotalRate
+end reaction rules
+begin bng3_events version 1
+    event "mark_first_birth"
+        trigger: x > 0.5
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: true
+        assignment: marker = 1
+    end event
+end bng3_events
+end model
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "ssa";
+    options.seed = 17;
+    options.tEnd = 1.0;
+    options.nSteps = 4;
+
+    const auto result = integrator.integrate(options);
+
+    REQUIRE(result.eventCount > 0);
+    for (const auto& row : result.observables) {
+        CHECK(row[0] == std::round(row[0]));
+        CHECK(row[1] == (row[0] > 0 ? 1.0 : 0.0));
+    }
+}
+
+TEST_CASE("SSA keeps event-only absolute-flux states continuous",
+          "[OdeOptions][Events][SSA]") {
+    auto model = parser::parseModel(R"(
+begin model
+setOption("BNG3AbsoluteFluxRules", "__rate_rule_x")
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 0
+end seed species
+begin observables
+    Molecules x_amt X()
+end observables
+begin functions
+    __rate_rule__x() = 1
+end functions
+begin reaction rules
+    __rate_rule_x: 0 -> X() __rate_rule__x() TotalRate
+end reaction rules
+begin bng3_events version 1
+    event "reset"
+        trigger: x_amt >= 1
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: true
+        assignment: x_amt = 0
+    end event
+end bng3_events
+end model
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "ssa";
+    options.seed = 29;
+    options.tEnd = 2.0;
+    options.nSteps = 2;
+
+    const auto result = integrator.integrate(options);
+
+    CHECK_THAT(result.observables.back()[0], Catch::Matchers::WithinAbs(0.0, 1e-8));
+}
+
+TEST_CASE("native event distribution draws use the simulation seed",
+          "[OdeOptions][Events][Distribution]") {
+    auto model = parser::parseModel(R"(
+begin molecule types
+    A()
+    B()
+    X()
+end molecule types
+begin seed species
+    A() 1
+    X() 0
+end seed species
+begin observables
+    Molecules x X()
+    Molecules b B()
+end observables
+begin reaction rules
+    fire: A() -> B() 1000000
+end reaction rules
+begin bng3_events version 1
+    event "draw"
+        trigger: b > 0
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: true
+        assignment: x = distrib_normal(-1, 0.01)
+    end event
+end bng3_events
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "ssa";
+    options.seed = 173;
+    options.tEnd = 1.0;
+    options.nSteps = 1;
+
+    const auto first = integrator.integrate(options);
+    const auto repeated = integrator.integrate(options);
+
+    REQUIRE(first.eventCount == 1);
+    REQUIRE(repeated.eventCount == 1);
+    CHECK(first.observables.back()[0] == repeated.observables.back()[0]);
+    CHECK(first.observables.back()[0] < 0.0);
+}
+
+
+TEST_CASE("native event distribution parameters evaluate square roots",
+          "[OdeOptions][Events][Distribution]") {
+    auto model = parser::parseModel(R"(
+begin molecule types
+    A()
+    B()
+    X()
+end molecule types
+begin seed species
+    A() 1
+    X() 0
+end seed species
+begin observables
+    Molecules x X()
+    Molecules b B()
+end observables
+begin reaction rules
+    fire: A() -> B() 1000000
+end reaction rules
+begin bng3_events version 1
+    event "draw"
+        trigger: b > 0
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: true
+        assignment: x = distrib_normal(-1, sqrt(0.0001))
+    end event
+end bng3_events
+)");
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "ssa";
+    options.seed = 173;
+    options.tEnd = 1.0;
+    options.nSteps = 1;
+
+    const auto first = integrator.integrate(options);
+    const auto repeated = integrator.integrate(options);
+
+    REQUIRE(first.eventCount == 1);
+    REQUIRE(repeated.eventCount == 1);
+    CHECK(first.observables.back()[0] == repeated.observables.back()[0]);
+    CHECK(first.observables.back()[0] < 0.0);
+}
+
 
 TEST_CASE("OdeIntegrator evaluates user-defined function rates", "[OdeOptions]") {
     // Source-derived from akutuva21/bionetgen PR #508 head e67850cf and

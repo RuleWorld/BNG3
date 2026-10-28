@@ -1262,7 +1262,7 @@ ast::Expression buildObservableRef(BNGParser::Observable_refContext* ctx) {
     // function instead of an unresolved observable reference.
     const auto lower = toLower(name);
     if (lower == "floor" || lower == "ceil" || lower == "ceiling" ||
-        lower == "factorial") {
+        lower == "factorial" || lower.rfind("distrib_", 0) == 0) {
         return ast::Expression::function(
             lower == "ceiling" ? "ceil" : lower, std::move(args));
     }
