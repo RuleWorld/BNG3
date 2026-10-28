@@ -261,10 +261,7 @@ jobs:
       - name: Provide sbmlTranslator
         run: |
           mkdir -p "$HOME/.local/bin"
-          cat > "$HOME/.local/bin/sbmlTranslator" <<'EOF'
-#!/bin/sh
-PYTHONPATH="$GITHUB_WORKSPACE/python${PYTHONPATH:+:$PYTHONPATH}" exec python "$GITHUB_WORKSPACE/python/bionetgen/atomizer/sbmlTranslator.py" "$@"
-EOF
+          printf '%s\n' '#!/bin/sh' 'PYTHONPATH="$GITHUB_WORKSPACE/python${PYTHONPATH:+:$PYTHONPATH}" exec python "$GITHUB_WORKSPACE/python/bionetgen/atomizer/sbmlTranslator.py" "$@"' > "$HOME/.local/bin/sbmlTranslator"
           chmod +x "$HOME/.local/bin/sbmlTranslator"
           echo "$HOME/.local/bin" >> "$GITHUB_PATH"
 
