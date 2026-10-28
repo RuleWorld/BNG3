@@ -2506,8 +2506,9 @@ def test_playground_writer_curates_nonfinite_parameter_values():
         model, sct, get_molecule_types(sct), get_seed_species(sct, model)
     )
 
-    assert "kInf 1e20" in bngl
-    assert "kNaN 0" in bngl
+    assert "kInf exp(1000)" in bngl
+    assert "kNaN sqrt(-1)" in bngl
+    assert "1e20" not in bngl
     parameters = bngl.split("begin parameters", 1)[1].split("end parameters", 1)[0]
     assert " inf" not in parameters.lower()
     assert " nan" not in parameters.lower()
