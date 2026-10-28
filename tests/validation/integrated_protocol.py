@@ -35,6 +35,7 @@ lifecycle_budget = {
         "add_molecule_type",
         "add_seed_species",
         "remove_seed_species",
+        "set_seed_species_amount",
         "move_species_to_compartment",
     ),
 }
@@ -179,6 +180,9 @@ def _topology_edit_contract(bionetgen, source, directory):
 
     edited.add_molecule_type(_TOPOLOGY_PROBE)
     edited.add_seed_species(_TOPOLOGY_PROBE, 3, compartment=seed_compartment)
+    # Change the added seed's amount in place; the fresh source states only
+    # the final amount, so the comparison checks the edit took effect.
+    edited.set_seed_species_amount(_TOPOLOGY_PROBE, 5, compartment=seed_compartment)
     if seed_compartment is not None:
         probe_compartment = _TOPOLOGY_PROBE_COMPARTMENT
         edited.add_compartment(probe_compartment, 3, 1)
@@ -186,9 +190,9 @@ def _topology_edit_contract(bionetgen, source, directory):
             _TOPOLOGY_PROBE, probe_compartment, from_compartment=seed_compartment
         )
         fresh = _insert_source_line(fresh, "compartments", f"{probe_compartment} 3 1")
-        seed_line = f"@{probe_compartment}:{_TOPOLOGY_PROBE} 3"
+        seed_line = f"@{probe_compartment}:{_TOPOLOGY_PROBE} 5"
     else:
-        seed_line = f"{_TOPOLOGY_PROBE} 3"
+        seed_line = f"{_TOPOLOGY_PROBE} 5"
     fresh = _insert_source_line(fresh, "seed species", seed_line)
     fresh_path = directory / "topology-fresh.bngl"
     fresh_path.write_text(fresh)

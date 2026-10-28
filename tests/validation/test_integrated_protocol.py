@@ -59,6 +59,7 @@ def test_lifecycle_protocol_declares_bounded_work_and_explicit_topology_gap():
             "add_molecule_type",
             "add_seed_species",
             "remove_seed_species",
+            "set_seed_species_amount",
             "move_species_to_compartment",
         ),
     }
