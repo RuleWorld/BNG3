@@ -2853,3 +2853,133 @@ def test_neq_observable_round_trips():
     restored = bionetgen.from_bngir(document, native=True)
     rebuilt = json.loads(restored.to_bngir(version="0.2"))
     assert rebuilt == document
+
+
+BNGIR_BINDING_SOURCE = r"""
+version("2.2")
+setModelName("native_bngir_binding_complex")
+begin model
+begin parameters
+    kon 0.1
+    koff 0.2
+end parameters
+begin molecule types
+    A(b)
+    B(a)
+end molecule types
+begin seed species
+    A(b) 10
+    B(a) 10
+    A(b!1).B(a!1) 0
+end seed species
+begin observables
+    Molecules A_bound A(b!+)
+    Molecules A_any_bond A(b!?)
+    Species AB A(b!1).B(a!1)
+end observables
+begin reaction rules
+    bind: A(b) + B(a) -> A(b!1).B(a!1) kon
+    unbind: A(b!1).B(a!1) -> A(b) + B(a) koff
+end reaction rules
+end model
+"""
+
+
+def test_native_import_reconstructs_bonded_patterns_and_binding_rules(monkeypatch):
+    source_model = bionetgen.BioNetGenModel(_cpp.parse_string(BNGIR_BINDING_SOURCE))
+    document = json.loads(source_model.to_bngir(version="0.2"))
+    assert len(document["model"]["seeds"][2]["pattern"]["molecules"]) == 2
+    assert (
+        len(document["model"]["observables"][2]["terms"][0]["pattern"]["molecules"])
+        == 2
+    )
+
+    bngir_module = importlib.import_module("bionetgen.bngir")
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("native BNGIR import rendered or parsed BNGL source")
+
+    monkeypatch.setattr(_cpp, "parse_string", forbidden)
+    monkeypatch.setattr(bngir_module, "_as_bngl_v02", forbidden)
+    restored = bionetgen.from_bngir(document, native=True)
+    assert json.loads(restored.to_bngir(version="0.2")) == document
+
+    derivatives = []
+    trajectories = []
+    for model in (source_model, restored):
+        network = model.generate_network()
+        assert network.num_reactions == 2
+        assert network.species_names == source_model.generate_network().species_names
+        initial = [
+            10.0 if name in {"A(b)", "B(a)"} else 0.0 for name in network.species_names
+        ]
+        derivatives.append(
+            _cpp._validation_ode_rhs(model._model, network, 0.0, initial)
+        )
+        trajectories.append(
+            model.simulate(method="ode", t_end=0.2, n_steps=4).concentrations
+        )
+    assert derivatives[1] == pytest.approx(derivatives[0])
+    assert trajectories[1] == pytest.approx(trajectories[0])
+
+
+def test_native_import_rejects_malformed_bond_in_multimolecule_seed():
+    document = _document(BNGIR_BINDING_SOURCE)
+    pattern = document["model"]["seeds"][2]["pattern"]
+    pattern["molecules"][1]["sites"][0]["bond"]["group"] = 2
+
+    with pytest.raises(ValueError, match="malformed bond endpoints"):
+        bionetgen.from_bngir(document, native=True)
+    with pytest.raises(
+        RuntimeError, match="exact bond group must have exactly two endpoints"
+    ):
+        _cpp._model_from_bngir_v02(_native_model_section(document))
+
+
+BNGIR_SYMMETRIC_DIMER_SOURCE = r"""
+version("2.2")
+setModelName("native_bngir_symmetric_dimer")
+begin model
+begin parameters
+    kon 0.1
+    koff 0.2
+end parameters
+begin molecule types
+    A(b)
+end molecule types
+begin seed species
+    A(b) 10
+    A(b!1).A(b!1) 0
+end seed species
+begin observables
+    Species dimer A(b!1).A(b!1)
+    Molecules bound A(b!+)
+end observables
+begin reaction rules
+    bind: A(b) + A(b) -> A(b!1).A(b!1) kon
+    unbind: A(b!1).A(b!1) -> A(b) + A(b) koff
+end reaction rules
+end model
+"""
+
+
+def test_native_import_reconstructs_symmetric_dimer_binding_and_unbinding():
+    source_model = bionetgen.BioNetGenModel(
+        _cpp.parse_string(BNGIR_SYMMETRIC_DIMER_SOURCE)
+    )
+    document = json.loads(source_model.to_bngir(version="0.2"))
+    restored = bionetgen.from_bngir(document, native=True)
+    assert json.loads(restored.to_bngir(version="0.2")) == document
+
+    source_network = source_model.generate_network()
+    restored_network = restored.generate_network()
+    assert source_network.species_names == restored_network.species_names
+    assert source_network.num_reactions == restored_network.num_reactions == 2
+    initial = [10.0 if name == "A(b)" else 0.0 for name in source_network.species_names]
+    source_rhs = _cpp._validation_ode_rhs(
+        source_model._model, source_network, 0.0, initial
+    )
+    restored_rhs = _cpp._validation_ode_rhs(
+        restored._model, restored_network, 0.0, initial
+    )
+    assert restored_rhs == pytest.approx(source_rhs)

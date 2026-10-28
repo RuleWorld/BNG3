@@ -1522,8 +1522,6 @@ def _native_pattern_v02(
     where: str,
     molecule_ids: set[int],
     molecule_types: Mapping[int, Mapping[str, Any]],
-    *,
-    allow_bonded_pair: bool = False,
 ) -> None:
     pattern = _require_mapping(pattern, where)
     _native_required_optional_keys(
@@ -1545,13 +1543,10 @@ def _native_pattern_v02(
                 f"native BNGIR {where} compartment must be a nonempty string"
             )
     molecules = pattern["molecules"]
-    if not isinstance(molecules, list) or len(molecules) not in (
-        {1, 2} if allow_bonded_pair else {1}
-    ):
-        expected = (
-            "one or two molecules" if allow_bonded_pair else "exactly one molecule"
+    if not isinstance(molecules, list) or not molecules:
+        raise ValueError(
+            f"native BNGIR {where} requires exactly one molecule or a bonded complex"
         )
-        raise ValueError(f"native BNGIR {where} requires {expected}")
     exact_bond_groups: dict[int, list[tuple[int, int]]] = {}
     for molecule_index, raw_molecule in enumerate(molecules):
         molecule = _require_mapping(
@@ -1660,7 +1655,7 @@ def _native_pattern_v02(
         )
         if bond == {"kind": "unbound"}:
             continue
-        if allow_bonded_pair and bond.get("kind") == "exact":
+        if bond.get("kind") == "exact":
             _native_exact_keys(
                 bond,
                 {"kind", "group"},
@@ -1673,16 +1668,34 @@ def _native_pattern_v02(
                 )
             exact_bond_groups.setdefault(group, []).append((molecule_index, 0))
             continue
-        raise ValueError(
-            f"native BNGIR {where} supports only an explicitly unbound site"
-        )
-    if exact_bond_groups and (
-        len(exact_bond_groups) != 1
-        or len(next(iter(exact_bond_groups.values()))) != 2
-        or next(iter(exact_bond_groups.values()))[0][0]
-        == next(iter(exact_bond_groups.values()))[1][0]
+        if bond in (
+            {"kind": "bound"},
+            {"kind": "any"},
+            {"kind": "unspecified"},
+        ):
+            continue
+        raise ValueError(f"native BNGIR {where} has an unsupported bond constraint")
+    if any(
+        len(endpoints) != 2 or endpoints[0][0] == endpoints[1][0]
+        for endpoints in exact_bond_groups.values()
     ):
         raise ValueError(f"native BNGIR {where} has malformed bond endpoints")
+    if len(molecules) > 1:
+        parents = list(range(len(molecules)))
+
+        def find(index: int) -> int:
+            while parents[index] != index:
+                parents[index] = parents[parents[index]]
+                index = parents[index]
+            return index
+
+        for endpoints in exact_bond_groups.values():
+            left, right = (endpoint[0] for endpoint in endpoints)
+            parents[find(left)] = find(right)
+        if len({find(index) for index in range(len(molecules))}) != 1:
+            raise ValueError(
+                f"native BNGIR {where} requires exactly one molecule or a connected bonded complex"
+            )
 
 
 def _native_state_transition_v02(
@@ -1786,28 +1799,56 @@ def _native_state_transition_v02(
         )
 
 
-def _native_bond_formation_v02(
+def _native_bond_change_v02(
     rule: Mapping[str, Any],
     direction: Mapping[str, Any],
     index: int,
     model: Mapping[str, Any],
+    *,
+    validate_mappings: bool = True,
 ) -> None:
-    """Require the narrow carried-pair association represented by one add_bond."""
+    """Validate a two-molecule association or dissociation correspondence."""
     where = f"model.rules[{index}]"
     if model["compartments"]:
         raise ValueError(
-            f"native BNGIR {where} bond formation does not support compartments"
+            f"native BNGIR {where} bond changes do not support compartments"
         )
     reactants, products = direction["reactants"], direction["products"]
-    if (
-        len(reactants) != 2
-        or len(products) != 1
-        or any(len(pattern["molecules"]) != 1 for pattern in reactants)
-        or len(products[0]["molecules"]) != 2
-    ):
+    mutations = direction["mutations"]
+    if len(mutations) != 1 or mutations[0].get("kind") not in {
+        "add_bond",
+        "delete_bond",
+    }:
         raise ValueError(
-            f"native BNGIR {where} bond formation requires two one-molecule reactants and one two-molecule product"
+            f"native BNGIR {where} bond changes require one add_bond or delete_bond mutation"
         )
+    mutation_kind = mutations[0]["kind"]
+    association = mutation_kind == "add_bond"
+    if association:
+        if (
+            len(reactants) != 2
+            or len(products) != 1
+            or any(len(pattern["molecules"]) != 1 for pattern in reactants)
+            or len(products[0]["molecules"]) != 2
+        ):
+            raise ValueError(
+                f"native BNGIR {where} bond formation requires two one-molecule reactants and one two-molecule product"
+            )
+        reactant_molecules = [pattern["molecules"][0] for pattern in reactants]
+        product_molecules = products[0]["molecules"]
+    else:
+        if (
+            len(reactants) != 1
+            or len(reactants[0]["molecules"]) != 2
+            or len(products) != 2
+            or any(len(pattern["molecules"]) != 1 for pattern in products)
+        ):
+            raise ValueError(
+                f"native BNGIR {where} bond dissociation requires one two-molecule reactant and two one-molecule products"
+            )
+        reactant_molecules = reactants[0]["molecules"]
+        product_molecules = [pattern["molecules"][0] for pattern in products]
+
     if any(
         pattern["compartment_prefix"] or "compartment" in pattern
         for pattern in (*reactants, *products)
@@ -1817,80 +1858,119 @@ def _native_bond_formation_v02(
         for molecule in pattern["molecules"]
     ):
         raise ValueError(
-            f"native BNGIR {where} bond formation does not support compartments"
+            f"native BNGIR {where} bond changes do not support compartments"
         )
-    reactant_molecules = [pattern["molecules"][0] for pattern in reactants]
-    product_molecules = products[0]["molecules"]
     if [molecule["type_id"] for molecule in reactant_molecules] != [
         molecule["type_id"] for molecule in product_molecules
-    ] or reactant_molecules[0]["type_id"] == reactant_molecules[1]["type_id"]:
+    ]:
         raise ValueError(
-            f"native BNGIR {where} bond formation must carry two distinct molecule types"
+            f"native BNGIR {where} bond change must preserve molecule types"
         )
     for molecule in (*reactant_molecules, *product_molecules):
         if len(molecule["sites"]) != 1:
             raise ValueError(
-                f"native BNGIR {where} bond formation requires one site per molecule"
+                f"native BNGIR {where} bond changes require one site per molecule"
             )
         site = molecule["sites"][0]
         if site["state"] != {"kind": "any"}:
             raise ValueError(
-                f"native BNGIR {where} bond formation supports binding-only sites"
+                f"native BNGIR {where} bond changes support binding-only sites"
             )
-    if any(
-        molecule["sites"][0]["bond"] != {"kind": "unbound"}
-        for molecule in reactant_molecules
-    ):
-        raise ValueError(
-            f"native BNGIR {where} bond formation requires unbound reactant sites"
+
+    def exact_bond_group(molecule: Mapping[str, Any]) -> int:
+        bond = molecule["sites"][0]["bond"]
+        if (
+            bond.get("kind") != "exact"
+            or isinstance(bond.get("group"), bool)
+            or not isinstance(bond.get("group"), int)
+            or bond["group"] < 0
+        ):
+            raise ValueError(f"native BNGIR {where} requires one explicit exact bond")
+        return bond["group"]
+
+    if association:
+        if any(
+            molecule["sites"][0]["bond"] != {"kind": "unbound"}
+            for molecule in reactant_molecules
+        ):
+            raise ValueError(
+                f"native BNGIR {where} bond formation requires unbound reactant sites"
+            )
+        groups = [exact_bond_group(molecule) for molecule in product_molecules]
+    else:
+        groups = [exact_bond_group(molecule) for molecule in reactant_molecules]
+        if any(
+            molecule["sites"][0]["bond"] != {"kind": "unbound"}
+            for molecule in product_molecules
+        ):
+            raise ValueError(
+                f"native BNGIR {where} bond dissociation requires unbound product sites"
+            )
+    if groups[0] != groups[1]:
+        raise ValueError(f"native BNGIR {where} bond endpoints do not correspond")
+
+    molecule_mappings = []
+    component_mappings = []
+    for molecule_index in range(2):
+        reactant_pattern = 0 if not association else molecule_index
+        reactant_molecule = molecule_index if not association else 0
+        product_pattern = molecule_index if not association else 0
+        product_molecule = 0 if not association else molecule_index
+        molecule_mappings.append(
+            {
+                "product": {
+                    "side": "product",
+                    "pattern": product_pattern,
+                    "molecule": product_molecule,
+                },
+                "reactant": {
+                    "side": "reactant",
+                    "pattern": reactant_pattern,
+                    "molecule": reactant_molecule,
+                },
+            }
         )
-    if any(
-        molecule["sites"][0]["bond"] != {"kind": "exact", "group": 1}
-        for molecule in product_molecules
-    ):
-        raise ValueError(
-            f"native BNGIR {where} bond formation requires one exact product bond"
+        component_mappings.append(
+            {
+                "product": {
+                    "side": "product",
+                    "pattern": product_pattern,
+                    "molecule": product_molecule,
+                    "site": 0,
+                },
+                "reactant": {
+                    "side": "reactant",
+                    "pattern": reactant_pattern,
+                    "molecule": reactant_molecule,
+                    "site": 0,
+                },
+            }
         )
-    expected_molecule_mappings = [
-        {
-            "product": {"side": "product", "pattern": 0, "molecule": product_index},
-            "reactant": {"side": "reactant", "pattern": product_index, "molecule": 0},
-        }
-        for product_index in range(2)
-    ]
-    expected_component_mappings = [
-        {
-            "product": {
-                "side": "product",
-                "pattern": 0,
-                "molecule": product_index,
-                "site": 0,
-            },
-            "reactant": {
-                "side": "reactant",
-                "pattern": product_index,
-                "molecule": 0,
-                "site": 0,
-            },
-        }
-        for product_index in range(2)
-    ]
-    if rule["molecule_mappings"] != expected_molecule_mappings:
-        raise ValueError(
-            f"native BNGIR {where} bond formation requires exact molecule mappings"
-        )
-    if rule["component_mappings"] != expected_component_mappings:
-        raise ValueError(
-            f"native BNGIR {where} bond formation requires exact site mappings"
-        )
-    expected_mutation = {
-        "kind": "add_bond",
-        "source": {"side": "reactant", "pattern": 0, "molecule": 0, "site": 0},
-        "partner": {"side": "reactant", "pattern": 1, "molecule": 0, "site": 0},
+    if validate_mappings:
+        if rule["molecule_mappings"] != molecule_mappings:
+            raise ValueError(
+                f"native BNGIR {where} bond change has contradictory molecule mappings"
+            )
+        if rule["component_mappings"] != component_mappings:
+            raise ValueError(
+                f"native BNGIR {where} bond change has contradictory site mappings"
+            )
+
+    first = {"side": "reactant", "pattern": 0, "molecule": 0, "site": 0}
+    second = {
+        "side": "reactant",
+        "pattern": 0 if not association else 1,
+        "molecule": 1 if not association else 0,
+        "site": 0,
     }
-    if direction["mutations"] != [expected_mutation]:
+    expected_mutation = {
+        "kind": mutation_kind,
+        "source": first,
+        "partner": second,
+    }
+    if mutations != [expected_mutation]:
         raise ValueError(
-            f"native BNGIR {where} bond formation requires one matching add_bond mutation"
+            f"native BNGIR {where} has contradictory bond mutation endpoints"
         )
 
 
@@ -2348,7 +2428,6 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
         )
 
     rule_names: set[str] = set()
-    admitted_binding_only_type_ids: set[int] = set()
     for index, raw in enumerate(model["rules"]):
         rule = _require_mapping(raw, f"model.rules[{index}]")
         rule_keys = {
@@ -2422,10 +2501,9 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             raise ValueError(
                 f"native BNGIR model.rules[{index}] has incomplete transformations"
             )
-        bond_formation = (
-            len(direction["reactants"]) == 2
-            and len(direction["products"]) == 1
-            and len(direction["products"][0].get("molecules", [])) == 2
+        bond_change = any(
+            mutation.get("kind") in {"add_bond", "delete_bond"}
+            for mutation in direction["mutations"]
         )
         uses_binding_only_type = False
         for side in ("reactants", "products"):
@@ -2434,9 +2512,7 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                     type_id = molecule.get("type_id")
                     if type_id in binding_only_type_ids:
                         uses_binding_only_type = True
-                        if bond_formation:
-                            admitted_binding_only_type_ids.add(type_id)
-        if uses_binding_only_type and not bond_formation:
+        if uses_binding_only_type and not bond_change:
             raise ValueError("native BNGIR binding-only components are unsupported")
         for side in ("reactants", "products"):
             patterns = direction[side]
@@ -2456,28 +2532,30 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                     f"model.rules[{index}].{side}[{pattern_index}]",
                     molecule_ids,
                     molecule_types_by_id,
-                    allow_bonded_pair=(bond_formation and side == "products"),
                 )
         has_state_sites = any(
-            molecule["sites"]
+            any(
+                component["states"]
+                for component in molecule_types_by_id[molecule["type_id"]]["components"]
+            )
             for side in ("reactants", "products")
             for pattern in direction[side]
             for molecule in pattern["molecules"]
         )
-        if bond_formation:
-            _native_bond_formation_v02(rule, direction, index, model)
+        if bond_change:
+            _native_bond_change_v02(rule, direction, index, model)
         elif has_state_sites:
             _native_state_transition_v02(rule, direction, index, model)
-        if not bond_formation:
+        if not bond_change:
             _native_multi_pattern_direction_v02(
                 rule, direction, index, model, molecule_ids
             )
-        if len(rule["molecule_mappings"]) > (2 if bond_formation else 1):
+        if len(rule["molecule_mappings"]) > (2 if bond_change else 1):
             raise ValueError(
                 f"native BNGIR model.rules[{index}] has too many molecule mappings"
             )
         for mapping_index, raw_mapping in enumerate(
-            rule["molecule_mappings"] if not bond_formation else []
+            rule["molecule_mappings"] if not bond_change else []
         ):
             mapping = _require_mapping(
                 raw_mapping,
@@ -2510,7 +2588,7 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                     raise ValueError(
                         f"native BNGIR model.rules[{index}] has an out-of-slice molecule mapping reference"
                     )
-        if rule["component_mappings"] and not has_state_sites and not bond_formation:
+        if rule["component_mappings"] and not has_state_sites and not bond_change:
             raise ValueError(
                 f"native BNGIR model.rules[{index}] does not support component mappings"
             )
@@ -2536,7 +2614,7 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                 f"native BNGIR model.rules[{index}].forward.mutations must be an array"
             )
         for mutation_index, raw_mutation in enumerate(mutations):
-            if has_state_sites:
+            if has_state_sites or bond_change:
                 # The narrow state-transition validator above checked the
                 # single change_state operation and all of its references.
                 continue
@@ -2634,7 +2712,11 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                 raise ValueError(
                     f"native BNGIR model.rules[{index}].reverse.mutations must be an array"
                 )
-            if has_state_sites:
+            if bond_change:
+                _native_bond_change_v02(
+                    rule, reverse, index, model, validate_mappings=False
+                )
+            elif has_state_sites:
                 _native_state_transition_v02(
                     rule, reverse, index, model, validate_mappings=False
                 )
@@ -2683,11 +2765,9 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                         raise ValueError(
                             f"native BNGIR model.rules[{index}] has a contradictory reverse molecule mutation reference"
                         )
-                _native_reversible_direction_v02(direction, index, "forward")
-                _native_reversible_direction_v02(reverse, index, "reverse")
-
-    if admitted_binding_only_type_ids != binding_only_type_ids:
-        raise ValueError("native BNGIR binding-only components are unsupported")
+                if not bond_change:
+                    _native_reversible_direction_v02(direction, index, "forward")
+                    _native_reversible_direction_v02(reverse, index, "reverse")
 
     protocol = _require_mapping(root["protocol"], "protocol")
     _native_exact_keys(protocol, {"actions"}, "protocol")
