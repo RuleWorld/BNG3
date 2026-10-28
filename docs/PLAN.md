@@ -6,6 +6,29 @@ The five largest obstacles are unverified inventory statuses; incomplete indepen
 
 Use six Luna agents: three product agents and three checks agents. Checks agents stay ahead of product work; product packages run concurrently only when their dependencies and checks have landed and their files do not overlap. The first three packages are #472 documentation standardization, the anti-gaming CI checks, and auditing every inventory row. The remaining sequence expands independent BNG2 expected outputs, builds issue-specific checks, and implements the dependency-ordered product slices.
 
+## Current priorities (supersedes the delegation schedule in 4.5)
+
+Work toward a 3.0.0a1 alpha first, one agent and one pull request at a time, with CI as the judge. Sections 4.1 to 4.7 remain the reference for the full release; the six-agent schedule in 4.5 is not in use.
+
+Alpha criteria:
+
+- BNG2 parity: the weekly full corpus and the 71-model cross-validation match the pinned BNG2 oracle (provenance/upstreams.lock.yml), with no reference errors.
+- NFsim: the NFsim parity and integrated validation jobs pass.
+- SBML: the full SBML Test Suite and curated BioModels match provenance/sbml-campaign/expectations.json.
+- PyBioNetGen: every common workflow runs under the new API and is covered by docs/migration_guide.md.
+- Install: wheels and the sdist build on Linux, macOS and Windows, and a clean pip install runs the public examples.
+
+Order:
+
+1. Land the open SBML and parity pull requests, then regenerate provenance/sbml-campaign/expectations.json and docs/ATOMIZER_LIMITATIONS.md from a full SBML Test Suite run on main, in a separate pull request.
+2. Run the weekly workflow on main and rank every failure by the number of cases it affects.
+3. Cross-validation: check ANx, hybrid_test and test_write_sbml_multi with their authored export actions, as BNG2's own validation runs them, instead of forced full network generation. Move tests/validation/oracle_perl.py and scripts/regen_golden.py from legacy/perl to the pinned BNG2 oracle.
+4. Remaining SBML gaps: fast reactions with time-varying rates (semantic/00987, 00988, 01398, 01539, 01568, 01570); general algebraic rules; state-dependent delay durations (semantic/00985, 01142); then rerun and triage curated BioModels.
+5. Python API: runtime topology edits in the public Model API, and native BNGIR patterns with more than one molecule.
+6. PyBioNetGen migration: verify the section 4.7 migration table against pinned PyBioNetGen, fill the gaps, and write docs/migration_guide.md from the verified table.
+7. Packaging: build and install wheels on all three platforms, then publish 3.0.0a1 as a pre-release.
+8. After the alpha: the architecture and qualification work in sections 4.1 to 4.5, in the dependency order of section 4.4.
+
 ## 4.1 Process infrastructure
 
 Baseline: `eb70e7bef25b2460741f975e23faab42420e8ade` (PR #469). Sizes below count physical lines in the checked-out files, including JSON and fixtures, and bytes on disk; they are not token counts. Agent-context cost means the amount an agent would have to ingest if reading an entire item; agents should instead consult the specific entry or generated index. CI time is runner elapsed time, not queue time or billed minutes; per-item timing is unavailable because current jobs combine steps. Section 4.3 will measure job-level costs from recorded runs. Do not infer a per-check cost from the combined job.
