@@ -13,6 +13,22 @@ individual pure checks accept a Git checkout path and base commit, so mutation
 acceptance fixtures can construct disposable repositories and verify
 rejection cases. `run_antigaming.py` is the CI command-line entry point.
 
+Product changes remain separate from edits to protected acceptance criteria,
+except for a reviewed SBML verdict improvement that advances existing case
+stages to `passed`. Such a change must pair the expectation manifest with an
+append-only `provenance/sbml-campaign/expectation-improvements.json` record.
+The base-revision policy verifies that the suite identity and case membership
+are unchanged, only non-pass stage verdicts advance to `passed`, the evidence
+matches those exact transitions, and product code is unchanged after the
+measured commit. The manifest provenance note must identify the measured
+commit, report digest, workflow run, job, and artifact.
+
+Reviewers must inspect the referenced hosted report artifact, confirm that it
+supports every recorded transition, and verify its SHA-256 digest before
+approving the PR. The policy validates the evidence record and its relationship
+to the manifest; it does not fetch GitHub artifacts or establish that their
+contents are scientifically valid.
+
 Every Python integration run draws a fresh 31-bit seed, creates a small valid
 BNGL decay source, executes it through the installed package, and uploads the
 seed, case ID, source digest and revision with the source. This artifact is a

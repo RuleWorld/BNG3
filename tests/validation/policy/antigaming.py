@@ -31,9 +31,19 @@ SKIP_XFAIL_RE = re.compile(
 )
 EXPECTED_PATHS = {
     "provenance/sbml-campaign/expectations.json",
+    "provenance/sbml-campaign/expectation-improvements.json",
     "provenance/curated-biomodels-corpus-expectations.json",
     "tests/validation/exceptions.json",
 }
+SBML_EXPECTATIONS_PATH = "provenance/sbml-campaign/expectations.json"
+SBML_IMPROVEMENTS_PATH = "provenance/sbml-campaign/expectation-improvements.json"
+SBML_EXPECTATION_STAGES = (
+    "conversion",
+    "roundtrip_structure",
+    "independent_comparison",
+    "official_reference",
+)
+SBML_IMPROVABLE_STATUSES = {"failed", "not_tested", "unsupported"}
 BOOTSTRAP_PATHS = {
     ".github/workflows/ci.yml",
     ".github/workflows/release-policy.yml",
@@ -215,6 +225,22 @@ def check_protected_changes(root: Path, base: str, head: str = "HEAD") -> list[s
             protected.append(exclusion_path)
 
     protected = sorted(set(protected))
+    if product and protected:
+        protected_set = set(protected)
+        if SBML_EXPECTATIONS_PATH in protected_set and protected_set <= {
+            SBML_EXPECTATIONS_PATH,
+            SBML_IMPROVEMENTS_PATH,
+        }:
+            valid, reason = _allow_sbml_expectation_improvement(
+                root, base, head, set(paths)
+            )
+            if valid:
+                protected = []
+            else:
+                return [
+                    "product changes mixed with protected acceptance data: "
+                    f"{product} + {protected}; SBML improvement evidence rejected: {reason}"
+                ]
     return (
         [
             f"product changes mixed with protected acceptance data: {product} + {protected}"
@@ -222,6 +248,240 @@ def check_protected_changes(root: Path, base: str, head: str = "HEAD") -> list[s
         if product and protected
         else []
     )
+
+
+def _allow_sbml_expectation_improvement(
+    root: Path, base: str, head: str, paths: set[str]
+) -> tuple[bool, str]:
+    """Allow only measured SBML verdict advances to ``passed`` with an audit record.
+
+    The official SBML job reruns the suite and checks these expectations. This
+    base-revision guard verifies that the paired manifest change contains only
+    strict verdict improvements and that its report metadata identifies the
+    unchanged product revision that was measured.
+    """
+    if not {SBML_EXPECTATIONS_PATH, SBML_IMPROVEMENTS_PATH} <= paths:
+        return (
+            False,
+            "both the expectation manifest and improvement evidence must change",
+        )
+
+    try:
+        old_manifest = json.loads(_base_text(root, base, SBML_EXPECTATIONS_PATH))
+        new_manifest = json.loads(_head_text(root, head, SBML_EXPECTATIONS_PATH))
+        new_evidence = json.loads(_head_text(root, head, SBML_IMPROVEMENTS_PATH))
+        old_evidence_text = _base_text(root, base, SBML_IMPROVEMENTS_PATH)
+        old_evidence = json.loads(old_evidence_text) if old_evidence_text else None
+    except (json.JSONDecodeError, OSError, subprocess.CalledProcessError):
+        return False, "expectation or evidence JSON is missing or invalid"
+
+    if not all(
+        isinstance(value, dict) for value in (old_manifest, new_manifest, new_evidence)
+    ):
+        return False, "expectation and evidence documents must be JSON objects"
+    old_suite = old_manifest.get("suite")
+    new_suite = new_manifest.get("suite")
+    if not isinstance(old_suite, dict) or old_suite != new_suite:
+        return False, "the official SBML suite identity may not change with verdicts"
+    suite_revision = old_suite.get("revision")
+    if not isinstance(suite_revision, str) or not re.fullmatch(
+        r"[0-9a-f]{40}", suite_revision
+    ):
+        return False, "the expectation manifest has no pinned suite revision"
+
+    old_metadata = {
+        key: value
+        for key, value in old_manifest.items()
+        if key not in {"cases", "note", "provenance"}
+    }
+    new_metadata = {
+        key: value
+        for key, value in new_manifest.items()
+        if key not in {"cases", "note", "provenance"}
+    }
+    if old_metadata != new_metadata:
+        return False, "manifest metadata outside cases and provenance may not change"
+    old_note = old_manifest.get("note")
+    new_note = new_manifest.get("note")
+    old_provenance = old_manifest.get("provenance")
+    new_provenance = new_manifest.get("provenance")
+    if not all(isinstance(value, dict) for value in (old_provenance, new_provenance)):
+        return False, "manifest provenance must remain an object"
+    old_provenance_metadata = {
+        key: value for key, value in old_provenance.items() if key != "note"
+    }
+    new_provenance_metadata = {
+        key: value for key, value in new_provenance.items() if key != "note"
+    }
+    if old_provenance_metadata != new_provenance_metadata:
+        return False, "manifest provenance identity may not change with verdicts"
+    old_provenance_note = old_provenance.get("note")
+    new_provenance_note = new_provenance.get("note")
+    if not isinstance(old_provenance_note, str) or not isinstance(
+        new_provenance_note, str
+    ):
+        return False, "manifest provenance notes must remain strings"
+    if not new_provenance_note.startswith(old_provenance_note):
+        return (
+            False,
+            "supplemental provenance may append to, not replace, the baseline note",
+        )
+    if old_note != new_note and (
+        not isinstance(new_note, str)
+        or "scoped supplemental measurement" not in new_note
+        or "provenance.note" not in new_note
+    ):
+        return False, "manifest note changes must identify supplemental provenance"
+
+    if new_evidence.get("schema_version") != 1 or not isinstance(
+        new_evidence.get("measurements"), list
+    ):
+        return (
+            False,
+            "improvement evidence must use schema_version 1 and a measurements list",
+        )
+    old_measurements = []
+    if old_evidence is not None:
+        if old_evidence.get("schema_version") != 1 or not isinstance(
+            old_evidence.get("measurements"), list
+        ):
+            return False, "base improvement evidence is invalid"
+        old_measurements = old_evidence["measurements"]
+    new_measurements = new_evidence["measurements"]
+    if new_measurements[: len(old_measurements)] != old_measurements:
+        return False, "existing improvement measurements may not be changed or removed"
+    if len(new_measurements) != len(old_measurements) + 1:
+        return False, "exactly one new measurement must support this expectation update"
+    measurement = new_measurements[-1]
+    required_fields = {
+        "suite_revision",
+        "tested_commit",
+        "report_sha256",
+        "workflow_run_id",
+        "job_id",
+        "artifact_id",
+        "cases",
+    }
+    if not isinstance(measurement, dict) or set(measurement) != required_fields:
+        return False, "the supplemental measurement has missing or unexpected fields"
+    tested_commit = measurement.get("tested_commit")
+    report_sha256 = measurement.get("report_sha256")
+    if measurement.get("suite_revision") != suite_revision:
+        return False, "the report suite revision does not match the manifest"
+    if not isinstance(tested_commit, str) or not re.fullmatch(
+        r"[0-9a-f]{40}", tested_commit
+    ):
+        return False, "the report must identify a full product commit"
+    if not isinstance(report_sha256, str) or not re.fullmatch(
+        r"[0-9a-f]{64}", report_sha256
+    ):
+        return False, "the report must identify a SHA-256 digest"
+    for field in ("workflow_run_id", "job_id", "artifact_id"):
+        if type(measurement.get(field)) is not int or measurement[field] <= 0:
+            return False, f"the report {field} must be a positive integer"
+    try:
+        git(root, "rev-parse", "--verify", f"{tested_commit}^{{commit}}")
+    except subprocess.CalledProcessError:
+        return False, "the measured product commit is unavailable in this checkout"
+    if subprocess.run(
+        ("git", "merge-base", "--is-ancestor", tested_commit, head),
+        cwd=root,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ).returncode:
+        return False, "the measured product commit is not an ancestor of the candidate"
+    if subprocess.run(
+        ("git", "diff", "--quiet", f"{tested_commit}..{head}", "--", "cpp/", "python/"),
+        cwd=root,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    ).returncode:
+        return False, "product code changed after the recorded measurement"
+    for token in (
+        tested_commit,
+        report_sha256,
+        str(measurement["workflow_run_id"]),
+        str(measurement["job_id"]),
+        str(measurement["artifact_id"]),
+    ):
+        if token not in new_provenance_note:
+            return (
+                False,
+                "manifest provenance note does not identify the supplemental report",
+            )
+
+    old_cases = old_manifest.get("cases")
+    new_cases = new_manifest.get("cases")
+    evidence_cases = measurement.get("cases")
+    if not all(
+        isinstance(value, dict) for value in (old_cases, new_cases, evidence_cases)
+    ):
+        return False, "manifest and evidence cases must be objects"
+    if old_cases.keys() != new_cases.keys():
+        return False, "case membership may not change in a product and expectation PR"
+
+    changed_cases: dict[str, dict[str, dict[str, str]]] = {}
+    for case_id in old_cases:
+        old_case = old_cases[case_id]
+        new_case = new_cases[case_id]
+        if not isinstance(old_case, dict) or not isinstance(new_case, dict):
+            return False, f"manifest case {case_id} must be an object"
+        stage_changes: dict[str, dict[str, str]] = {}
+        for stage in SBML_EXPECTATION_STAGES:
+            before = old_case.get(stage)
+            after = new_case.get(stage)
+            if before == after:
+                continue
+            if before not in SBML_IMPROVABLE_STATUSES or after != "passed":
+                return (
+                    False,
+                    f"{case_id} {stage} must advance from a non-pass verdict to passed",
+                )
+            stage_changes[stage] = {"from": before, "to": after}
+        old_gap = old_case.get("gap", {}) or {}
+        new_gap = new_case.get("gap", {}) or {}
+        if not isinstance(old_gap, dict) or not isinstance(new_gap, dict):
+            return False, f"{case_id} gap metadata must be an object"
+        expected_gap = {
+            stage: value
+            for stage, value in old_gap.items()
+            if stage not in stage_changes
+        }
+        if expected_gap != new_gap:
+            return (
+                False,
+                f"{case_id} gap metadata may only be removed for stages now passed",
+            )
+        old_other = {
+            key: value
+            for key, value in old_case.items()
+            if key not in {*SBML_EXPECTATION_STAGES, "gap"}
+        }
+        new_other = {
+            key: value
+            for key, value in new_case.items()
+            if key not in {*SBML_EXPECTATION_STAGES, "gap"}
+        }
+        if old_other != new_other:
+            return False, f"{case_id} non-verdict metadata may not change"
+        if stage_changes:
+            changed_cases[case_id] = stage_changes
+        elif old_case != new_case:
+            return False, f"{case_id} changed outside its stage verdicts"
+
+    if not changed_cases:
+        return False, "the manifest contains no improved stage verdicts"
+    if set(evidence_cases) != set(changed_cases):
+        return False, "evidence case identities must exactly match the improved cases"
+    for case_id, stages in changed_cases.items():
+        record = evidence_cases.get(case_id)
+        if (
+            not isinstance(record, dict)
+            or set(record) != {"stages"}
+            or record["stages"] != stages
+        ):
+            return False, f"{case_id} evidence stages do not match the manifest changes"
+    return True, ""
 
 
 def _is_product_path(path: str) -> bool:

@@ -20,7 +20,7 @@ Alpha criteria:
 
 Order:
 
-1. Land the open SBML and parity pull requests, then regenerate provenance/sbml-campaign/expectations.json and docs/ATOMIZER_LIMITATIONS.md from a full SBML Test Suite run on main, in a separate pull request.
+1. Land the open SBML and parity pull requests, then regenerate provenance/sbml-campaign/expectations.json and docs/ATOMIZER_LIMITATIONS.md from a full SBML Test Suite run on main, in a separate pull request. A reviewed supplemental measurement may advance existing SBML stage verdicts to `passed` alongside product changes only under the evidence constraints enforced by the base-revision policy.
 2. Run the weekly workflow on main and rank every failure by the number of cases it affects.
 3. Cross-validation: check ANx, hybrid_test and test_write_sbml_multi with their authored export actions, as BNG2's own validation runs them, instead of forced full network generation. Move tests/validation/oracle_perl.py and scripts/regen_golden.py from legacy/perl to the pinned BNG2 oracle.
 4. Remaining SBML gaps: fast reactions with time-varying rates (semantic/00987, 00988, 01398, 01539, 01568, 01570); general algebraic rules; state-dependent delay durations (semantic/00985, 01142); then rerun and triage curated BioModels.
@@ -130,7 +130,7 @@ Serialize packages that touch the same files: `cpp/engine/OdeIntegrator.cpp` for
 | 6 `checks-N` | Build issue N release checks separately from product work; owns only `tests/validation/release/cases/issue-N/` | anti-gaming, matrix and relevant oracle cases; one agent never implements same issue | every release identity named by issue N, including negative and mutation controls; PR/full/release; closes #155/#159/#177 when all own checks pass, otherwise contributes to N |
 | 7 `product-N` | Implement issue N in its listed component; reserve its actual non-overlapping product files; paths below identify entry points, not exhaustive files | corresponding `checks-N` landed first; dependencies in each issue and section 4.4 | every listed issue check passes independently on main; PR/full/release; closes N |
 
-Assign each `checks-N` and `product-N` to different agents, including across time. The checks agent may add only case inputs and expectations in its exclusive test directory; only the separate `golden` package updates shared goldens. Workflow wiring is serialized through the `antigaming` owner. Shared registries and matrix have a single owner; other packages submit requested edits for that owner. Changes to independent expectations occur in a separate PR from product changes.
+Assign each `checks-N` and `product-N` to different agents, including across time. The checks agent may add only case inputs and expectations in its exclusive test directory; only the separate `golden` package updates shared goldens. Workflow wiring is serialized through the `antigaming` owner. Shared registries and matrix have a single owner; other packages submit requested edits for that owner. Changes to independent expectations occur in a separate PR from product changes, except for reviewed, evidence-backed SBML stage advances to `passed` that satisfy the base-revision policy and its audit requirements.
 
 Implementation follows the dependency levels in 4.4 and the file-reservation rule above. #154 and #162 each have a checks package and a product package because their issue bodies include product work. #155, #159 and #177 remain check-only. The critical path is #142 → #139 → #138 → #147 → #150 → #148 → #176 → #149 → #186 → #184.
 

@@ -1511,7 +1511,7 @@ def test_weekly_cross_validation_fails_closed_on_engine_or_output_errors():
     assert "SKIP" not in job
     assert "python scripts/cross_validate.py" in job
     assert "--bng-cpp build/cpp/bng_cpp" in job
-    assert "--bng-perl legacy/perl/BNG2.pl" in job
+    assert '--bng-perl "$RUNNER_TEMP/oracle-bionetgen/bng2/BNG2.pl"' in job
     assert "pip install numpy" in job
     assert "|| true" not in job
 
@@ -1692,7 +1692,7 @@ def test_weekly_cross_validation_uses_structural_oracle_runner():
 
     job = _workflow_job_from(WEEKLY_WORKFLOW, "cross-validation")
     assert "python scripts/cross_validate.py" in job
-    assert "--bng-perl legacy/perl/BNG2.pl" in job
+    assert '--bng-perl "$RUNNER_TEMP/oracle-bionetgen/bng2/BNG2.pl"' in job
     assert '--summary-file "$GITHUB_STEP_SUMMARY"' in job
     assert "grep -c" not in job
     assert "species counts" not in job
