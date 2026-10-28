@@ -608,7 +608,13 @@ been measured yet.
   and the product while `c < 0`, and for a balance `a*x_R - b*x_P` the
   amounts are `b*T/(nu_P*b + nu_R*a)` and `a*T/(nu_P*b + nu_R*a)`.  An event
   that sets the constant then moves the steady state at once, and is lowered
-  as an ordinary scheduled parameter change.
+  as an ordinary scheduled parameter change.  The rate constants may read
+  time, parameters and the model's other species, but not the two converted
+  species.  The switching shape takes the stable root at every instant, so
+  the held species changes as soon as `c` changes sign; when the held species
+  has no slow source, a large but finite fast rate instead stays on the
+  unstable root for a while (a delayed bifurcation), so the official
+  references decide which reading the suite uses.
 * **A stoichiometry an event changes** (01398): the amounts do not jump when
   the stoichiometry changes, but the pool does, so with constant rate
   constants one species keeps its amount as the state (the one not held at

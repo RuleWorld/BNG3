@@ -1331,6 +1331,11 @@ def _reduce_with_pool(
     the two amounts are its functions, so a change of a rate constant moves
     the steady state at once.  The switching shape assumes ``c`` is zero only
     at isolated instants; a model where an event sets it to zero is refused.
+    It takes the stable root at every instant, so the held species changes
+    as soon as ``c`` changes sign.  That is the algebraic condition SBML
+    defines; a large but finite fast rate can stay on the unstable root for
+    a while when the held species has no source, so it is not the limit of
+    such a simulation in that case.
 
     When an event changes a stoichiometry instead, the amounts do not jump,
     but ``T`` does.  The rate constants must then be constant, and one of
@@ -1449,7 +1454,7 @@ def _reduce_with_pool(
         return refuse("the fast reaction's kinetic law is not a supported expression")
     expression = _inline_function_calls(expression, model.function_definitions)
     resolver = _ConstantResolver(model, reaction)
-    analysis = _SymbolAnalysis(model, reaction, resolver)
+    analysis = _SymbolAnalysis(model, reaction, resolver, {reactant_id, product_id})
     terms = _symbolic_terms(expression.body, resolver, analysis)
     if terms is None:
         return refuse(
@@ -1474,7 +1479,14 @@ def _reduce_with_pool(
             ),
         )
     if len(active) == 1:
-        plan = _completion_plan(active[0], reactant_id, product_id, analysis)
+        sourced = {
+            identifier
+            for other in model.reactions.values()
+            if other.id != reaction.id
+            for identifier in (reactant_id, product_id)
+            if _signed_stoichiometry(other, identifier) > 0
+        }
+        plan = _completion_plan(active[0], reactant_id, product_id, analysis, sourced)
     elif len(active) == 2:
         plan = _balance_plan(active, reactant_id, product_id, analysis)
     else:
@@ -1806,11 +1818,16 @@ class _SymbolAnalysis:
     """Decide which symbols a coefficient may hold and what sign they have."""
 
     def __init__(
-        self, model: SBMLModel, reaction: SBMLReaction, resolver: "_ConstantResolver"
+        self,
+        model: SBMLModel,
+        reaction: SBMLReaction,
+        resolver: "_ConstantResolver",
+        fast_species: Sequence[str] = (),
     ) -> None:
         self._model = model
         self._resolver = resolver
         self._species = {standardize_name(str(name)) for name in model.species}
+        self._fast = {standardize_name(str(name)) for name in fast_species}
         self._reactions = {standardize_name(str(name)) for name in model.reactions}
         self._assignment_rules: Dict[str, str] = {}
         self._rate_rules: set[str] = set()
@@ -1837,14 +1854,26 @@ class _SymbolAnalysis:
             )
         }
 
+    def is_fast_species(self, name: str) -> bool:
+        """Say whether a symbol is one of the two species the fast reaction converts."""
+
+        return standardize_name(str(name).strip()) in self._fast
+
     def is_species_free(self, name: str, stack: Tuple[str, ...] = ()) -> bool:
-        """Say whether a symbol's value is independent of every species."""
+        """Say whether a symbol's value is independent of the converted species.
+
+        The steady state fixes the two converted species as functions of the
+        pool and of the rate constants, so a rate constant may read time,
+        parameters, compartments and the model's other species, but not
+        the converted species themselves, a reaction's rate, or a rule that
+        reads either.
+        """
 
         text = str(name).strip()
         if text.lower() == "time":
             return True
         key = standardize_name(text)
-        if key in self._species or key in self._reactions:
+        if key in self._fast or key in self._reactions:
             return False
         if self._resolver.value(text) is not None or key in self._local:
             return True
@@ -1860,17 +1889,54 @@ class _SymbolAnalysis:
                 if inner not in _CALLABLE_NAMES
             )
         model = self._model
-        known = {standardize_name(str(item)) for item in model.parameters} | {
-            standardize_name(str(item)) for item in model.compartments
-        }
+        known = (
+            {standardize_name(str(item)) for item in model.parameters}
+            | {standardize_name(str(item)) for item in model.compartments}
+            | self._species
+        )
         return key in known
 
-    def sign(self, node: ast.AST) -> Optional[str]:
-        """Return ``"+"`` or ``"-"`` when a factor's sign is provable.
+    def initial_value(self, node: ast.AST) -> Optional[float]:
+        """Return a factor's value at the start of the run, when it is known."""
 
-        A factor is provably signed when it is a constant, or a parameter
-        whose only changes are events assigning constants, all of the same
-        sign as its value; products, quotients and integer powers combine.
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return float(node.value)
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+            inner = self.initial_value(node.operand)
+            return None if inner is None else -inner
+        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Mult, ast.Div)):
+            left, right = self.initial_value(node.left), self.initial_value(node.right)
+            if left is None or right is None:
+                return None
+            if isinstance(node.op, ast.Mult):
+                return left * right
+            return None if right == 0 else left / right
+        if isinstance(node, ast.Name):
+            value = self._resolver.value(node.id)
+            if value is not None:
+                return value
+            key = standardize_name(node.id)
+            parameter = self._model.parameters.get(node.id)
+            if (
+                parameter is None
+                or key in self._assignment_rules
+                or not getattr(parameter, "value_set", True)
+                or any(
+                    standardize_name(str(assignment.symbol or "")) == key
+                    for assignment in self._model.initial_assignments
+                )
+            ):
+                return None
+            return float(parameter.value)
+        return None
+
+    def sign(self, node: ast.AST) -> Optional[str]:
+        """Return a factor's provable sign over the run, or ``None``.
+
+        ``"+"`` and ``"-"`` are strict; ``"0+"`` and ``"0-"`` allow zero.  A
+        factor is provably signed when it is a constant, or a parameter
+        whose only changes are events assigning constants; products,
+        quotients and integer powers combine.
         """
 
         if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
@@ -1881,12 +1947,14 @@ class _SymbolAnalysis:
             return None
         if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
             inner = self.sign(node.operand)
-            return None if inner is None else ("-" if inner == "+" else "+")
+            return None if inner is None else _flip_sign(inner)
         if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Mult, ast.Div)):
             left, right = self.sign(node.left), self.sign(node.right)
             if left is None or right is None:
                 return None
-            return "+" if left == right else "-"
+            if isinstance(node.op, ast.Div) and right.startswith("0"):
+                return None
+            return _combine_signs(left, right)
         if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Pow):
             base = self.sign(node.left)
             exponent = node.right
@@ -1895,8 +1963,11 @@ class _SymbolAnalysis:
                 and isinstance(exponent, ast.Constant)
                 and isinstance(exponent.value, (int, float))
                 and float(exponent.value).is_integer()
+                and exponent.value >= 1
             ):
-                return "+" if base == "+" or int(exponent.value) % 2 == 0 else "-"
+                if int(exponent.value) % 2 == 0:
+                    return "0+" if base.startswith("0") else "+"
+                return base
             return None
         if isinstance(node, ast.Name):
             return self._name_sign(node.id)
@@ -1922,6 +1993,10 @@ class _SymbolAnalysis:
             return "+"
         if all(item < 0 for item in values):
             return "-"
+        if all(item >= 0 for item in values):
+            return "0+"
+        if all(item <= 0 for item in values):
+            return "0-"
         return None
 
     def can_vanish_on_an_interval(self, factors: Sequence[ast.AST]) -> bool:
@@ -1942,6 +2017,18 @@ class _SymbolAnalysis:
         return False
 
 
+def _flip_sign(sign: str) -> str:
+    return {"+": "-", "-": "+", "0+": "0-", "0-": "0+"}[sign]
+
+
+def _combine_signs(left: str, right: str) -> str:
+    """Return the sign of a product of two signed factors."""
+
+    zero = left.startswith("0") or right.startswith("0")
+    negative = left.endswith("-") != right.endswith("-")
+    return ("0" if zero else "") + ("-" if negative else "+")
+
+
 _CALLABLE_NAMES = {"bng_if", "bng_and", "bng_or", "bng_not"}
 
 
@@ -1959,7 +2046,7 @@ def _symbolic_terms(
                     inner, name_node
                 ):
                     continue
-                if resolver.species_id(name_node.id) is not None:
+                if analysis.is_fast_species(name_node.id):
                     return False
                 if not analysis.is_species_free(name_node.id):
                     return False
@@ -1985,7 +2072,7 @@ def _symbolic_terms(
         )
 
     def visit(inner: ast.AST) -> Optional[List[_SymbolicTerm]]:
-        if isinstance(inner, ast.Name):
+        if isinstance(inner, ast.Name) and analysis.is_fast_species(inner.id):
             identifier = resolver.species_id(inner.id)
             if identifier is not None:
                 return [_SymbolicTerm(((identifier, 1),), 1.0)]
@@ -2082,9 +2169,18 @@ def _term_sign(term: _SymbolicTerm, analysis: _SymbolAnalysis) -> Optional[str]:
         factor_sign = analysis.sign(factor)
         if factor_sign is None:
             return None
-        if factor_sign == "-":
-            sign = "-" if sign == "+" else "+"
+        sign = _combine_signs(sign, factor_sign)
     return sign
+
+
+def _initial_coefficient(term: _SymbolicTerm, analysis: _SymbolAnalysis):
+    value = term.coefficient
+    for factor in term.factors:
+        factor_value = analysis.initial_value(factor)
+        if factor_value is None:
+            return None
+        value *= factor_value
+    return value
 
 
 def _completion_plan(
@@ -2092,8 +2188,21 @@ def _completion_plan(
     reactant_id: str,
     product_id: str,
     analysis: _SymbolAnalysis,
+    sourced: Sequence[str] = (),
 ):
-    """Return how a single-term fast rate fixes the amounts, or a refusal."""
+    """Return how a single-term fast rate fixes the amounts, or a refusal.
+
+    A rate of one species holds that species at zero.  Its rate constant may
+    become zero later only when no slow reaction produces the species: the
+    species is then zero from the start and stays zero whatever the constant
+    does, provided the constant is nonzero at the start.
+    """
+
+    def holds_from_the_start(species: str, wanted: str) -> bool:
+        value = _initial_coefficient(term, analysis)
+        if value is None or species in sourced:
+            return False
+        return value > 0 if wanted == "+" else value < 0
 
     powers = dict(term.species)
     depends_on_reactant = powers.get(reactant_id, 0) >= 1
@@ -2134,14 +2243,14 @@ def _completion_plan(
             coefficient=_coefficient_text(term),
         )
     if depends_on_reactant:
-        if sign == "+":
+        if sign == "+" or (sign == "0+" and holds_from_the_start(reactant_id, "+")):
             return forward
         return (
             "the fast reaction's rate depends only on the species it consumes, "
             "and its rate constant is not provably positive for the whole run, "
             "so its steady state is not defined at every instant"
         )
-    if sign == "-":
+    if sign == "-" or (sign == "0-" and holds_from_the_start(product_id, "-")):
         return backward
     return (
         "the fast reaction's rate depends only on the species it produces, "
@@ -2176,6 +2285,12 @@ def _balance_plan(
             "the signs of the fast reaction's rate constants cannot be "
             "established for the whole run, so the stability of its balance "
             "is not known"
+        )
+    if forward_sign in {"0+", "0-"} or backward_sign in {"0+", "0-"}:
+        return (
+            "an event can set one of the fast reaction's rate constants to "
+            "zero, so its balance is not provably a single algebraic condition "
+            "for the whole run"
         )
     if forward_sign != "+" or backward_sign != "-":
         return (

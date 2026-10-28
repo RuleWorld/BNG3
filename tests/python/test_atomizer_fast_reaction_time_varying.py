@@ -11,9 +11,17 @@ rate constant follows a rule).
 Each model below is small enough to have a closed-form reduced solution, and
 the references are those closed forms, derived from the source model here and
 not from the Atomizer.  They were also checked against the unreduced source
-ODEs with the fast rate multiplied by 1e5 to 1e8 (scipy Radau), which converge
-to the same values: O(1/F) for the smooth models and O(F^-1/2) for the model
+ODEs with the fast rate multiplied by 1e4 to 1e8 (scipy Radau), which converge
+to the same values: O(1/F) for the smooth models and O(F^-1/2) for the models
 whose steady state switches branch.
+
+The switching models give the species held at zero a slow source on purpose.
+Without one, that species is exponentially small in F when the rate constant
+changes sign, and a large but finite fast rate leaves the system on the
+unstable branch for a time of order one after the sign change (a delayed
+bifurcation).  The reduction takes the stable root of the pseudo steady state
+at every instant, which is the algebraic definition SBML gives; a large-F
+simulation is not a check of it in that case.
 
 The tests marked as native execute the generated BNGL with the BNG3 engine;
 the others check the lowered model with a small RK4 integrator of the lowered
@@ -292,6 +300,50 @@ def event_keeps_rate_constant_positive() -> str:
     )
 
 
+def event_turns_the_fast_reaction_off() -> str:
+    """``S1 -> S2`` fast at ``k*S1``; an event sets k from 1 to 0 at 1.25.
+
+    No slow reaction produces S1, so S1 is zero from the start and stays
+    zero after the fast reaction stops.
+    """
+
+    return event_keeps_rate_constant_positive().replace(
+        '<eventAssignment variable="k">'
+        '<math xmlns="http://www.w3.org/1998/Math/MathML"><cn>5</cn></math>',
+        '<eventAssignment variable="k">'
+        '<math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0</cn></math>',
+    )
+
+
+def rate_constant_reads_another_species() -> str:
+    """``S1 -> S2`` fast at ``k*S1*S2`` with ``k = S3 - 0.5`` and ``S3 = e^-t``.
+
+    k changes sign at ``t = ln 2``; the slow reactions are ``0 -> S1`` at
+    ``0.05``, ``S2 -> 0`` at ``0.4*S2`` and ``S3 -> 0`` at ``S3``.
+    """
+
+    return _model(
+        1,
+        [_species("S1", 1), _species("S2", 0.5), _species("S3", 1)],
+        [("k", 0.5, False), ("k2", 0.4, True)],
+        [_rule_k(_apply("minus", _ci("S3"), _cn(0.5)))],
+        [
+            _reaction(
+                "fast",
+                [_reference("S1")],
+                [_reference("S2")],
+                _apply("times", _ci("k"), _ci("S1"), _ci("S2")),
+                fast=True,
+            ),
+            _reaction(
+                "slow2", [_reference("S2")], [], _apply("times", _ci("k2"), _ci("S2"))
+            ),
+            _reaction("slow3", [_reference("S3")], [], _ci("S3")),
+            _reaction("source", [], [_reference("S1")], _cn(0.05)),
+        ],
+    )
+
+
 # --- closed-form references, in amounts ---------------------------------
 
 
@@ -353,6 +405,21 @@ def reference_positive_event(time: float):
     return {"S1": 0.0, "S2": s2, "S3": 1 - s2}
 
 
+def reference_reads_another_species(time: float):
+    # T = S1 + S2 starts at 1.5.  While k > 0 (t < ln 2) S2 carries it and
+    # dT/dt = 0.05 - 0.4*T; once k < 0, S1 carries it and dT/dt = 0.05.
+    switch = math.log(2)
+    s3 = math.exp(-time)
+    if time < switch:
+        return {
+            "S1": 0.0,
+            "S2": 0.125 + 1.375 * math.exp(-0.4 * time),
+            "S3": s3,
+        }
+    pool = 0.125 + 1.375 * math.exp(-0.4 * switch)
+    return {"S1": pool + 0.05 * (time - switch), "S2": 0.0, "S3": s3}
+
+
 CASES = {
     "sign_switching_rule": (sign_switching_rule, reference_sign_switching, 1),
     "event_sets_balance_constant": (
@@ -373,6 +440,16 @@ CASES = {
     "event_keeps_rate_constant_positive": (
         event_keeps_rate_constant_positive,
         reference_positive_event,
+        1,
+    ),
+    "event_turns_the_fast_reaction_off": (
+        event_turns_the_fast_reaction_off,
+        reference_positive_event,
+        1,
+    ),
+    "rate_constant_reads_another_species": (
+        rate_constant_reads_another_species,
+        reference_reads_another_species,
         1,
     ),
 }
@@ -535,12 +612,19 @@ def test_time_varying_fast_reaction_reduces(name):
 def test_lowered_model_reproduces_the_closed_form_steady_state(name):
     builder, reference, _volume = CASES[name]
     model = SBMLParser().parse(builder())
-    breakpoints = (1.2,) if name == "sign_switching_rule" else ()
+    breakpoints = {
+        "sign_switching_rule": (1.2,),
+        "rate_constant_reads_another_species": (math.log(2),),
+    }.get(name, ())
     lowered = _lowered_amounts(model, TIMES, breakpoints)
+    # The switch of this model depends on the state (S3 crossing 0.5), so a
+    # fixed RK4 step can evaluate its last stage on either side of it; that
+    # costs at most about h * 0.4 * T / 6 ~ 1e-4 in the pool.
+    tolerance = 2e-4 if name == "rate_constant_reads_another_species" else 1e-9
     for time, row in zip(TIMES, lowered):
         for species, expected in reference(time).items():
             assert row[species] == pytest.approx(
-                expected, rel=1e-9, abs=1e-9
+                expected, rel=tolerance, abs=tolerance
             ), f"{name}: {species} at t={time}"
 
 
@@ -624,6 +708,24 @@ def test_single_species_rate_with_a_rule_constant_is_refused():
         ],
     )
     assert "not provably positive for the whole run" in _refusal(xml)
+
+
+def test_turning_off_a_fast_reaction_whose_species_has_a_source_is_refused():
+    """Once k = 0 the slow source would refill S1, so S1 is no longer held."""
+
+    xml = event_turns_the_fast_reaction_off().replace(
+        "</listOfReactions>",
+        _reaction("source", [], [_reference("S1")], _cn(0.1)) + "</listOfReactions>",
+    )
+    assert "not provably positive for the whole run" in _refusal(xml)
+
+
+def test_rate_constant_reading_a_converted_species_is_refused():
+    xml = rate_constant_reads_another_species().replace(
+        _rule_k(_apply("minus", _ci("S3"), _cn(0.5))),
+        _rule_k(_apply("minus", _ci("S2"), _cn(0.5))),
+    )
+    assert "coefficients that do not depend on the species" in _refusal(xml)
 
 
 def test_event_that_zeroes_a_switching_rate_constant_is_refused():
