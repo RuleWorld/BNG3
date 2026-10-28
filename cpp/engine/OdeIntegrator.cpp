@@ -2658,8 +2658,10 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
 }
 
 OdeResult OdeIntegrator::integrateCore(const OdeOptions& options) {
-    if (!nativeEvents_.empty() && options.method != "cvode") {
-        throw std::runtime_error("bng3_events require CVODE continuous root detection");
+    if (!nativeEvents_.empty() && options.method != "cvode" &&
+        options.method != "ssa") {
+        throw std::runtime_error(
+            "bng3_events require CVODE or SSA event detection");
     }
     if (options.method != "ssa" &&
         (options.maxSimSteps > 0 || options.outputStepInterval > 0)) {
@@ -2669,6 +2671,10 @@ OdeResult OdeIntegrator::integrateCore(const OdeOptions& options) {
     if (options.method == "ssa" && options.batchSize > 0 &&
         !options.stopIf.empty()) {
         throw std::runtime_error("batch SSA does not support stop_if");
+    }
+    if (options.method == "ssa" && options.batchSize > 0 &&
+        !nativeEvents_.empty()) {
+        throw std::runtime_error("batch SSA does not support native events");
     }
     if (nSpecies_ == 0 &&
         (options.method == "euler" || options.method == "rk4" ||
@@ -4231,6 +4237,19 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     auto times = outputTimes(opts);
     const auto stopIfExpr = parseStopIf(opts);
     const bool explicitTimes = !opts.sampleTimes.empty();
+    pendingEvents_.clear();
+    auto* eventSession = activeSimulationSession_;
+    if (opts.continueSimulation && eventSession) {
+        for (const auto& pending : eventSession->pendingNativeEvents) {
+            pendingEvents_.push_back({pending.event, pending.executionTime,
+                                      pending.values});
+        }
+        triggerRoseAt_ = eventSession->eventTriggerRoseAt;
+    }
+    if (!opts.continueSimulation || triggerRoseAt_.size() != nativeEvents_.size()) {
+        triggerRoseAt_.assign(nativeEvents_.size(),
+                              -std::numeric_limits<double>::infinity());
+    }
     // Constructing with the value seeds the engine once.  Declaring the engine
     // and then calling seed() runs the 312-word state initialisation twice per
     // trajectory and throws the first result away; a pool run pays that on
@@ -4257,6 +4276,23 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         const double state = session && session->state.size() == nSpecies_
             ? session->state[i] : network_.species.get(i).getAmount();
         y[i] = std::round(state);
+    }
+    if (!opts.continueSimulation) {
+        for (std::size_t index = 0; index < nativeEvents_.size(); ++index) {
+            const auto& event = nativeEvents_[index];
+            if (!event.initialValue &&
+                triggerHolds(event.trigger, opts.tStart, y.data())) {
+                PendingEvent pending;
+                pending.event = index;
+                pending.executionTime = opts.tStart + event.delay;
+                if (event.useValuesFromTriggerTime) {
+                    pending.values = eventValues(event, opts.tStart, y.data());
+                }
+                triggerRoseAt_[index] = opts.tStart;
+                pendingEvents_.push_back(std::move(pending));
+            }
+        }
+        applyDueEvents(opts.tStart, y);
     }
     const bool stopAtInitial =
         stopIfExpr.has_value() && stopConditionMet(*stopIfExpr, opts.tStart, y);
@@ -4487,6 +4523,9 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                 nextCompletion = std::min(nextCompletion, pending.time);
             }
         }
+        for (const auto& pending : pendingEvents_) {
+            nextCompletion = std::min(nextCompletion, pending.executionTime);
+        }
         double nextReaction = std::numeric_limits<double>::infinity();
         if (totalPropensity > 0.0) {
             if (session) {
@@ -4514,16 +4553,29 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                 appendScheduledBefore(nextCompletion);
             }
             t = nextCompletion;
+            std::vector<bool> heldBefore;
+            if (!nativeEvents_.empty()) {
+                heldBefore.reserve(nativeEvents_.size());
+                for (const auto& event : nativeEvents_) {
+                    heldBefore.push_back(
+                        triggerHolds(event.trigger, t, y.data()));
+                }
+            }
+            bool reactionCompletionApplied = false;
             std::vector<std::size_t> completed;
-            for (std::size_t i = 0; i < session->pendingCompletions.size(); ++i) {
-                if (std::abs(session->pendingCompletions[i].time - t) <= 1e-12) {
-                    completed.push_back(i);
+            if (session) {
+                for (std::size_t i = 0;
+                     i < session->pendingCompletions.size(); ++i) {
+                    if (std::abs(session->pendingCompletions[i].time - t) <= 1e-12) {
+                        completed.push_back(i);
+                    }
                 }
             }
             std::sort(completed.rbegin(), completed.rend());
             for (const auto index : completed) {
                 const auto pending = session->pendingCompletions[index];
                 const auto& reaction = compiledRxns_[pending.reaction];
+                reactionCompletionApplied = true;
                 if (reaction.nonConsuming) {
                     for (const auto idx : reaction.reactantIndices) {
                         if (!fixedSpecies_[idx]) y[idx] -= 1.0;
@@ -4536,7 +4588,13 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                     session->pendingCompletions.begin() +
                     static_cast<std::ptrdiff_t>(index));
             }
-            recomputeAll();
+            if (reactionCompletionApplied && !nativeEvents_.empty()) {
+                retestTriggers(t, y, heldBefore);
+            }
+            const bool eventApplied = applyDueEvents(t, y);
+            if (reactionCompletionApplied || eventApplied) {
+                recomputeAll();
+            }
             if (opts.outputStepInterval == 0 || explicitTimes) {
                 appendScheduledThrough(t);
             } else if ((ssaStepCount % opts.outputStepInterval) == 0) {
@@ -4616,6 +4674,13 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
         // depending on which engine simulates it.  The propensity is
         // untouched - a constant species still contributes its amount to the
         // rate law it appears in - only the state update skips it.
+        std::vector<bool> heldBefore;
+        if (!nativeEvents_.empty()) {
+            heldBefore.reserve(nativeEvents_.size());
+            for (const auto& event : nativeEvents_) {
+                heldBefore.push_back(triggerHolds(event.trigger, t, y.data()));
+            }
+        }
         const auto& rxn = compiledRxns_[selectedRxn];
         if (rxn.delay > 0.0) {
             if (!rxn.nonConsuming) {
@@ -4639,12 +4704,21 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             }
         }
 
+        if (!nativeEvents_.empty()) {
+            retestTriggers(t, y, heldBefore);
+        }
+        const bool eventApplied = applyDueEvents(t, y);
+
         // Recompute propensities.  On a network with a dependency graph only
         // reactions that read a species whose amount this event changed can
         // differ from the previous step, and the total is rebuilt over all
         // reactions in the original order; on a small network the whole table
         // is re-derived instead.  Both are bit-identical to each other.
-        if (useDependencyGraph) {
+        if (eventApplied) {
+            // Event assignments can write species unrelated to the reaction
+            // that triggered them, so refresh the complete propensity table.
+            recomputeAll();
+        } else if (useDependencyGraph) {
             refreshAffected(selectedRxn);
         } else {
             recomputeAll();

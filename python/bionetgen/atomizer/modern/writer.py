@@ -4085,9 +4085,8 @@ def _update_event_translation_warning(
     if native_event_block:
         message = (
             f"{len(model.events)} SBML event(s) lowered to the native BNG3 "
-            "event runtime, which detects the trigger's rising edge with "
-            "continuous root finding and applies the assignments at that "
-            "instant."
+            "event runtime, which detects trigger rising edges and applies "
+            "the assignments at the corresponding execution instant."
         )
         for warning in getattr(model, "import_warnings", []) or []:
             if warning.get("category") != "event":

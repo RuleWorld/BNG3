@@ -1599,10 +1599,8 @@ def test_quadratic_state_event_is_not_horizon_proven_for_ssa_actions():
         "proven to make no state changes through the configured simulation horizon"
         not in result.bngl
     )
-    assert (
-        "state-triggered SBML events require stochastic jump scheduling" in result.bngl
-    )
-    assert "Events NOT simulated" in result.bngl
+    assert "begin bng3_events version 1" in result.bngl
+    assert "Events NOT simulated" not in result.bngl
 
 
 def test_quadratic_state_event_rejects_kinetic_coupling_to_an_independent_component():

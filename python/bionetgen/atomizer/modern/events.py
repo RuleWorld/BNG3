@@ -3398,11 +3398,11 @@ def lower_native_events(
 ) -> NativeEventLowering:
     """Lower the SBML events into the native ``bng3_events`` block.
 
-    The native runtime detects the trigger's rising edge with continuous root
-    finding, so it executes a state-dependent trigger that no finite list of
-    scheduled actions can express.  Several events may share the block: the
-    runtime orders the events that are executed simultaneously by their
-    priority, and re-tests every trigger after each execution.
+    The native runtime detects trigger rising edges at continuous ODE roots
+    or after stochastic jumps, so it executes a state-dependent trigger that
+    no finite list of scheduled actions can express. Several events may share
+    the block: the runtime orders simultaneous events by priority and
+    re-tests every trigger after each execution.
     """
 
     if not events:
@@ -3412,9 +3412,11 @@ def lower_native_events(
         # so the generated model does not reproduce the source dynamics and
         # the trigger cannot be evaluated on it.
         return NativeEventLowering(None)
-    if str(context.method or "ode").lower() not in {"ode", "cvode"}:
-        # The native runtime finds a trigger crossing with the continuous ODE
-        # solver; a stochastic run needs jump scheduling instead.
+    if str(context.method or "ode").lower() not in {
+        "ode", "cvode", "ssa", "stochastic"
+    }:
+        # Native trigger checks are implemented for continuous ODE roots and
+        # stochastic state jumps, not for the partitioned simulators.
         return NativeEventLowering(None)
     entries: List[NativeEventEntry] = []
     for event in events:

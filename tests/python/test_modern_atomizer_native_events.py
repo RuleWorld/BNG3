@@ -1,11 +1,11 @@
 """Contracts for the native ``bng3_events`` lowering of SBML events.
 
 A state-dependent SBML trigger has no finite schedule of BNGL actions, so
-the modern Atomizer hands it to the native BNG3 event runtime, which locates
-the trigger's rising edge with continuous root finding.  These tests pin the
-lowered model, the unit conversion between an SBML value and the observable
-the runtime observes, the delay semantics, and the boundaries that stay
-explicitly unsupported.
+the modern Atomizer hands it to the native BNG3 event runtime, which detects
+continuous roots for ODE runs and state changes for SSA runs. These tests pin
+the lowered model, the unit conversion between an SBML value and the
+observable the runtime observes, the delay semantics, and unsupported
+boundaries.
 """
 
 import numpy as np
@@ -167,7 +167,7 @@ def test_non_persistent_trigger_is_lowered_to_the_native_event_block():
     assert "# Events NOT simulated" not in result.bngl
 
 
-def test_stochastic_run_keeps_the_explicit_refusal():
+def test_stochastic_run_lowers_state_events_to_native_execution():
     result = Atomizer(
         atomize=False,
         quiet_mode=True,
@@ -177,10 +177,8 @@ def test_stochastic_run_keeps_the_explicit_refusal():
     ).atomize(coupled_event_model())
 
     assert result.success, result.error
-    assert "begin bng3_events version 1" not in result.bngl
-    assert (
-        "state-triggered SBML events require stochastic jump scheduling" in result.bngl
-    )
+    assert "begin bng3_events version 1" in result.bngl
+    assert "state-triggered SBML events require stochastic jump scheduling" not in result.bngl
 
 
 def test_two_state_trigger_is_lowered_to_the_native_event_block():
