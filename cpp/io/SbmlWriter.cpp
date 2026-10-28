@@ -72,6 +72,64 @@ bool isInternalFunction(const std::string& name) {
            name.rfind("__rate_rule_neg__", 0) == 0;
 }
 
+bool isDistribFunction(const std::string& name) {
+    static constexpr std::string_view functions[] = {
+        "distrib_bernoulli", "distrib_binomial", "distrib_cauchy",
+        "distrib_chisquare", "distrib_exponential", "distrib_gamma",
+        "distrib_laplace", "distrib_lognormal", "distrib_normal",
+        "distrib_poisson", "distrib_rayleigh", "distrib_uniform",
+    };
+    return std::find(std::begin(functions), std::end(functions), name) !=
+           std::end(functions);
+}
+
+bool expressionUsesDistrib(const ast::Expression& expression) {
+    if (expression.kind() == ast::ExpressionKind::Function &&
+        isDistribFunction(expression.name())) {
+        return true;
+    }
+    return std::any_of(expression.args().begin(), expression.args().end(),
+                       expressionUsesDistrib);
+}
+
+bool modelUsesDistrib(const ast::Model& model) {
+    for (const auto& parameter : model.getParameters().all()) {
+        if (expressionUsesDistrib(parameter.getExpression())) return true;
+    }
+    for (const auto& compartment : model.getCompartments()) {
+        if (compartment.getVolumeExpression() &&
+            expressionUsesDistrib(*compartment.getVolumeExpression())) {
+            return true;
+        }
+    }
+    for (const auto& function : model.getFunctions()) {
+        if (expressionUsesDistrib(function.getExpression())) return true;
+    }
+    for (const auto& event : model.getEvents()) {
+        if (expressionUsesDistrib(event.trigger) ||
+            (event.delay && expressionUsesDistrib(*event.delay)) ||
+            (event.priority && expressionUsesDistrib(*event.priority))) {
+            return true;
+        }
+        for (const auto& assignment : event.assignments) {
+            if (expressionUsesDistrib(assignment.value)) return true;
+        }
+    }
+    for (const auto& seed : model.getSeedSpecies()) {
+        if (expressionUsesDistrib(seed.getAmount())) return true;
+    }
+    for (const auto& rule : model.getReactionRules()) {
+        for (const auto& rate : rule.getRates()) {
+            if (expressionUsesDistrib(rate)) return true;
+        }
+        if (rule.getDelayExpression() &&
+            expressionUsesDistrib(*rule.getDelayExpression())) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // The origin rule name of a network reaction is the name of the reaction
 // rule it came from.  The reverse direction of a reversible rule carries the
 // prefix ``_reverse__`` (or ``__reverse__``), and a rule that the parser
@@ -224,6 +282,11 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
         throw std::runtime_error("SBML start time must be finite");
     }
     const compile::CompiledModel compiled(model);
+    const bool usesDistrib = modelUsesDistrib(model);
+    if (usesDistrib && options.level < 3) {
+        throw std::invalid_argument(
+            "SBML distributions require a Level 3 document");
+    }
     std::ostringstream sbml;
     // Preserve enough precision for a numerical round trip. The default
     // stream precision (six digits) changes compartment conversion factors
@@ -243,7 +306,12 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
     sbml << "<sbml xmlns=\"http://www.sbml.org/sbml/level" << options.level
          << "/version" << options.version
          << (options.level >= 3 ? "/core" : "") << "\" "
-         << "level=\"" << options.level << "\" version=\"" << options.version << "\">\n";
+         << "level=\"" << options.level << "\" version=\"" << options.version << "\"";
+    if (usesDistrib) {
+        sbml << " xmlns:distrib=\"http://www.sbml.org/sbml/level3/version1/distrib/version1\""
+             << " distrib:required=\"true\"";
+    }
+    sbml << ">\n";
 
     sbml << "  <model id=\"" << escapeXml(makeValidSBMLId(model.getModelName())) << "\" name=\""
          << escapeXml(model.getModelName()) << "\""
@@ -1137,6 +1205,38 @@ std::string SbmlWriter::exprToMathML(
                     << "  <csymbol encoding=\"text\" definitionURL=\""
                     << "http://www.sbml.org/sbml/symbols/" << funcName << "\">"
                     << " " << funcName << " </csymbol>\n";
+                for (const auto& arg : expr.args()) {
+                    out << exprToMathML(arg, indent + "  ", symbolIds, preferSpecies);
+                }
+                out << indent << "</apply>\n";
+            } else if (isDistribFunction(funcName)) {
+                const auto arity = expr.args().size();
+                const bool validArity =
+                    (funcName == "distrib_uniform" && arity == 2) ||
+                    (funcName == "distrib_bernoulli" && arity == 1) ||
+                    ((funcName == "distrib_normal" ||
+                      funcName == "distrib_binomial" ||
+                      funcName == "distrib_gamma" ||
+                      funcName == "distrib_lognormal") &&
+                     (arity == 2 || arity == 4)) ||
+                    ((funcName == "distrib_cauchy" ||
+                      funcName == "distrib_laplace") &&
+                     (arity == 1 || arity == 2 || arity == 4)) ||
+                    ((funcName == "distrib_chisquare" ||
+                      funcName == "distrib_exponential" ||
+                      funcName == "distrib_poisson" ||
+                      funcName == "distrib_rayleigh") &&
+                     (arity == 1 || arity == 3));
+                if (!validArity) {
+                    throw std::invalid_argument(
+                        "SBML distrib function '" + funcName +
+                        "' has an invalid argument count");
+                }
+                const auto symbol = funcName.substr(std::string("distrib_").size());
+                out << indent << "<apply>\n"
+                    << indent << "  <csymbol encoding=\"text\" "
+                    << "definitionURL=\"http://www.sbml.org/sbml/symbols/distrib/"
+                    << symbol << "\"> " << symbol << " </csymbol>\n";
                 for (const auto& arg : expr.args()) {
                     out << exprToMathML(arg, indent + "  ", symbolIds, preferSpecies);
                 }
