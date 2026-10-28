@@ -231,8 +231,10 @@ private:
     // true when the state changed.
     bool applyDueEvents(double time, std::vector<double>& state);
     double eventSideDerivative(const ast::Expression& expression, double time,
+                               const double* state,
                                const std::vector<double>& derivatives) const;
     double eventRootDerivative(const ast::Expression& trigger, double time,
+                               const double* state,
                                const std::vector<double>& derivatives) const;
     // The trigger's signed root function: positive exactly where the trigger
     // holds.  A conjunction is the conjunction of its conjuncts, so its root

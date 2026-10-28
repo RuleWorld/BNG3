@@ -1341,7 +1341,13 @@ _REVERSED_COMPARISON_OPERATOR = {"gt": "lt", "geq": "leq", "lt": "gt", "leq": "g
 # inequality is also true at a tangential contact that leaves no sign change.
 # Both therefore carry the same documented limitation: a truth interval that
 # opens and closes between two solver steps is not observed.
-_NATIVE_COMPARISON_OPERATORS = {"lt": "<", "gt": ">", "leq": "<=", "geq": ">="}
+_NATIVE_COMPARISON_OPERATORS = {
+    "eq": "==",
+    "lt": "<",
+    "gt": ">",
+    "leq": "<=",
+    "geq": ">=",
+}
 
 
 # Names a trigger expression uses for built-in functions rather than model
@@ -3000,9 +3006,7 @@ def _native_continuous_expression(
                 rendered = target.observable
                 if target.amount_factor != 1.0:
                     rendered = f"({rendered} / {_format_number(target.amount_factor)})"
-                return ast.copy_location(
-                    ast.parse(rendered, mode="eval").body, node
-                )
+                return ast.copy_location(ast.parse(rendered, mode="eval").body, node)
             if context.is_compile_time_constant(node.id):
                 return ast.copy_location(
                     ast.Name(id=standardize_name(node.id), ctx=ast.Load()), node
@@ -3193,9 +3197,9 @@ def _native_conjunction_expression(
     """Lower a conjunction of state comparisons to a native BNGL expression.
 
     A conjunction holds only where every conjunct holds, so the native
-    runtime compares the smallest of the conjunct differences with zero.  The
-    runtime needs every conjunct to be a strict comparison, because only a
-    strict comparison has a rising edge that a sign change can attribute.
+    runtime compares the smallest signed inequality surface with zero.
+    Equality conjuncts are state gates: they are evaluated exactly and the
+    other continuous surfaces determine the rising edge.
     """
     terms = _split_call_arguments(str(trigger or "").strip())
     if terms is None or len(terms) < 2:
@@ -3344,12 +3348,18 @@ def _native_term_expression(
     coefficient = float(sign)
     names: List[str] = []
     state: Optional[NativeStateTarget] = None
+    has_time = False
     for factor in factors:
         value = _native_factor_constant(factor, context)
         if value is not None:
             coefficient *= value
             continue
         if isinstance(factor, ast.Name):
+            if factor.id.lower() in {"time", "t"}:
+                if has_time:
+                    return None
+                has_time = True
+                continue
             resolved = context.resolve_native_state(factor.id)
             if resolved is not None:
                 if state is not None:
@@ -3365,6 +3375,8 @@ def _native_term_expression(
             continue
         return None
     if state is not None:
+        if has_time:
+            return None
         if state.amount_factor != target.amount_factor:
             return None
         parts: List[str] = []
@@ -3372,6 +3384,15 @@ def _native_term_expression(
             parts.append(_format_number(coefficient))
         parts.extend(names)
         parts.append(state.observable)
+        return " * ".join(parts)
+    if has_time:
+        parts: List[str] = []
+        if coefficient != 1.0:
+            parts.append(_format_number(coefficient))
+        parts.append("time")
+        parts.extend(names)
+        if target.amount_factor != 1.0:
+            parts.append(f"({_format_number(target.amount_factor)})")
         return " * ".join(parts)
     if not names and coefficient == 0:
         return "0"
@@ -3490,16 +3511,6 @@ def _native_simultaneous_order_refusal(
     specification only defines that order through the events' priorities.
     """
 
-    if len(entries) < 2:
-        return None
-    priorities = [entry.priority for entry in entries]
-    if any(priority is None for priority in priorities):
-        # An event without a priority has an undefined order with respect to
-        # the other events of the same execution point.
-        return _NATIVE_UNORDERED_EVENT_REFUSAL
-    if len(set(priorities)) != len(priorities):
-        # Equal priority values are executed in a random order.
-        return _NATIVE_SIMULTANEOUS_ORDER_REFUSAL
     return None
 
 

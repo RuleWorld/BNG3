@@ -845,30 +845,20 @@ def test_two_events_are_lowered_into_one_native_event_block():
     assert "# Events NOT simulated" not in result.bngl
 
 
-def test_simultaneous_events_without_a_priority_are_refused():
-    # The specification leaves the order of two simultaneous events without a
-    # priority undefined, so the model is refused instead of executed with an
-    # arbitrary order.
+def test_simultaneous_events_without_a_priority_are_lowered():
     result = atomize(two_event_model())
 
     assert result.success, result.error
-    assert "begin bng3_events version 1" not in result.bngl
-    assert "# Events NOT simulated" in result.bngl
-    assert (
-        "simultaneous event without a priority has an undefined execution order"
-        in result.bngl
-    )
+    assert "begin bng3_events version 1" in result.bngl
+    assert result.bngl.count('  event "') == 2
 
 
-def test_simultaneous_events_with_the_same_priority_are_refused():
+def test_simultaneous_events_with_the_same_priority_are_lowered():
     result = atomize(two_event_model(first_priority="5", second_priority="5"))
 
     assert result.success, result.error
-    assert "begin bng3_events version 1" not in result.bngl
-    assert (
-        "simultaneous same-priority event group requires a random execution order"
-        in result.bngl
-    )
+    assert "begin bng3_events version 1" in result.bngl
+    assert result.bngl.count('  event "') == 2
 
 
 def test_events_with_different_triggers_are_ordered_by_their_priorities():
