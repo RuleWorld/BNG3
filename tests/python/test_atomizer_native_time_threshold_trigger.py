@@ -208,3 +208,65 @@ def test_state_against_a_moving_threshold_stays_refused_for_ssa():
         actions='simulate({method=>"ssa", t_end=>3, n_steps=>6})',
     )
     assert "begin bng3_events version 1" not in bngl
+
+
+PIECEWISE = (
+    "<piecewise><piece><cn>1</cn><apply><gt/><ci>S2</ci><cn>0.5</cn></apply>"
+    "</piece><otherwise><cn>0</cn></otherwise></piecewise>"
+)
+
+
+def _piecewise_value_source(size: str = "1") -> str:
+    """``S1 := piecewise(1, S2 > 0.5, 0)`` at ``time >= 1.5``."""
+
+    source = SOURCE.replace(
+        '<eventAssignment variable="p">'
+        '<math xmlns="http://www.w3.org/1998/Math/MathML">'
+        "<apply><times/><cn>2</cn><ci>S2</ci></apply></math>",
+        '<eventAssignment variable="S1">'
+        f'<math xmlns="http://www.w3.org/1998/Math/MathML">{PIECEWISE}</math>',
+    )
+    return source.replace('size="1"', f'size="{size}"')
+
+
+@pytest.mark.parametrize(
+    "size, rendered",
+    [
+        ("1", "assignment: S1_amt = if((S2_amt > 0.5), 1, 0)"),
+        ("2", "assignment: S1_amt = (if((S2_amt / 2 > 0.5), 1, 0)) * 2"),
+    ],
+)
+def test_piecewise_assignment_value_reaches_the_native_runtime(size, rendered):
+    """A piecewise value is evaluated once at execution, so it needs no root.
+
+    The comparison becomes a BNGL operator as in a generated function, and a
+    concentration-valued target converts the value to an amount once.
+    """
+
+    source = _piecewise_value_source(size)
+    assert "<piecewise>" in source
+    bngl = _convert(source)
+    assert "begin bng3_events version 1" in bngl
+    assert rendered in bngl
+
+
+def test_native_engine_applies_the_piecewise_assignment(tmp_path):
+    import bionetgen
+
+    # S2(1.5) = 1 - e^-1.5 > 0.5, so S1 := 1 at t = 1.5 and then decays.
+    bngl = _convert(_piecewise_value_source())
+    source = tmp_path / "model.bngl"
+    source.write_text(bngl, encoding="utf-8")
+    bionetgen.load(str(source)).execute()
+    lines = (tmp_path / "model.gdat").read_text().splitlines()
+    header = lines[0].lstrip("#").split()
+    rows = {}
+    for line in lines[1:]:
+        if line.strip() and not line.startswith("#"):
+            fields = [float(field) for field in line.split()]
+            rows[round(fields[0], 9)] = dict(zip(header, fields))
+    for time in (0.5, 1.0, 2.0, 2.5, 3.0):
+        expected = math.exp(-time) if time < 1.5 else math.exp(-(time - 1.5))
+        assert rows[round(time, 9)]["S1_amt"] == pytest.approx(
+            expected, rel=1e-6, abs=1e-8
+        )

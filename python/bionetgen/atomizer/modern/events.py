@@ -3043,6 +3043,95 @@ def _native_continuous_expression(
     return rendered, has_state, has_time
 
 
+# SBML calls whose names are Python keywords, renamed while the value is
+# parsed as a Python expression.
+_NATIVE_VALUE_KEYWORD_CALLS = {
+    "if": "_bng_if_",
+    "and": "_bng_and_",
+    "or": "_bng_or_",
+    "not": "_bng_not_",
+}
+_NATIVE_VALUE_CALLS = {
+    "abs",
+    "floor",
+    "gt",
+    "lt",
+    "geq",
+    "leq",
+    "eq",
+    "neq",
+    *_NATIVE_VALUE_KEYWORD_CALLS.values(),
+}
+
+
+def _native_piecewise_value_expression(
+    expression: str, context: EventTranslationContext
+) -> Optional[Tuple[str, bool, bool]]:
+    """Render an assignment value that holds an SBML piecewise.
+
+    The value is written over native state and constants as in
+    ``_native_continuous_expression``, then the SBML comparison and logic
+    calls become BNGL operators exactly as the writer renders a function.
+    Only an assignment value uses this: a trigger needs a continuous
+    surface for the root finder.
+    """
+
+    expanded = context.expand_functions(str(expression or "").strip())
+    if not expanded:
+        return None
+    for keyword, placeholder in _NATIVE_VALUE_KEYWORD_CALLS.items():
+        expanded = re.sub(rf"\b{keyword}\s*\(", f"{placeholder}(", expanded)
+    expanded = expanded.replace("^", "**")
+    try:
+        tree = ast.parse(expanded, mode="eval")
+    except (TypeError, ValueError, SyntaxError):
+        return None
+    has_state = False
+    has_time = False
+
+    class Render(ast.NodeTransformer):
+        def visit_Name(self, node: ast.Name) -> ast.AST:
+            nonlocal has_state, has_time
+            if node.id.lower() in {"time", "t"}:
+                has_time = True
+                return ast.copy_location(ast.Name(id="time", ctx=ast.Load()), node)
+            target = context.resolve_native_state(node.id)
+            if target is not None:
+                has_state = True
+                rendered = target.observable
+                if target.amount_factor != 1.0:
+                    rendered = f"({rendered} / {_format_number(target.amount_factor)})"
+                return ast.copy_location(ast.parse(rendered, mode="eval").body, node)
+            if context.is_compile_time_constant(node.id):
+                return ast.copy_location(
+                    ast.Name(id=standardize_name(node.id), ctx=ast.Load()), node
+                )
+            raise ValueError(f"non-static identifier {node.id}")
+
+        def visit_Call(self, node: ast.Call) -> ast.AST:
+            if (
+                not isinstance(node.func, ast.Name)
+                or node.func.id not in _NATIVE_VALUE_CALLS
+            ):
+                raise ValueError("unsupported native assignment function")
+            node.args = [self.visit(argument) for argument in node.args]
+            return node
+
+    try:
+        tree = Render().visit(tree)
+        ast.fix_missing_locations(tree)
+        rendered = ast.unparse(tree.body)
+    except (TypeError, ValueError, SyntaxError):
+        return None
+    if not has_state and not has_time:
+        return None
+    for keyword, placeholder in _NATIVE_VALUE_KEYWORD_CALLS.items():
+        rendered = rendered.replace(f"{placeholder}(", f"{keyword}(")
+    from .writer import convert_math_expression
+
+    return convert_math_expression(rendered.replace("**", "^")), has_state, has_time
+
+
 def _native_time_against_static(
     left_text: str, right_text: str, context: EventTranslationContext
 ) -> bool:
@@ -3554,6 +3643,11 @@ def _native_value_expression(
     # source value is nonlinear, render the full continuous expression and
     # convert from SBML units to the native amount units exactly once.
     continuous = _native_continuous_expression(text, context)
+    if continuous is None:
+        # An assignment value is evaluated once at execution and has no
+        # root, so it may also hold the comparisons, logic and ``if`` of an
+        # SBML piecewise.
+        continuous = _native_piecewise_value_expression(text, context)
     if continuous is not None:
         rendered, _, _ = continuous
         if target.amount_factor != 1.0:
