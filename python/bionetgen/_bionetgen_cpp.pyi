@@ -314,6 +314,7 @@ def simulate_ode(
     output_step_interval: int = 0,
     sparse: bool = False,
     check_product_scale: float = 0.0,
+    seed: int = 0,
 ) -> Dict[str, object]:
     """Run ODE simulation on a generated network.
 
@@ -353,6 +354,9 @@ def simulate_ode(
         Request the sparse CVODE linear solver.
     check_product_scale : float
         Warn when a species exceeds this threshold.
+    seed : int
+        Random seed for SBML distribution draws in ODE event assignments
+        (0 = system default).
 
     Returns
     -------

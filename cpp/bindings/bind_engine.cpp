@@ -542,7 +542,8 @@ void bind_engine(py::module_& m) {
                              double check_product_scale,
                              bool continue_simulation,
                              bool fresh_from_initial_state,
-                             const std::vector<std::pair<std::string, std::string>>& algebraic_rules) {
+                             const std::vector<std::pair<std::string, std::string>>& algebraic_rules,
+                             int seed) {
         if (max_sim_steps > 0 || output_step_interval > 0) {
             throw std::runtime_error(
                 "max_sim_steps and output_step_interval are supported only "
@@ -559,6 +560,7 @@ void bind_engine(py::module_& m) {
         opts.rtol = rtol;
         opts.atol = atol;
         opts.method = method;
+        opts.seed = seed;
         opts.maxStep = max_step;
         opts.steadyState = steady_state;
         opts.steadyStateTol = steady_state_tol;
@@ -610,6 +612,7 @@ void bind_engine(py::module_& m) {
         py::arg("continue_simulation") = false,
         py::arg("fresh_from_initial_state") = false,
         py::arg("algebraic_rules") = std::vector<std::pair<std::string, std::string>>{},
+        py::arg("seed") = 0,
         "Run ODE simulation on a generated network");
 
     m.def("simulate_ssa", [](Model& model, GeneratedNetwork& network,
