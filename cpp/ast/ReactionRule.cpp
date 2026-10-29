@@ -1303,6 +1303,25 @@ void ReactionRule::initialize() {
         for (std::size_t i = 0; i < reactantMol.components.size(); ++i) {
             reactantComponentsByName[reactantMol.components[i].name].push_back(i);
         }
+        // A tag pins its product component to the tagged reactant component;
+        // the untagged components then correspond in order among those left.
+        // Claim the tagged reactant components before any untagged product
+        // component takes the front of its name bucket: otherwise an untagged
+        // product component listed before the tagged one is mapped onto the
+        // tagged reactant component, which is then mapped twice.
+        for (const auto& productComponent : productMol.components) {
+            if (productComponent.label.empty()) continue;
+            auto tagIt = globalReactantComponentsByTag.find(productComponent.label);
+            if (tagIt == globalReactantComponentsByTag.end()) continue;
+            const auto& tagged = tagIt->second;
+            if (tagged.patternIndex != reactantMolRef.base.patternIndex ||
+                tagged.moleculeIndex != reactantMolRef.base.moleculeIndex) {
+                continue;
+            }
+            auto& bucket = reactantComponentsByName[productComponent.name];
+            auto claimed = std::find(bucket.begin(), bucket.end(), tagged.componentIndex);
+            if (claimed != bucket.end()) bucket.erase(claimed);
+        }
 
         for (std::size_t i = 0; i < productMol.components.size(); ++i) {
             const auto& productComponent = productMol.components[i];
@@ -1523,6 +1542,31 @@ std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddings(
         allSpecies.push_back(speciesIndex);
     }
     return findEmbeddingsForSpecies(patternIndex, speciesList, allSpecies, state);
+}
+
+std::vector<BNGcore::Map> ReactionRule::filterIdenticalByReactionCenter(
+    std::size_t patternIndex, std::vector<BNGcore::Map> maps) const {
+    if (maps.size() < 2) return maps;
+    if (!patternCache_ || patternIndex >= reactionCenter_.size()) {
+        throw std::logic_error(
+            "filterIdenticalByReactionCenter requires an initialized rule");
+    }
+    const auto& center = reactionCenter_[patternIndex];
+    if (center.empty()) {
+        maps.resize(1);
+        return maps;
+    }
+    const auto& infos = patternCache_->reactantInfo;
+    std::vector<BNGcore::Map> kept;
+    std::unordered_set<std::string> seen;
+    for (auto& map : maps) {
+        const auto* target = map.get_target_graph();
+        if (target == nullptr) continue;
+        if (seen.insert(reactionCenterSignature(infos, center, map, *target)).second) {
+            kept.push_back(std::move(map));
+        }
+    }
+    return kept;
 }
 
 std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddingsForSpecies(

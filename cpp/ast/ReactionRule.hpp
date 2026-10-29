@@ -207,6 +207,13 @@ public:
     void clearPatternMatchCache() const;
     void clearPatternMatchCache(ExecutionState& state) const;
     std::unique_ptr<ExecutionState> createExecutionState() const;
+    // Keep one of the given maps of reactant pattern ``patternIndex`` into a
+    // single target graph per distinct image of that pattern's reaction
+    // center (BNG2 RxnRule::filter_identical_by_rxn_center, called from
+    // find_embeddings).  A pattern without a reaction center keeps the first
+    // map only.  Maps that differ elsewhere describe the same transition.
+    std::vector<BNGcore::Map> filterIdenticalByReactionCenter(
+        std::size_t patternIndex, std::vector<BNGcore::Map> maps) const;
     std::vector<EmbeddingResult> findEmbeddings(std::size_t patternIndex, const SpeciesList& speciesList) const;
     std::vector<EmbeddingResult> findEmbeddings(
         std::size_t patternIndex,

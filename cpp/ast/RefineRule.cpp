@@ -264,22 +264,42 @@ void removeRedundantLabels(std::vector<SpeciesGraph>& reactants,
                            std::vector<SpeciesGraph>& products,
                            const std::unordered_map<std::string, bool>& tempLabels)
 {
-    // Temporary labels identify source-to-product nodes while rule operations
-    // are applied. Once concrete product graphs exist, their structural
-    // correspondence is explicit and these internal labels must not leak into
-    // authored BNGL. User-authored %tags are not in tempLabels and remain.
-    auto clearTemporary = [&](std::vector<SpeciesGraph>& species) {
-        for (auto& graph : species) {
-            for (auto node = graph.getGraph().begin(); node != graph.getGraph().end(); ++node) {
-                const auto& tag = (*node)->get_label_tag();
-                if (!tag.empty() && tempLabels.count(tag)) {
-                    (*node)->set_label_tag("");
-                }
+    // Collect labels used in products
+    std::unordered_set<std::string> prodLabels;
+    for (auto& p : products) {
+        for (auto it = p.getGraph().begin(); it != p.getGraph().end(); ++it) {
+            const auto& tag = (*it)->get_label_tag();
+            if (!tag.empty()) prodLabels.insert(tag);
+        }
+    }
+
+    // For each temp label in reactants, if it's NOT in products, remove it
+    // Also remove temp labels from products that aren't in reactants
+    std::unordered_set<std::string> reacLabels;
+    for (auto& r : reactants) {
+        for (auto it = r.getGraph().begin(); it != r.getGraph().end(); ++it) {
+            const auto& tag = (*it)->get_label_tag();
+            if (!tag.empty()) reacLabels.insert(tag);
+        }
+    }
+
+    // Remove temp labels that don't need to bridge reactants<->products
+    for (auto& r : reactants) {
+        for (auto it = r.getGraph().begin(); it != r.getGraph().end(); ++it) {
+            const auto& tag = (*it)->get_label_tag();
+            if (!tag.empty() && tempLabels.count(tag) && !prodLabels.count(tag)) {
+                (*it)->set_label_tag("");
             }
         }
-    };
-    clearTemporary(reactants);
-    clearTemporary(products);
+    }
+    for (auto& p : products) {
+        for (auto it = p.getGraph().begin(); it != p.getGraph().end(); ++it) {
+            const auto& tag = (*it)->get_label_tag();
+            if (!tag.empty() && tempLabels.count(tag) && !reacLabels.count(tag)) {
+                (*it)->set_label_tag("");
+            }
+        }
+    }
 }
 
 // Safe delete a node from a graph, removing all edges first.
@@ -369,7 +389,14 @@ ExpandRuleResult expandRule(
         // Find all embeddings of pattern into each species graph in sgList
         // (Perl lines 367-368)
         for (std::size_t si = 0; si < sgList.size(); ++si) {
-            auto maps = findAllMaps(patt.getGraph(), sgList[si].getGraph());
+            // BNG2 keeps one embedding per distinct image of the pattern's
+            // reaction center in each target (find_embeddings ->
+            // filter_identical_by_rxn_center). Embeddings that differ only
+            // outside the reaction center are the same transition, so the
+            // match count, and with it the child multiplicity below, counts
+            // reaction-center images rather than graph automorphisms.
+            auto maps = rule.filterIdenticalByReactionCenter(
+                ipatt, findAllMaps(patt.getGraph(), sgList[si].getGraph()));
             for (auto& m : maps) {
                 ReactionRule::EmbeddingResult embed;
                 embed.speciesIndex = si;
@@ -515,35 +542,20 @@ ExpandRuleResult expandRule(
             }
         }
 
-        // Adjust rates for stat factors > 1 (Perl lines 405-421)
-        for (auto& [sid, idx] : childRuleMap) {
+        // Adjust rates for stat factors > 1 (Perl lines 405-421), in child
+        // order so that the scaled rate parameters are numbered as BNG2
+        // numbers them.
+        std::vector<std::pair<std::size_t, std::string>> childOrder;
+        childOrder.reserve(childRuleMap.size());
+        for (const auto& [sid, idx] : childRuleMap) childOrder.emplace_back(idx, sid);
+        std::sort(childOrder.begin(), childOrder.end());
+        for (const auto& [idx, sid] : childOrder) {
             double factor = factorMap.count(sid) ? factorMap[sid] : 1.0;
             if (factor != 1.0 && idx < result.childRules.size()) {
-                // Each distinct product pattern's automorphisms represent
-                // the same child transition under different product-node
-                // labellings. BNG2's parent/child MultScale ratio removes
-                // those duplicate product embeddings from the accumulated
-                // match multiplicity.
-                double productSymmetry = 1.0;
-                for (const auto& product : result.childRules[idx].getProductPatterns()) {
-                    bool hasCorrespondenceTag = false;
-                    for (auto node = product.getGraph().begin();
-                         node != product.getGraph().end(); ++node) {
-                        if (!(*node)->get_label_tag().empty()) {
-                            hasCorrespondenceTag = true;
-                            break;
-                        }
-                    }
-                    if (hasCorrespondenceTag) continue;
-                    const auto automorphisms = findAllMaps(
-                        product.getGraph(), product.getGraph()).size();
-                    if (automorphisms > 0) {
-                        productSymmetry *= static_cast<double>(automorphisms);
-                    }
-                }
-                factor /= productSymmetry;
-                if (factor == 1.0) continue;
-
+                // The count above is BNG2's Factor sum over rule instances
+                // that restrict to the same child (RefineRule.pm 388-398).
+                // Symmetry outside the reaction center was removed when the
+                // embeddings were filtered, so no further division applies.
                 // Multiply the first rate constant by the stat factor
                 auto& childRule = result.childRules[idx];
                 const auto& rates = childRule.getRates();
@@ -555,12 +567,15 @@ ExpandRuleResult expandRule(
                     Expression origExpr = rates[0];
                     Expression newExpr = Expression::binary("*", factorExpr, origExpr);
 
-                    // Generate a new parameter name: paramName + "_statfactor"
-                    std::string newParamName = paramName + "_" + std::to_string(static_cast<int>(factor));
-                    // Add the new parameter to the hybrid model
-                    if (!hybridModel.getParameters().contains(newParamName)) {
-                        hybridModel.addParameter(Parameter(newParamName, newExpr));
+                    // Name the scaled rate paramName_<n> with the first free n,
+                    // as BNG2's Expression::getName does. A name derived from
+                    // the factor would collide for non-integer factors.
+                    std::string newParamName;
+                    for (int suffix = 1;; ++suffix) {
+                        newParamName = paramName + "_" + std::to_string(suffix);
+                        if (!hybridModel.getParameters().contains(newParamName)) break;
                     }
+                    hybridModel.addParameter(Parameter(newParamName, newExpr));
 
                     // Reconstruct the child rule with the adjusted rate.
                     // Since ReactionRule doesn't expose a rate setter, we reconstruct.

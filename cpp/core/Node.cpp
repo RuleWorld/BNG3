@@ -7,6 +7,7 @@
 
 #include "BNGcore.hpp"
 #include <climits>
+#include <iterator>
 using namespace BNGcore;
 
 
@@ -290,7 +291,14 @@ Node::get_BNG2_string ( link_index_t & link_index, int & next_bond ) const
 
     if ( get_type() < LINK_NODE_TYPE )
     {   // handle a link node
-        if ( get_state() == BOUND_STATE )
+        if ( get_state() == BOUND_STATE &&
+             std::distance( edges_in_begin(), edges_in_end() ) < 2 )
+        {
+            // A bound link with no partner site is a pattern's "bound to
+            // anything" (!+). Numbering it would write a dangling bond.
+            s += "!+";
+        }
+        else if ( get_state() == BOUND_STATE )
         {
             // Assign bond number on first encounter (Perl convention:
             // bonds numbered in order they appear during string serialization)
@@ -308,8 +316,11 @@ Node::get_BNG2_string ( link_index_t & link_index, int & next_bond ) const
                 s += std::to_string(it->second);
             }
         }
-        //else
-        //    std::cout << "not bound" << std::endl;
+        else if ( get_state().get_BNG2_string() == "!" + WILDCARD_STRING )
+        {
+            // A pattern's "any bond state" (!?).
+            s += "!?";
+        }
     }
     else
     {   // handle other node types.
