@@ -521,6 +521,36 @@ TEST_CASE("line continuation allows a trailing comment") {
     CHECK(model->getParameters().get("kf").getValue() == Catch::Approx(2.0));
 }
 
+TEST_CASE("commented simulate continuation is ignored while live actions remain parsed") {
+    const auto commented = bng::parser::parseModel(
+        "#simulate({method=>\"nf\",\\\n"
+        "          t_start=>0,t_end=>30,n_steps=>300})\n");
+    REQUIRE(commented != nullptr);
+    CHECK(commented->getActions().empty());
+
+    const auto live = bng::parser::parseModel(
+        "simulate({method=>\"ode\",\\\n"
+        "          t_start=>0,t_end=>1,n_steps=>1})\n");
+    REQUIRE(live != nullptr);
+    REQUIRE(live->getActions().size() == 1);
+    CHECK(live->getActions().front().name == "simulate");
+
+    CHECK_THROWS(bng::parser::parseModel(
+        "simulate({method=>\"ode\",\\\n"
+        "          t_start=>0,t_end=>1,n_steps=>1\n"));
+
+    CHECK_THROWS(bng::parser::parseModel(
+        "#simulate({method=>\"nf\",\\\n"
+        "          t_start=>0,t_end=>30,n_steps=>300})\n"
+        "not_a_bngl_command\n"));
+
+    for (const auto* commentedPrefix : {"#simulator", "#simulateX"}) {
+        const std::string source = std::string(commentedPrefix) + "({method=>\"nf\",\\\n" +
+                                   "          t_start=>0,t_end=>30,n_steps=>300})\n";
+        CHECK_THROWS(bng::parser::parseModel(source));
+    }
+}
+
 TEST_CASE("trailing annotation after a seed amount is ignored") {
     const auto model = bng::parser::parseModel(R"BNGL(
 begin molecule types
