@@ -2393,8 +2393,11 @@ def test_shared_quadratic_event_pair_proves_constant_boundary_trigger_inactive()
         assert "Events NOT simulated" not in result.bngl
 
 
-def test_shared_quadratic_simultaneous_crossings_stay_unsupported():
+def test_shared_quadratic_simultaneous_crossings_execute_together(tmp_path):
+    import numpy as np
+
     from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
 
     xml = (
         _shared_quadratic_event_pair_model(assignment_value=0.0)
@@ -2405,8 +2408,48 @@ def test_shared_quadratic_simultaneous_crossings_stay_unsupported():
     result = Atomizer(quiet_mode=True, t_end=2, n_steps=400).atomize(xml)
 
     assert result.success, result.error
-    assert "state-dependent or non-constant event" in result.bngl
-    assert "Events NOT simulated" in result.bngl
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert "Events NOT simulated" not in result.bngl
+    assert "begin bng3_events version 1" in result.bngl
+
+    model_path = tmp_path / "shared_quadratic_simultaneous_crossings.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    simulation = load(model_path).simulate(
+        method="ode", t_end=2, n_steps=400, rtol=1e-10, atol=1e-12
+    )
+    times = simulation.time
+    states = np.column_stack(
+        [simulation.observables[f"{species}_amt"] for species in ("S1", "S2", "S3")]
+    )
+    jumps = np.flatnonzero(np.max(np.abs(np.diff(states, axis=0)), axis=1) > 0.1)
+    assert len(jumps) == 1
+
+    jump = jumps[0]
+    # S1 + S3 is conserved, so S1 < 0.75 and S3 > 1.25 become true at the same
+    # instant. The simultaneous group applies S2 = 0 and S3 = 0, leaving
+    # S1 = 0.75 with no reaction flux.
+    assert states[jump, 0] >= 0.75 - 1e-9
+    assert states[jump, 2] <= 1.25 + 1e-9
+    np.testing.assert_allclose(states[jump + 1 :, 0], 0.75, rtol=0, atol=1e-9)
+    np.testing.assert_allclose(states[jump + 1 :, 1], 0.0, rtol=0, atol=1e-12)
+    np.testing.assert_allclose(states[jump + 1 :, 2], 0.0, rtol=0, atol=1e-12)
+
+    # Before the shared crossing the trajectory must match the independent
+    # RoadRunner source model. RoadRunner's root finder is unstable exactly at
+    # the shared crossing, so the boundary itself is checked analytically above.
+    import pytest
+
+    roadrunner = pytest.importorskip("roadrunner")
+    reference_engine = roadrunner.RoadRunner(xml)
+    reference_engine.integrator.setValue("relative_tolerance", 1e-10)
+    reference_engine.integrator.setValue("absolute_tolerance", 1e-12)
+    reference_engine.timeCourseSelections = ["time", "[S1]", "[S2]", "[S3]"]
+    reference = reference_engine.simulate(times=times)
+    pre_crossing = np.arange(len(times)) <= jump
+    for index, species in enumerate(("S1", "S2", "S3")):
+        bng_values = states[pre_crossing, index]
+        rr_values = reference[pre_crossing, reference.colnames.index(f"[{species}]")]
+        np.testing.assert_allclose(bng_values, rr_values, rtol=1e-5, atol=5e-10)
 
 
 def test_shared_quadratic_simultaneous_initial_entries_stay_unsupported():
