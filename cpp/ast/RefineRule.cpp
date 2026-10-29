@@ -609,17 +609,17 @@ std::unique_ptr<ReactionRule> restrictRule(
         if (embed.speciesIndex == static_cast<std::size_t>(-1)) {
             // Self-embedding: target is the pattern
             auto cloneMap = cloneGraphInto(reactantPatterns[i].getGraph(), targetCopy);
-            // Build a map from pattern nodes to cloned nodes
+            // The embedding saved by expandRule points into a temporary
+            // PatternGraph that has already been destroyed. Rebuild the
+            // identity embedding directly into this owned clone.
             mapCopy = BNGcore::Map();
             mapCopy.set_source_graph(const_cast<BNGcore::PatternGraph*>(&reactantPatterns[i].getGraph()));
             mapCopy.set_target_graph(&targetCopy);
-            for (auto it = embed.map.begin(); it != embed.map.end(); ++it) {
-                BNGcore::Node* srcNode = it->first;
-                BNGcore::Node* origTarget = it->second;
-                // origTarget is in the copy of the pattern; find its clone in targetCopy
-                auto cloneIt = cloneMap.find(origTarget);
+            for (auto node = reactantPatterns[i].getGraph().begin();
+                 node != reactantPatterns[i].getGraph().end(); ++node) {
+                auto cloneIt = cloneMap.find(*node);
                 if (cloneIt != cloneMap.end()) {
-                    mapCopy.insert(srcNode, cloneIt->second);
+                    mapCopy.insert(*node, cloneIt->second);
                 }
             }
         } else {
@@ -643,7 +643,10 @@ std::unique_ptr<ReactionRule> restrictRule(
         // Transfer labels from pattern to target copy (Perl line 469)
         transferLabels(mapCopy);
 
-        reactants.emplace_back(targetCopy);
+        // The embedding maps into the cloned target graph. Preserve that node
+        // identity and point the map at the graph object that now owns it.
+        reactants.emplace_back(std::move(targetCopy));
+        mapCopy.set_target_graph(&reactants.back().getGraph());
         matches.push_back(std::move(mapCopy));
     }
 
