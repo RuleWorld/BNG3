@@ -32,6 +32,8 @@ Every regression here fails on the unfixed source.
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from bionetgen.atomizer.modern import Atomizer
@@ -360,15 +362,12 @@ def test_cn_with_separator_and_an_impermissible_type_is_reported_as_invalid():
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("constant", ["infinity", "notanumber"])
-def test_mathml_constants_remain_an_approximation(constant):
-    """SBML Level 3 Version 2 Core validation rule 10202.
-
-    ``infinity`` and ``notanumber`` are permitted MathML elements, so the
-    source document is valid; BNG3 cannot represent either value exactly in a
-    finite-double model, so the model stays an approximation.
-    """
-
+@pytest.mark.parametrize(
+    ("constant", "expression"),
+    [("infinity", "exp(1000)"), ("notanumber", "sqrt(-1)")],
+)
+def test_mathml_constants_preserve_nonfinite_values(constant, expression):
+    """Valid MathML non-finite constants survive initial-assignment lowering."""
     sbml = _sbml(f"""
         <listOfParameters>
           <parameter id="p" value="0" constant="true"/>
@@ -379,50 +378,34 @@ def test_mathml_constants_remain_an_approximation(constant):
           </initialAssignment>
         </listOfInitialAssignments>
         """)
-    atomizer, _ = _atomize(sbml)
+    atomizer, result = _atomize(sbml)
 
-    warnings = [
-        warning
-        for warning in atomizer.model.import_warnings
-        if warning["category"] == "mathml"
-    ]
-    assert len(warnings) == 1
-    assert warnings[0]["severity"] == "approximated"
-    assert _limitations(atomizer)
+    assert atomizer.model.initial_assignments[0].symbol == "p"
+    assert atomizer.model.initial_assignments[0].math == expression
+    assert not _warnings(atomizer, category="mathml")
+    assert not _warnings(atomizer, category="invalidSource")
+    assert not _limitations(atomizer)
+
+    from bionetgen import _bionetgen_cpp as cpp
+
+    model = cpp.parse_string(result.bngl)
+    emitted = next(
+        function.expression for function in model.functions if function.name == "p"
+    )
+    # Evaluate the emitted constant expression through the native parameter evaluator.
+    probe = cpp.parse_string(
+        f"begin model\nbegin parameters\nprobe {emitted}\nend parameters\nend model"
+    )
+    value = probe.parameters[0].value
+    if constant == "infinity":
+        assert math.isinf(value) and value > 0
+    else:
+        assert math.isnan(value)
 
 
 # ---------------------------------------------------------------------------
 # The reason text has to keep the two sides of the boundary apart
 # ---------------------------------------------------------------------------
-
-
-def test_valid_source_limitation_says_so_for_the_mathml_constants():
-    """A reader must be able to tell "the source is malformed" from
-    "the source is fine and we cannot represent it"."""
-
-    for constant in ("infinity", "notanumber"):
-        sbml = _sbml(f"""
-            <listOfParameters>
-              <parameter id="p" value="0" constant="true"/>
-            </listOfParameters>
-            <listOfInitialAssignments>
-              <initialAssignment symbol="p">
-                <math xmlns="{SBML_NS}"><{constant}/></math>
-              </initialAssignment>
-            </listOfInitialAssignments>
-            """)
-        atomizer, _ = _atomize(sbml)
-        message = next(
-            warning["message"]
-            for warning in atomizer.model.import_warnings
-            if warning["category"] == "mathml"
-        )
-        assert "the source is valid SBML" in message, message
-        assert "validation rule 10202" in message, message
-        # The source is valid, so this is a converter limitation, not a
-        # source defect: the diagnostic must not read like a malformed input.
-        assert "does not conform" not in message, message
-        assert "not valid SBML" not in message, message
 
 
 def test_valid_source_limitation_says_so_for_a_rate_less_reaction():
@@ -498,18 +481,6 @@ def _reason_for_needle(needle: str) -> str:
             </listOfReactions>
             """)
         category = "missingMath"
-    else:
-        sbml = _sbml(f"""
-            <listOfParameters>
-              <parameter id="p" value="0" constant="true"/>
-            </listOfParameters>
-            <listOfInitialAssignments>
-              <initialAssignment symbol="p">
-                <math xmlns="{SBML_NS}"><{needle}/></math>
-              </initialAssignment>
-            </listOfInitialAssignments>
-            """)
-        category = "mathml"
 
     atomizer, _ = _atomize(sbml)
     return next(
@@ -524,8 +495,6 @@ def _reason_for_needle(needle: str) -> str:
     [
         "no mathml expression",
         "have no mathml kinetic law",
-        "infinity",
-        "notanumber",
     ],
 )
 def test_reason_text_keeps_the_inventory_needles(needle):
