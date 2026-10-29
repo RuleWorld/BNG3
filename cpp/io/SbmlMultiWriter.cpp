@@ -500,7 +500,7 @@ std::string SbmlMultiWriter::writeReactionRules(const ast::Model& model) {
                     // Both directions reference the same pattern-species objects.
                     const auto species = patternPrefix + ((product != reverse) ? "_P" : "_R") +
                                          std::to_string(position + 1);
-                    const auto reference = id + (product ? "_P" : "_R") +
+                    const auto reference = "ref_" + id + (product ? "_P" : "_R") +
                                            std::to_string(position + 1);
                     if (!product) reactantIds.push_back(species);
                     sbml << "          <speciesReference id=\"" << reference
@@ -521,7 +521,7 @@ std::string SbmlMultiWriter::writeReactionRules(const ast::Model& model) {
                                 return pattern.moleculeCount() == 1 ? type
                                     : type + "_M" + std::to_string(molecule + 1);
                             };
-                            maps.push_back("              <multi:speciesTypeComponentMapInProduct multi:reactant=\"" +
+                            maps.push_back("              <multi:speciesTypeComponentMapInProduct multi:reactant=\"ref_" +
                                 id + "_R" + std::to_string(source.patternIndex + 1) +
                                 "\" multi:reactantComponent=\"" +
                                 component(sourcePattern, sourceSpecies, source.moleculeIndex) +

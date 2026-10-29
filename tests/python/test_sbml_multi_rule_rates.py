@@ -80,3 +80,19 @@ end model
     assert list(root.iter(multi_ns + "inSpeciesTypeBond"))
     mappings = list(root.iter(multi_ns + "speciesTypeComponentMapInProduct"))
     assert len(mappings) == 4
+
+    # SBML references have their own global IDs; aliasing a species ID makes
+    # the importer read a kinetic-law species symbol as stoichiometry 1.
+    core_ids = [node.attrib["id"] for node in root.iter() if "id" in node.attrib]
+    assert len(core_ids) == len(set(core_ids))
+    structural = tmp_path / "structural.xml"
+    ET.ElementTree(root).write(structural, encoding="unicode")
+    imported = bionetgen.from_sbml(str(structural))
+    original = bionetgen.load(str(path))
+    import numpy as np
+
+    expected = original.simulate(method="ode", t_end=1, n_steps=4)
+    actual = imported.simulate(method="ode", t_end=1, n_steps=4)
+    np.testing.assert_allclose(
+        actual.concentrations, expected.concentrations, rtol=1e-6, atol=1e-8
+    )
