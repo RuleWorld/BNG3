@@ -3192,16 +3192,23 @@ def _native_comparison_expression(
         if left_state.amount_factor != right_state.amount_factor:
             return None
         return f"{left_state.observable} {symbol} {right_state.observable}"
+    stochastic = str(context.method or "ode").lower() in {"ssa", "stochastic"}
     if left_state is not None:
         scaled = _native_scaled_static(right_text, left_state.amount_factor, context)
-        if scaled is None:
+        if scaled is not None:
+            return f"{left_state.observable} {symbol} {scaled}"
+        if stochastic:
             return None
-        return f"{left_state.observable} {symbol} {scaled}"
-    if right_state is not None:
+    elif right_state is not None:
         scaled = _native_scaled_static(left_text, right_state.amount_factor, context)
-        if scaled is None:
+        if scaled is not None:
+            return f"{scaled} {symbol} {right_state.observable}"
+        if stochastic:
             return None
-        return f"{scaled} {symbol} {right_state.observable}"
+    # Otherwise the other side moves (it reads time or another state), and
+    # both sides are rendered in their SBML units below.  The native SSA
+    # runtime checks triggers only after jumps, so for a stochastic run the
+    # state against a moving side stays refused, as before.
     time_rewrite = _native_time_minus_state_comparison(
         left_text, right_text, symbol, context
     )
