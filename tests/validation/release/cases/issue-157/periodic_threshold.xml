@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="periodic_threshold">
+    <listOfParameters>
+      <parameter id="reset" value="0" constant="false"/>
+      <parameter id="ticks" value="0" constant="false"/>
+      <parameter id="complete" value="0" constant="false"/>
+    </listOfParameters>
+    <listOfEvents>
+      <event id="tick" useValuesFromTriggerTime="true">
+        <trigger initialValue="false" persistent="false">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><geq/>
+              <apply><minus/>
+                <csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol>
+                <ci>reset</ci>
+              </apply>
+              <cn>0.01</cn>
+            </apply>
+          </math>
+        </trigger>
+        <priority><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>10</cn></math></priority>
+        <listOfEventAssignments>
+          <eventAssignment variable="reset">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <csymbol definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol>
+            </math>
+          </eventAssignment>
+          <eventAssignment variable="ticks">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><plus/><ci>ticks</ci><cn>1</cn></apply>
+            </math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+      <event id="complete_after_sixteen_ticks" useValuesFromTriggerTime="true">
+        <trigger initialValue="false" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><geq/>
+              <apply><floor/>
+                <apply><divide/><ci>ticks</ci><cn>16</cn></apply>
+              </apply>
+              <cn>1</cn>
+            </apply>
+          </math>
+        </trigger>
+        <priority><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>5</cn></math></priority>
+        <listOfEventAssignments>
+          <eventAssignment variable="complete">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>
