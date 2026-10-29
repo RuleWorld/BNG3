@@ -30,6 +30,8 @@ from scripts.validate import (
 from scripts.cross_validate import (
     compare_network_files,
     compare_structural_xml,
+    diff_structural_xml,
+    format_structural_xml_differences,
     _network_only_text,
     _stage_model,
     run_cross_validation,
@@ -819,6 +821,12 @@ def test_numerical_expression_export_parity_uses_one_installed_native_build():
     assert "--models-dir tests/validation/Validate" in compare_run
     for fixture in ("ANx", "hybrid_test", "test_write_sbml_multi"):
         assert f"--model {fixture}" in compare_run
+    assert '--artifact-dir "$RUNNER_TEMP/bng3-authored-xml"' in compare_run
+    assert any(
+        step.get("uses", "").startswith("actions/upload-artifact@")
+        and "bng3-authored-xml" in step.get("with", {}).get("name", "")
+        for step in job_doc["steps"]
+    )
     required = steps["numerical_expression_export_parity"]
 
     assert job_doc["timeout-minutes"] == 120
@@ -1781,6 +1789,117 @@ def test_structural_xml_comparator_checks_multi_species_types_and_reactions(
     assert "listOfSpeciesTypes" in differences
 
 
+def test_structural_xml_comparator_reports_categorized_element_differences(tmp_path):
+    reference = tmp_path / "reference-details.xml"
+    generated = tmp_path / "generated-details.xml"
+    reference.write_text(
+        """<sbml><model>
+<ListOfSpecies>
+  <Species id="sA" name="A"/>
+  <Species id="sB" name="B"/>
+</ListOfSpecies>
+<ListOfReactionRules>
+  <ReactionRule id="rA" name="bind">
+    <RateLaw type="Ele"><ListOfRateConstants><RateConstant value="1"/></ListOfRateConstants></RateLaw>
+    <Map><MapItem sourceID="sA" targetID="sB"/></Map>
+  </ReactionRule>
+  <ReactionRule id="rB" name="release"/>
+</ListOfReactionRules>
+</model></sbml>""",
+        encoding="utf-8",
+    )
+    generated.write_text(
+        """<sbml><model>
+<ListOfSpecies>
+  <Species id="species_1" name="A"/>
+  <Species id="species_2" name="C"/>
+</ListOfSpecies>
+<ListOfReactionRules>
+  <ReactionRule id="rule_1" name="bind">
+    <RateLaw type="Ele"><ListOfRateConstants><RateConstant value="2"/></ListOfRateConstants></RateLaw>
+    <Map><MapItem sourceID="species_1" targetID="species_1"/></Map>
+  </ReactionRule>
+  <ReactionRule id="rule_2" name="extra"/>
+</ListOfReactionRules>
+</model></sbml>""",
+        encoding="utf-8",
+    )
+
+    comparison = diff_structural_xml(
+        reference,
+        generated,
+        sections=("ListOfSpecies", "ListOfReactionRules"),
+    )
+
+    assert comparison.equal is False
+    assert comparison.sections == ("ListOfSpecies", "ListOfReactionRules")
+    counts = comparison.counts()
+    assert counts["species"] == {"missing": 1, "extra": 1}
+    assert counts["reaction rule"] == {"missing": 1, "extra": 1}
+    assert counts["rate law"] == {"value": 1}
+    # The sourceID aliases resolve to the same named species (A); only the
+    # targetID changes from B to A.
+    assert counts["component mapping"] == {"value": 1}
+
+    missing = [
+        difference
+        for difference in comparison.differences
+        if difference.kind == "missing"
+    ]
+    extra = [
+        difference
+        for difference in comparison.differences
+        if difference.kind == "extra"
+    ]
+    assert any("Species[name='B']" in difference.path for difference in missing)
+    assert any("Species[name='C']" in difference.path for difference in extra)
+    assert any(
+        "ReactionRule[name='release']" in difference.path for difference in missing
+    )
+    assert any("ReactionRule[name='extra']" in difference.path for difference in extra)
+
+    formatted = format_structural_xml_differences(comparison)
+    assert formatted
+    assert any("RateConstant/@value" in line for line in formatted)
+    assert any(
+        "MapItem[sourceID=" in line and "/@targetID" in line for line in formatted
+    )
+    assert all("BNG2=" in line and "C++=" in line for line in formatted)
+
+
+def test_structural_xml_comparator_separates_representation_only_sections(tmp_path):
+    reference = tmp_path / "reference-representation.xml"
+    generated = tmp_path / "generated-representation.xml"
+    reference.write_text(
+        """<sbml xmlns="urn:bng"><model>
+<ListOfSpecies><Species id="A" pattern="A()"/></ListOfSpecies>
+<ListOfReactionRules><ReactionRule id="r1"><Rate value="2"/></ReactionRule></ListOfReactionRules>
+</model></sbml>""",
+        encoding="utf-8",
+    )
+    generated.write_text(
+        """<sbml xmlns="another-bng-namespace"><model>
+<ListOfReactionRules><ReactionRule id="r1"><Rate value="2"/></ReactionRule></ListOfReactionRules>
+<ListOfSpecies><Species pattern="A()" id="A"/></ListOfSpecies>
+</model></sbml>""",
+        encoding="utf-8",
+    )
+
+    comparison = diff_structural_xml(
+        reference,
+        generated,
+        sections=("ListOfSpecies", "ListOfReactionRules"),
+    )
+
+    assert comparison.equal is True
+    assert comparison.sections == ()
+    assert comparison.differences == ()
+    assert comparison.representation_only == (
+        "ListOfSpecies",
+        "ListOfReactionRules",
+    )
+
+
 @pytest.mark.parametrize(
     "model_name,source,cpp_output,perl_output,xml,action_label",
     [
@@ -1899,6 +2018,54 @@ def test_authored_export_reports_perl_when_cpp_times_out(tmp_path, monkeypatch):
     assert "C++: timeout after 5s" in detail
     assert "BNG2: action completed" in detail
     assert calls == ["C++", "BNG2"]
+
+
+def test_authored_export_preserves_both_xml_files_on_failure(tmp_path, monkeypatch):
+    from scripts.cross_validate import _run_authored_export_comparison
+
+    models = tmp_path / "Validate"
+    models.mkdir()
+    model = models / "ANx.bngl"
+    model.write_text("begin model\nend model\nwriteXML()\n", encoding="utf-8")
+    cpp = tmp_path / "bng_cpp"
+    perl = tmp_path / "BNG2.pl"
+    cpp.touch()
+    perl.touch()
+    reference = """<sbml><model>
+<ListOfSpecies><Species id="A" name="A"/></ListOfSpecies>
+<ListOfReactionRules><ReactionRule id="r" name="bind"/></ListOfReactionRules>
+</model></sbml>"""
+    generated = """<sbml><model>
+<ListOfSpecies><Species id="B" name="B"/></ListOfSpecies>
+<ListOfReactionRules><ReactionRule id="s" name="release"/></ListOfReactionRules>
+</model></sbml>"""
+
+    def run_engine(command, work_dir, timeout, environment=None):
+        del timeout, environment
+        text = reference if command[0] == "perl" else generated
+        (work_dir / "ANx.xml").write_text(text, encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", ""), None
+
+    monkeypatch.setattr("scripts.cross_validate._run_engine", run_engine)
+    artifact_dir = tmp_path / "artifacts"
+    status, detail = _run_authored_export_comparison(
+        model,
+        cpp,
+        perl,
+        models,
+        "perl",
+        5,
+        artifact_dir=artifact_dir,
+    )
+
+    assert status == "fail"
+    assert "canonical structural differences" in detail
+    assert "semantic impact unclassified" in detail
+    assert "ListOfSpecies/Species[name='A']" in detail
+    assert "ListOfReactionRules/ReactionRule[name='bind']" in detail
+    assert (artifact_dir / "ANx.bng2.xml").read_text(encoding="utf-8") == reference
+    assert (artifact_dir / "ANx.cpp.xml").read_text(encoding="utf-8") == generated
+    assert "preserved artifacts" in detail
 
 
 def test_cross_validation_stages_generation_without_simulation_actions():
