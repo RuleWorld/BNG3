@@ -541,7 +541,8 @@ void bind_engine(py::module_& m) {
                              std::size_t output_step_interval, bool sparse,
                              double check_product_scale,
                              bool continue_simulation,
-                             bool fresh_from_initial_state) {
+                             bool fresh_from_initial_state,
+                             const std::vector<std::pair<std::string, std::string>>& algebraic_rules) {
         if (max_sim_steps > 0 || output_step_interval > 0) {
             throw std::runtime_error(
                 "max_sim_steps and output_step_interval are supported only "
@@ -572,6 +573,7 @@ void bind_engine(py::module_& m) {
         auto t_opts = std::chrono::steady_clock::now();
 
         OdeIntegrator integrator(model, network);
+        integrator.setAlgebraicRules(algebraic_rules);
         auto t_ctor = std::chrono::steady_clock::now();
         const bool probe = probeOn();
         OdeResult result = integrator.integrate(opts);
@@ -607,6 +609,7 @@ void bind_engine(py::module_& m) {
         py::arg("check_product_scale") = 0.0,
         py::arg("continue_simulation") = false,
         py::arg("fresh_from_initial_state") = false,
+        py::arg("algebraic_rules") = std::vector<std::pair<std::string, std::string>>{},
         "Run ODE simulation on a generated network");
 
     m.def("simulate_ssa", [](Model& model, GeneratedNetwork& network,

@@ -27,6 +27,7 @@ from typing import (
 from urllib.parse import quote
 
 from .events import (
+    EventTranslationResult,
     EventTranslationContext,
     NativeStateTarget,
     _event_assignment,
@@ -5709,12 +5710,22 @@ def _rewrite_assignment_rule_references(
     )
 
 
+ALGEBRAIC_RESIDUAL_PREFIX = "__algebraic_residual_"
+
+
+def algebraic_residual_name(index: int) -> str:
+    """Return the BNGL function name of the ``index``-th SBML algebraic rule."""
+
+    return f"{ALGEBRAIC_RESIDUAL_PREFIX}{index}"
+
+
 def write_functions(
     model: SBMLModel,
     synthetic_rate_rule_variables: Optional[Set[str]] = None,
     skip_assignment_rules: Optional[Set[str]] = None,
     keep_parameterized: bool = False,
     replace_loc_params: bool = True,
+    algebraic_residuals: bool = False,
 ) -> List[str]:
     lines = []
     zero_argument_functions = []
@@ -5957,6 +5968,43 @@ def write_functions(
         name = standardize_name(variable)
         lines.append(f"{name}() = {body}")
         emitted_names.add(name)
+
+    # The native DAE runtime evaluates each SBML algebraic rule's math as a
+    # residual.  The math names SBML symbols, so it is translated exactly as
+    # an assignment rule's: a concentration-valued species reads its
+    # concentration function, not its amount observable.
+    if algebraic_residuals:
+        algebraic_rules = [rule for rule in model.rules if rule.type == "algebraic"]
+        for index, rule in enumerate(algebraic_rules):
+            body = _inline_reaction_fluxes(
+                rule.math,
+                model,
+                assignment_rule_variables,
+                set(),
+                concentration_names,
+                species_map,
+                replace_loc_params,
+            )
+            body = extend_function(body, {}, model.function_definitions)
+            body = bngl_function(
+                body,
+                algebraic_residual_name(index),
+                [],
+                list(model.compartments),
+                assignment_rule_variables=assignment_rule_variables,
+                species_with_conc_functions=concentration_names,
+                sbml_to_bngl_id=species_map,
+                rate_rule_variables=rate_rule_variables,
+            )
+            body = _map_compartment_references(
+                convert_math_expression(body),
+                model,
+                rate_ruled_compartments=rate_ruled_compartments,
+                assignment_rule_compartments=assignment_rule_compartments,
+            )
+            name = algebraic_residual_name(index)
+            lines.append(f"{name}() = {body}")
+            emitted_names.add(name)
 
     emitted_assignment_rules: Set[str] = set()
     for rule in _ordered_assignment_rules(assignment_rules):
@@ -7278,6 +7326,7 @@ def generate_bngl(
     replace_loc_params: bool = True,
     _promoted_event_parameters: Optional[Set[str]] = None,
     _allow_event_parameter_promotion: bool = True,
+    native_dae_runtime: bool = False,
 ) -> BNGLGenerationResult:
     import_warnings_before_generation = copy.deepcopy(model.import_warnings)
     promoted_event_parameters = set(_promoted_event_parameters or ())
@@ -7676,6 +7725,7 @@ def generate_bngl(
         synthetic_rate_rule_variables,
         observable_rule_variables,
         replace_loc_params=replace_loc_params,
+        algebraic_residuals=native_dae_runtime,
     )
     time_rate_functions: List[str] = []
     reaction_rules = (
@@ -11370,8 +11420,9 @@ def generate_bngl(
             ),
             resolve_species_concentration_volume=(resolve_species_concentration_volume),
             is_compile_time_constant=is_compile_time_constant,
-            unapplied_algebraic_rule=any(
-                rule.type == "algebraic" for rule in model.rules
+            unapplied_algebraic_rule=(
+                any(rule.type == "algebraic" for rule in model.rules)
+                and not native_dae_runtime
             ),
             resolve_constant=resolve_constant,
             expand_functions=lambda expression: extend_function(
@@ -11459,10 +11510,20 @@ def generate_bngl(
             static_event_state=static_event_state,
             resolve_native_state=resolve_native_state,
         )
-        event_result = synthesize_event_actions(
-            event_translation_events,
-            event_context,
-        )
+        if native_dae_runtime and any(rule.type == "algebraic" for rule in model.rules):
+            event_result = EventTranslationResult(
+                None,
+                0,
+                [
+                    (event, "state event routed to native DAE event runtime")
+                    for event in event_translation_events
+                ],
+            )
+        else:
+            event_result = synthesize_event_actions(
+                event_translation_events,
+                event_context,
+            )
         native_event_block = None
         native_event_refusal = None
         native_event_count = 0
@@ -11528,6 +11589,7 @@ def generate_bngl(
                         replace_loc_params=replace_loc_params,
                         _promoted_event_parameters=assigned_parameters,
                         _allow_event_parameter_promotion=False,
+                        native_dae_runtime=native_dae_runtime,
                     )
                     if "begin bng3_events version 1" in promoted.bngl:
                         model.import_warnings = promoted_model.import_warnings

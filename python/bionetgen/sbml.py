@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -11,6 +12,65 @@ from bionetgen.model import BioNetGenModel, _cpp
 
 class BioNetGenError(BNGError):
     """Public SBML import error used by the new API."""
+
+
+def _native_algebraic_rules(model) -> list[tuple[str, str]]:
+    """Select unambiguous free species for native index-1 DAE rows."""
+    algebraic = [rule for rule in model.rules if rule.type == "algebraic"]
+    if not algebraic:
+        return []
+    controlled = {
+        str(rule.variable).casefold()
+        for rule in model.rules
+        if rule.type in {"assignment", "rate"} and rule.variable
+    }
+    controlled.update(
+        str(event_assignment.variable).casefold()
+        for event in model.events
+        for event_assignment in event.assignments
+        if event_assignment.variable
+    )
+    reaction_species = {
+        str(reference.species).casefold()
+        for reaction in model.reactions.values()
+        for reference in [*reaction.reactants, *reaction.products]
+        if reference.species and reference.species != "EmptySet"
+    }
+    candidates = {
+        str(identifier).casefold(): str(identifier)
+        for identifier, species in model.species.items()
+        if not species.constant
+        and str(identifier).casefold() not in controlled
+        and str(identifier).casefold() not in reaction_species
+    }
+    from bionetgen.atomizer.modern.writer import algebraic_residual_name
+
+    result = []
+    assigned = set()
+    for index, rule in enumerate(algebraic):
+        symbols = {
+            name.casefold()
+            for name in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", rule.math)
+        }
+        matched = symbols.intersection(candidates)
+        if len(matched) != 1:
+            raise BioNetGenError(
+                "SBML algebraic rule requires an unambiguous free species "
+                "to form a native DAE state"
+            )
+        target = next(iter(matched))
+        if target in assigned:
+            raise BioNetGenError(
+                "SBML algebraic rules constrain the same species more than once"
+            )
+        assigned.add(target)
+        # The generated model carries the rule's math as a BNGL function with
+        # the SBML symbols translated, so the residual reads concentrations
+        # where the SBML math does.
+        result.append((candidates[target], f"{algebraic_residual_name(index)}()"))
+    if len(result) > len(model.species):
+        raise BioNetGenError("SBML model has more algebraic rules than species states")
+    return result
 
 
 def _require_libsbml() -> None:
@@ -42,6 +102,7 @@ def _translate_modern_with_model(
             actions=options.get("actions", ""),
             t_end=options.get("t_end", 10),
             n_steps=options.get("n_steps", 100),
+            native_dae_runtime=options.get("native_dae_runtime", False),
         )
         result = atomizer.atomize(sbml_text)
     except Exception as exc:  # pragma: no cover - depends on optional deps
@@ -131,12 +192,29 @@ def from_sbml(sbml_path: str, atomize: bool = False, **options) -> BioNetGenMode
         from bionetgen.atomizer.modern import source_metadata_payload
 
         bngl_text, parsed_model = _translate_modern_with_model(
-            sbml_path, atomize, options
+            sbml_path, atomize, {**options, "native_dae_runtime": True}
         )
+        algebraic_rules = _native_algebraic_rules(parsed_model)
+        algebraic_rules.extend(
+            (str(symbol), str(expression))
+            for symbol, expression in getattr(
+                parsed_model, "fast_equilibrium_rules", ()
+            )
+        )
+        if (
+            algebraic_rules
+            and parsed_model.events
+            and "begin bng3_events version 1" not in bngl_text
+        ):
+            raise BioNetGenError(
+                "SBML algebraic-rule models with events require the native DAE "
+                "event runtime; one or more events could not be represented"
+            )
         return BioNetGenModel(
             _cpp.parse_string(bngl_text),
             source_path=str(sbml_path),
             source_metadata=source_metadata_payload(parsed_model),
+            algebraic_rules=algebraic_rules,
         )
     return BioNetGenModel(
         _cpp.parse_string(sbml_to_bngl(sbml_path, atomize=atomize, **options)),

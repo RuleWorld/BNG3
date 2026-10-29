@@ -437,6 +437,9 @@ class Atomizer:
                     replace_loc_params=bool(
                         self.options.get("replace_loc_params", True)
                     ),
+                    native_dae_runtime=bool(
+                        self.options.get("native_dae_runtime", False)
+                    ),
                 )
                 return AtomizerResult(
                     bngl=bngl,
@@ -490,6 +493,7 @@ class Atomizer:
                 t_end=float(self.options.get("t_end", 10) or 10),
                 n_steps=int(self.options.get("n_steps", 100) or 100),
                 replace_loc_params=bool(self.options.get("replace_loc_params", True)),
+                native_dae_runtime=bool(self.options.get("native_dae_runtime", False)),
             )
             logger.info("ATM009", "BNGL generation complete")
             annotation = (
