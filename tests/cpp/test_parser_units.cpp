@@ -543,6 +543,12 @@ TEST_CASE("commented simulate continuation is ignored while live actions remain 
         "#simulate({method=>\"nf\",\\\n"
         "          t_start=>0,t_end=>30,n_steps=>300})\n"
         "not_a_bngl_command\n"));
+
+    for (const auto* commentedPrefix : {"#simulator", "#simulateX"}) {
+        const std::string source = std::string(commentedPrefix) + "({method=>\"nf\",\\\n" +
+                                   "          t_start=>0,t_end=>30,n_steps=>300})\n";
+        CHECK_THROWS(bng::parser::parseModel(source));
+    }
 }
 
 TEST_CASE("trailing annotation after a seed amount is ignored") {

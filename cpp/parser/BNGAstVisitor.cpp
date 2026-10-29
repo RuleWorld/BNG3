@@ -1529,9 +1529,13 @@ std::string normalizeCommentedSimulateContinuations(const std::string& source) {
                 const auto action = line.find_first_not_of(" \t", first + 1);
                 if (action != std::string_view::npos && line.substr(action, 8) == "simulate") {
                     const auto afterAction = action + 8;
+                    const bool tokenBoundary = afterAction < line.size() &&
+                                               (line[afterAction] == '(' ||
+                                                line[afterAction] == ' ' ||
+                                                line[afterAction] == '\t');
                     const auto openParen = line.find_first_not_of(" \t", afterAction);
                     const auto last = line.find_last_not_of(" \t");
-                    skipContinuation = openParen != std::string_view::npos &&
+                    skipContinuation = tokenBoundary && openParen != std::string_view::npos &&
                                        line[openParen] == '(' && last != std::string_view::npos &&
                                        line[last] == '\\';
                 }
