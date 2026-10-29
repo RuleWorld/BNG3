@@ -1,6 +1,8 @@
 #include <catch2/catch_all.hpp>
 #include "../../cpp/engine/HybridModelGenerator.hpp"
 #include "../../cpp/ast/Model.hpp"
+#include "../../cpp/ast/RefineRule.hpp"
+#include "../../cpp/parser/BNGAstVisitor.hpp"
 #include <fstream>
 #include <iostream>
 
@@ -181,4 +183,27 @@ TEST_CASE("HybridModelGenerator isIsomorphic error handling", "[HybridModelGener
     REQUIRE(bng::engine::HybridModelGeneratorTest::callIsIsomorphic(generator, "\x01", "A()") == false);
     REQUIRE(bng::engine::HybridModelGeneratorTest::callIsIsomorphic(generator, "!!InvalidBNGL!!", "A()") == false);
     REQUIRE(bng::engine::HybridModelGeneratorTest::callIsIsomorphic(generator, "A(x!1)) garbage", "A()") == false);
+}
+
+TEST_CASE("Hybrid self embeddings are rebound to the owned target graph", "[hybrid][RefineRule]") {
+    auto model = bng::parser::parseModel(R"(
+begin molecule types
+    A(x~u~p)
+end molecule types
+begin reaction rules
+    convert: A(x~u) -> A(x~p) 1
+end reaction rules
+)");
+    Model hybridModel;
+    bng::ast::RefineRuleParams params;
+    params.safe = true;
+
+    const auto refined = bng::ast::expandRule(
+        model->getReactionRules().front(), {}, *model, hybridModel, params);
+
+    REQUIRE(refined.error.empty());
+    REQUIRE(refined.childRules.size() == 1);
+    REQUIRE(refined.childRules.front().getProducts().size() == 1);
+    CHECK(refined.childRules.front().getProducts().front().find("x~p") !=
+          std::string::npos);
 }
