@@ -212,9 +212,8 @@ class StructuralXmlComparison:
         ]
         text = "; ".join(parts)
         if self.representation_only:
-            text += (
-                "; representation-only differences in "
-                + ", ".join(self.representation_only)
+            text += "; representation-only differences in " + ", ".join(
+                self.representation_only
             )
         return text
 
@@ -814,9 +813,7 @@ def diff_structural_xml(
         if reference_signatures != test_signatures:
             differing_sections.append(section)
             differences.extend(
-                _diff_xml_node_lists(
-                    reference_nodes, test_nodes, section, section
-                )
+                _diff_xml_node_lists(reference_nodes, test_nodes, section, section)
             )
         elif reference_raw.get(section, ()) != test_raw.get(section, ()):
             representation_only.append(section)
@@ -836,9 +833,7 @@ def compare_structural_xml(
 ) -> tuple[bool, list[str]]:
     """Compare declared species/rule/function or SBML-Multi XML sections."""
 
-    comparison = diff_structural_xml(
-        reference_xml, test_xml, sections=sections
-    )
+    comparison = diff_structural_xml(reference_xml, test_xml, sections=sections)
     return comparison.equal, list(comparison.sections)
 
 
@@ -1088,9 +1083,7 @@ def _run_authored_export_comparison(
             return "error", detail
 
         try:
-            comparison = diff_structural_xml(
-                perl_xml, cpp_xml, sections=sections
-            )
+            comparison = diff_structural_xml(perl_xml, cpp_xml, sections=sections)
         except (ET.ParseError, OSError, ValueError) as exc:
             preserved = _preserve_xml_artifacts(
                 artifact_dir, model.stem, cpp_xml, perl_xml
@@ -1110,8 +1103,7 @@ def _run_authored_export_comparison(
                 f"  semantic differences: {comparison.summary()}",
             ]
             lines.extend(
-                f"  {line}"
-                for line in format_structural_xml_differences(comparison)
+                f"  {line}" for line in format_structural_xml_differences(comparison)
             )
             if preserved:
                 lines.append(
