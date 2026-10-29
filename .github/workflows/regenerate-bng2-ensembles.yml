@@ -31,7 +31,7 @@ jobs:
         run: |
           python scripts/ci/checkout_oracle.py --name bionetgen \
             --destination "$RUNNER_TEMP/ensemble-bng2" --summary-file "$GITHUB_STEP_SUMMARY"
-          make -C "$RUNNER_TEMP/ensemble-bng2/bng2/Network3" -f Makefile.cmake --jobs=2
+          make -C "$RUNNER_TEMP/ensemble-bng2/bng2/Network3" -f Makefile.cmake --jobs=1
           echo "BNG2_PERL=$RUNNER_TEMP/ensemble-bng2/bng2/BNG2.pl" >> "$GITHUB_ENV"
           {
             uname -a
