@@ -35,6 +35,7 @@ lifecycle_budget = {
         "add_molecule_type",
         "add_seed_species",
         "remove_seed_species",
+        "set_seed_species_amount",
         "move_species_to_compartment",
     ),
 }
@@ -161,6 +162,44 @@ def _source_compartments(text):
     return names
 
 
+def _topology_probe_difference(model, result, *, compartment=None, removed=False):
+    """Observe the inert edit probe directly; original observables cannot see it."""
+    import numpy as np
+
+    names = list(model.generate_network().species_names)
+    indexes = [
+        index for index, name in enumerate(names) if name.endswith(_TOPOLOGY_PROBE)
+    ]
+    if removed:
+        return (
+            {"field": "topology.probe.removal", "species": [names[i] for i in indexes]}
+            if indexes
+            else None
+        )
+    expected = f"@{compartment}::{_TOPOLOGY_PROBE}" if compartment else _TOPOLOGY_PROBE
+    if len(indexes) != 1 or names[indexes[0]] != expected:
+        return {
+            "field": "topology.probe.identity",
+            "expected": expected,
+            "species": [names[i] for i in indexes],
+        }
+    values = np.asarray(result.concentrations, dtype=float)
+    if values.ndim != 2 or values.shape != (len(result.time), len(names)):
+        return {"field": "topology.probe.shape", "shape": list(values.shape)}
+    amounts = values[:, indexes[0]]
+    # The probe has no reactions and is set to amount 5 in the source control.
+    wrong = np.flatnonzero(~np.isfinite(amounts) | (amounts != 5.0))
+    if wrong.size:
+        row = int(wrong[0])
+        return {
+            "field": "topology.probe.amount",
+            "row": row,
+            "expected": 5.0,
+            "actual": float(amounts[row]),
+        }
+    return None
+
+
 def _topology_edit_contract(bionetgen, source, directory):
     """Compare in-place topology edits with a fresh compilation of the edit."""
     edited = bionetgen.load(source)
@@ -179,6 +218,9 @@ def _topology_edit_contract(bionetgen, source, directory):
 
     edited.add_molecule_type(_TOPOLOGY_PROBE)
     edited.add_seed_species(_TOPOLOGY_PROBE, 3, compartment=seed_compartment)
+    # Change the added seed's amount in place; the fresh source states only
+    # the final amount, so the comparison checks the edit took effect.
+    edited.set_seed_species_amount(_TOPOLOGY_PROBE, 5, compartment=seed_compartment)
     if seed_compartment is not None:
         probe_compartment = _TOPOLOGY_PROBE_COMPARTMENT
         edited.add_compartment(probe_compartment, 3, 1)
@@ -186,9 +228,9 @@ def _topology_edit_contract(bionetgen, source, directory):
             _TOPOLOGY_PROBE, probe_compartment, from_compartment=seed_compartment
         )
         fresh = _insert_source_line(fresh, "compartments", f"{probe_compartment} 3 1")
-        seed_line = f"@{probe_compartment}:{_TOPOLOGY_PROBE} 3"
+        seed_line = f"@{probe_compartment}:{_TOPOLOGY_PROBE} 5"
     else:
-        seed_line = f"{_TOPOLOGY_PROBE} 3"
+        seed_line = f"{_TOPOLOGY_PROBE} 5"
     fresh = _insert_source_line(fresh, "seed species", seed_line)
     fresh_path = directory / "topology-fresh.bngl"
     fresh_path.write_text(fresh)
@@ -196,7 +238,11 @@ def _topology_edit_contract(bionetgen, source, directory):
     options = {"method": "ode", "t_end": 2.0, "n_steps": 10}
     edited_result = edited.simulate(**options)
     fresh_result = bionetgen.load(fresh_path).simulate(**options)
-    difference = _result_difference(edited_result, fresh_result)
+    difference = _topology_probe_difference(
+        edited, edited_result, compartment=probe_compartment
+    )
+    if difference is None:
+        difference = _result_difference(edited_result, fresh_result)
     runs = [
         _result_receipt(edited_result, route="edited-model"),
         _result_receipt(fresh_result, route="fresh-edited-source"),
@@ -205,7 +251,9 @@ def _topology_edit_contract(bionetgen, source, directory):
         edited.remove_seed_species(_TOPOLOGY_PROBE, compartment=probe_compartment)
         removed_result = edited.simulate(**options)
         original_result = bionetgen.load(source).simulate(**options)
-        difference = _result_difference(removed_result, original_result)
+        difference = _topology_probe_difference(edited, removed_result, removed=True)
+        if difference is None:
+            difference = _result_difference(removed_result, original_result)
         runs += [
             _result_receipt(removed_result, route="edited-model-after-removal"),
             _result_receipt(original_result, route="fresh-original-source"),

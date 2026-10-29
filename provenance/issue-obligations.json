@@ -1467,7 +1467,7 @@
           "boundaries": [
             "Compiled model -> instance operation -> fresh-compilation trajectory comparator",
             "The four-case generated lifecycle slice only; no full-corpus, arbitrary-model or concurrent-service claim.",
-            "Runtime topology editing through the public Model API remains unsupported; the qualified route is the action protocol's include_model.",
+            "The public Model API supports in-place add_compartment, add_molecule_type, add_seed_species, remove_seed_species, set_seed_species_amount and move_species_to_compartment edits (python/bionetgen/model.py); lifecycle-topology-edits in tests/validation/integrated_protocol.py verifies this finite edit slice. Other topology-editing behavior remains outside this qualification.",
             "Merging a fragment that carries its own reaction rules or infers an existing molecule type is outside this slice."
           ],
           "required_checks": [
