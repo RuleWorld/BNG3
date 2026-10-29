@@ -123,7 +123,7 @@ def _model(size, species, parameters, rules, reactions, events="") -> str:
         for identifier, value, constant in parameters
     )
     return (
-        HEADER + '<model id="fast_model" timeUnits="time">'
+        HEADER + '<model id="fast_model" timeUnits="second">'
         f'<listOfCompartments><compartment id="C" size="{size}" constant="true"/>'
         "</listOfCompartments>"
         f"<listOfSpecies>{''.join(species)}</listOfSpecies>"
@@ -906,3 +906,16 @@ def test_native_engine_reproduces_the_closed_form_steady_state(name, tmp_path):
             assert _amount(row, species, volume) == pytest.approx(
                 expected, rel=1e-6, abs=1e-7
             ), f"{name}: {species} at t={time}"
+
+
+def test_generated_source_documents_are_valid_sbml():
+    libsbml = pytest.importorskip("libsbml")
+    for source in [builder() for builder, *_ in CASES.values()]:
+        document = libsbml.readSBMLFromString(source)
+        document.checkConsistency()
+        errors = [
+            document.getError(index).getMessage()
+            for index in range(document.getNumErrors())
+            if document.getError(index).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
+        ]
+        assert not errors, errors

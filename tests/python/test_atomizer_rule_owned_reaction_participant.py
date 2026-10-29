@@ -33,7 +33,7 @@ RATE_RULE = (
 
 def _source(rule: str) -> str:
     return f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1">
-<model id="m" timeUnits="time">
+<model id="m" timeUnits="second">
 <listOfCompartments><compartment id="C" size="2" constant="true"/></listOfCompartments>
 <listOfSpecies>
  <species id="S2" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false"
@@ -110,3 +110,16 @@ def test_native_engine_integrates_the_rule_owned_factor(rule, reference, tmp_pat
         assert rows[round(time, 9)]["S3_amt"] == pytest.approx(
             reference(time), rel=1e-6, abs=1e-8
         )
+
+
+def test_generated_source_documents_are_valid_sbml():
+    libsbml = pytest.importorskip("libsbml")
+    for source in [_source(ASSIGNMENT_RULE), _source(RATE_RULE)]:
+        document = libsbml.readSBMLFromString(source)
+        document.checkConsistency()
+        errors = [
+            document.getError(index).getMessage()
+            for index in range(document.getNumErrors())
+            if document.getError(index).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
+        ]
+        assert not errors, errors

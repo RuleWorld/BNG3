@@ -24,7 +24,7 @@ import pytest
 from bionetgen.atomizer.modern import Atomizer
 
 SOURCE = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1">
-<model id="m" timeUnits="time">
+<model id="m" timeUnits="second">
 <listOfCompartments><compartment id="C" size="1" constant="true"/></listOfCompartments>
 <listOfSpecies>
  <species id="S1" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
@@ -317,3 +317,16 @@ def test_negated_time_threshold_is_scheduled_like_its_complement():
 
     assert SBMLParser().parse(negated).events[0].trigger == "geq(time, 1.5)"
     assert "trigger: time >= 1.5" in _convert(negated)
+
+
+def test_generated_source_documents_are_valid_sbml():
+    libsbml = pytest.importorskip("libsbml")
+    for source in [SOURCE, _moving_threshold_source(), _piecewise_value_source()]:
+        document = libsbml.readSBMLFromString(source)
+        document.checkConsistency()
+        errors = [
+            document.getError(index).getMessage()
+            for index in range(document.getNumErrors())
+            if document.getError(index).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
+        ]
+        assert not errors, errors
