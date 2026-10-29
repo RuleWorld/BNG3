@@ -3132,6 +3132,53 @@ def _native_piecewise_value_expression(
     return convert_math_expression(rendered.replace("**", "^")), has_state, has_time
 
 
+_COMPARISON_COMPLEMENTS = {
+    "gt": "leq",
+    "lt": "geq",
+    "geq": "lt",
+    "leq": "gt",
+    "eq": "neq",
+    "neq": "eq",
+}
+
+
+def complement_negated_comparison(trigger: str) -> str:
+    """Rewrite ``not(cmp(a, b))`` as the complementary comparison.
+
+    ``not(gt(a, b))`` holds exactly when ``leq(a, b)`` holds for real
+    values, so an SBML trigger written with ``not`` becomes the comparison
+    the event lowering recognizes.  Any other text is returned unchanged.
+    """
+
+    text = str(trigger or "").strip()
+    match = re.fullmatch(r"not\s*\((.*)\)", text, re.S)
+    if match is None:
+        return trigger
+    inner = match.group(1).strip()
+    depth = 0
+    for character in inner:
+        depth += {"(": 1, ")": -1}.get(character, 0)
+        if depth < 0:
+            # The outer parentheses do not enclose the whole trigger.
+            return trigger
+    if depth != 0:
+        return trigger
+    comparison = _match_comparison_call(inner)
+    if comparison is None:
+        return trigger
+    operator, arguments_text = comparison
+    if operator not in _COMPARISON_COMPLEMENTS:
+        return trigger
+    arguments = _split_arguments(arguments_text)
+    if arguments is None or len(arguments) != 2:
+        return trigger
+    # The match must cover the whole inner text, so a trigger such as
+    # not(gt(a, b)) && c is not rewritten.
+    if inner != f"{operator}({arguments_text})":
+        return trigger
+    return f"{_COMPARISON_COMPLEMENTS[operator]}({arguments_text})"
+
+
 def _native_time_against_static(
     left_text: str, right_text: str, context: EventTranslationContext
 ) -> bool:

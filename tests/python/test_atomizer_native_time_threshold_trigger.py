@@ -270,3 +270,37 @@ def test_native_engine_applies_the_piecewise_assignment(tmp_path):
         assert rows[round(time, 9)]["S1_amt"] == pytest.approx(
             expected, rel=1e-6, abs=1e-8
         )
+
+
+@pytest.mark.parametrize(
+    "trigger, expected",
+    [
+        ("not(gt(S1, 0.5))", "leq(S1, 0.5)"),
+        ("not(lt(time, 1.5))", "geq(time, 1.5)"),
+        ("not(geq(S1, S2))", "lt(S1, S2)"),
+        ("not(leq(f(x, y), 2))", "gt(f(x, y), 2)"),
+        ("not(eq(S1, 1))", "neq(S1, 1)"),
+        # Not a single negated comparison: left as it is.
+        ("not(and(gt(a, b), lt(c, d)))", "not(and(gt(a, b), lt(c, d)))"),
+        ("not(gt(a, b)) && not(lt(c, d))", "not(gt(a, b)) && not(lt(c, d))"),
+        ("gt(S1, 0.5)", "gt(S1, 0.5)"),
+    ],
+)
+def test_negated_comparison_becomes_its_complement(trigger, expected):
+    from bionetgen.atomizer.modern.events import complement_negated_comparison
+
+    assert complement_negated_comparison(trigger) == expected
+
+
+def test_negated_time_threshold_is_scheduled_like_its_complement():
+    """``not(lt(time, 1.5))`` is the trigger ``geq(time, 1.5)``."""
+
+    negated = SOURCE.replace(
+        "<apply><geq/>",
+        "<apply><not/><apply><lt/>",
+    ).replace("<cn>1.5</cn></apply>", "<cn>1.5</cn></apply></apply>", 1)
+    assert "<not/>" in negated
+    from bionetgen.atomizer.modern.parser import SBMLParser
+
+    assert SBMLParser().parse(negated).events[0].trigger == "geq(time, 1.5)"
+    assert "trigger: time >= 1.5" in _convert(negated)
