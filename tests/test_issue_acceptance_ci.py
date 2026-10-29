@@ -9,15 +9,37 @@ def test_native_acceptance_is_opt_in_and_keeps_prerequisite_separate():
     triggers = WORKFLOW.get("on") or WORKFLOW.get(True) or {}
     assert set(triggers) == {"pull_request", "workflow_dispatch"}
     paths = triggers["pull_request"]["paths"]
-    assert "tests/validation/release/cases/issue-157/**" in paths
-    assert "tests/validation/release/cases/issue-161/**" in paths
-    assert "cpp/engine/OdeIntegrator.cpp" in paths
-    assert "cpp/actions/ActionDispatch.cpp" in paths
-    assert "cpp/io/SbmlMultiWriter.cpp" in paths
-    assert "cpp/io/SbmlMultiWriter.hpp" in paths
-    assert "cpp/parser/BNGAstVisitor.cpp" in paths
-    assert "cpp/compile/CompiledModel.cpp" in paths
-    assert "python/bionetgen/atomizer/modern/writer.py" in paths
+    assert {
+        "tests/validation/release/cases/issue-157/**",
+        "tests/validation/release/cases/issue-161/**",
+        "CMakeLists.txt",
+        "cpp/CMakeLists.txt",
+        "pyproject.toml",
+        "cpp/engine/OdeIntegrator.cpp",
+        "cpp/actions/ActionDispatch.cpp",
+        "cpp/ast/EventSupport.hpp",
+        "cpp/bindings/bind_engine.cpp",
+        "cpp/compile/CompiledModel.cpp",
+        "cpp/io/SbmlMultiWriter.cpp",
+        "cpp/io/SbmlMultiWriter.hpp",
+        "cpp/parser/BNGAstVisitor.cpp",
+        "provenance/ssts-ci-linux-py312.lock",
+        "provenance/upstreams.lock.yml",
+        "python/bionetgen/__init__.py",
+        "python/bionetgen/model.py",
+        "python/bionetgen/atomizer/modern/events.py",
+        "python/bionetgen/atomizer/modern/core.py",
+        "python/bionetgen/atomizer/modern/multi.py",
+        "python/bionetgen/atomizer/modern/parser.py",
+        "python/bionetgen/atomizer/modern/types.py",
+        "python/bionetgen/atomizer/modern/writer.py",
+        "scripts/ci/checkout_oracle.py",
+        "scripts/ci/oracle_sources.py",
+        "scripts/cross_validate.py",
+        "scripts/validate.py",
+        "tests/validation/compare.py",
+        "tests/validation/oracle_perl.py",
+    } <= set(paths)
     inputs = triggers["workflow_dispatch"]["inputs"]
     for issue in (157, 161):
         choice = inputs[f"run_issue_{issue}"]
