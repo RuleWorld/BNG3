@@ -2059,7 +2059,8 @@ def test_authored_export_preserves_both_xml_files_on_failure(tmp_path, monkeypat
     )
 
     assert status == "fail"
-    assert "semantic differences" in detail
+    assert "canonical structural differences" in detail
+    assert "semantic impact unclassified" in detail
     assert "ListOfSpecies/Species[name='A']" in detail
     assert "ListOfReactionRules/ReactionRule[name='bind']" in detail
     assert (artifact_dir / "ANx.bng2.xml").read_text(encoding="utf-8") == reference

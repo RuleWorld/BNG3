@@ -175,19 +175,18 @@ _XML_RATE_LAW_TAGS = {
 
 @dataclass(frozen=True)
 class XmlDifference:
-    """One canonical XML difference with an element path and both values."""
+    """One structural XML difference with an element path and both values."""
 
     path: str
     reference: object
     test: object
     category: str
     kind: str
-    semantic: bool = True
 
 
 @dataclass(frozen=True)
 class StructuralXmlComparison:
-    """Semantic XML differences plus sections that differ only in representation."""
+    """Structural XML differences plus canonically equal sections with raw differences."""
 
     sections: tuple[str, ...]
     differences: tuple[XmlDifference, ...]
@@ -420,7 +419,7 @@ def format_structural_xml_differences(
     lines = [
         f"{difference.path}: BNG2={_format_xml_value(difference.reference)} "
         f"C++={_format_xml_value(difference.test)} "
-        f"[{difference.category}, {'semantic' if difference.semantic else 'representation-only'}]"
+        f"[{difference.category}, structural; semantic impact unclassified]"
         for difference in comparison.differences[:limit]
     ]
     remaining = len(comparison.differences) - limit
@@ -1100,7 +1099,7 @@ def _run_authored_export_comparison(
             )
             lines = [
                 f"FAIL {model.stem} (C++/BNG2 structural XML differs: {', '.join(comparison.sections)})",
-                f"  semantic differences: {comparison.summary()}",
+                f"  canonical structural differences: {comparison.summary()}",
             ]
             lines.extend(
                 f"  {line}" for line in format_structural_xml_differences(comparison)
