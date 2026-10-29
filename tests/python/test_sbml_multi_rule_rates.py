@@ -44,3 +44,39 @@ end model
     assert [r.getSpecies() for r in forward.getListOfReactants()] == [
         p.getSpecies() for p in reverse.getListOfProducts()
     ]
+
+
+def test_multi_binding_topology_is_encoded_without_pattern_name_fallback(tmp_path):
+    import xml.etree.ElementTree as ET
+    from bionetgen.atomizer.modern.multi import parse_multi_package
+
+    path = tmp_path / "binding.bngl"
+    path.write_text("""begin model
+begin parameters
+ kf 0.125
+ kr 0.75
+end parameters
+begin molecule types
+ A(b)
+ B(a)
+end molecule types
+begin seed species
+ A(b) 4
+ B(a) 3
+end seed species
+begin reaction rules
+ bind: A(b) + B(a) <-> A(b!1).B(a!1) kf, kr
+end reaction rules
+end model
+""")
+    xml = bionetgen.load(str(path)).sbml_multi()
+    root = ET.fromstring(xml)
+    for node in root.iter():
+        if node.tag.rsplit("}", 1)[-1] == "species":
+            node.attrib.pop("name", None)
+    result = parse_multi_package(ET.tostring(root, encoding="unicode"))
+    assert result.executable, [warning.message for warning in result.warnings]
+    multi_ns = "{http://www.sbml.org/sbml/level3/version1/multi/version1}"
+    assert list(root.iter(multi_ns + "inSpeciesTypeBond"))
+    mappings = list(root.iter(multi_ns + "speciesTypeComponentMapInProduct"))
+    assert len(mappings) == 4
