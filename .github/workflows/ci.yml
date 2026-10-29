@@ -105,7 +105,7 @@ jobs:
         run: python -m tests.validation.exception_ledger --max-exceptions 1
 
       - name: Run CI contract tests
-        run: python -m pytest tests/test_ci_contract.py tests/test_ci_fast_feedback.py tests/test_workflow_guard_selftests.py -q --maxfail=1
+        run: python -m pytest tests/test_ci_contract.py tests/test_ci_fast_feedback.py tests/test_workflow_guard_selftests.py tests/test_issue_acceptance_ci.py -q --maxfail=1
 
       - name: Check workflow structure before native builds
         run: >-
@@ -1268,6 +1268,11 @@ jobs:
               *selected, '-q', '--maxfail=1', '--junitxml=' + str(output / 'junit.xml'),
           ])
           PY
+      - name: Validate independent SSTS 00003 source-law prerequisite
+        run: >-
+          python -m pytest
+          --confcutdir=tests/validation/release/cases/issue-159
+          -q tests/validation/release/cases/issue-159/test_stochastic_00003_law.py
       - name: Retain the discovered denominator without qualifying it
         if: always()
         run: python scripts/validate.py --inventory-only --report-dir "$RUNNER_TEMP/conformance-harness/inventory"
