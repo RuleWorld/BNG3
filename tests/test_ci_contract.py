@@ -2340,3 +2340,43 @@ def test_parity_revision_declarations_match_the_product_checkout():
                         f"does not match product checkout {source_ref!r}"
                     )
     assert declarations, "no product revision declarations checked"
+
+
+def test_structural_xml_comparator_preserves_rates_under_export_spelling_changes(
+    tmp_path,
+):
+    reference = tmp_path / "reference.xml"
+    generated = tmp_path / "generated.xml"
+    reference.write_text("""<sbml><model>
+<ListOfParameters><Parameter id="_rateLaw1" type="Constant" value="1000"/></ListOfParameters>
+<ListOfReactionRules><ReactionRule id="RR1" name="r">
+<RateLaw type="Function" name="_rateLaw2"/>
+<Map><MapItem sourceID="a" targetID="b"/><MapItem sourceID="c" targetID="d"/></Map>
+<ListOfOperations><AddBond site1="a" site2="c"/></ListOfOperations>
+</ReactionRule><ReactionRule id="RR2" name="s"><RateLaw type="Ele"><ListOfRateConstants><RateConstant value="_rateLaw1"/></ListOfRateConstants></RateLaw></ReactionRule></ListOfReactionRules>
+<ListOfObservables><Observable id="O1" name="X" output="1"><ListOfPatterns><Pattern id="P1" automorphisms="1"/></ListOfPatterns></Observable></ListOfObservables>
+<ListOfFunctions><Function id="_rateLaw2"><Expression> 1.0 / (1.0 + x) </Expression></Function></ListOfFunctions>
+</model></sbml>""")
+    text = """<sbml><model>
+<ListOfReactionRules><ReactionRule id="RR1" name="r">
+<RateLaw type="Function" name="__bng3_reaction_rate_RR1"/>
+<Map><MapItem sourceID="c" targetID="d"/><MapItem sourceID="a" targetID="b"/></Map>
+<ListOfOperations><AddBond site1="c" site2="a"/></ListOfOperations>
+</ReactionRule><ReactionRule id="RR2" name="s"><RateLaw type="Ele"><ListOfRateConstants><RateConstant value="1000"/></ListOfRateConstants></RateLaw></ReactionRule></ListOfReactionRules>
+<ListOfObservables><Observable id="O1" name="X"><ListOfPatterns><Pattern id="P1"/></ListOfPatterns></Observable></ListOfObservables>
+<ListOfFunctions><Function id="__bng3_reaction_rate_RR1"><Expression>(1 / (1 + x))</Expression></Function></ListOfFunctions>
+</model></sbml>"""
+    sections = ("ListOfReactionRules", "ListOfFunctions", "ListOfObservables")
+    generated.write_text(text)
+    assert compare_structural_xml(reference, generated, sections=sections) == (True, [])
+    for before, after in [
+        ('value="1000"', 'value="999"'),
+        ("1 + x", "2 + x"),
+        ('site2="a"', 'site2="b"'),
+        ('sourceID="a" targetID="b"', 'sourceID="a" targetID="d"'),
+        ('<Pattern id="P1"/>', '<Pattern id="P1" automorphisms="2"/>'),
+        ('name="X"', 'name="X" output="0"'),
+    ]:
+        generated.write_text(text.replace(before, after))
+        equal, _ = compare_structural_xml(reference, generated, sections=sections)
+        assert not equal, (before, after)

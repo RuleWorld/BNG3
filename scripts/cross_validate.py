@@ -27,7 +27,12 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from scripts.validate import copy_referenced_support_files  # noqa: E402
-from tests.validation.compare import NetDiff, compare_net, parse_net  # noqa: E402
+from tests.validation.compare import (
+    NetDiff,
+    _canon_expr,
+    compare_net,
+    parse_net,
+)  # noqa: E402
 
 
 def _sha256_file(path: Path) -> str:
@@ -295,6 +300,28 @@ def _semantic_xml_ids(model: ET.Element) -> dict[str, str]:
         occurrence = counts.get(label, 0)
         counts[label] = occurrence + 1
         aliases[identifier] = f"{label}#{occurrence}"
+    # Generated rate helper names are local export IDs. Tie each helper to
+    # the rule that references it, retaining the helper's complete definition.
+    for rule in model.iter():
+        if rule.tag.rsplit("}", 1)[-1] != "ReactionRule":
+            continue
+        for rate in rule:
+            if rate.tag.rsplit("}", 1)[-1] != "RateLaw":
+                continue
+            name = rate.attrib.get("name", "")
+            if rate.attrib.get("type") == "Function" and re.fullmatch(
+                r"(?:_rateLaw\d+|__bng3_reaction_rate_\w+)", name
+            ):
+                owner = aliases.get(
+                    rule.attrib.get("id", ""), rule.attrib.get("id", "")
+                )
+                aliases[name] = f"generated-rate:{owner}"
+    # Bonds are undirected. Their enumeration does not identify the bond;
+    # the endpoints do, including when an ID is referenced elsewhere.
+    for bond in model.iter():
+        if bond.tag.rsplit("}", 1)[-1] == "Bond" and "id" in bond.attrib:
+            ends = sorted(bond.attrib.get(key, "") for key in ("site1", "site2"))
+            aliases[bond.attrib["id"]] = f"bond:{ends!r}"
     return aliases
 
 
@@ -314,6 +341,14 @@ def _xml_element_signature(
         normalized_attributes["name"] = normalized_attributes["name"][1:]
     if tag_name == "ReactionRule":
         normalized_attributes.setdefault("symmetry_factor", "1")
+    if tag == "Observable":
+        normalized_attributes.setdefault("output", "1")
+    if tag == "Pattern":
+        normalized_attributes.setdefault("automorphisms", "1")
+    if tag in {"Bond", "AddBond", "DeleteBond"}:
+        if "site1" in normalized_attributes and "site2" in normalized_attributes:
+            ends = sorted(normalized_attributes[key] for key in ("site1", "site2"))
+            normalized_attributes.update(zip(("site1", "site2"), ends))
     attributes = tuple(
         sorted(
             (
@@ -322,6 +357,7 @@ def _xml_element_signature(
                     aliases.get(value, " ".join(value.split()))
                     if name.rsplit("}", 1)[-1] == "id"
                     or name.rsplit("}", 1)[-1] in _XML_IDREF_ATTRIBUTES
+                    or (tag == "RateLaw" and name == "name")
                     else " ".join(value.split())
                 ),
             )
@@ -335,6 +371,11 @@ def _xml_element_signature(
             (
                 parameter_values.get(value, value)
                 if name in {"concentration", "initialAmount", "initialConcentration"}
+                or (
+                    tag == "RateConstant"
+                    and name == "value"
+                    and re.fullmatch(r"_rateLaw\d+", value)
+                )
                 else value
             ),
         )
@@ -349,7 +390,7 @@ def _xml_element_signature(
     children = tuple(
         _xml_element_signature(child, aliases, parameter_values) for child in element
     )
-    if tag.startswith("ListOf") and tag != "ListOfArguments":
+    if (tag.startswith("ListOf") and tag != "ListOfArguments") or tag == "Map":
         children = tuple(sorted(children, key=repr))
     return tag, attributes, text, children
 
@@ -357,22 +398,7 @@ def _xml_element_signature(
 def _normalize_expression_text(expression: str) -> str:
     """Remove insignificant whitespace and redundant outer grouping only."""
 
-    normalized = "".join(expression.split())
-    while normalized.startswith("(") and normalized.endswith(")"):
-        depth = 0
-        wraps_expression = True
-        for index, character in enumerate(normalized):
-            if character == "(":
-                depth += 1
-            elif character == ")":
-                depth -= 1
-                if depth == 0 and index != len(normalized) - 1:
-                    wraps_expression = False
-                    break
-        if not wraps_expression or depth != 0:
-            break
-        normalized = normalized[1:-1]
-    return normalized
+    return _canon_expr(expression)
 
 
 def _structural_xml_signature(path: Path, sections: Iterable[str]) -> dict[str, tuple]:
