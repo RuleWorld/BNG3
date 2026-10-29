@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import copy
+import dataclasses
 import json
 import math
 import os
@@ -7029,8 +7030,28 @@ def write_reaction_rules(
                     replace_loc_params=replace_loc_params,
                     complete_flux=True,
                 )
+        # A participant removed from the pattern because a rule controls its
+        # value is still an operand of the kinetic law, so
+        # the mass-action conversion must not divide its factor out: the rule
+        # owns its value, and the law's flux still depends on it.
+        rate_reaction = reaction
+        if any(
+            reference.species in non_reaction_state_species
+            for reference in [*reaction.reactants, *reaction.products]
+        ):
+            rate_reaction = copy.copy(reaction)
+            rate_reaction.reactants = [
+                reference
+                for reference in reaction.reactants
+                if reference.species not in non_reaction_state_species
+            ]
+            rate_reaction.products = [
+                reference
+                for reference in reaction.products
+                if reference.species not in non_reaction_state_species
+            ]
         processed = process_reaction_rate(
-            reaction,
+            rate_reaction,
             reaction_id,
             model,
             observable_converted_rules=observable_converted_rules,
@@ -11527,7 +11548,12 @@ def generate_bngl(
         native_event_count = 0
         if event_result.untranslated:
             native_events = [event for event, _reason in event_result.untranslated]
-            native_lowering = lower_native_events(native_events, event_context)
+            native_context = event_context
+            if event_result.actions_block:
+                native_context = dataclasses.replace(
+                    event_context, scheduled_events_present=True
+                )
+            native_lowering = lower_native_events(native_events, native_context)
             native_event_block = native_lowering.block
             native_event_refusal = native_lowering.reason
             if native_event_block:

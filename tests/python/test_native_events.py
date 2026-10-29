@@ -389,3 +389,24 @@ def test_nonfirst_cvode_root_group_executes_its_event(tmp_path):
     ).simulate(method="ode", t_end=2, n_steps=4)
 
     assert result.observables["Y"][-1] == pytest.approx(123.0)
+
+
+@pytest.mark.parametrize("threshold,expected", [(4, 7), (6, 9)])
+def test_event_assignment_samples_a_piecewise_value(tmp_path, threshold, expected):
+    # X=5 at the crossing; the condition is sampled when the event assigns Y.
+    result = model(tmp_path, "X <= 5", f"Y = if(X > {threshold}, 7, 9)").simulate(
+        method="ode", t_end=1, n_steps=1
+    )
+    assert result.observables["Y"][-1] == pytest.approx(expected)
+
+
+def test_piecewise_assignment_does_not_sample_an_unselected_distribution(tmp_path):
+    plain = model(tmp_path, "X <= 5", "Y = 7; X = distrib_uniform(1, 2)")
+    expected = plain.simulate(method="ode", t_end=1, n_steps=1, seed=17)
+    conditional = model(
+        tmp_path,
+        "X <= 5",
+        "Y = if(X > 4, 7, distrib_uniform(1, 2)); X = distrib_uniform(1, 2)",
+    )
+    actual = conditional.simulate(method="ode", t_end=1, n_steps=1, seed=17)
+    np.testing.assert_array_equal(actual.concentrations, expected.concentrations)

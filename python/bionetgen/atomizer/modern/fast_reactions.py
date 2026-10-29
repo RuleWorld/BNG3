@@ -32,6 +32,15 @@ BNG3 can express exactly:
   is the one the balance pins, and the slow reactions' effect on the fast
   subsystem is scaled by the balance's stiffness.
 
+When the rate constants change during the run (an event or a rule sets
+them) or an event changes the fast reaction's stoichiometry, the steady state
+moves with them.  Both shapes then reduce through the fast subsystem's
+conserved pool ``nu_P * n_R + nu_R * n_P`` (amounts): the pool is a state that
+only the slow reactions change, and the two species are the closed-form
+functions of the pool and the current rate constants that the steady state
+defines.  An event that changes the stoichiometry re-expresses the pool from
+the amounts at that instant.  See ``_reduce_with_pool`` for the conditions.
+
 Every other shape of fast reaction needs an algebraic solve that BNG3 cannot
 perform, so those are reported with the specific reason they cannot be
 reduced.
@@ -170,7 +179,9 @@ def _reduce_fast_reaction(
                 "rather than a missing diagnostic"
             )
     if reactant.variable_stoichiometry or product.variable_stoichiometry:
-        return refuse("the fast reaction's stoichiometry is not a constant")
+        # An event can change the stoichiometry, which changes the fast
+        # subsystem's conserved combination; the pooled reduction carries it.
+        return _reduce_with_pool(model, reaction, reactant, product)
     reactant_stoichiometry = float(reactant.stoichiometry)
     product_stoichiometry = float(product.stoichiometry)
     if (
@@ -201,9 +212,9 @@ def _reduce_fast_reaction(
         if any(
             resolver.is_time_dependent(name) for name in _expression_names(expression)
         ):
-            return refuse(
-                "the fast reaction's rate constant is not a time-independent value"
-            )
+            # The rate constant changes during the run (an event or a rule
+            # sets it), so the fast subsystem's steady state moves with it.
+            return _reduce_with_pool(model, reaction, reactant, product)
         return refuse("the fast reaction's kinetic law is not a supported expression")
     active = [term for term in terms if term.coefficient != 0.0]
     if not active:
@@ -649,7 +660,9 @@ def _slow_invariant_expression(
         weight = pinned_signed * other_coefficient - other_signed * pinned_coefficient
         if weight == 0:
             continue
-        rate = _kinetic_law_math(other).strip()
+        # The law becomes part of a global rate rule, so its local
+        # parameters are replaced by their values.
+        rate = _global_kinetic_law(other)
         if not rate:
             return None
         if weight == 1:
@@ -866,6 +879,16 @@ class _ConstantResolver:
         value = self._assignment_rule_value(model, identifier)
         if value is not None:
             return value
+        if any(
+            rule.type == "assignment"
+            and rule.variable
+            and standardize_name(str(rule.variable)) == key
+            for rule in model.rules
+        ):
+            # An assignment rule holds the parameter's value for the whole
+            # run, so a rule this resolver cannot fold to a constant makes the
+            # parameter time-dependent; its declared value is not its value.
+            return None
         if getattr(parameter, "constant", True):
             return None if key in controlled else float(parameter.value)
         if getattr(parameter, "value_set", False):
@@ -1245,3 +1268,1050 @@ def _rate_terms(
         return None
 
     return visit(node)
+
+
+# ---------------------------------------------------------------------------
+# Reduction through the fast subsystem's conserved pool
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class _SymbolicTerm:
+    """One additive term of a rate law whose coefficient may change in time.
+
+    ``factors`` are the term's species-free factors that are not constants,
+    kept as parsed expressions; ``coefficient`` is the constant part.
+    """
+
+    species: Tuple[Tuple[str, int], ...]
+    coefficient: float
+    factors: Tuple[ast.AST, ...] = ()
+
+    @property
+    def species_ids(self) -> Tuple[str, ...]:
+        return tuple(identifier for identifier, _ in self.species)
+
+
+def _infix(node: ast.AST) -> str:
+    """Render a parsed expression back in the parser's infix dialect."""
+
+    text = ast.unparse(node)
+    text = text.replace("**", "^")
+    return re.sub(r"\bbng_(if|and|or|not)\(", r"\1(", text)
+
+
+def _reduce_with_pool(
+    model: SBMLModel,
+    reaction: SBMLReaction,
+    reactant: Any,
+    product: Any,
+) -> FastReactionOutcome:
+    """Reduce a fast reaction whose steady state moves during the run.
+
+    With ``nu_R`` and ``nu_P`` the reaction's stoichiometries and ``n`` the
+    species amounts, the fast reaction leaves the pool ``T = nu_P * n_R +
+    nu_R * n_P`` unchanged, so only the slow reactions change it::
+
+        dT/dt = sum_j (nu_P * sigma_Rj + nu_R * sigma_Pj) * v_j
+
+    and the steady state fixes the two amounts as functions of ``T``:
+
+    * a rate ``c * x_R^a * x_P^b`` (``a, b >= 1``) vanishes when either
+      species is zero; it holds the reactant at zero while ``c > 0`` and the
+      product at zero while ``c < 0``, so ``n_R = [c <= 0] T / nu_P`` and
+      ``n_P = [c > 0] T / nu_R``.  A rate of one species only (``b = 0`` or
+      ``a = 0``) has a steady state only while ``c`` keeps the sign that runs
+      the reaction away from that species, so its sign must be provable.
+    * a rate ``a * x_R - b * x_P`` with ``a, b > 0`` is zero on the balance
+      ``a n_R = b n_P``: ``n_R = b T / (nu_P b + nu_R a)`` and
+      ``n_P = a T / (nu_P b + nu_R a)``.
+
+    ``c``, ``a`` and ``b`` may be any expression of constants, time and
+    parameters whose values do not depend on the species (an event, an
+    assignment rule or a rate rule may set them); ``T`` is then the state and
+    the two amounts are its functions, so a change of a rate constant moves
+    the steady state at once.  The switching shape assumes ``c`` is zero only
+    at isolated instants; a model where an event sets it to zero is refused.
+    It takes the stable root at every instant, so the held species changes
+    as soon as ``c`` changes sign.  That is the algebraic condition SBML
+    defines; a large but finite fast rate can stay on the unstable root for
+    a while when the held species has no source, so it is not the limit of
+    such a simulation in that case.
+
+    When an event changes a stoichiometry instead, the amounts do not jump,
+    but ``T`` does.  The rate constants must then be constant, and one of
+    the two species keeps its amount as the state: the species that is not
+    held at zero, or the reactant of a balance, whose partner is
+    ``(a / b) n_R``.  Both moving at once would need an event assignment
+    computed from the state, which is refused.
+    """
+
+    def refuse(reason: str) -> FastReactionOutcome:
+        return FastReactionOutcome(reaction.id, False, reason=reason)
+
+    reactant_id, product_id = reactant.species, product.species
+    reactant_species = model.species.get(reactant_id)
+    product_species = model.species.get(product_id)
+    if reactant_species is None or product_species is None:
+        return refuse("the fast reaction refers to a species the model does not define")
+    if reactant_id == product_id:
+        return refuse("the fast reaction converts a species into itself")
+    for modifier in reaction.modifiers:
+        name = _modifier_species(modifier)
+        if name in {reactant_id, product_id}:
+            return refuse(
+                f'species "{name}" is a modifier of the fast reaction, so the '
+                "reaction does not change it"
+            )
+    if reactant_species.compartment != product_species.compartment:
+        return refuse(
+            "the fast reaction's two species are in different compartments, "
+            "so their pool is not a single amount"
+        )
+    if (
+        reactant_species.has_only_substance_units
+        != product_species.has_only_substance_units
+    ):
+        return refuse(
+            "the fast reaction's two species do not carry the same kind of "
+            "quantity, so their steady state is not a single algebraic condition"
+        )
+    controlled = _controlled_symbols(model)
+    delayed = _delayed_species(model)
+    for species in (reactant_species, product_species):
+        if species.constant:
+            return refuse(f'species "{species.id}" is constant')
+        if species.boundary_condition:
+            return refuse(f'species "{species.id}" is a boundary species')
+        if species.conversion_factor or getattr(model, "conversion_factor", None):
+            return refuse(
+                f'species "{species.id}" has a conversion factor, which the '
+                "pooled reduction does not carry"
+            )
+        if not (species.initial_amount_set or species.initial_concentration_set):
+            return refuse(f'species "{species.id}" has no initial value')
+        if standardize_name(species.id) in controlled:
+            return refuse(
+                f'species "{species.id}" is reassigned by a rule, an initial '
+                "assignment, or an event"
+            )
+        if standardize_name(species.id) in delayed:
+            return refuse(
+                f'species "{species.id}" is read by a delay expression, whose '
+                "value before the delay elapses is the species' declared "
+                "initial value"
+            )
+    compartment = model.compartments.get(reactant_species.compartment or "")
+    if compartment is not None:
+        if not compartment.constant:
+            return refuse(f'compartment "{compartment.id}" is not constant')
+        if standardize_name(compartment.id) in controlled:
+            return refuse(
+                f'compartment "{compartment.id}" is reassigned by a rule, an '
+                "initial assignment, or an event"
+            )
+    volume = _compartment_volume(model, reactant_species)
+    if not math.isfinite(volume) or volume <= 0:
+        return refuse("the fast reaction's compartment has no usable volume")
+
+    # The stoichiometries: a positive constant, or a species reference that
+    # only events change.
+    stoichiometries: Dict[str, Tuple[str, float]] = {}
+    stoichiometry_ids: Dict[str, str] = {}
+    for role, reference in (("reactant", reactant), ("product", product)):
+        value = float(reference.stoichiometry)
+        if not math.isfinite(value) or value <= 0:
+            return refuse("the fast reaction's stoichiometry is not a positive value")
+        if not reference.variable_stoichiometry:
+            stoichiometries[role] = (format_number(value), value)
+            continue
+        identifier = str(reference.id or "")
+        problem = _event_only_stoichiometry(model, reference)
+        if problem:
+            return refuse(problem)
+        stoichiometries[role] = (identifier, value)
+        stoichiometry_ids[role] = identifier
+    nu_r_text, nu_r_value = stoichiometries["reactant"]
+    nu_p_text, nu_p_value = stoichiometries["product"]
+
+    # Nothing else may read the fast reaction's own rate or the species'
+    # rates of change: the steady state does not define them.
+    for expression in _model_expressions(model):
+        names = set(re.findall(r"[A-Za-z_][A-Za-z_0-9]*", expression))
+        if reaction.id in names:
+            return refuse(
+                f'an expression reads the fast reaction "{reaction.id}"\'s rate, '
+                "which its steady state does not define"
+            )
+        if "rateOf" in names and names & {reactant_id, product_id}:
+            return refuse(
+                "an expression reads the rate of change of a species the fast "
+                "reaction converts"
+            )
+
+    rate = _kinetic_law_math(reaction)
+    expression = _parse_expression(rate) if rate.strip() else None
+    if expression is None:
+        return refuse("the fast reaction's kinetic law is not a supported expression")
+    expression = _inline_function_calls(expression, model.function_definitions)
+    # A local parameter is scoped to this kinetic law, so its value replaces
+    # it before the coefficients become global rules.
+    local = {
+        str(parameter.id): ast.Constant(value=float(getattr(parameter, "value", 0.0)))
+        for parameter in list(
+            getattr(reaction.kinetic_law, "local_parameters", []) or []
+        )
+    }
+    if local:
+        expression = _Substituter(local).visit(expression)
+    resolver = _ConstantResolver(model, reaction)
+    analysis = _SymbolAnalysis(model, reaction, resolver, {reactant_id, product_id})
+    terms = _symbolic_terms(expression.body, resolver, analysis)
+    if terms is None:
+        return refuse(
+            "the fast reaction's kinetic law is not a sum of species products "
+            "with coefficients that do not depend on the species"
+        )
+    active = [term for term in terms if term.coefficient != 0.0]
+    participants = {reactant_id, product_id}
+    for term in active:
+        if not set(term.species_ids) <= participants:
+            return refuse(
+                "the fast reaction's rate depends on a species it does not convert"
+            )
+
+    if not active:
+        return FastReactionOutcome(
+            reaction.id,
+            True,
+            detail=(
+                "its kinetic law is zero for every state, so the reaction "
+                "never carries a flux and is removed"
+            ),
+        )
+    if len(active) == 1:
+        sourced = {
+            identifier
+            for other in model.reactions.values()
+            if other.id != reaction.id
+            for identifier in (reactant_id, product_id)
+            if _signed_stoichiometry(other, identifier) > 0
+        }
+        plan = _completion_plan(active[0], reactant_id, product_id, analysis, sourced)
+    elif len(active) == 2:
+        plan = _balance_plan(active, reactant_id, product_id, analysis)
+    else:
+        return refuse(
+            "the fast reaction's rate is a sum of more than two terms, so its "
+            "pseudo steady state is a multi-term balance that needs an "
+            "algebraic solve in the simulation engine"
+        )
+    if isinstance(plan, str):
+        return refuse(plan)
+    varying = any(term.factors for term in active)
+    if stoichiometry_ids and varying:
+        return refuse(
+            "an event changes the fast reaction's stoichiometry while its rate "
+            "constants change during the run, so re-expressing the steady "
+            "state at that event needs an assignment computed from the state, "
+            "which the event lowering does not carry"
+        )
+    if stoichiometry_ids and plan.kind == "switch":
+        return refuse(
+            "an event changes the fast reaction's stoichiometry while the "
+            "species it holds at zero can change, so re-expressing the steady "
+            "state at that event needs an assignment computed from the state, "
+            "which the event lowering does not carry"
+        )
+
+    # The slow reactions' contributions: sigma_R and sigma_P per reaction.
+    slow: List[Tuple[float, float, str]] = []
+    for other in model.reactions.values():
+        if other.id == reaction.id:
+            continue
+        for identifier in (reactant_id, product_id):
+            for reference in [*other.reactants, *other.products]:
+                if reference.species == identifier and reference.variable_stoichiometry:
+                    return refuse(
+                        f'reaction "{other.id}" changes species "{identifier}" '
+                        "with a stoichiometry that is not a constant"
+                    )
+        sigma_r = _signed_stoichiometry(other, reactant_id)
+        sigma_p = _signed_stoichiometry(other, product_id)
+        if sigma_r == 0 and sigma_p == 0:
+            continue
+        law = _global_kinetic_law(other)
+        if law is None:
+            return refuse(
+                f'reaction "{other.id}" has no kinetic law the pooled reduction '
+                "can use"
+            )
+        slow.append((sigma_r, sigma_p, law))
+
+    initial_r = _species_amount(model, reactant_species)
+    initial_p = _species_amount(model, product_species)
+    if initial_r is None or initial_p is None:
+        return refuse("the fast reaction's species have no usable initial amount")
+    initial_pool = nu_p_value * initial_r + nu_r_value * initial_p
+
+    from .types import SBMLModifierSpeciesReference, SBMLParameter, SBMLRule
+
+    def symbol_value(species: SBMLSpecies, amount: str) -> str:
+        if species.has_only_substance_units:
+            return amount
+        return f"({amount}) / {format_number(volume)}"
+
+    def weighted(weight_r: str, weight_p: str) -> str:
+        pieces = []
+        for sigma_r, sigma_p, law in slow:
+            weight = _weight_text(weight_r, sigma_r, weight_p, sigma_p)
+            if weight != "0":
+                pieces.append(f"({weight}) * ({law})")
+        return " + ".join(pieces) if pieces else "0"
+
+    rules: List[Any] = []
+    if stoichiometry_ids:
+        # Constant rate constants: the steady state's ratio does not move, and
+        # the amounts do not jump when an event changes the stoichiometry,
+        # so one of the two species keeps its amount as the state.
+        if plan.kind == "forward":
+            state_species, other_species = product_species, reactant_species
+            state_rate = weighted(f"({nu_p_text}) / ({nu_r_text})", "1")
+            state_amount = initial_pool / nu_r_value
+            other_amount = "0"
+        elif plan.kind == "backward":
+            state_species, other_species = reactant_species, product_species
+            state_rate = weighted("1", f"({nu_r_text}) / ({nu_p_text})")
+            state_amount = initial_pool / nu_p_value
+            other_amount = "0"
+        else:
+            # a * n_R = b * n_P, so n_P = (a / b) n_R and the pool is
+            # n_R * (nu_P + nu_R * a / b).
+            ratio = f"({plan.forward}) / ({plan.backward})"
+            denominator = f"(({nu_p_text}) + ({nu_r_text}) * {ratio})"
+            state_species, other_species = reactant_species, product_species
+            state_rate = (
+                f"({weighted(nu_p_text, nu_r_text)}) / {denominator}" if slow else "0"
+            )
+            ratio_value = plan.forward_value / plan.backward_value
+            state_amount = initial_pool / (nu_p_value + nu_r_value * ratio_value)
+            other_amount = f"{ratio} * {_amount_symbol(state_species, volume)}"
+        _set_species_amount(model, state_species, state_amount)
+        rules.append(
+            SBMLRule(
+                type="rate",
+                variable=state_species.id,
+                math=symbol_value(state_species, f"{state_rate}"),
+            )
+        )
+        rules.append(
+            SBMLRule(
+                type="assignment",
+                variable=other_species.id,
+                math=symbol_value(other_species, other_amount),
+            )
+        )
+        for role, identifier in stoichiometry_ids.items():
+            value = nu_r_value if role == "reactant" else nu_p_value
+            model.parameters[identifier] = SBMLParameter(
+                id=identifier,
+                name=identifier,
+                value=value,
+                constant=False,
+                value_set=True,
+            )
+    else:
+        # Constant stoichiometry: the pool T = nu_P n_R + nu_R n_P is the
+        # state, and the two amounts are functions of T and the current rate
+        # constants, so an event or a rule that moves the rate constants
+        # moves the steady state at once.
+        pool = _unique_identifier(model, f"__fast_pool_{standardize_name(reaction.id)}")
+        amount_r, amount_p = plan.amounts(pool, nu_r_text, nu_p_text)
+        model.parameters[pool] = SBMLParameter(
+            id=pool,
+            name=pool,
+            value=initial_pool,
+            constant=False,
+            value_set=True,
+        )
+        rules.append(
+            SBMLRule(type="rate", variable=pool, math=weighted(nu_p_text, nu_r_text))
+        )
+        rules.append(
+            SBMLRule(
+                type="assignment",
+                variable=reactant_species.id,
+                math=symbol_value(reactant_species, amount_r),
+            )
+        )
+        rules.append(
+            SBMLRule(
+                type="assignment",
+                variable=product_species.id,
+                math=symbol_value(product_species, amount_p),
+            )
+        )
+    model.rules.extend(rules)
+    # The slow reactions keep reading the two species, but the reduction's
+    # rules own their values, so they become modifiers.
+    for other in model.reactions.values():
+        if other.id == reaction.id:
+            continue
+        moved = [
+            reference
+            for reference in [*other.reactants, *other.products]
+            if reference.species in participants
+        ]
+        if not moved:
+            continue
+        other.reactants = [
+            reference
+            for reference in other.reactants
+            if reference.species not in participants
+        ]
+        other.products = [
+            reference
+            for reference in other.products
+            if reference.species not in participants
+        ]
+        present = {_modifier_species(modifier) for modifier in other.modifiers}
+        for reference in moved:
+            if reference.species not in present:
+                other.modifiers.append(SBMLModifierSpeciesReference(reference.species))
+                present.add(reference.species)
+    return FastReactionOutcome(reaction.id, True, detail=plan.description)
+
+
+def _amount_symbol(species: SBMLSpecies, volume: float) -> str:
+    """Return the expression for a species' amount from its own symbol."""
+
+    if species.has_only_substance_units:
+        return species.id
+    return f"({species.id} * {format_number(volume)})"
+
+
+@dataclass(frozen=True)
+class _SteadyStatePlan:
+    """How the steady state fixes the two amounts.
+
+    ``kind`` is ``forward`` (the reactant is held at zero), ``backward`` (the
+    product is held at zero), ``switch`` (the sign of ``coefficient``
+    decides) or ``balance`` (``forward * x_R = backward * x_P``).
+    """
+
+    kind: str
+    description: str
+    coefficient: str = ""
+    forward: str = ""
+    backward: str = ""
+    forward_value: float = 0.0
+    backward_value: float = 0.0
+
+    def amounts(self, pool: str, nu_r: str, nu_p: str) -> Tuple[str, str]:
+        if self.kind == "forward":
+            return "0", f"{pool} / ({nu_r})"
+        if self.kind == "backward":
+            return f"{pool} / ({nu_p})", "0"
+        if self.kind == "switch":
+            return (
+                f"if(gt({self.coefficient}, 0), 0, {pool} / ({nu_p}))",
+                f"if(gt({self.coefficient}, 0), {pool} / ({nu_r}), 0)",
+            )
+        # a * n_R = b * n_P and T = nu_P n_R + nu_R n_P.
+        denominator = f"({nu_p}) * ({self.backward}) + ({nu_r}) * ({self.forward})"
+        return (
+            f"({self.backward}) * {pool} / ({denominator})",
+            f"({self.forward}) * {pool} / ({denominator})",
+        )
+
+
+def _modifier_species(modifier: Any) -> str:
+    if isinstance(modifier, str):
+        return modifier
+    return str(getattr(modifier, "species", "") or "")
+
+
+def _unique_identifier(model: SBMLModel, base: str) -> str:
+    taken = (
+        set(model.parameters)
+        | set(model.species)
+        | set(model.compartments)
+        | set(model.reactions)
+        | set(model.function_definitions)
+    )
+    taken = {standardize_name(str(name)) for name in taken}
+    candidate = base
+    suffix = 1
+    while standardize_name(candidate) in taken:
+        candidate = f"{base}_{suffix}"
+        suffix += 1
+    return candidate
+
+
+def _event_only_stoichiometry(model: SBMLModel, reference: Any) -> str:
+    """Return why a variable stoichiometry is not event-only, or ``""``."""
+
+    identifier = str(getattr(reference, "id", "") or "")
+    if not identifier or str(getattr(reference, "stoichiometry_math", "") or ""):
+        return "the fast reaction's stoichiometry is not a constant"
+    key = standardize_name(identifier)
+    for rule in model.rules:
+        if rule.variable and standardize_name(str(rule.variable)) == key:
+            return (
+                "a rule sets the fast reaction's stoichiometry, so the fast "
+                "subsystem's pool changes continuously"
+            )
+    for assignment in model.initial_assignments:
+        if standardize_name(str(assignment.symbol or "")) == key:
+            return (
+                "an initial assignment sets the fast reaction's stoichiometry, "
+                "which the pooled reduction does not evaluate"
+            )
+    if identifier in model.parameters or identifier in model.species:
+        return (
+            f'the fast reaction\'s stoichiometry "{identifier}" shares its '
+            "identifier with another element"
+        )
+    return ""
+
+
+def _constant_value(text: str, resolver: "_ConstantResolver") -> Optional[float]:
+    expression = _parse_expression(text)
+    if expression is None:
+        return None
+    resolver._allow_time = False
+    terms = _rate_terms(expression, resolver._model, resolver)
+    if terms is None or any(term.species for term in terms):
+        return None
+    value = math.fsum(term.coefficient for term in terms)
+    return value if math.isfinite(value) else None
+
+
+def _global_kinetic_law(reaction: SBMLReaction) -> Optional[str]:
+    """Return a kinetic law with its local parameters replaced by their values."""
+
+    rate = _kinetic_law_math(reaction).strip()
+    if not rate:
+        return None
+    law = reaction.kinetic_law
+    local = {
+        str(parameter.id): float(getattr(parameter, "value", 0.0))
+        for parameter in list(getattr(law, "local_parameters", []) or [])
+    }
+    if not local:
+        return rate
+    expression = _parse_expression(rate)
+    if expression is None:
+        return None
+    mapping = {name: ast.Constant(value=value) for name, value in local.items()}
+    return _infix(_Substituter(mapping).visit(expression.body))
+
+
+def _weight_text(nu_p: str, sigma_r: float, nu_r: str, sigma_p: float) -> str:
+    """Return ``nu_P * sigma_R + nu_R * sigma_P`` with constant parts folded."""
+
+    try:
+        return format_number(float(nu_p) * sigma_r + float(nu_r) * sigma_p)
+    except ValueError:
+        parts = []
+        if sigma_r:
+            parts.append(f"{nu_p} * {format_number(sigma_r)}")
+        if sigma_p:
+            parts.append(f"{nu_r} * {format_number(sigma_p)}")
+        return " + ".join(parts) if parts else "0"
+
+
+class _SymbolAnalysis:
+    """Decide which symbols a coefficient may hold and what sign they have."""
+
+    def __init__(
+        self,
+        model: SBMLModel,
+        reaction: SBMLReaction,
+        resolver: "_ConstantResolver",
+        fast_species: Sequence[str] = (),
+    ) -> None:
+        self._model = model
+        self._resolver = resolver
+        self._species = {standardize_name(str(name)) for name in model.species}
+        self._fast = {standardize_name(str(name)) for name in fast_species}
+        self._reactions = {standardize_name(str(name)) for name in model.reactions}
+        self._assignment_rules: Dict[str, str] = {}
+        self._rate_rules: set[str] = set()
+        for rule in model.rules:
+            if not rule.variable:
+                continue
+            key = standardize_name(str(rule.variable))
+            if rule.type == "assignment":
+                self._assignment_rules[key] = str(rule.math or "")
+            elif rule.type == "rate":
+                self._rate_rules.add(key)
+        self._event_values: Dict[str, List[str]] = {}
+        for event in model.events:
+            for assignment in event.assignments:
+                variable = str(getattr(assignment, "variable", "") or "")
+                if variable:
+                    self._event_values.setdefault(
+                        standardize_name(variable), []
+                    ).append(str(assignment.math or ""))
+        self._local = {
+            standardize_name(str(parameter.id))
+            for parameter in list(
+                getattr(reaction.kinetic_law, "local_parameters", []) or []
+            )
+        }
+
+    def is_fast_species(self, name: str) -> bool:
+        """Say whether a symbol is one of the two species the fast reaction converts."""
+
+        return standardize_name(str(name).strip()) in self._fast
+
+    def is_species_free(self, name: str, stack: Tuple[str, ...] = ()) -> bool:
+        """Say whether a symbol's value is independent of the converted species.
+
+        The steady state fixes the two converted species as functions of the
+        pool and of the rate constants, so a rate constant may read time,
+        parameters, compartments and the model's other species, but not
+        the converted species themselves, a reaction's rate, or a rule that
+        reads either.
+        """
+
+        text = str(name).strip()
+        if text.lower() == "time":
+            return True
+        key = standardize_name(text)
+        if key in self._fast or key in self._reactions:
+            return False
+        if self._resolver.value(text) is not None or key in self._local:
+            return True
+        if key in stack:
+            return False
+        if key in self._assignment_rules:
+            expression = _parse_expression(self._assignment_rules[key])
+            if expression is None:
+                return False
+            return all(
+                self.is_species_free(inner, (*stack, key))
+                for inner in _expression_names(expression)
+                if inner not in _CALLABLE_NAMES
+            )
+        model = self._model
+        known = (
+            {standardize_name(str(item)) for item in model.parameters}
+            | {standardize_name(str(item)) for item in model.compartments}
+            | self._species
+        )
+        return key in known
+
+    def initial_value(self, node: ast.AST) -> Optional[float]:
+        """Return a factor's value at the start of the run, when it is known."""
+
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return float(node.value)
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+            inner = self.initial_value(node.operand)
+            return None if inner is None else -inner
+        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Mult, ast.Div)):
+            left, right = self.initial_value(node.left), self.initial_value(node.right)
+            if left is None or right is None:
+                return None
+            if isinstance(node.op, ast.Mult):
+                return left * right
+            return None if right == 0 else left / right
+        if isinstance(node, ast.Name):
+            value = self._resolver.value(node.id)
+            if value is not None:
+                return value
+            key = standardize_name(node.id)
+            parameter = self._model.parameters.get(node.id)
+            if (
+                parameter is None
+                or key in self._assignment_rules
+                or not getattr(parameter, "value_set", True)
+                or any(
+                    standardize_name(str(assignment.symbol or "")) == key
+                    for assignment in self._model.initial_assignments
+                )
+            ):
+                return None
+            return float(parameter.value)
+        return None
+
+    def sign(self, node: ast.AST) -> Optional[str]:
+        """Return a factor's provable sign over the run, or ``None``.
+
+        ``"+"`` and ``"-"`` are strict; ``"0+"`` and ``"0-"`` allow zero.  A
+        factor is provably signed when it is a constant, or a parameter
+        whose only changes are events assigning constants; products,
+        quotients and integer powers combine.
+        """
+
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            if node.value > 0:
+                return "+"
+            if node.value < 0:
+                return "-"
+            return None
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+            inner = self.sign(node.operand)
+            return None if inner is None else _flip_sign(inner)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, (ast.Mult, ast.Div)):
+            left, right = self.sign(node.left), self.sign(node.right)
+            if left is None or right is None:
+                return None
+            if isinstance(node.op, ast.Div) and right.startswith("0"):
+                return None
+            return _combine_signs(left, right)
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Pow):
+            base = self.sign(node.left)
+            exponent = node.right
+            if (
+                base is not None
+                and isinstance(exponent, ast.Constant)
+                and isinstance(exponent.value, (int, float))
+                and float(exponent.value).is_integer()
+                and exponent.value >= 1
+            ):
+                if int(exponent.value) % 2 == 0:
+                    return "0+" if base.startswith("0") else "+"
+                return base
+            return None
+        if isinstance(node, ast.Name):
+            return self._name_sign(node.id)
+        return None
+
+    def _name_sign(self, name: str) -> Optional[str]:
+        value = self._resolver.value(name)
+        key = standardize_name(name)
+        if value is not None:
+            return "+" if value > 0 else ("-" if value < 0 else None)
+        if key in self._assignment_rules or key in self._rate_rules:
+            return None
+        parameter = self._model.parameters.get(name)
+        if parameter is None or key not in self._event_values:
+            return None
+        values = [float(parameter.value)]
+        for text in self._event_values[key]:
+            assigned = _constant_value(text, self._resolver)
+            if assigned is None:
+                return None
+            values.append(assigned)
+        if all(item > 0 for item in values):
+            return "+"
+        if all(item < 0 for item in values):
+            return "-"
+        if all(item >= 0 for item in values):
+            return "0+"
+        if all(item <= 0 for item in values):
+            return "0-"
+        return None
+
+    def can_vanish_on_an_interval(self, factors: Sequence[ast.AST]) -> bool:
+        """Say whether an event provably sets a factor to zero."""
+
+        for factor in factors:
+            for name in _expression_names(factor):
+                key = standardize_name(name)
+                if key in self._assignment_rules or key in self._rate_rules:
+                    continue
+                parameter = self._model.parameters.get(name)
+                if parameter is not None and key in self._event_values:
+                    if float(parameter.value) == 0.0:
+                        return True
+                    for text in self._event_values[key]:
+                        if _constant_value(text, self._resolver) == 0.0:
+                            return True
+        return False
+
+
+def _flip_sign(sign: str) -> str:
+    return {"+": "-", "-": "+", "0+": "0-", "0-": "0+"}[sign]
+
+
+def _combine_signs(left: str, right: str) -> str:
+    """Return the sign of a product of two signed factors."""
+
+    zero = left.startswith("0") or right.startswith("0")
+    negative = left.endswith("-") != right.endswith("-")
+    return ("0" if zero else "") + ("-" if negative else "+")
+
+
+_CALLABLE_NAMES = {"bng_if", "bng_and", "bng_or", "bng_not"}
+
+
+def _symbolic_terms(
+    node: ast.AST, resolver: "_ConstantResolver", analysis: _SymbolAnalysis
+) -> Optional[List[_SymbolicTerm]]:
+    """Split a rate law into species products with species-free coefficients."""
+
+    def species_free(inner: ast.AST) -> bool:
+        for name_node in ast.walk(inner):
+            if isinstance(name_node, ast.Name):
+                if name_node.id in _CALLABLE_NAMES:
+                    continue
+                if isinstance(name_node.ctx, ast.Load) and _is_call_target(
+                    inner, name_node
+                ):
+                    continue
+                if analysis.is_fast_species(name_node.id):
+                    return False
+                if not analysis.is_species_free(name_node.id):
+                    return False
+        return True
+
+    def factor(inner: ast.AST) -> List[_SymbolicTerm]:
+        constant = _rate_terms(inner, resolver._model, resolver)
+        if constant is not None and len(constant) == 1 and not constant[0].species:
+            return [_SymbolicTerm((), constant[0].coefficient)]
+        return [_SymbolicTerm((), 1.0, (inner,))]
+
+    def scale(terms: List[_SymbolicTerm], value: float) -> List[_SymbolicTerm]:
+        return [
+            _SymbolicTerm(term.species, term.coefficient * value, term.factors)
+            for term in terms
+        ]
+
+    def multiply(left: _SymbolicTerm, right: _SymbolicTerm) -> _SymbolicTerm:
+        return _SymbolicTerm(
+            _merge_species(left.species, right.species),
+            left.coefficient * right.coefficient,
+            left.factors + right.factors,
+        )
+
+    def visit(inner: ast.AST) -> Optional[List[_SymbolicTerm]]:
+        if isinstance(inner, ast.Name) and analysis.is_fast_species(inner.id):
+            identifier = resolver.species_id(inner.id)
+            if identifier is not None:
+                return [_SymbolicTerm(((identifier, 1),), 1.0)]
+        if species_free(inner):
+            return factor(inner)
+        if isinstance(inner, ast.UnaryOp):
+            if isinstance(inner.op, ast.UAdd):
+                return visit(inner.operand)
+            if isinstance(inner.op, ast.USub):
+                result = visit(inner.operand)
+                return None if result is None else scale(result, -1.0)
+            return None
+        if not isinstance(inner, ast.BinOp):
+            return None
+        if isinstance(inner.op, (ast.Add, ast.Sub)):
+            left, right = visit(inner.left), visit(inner.right)
+            if left is None or right is None:
+                return None
+            if isinstance(inner.op, ast.Sub):
+                right = scale(right, -1.0)
+            return left + right
+        if isinstance(inner.op, ast.Mult):
+            left, right = visit(inner.left), visit(inner.right)
+            if left is None or right is None:
+                return None
+            if len(left) == 1:
+                return [multiply(left[0], term) for term in right]
+            if len(right) == 1:
+                return [multiply(term, right[0]) for term in left]
+            return None
+        if isinstance(inner.op, ast.Div):
+            if not species_free(inner.right):
+                return None
+            left = visit(inner.left)
+            if left is None:
+                return None
+            denominator = factor(inner.right)[0]
+            if not denominator.factors:
+                if denominator.coefficient == 0:
+                    return None
+                return scale(left, 1.0 / denominator.coefficient)
+            reciprocal = ast.BinOp(
+                left=ast.Constant(value=1.0), op=ast.Div(), right=inner.right
+            )
+            return [
+                _SymbolicTerm(
+                    term.species, term.coefficient, term.factors + (reciprocal,)
+                )
+                for term in left
+            ]
+        if isinstance(inner.op, ast.Pow):
+            exponent = inner.right
+            if not (
+                isinstance(exponent, ast.Constant)
+                and isinstance(exponent.value, (int, float))
+                and float(exponent.value).is_integer()
+                and exponent.value >= 1
+            ):
+                return None
+            base = visit(inner.left)
+            if base is None or len(base) != 1:
+                return None
+            term = base[0]
+            count = int(exponent.value)
+            if term.factors or term.coefficient != 1.0:
+                return None
+            return [
+                _SymbolicTerm(
+                    tuple((name, power * count) for name, power in term.species),
+                    1.0,
+                )
+            ]
+        return None
+
+    return visit(node)
+
+
+def _is_call_target(root: ast.AST, name_node: ast.Name) -> bool:
+    for node in ast.walk(root):
+        if isinstance(node, ast.Call) and node.func is name_node:
+            return True
+    return False
+
+
+def _coefficient_text(term: _SymbolicTerm) -> str:
+    pieces = [format_number(term.coefficient)]
+    pieces.extend(f"({_infix(factor)})" for factor in term.factors)
+    return " * ".join(pieces)
+
+
+def _term_sign(term: _SymbolicTerm, analysis: _SymbolAnalysis) -> Optional[str]:
+    sign = "+" if term.coefficient > 0 else "-"
+    for factor in term.factors:
+        factor_sign = analysis.sign(factor)
+        if factor_sign is None:
+            return None
+        sign = _combine_signs(sign, factor_sign)
+    return sign
+
+
+def _initial_coefficient(term: _SymbolicTerm, analysis: _SymbolAnalysis):
+    value = term.coefficient
+    for factor in term.factors:
+        factor_value = analysis.initial_value(factor)
+        if factor_value is None:
+            return None
+        value *= factor_value
+    return value
+
+
+def _completion_plan(
+    term: _SymbolicTerm,
+    reactant_id: str,
+    product_id: str,
+    analysis: _SymbolAnalysis,
+    sourced: Sequence[str] = (),
+):
+    """Return how a single-term fast rate fixes the amounts, or a refusal.
+
+    A rate of one species holds that species at zero.  Its rate constant may
+    become zero later only when no slow reaction produces the species: the
+    species is then zero from the start and stays zero whatever the constant
+    does, provided the constant is nonzero at the start.
+    """
+
+    def holds_from_the_start(species: str, wanted: str) -> bool:
+        value = _initial_coefficient(term, analysis)
+        if value is None or species in sourced:
+            return False
+        return value > 0 if wanted == "+" else value < 0
+
+    powers = dict(term.species)
+    depends_on_reactant = powers.get(reactant_id, 0) >= 1
+    depends_on_product = powers.get(product_id, 0) >= 1
+    if not (depends_on_reactant or depends_on_product):
+        return (
+            "the fast reaction's rate does not depend on the species it "
+            "converts, so it has no steady state"
+        )
+    sign = _term_sign(term, analysis)
+    forward = _SteadyStatePlan(
+        "forward",
+        f'species "{reactant_id}" is held at zero and "{product_id}" carries '
+        "the fast subsystem's pool",
+    )
+    backward = _SteadyStatePlan(
+        "backward",
+        f'species "{product_id}" is held at zero and "{reactant_id}" carries '
+        "the fast subsystem's pool",
+    )
+    if depends_on_reactant and depends_on_product:
+        if sign == "+":
+            return forward
+        if sign == "-":
+            return backward
+        if analysis.can_vanish_on_an_interval(term.factors):
+            return (
+                "an event sets the fast reaction's rate constant to zero, so "
+                "the fast reaction stops constraining its species over an "
+                "interval and the two species are no longer a function of "
+                "their pool"
+            )
+        return _SteadyStatePlan(
+            "switch",
+            "the species the fast reaction holds at zero follows the sign of "
+            f'its rate constant: "{reactant_id}" while it is positive and '
+            f'"{product_id}" while it is negative',
+            coefficient=_coefficient_text(term),
+        )
+    if depends_on_reactant:
+        if sign == "+" or (sign == "0+" and holds_from_the_start(reactant_id, "+")):
+            return forward
+        return (
+            "the fast reaction's rate depends only on the species it consumes, "
+            "and its rate constant is not provably positive for the whole run, "
+            "so its steady state is not defined at every instant"
+        )
+    if sign == "-" or (sign == "0-" and holds_from_the_start(product_id, "-")):
+        return backward
+    return (
+        "the fast reaction's rate depends only on the species it produces, "
+        "and its rate constant is not provably negative for the whole run, "
+        "so its steady state is not defined at every instant"
+    )
+
+
+def _balance_plan(
+    terms: Sequence[_SymbolicTerm],
+    reactant_id: str,
+    product_id: str,
+    analysis: _SymbolAnalysis,
+):
+    """Return how a two-term balance fixes the amounts, or a refusal."""
+
+    by_species: Dict[str, _SymbolicTerm] = {}
+    for term in terms:
+        if len(term.species) != 1 or term.species[0][1] != 1:
+            return "the fast reaction's rate is not linear in one species per term"
+        identifier = term.species[0][0]
+        if identifier in by_species:
+            return "the fast reaction's rate balances a species against itself"
+        by_species[identifier] = term
+    if set(by_species) != {reactant_id, product_id}:
+        return "the fast reaction's rate depends on a species it does not convert"
+    forward, backward = by_species[reactant_id], by_species[product_id]
+    forward_sign = _term_sign(forward, analysis)
+    backward_sign = _term_sign(backward, analysis)
+    if forward_sign is None or backward_sign is None:
+        return (
+            "the signs of the fast reaction's rate constants cannot be "
+            "established for the whole run, so the stability of its balance "
+            "is not known"
+        )
+    if forward_sign in {"0+", "0-"} or backward_sign in {"0+", "0-"}:
+        return (
+            "an event can set one of the fast reaction's rate constants to "
+            "zero, so its balance is not provably a single algebraic condition "
+            "for the whole run"
+        )
+    if forward_sign != "+" or backward_sign != "-":
+        return (
+            "the fast reaction's balance is not stable: its rate does not "
+            "decrease as the reaction proceeds"
+        )
+    negated = _SymbolicTerm(backward.species, -backward.coefficient, backward.factors)
+    return _SteadyStatePlan(
+        "balance",
+        f'the fast subsystem is held on the balance between "{reactant_id}" '
+        f'and "{product_id}", and the slow reactions move it along the '
+        "balance",
+        forward=_coefficient_text(forward),
+        backward=_coefficient_text(negated),
+        forward_value=forward.coefficient,
+        backward_value=-backward.coefficient,
+    )

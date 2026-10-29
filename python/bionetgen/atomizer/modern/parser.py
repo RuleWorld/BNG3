@@ -39,6 +39,7 @@ from .types import (
 from .multi import parse_multi_package
 from .units import apply_unit_scaling
 from .helpers import logger
+from .events import complement_negated_comparison
 from .fast_reactions import lower_fast_reactions
 from .math_builtins import (
     MATH_BUILTIN_BY_MATHML,
@@ -5382,8 +5383,10 @@ class SBMLParser:
                         )
                         or f"event_{index + 1}"
                     ),
-                    trigger=SBMLParser._normalize_formula_identifiers(
-                        SBMLParser._xml_math(trigger), parameter_aliases
+                    trigger=complement_negated_comparison(
+                        SBMLParser._normalize_formula_identifiers(
+                            SBMLParser._xml_math(trigger), parameter_aliases
+                        )
                     ),
                     delay=SBMLParser._normalize_formula_identifiers(
                         SBMLParser._xml_math(_first_child(item, "delay")),
@@ -5809,7 +5812,9 @@ class SBMLParser:
                 SBMLEvent(
                     id=str(item.getId() or f"event_{index + 1}"),
                     name=str(item.getName() or item.getId() or f"event_{index + 1}"),
-                    trigger=SBMLParser._formula_for_sbase(trigger, libsbml),
+                    trigger=complement_negated_comparison(
+                        SBMLParser._formula_for_sbase(trigger, libsbml)
+                    ),
                     delay=SBMLParser._formula_for_sbase(delay, libsbml) or None,
                     use_values_from_trigger_time=bool(
                         item.getUseValuesFromTriggerTime()

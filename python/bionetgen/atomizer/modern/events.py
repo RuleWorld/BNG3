@@ -457,6 +457,11 @@ class EventTranslationContext:
     resolve_param: Callable[[str], Optional[float]]
     is_param: Callable[[str], bool]
     method: str = "ode"
+    # True when some of the model's events were lowered to scheduled actions.
+    # A native event that fires at a fixed time could then coincide with a
+    # scheduled phase boundary, whose relative order the two mechanisms do
+    # not share.
+    scheduled_events_present: bool = False
     # The seed the caller asked for.  A generated schedule must carry it into
     # every generated ``simulate`` phase, otherwise the seed the caller asked
     # for is silently dropped and the run is no longer reproducible.
@@ -3038,6 +3043,172 @@ def _native_continuous_expression(
     return rendered, has_state, has_time
 
 
+# SBML calls whose names are Python keywords, renamed while the value is
+# parsed as a Python expression.
+_NATIVE_VALUE_KEYWORD_CALLS = {
+    "if": "_bng_if_",
+    "and": "_bng_and_",
+    "or": "_bng_or_",
+    "not": "_bng_not_",
+}
+_NATIVE_VALUE_CALLS = {
+    "abs",
+    "floor",
+    "gt",
+    "lt",
+    "geq",
+    "leq",
+    "eq",
+    "neq",
+    *_NATIVE_VALUE_KEYWORD_CALLS.values(),
+}
+
+
+def _native_piecewise_value_expression(
+    expression: str, context: EventTranslationContext
+) -> Optional[Tuple[str, bool, bool]]:
+    """Render an assignment value that holds an SBML piecewise.
+
+    The value is written over native state and constants as in
+    ``_native_continuous_expression``, then the SBML comparison and logic
+    calls become BNGL operators exactly as the writer renders a function.
+    Only an assignment value uses this: a trigger needs a continuous
+    surface for the root finder.
+    """
+
+    expanded = context.expand_functions(str(expression or "").strip())
+    if not expanded:
+        return None
+    for keyword, placeholder in _NATIVE_VALUE_KEYWORD_CALLS.items():
+        expanded = re.sub(rf"\b{keyword}\s*\(", f"{placeholder}(", expanded)
+    expanded = expanded.replace("^", "**")
+    try:
+        tree = ast.parse(expanded, mode="eval")
+    except (TypeError, ValueError, SyntaxError):
+        return None
+    has_state = False
+    has_time = False
+
+    class Render(ast.NodeTransformer):
+        def visit_Name(self, node: ast.Name) -> ast.AST:
+            nonlocal has_state, has_time
+            if node.id.lower() in {"time", "t"}:
+                has_time = True
+                return ast.copy_location(ast.Name(id="time", ctx=ast.Load()), node)
+            target = context.resolve_native_state(node.id)
+            if target is not None:
+                has_state = True
+                rendered = target.observable
+                if target.amount_factor != 1.0:
+                    rendered = f"({rendered} / {_format_number(target.amount_factor)})"
+                return ast.copy_location(ast.parse(rendered, mode="eval").body, node)
+            if context.is_compile_time_constant(node.id):
+                return ast.copy_location(
+                    ast.Name(id=standardize_name(node.id), ctx=ast.Load()), node
+                )
+            raise ValueError(f"non-static identifier {node.id}")
+
+        def visit_Call(self, node: ast.Call) -> ast.AST:
+            if (
+                not isinstance(node.func, ast.Name)
+                or node.func.id not in _NATIVE_VALUE_CALLS
+            ):
+                raise ValueError("unsupported native assignment function")
+            node.args = [self.visit(argument) for argument in node.args]
+            return node
+
+    try:
+        tree = Render().visit(tree)
+        ast.fix_missing_locations(tree)
+        rendered = ast.unparse(tree.body)
+    except (TypeError, ValueError, SyntaxError):
+        return None
+    if not has_state and not has_time:
+        return None
+    for keyword, placeholder in _NATIVE_VALUE_KEYWORD_CALLS.items():
+        rendered = rendered.replace(f"{placeholder}(", f"{keyword}(")
+    from .writer import convert_math_expression
+
+    return convert_math_expression(rendered.replace("**", "^")), has_state, has_time
+
+
+_COMPARISON_COMPLEMENTS = {
+    "gt": "leq",
+    "lt": "geq",
+    "geq": "lt",
+    "leq": "gt",
+    "eq": "neq",
+    "neq": "eq",
+}
+
+
+def complement_negated_comparison(trigger: str) -> str:
+    """Rewrite ``not(cmp(a, b))`` as the complementary comparison.
+
+    ``not(gt(a, b))`` holds exactly when ``leq(a, b)`` holds for real
+    values, so an SBML trigger written with ``not`` becomes the comparison
+    the event lowering recognizes.  Any other text is returned unchanged.
+    """
+
+    text = str(trigger or "").strip()
+    match = re.fullmatch(r"not\s*\((.*)\)", text, re.S)
+    if match is None:
+        return trigger
+    inner = match.group(1).strip()
+    depth = 0
+    for character in inner:
+        depth += {"(": 1, ")": -1}.get(character, 0)
+        if depth < 0:
+            # The outer parentheses do not enclose the whole trigger.
+            return trigger
+    if depth != 0:
+        return trigger
+    comparison = _match_comparison_call(inner)
+    if comparison is None:
+        return trigger
+    operator, arguments_text = comparison
+    if operator not in _COMPARISON_COMPLEMENTS:
+        return trigger
+    arguments = _split_arguments(arguments_text)
+    if arguments is None or len(arguments) != 2:
+        return trigger
+    # The match must cover the whole inner text, so a trigger such as
+    # not(gt(a, b)) && c is not rewritten.
+    if inner != f"{operator}({arguments_text})":
+        return trigger
+    return f"{_COMPARISON_COMPLEMENTS[operator]}({arguments_text})"
+
+
+def _native_time_against_static(
+    left_text: str, right_text: str, context: EventTranslationContext
+) -> bool:
+    """True when one side is the time symbol and the other a static value.
+
+    Time increases at rate one, so ``time >= c`` and ``time <= c`` cross
+    their threshold transversally: a non-strict comparison of time against
+    a static value has no tangential contact, and its rising edge is the
+    root of ``time - c``.
+    """
+
+    def is_time(text: str) -> bool:
+        return _strip_outer_parens(text).strip().lower() in {"time", "t"}
+
+    if str(context.method or "ode").lower() in {"ssa", "stochastic"}:
+        # The native SSA runtime detects triggers after jumps and refuses
+        # one that reads the clock, so such an event stays untranslated.
+        return False
+    if context.scheduled_events_present:
+        # The other events are scheduled actions, which split the run into
+        # phases at fixed times; a native fixed-time trigger at a phase
+        # boundary has no defined order relative to them.
+        return False
+    if is_time(left_text):
+        return _native_static_text(right_text, context) is not None
+    if is_time(right_text):
+        return _native_static_text(left_text, context) is not None
+    return False
+
+
 def _native_time_minus_state_comparison(
     left_text: str,
     right_text: str,
@@ -3157,16 +3328,23 @@ def _native_comparison_expression(
         if left_state.amount_factor != right_state.amount_factor:
             return None
         return f"{left_state.observable} {symbol} {right_state.observable}"
+    stochastic = str(context.method or "ode").lower() in {"ssa", "stochastic"}
     if left_state is not None:
         scaled = _native_scaled_static(right_text, left_state.amount_factor, context)
-        if scaled is None:
+        if scaled is not None:
+            return f"{left_state.observable} {symbol} {scaled}"
+        if stochastic:
             return None
-        return f"{left_state.observable} {symbol} {scaled}"
-    if right_state is not None:
+    elif right_state is not None:
         scaled = _native_scaled_static(left_text, right_state.amount_factor, context)
-        if scaled is None:
+        if scaled is not None:
+            return f"{scaled} {symbol} {right_state.observable}"
+        if stochastic:
             return None
-        return f"{scaled} {symbol} {right_state.observable}"
+    # Otherwise the other side moves (it reads time or another state), and
+    # both sides are rendered in their SBML units below.  The native SSA
+    # runtime checks triggers only after jumps, so for a stochastic run the
+    # state against a moving side stays refused, as before.
     time_rewrite = _native_time_minus_state_comparison(
         left_text, right_text, symbol, context
     )
@@ -3274,6 +3452,7 @@ def _native_trigger_expression(
                     return f"{inner[0]} >= {static_threshold}"
     if (
         operator in {"leq", "geq"}
+        and not _native_time_against_static(left_text, right_text, context)
         and _native_time_minus_state_comparison(
             left_text,
             right_text,
@@ -3511,6 +3690,11 @@ def _native_value_expression(
     # source value is nonlinear, render the full continuous expression and
     # convert from SBML units to the native amount units exactly once.
     continuous = _native_continuous_expression(text, context)
+    if continuous is None:
+        # An assignment value is evaluated once at execution and has no
+        # root, so it may also hold the comparisons, logic and ``if`` of an
+        # SBML piecewise.
+        continuous = _native_piecewise_value_expression(text, context)
     if continuous is not None:
         rendered, _, _ = continuous
         if target.amount_factor != 1.0:
