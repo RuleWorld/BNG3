@@ -282,12 +282,15 @@ jobs:
           .venv/bin/python scripts/cross_validate.py \
             --bng-cpp build/cpp/bng_cpp \
             --bng-perl "$RUNNER_TEMP/oracle-bionetgen/bng2/BNG2.pl" \
-            --models-dir "$RUNNER_TEMP/oracle-bionetgen/bng2/Validate" \
+            --models-dir tests/validation/Validate \
             --model simple_system \
             --model test_assignment \
             --model test_compartment_XML \
             --model test_time \
             --model test_tfun_observable \
+            --model ANx \
+            --model hybrid_test \
+            --model test_write_sbml_multi \
             --summary-file "$GITHUB_STEP_SUMMARY" \
             --verbose
         env:

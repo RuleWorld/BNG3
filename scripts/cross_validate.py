@@ -1,9 +1,11 @@
-"""Run structural C++ versus Perl network cross-validation.
+"""Run structural C++ versus Perl network/export cross-validation.
 
 The Perl engine is the independent BNG2 oracle for this gate.  Both engines
 run in isolated temporary directories and their generated ``.net`` files are
 compared through the typed graph-aware comparator used by the other validation
-tiers.  A species-count match is not sufficient evidence of parity.
+tiers.  The ANx, hybrid_test, and test_write_sbml_multi fixtures retain their
+authored XML-export actions and compare the generated model sections instead.
+A species-count match is not sufficient evidence of parity.
 """
 
 from __future__ import annotations
@@ -16,6 +18,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Iterable, Optional, Union
 
@@ -24,7 +27,12 @@ if str(REPO) not in sys.path:
     sys.path.insert(0, str(REPO))
 
 from scripts.validate import copy_referenced_support_files  # noqa: E402
-from tests.validation.compare import NetDiff, compare_net, parse_net  # noqa: E402
+from tests.validation.compare import (
+    NetDiff,
+    _canon_expr,
+    compare_net,
+    parse_net,
+)  # noqa: E402
 
 
 def _sha256_file(path: Path) -> str:
@@ -64,6 +72,68 @@ _READ_NET_FILE = re.compile(
     r"""\breadFile\s*\(\s*\{[^}]*\bfile\s*=>\s*['"][^'"]+\.net['"]""",
     re.IGNORECASE,
 )
+
+_AUTHORED_EXPORTS = {
+    "ANx": (
+        {"cpp": "ANx.xml", "perl": "ANx.xml"},
+        (
+            "ListOfMoleculeTypes",
+            "ListOfSpecies",
+            "ListOfReactionRules",
+            "ListOfObservables",
+            "ListOfFunctions",
+        ),
+        "molecule types, species, rules, observables, functions",
+    ),
+    "hybrid_test": (
+        {"cpp": "hybrid_test_hpp.xml", "perl": "hybrid_test_hpp.xml"},
+        (
+            "ListOfMoleculeTypes",
+            "ListOfSpecies",
+            "ListOfReactionRules",
+            "ListOfObservables",
+            "ListOfFunctions",
+        ),
+        "molecule types, species, rules, observables, functions",
+    ),
+    "test_write_sbml_multi": (
+        {
+            "cpp": "test_write_sbml_multi_sbml_multi.xml",
+            "perl": "test_write_sbml_multi_sbml_sbmlmulti.xml",
+        },
+        ("listOfSpeciesTypes", "listOfSpecies", "listOfReactions"),
+        "Multi species types, species, reactions",
+    ),
+}
+_XML_IDREF_ATTRIBUTES = {
+    "bindingSite1",
+    "bindingSite2",
+    "component",
+    "compartment",
+    "parent",
+    "parentComponent",
+    "productComponent",
+    "reactant",
+    "reactantComponent",
+    "species",
+    "speciesReference",
+    "speciesType",
+    "speciesTypeInstance",
+    "site1",
+    "site2",
+    "sourceID",
+    "targetID",
+    "variable",
+}
+_XML_METADATA_ATTRIBUTES = {"args"}
+_XML_NAMED_ID_TAGS = {
+    "MoleculeType",
+    "Observable",
+    "ReactionRule",
+    "Species",
+    "species",
+    "speciesType",
+}
 
 
 def _network_only_text(
@@ -182,6 +252,214 @@ def _stage_model(
             work_dir,
         )
     return staged_model
+
+
+def _stage_authored_action_model(model: Path, models_dir: Path, work_dir: Path) -> Path:
+    """Stage an export fixture unchanged, with only its declared support files."""
+
+    work_dir.mkdir(parents=True, exist_ok=True)
+    staged_model = work_dir / model.name
+    shutil.copy2(model, staged_model)
+
+    input_dir = models_dir / "INPUT_FILES"
+    if input_dir.is_dir():
+        shutil.copytree(input_dir, work_dir / "INPUT_FILES", dirs_exist_ok=True)
+
+    copy_referenced_support_files(
+        model,
+        models_dir,
+        models_dir / "DAT_validate",
+        work_dir,
+    )
+    return staged_model
+
+
+def _semantic_xml_ids(model: ET.Element) -> dict[str, str]:
+    """Map generated XML IDs to stable element labels for reference comparison."""
+
+    aliases: dict[str, str] = {}
+    counts: dict[str, int] = {}
+    identity_attributes = ("name", "symbol", "variable")
+    for element in model.iter():
+        identifier = element.attrib.get("id")
+        tag = element.tag.rsplit("}", 1)[-1]
+        if not identifier or tag not in _XML_NAMED_ID_TAGS:
+            continue
+        identity = tuple(
+            (name, " ".join(element.attrib[name].split()))
+            for name in identity_attributes
+            if name in element.attrib
+        )
+        if not identity:
+            continue
+        if tag == "ReactionRule" and identity:
+            name, value = identity[0]
+            if name == "name" and re.fullmatch(r"_R\d+", value):
+                identity = ((name, value[1:]), *identity[1:])
+        label = f"{tag}:{identity!r}"
+        occurrence = counts.get(label, 0)
+        counts[label] = occurrence + 1
+        aliases[identifier] = f"{label}#{occurrence}"
+    # Generated rate helper names are local export IDs. Tie each helper to
+    # the rule that references it, retaining the helper's complete definition.
+    for rule in model.iter():
+        if rule.tag.rsplit("}", 1)[-1] != "ReactionRule":
+            continue
+        for rate in rule:
+            if rate.tag.rsplit("}", 1)[-1] != "RateLaw":
+                continue
+            name = rate.attrib.get("name", "")
+            if rate.attrib.get("type") == "Function" and re.fullmatch(
+                r"(?:_rateLaw\d+|__bng3_reaction_rate_\w+)", name
+            ):
+                owner = aliases.get(
+                    rule.attrib.get("id", ""), rule.attrib.get("id", "")
+                )
+                aliases[name] = f"generated-rate:{owner}"
+    # Bonds are undirected. Their enumeration does not identify the bond;
+    # the endpoints do, including when an ID is referenced elsewhere.
+    for bond in model.iter():
+        if bond.tag.rsplit("}", 1)[-1] == "Bond" and "id" in bond.attrib:
+            ends = sorted(bond.attrib.get(key, "") for key in ("site1", "site2"))
+            aliases[bond.attrib["id"]] = f"bond:{ends!r}"
+    return aliases
+
+
+def _xml_element_signature(
+    element: ET.Element,
+    aliases: dict[str, str],
+    parameter_values: dict[str, str],
+) -> tuple:
+    """Return a whitespace- and namespace-prefix-independent XML signature."""
+
+    tag = element.tag.rsplit("}", 1)[-1]
+    tag_name = element.tag.rsplit("}", 1)[-1]
+    normalized_attributes = dict(element.attrib)
+    if tag_name == "ReactionRule" and re.fullmatch(
+        r"_R\d+", normalized_attributes.get("name", "")
+    ):
+        normalized_attributes["name"] = normalized_attributes["name"][1:]
+    if tag_name == "ReactionRule":
+        normalized_attributes.setdefault("symmetry_factor", "1")
+    if tag == "Observable":
+        normalized_attributes.setdefault("output", "1")
+    if tag == "Pattern":
+        normalized_attributes.setdefault("automorphisms", "1")
+    if tag in {"Bond", "AddBond", "DeleteBond"}:
+        if "site1" in normalized_attributes and "site2" in normalized_attributes:
+            ends = sorted(normalized_attributes[key] for key in ("site1", "site2"))
+            normalized_attributes.update(zip(("site1", "site2"), ends))
+    attributes = tuple(
+        sorted(
+            (
+                name.rsplit("}", 1)[-1],
+                (
+                    aliases.get(value, " ".join(value.split()))
+                    if name.rsplit("}", 1)[-1] == "id"
+                    or name.rsplit("}", 1)[-1] in _XML_IDREF_ATTRIBUTES
+                    or (tag == "RateLaw" and name == "name")
+                    else " ".join(value.split())
+                ),
+            )
+            for name, value in normalized_attributes.items()
+            if name.rsplit("}", 1)[-1] not in _XML_METADATA_ATTRIBUTES
+        )
+    )
+    attributes = tuple(
+        (
+            name,
+            (
+                parameter_values.get(value, value)
+                if name in {"concentration", "initialAmount", "initialConcentration"}
+                or (
+                    tag == "RateConstant"
+                    and name == "value"
+                    and re.fullmatch(r"_rateLaw\d+", value)
+                )
+                else value
+            ),
+        )
+        for name, value in attributes
+    )
+    raw_text = element.text or ""
+    text = (
+        _normalize_expression_text(raw_text)
+        if tag in {"Expression", "math"}
+        else " ".join(raw_text.split())
+    ) or None
+    children = tuple(
+        _xml_element_signature(child, aliases, parameter_values) for child in element
+    )
+    if (tag.startswith("ListOf") and tag != "ListOfArguments") or tag == "Map":
+        children = tuple(sorted(children, key=repr))
+    return tag, attributes, text, children
+
+
+def _normalize_expression_text(expression: str) -> str:
+    """Remove insignificant whitespace and redundant outer grouping only."""
+
+    return _canon_expr(expression)
+
+
+def _structural_xml_signature(path: Path, sections: Iterable[str]) -> dict[str, tuple]:
+    """Extract selected model XML sections for BNG2/BNG3 structural checks."""
+
+    root = ET.parse(path).getroot()
+    model = next(
+        (
+            element
+            for element in root.iter()
+            if element.tag.rsplit("}", 1)[-1] == "model"
+        ),
+        None,
+    )
+    if model is None:
+        raise ValueError(f"{path.name} has no model element")
+
+    requested = set(sections)
+    aliases = _semantic_xml_ids(model)
+    parameter_values = {
+        element.attrib["id"]: element.attrib["value"]
+        for element in model.iter()
+        if element.tag.rsplit("}", 1)[-1] == "Parameter"
+        and "id" in element.attrib
+        and "value" in element.attrib
+        and element.attrib.get("type") == "Constant"
+    }
+    observed: dict[str, tuple] = {}
+    for child in model:
+        name = child.tag.rsplit("}", 1)[-1]
+        if name in requested:
+            observed[name] = tuple(
+                sorted(
+                    (
+                        _xml_element_signature(item, aliases, parameter_values)
+                        for item in child
+                    ),
+                    key=repr,
+                )
+            )
+
+    for name in requested - set(observed):
+        observed[name] = ()
+    return observed
+
+
+def compare_structural_xml(
+    reference_xml: Union[Path, str],
+    test_xml: Union[Path, str],
+    *,
+    sections: Iterable[str],
+) -> tuple[bool, list[str]]:
+    """Compare declared species/rule/function or SBML-Multi XML sections."""
+
+    selected_sections = tuple(sections)
+    reference = _structural_xml_signature(Path(reference_xml), selected_sections)
+    test = _structural_xml_signature(Path(test_xml), selected_sections)
+    differences = sorted(
+        section for section in reference if reference[section] != test.get(section)
+    )
+    return not differences, differences
 
 
 _CONTINUATION_BASES = {
@@ -331,6 +609,89 @@ def _run_engine(
         return None, f"could not launch engine: {exc}"
 
 
+def _run_authored_export_comparison(
+    model: Path,
+    cpp_path: Path,
+    perl_path: Path,
+    models_dir: Path,
+    perl_executable: str,
+    timeout: float,
+) -> tuple[str, str]:
+    """Run a fixture's authored export action in both engines and compare XML."""
+
+    output_names, sections, label = _AUTHORED_EXPORTS[model.stem]
+    with tempfile.TemporaryDirectory(prefix=f"bng3-export-{model.stem}-") as raw:
+        root = Path(raw)
+        cpp_dir = root / "cpp"
+        perl_dir = root / "perl"
+        cpp_model = _stage_authored_action_model(model, models_dir, cpp_dir)
+        perl_model = _stage_authored_action_model(model, models_dir, perl_dir)
+
+        cpp_result, cpp_error = _run_engine(
+            [str(cpp_path), str(cpp_model)], cpp_dir, timeout
+        )
+        perl_result, perl_error = _run_engine(
+            [
+                perl_executable,
+                str(perl_path),
+                "--outdir",
+                str(perl_dir),
+                str(perl_model),
+            ],
+            perl_dir,
+            timeout,
+            environment={"BNGPATH": str(perl_path.parent)},
+        )
+
+        engine_status = []
+        engine_errors = []
+        for engine, result, error in (
+            ("C++", cpp_result, cpp_error),
+            ("BNG2", perl_result, perl_error),
+        ):
+            if error:
+                engine_status.append(f"{engine}: {error}")
+                engine_errors.append(f"{engine} {error}")
+            elif result is None or result.returncode != 0:
+                reason = (
+                    "process did not return"
+                    if result is None
+                    else _short_process_error(result)
+                )
+                engine_status.append(f"{engine}: action failed: {reason}")
+                engine_errors.append(f"{engine} action failed: {reason}")
+            else:
+                engine_status.append(f"{engine}: action completed")
+        if engine_errors:
+            return "error", f"ERROR {model.stem} ({'; '.join(engine_status)})"
+
+        cpp_xml = cpp_dir / output_names["cpp"]
+        perl_xml = perl_dir / output_names["perl"]
+        missing = [
+            f"{engine} {path.name}"
+            for engine, path in (("C++", cpp_xml), ("Perl", perl_xml))
+            if not path.is_file() or path.stat().st_size == 0
+        ]
+        if missing:
+            return (
+                "error",
+                f"ERROR {model.stem} (missing authored output: {', '.join(missing)})",
+            )
+
+        try:
+            equal, differences = compare_structural_xml(
+                perl_xml, cpp_xml, sections=sections
+            )
+        except (ET.ParseError, OSError, ValueError) as exc:
+            return "fail", f"FAIL {model.stem} (invalid structural XML: {exc})"
+        if not equal:
+            return (
+                "fail",
+                f"FAIL {model.stem} (C++/BNG2 structural XML differs: {', '.join(differences)})",
+            )
+        return "pass", f"PASS  {model.stem} (authored export: {label})"
+
+
 def run_cross_validation(
     bng_cpp: Union[Path, str],
     bng_perl: Union[Path, str],
@@ -358,6 +719,19 @@ def run_cross_validation(
 
     for model in models:
         model_name = model.stem
+        if model_name in _AUTHORED_EXPORTS:
+            status, detail = _run_authored_export_comparison(
+                model,
+                cpp_path,
+                perl_path,
+                corpus,
+                perl_executable,
+                timeout,
+            )
+            results[status] += 1
+            details.append(detail)
+            continue
+
         with tempfile.TemporaryDirectory(prefix=f"bng3-cross-{model_name}-") as root:
             root_path = Path(root)
             cpp_dir = root_path / "cpp"
@@ -478,6 +852,7 @@ def write_cross_validation_summary(
     bng_cpp: Union[Path, str],
     bng_perl: Union[Path, str],
     models_dir: Union[Path, str],
+    details: Iterable[str] = (),
 ) -> None:
     """Append a provenance-bearing structural cross-validation summary."""
 
@@ -499,13 +874,18 @@ def write_cross_validation_summary(
         f"- bng_cpp SHA-256: `{_sha256_file(cpp_path)}`",
         f"- BNG2 oracle: `{perl_path}`",
         f"- BNG2 oracle SHA-256: `{_sha256_file(perl_path)}`",
-        "- Comparison: graph-aware species, reaction, rate, and observable-group semantics",
+        "- Comparison: graph-aware network semantics plus authored XML export sections",
         "",
         "| Total | Pass | Fail | Error |",
         "| ---: | ---: | ---: | ---: |",
         f"| {total} | {results['pass']} | {results['fail']} | {results['error']} |",
         "",
     ]
+    case_details = list(details)
+    if case_details:
+        lines.extend(["#### Per-model results", ""])
+        lines.extend(f"- {detail}" for detail in case_details)
+        lines.append("")
     with summary_path.open("a", encoding="utf-8") as stream:
         stream.write("\n".join(lines))
 
@@ -566,6 +946,7 @@ def main() -> None:
             args.bng_cpp,
             args.bng_perl,
             args.models_dir,
+            details,
         )
 
     if total == 0 or results["fail"] or results["error"]:

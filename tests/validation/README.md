@@ -432,10 +432,16 @@ caller-dependent source-tree imports from being counted as direct evidence.
 
 The former reference-exclusion ledger is closed. The six fixtures whose
 primary behavior is an action output (`ANx`, `hybrid_test`, `test_tfun`,
-`test_tfun_xml`, `test_write_sbml_multi`, and `visualize`) are independently
-validated by `scripts/validate_actions.py`; the remaining fixtures are checked
-against committed BNG2 network references. The native reader also has a narrow
-legacy structured-SBML `atomize=>1` contract for the `plain2` validation model.
+`test_tfun_xml`, `test_write_sbml_multi`, and `visualize`) are checked by
+`scripts/validate_actions.py`. Parity cross-validation also runs the authored
+`writeXML()`, `generate_hybrid_model` (with its `writeXML()` action), and
+`writeSBMLMulti()` actions for ANx, hybrid_test, and
+test_write_sbml_multi in both BNG3 and pinned BNG2, then compares the structural
+XML species/rule/observable/function sections or Multi species types/species/
+reactions. It does not force these three models through full network
+generation. Other fixtures remain checked against BNG2 network references.
+The native reader also has a narrow legacy structured-SBML `atomize=>1`
+contract for the `plain2` validation model.
 
 ## What each gate proves
 - `test_parity_net` — WO-1a. Active expected failures come only from `exceptions.json`; each is signature-checked and an unexpected pass fails. The current ledger is empty: `blbr` now compares equal under structural species identity, including its symmetry-heavy bond-label orientations.

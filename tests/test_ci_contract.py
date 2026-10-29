@@ -29,6 +29,7 @@ from scripts.validate import (
 )
 from scripts.cross_validate import (
     compare_network_files,
+    compare_structural_xml,
     _network_only_text,
     _stage_model,
     run_cross_validation,
@@ -814,6 +815,10 @@ def test_numerical_expression_export_parity_uses_one_installed_native_build():
         for step in job_doc["steps"]
         if step.get("name") == "Compare graph-aware networks against BNG2"
     )
+    compare_run = compare_step["run"]
+    assert "--models-dir tests/validation/Validate" in compare_run
+    for fixture in ("ANx", "hybrid_test", "test_write_sbml_multi"):
+        assert f"--model {fixture}" in compare_run
     required = steps["numerical_expression_export_parity"]
 
     assert job_doc["timeout-minutes"] == 120
@@ -1573,6 +1578,329 @@ def test_cross_validation_missing_engine_output_is_an_error(tmp_path):
     assert details == ["ERROR model (missing C++ .net)"]
 
 
+def test_structural_xml_comparator_checks_bng_model_sections(tmp_path):
+    reference = tmp_path / "reference.xml"
+    generated = tmp_path / "generated.xml"
+    reference.write_text(
+        """<sbml xmlns="urn:bng"><model>
+<ListOfSpecies><Species id="A" pattern="A()"/></ListOfSpecies>
+<ListOfReactionRules><ReactionRule id="r1"><Rate value="2"/></ReactionRule></ListOfReactionRules>
+<ListOfObservables><Observable id="obs" pattern="A()"/></ListOfObservables>
+<ListOfFunctions><Function id="f"><Expression>k * x</Expression></Function></ListOfFunctions>
+</model></sbml>""",
+        encoding="utf-8",
+    )
+    generated.write_text(
+        """<sbml xmlns="another-bng-namespace"><model>
+<ListOfFunctions><Function id="f"><Expression>k * x</Expression></Function></ListOfFunctions>
+<ListOfObservables><Observable pattern="A()" id="obs"/></ListOfObservables>
+<ListOfReactionRules><ReactionRule id="r1"><Rate value="2"/></ReactionRule></ListOfReactionRules>
+<ListOfSpecies><Species pattern="A()" id="A"/></ListOfSpecies>
+</model></sbml>""",
+        encoding="utf-8",
+    )
+
+    equal, differences = compare_structural_xml(
+        reference,
+        generated,
+        sections=(
+            "ListOfSpecies",
+            "ListOfReactionRules",
+            "ListOfObservables",
+            "ListOfFunctions",
+        ),
+    )
+
+    assert equal is True
+    assert differences == []
+
+    generated.write_text(
+        generated.read_text(encoding="utf-8").replace('value="2"', 'value="3"'),
+        encoding="utf-8",
+    )
+    equal, differences = compare_structural_xml(
+        reference,
+        generated,
+        sections=(
+            "ListOfSpecies",
+            "ListOfReactionRules",
+            "ListOfObservables",
+            "ListOfFunctions",
+        ),
+    )
+    assert equal is False
+    assert differences == ["ListOfReactionRules"]
+
+
+def test_structural_xml_comparator_normalizes_export_defaults_and_expression_text(
+    tmp_path,
+):
+    reference = tmp_path / "reference-defaults.xml"
+    generated = tmp_path / "generated-defaults.xml"
+    reference.write_text(
+        """<sbml><model><ListOfReactionRules>
+<ReactionRule id="RR1" name="_R1" symmetry_factor="1"><Expression> ( 1 + (k) ) </Expression></ReactionRule>
+</ListOfReactionRules></model></sbml>""",
+        encoding="utf-8",
+    )
+    generated.write_text(
+        """<sbml><model><ListOfReactionRules>
+<ReactionRule id="RR1" name="R1"><Expression>1+(k)</Expression></ReactionRule>
+</ListOfReactionRules></model></sbml>""",
+        encoding="utf-8",
+    )
+
+    equal, differences = compare_structural_xml(
+        reference,
+        generated,
+        sections=("ListOfReactionRules",),
+    )
+
+    assert equal is True
+    assert differences == []
+
+
+def test_structural_xml_comparator_treats_omitted_empty_sections_as_empty(
+    tmp_path,
+):
+    reference = tmp_path / "reference-empty-section.xml"
+    generated = tmp_path / "generated-empty-section.xml"
+    reference.write_text(
+        "<sbml><model><ListOfSpecies/><ListOfFunctions/></model></sbml>",
+        encoding="utf-8",
+    )
+    generated.write_text(
+        "<sbml><model><ListOfSpecies/></model></sbml>", encoding="utf-8"
+    )
+
+    equal, differences = compare_structural_xml(
+        reference,
+        generated,
+        sections=("ListOfSpecies", "ListOfFunctions"),
+    )
+
+    assert equal is True
+    assert differences == []
+
+    reference.write_text(
+        '<sbml><model><ListOfSpecies/><ListOfFunctions><Function id="f"/></ListOfFunctions></model></sbml>',
+        encoding="utf-8",
+    )
+    equal, differences = compare_structural_xml(
+        reference,
+        generated,
+        sections=("ListOfSpecies", "ListOfFunctions"),
+    )
+    assert equal is False
+    assert differences == ["ListOfFunctions"]
+
+
+def test_structural_xml_comparator_normalizes_ids_and_references(tmp_path):
+    reference = tmp_path / "reference-ids.xml"
+    generated = tmp_path / "generated-ids.xml"
+    reference.write_text(
+        """<sbml><model>
+<ListOfSpecies><Species id="sA" name="A"/><Species id="sB" name="B"/></ListOfSpecies>
+<ListOfReactionRules><ReactionRule id="rA" name="bind"><Reactant species="sA"/><Product species="sB"/></ReactionRule></ListOfReactionRules>
+</model></sbml>""",
+        encoding="utf-8",
+    )
+    generated.write_text(
+        """<sbml><model>
+<ListOfSpecies><Species id="species_2" name="B"/><Species id="species_1" name="A"/></ListOfSpecies>
+<ListOfReactionRules><ReactionRule id="rule_9" name="bind"><Reactant species="species_1"/><Product species="species_2"/></ReactionRule></ListOfReactionRules>
+</model></sbml>""",
+        encoding="utf-8",
+    )
+
+    equal, differences = compare_structural_xml(
+        reference,
+        generated,
+        sections=("ListOfSpecies", "ListOfReactionRules"),
+    )
+
+    assert equal is True
+    assert differences == []
+
+    generated.write_text(
+        generated.read_text(encoding="utf-8").replace(
+            'species="species_1"', 'species="species_2"'
+        ),
+        encoding="utf-8",
+    )
+    equal, differences = compare_structural_xml(
+        reference,
+        generated,
+        sections=("ListOfSpecies", "ListOfReactionRules"),
+    )
+    assert equal is False
+    assert differences == ["ListOfReactionRules"]
+
+
+def test_structural_xml_comparator_checks_multi_species_types_and_reactions(
+    tmp_path,
+):
+    reference = tmp_path / "reference-multi.xml"
+    generated = tmp_path / "generated-multi.xml"
+    reference.write_text(
+        """<sbml xmlns:multi="urn:multi"><model>
+<multi:listOfSpeciesTypes><multi:speciesType id="st_R" name="R"><multi:listOfSpeciesFeatureTypes><multi:speciesFeatureType id="state"/></multi:listOfSpeciesFeatureTypes></multi:speciesType></multi:listOfSpeciesTypes>
+<listOfSpecies><species id="S1" multi:speciesType="st_R"/></listOfSpecies>
+<listOfReactions><reaction id="RR1"><listOfReactants><speciesReference species="RR1_R1"/></listOfReactants><listOfProducts><speciesReference species="RR1_P1"/></listOfProducts></reaction></listOfReactions>
+</model></sbml>""",
+        encoding="utf-8",
+    )
+    generated.write_text(
+        """<sbml xmlns:multi="urn:multi"><model>
+<multi:listOfSpeciesTypes><multi:speciesType id="st_other" name="R"><multi:listOfSpeciesFeatureTypes><multi:speciesFeatureType id="state"/></multi:listOfSpeciesFeatureTypes></multi:speciesType></multi:listOfSpeciesTypes>
+<listOfSpecies><species id="S1" multi:speciesType="st_other"/></listOfSpecies>
+<listOfReactions><reaction id="RR1"><listOfReactants><speciesReference species="RR1_R1"/></listOfReactants><listOfProducts><speciesReference species="RR1_P1"/></listOfProducts></reaction></listOfReactions>
+</model></sbml>""",
+        encoding="utf-8",
+    )
+
+    equal, differences = compare_structural_xml(
+        reference,
+        generated,
+        sections=("listOfSpeciesTypes", "listOfSpecies", "listOfReactions"),
+    )
+
+    assert equal is True
+    assert differences == []
+
+    generated.write_text(
+        generated.read_text(encoding="utf-8").replace('name="R"', 'name="L"'),
+        encoding="utf-8",
+    )
+    equal, differences = compare_structural_xml(
+        reference,
+        generated,
+        sections=("listOfSpeciesTypes", "listOfSpecies", "listOfReactions"),
+    )
+    assert equal is False
+    assert "listOfSpeciesTypes" in differences
+
+
+@pytest.mark.parametrize(
+    "model_name,source,cpp_output,perl_output,xml,action_label",
+    [
+        (
+            "ANx",
+            "begin model\nend model\nwriteXML()\n",
+            "ANx.xml",
+            "ANx.xml",
+            """<sbml><model><ListOfMoleculeTypes><MoleculeType id="A"/></ListOfMoleculeTypes>
+<ListOfSpecies><Species id="S1"/></ListOfSpecies>
+<ListOfReactionRules><ReactionRule id="r1"/></ListOfReactionRules>
+<ListOfObservables><Observable id="obs"/></ListOfObservables>
+<ListOfFunctions><Function id="f"/></ListOfFunctions></model></sbml>""",
+            "molecule types, species, rules, observables, functions",
+        ),
+        (
+            "hybrid_test",
+            'begin model\nend model\ngenerate_hybrid_model({actions=>["writeXML()"]})\n',
+            "hybrid_test_hpp.xml",
+            "hybrid_test_hpp.xml",
+            """<sbml><model><ListOfMoleculeTypes><MoleculeType id="A"/></ListOfMoleculeTypes>
+<ListOfSpecies><Species id="S1"/></ListOfSpecies>
+<ListOfReactionRules><ReactionRule id="r1"/></ListOfReactionRules>
+<ListOfObservables><Observable id="obs"/></ListOfObservables>
+<ListOfFunctions><Function id="f"/></ListOfFunctions></model></sbml>""",
+            "molecule types, species, rules, observables, functions",
+        ),
+        (
+            "test_write_sbml_multi",
+            "begin model\nend model\nwriteSBMLMulti();\n",
+            "test_write_sbml_multi_sbml_multi.xml",
+            "test_write_sbml_multi_sbml_sbmlmulti.xml",
+            """<sbml xmlns:multi="urn:multi"><model>
+<multi:listOfSpeciesTypes><multi:speciesType id="st_R"/></multi:listOfSpeciesTypes>
+<listOfSpecies><species id="S1" multi:speciesType="st_R"/></listOfSpecies>
+<listOfReactions><reaction id="RR1"/></listOfReactions>
+</model></sbml>""",
+            "Multi species types, species, reactions",
+        ),
+    ],
+)
+def test_cross_validation_runs_authored_export_actions_without_network_generation(
+    tmp_path,
+    monkeypatch,
+    model_name,
+    source,
+    cpp_output,
+    perl_output,
+    xml,
+    action_label,
+):
+    models = tmp_path / "Validate"
+    models.mkdir()
+    model = models / f"{model_name}.bngl"
+    model.write_text(source, encoding="utf-8")
+    cpp = tmp_path / "bng_cpp"
+    perl = tmp_path / "BNG2.pl"
+    cpp.touch()
+    perl.touch()
+    calls = []
+
+    def run_engine(command, work_dir, timeout, environment=None):
+        del timeout, environment
+        staged = Path(command[-1])
+        source_text = staged.read_text(encoding="utf-8")
+        assert model_name in staged.name
+        assert "writeXML()" in source_text or "writeSBMLMulti()" in source_text
+        assert "generate_network" not in source_text
+        output_name = cpp_output if command[0] == str(cpp) else perl_output
+        (work_dir / output_name).write_text(xml, encoding="utf-8")
+        calls.append(command[0])
+        return subprocess.CompletedProcess(command, 0, "", ""), None
+
+    monkeypatch.setattr("scripts.cross_validate._run_engine", run_engine)
+
+    results, details = run_cross_validation(
+        cpp,
+        perl,
+        models,
+        model_names=[model_name],
+    )
+
+    assert results == {"pass": 1, "fail": 0, "error": 0}
+    assert details == [f"PASS  {model_name} (authored export: {action_label})"]
+    assert len(calls) == 2
+
+
+def test_authored_export_reports_perl_when_cpp_times_out(tmp_path, monkeypatch):
+    from scripts.cross_validate import _run_authored_export_comparison
+
+    models = tmp_path / "Validate"
+    models.mkdir()
+    model = models / "ANx.bngl"
+    model.write_text("begin model\nend model\nwriteXML()\n", encoding="utf-8")
+    calls = []
+
+    def run_engine(command, work_dir, timeout, environment=None):
+        del work_dir, timeout, environment
+        engine = "C++" if command[0] == "/fake/bng_cpp" else "BNG2"
+        calls.append(engine)
+        if engine == "C++":
+            return None, "timeout after 5s"
+        return subprocess.CompletedProcess(command, 0, "", ""), None
+
+    monkeypatch.setattr("scripts.cross_validate._run_engine", run_engine)
+    status, detail = _run_authored_export_comparison(
+        model,
+        Path("/fake/bng_cpp"),
+        Path("/fake/BNG2.pl"),
+        models,
+        "perl",
+        5,
+    )
+
+    assert status == "error"
+    assert "C++: timeout after 5s" in detail
+    assert "BNG2: action completed" in detail
+    assert calls == ["C++", "BNG2"]
+
+
 def test_cross_validation_stages_generation_without_simulation_actions():
     """Network parity must not accidentally execute a model's simulations."""
 
@@ -1786,6 +2114,7 @@ def test_cross_validation_summary_records_both_engines_without_duplicate_header(
         bng_cpp,
         bng_perl,
         tmp_path / "Validate",
+        ["FAIL model (C++/BNG2 structural XML differs: species)"],
     )
 
     text = summary.read_text(encoding="utf-8")
@@ -1794,6 +2123,8 @@ def test_cross_validation_summary_records_both_engines_without_duplicate_header(
     assert "bng_cpp SHA-256" in text
     assert "| 6 | 3 | 1 | 2 |" in text
     assert text.count("| ---: | ---: | ---: | ---: |") == 1
+    assert "Per-model results" in text
+    assert "FAIL model" in text
 
 
 def test_reference_exclusion_manifest_is_explicit_and_corpus_backed():
@@ -2009,3 +2340,43 @@ def test_parity_revision_declarations_match_the_product_checkout():
                         f"does not match product checkout {source_ref!r}"
                     )
     assert declarations, "no product revision declarations checked"
+
+
+def test_structural_xml_comparator_preserves_rates_under_export_spelling_changes(
+    tmp_path,
+):
+    reference = tmp_path / "reference.xml"
+    generated = tmp_path / "generated.xml"
+    reference.write_text("""<sbml><model>
+<ListOfParameters><Parameter id="_rateLaw1" type="Constant" value="1000"/></ListOfParameters>
+<ListOfReactionRules><ReactionRule id="RR1" name="r">
+<RateLaw type="Function" name="_rateLaw2"/>
+<Map><MapItem sourceID="a" targetID="b"/><MapItem sourceID="c" targetID="d"/></Map>
+<ListOfOperations><AddBond site1="a" site2="c"/></ListOfOperations>
+</ReactionRule><ReactionRule id="RR2" name="s"><RateLaw type="Ele"><ListOfRateConstants><RateConstant value="_rateLaw1"/></ListOfRateConstants></RateLaw></ReactionRule></ListOfReactionRules>
+<ListOfObservables><Observable id="O1" name="X" output="1"><ListOfPatterns><Pattern id="P1" automorphisms="1"/></ListOfPatterns></Observable></ListOfObservables>
+<ListOfFunctions><Function id="_rateLaw2"><Expression> 1.0 / (1.0 + x) </Expression></Function></ListOfFunctions>
+</model></sbml>""")
+    text = """<sbml><model>
+<ListOfReactionRules><ReactionRule id="RR1" name="r">
+<RateLaw type="Function" name="__bng3_reaction_rate_RR1"/>
+<Map><MapItem sourceID="c" targetID="d"/><MapItem sourceID="a" targetID="b"/></Map>
+<ListOfOperations><AddBond site1="c" site2="a"/></ListOfOperations>
+</ReactionRule><ReactionRule id="RR2" name="s"><RateLaw type="Ele"><ListOfRateConstants><RateConstant value="1000"/></ListOfRateConstants></RateLaw></ReactionRule></ListOfReactionRules>
+<ListOfObservables><Observable id="O1" name="X"><ListOfPatterns><Pattern id="P1"/></ListOfPatterns></Observable></ListOfObservables>
+<ListOfFunctions><Function id="__bng3_reaction_rate_RR1"><Expression>(1 / (1 + x))</Expression></Function></ListOfFunctions>
+</model></sbml>"""
+    sections = ("ListOfReactionRules", "ListOfFunctions", "ListOfObservables")
+    generated.write_text(text)
+    assert compare_structural_xml(reference, generated, sections=sections) == (True, [])
+    for before, after in [
+        ('value="1000"', 'value="999"'),
+        ("1 + x", "2 + x"),
+        ('site2="a"', 'site2="b"'),
+        ('sourceID="a" targetID="b"', 'sourceID="a" targetID="d"'),
+        ('<Pattern id="P1"/>', '<Pattern id="P1" automorphisms="2"/>'),
+        ('name="X"', 'name="X" output="0"'),
+    ]:
+        generated.write_text(text.replace(before, after))
+        equal, _ = compare_structural_xml(reference, generated, sections=sections)
+        assert not equal, (before, after)
