@@ -12,9 +12,9 @@ Three boundaries matter here:
   that carries a delay or a rateOf stays valid SBML;
 * the modern Atomizer must fold a delay away whenever the delayed history is
   exactly reproducible, and must not report such a model as unsupported;
-* a delay whose history cannot be reproduced must stay explicitly
-  unsupported, because neither the BNG3 engine nor libRoadRunner can
-  evaluate SBML delay semantics.
+* a dynamic delay duration may remain in the generated expression and execute
+  in BNG3 CVODE; libRoadRunner's inability to load delay models limits
+  independent comparison, not BNG3 execution.
 """
 
 from __future__ import annotations
@@ -345,20 +345,18 @@ def test_delay_with_a_reproducible_history_is_not_reported_as_unsupported():
     assert "sin((10 * (time() - 0.2)))" in result.bngl
 
 
-def test_delay_without_a_reproducible_history_stays_unsupported():
-    """A delay whose history is not reproducible must stay refused."""
+def test_dynamic_delay_duration_is_retained_for_cvode_execution():
+    """A state-dependent delay duration is preserved for CVODE evaluation."""
 
     atomizer = Atomizer(atomize=False, quiet_mode=True)
     result = atomizer.atomize(_UNFOLDABLE_DELAY_MODEL)
     assert result.success, result.error
 
-    messages = [
-        message
-        for message in _warnings(atomizer)
-        if "not losslessly representable" in message and "delay" in message
-    ]
+    messages = [message for message in _warnings(atomizer) if "delay" in message]
     assert messages, _warnings(atomizer)
-    assert "libRoadRunner" in messages[0]
+    assert "libRoadRunner cannot load" in messages[0]
+    assert "not losslessly representable" not in messages[0]
+    assert "y() = delay(x_amt, z())" in result.bngl
 
 
 def test_rate_of_a_reaction_local_parameter_is_zero():

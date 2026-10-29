@@ -391,6 +391,19 @@ def test_sbml_export_preserves_the_delayed_event(tmp_path):
     assert abs(delay.getMath().getValue() - 1.5) < 1e-12
 
 
+def test_native_event_state_dependent_delay_is_emitted_as_an_expression():
+    result = atomize(coupled_event_model(delay="S1 / 2"))
+
+    assert result.success, result.error
+    assert "begin bng3_events version 1" in result.bngl
+    assert "delay: S1_amt / 2" in result.bngl
+    assert not any(
+        warning.get("category") == "event"
+        and warning.get("severity") in {"dropped", "unsupported", "untranslated"}
+        for warning in result.import_warnings
+    )
+
+
 def test_sbml_export_keeps_the_event_executable_after_a_reimport(tmp_path):
     result = atomize(coupled_event_model(delay="1.5"))
 

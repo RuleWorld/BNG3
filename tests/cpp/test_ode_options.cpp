@@ -1519,6 +1519,37 @@ TEST_CASE("CVODE defers a native event until its delay elapses", "[OdeOptions][E
     CHECK_THAT(result.observables.back()[0], Catch::Matchers::WithinRel(expected, 1e-6));
 }
 
+TEST_CASE("CVODE evaluates a dynamic native event delay at trigger time",
+          "[OdeOptions][Events]") {
+    auto model = parseDecayModel();
+    ast::Event event;
+    event.id = "dynamic_delay";
+    event.trigger = ast::Expression::binary(
+        ">", ast::Expression::identifier("time"), ast::Expression::number(1.0));
+    event.delay = ast::Expression::binary(
+        "/",
+        ast::Expression::binary("-", ast::Expression::number(100.0),
+                                ast::Expression::identifier("Xtot")),
+        ast::Expression::number(100.0));
+    event.assignments.push_back({"Xtot", ast::Expression::number(100.0)});
+    model->setEventFormatVersion(1);
+    model->addEvent(std::move(event));
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 2.0;
+    options.nSteps = 40;
+    const auto result = integrator.integrate(options);
+
+    REQUIRE(result.timePoints.size() == 41);
+    REQUIRE(result.observables.size() == result.timePoints.size());
+    CHECK(result.observables[21][0] < 95.0); // before trigger-time delay expires
+    CHECK(result.observables[23][0] > 95.0);  // after execution at about t=1.1
+}
+
 TEST_CASE("CVODE keeps a delayed native event on its trigger-time values",
           "[OdeOptions][Events]") {
     auto model = parseDecayModel();

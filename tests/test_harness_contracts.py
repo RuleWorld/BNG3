@@ -144,10 +144,10 @@ def test_informational_delay_warning_does_not_block_official_reference():
     assert runner._warning_limitations([unsupported]) == [delay_notice["message"]]
 
 
-def test_dynamic_delay_refusal_is_classified_as_unsupported():
+def test_dynamic_delay_execution_error_is_not_hidden_as_unsupported():
     assert (
         runner._classify_error("RuntimeError: delay expression duration must be static")
-        == "unsupported"
+        == "failed"
     )
 
 

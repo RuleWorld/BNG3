@@ -250,16 +250,8 @@ inline void validateNativeEventSubset(const Model& model) {
     };
     continuousTrigger(trigger);
     if (event.delay) {
-        // A delay is a scheduling offset, so it has to be a static constant.
-        for (const auto& name : event.delay->getDependencies()) {
-            if (name == "time") fail("event delay must be static");
-            for (const auto& observable : model.getObservables()) {
-                if (observable.getName() == name) fail("event delay must be static");
-            }
-            try {
-                if (model.getParameters().isTimeDependent(name)) fail("event delay must be static");
-            } catch (const std::exception&) { fail("event delay requires static parameters"); }
-        }
+        // SBML evaluates the delay when the trigger fires. The ODE event
+        // runtime evaluates this expression against that trigger-time state.
         continuous(*event.delay);
     }
     const auto isStaticNonfinite = [&](const Expression& expression) {

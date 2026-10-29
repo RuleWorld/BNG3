@@ -184,6 +184,7 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
                         "explicit-loss-diagnostic",
                         "unsupported-boundary-contract",
                         "static-delay-analytic-execution",
+                        "dynamic-delay-analytic-execution",
                         "source-trajectory",
                     }
                     if operation == "boundaries"
@@ -206,20 +207,32 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
                     static_delay = row["id"] == (
                         "sbml-boundary:delay_state_history_a:static-delay-execution"
                     )
+                    dynamic_delay = row["id"] == (
+                        "sbml-boundary:delay_state_history_b:dynamic-delay-execution"
+                    )
                     supported_event = row["id"] in {
                         f"sbml-event:{case_id}:source-trajectory"
                         for case_id, *_ in integrated_boundaries.SUPPORTED_EVENT_CASES
                     }
-                    if static_delay:
+                    if static_delay or dynamic_delay:
+                        expected_check = (
+                            "static-delay-analytic-execution"
+                            if static_delay
+                            else "dynamic-delay-analytic-execution"
+                        )
+                        expected_behavior = (
+                            "execute-static-delay-history"
+                            if static_delay
+                            else "execute-state-dependent-delay-history"
+                        )
                         if (
-                            row.get("check") != "static-delay-analytic-execution"
+                            row.get("check") != expected_check
                             or row.get("supported_execution") is not True
                             or row.get("evidence_kind") != "analytic-execution"
-                            or row.get("expected_behavior")
-                            != "execute-static-delay-history"
+                            or row.get("expected_behavior") != expected_behavior
                         ):
                             raise ValueError(
-                                "static delay control lacks analytic execution evidence"
+                                "delay control lacks analytic execution evidence"
                             )
                     elif supported_event:
                         if (
@@ -272,6 +285,9 @@ def invoke(operation, args, rows, env, run_stage, *, case=None, dependencies=())
                 static_delay_artifact = directory / "delay_state_history_a.bngl"
                 if not static_delay_artifact.is_file():
                     raise ValueError("static delay execution source artifact missing")
+                dynamic_delay_artifact = directory / "delay_state_history_b.bngl"
+                if not dynamic_delay_artifact.is_file():
+                    raise ValueError("dynamic delay execution source artifact missing")
                 for case_id, *_ in integrated_boundaries.SUPPORTED_EVENT_CASES:
                     if not (directory / f"{case_id}.bngl").is_file():
                         raise ValueError(

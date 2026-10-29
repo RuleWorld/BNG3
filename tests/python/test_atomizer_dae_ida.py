@@ -145,3 +145,28 @@ def test_concentration_algebraic_rule_is_enforced_in_its_compartment(tmp_path):
     root = 0.5**0.5 - 0.125
     assert values[(0.5, "@C::M_X()")] == pytest.approx(2 * root**2, abs=1e-6)
     assert values[(0.5, "@C::M_Z()")] == pytest.approx(2 * root, abs=1e-6)
+
+
+def test_initially_true_dae_event_evaluates_its_delay_at_trigger_time(tmp_path):
+    source = _dae_sbml(with_event=True)
+    source = source.replace('initialValue="true"', 'initialValue="false"')
+    source = source.replace("<lt/><ci>X</ci><cn>0.25</cn>", "<gt/><ci>X</ci><cn>0</cn>")
+    source = source.replace(
+        "<listOfEventAssignments>",
+        '<delay><math xmlns="http://www.w3.org/1998/Math/MathML">'
+        "<apply><times/><ci>X</ci><cn>0.1</cn></apply></math></delay>"
+        "<listOfEventAssignments>",
+    )
+    source = source.replace(
+        '<eventAssignment variable="X"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn>',
+        '<eventAssignment variable="X"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0.25</cn>',
+    )
+    path = tmp_path / "initial-dae-delay.xml"
+    path.write_text(source, encoding="utf-8")
+    model = bionetgen.from_sbml(str(path))
+    result = model.simulate(method="ode", t_end=0.2, n_steps=2)
+    values = _by_time_and_species(model, result)
+    # Initial X=1 sets the delay to 0.1. After resetting X=0.25 at t=0.1,
+    # d sqrt(X)/dt=-1/2 for another 0.1 time units.
+    assert values[(0.2, "@C::M_X()")] == pytest.approx(0.45**2, abs=2e-6)
+    assert values[(0.2, "@C::M_Z()")] == pytest.approx(0.45, abs=2e-6)
