@@ -40,6 +40,7 @@
 
 // SUNDIALS/CVODE includes (v7.x API)
 #include "cvode/cvode.h"
+#include "ida/ida.h"
 #include "nvector/nvector_serial.h"
 #include "sundials/sundials_context.h"
 #include "sundials/sundials_nonlinearsolver.h"
@@ -367,6 +368,166 @@ OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& ne
     compile();
     validateEventTargets();
     validateEventRootSurface();
+}
+
+void OdeIntegrator::setAlgebraicRules(
+    const std::vector<std::pair<std::string, std::string>>& rules) {
+    algebraicSpeciesIndices_.clear();
+    algebraicResiduals_.clear();
+    std::unordered_set<std::size_t> assigned;
+    for (const auto& [observableName, residualText] : rules) {
+        const auto observable = observableIndex_.find(observableName);
+        if (observable == observableIndex_.end()) {
+            throw std::runtime_error(
+                "DAE algebraic target is not a compiled observable: " + observableName);
+        }
+        const auto& entries = compiledGroups_.at(observable->second).entries;
+        if (entries.size() != 1 || std::abs(entries.front().second - 1.0) > 1e-12 ||
+            fixedSpecies_.at(entries.front().first)) {
+            throw std::runtime_error(
+                "DAE algebraic target must identify one nonconstant species: " +
+                observableName);
+        }
+        if (!assigned.insert(entries.front().first).second) {
+            throw std::runtime_error(
+                "DAE algebraic rules assign the same species more than once");
+        }
+        algebraicSpeciesIndices_.push_back(entries.front().first);
+        algebraicResiduals_.push_back(parser::parseExpression(residualText));
+    }
+    if (algebraicSpeciesIndices_.size() > nSpecies_) {
+        throw std::runtime_error("DAE has more algebraic rules than state variables");
+    }
+}
+
+int OdeIntegrator::idaResidual(double time, const double* scaledState,
+                               const double* scaledDerivative,
+                               double* residual) const {
+    try {
+        std::vector<double> physicalState(nSpecies_);
+        std::vector<double> scaledRhs(nSpecies_);
+        cvodeDerivs(time, scaledState, scaledRhs.data());
+        std::vector<bool> algebraic(nSpecies_, false);
+        for (std::size_t i = 0; i < algebraicSpeciesIndices_.size(); ++i) {
+            algebraic[algebraicSpeciesIndices_[i]] = true;
+        }
+        for (std::size_t i = 0; i < nSpecies_; ++i) {
+            physicalState[i] = scaledState[i] * cvodeStateScale_[i];
+            residual[i] = algebraic[i]
+                ? scaledDerivative[i]
+                : scaledDerivative[i] - scaledRhs[i];
+        }
+        for (std::size_t i = 0; i < algebraicSpeciesIndices_.size(); ++i) {
+            residual[algebraicSpeciesIndices_[i]] = evaluateExpressionWithHistory(
+                algebraicResiduals_[i], time, physicalState.data());
+        }
+        return 0;
+    } catch (...) {
+        return -1;
+    }
+}
+
+void OdeIntegrator::correctAlgebraicState(std::vector<double>& state,
+                                          double time,
+                                          double tolerance) const {
+    const std::size_t count = algebraicSpeciesIndices_.size();
+    if (count == 0) return;
+    std::vector<double> residual(count);
+    std::vector<double> jacobian(count * count);
+    std::vector<double> perturbed = state;
+    const auto evaluate = [&](const std::vector<double>& values,
+                              std::vector<double>& result) {
+        for (std::size_t row = 0; row < count; ++row) {
+            result[row] = evaluateExpressionWithHistory(
+                algebraicResiduals_[row], time, values.data());
+            if (!std::isfinite(result[row])) {
+                throw std::runtime_error("algebraic residual is not finite");
+            }
+        }
+    };
+    const auto norm = [](const std::vector<double>& values) {
+        double value = 0.0;
+        for (const double item : values) value = std::max(value, std::abs(item));
+        return value;
+    };
+    const double epsilon = std::cbrt(std::numeric_limits<double>::epsilon());
+    for (int iteration = 0; iteration < 30; ++iteration) {
+        evaluate(state, residual);
+        const double residualNorm = norm(residual);
+        if (residualNorm <= tolerance) return;
+        for (std::size_t column = 0; column < count; ++column) {
+            const auto species = algebraicSpeciesIndices_[column];
+            const double h = epsilon * std::max(1.0, std::abs(state[species]));
+            perturbed[species] = state[species] + h;
+            std::vector<double> plus(count);
+            evaluate(perturbed, plus);
+            perturbed[species] = state[species] - h;
+            std::vector<double> minus(count);
+            evaluate(perturbed, minus);
+            perturbed[species] = state[species];
+            for (std::size_t row = 0; row < count; ++row) {
+                jacobian[row * count + column] = (plus[row] - minus[row]) / (2.0 * h);
+            }
+        }
+        std::vector<double> matrix = jacobian;
+        std::vector<double> step(count);
+        for (std::size_t i = 0; i < count; ++i) step[i] = -residual[i];
+        for (std::size_t column = 0; column < count; ++column) {
+            std::size_t pivot = column;
+            for (std::size_t row = column + 1; row < count; ++row) {
+                if (std::abs(matrix[row * count + column]) >
+                    std::abs(matrix[pivot * count + column])) pivot = row;
+            }
+            if (std::abs(matrix[pivot * count + column]) <=
+                64.0 * std::numeric_limits<double>::epsilon()) {
+                throw std::runtime_error(
+                    "algebraic constraint Jacobian is singular or inconsistent");
+            }
+            for (std::size_t j = column; j < count; ++j) {
+                std::swap(matrix[column * count + j], matrix[pivot * count + j]);
+            }
+            std::swap(step[column], step[pivot]);
+            const double diagonal = matrix[column * count + column];
+            for (std::size_t j = column; j < count; ++j) {
+                matrix[column * count + j] /= diagonal;
+            }
+            step[column] /= diagonal;
+            for (std::size_t row = 0; row < count; ++row) {
+                if (row == column) continue;
+                const double factor = matrix[row * count + column];
+                for (std::size_t j = column; j < count; ++j) {
+                    matrix[row * count + j] -= factor * matrix[column * count + j];
+                }
+                step[row] -= factor * step[column];
+            }
+        }
+        double damping = 1.0;
+        bool accepted = false;
+        for (int attempt = 0; attempt < 20; ++attempt) {
+            for (std::size_t i = 0; i < count; ++i) {
+                const auto species = algebraicSpeciesIndices_[i];
+                perturbed[species] = state[species] + damping * step[i];
+            }
+            std::vector<double> candidate(count);
+            try {
+                evaluate(perturbed, candidate);
+                if (norm(candidate) < residualNorm) {
+                    state.swap(perturbed);
+                    accepted = true;
+                    break;
+                }
+            } catch (const std::exception&) {
+            }
+            perturbed = state;
+            damping *= 0.5;
+        }
+        if (!accepted) {
+            throw std::runtime_error(
+                "algebraic constraint is singular or inconsistent; no consistent state was found");
+        }
+    }
+    throw std::runtime_error(
+        "algebraic constraint solve did not converge to a consistent state");
 }
 
 void OdeIntegrator::compile() {
@@ -3056,6 +3217,13 @@ OdeResult OdeIntegrator::integrateCore(const OdeOptions& options) {
     } else if (options.method == "rk4") {
         return integrateRK4(options);
     } else if (options.method == "cvode") {
+        if (!algebraicResiduals_.empty()) {
+            if (options.enforceNonnegative) {
+                throw std::runtime_error(
+                    "DAE integration does not combine with CVODE nonnegative constraints");
+            }
+            return integrateIda(options);
+        }
         if (options.enforceNonnegative) {
             return integrateCvode(options);
         }
@@ -3882,6 +4050,24 @@ static int cvodeCallbackWrapper(sunrealtype t, N_Vector y, N_Vector ydot, void* 
     return 0;
 }
 
+static int idaResidualWrapper(sunrealtype t, N_Vector y, N_Vector ydot,
+                              N_Vector residual, void* user_data) {
+    return static_cast<OdeIntegrator*>(user_data)->idaResidual(
+        static_cast<double>(t), NV_DATA_S(y), NV_DATA_S(ydot),
+        NV_DATA_S(residual));
+}
+
+static int idaEventRootWrapper(sunrealtype time, N_Vector state, N_Vector,
+                               sunrealtype* roots, void* userData) {
+    try {
+        static_cast<OdeIntegrator*>(userData)->cvodeEventRoots(
+            static_cast<double>(time), NV_DATA_S(state), roots);
+        return 0;
+    } catch (...) {
+        return -1;
+    }
+}
+
 static int cvodeEventRootWrapper(sunrealtype time, N_Vector state,
                                  sunrealtype* roots, void* userData) {
     try {
@@ -3924,6 +4110,31 @@ struct CvodeSession {
         }
         if (y) { N_VDestroy(y); y = nullptr; }
         if (sunctx) { SUNContext_Free(&sunctx); }
+    }
+};
+
+struct IdaSession {
+    SUNContext sunctx = nullptr;
+    N_Vector y = nullptr;
+    N_Vector ydot = nullptr;
+    N_Vector id = nullptr;
+    N_Vector absTol = nullptr;
+    void* ida_mem = nullptr;
+    SUNMatrix A = nullptr;
+    SUNLinearSolver LS = nullptr;
+
+    IdaSession() = default;
+    IdaSession(const IdaSession&) = delete;
+    IdaSession& operator=(const IdaSession&) = delete;
+    ~IdaSession() {
+        if (LS) SUNLinSolFree(LS);
+        if (A) SUNMatDestroy(A);
+        if (ida_mem) IDAFree(&ida_mem);
+        if (absTol) N_VDestroy(absTol);
+        if (id) N_VDestroy(id);
+        if (ydot) N_VDestroy(ydot);
+        if (y) N_VDestroy(y);
+        if (sunctx) SUNContext_Free(&sunctx);
     }
 };
 
@@ -4542,6 +4753,330 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
 
     // Cleanup (v7: also free linear solver, matrix, and context) happens
     // when ``session`` goes out of scope, after the result is returned.
+    return result;
+}
+
+OdeResult OdeIntegrator::integrateIda(const OdeOptions& opts) {
+    if (hasPositiveExpressionDelay_ || !historyDelays_.empty()) {
+        throw std::runtime_error(
+            "DAE integration with delayed expressions is not supported");
+    }
+    auto times = outputTimes(opts);
+    const auto stopIfExpr = parseStopIf(opts);
+    pendingEvents_.clear();
+    if (opts.continueSimulation && activeSimulationSession_) {
+        for (const auto& pending : activeSimulationSession_->pendingNativeEvents) {
+            pendingEvents_.push_back({pending.event, pending.executionTime,
+                                      pending.values});
+        }
+        triggerRoseAt_ = activeSimulationSession_->eventTriggerRoseAt;
+    }
+    if (!opts.continueSimulation || triggerRoseAt_.size() != nativeEvents_.size()) {
+        triggerRoseAt_.assign(nativeEvents_.size(),
+                              -std::numeric_limits<double>::infinity());
+    }
+
+    std::vector<double> initialState(nSpecies_);
+    for (std::size_t i = 0; i < nSpecies_; ++i) {
+        initialState[i] = activeSimulationSession_ &&
+                activeSimulationSession_->state.size() == nSpecies_
+            ? activeSimulationSession_->state[i]
+            : network_.species.get(i).getAmount();
+    }
+    correctAlgebraicState(initialState, opts.tStart,
+        std::max(opts.atol, 32.0 * std::numeric_limits<double>::epsilon()));
+    lastRootValues_.clear();
+    for (const auto& group : nativeEventGroups_) {
+        lastRootValues_.push_back(
+            eventRootValue(group.trigger, opts.tStart, initialState.data()));
+    }
+    for (std::size_t index = 0;
+         !opts.continueSimulation && index < nativeEvents_.size(); ++index) {
+        const auto& event = nativeEvents_[index];
+        if (isStrictTrigger(event.trigger) &&
+            std::abs(eventRootValue(event.trigger, opts.tStart,
+                                    initialState.data())) <= 1e-14) {
+            throw std::runtime_error(
+                std::string(ast::kUnsupportedEventExecutionMessage) +
+                ": strict trigger equals its threshold at the initial time");
+        }
+        if (!event.initialValue &&
+            triggerHolds(event.trigger, opts.tStart, initialState.data())) {
+            PendingEvent pending;
+            pending.event = index;
+            pending.executionTime = opts.tStart + event.delay;
+            if (event.useValuesFromTriggerTime) {
+                pending.values = eventValues(event, opts.tStart, initialState.data());
+            }
+            triggerRoseAt_[index] = opts.tStart;
+            pendingEvents_.push_back(std::move(pending));
+        }
+    }
+    if (!opts.continueSimulation && applyDueEvents(opts.tStart, initialState)) {
+        correctAlgebraicState(initialState, opts.tStart,
+            std::max(opts.atol, 32.0 * std::numeric_limits<double>::epsilon()));
+        for (std::size_t group = 0; group < nativeEventGroups_.size(); ++group) {
+            lastRootValues_[group] = eventRootValue(
+                nativeEventGroups_[group].trigger, opts.tStart, initialState.data());
+        }
+    }
+    std::vector<double> initialRhs(nSpecies_);
+    derivs(opts.tStart, initialState.data(), initialRhs.data());
+    const double timeScale = std::max(std::abs(opts.tEnd - opts.tStart), 1.0);
+    cvodeStateScale_.resize(nSpecies_);
+
+    IdaSession session;
+    if (SUNContext_Create(SUN_COMM_NULL, &session.sunctx) != 0) {
+        throw std::runtime_error("IDA DAE solver could not create SUNDIALS context");
+    }
+    const auto count = static_cast<sunindextype>(nSpecies_);
+    session.y = N_VNew_Serial(count, session.sunctx);
+    session.ydot = N_VNew_Serial(count, session.sunctx);
+    session.id = N_VNew_Serial(count, session.sunctx);
+    session.absTol = N_VNew_Serial(count, session.sunctx);
+    if (!session.y || !session.ydot || !session.id || !session.absTol) {
+        throw std::runtime_error("IDA DAE solver could not allocate state vectors");
+    }
+    std::vector<bool> isAlgebraic(nSpecies_, false);
+    for (const auto index : algebraicSpeciesIndices_) isAlgebraic[index] = true;
+    for (std::size_t i = 0; i < nSpecies_; ++i) {
+        double scale = std::abs(initialState[i]);
+        if (std::isfinite(initialRhs[i])) {
+            scale = std::max(scale, std::abs(initialRhs[i]) * timeScale);
+        }
+        if (!std::isfinite(scale) || scale < 1e-30) scale = 1.0;
+        cvodeStateScale_[i] = scale;
+        NV_Ith_S(session.y, i) = initialState[i] / scale;
+        NV_Ith_S(session.ydot, i) = initialRhs[i] / scale;
+        NV_Ith_S(session.id, i) = isAlgebraic[i] ? 0.0 : 1.0;
+        NV_Ith_S(session.absTol, i) = opts.atol / scale;
+    }
+
+    session.ida_mem = IDACreate(session.sunctx);
+    if (!session.ida_mem || IDAInit(session.ida_mem, idaResidualWrapper,
+                                    opts.tStart, session.y, session.ydot) != IDA_SUCCESS) {
+        throw std::runtime_error("IDA DAE solver initialization failed");
+    }
+    IDASetUserData(session.ida_mem, this);
+    if (IDASVtolerances(session.ida_mem, opts.rtol, session.absTol) != IDA_SUCCESS ||
+        IDASetId(session.ida_mem, session.id) != IDA_SUCCESS ||
+        IDASetMaxNumSteps(session.ida_mem, 10000) != IDA_SUCCESS) {
+        throw std::runtime_error("IDA DAE solver configuration failed");
+    }
+    if (opts.maxStep > 0.0 &&
+        IDASetMaxStep(session.ida_mem, opts.maxStep) != IDA_SUCCESS) {
+        throw std::runtime_error("IDA DAE solver maximum step setup failed");
+    }
+    if (!opts.sparse && nSpecies_ < 500) {
+        session.A = SUNDenseMatrix(count, count, session.sunctx);
+        session.LS = session.A
+            ? SUNLinSol_Dense(session.y, session.A, session.sunctx)
+            : nullptr;
+    } else {
+        session.LS = SUNLinSol_SPGMR(session.y, SUN_PREC_NONE, 0, session.sunctx);
+    }
+    if (!session.LS ||
+        IDASetLinearSolver(session.ida_mem, session.LS, session.A) != IDA_SUCCESS) {
+        throw std::runtime_error("IDA DAE solver linear system setup failed");
+    }
+    if (!nativeEventRoots_.empty()) {
+        const int rootCount = static_cast<int>(nativeEventRoots_.size());
+        std::vector<int> rootDirections(static_cast<std::size_t>(rootCount), 1);
+        if (IDARootInit(session.ida_mem, rootCount, idaEventRootWrapper) != IDA_SUCCESS ||
+            IDASetRootDirection(session.ida_mem, rootDirections.data()) != IDA_SUCCESS) {
+            throw std::runtime_error("DAE event root initialization failed");
+        }
+    }
+    double icTarget = opts.tStart + std::max(timeScale * 1e-3, 1e-8);
+    if (IDACalcIC(session.ida_mem, IDA_YA_YDP_INIT, icTarget) != IDA_SUCCESS ||
+        IDAGetConsistentIC(session.ida_mem, session.y, session.ydot) != IDA_SUCCESS) {
+        throw std::runtime_error(
+            "DAE consistent initial conditions failed; algebraic constraint may be singular or inconsistent");
+    }
+
+    OdeResult result;
+    result.timePoints.reserve(times.size());
+    result.concentrations.reserve(times.size());
+    double time = opts.tStart;
+    for (std::size_t step = 0; step < times.size(); ++step) {
+        const double outputTime = times[step];
+        if (outputTime > time) {
+            while (time < outputTime - 1e-12) {
+                double target = outputTime;
+                for (const auto& pending : pendingEvents_) {
+                    target = std::min(target, pending.executionTime);
+                }
+                if (target <= time + 1e-12) {
+                    std::vector<double> dueState(nSpecies_);
+                    for (std::size_t i = 0; i < nSpecies_; ++i) {
+                        dueState[i] = NV_Ith_S(session.y, i) * cvodeStateScale_[i];
+                    }
+                    if (!applyDueEvents(time, dueState)) break;
+                    correctAlgebraicState(dueState, time,
+                        std::max(opts.atol,
+                            32.0 * std::numeric_limits<double>::epsilon()));
+                    for (std::size_t i = 0; i < nSpecies_; ++i) {
+                        NV_Ith_S(session.y, i) = dueState[i] / cvodeStateScale_[i];
+                    }
+                    if (IDAReInit(session.ida_mem, time, session.y,
+                                  session.ydot) != IDA_SUCCESS ||
+                        IDASetId(session.ida_mem, session.id) != IDA_SUCCESS) {
+                        throw std::runtime_error("DAE event reinitialization failed");
+                    }
+                    const double icTarget = time + std::max(timeScale * 1e-3, 1e-8);
+                    if (IDACalcIC(session.ida_mem, IDA_YA_YDP_INIT, icTarget) !=
+                            IDA_SUCCESS ||
+                        IDAGetConsistentIC(session.ida_mem, session.y,
+                                           session.ydot) != IDA_SUCCESS) {
+                        throw std::runtime_error(
+                            "DAE event reset left inconsistent algebraic state");
+                    }
+                    recordHistoryJump(time, dueState);
+                    continue;
+                }
+                if (IDASetStopTime(session.ida_mem, target) != IDA_SUCCESS) {
+                    throw std::runtime_error("IDA DAE stop time setup failed");
+                }
+                const int flag = IDASolve(session.ida_mem, target, &time,
+                                          session.y, session.ydot, IDA_NORMAL);
+                if (flag == IDA_ROOT_RETURN) {
+                    std::vector<int> rootsFound(nativeEventRoots_.size());
+                    if (IDAGetRootInfo(session.ida_mem, rootsFound.data()) != IDA_SUCCESS) {
+                        throw std::runtime_error("DAE event root information failed");
+                    }
+                    std::vector<double> state(nSpecies_);
+                    for (std::size_t i = 0; i < nSpecies_; ++i) {
+                        state[i] = NV_Ith_S(session.y, i) * cvodeStateScale_[i];
+                    }
+                    recordHistoryPoint(time, state);
+                    std::set<std::size_t> risingGroups;
+                    std::vector<double> derivatives(nSpecies_);
+                    derivs(time, state.data(), derivatives.data());
+                    for (std::size_t root = 0; root < rootsFound.size(); ++root) {
+                        if (rootsFound[root] <= 0) continue;
+                        const auto [group, risingConjunct] = nativeEventRoots_[root];
+                        bool conjunctionHolds = true;
+                        for (const auto* conjunct : triggerConjuncts(
+                                 nativeEventGroups_[group].trigger)) {
+                            if (conjunct == risingConjunct) continue;
+                            const double value = eventRootValue(
+                                *conjunct, time, state.data());
+                            const double tolerance = 1e-9 * (1.0 + std::abs(value));
+                            if (value < -tolerance ||
+                                (std::abs(value) <= tolerance &&
+                                 eventRootDerivative(*conjunct, time, state.data(),
+                                                     derivatives) <= 0.0)) {
+                                conjunctionHolds = false;
+                                break;
+                            }
+                        }
+                        if (conjunctionHolds) {
+                            risingGroups.insert(group);
+                            queueTriggeredGroup(group, time, state);
+                        }
+                    }
+                    for (std::size_t group = 0;
+                         group < nativeEventGroups_.size(); ++group) {
+                        if (risingGroups.count(group)) continue;
+                        const double value = eventRootValue(
+                            nativeEventGroups_[group].trigger, time, state.data());
+                        const double previous = lastRootValues_[group];
+                        const double tolerance = 1e-9 * (1.0 + std::abs(previous));
+                        bool crossed = value > tolerance && previous <= 0.0;
+                        if (std::abs(value) <= tolerance) {
+                            crossed = eventRootDerivative(
+                                nativeEventGroups_[group].trigger, time, state.data(),
+                                derivatives) > 0.0;
+                        }
+                        if (crossed) queueTriggeredGroup(group, time, state);
+                    }
+                    for (std::size_t group = 0;
+                         group < nativeEventGroups_.size(); ++group) {
+                        lastRootValues_[group] = eventRootValue(
+                            nativeEventGroups_[group].trigger, time, state.data());
+                    }
+                    if (applyDueEvents(time, state)) {
+                        correctAlgebraicState(state, time,
+                            std::max(opts.atol,
+                                32.0 * std::numeric_limits<double>::epsilon()));
+                        for (std::size_t i = 0; i < nSpecies_; ++i) {
+                            NV_Ith_S(session.y, i) = state[i] / cvodeStateScale_[i];
+                        }
+                        recordHistoryJump(time, state);
+                        if (IDAReInit(session.ida_mem, time, session.y,
+                                      session.ydot) != IDA_SUCCESS ||
+                            IDASetId(session.ida_mem, session.id) != IDA_SUCCESS) {
+                            throw std::runtime_error("DAE event reinitialization failed");
+                        }
+                        const double icTarget = time +
+                            std::max(timeScale * 1e-3, 1e-8);
+                        const int icFlag = IDACalcIC(
+                            session.ida_mem, IDA_YA_YDP_INIT, icTarget);
+                        const int getIcFlag = icFlag == IDA_SUCCESS
+                            ? IDAGetConsistentIC(session.ida_mem, session.y,
+                                                 session.ydot)
+                            : IDA_SUCCESS;
+                        if (icFlag != IDA_SUCCESS || getIcFlag != IDA_SUCCESS) {
+                            std::ostringstream detail;
+                            detail << "DAE event reset left inconsistent algebraic state"
+                                   << " (IDA flags " << icFlag << ", " << getIcFlag
+                                   << ", time " << time << ", state";
+                            for (std::size_t i = 0; i < state.size(); ++i) {
+                                detail << " " << state[i];
+                            }
+                            detail << ")";
+                            throw std::runtime_error(detail.str());
+                        }
+                    }
+                    continue;
+                }
+                if (flag != IDA_SUCCESS && flag != IDA_TSTOP_RETURN) {
+                    throw std::runtime_error("IDA DAE integration failed with flag " +
+                                             std::to_string(flag));
+                }
+                std::vector<double> dueState(nSpecies_);
+                for (std::size_t i = 0; i < nSpecies_; ++i) {
+                    dueState[i] = NV_Ith_S(session.y, i) * cvodeStateScale_[i];
+                }
+                if (applyDueEvents(time, dueState)) {
+                    correctAlgebraicState(dueState, time,
+                        std::max(opts.atol,
+                            32.0 * std::numeric_limits<double>::epsilon()));
+                    for (std::size_t i = 0; i < nSpecies_; ++i) {
+                        NV_Ith_S(session.y, i) = dueState[i] / cvodeStateScale_[i];
+                    }
+                    if (IDAReInit(session.ida_mem, time, session.y,
+                                  session.ydot) != IDA_SUCCESS ||
+                        IDASetId(session.ida_mem, session.id) != IDA_SUCCESS) {
+                        throw std::runtime_error("DAE event reinitialization failed");
+                    }
+                    const double icTarget = time + std::max(timeScale * 1e-3, 1e-8);
+                    if (IDACalcIC(session.ida_mem, IDA_YA_YDP_INIT, icTarget) !=
+                            IDA_SUCCESS ||
+                        IDAGetConsistentIC(session.ida_mem, session.y,
+                                           session.ydot) != IDA_SUCCESS) {
+                        throw std::runtime_error(
+                            "DAE event reset left inconsistent algebraic state");
+                    }
+                    continue;
+                }
+            }
+        }
+        result.timePoints.push_back(outputTime);
+        std::vector<double> state(nSpecies_);
+        for (std::size_t i = 0; i < nSpecies_; ++i) {
+            state[i] = NV_Ith_S(session.y, i) * cvodeStateScale_[i];
+        }
+        result.concentrations.push_back(state);
+        if (stopIfExpr && stopConditionMet(*stopIfExpr, outputTime, state)) break;
+        if (step > 0 && steadyStateReached(opts, outputTime, state)) break;
+    }
+    result.observables.resize(result.timePoints.size());
+    result.functions.resize(result.timePoints.size());
+    for (std::size_t step = 0; step < result.timePoints.size(); ++step) {
+        updateGroups(result.concentrations[step].data(), result.observables[step]);
+        updateFunctions(result.observables[step], result.timePoints[step], result.functions[step]);
+    }
     return result;
 }
 

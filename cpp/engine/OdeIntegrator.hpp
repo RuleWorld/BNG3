@@ -92,6 +92,10 @@ public:
     OdeIntegrator(const ast::Model& model, const GeneratedNetwork& network);
 
     OdeResult integrate(const OdeOptions& options);
+    // Register implicit algebraic residuals by the observable that exposes
+    // each algebraic state and an expression that must equal zero.
+    void setAlgebraicRules(
+        const std::vector<std::pair<std::string, std::string>>& rules);
     void writeOutputFiles(const std::string& prefix, const OdeResult& result, bool printCDAT = true, bool printFunctions = false, bool append = false) const;
     void writeBinaryOutputFiles(const std::string& prefix, const OdeResult& result, bool printCDAT = true) const;
     void writeBatchStdDevsFile(const std::string& prefix, const OdeResult& result) const;
@@ -103,6 +107,8 @@ public:
     // CVODE integrates a scaled state to keep very small SBML amounts and
     // very large converted rate constants numerically well-conditioned.
     void cvodeDerivs(double t, const double* y, double* dydt) const;
+    int idaResidual(double time, const double* scaledState,
+                    const double* scaledDerivative, double* residual) const;
     double cvodeEventRoot(double time, const double* scaledState) const;
     // The root function of every trigger group, for the solver's root
     // finding.  One root per group: the events that share a trigger are
@@ -199,6 +205,8 @@ private:
     std::vector<double> cvodeStateScale_;
     mutable std::vector<double> cvodePhysicalState_;
     mutable std::vector<double> cvodePhysicalDerivatives_;
+    std::vector<std::size_t> algebraicSpeciesIndices_;
+    std::vector<ast::Expression> algebraicResiduals_;
     std::vector<std::size_t> resultFunctionIndices_;                // zero-argument, user-visible, declaration order
 
     // One native event: the trigger that fires it, the delay between the
@@ -321,6 +329,8 @@ private:
                                             bool failOnError = false,
                                             bool discreteReactantCounts = false) const;
     void updateGroups(const double* y, std::vector<double>& groupValues) const;
+    void correctAlgebraicState(std::vector<double>& state, double time,
+                               double tolerance) const;
     void updateFunctions(const std::vector<double>& groupValues,
                          double time,
                          std::vector<double>& functionValues) const;
@@ -346,6 +356,7 @@ private:
     OdeResult integrateEuler(const OdeOptions& opts);
     OdeResult integrateRK4(const OdeOptions& opts);
     OdeResult integrateCvode(const OdeOptions& opts, bool useAdamsFallback = false);
+    OdeResult integrateIda(const OdeOptions& opts);
     OdeResult integrateSSA(const OdeOptions& opts);
     OdeResult integrateBatchSSA(const OdeOptions& opts);
     OdeResult integrateCore(const OdeOptions& options);

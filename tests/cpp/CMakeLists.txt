@@ -325,6 +325,17 @@ target_link_libraries(test_parser_units PRIVATE
 catch_discover_tests(test_parser_units)
 
 # SBML Core and SBML-Multi share the same unit definitions and attributes.
+add_executable(test_dae_ida test_dae_ida.cpp)
+target_include_directories(test_dae_ida PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/parser
+    ${CMAKE_SOURCE_DIR}/cpp/parser/generated
+    ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
+)
+target_link_libraries(test_dae_ida PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2 bng_engine)
+catch_discover_tests(test_dae_ida)
+
 add_executable(test_sbml_units test_sbml_units.cpp)
 target_include_directories(test_sbml_units PRIVATE
     ${CMAKE_SOURCE_DIR}/cpp
