@@ -17,7 +17,6 @@ import pytest
 from tests.validation import oracle_perl
 from tests.validation.strict import require_oracle
 
-
 ROOT = Path(__file__).resolve().parents[2]
 SOURCE = ROOT / "tests" / "validation" / "Validate" / "hybrid_test.bngl"
 EXPECTED_CHILDREN = {
@@ -52,9 +51,7 @@ def _pattern_signature(pattern: ET.Element) -> tuple:
         ):
             component_ids[component.get("id", "")] = (molecule_index, component_index)
             states = tuple(
-                state.get("name")
-                for state in component
-                if _tag(state) == "State"
+                state.get("name") for state in component if _tag(state) == "State"
             )
             components.append(
                 (component.get("name"), component.get("numberOfBonds"), states)
@@ -192,8 +189,7 @@ def test_hybrid_children_preserve_bng2_transitions_rates_and_observable_symmetry
             if _tag(molecule) == "Molecule"
         )
         and any(
-            _tag(item) == "Bond"
-            for item in _find(rule, "ListOfProductPatterns").iter()
+            _tag(item) == "Bond" for item in _find(rule, "ListOfProductPatterns").iter()
         )
     ]
     assert len(native_candidates) == len(EXPECTED_CHILDREN)
@@ -208,13 +204,13 @@ def test_hybrid_children_preserve_bng2_transitions_rates_and_observable_symmetry
     observed = {}
     for rule in native_candidates:
         signature = _rule_signature(rule)
-        assert signature in expected_by_transition, (
-            f"unexpected hybrid transition {rule.get('name')}"
-        )
+        assert (
+            signature in expected_by_transition
+        ), f"unexpected hybrid transition {rule.get('name')}"
         base_parameter, factor = expected_by_transition[signature]
-        observed[signature] = _rate_value(rule, native_parameters) / native_base_rates[
-            base_parameter
-        ]
+        observed[signature] = (
+            _rate_value(rule, native_parameters) / native_base_rates[base_parameter]
+        )
         assert observed[signature] == pytest.approx(factor, rel=1e-12)
     assert set(observed) == set(expected_by_transition)
 
