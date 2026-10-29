@@ -97,8 +97,10 @@ def test_underdetermined_algebraic_target_fails_explicitly(tmp_path):
 def _concentration_dae_sbml():
     """The same index-1 DAE with concentration-valued species in C = 2."""
 
-    return _dae_sbml().replace('size="1"', 'size="2"').replace(
-        'hasOnlySubstanceUnits="true"', 'hasOnlySubstanceUnits="false"'
+    return (
+        _dae_sbml()
+        .replace('size="1"', 'size="2"')
+        .replace('hasOnlySubstanceUnits="true"', 'hasOnlySubstanceUnits="false"')
     )
 
 
@@ -115,16 +117,20 @@ def test_algebraic_residual_reads_the_sbml_quantity_of_each_species():
     from bionetgen.sbml import _native_algebraic_rules
 
     source = _concentration_dae_sbml()
-    bngl = Atomizer(atomize=False, quiet_mode=True, native_dae_runtime=True).atomize(
-        source
-    ).bngl
+    bngl = (
+        Atomizer(atomize=False, quiet_mode=True, native_dae_runtime=True)
+        .atomize(source)
+        .bngl
+    )
     assert "__algebraic_residual_0() = (_c_Z()) ^ (2) - _c_X()" in bngl
     assert _native_algebraic_rules(SBMLParser().parse(source)) == [
         ("Z", "__algebraic_residual_0()")
     ]
-    amounts = Atomizer(atomize=False, quiet_mode=True, native_dae_runtime=True).atomize(
-        _dae_sbml()
-    ).bngl
+    amounts = (
+        Atomizer(atomize=False, quiet_mode=True, native_dae_runtime=True)
+        .atomize(_dae_sbml())
+        .bngl
+    )
     assert "__algebraic_residual_0() = (Z_amt) ^ (2) - X_amt" in amounts
 
 
