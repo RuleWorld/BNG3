@@ -140,6 +140,7 @@ public:
     ReactionRule& operator=(const ReactionRule&) = delete;
 
     const std::string& getRuleName() const;
+    void setLabel(std::string label);
     // Used only by the parser's post-parse pass, which removes synthetic
     // barrier rules from the model and renumbers the remaining ordinary rules
     // so the model matches one written without a barrier patterns block.

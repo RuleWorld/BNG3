@@ -967,6 +967,10 @@ const std::string& ReactionRule::getLabel() const {
     return label_;
 }
 
+void ReactionRule::setLabel(std::string label) {
+    label_ = std::move(label);
+}
+
 const std::vector<std::string>& ReactionRule::getReactants() const {
     return reactants_;
 }

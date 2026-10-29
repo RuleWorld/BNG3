@@ -264,42 +264,22 @@ void removeRedundantLabels(std::vector<SpeciesGraph>& reactants,
                            std::vector<SpeciesGraph>& products,
                            const std::unordered_map<std::string, bool>& tempLabels)
 {
-    // Collect labels used in products
-    std::unordered_set<std::string> prodLabels;
-    for (auto& p : products) {
-        for (auto it = p.getGraph().begin(); it != p.getGraph().end(); ++it) {
-            const auto& tag = (*it)->get_label_tag();
-            if (!tag.empty()) prodLabels.insert(tag);
-        }
-    }
-
-    // For each temp label in reactants, if it's NOT in products, remove it
-    // Also remove temp labels from products that aren't in reactants
-    std::unordered_set<std::string> reacLabels;
-    for (auto& r : reactants) {
-        for (auto it = r.getGraph().begin(); it != r.getGraph().end(); ++it) {
-            const auto& tag = (*it)->get_label_tag();
-            if (!tag.empty()) reacLabels.insert(tag);
-        }
-    }
-
-    // Remove temp labels that don't need to bridge reactants<->products
-    for (auto& r : reactants) {
-        for (auto it = r.getGraph().begin(); it != r.getGraph().end(); ++it) {
-            const auto& tag = (*it)->get_label_tag();
-            if (!tag.empty() && tempLabels.count(tag) && !prodLabels.count(tag)) {
-                (*it)->set_label_tag("");
+    // Temporary labels identify source-to-product nodes while rule operations
+    // are applied. Once concrete product graphs exist, their structural
+    // correspondence is explicit and these internal labels must not leak into
+    // authored BNGL. User-authored %tags are not in tempLabels and remain.
+    auto clearTemporary = [&](std::vector<SpeciesGraph>& species) {
+        for (auto& graph : species) {
+            for (auto node = graph.getGraph().begin(); node != graph.getGraph().end(); ++node) {
+                const auto& tag = (*node)->get_label_tag();
+                if (!tag.empty() && tempLabels.count(tag)) {
+                    (*node)->set_label_tag("");
+                }
             }
         }
-    }
-    for (auto& p : products) {
-        for (auto it = p.getGraph().begin(); it != p.getGraph().end(); ++it) {
-            const auto& tag = (*it)->get_label_tag();
-            if (!tag.empty() && tempLabels.count(tag) && !reacLabels.count(tag)) {
-                (*it)->set_label_tag("");
-            }
-        }
-    }
+    };
+    clearTemporary(reactants);
+    clearTemporary(products);
 }
 
 // Safe delete a node from a graph, removing all edges first.
@@ -487,6 +467,19 @@ ExpandRuleResult expandRule(
         // This shouldn't happen, but guard against it
     }
 
+    // Assign names to distinct refined rules after deduplication. Automorphic
+    // embeddings that collapse to one child must not consume a child number.
+    for (std::size_t i = 0; i < result.childRules.size(); ++i) {
+        std::string name = rule.getRuleName() + "_v" + std::to_string(i + 1);
+        std::size_t reversePos = 0;
+        while ((reversePos = name.find("(reverse)", reversePos)) != std::string::npos) {
+            name.replace(reversePos, 9, "_rev");
+            reversePos += 4;
+        }
+        result.childRules[i].setRuleName(name);
+        result.childRules[i].setLabel(name);
+    }
+
     // If we need stat factors, recount (only if there were duplicates)
     {
         // Re-iterate Cartesian product to count multiplicities
@@ -526,6 +519,31 @@ ExpandRuleResult expandRule(
         for (auto& [sid, idx] : childRuleMap) {
             double factor = factorMap.count(sid) ? factorMap[sid] : 1.0;
             if (factor != 1.0 && idx < result.childRules.size()) {
+                // Each distinct product pattern's automorphisms represent
+                // the same child transition under different product-node
+                // labellings. BNG2's parent/child MultScale ratio removes
+                // those duplicate product embeddings from the accumulated
+                // match multiplicity.
+                double productSymmetry = 1.0;
+                for (const auto& product : result.childRules[idx].getProductPatterns()) {
+                    bool hasCorrespondenceTag = false;
+                    for (auto node = product.getGraph().begin();
+                         node != product.getGraph().end(); ++node) {
+                        if (!(*node)->get_label_tag().empty()) {
+                            hasCorrespondenceTag = true;
+                            break;
+                        }
+                    }
+                    if (hasCorrespondenceTag) continue;
+                    const auto automorphisms = findAllMaps(
+                        product.getGraph(), product.getGraph()).size();
+                    if (automorphisms > 0) {
+                        productSymmetry *= static_cast<double>(automorphisms);
+                    }
+                }
+                factor /= productSymmetry;
+                if (factor == 1.0) continue;
+
                 // Multiply the first rate constant by the stat factor
                 auto& childRule = result.childRules[idx];
                 const auto& rates = childRule.getRates();
@@ -745,7 +763,7 @@ std::unique_ptr<ReactionRule> restrictRule(
 
             BNGcore::Node* lhs = findAggNode(op.source);
             BNGcore::Node* rhs = findAggNode(op.partner);
-            if (!lhs || !rhs) break;
+            if (!lhs || !rhs) return nullptr;
 
             // Remove unbound bond nodes
             auto removeUnbound = [&](BNGcore::Node* comp) {
@@ -798,7 +816,7 @@ std::unique_ptr<ReactionRule> restrictRule(
 
             BNGcore::Node* lhsNode = findAggNode2(op.source);
             BNGcore::Node* rhsNode = findAggNode2(op.partner);
-            if (!lhsNode || !rhsNode) break;
+            if (!lhsNode || !rhsNode) return nullptr;
 
             // Find shared bond node and delete it
             BNGcore::Node* sharedBond = nullptr;
@@ -821,6 +839,7 @@ std::unique_ptr<ReactionRule> restrictRule(
                 aggregateGraph.add_node(ub2);
                 aggregateGraph.add_edge(rhsNode, ub2);
             }
+            else return nullptr;
             break;
         }
         case ReactionRule::TransformOp::Type::DeleteMolecule: {
@@ -943,24 +962,29 @@ std::unique_ptr<ReactionRule> restrictRule(
         // filtering happens during rule application.
     }
 
-    // ---- Step 5: Replace with population equivalents (Perl lines 586-620) ----
-    const auto& popMaps = model.getPopulationMaps();
-    if (!popMaps.empty()) {
-        // Replace reactants that match a population species
-        for (std::size_t ir = 0; ir < reactants.size(); ++ir) {
-            for (const auto& pop : popMaps) {
-                // Parse population pattern to check isomorphism
-                // For simplicity, we check by molecule type name matching
-                // since population types are single-molecule
-                const auto& rg = reactants[ir].getGraph();
-                // A population reactant would be a single molecule matching the pop pattern
-                // This is a simplified check; full implementation would parse pop.patternText
-                // and do a proper isomorphism check
+    // ---- Step 5: Replace complete mapped complexes with populations ----
+    if (params.populationParticleGraphs && params.populationGraphs) {
+        const auto count = std::min(params.populationParticleGraphs->size(),
+                                    params.populationGraphs->size());
+        auto replaceWholeComplex = [&](SpeciesGraph& species) {
+            for (std::size_t i = 0; i < count; ++i) {
+                if (!(*params.populationParticleGraphs)[i].graphIsomorphicTo(
+                        species.getGraph())) {
+                    continue;
+                }
+                BNGcore::PatternGraph populationCopy;
+                cloneGraphInto((*params.populationGraphs)[i].getGraph(), populationCopy);
+                const std::string compartment = species.getCompartment();
+                species = SpeciesGraph(std::move(populationCopy), compartment);
+                return;
+            }
+        };
+        for (std::size_t i = 0; i < reactants.size() && i < ruleInstance.size(); ++i) {
+            if (ruleInstance[i].speciesIndex != static_cast<std::size_t>(-1)) {
+                replaceWholeComplex(reactants[i]);
             }
         }
-        // Replace products similarly
-        // (Population replacement is a best-effort operation here;
-        // the full logic requires PopulationList which stores parsed SpeciesGraphs)
+        for (auto& product : products) replaceWholeComplex(product);
     }
 
     // ---- Step 6: Remove redundant temp labels (Perl line 626) ----

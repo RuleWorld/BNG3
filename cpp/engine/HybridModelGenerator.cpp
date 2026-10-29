@@ -14,6 +14,7 @@
 #include "parser/PatternGraphBuilder.hpp"
 #include "core/Ullmann.hpp"
 #include "io/BnglWriter.hpp"
+#include "ast/RefineRule.hpp"
 
 namespace bng::engine {
 
@@ -242,7 +243,7 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
                 "PopulationType " + name + " clashes with MoleculeType of the same name");
         }
         // Add a simple population molecule type (no components)
-        ast::MoleculeType popMt(name, {});
+        ast::MoleculeType popMt(name, {}, true);
         hybridModel.addMoleculeType(popMt);
         ++nPopTypes;
     }
@@ -377,108 +378,54 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
     ++stepIndex;
 
     // Get the species patterns for each population
-    std::vector<std::string> popSpeciesPatterns;
+    std::vector<ast::SpeciesGraph> popSpeciesPatterns;
+    std::vector<ast::SpeciesGraph> populationGraphs;
     for (const auto& pop : populations) {
-        popSpeciesPatterns.push_back(pop.speciesPattern);
+        antlr4::ANTLRInputStream particleInput(pop.speciesPattern);
+        BNGLexer particleLexer(&particleInput);
+        antlr4::CommonTokenStream particleTokens(&particleLexer);
+        BNGParser particleParser(&particleTokens);
+        auto* particleSpecies = particleParser.species_def();
+        if (particleParser.getNumberOfSyntaxErrors() != 0) {
+            throw std::runtime_error("Invalid population map species pattern: " +
+                                     pop.speciesPattern);
+        }
+        popSpeciesPatterns.emplace_back(
+            bng::parser::buildPatternGraph(particleSpecies, model_, false));
+
+        antlr4::ANTLRInputStream populationInput(pop.populationName + "()");
+        BNGLexer populationLexer(&populationInput);
+        antlr4::CommonTokenStream populationTokens(&populationLexer);
+        BNGParser populationParser(&populationTokens);
+        auto* populationSpecies = populationParser.species_def();
+        if (populationParser.getNumberOfSyntaxErrors() != 0) {
+            throw std::runtime_error("Invalid population species type: " +
+                                     pop.populationName);
+        }
+        populationGraphs.emplace_back(
+            bng::parser::buildPatternGraph(populationSpecies, hybridModel, true));
     }
 
     std::size_t ruleCount = 0;
     for (const auto& rule : model_.getReactionRules()) {
-        // In Perl: each element of @RxnRules is an array [forward, reverse].
-        // For bidirectional rules, we handle both directions.
-        // For now, copy the rule. In the full implementation, expandRule()
-        // would specialize the rule for population species.
-
-        // Check if any reactant matches a population species
-        bool matchesPopulation = false;
-        if (!opts.safe) {
-            for (const auto& reactant : rule.getReactants()) {
-                for (const auto& popPattern : popSpeciesPatterns) {
-                    if (isIsomorphic(reactant, popPattern)) {
-                        matchesPopulation = true;
-                        break;
-                    }
-                }
-                if (matchesPopulation) break;
-            }
+        ast::RefineRuleParams refineParams;
+        refineParams.verbose = opts.verbose;
+        refineParams.safe = opts.safe;
+        refineParams.populationParticleGraphs = &popSpeciesPatterns;
+        refineParams.populationGraphs = &populationGraphs;
+        auto expanded = ast::expandRule(
+            rule, popSpeciesPatterns, model_, hybridModel, refineParams);
+        const std::size_t childCount = expanded.childRules.size();
+        for (auto& childRule : expanded.childRules) {
+            hybridModel.addReactionRule(std::move(childRule));
+            ++ruleCount;
         }
 
-        if (matchesPopulation) {
-            // Create expanded copies that replace population-matching reactants
-            // with population variables. For now, we add the original rule
-            // plus a version with population reactants.
-            // This is the expandRule() stub -- in full implementation,
-            // RefineRule.pm logic would go here.
-
-            // First, add the original rule
-            hybridModel.addReactionRule(ast::ReactionRule(
-                rule.getRuleName(),
-                rule.getRuleName() + ":",
-                rule.getReactants(),
-                rule.getProducts(),
-                rule.getRates(),
-                rule.getModifiers(),
-                false,  // Each direction is separate in hybrid model
-                rule.getReactantPatterns(),
-                rule.getProductPatterns()));
-
-            // Create population-specialized version(s)
-            // Replace matching reactants with their population equivalents
-            auto reactantsCopy = rule.getReactants();
-            auto productsCopy = rule.getProducts();
-            bool modified = false;
-
-            for (auto& reactant : reactantsCopy) {
-                for (std::size_t p = 0; p < populations.size(); ++p) {
-                    if (isIsomorphic(reactant, populations[p].speciesPattern)) {
-                        reactant = populations[p].populationName + "()";
-                        modified = true;
-                        break;
-                    }
-                }
-            }
-            for (auto& product : productsCopy) {
-                for (std::size_t p = 0; p < populations.size(); ++p) {
-                    if (isIsomorphic(product, populations[p].speciesPattern)) {
-                        product = populations[p].populationName + "()";
-                        modified = true;
-                        break;
-                    }
-                }
-            }
-
-            if (modified) {
-                std::string popRuleName = rule.getRuleName() + "_pop";
-                hybridModel.addReactionRule(ast::ReactionRule(
-                    popRuleName,
-                    popRuleName + ":",
-                    reactantsCopy,
-                    productsCopy,
-                    rule.getRates(),
-                    rule.getModifiers(),
-                    false));
-            }
-
-            if (opts.verbose) {
-                std::cerr << indent << indent
-                          << "Rule '" << rule.getRuleName()
-                          << "': expanded to " << (modified ? 2 : 1) << " child rule"
-                          << (modified ? "s" : "") << ".\n";
-            }
-        } else {
-            // No population match: copy rule as-is
-            hybridModel.addReactionRule(ast::ReactionRule(
-                rule.getRuleName(),
-                rule.getRuleName() + ":",
-                rule.getReactants(),
-                rule.getProducts(),
-                rule.getRates(),
-                rule.getModifiers(),
-                false,
-                rule.getReactantPatterns(),
-                rule.getProductPatterns()));
+        if (opts.verbose) {
+            std::cerr << indent << indent << "Rule '" << rule.getRuleName()
+                      << "': expanded to " << childCount << " child rule"
+                      << (childCount == 1 ? "" : "s") << ".\n";
         }
-        ++ruleCount;
     }
     result.nRules = ruleCount;
     std::cerr << indent << "  ..finished processing " << ruleCount << " reaction rules.\n";
