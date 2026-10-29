@@ -5199,23 +5199,63 @@ def _state_triggered_priority_pair_model(assignment_target: str = "p2") -> str:
     </sbml>"""
 
 
-def test_state_triggered_group_with_a_dynamic_priority_is_ordered():
+def test_state_triggered_group_with_a_dynamic_priority_executes_in_order(tmp_path):
     # SBML L3V2 Core Sec. 4.12.3: the priority orders the events that are
     # executed simultaneously, and Sec. 4.12.3 also says the priority is
     # evaluated at the execution instant, so a priority that reads the model
     # state orders the group as well.
     from bionetgen.atomizer.modern import Atomizer
 
-    result = Atomizer(quiet_mode=True).atomize(_state_triggered_priority_pair_model())
+    import numpy as np
+    import pytest
+
+    from bionetgen.model import load
+
+    xml = _state_triggered_priority_pair_model(assignment_target="S").replace(
+        '<model id="state_triggered_priority_pair">',
+        '<model id="state_triggered_priority_pair">'
+        '<listOfCompartments><compartment id="C" size="1" constant="true"/>'
+        '</listOfCompartments><listOfSpecies><species id="S" compartment="C" '
+        'initialAmount="0" hasOnlySubstanceUnits="true"/></listOfSpecies>',
+    )
+    result = Atomizer(quiet_mode=True, t_end=6, n_steps=60).atomize(xml)
 
     assert result.success, result.error
     assert "Events NOT simulated" not in result.bngl
     # The constant priority 5 is higher than the state's value 3 at the
     # crossing, so the constant-priority event runs first and the other
     # event's value is the one that survives.
-    assert result.bngl.index('setParameter("p2", "2")') < result.bngl.index(
-        'setParameter("p2", "1")'
+    assert result.bngl.index('setConcentration("@C:M_S()", "2")') < result.bngl.index(
+        'setConcentration("@C:M_S()", "1")'
     )
+
+    # Execute the authored event actions in the native engine. The event with
+    # constant priority 5 runs first; the dynamic priority evaluates to 3 at
+    # the trigger and runs second, so its assignment to the shared target wins.
+    model_path = tmp_path / "state_triggered_priority_pair.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    rows = model_path.with_suffix(".gdat").read_text(encoding="utf-8").splitlines()
+    columns = rows[0].lstrip("# ").split()
+    native = np.loadtxt(rows[1:])
+    native_times = native[:, columns.index("time")]
+    native_state = native[:, columns.index("S")]
+    np.testing.assert_allclose(native_state[native_times < 1], 0, rtol=0, atol=1e-12)
+    np.testing.assert_allclose(native_state[native_times > 1], 1, rtol=0, atol=1e-12)
+
+    # RoadRunner independently confirms the SBML source trajectory away from
+    # the exact event instant, where output sampling conventions can differ.
+    roadrunner = pytest.importorskip("roadrunner")
+    reference_engine = roadrunner.RoadRunner(xml)
+    reference_engine.integrator.setValue("relative_tolerance", 1e-10)
+    reference_engine.integrator.setValue("absolute_tolerance", 1e-12)
+    reference_engine.timeCourseSelections = ["time", "S"]
+    reference = reference_engine.simulate(times=np.unique(native_times))
+    reference_times = reference[:, reference.colnames.index("time")]
+    compare = (native_times != 1) & (np.diff(np.r_[native_times, np.inf]) != 0)
+    rr_indices = np.searchsorted(reference_times, native_times[compare])
+    rr_values = reference[rr_indices, reference.colnames.index("S")]
+    np.testing.assert_allclose(native_state[compare], rr_values, rtol=1e-5, atol=5e-10)
 
 
 def test_state_triggered_group_that_assigns_the_trigger_state_stays_unsupported():
