@@ -7,7 +7,7 @@ Perl runtime is configured (scripts/regen_golden.py is the sanctioned way to
 populate golden/).
 
 Configuration (env):
-  BNG2_PERL   path to legacy/perl/BNG2.pl  (default: <repo>/legacy/perl/BNG2.pl)
+  BNG2_PERL   path to BNG2.pl in an explicitly checked-out oracle
   PERL        perl interpreter             (default: "perl")
 """
 
@@ -46,8 +46,29 @@ def golden_ensemble(model_name: str) -> Path | None:
 
 
 def _bng2_path() -> Path | None:
-    p = Path(os.environ.get("BNG2_PERL", REPO / "legacy" / "perl" / "BNG2.pl"))
-    return p if p.exists() else None
+    configured = os.environ.get("BNG2_PERL")
+    if not configured:
+        return None
+    path = Path(configured).expanduser()
+    return path if path.is_file() and _is_locked_bng2(path) else None
+
+
+def _is_locked_bng2(path: Path) -> bool:
+    """Accept only BNG2 from the exact revision in the upstream lock."""
+    from scripts.ci.oracle_sources import load_lock, load_oracle_source
+
+    try:
+        revision = subprocess.run(
+            ["git", "-C", str(path.parent), "rev-parse", "HEAD"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=10,
+        ).stdout.strip()
+        expected = load_oracle_source(load_lock(), "bionetgen")["revision"]
+    except (OSError, subprocess.SubprocessError, ValueError):
+        return False
+    return revision == expected
 
 
 def perl_available() -> bool:
@@ -197,7 +218,8 @@ def ensemble(
         from scripts import regen_golden
         import json
 
-        identity = regen_golden._ensemble_oracle_identity()
+        identity = regen_golden._bng2_oracle_identity(require_network=True)
+        regen_golden.check_seed_first_draws(regen_golden.ensemble_seeds(min_runs))
         receipt = regen_golden._generate_ensemble(
             model_name, min_runs, identity, destination_root=work_dir
         )
