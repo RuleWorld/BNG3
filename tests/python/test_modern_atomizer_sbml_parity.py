@@ -2452,8 +2452,13 @@ def test_shared_quadratic_simultaneous_crossings_execute_together(tmp_path):
         np.testing.assert_allclose(bng_values, rr_values, rtol=1e-5, atol=5e-10)
 
 
-def test_shared_quadratic_simultaneous_initial_entries_stay_unsupported():
+def test_shared_quadratic_simultaneous_initial_entries_report_runtime_boundary_limit(
+    tmp_path,
+):
+    import pytest
+
     from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
 
     xml = (
         _shared_quadratic_event_pair_model()
@@ -2466,8 +2471,17 @@ def test_shared_quadratic_simultaneous_initial_entries_stay_unsupported():
     result = Atomizer(quiet_mode=True, t_end=0.1, n_steps=10).atomize(xml)
 
     assert result.success, result.error
-    assert "state-dependent or non-constant event" in result.bngl
-    assert "Events NOT simulated" in result.bngl
+    assert "begin bng3_events version 1" in result.bngl
+    assert 'event "event1"' in result.bngl
+    assert 'event "event2"' in result.bngl
+
+    model_path = tmp_path / "shared_quadratic_simultaneous_initial_entries.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    with pytest.raises(
+        RuntimeError,
+        match="strict trigger equals its threshold at the initial time",
+    ):
+        load(model_path).simulate(method="ode", t_end=0.1, n_steps=10)
 
 
 def test_shared_quadratic_trigger_entering_at_initial_time_matches_libroadrunner(
