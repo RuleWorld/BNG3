@@ -1,7 +1,6 @@
 #include <catch2/catch_all.hpp>
 #include "../../cpp/engine/HybridModelGenerator.hpp"
 #include "../../cpp/ast/Model.hpp"
-#include "../../cpp/engine/NetworkGenerator.hpp"
 #include <fstream>
 #include <iostream>
 
@@ -28,8 +27,7 @@ TEST_CASE("HybridModelGenerator tests", "[hybrid]") {
 
         model.addMoleculeType(MoleculeType("A", {}));
 
-        GeneratedNetwork network;
-        HybridModelGenerator generator(model, network);
+        HybridModelGenerator generator(model);
         HybridModelGenerator::Options opts;
         opts.prefix = "test_empty";
         opts.overwrite = true;
@@ -51,8 +49,7 @@ TEST_CASE("HybridModelGenerator tests", "[hybrid]") {
         model.addReactionRule(ReactionRule("rule1", "r1", {"A()"}, {}, {Expression::number(1)}, {}, false));
         model.addObservable(Observable("obs1", "Molecules", {"A()"}));
 
-        GeneratedNetwork network;
-        HybridModelGenerator generator(model, network);
+        HybridModelGenerator generator(model);
         HybridModelGenerator::Options opts;
         opts.prefix = "test_model";
         opts.overwrite = true;
@@ -83,8 +80,7 @@ TEST_CASE("HybridModelGenerator tests", "[hybrid]") {
         model.addReactionRule(ReactionRule("rule_B", "rB", {"B()"}, {}, {Expression::number(1)}, {}, false));
         model.addReactionRule(ReactionRule("rule_A", "rA", {"A()"}, {}, {Expression::number(1)}, {}, false));
 
-        GeneratedNetwork network;
-        HybridModelGenerator generator(model, network);
+        HybridModelGenerator generator(model);
         HybridModelGenerator::Options opts;
         opts.prefix = "test_rules";
         opts.overwrite = true;
@@ -105,8 +101,7 @@ TEST_CASE("HybridModelGenerator tests", "[hybrid]") {
 
     SECTION("Preconditions validation") {
         Model model;
-        GeneratedNetwork network;
-        HybridModelGenerator generator(model, network);
+        HybridModelGenerator generator(model);
         HybridModelGenerator::Options opts;
 
         REQUIRE_THROWS_AS(generator.generate("dummy", opts), std::runtime_error);
@@ -128,8 +123,7 @@ TEST_CASE("HybridModelGenerator tests", "[hybrid]") {
         // Add a dummy reaction rule to bypass the throw
         model.addReactionRule(ReactionRule("rule1", "r1", {"A()"}, {}, {Expression::number(1)}, {}, false));
 
-        GeneratedNetwork network;
-        HybridModelGenerator generator(model, network);
+        HybridModelGenerator generator(model);
         HybridModelGenerator::Options opts;
         opts.prefix = "test_isomorphic";
         opts.overwrite = true;
@@ -163,8 +157,7 @@ TEST_CASE("HybridModelGenerator tests", "[hybrid]") {
         model.addSeedSpecies(SeedSpecies("A(b!1).B(a!1)", Expression::number(100)));
         model.addReactionRule(ReactionRule("rule1", "r1", {"A()"}, {}, {Expression::number(1)}, {}, false));
 
-        GeneratedNetwork network;
-        HybridModelGenerator generator(model, network);
+        HybridModelGenerator generator(model);
         HybridModelGenerator::Options opts;
         opts.prefix = "test_matches";
         opts.overwrite = true;
@@ -182,8 +175,7 @@ TEST_CASE("HybridModelGenerator tests", "[hybrid]") {
 
 TEST_CASE("HybridModelGenerator isIsomorphic error handling", "[HybridModelGenerator]") {
     bng::ast::Model model;
-    bng::engine::GeneratedNetwork network;
-    bng::engine::HybridModelGenerator generator(model, network);
+    bng::engine::HybridModelGenerator generator(model);
 
     REQUIRE(bng::engine::HybridModelGeneratorTest::callIsIsomorphic(generator, "A(x~1, x~2)", "A()") == false);
     REQUIRE(bng::engine::HybridModelGeneratorTest::callIsIsomorphic(generator, "\x01", "A()") == false);

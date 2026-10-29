@@ -3947,8 +3947,6 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "generate_hybrid_model") {
-            ensureNetwork();
-
             engine::HybridModelGenerator::Options hppOpts;
 
             const auto safeText = lowercase(stripQuotes(readArgument(action, "safe", "0")));
@@ -3987,7 +3985,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 hppOpts.actions = parseQuotedStringList(actionsText, "actions");
             }
 
-            engine::HybridModelGenerator gen(model, *network);
+            engine::HybridModelGenerator gen(model);
             auto genResult = gen.generate(sourcePath, hppOpts);
 
             if (verbose) {
