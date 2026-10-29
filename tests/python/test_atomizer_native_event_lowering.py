@@ -1,12 +1,18 @@
-"""A non-strict time threshold reaches the native event runtime.
+"""Event shapes the native event runtime can execute but were dropped.
 
-``geq(time, c)`` and ``leq(time, c)`` cross their threshold transversally,
-because time increases at rate one: unlike a non-strict comparison of a
-state, they have no tangential contact.  An event with such a trigger whose
-assignment depends on the state (here ``p := 2*S2`` at ``t >= 1.5``) cannot
-be a scheduled action, so it has to be lowered to the native runtime, as the
-strict ``gt(time, c)`` already was.  Before this change the non-strict
-trigger was refused and the event was dropped.
+Each test below covers an event the Atomizer used to report as
+untranslated although the native ``bng3_events`` runtime can execute it:
+
+* ``geq(time, c)`` and ``leq(time, c)``: time increases at rate one, so a
+  non-strict time threshold has no tangential contact (``gt`` was already
+  lowered).  Only used when no other event of the model is a scheduled
+  action, and not for SSA runs.
+* a species compared with an expression of time, rendered in SBML units.
+* an assignment value holding an SBML piecewise.
+* ``not(cmp(a, b))``, read as the complementary comparison.
+
+The tests that execute the generated model need the native extension; the
+others check the generated BNGL.
 """
 
 from __future__ import annotations
