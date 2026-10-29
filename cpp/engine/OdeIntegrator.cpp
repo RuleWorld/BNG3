@@ -4205,27 +4205,33 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
              !opts.continueSimulation && index < nativeEvents_.size(); ++index) {
             const auto& event = nativeEvents_[index];
             const auto& trigger = event.trigger;
-            // A strict trigger is false while its two sides are equal, so an
-            // equality at the start of the simulation is a falling edge and the
-            // event still waits for the next rising edge.  That is only decidable
-            // when the trigger does not also become true straight away: the very
-            // first instant has no crossing to attribute.
-            const bool strict = isStrictTrigger(trigger);
-            if (strict) {
-                bool rising = true;
-                try {
-                    std::vector<double> initialRates(nSpecies_);
-                    derivs(opts.tStart, initialState.data(), initialRates.data());
-                    const auto surface = triggerSurface(
-                        trigger, opts.tStart, initialState.data(), initialRates);
-                    rising = surface.difference == 0.0 && !(surface.derivative < 0.0);
-                } catch (const std::exception&) {
-                    rising = true;
-                }
-                if (rising) {
+            // CVODE does not report a root that starts exactly at zero.  For
+            // a strict trigger whose root surface is rising at tStart, queue
+            // its right-limit event at tStart so the first integration step
+            // starts from the post-trigger state.  The SBML trigger itself is
+            // still false at equality; this represents the crossing that
+            // occurs immediately after tStart at the solver's time precision.
+            if (isStrictTrigger(trigger) &&
+                eventRootValue(trigger, opts.tStart, initialState.data()) == 0.0) {
+                std::vector<double> initialRates(nSpecies_);
+                derivs(opts.tStart, initialState.data(), initialRates.data());
+                const auto surface = triggerSurface(
+                    trigger, opts.tStart, initialState.data(), initialRates);
+                if (surface.derivative > 0.0) {
+                    PendingEvent pending;
+                    pending.event = index;
+                    pending.executionTime = opts.tStart +
+                        eventDelay(event, opts.tStart, initialState.data());
+                    if (event.useValuesFromTriggerTime) {
+                        pending.values = eventValues(
+                            event, opts.tStart, initialState.data());
+                    }
+                    triggerRoseAt_[index] = opts.tStart;
+                    pendingEvents_.push_back(std::move(pending));
+                } else if (surface.derivative == 0.0) {
                     throw std::runtime_error(
                         std::string(ast::kUnsupportedEventExecutionMessage) +
-                        ": strict trigger equals its threshold at the initial time");
+                        ": strict trigger direction is unresolved at the initial time");
                 }
             }
             if (!event.initialValue &&
@@ -4801,12 +4807,39 @@ OdeResult OdeIntegrator::integrateIda(const OdeOptions& opts) {
     for (std::size_t index = 0;
          !opts.continueSimulation && index < nativeEvents_.size(); ++index) {
         const auto& event = nativeEvents_[index];
-        if (isStrictTrigger(event.trigger) &&
-            std::abs(eventRootValue(event.trigger, opts.tStart,
-                                    initialState.data())) <= 1e-14) {
-            throw std::runtime_error(
-                std::string(ast::kUnsupportedEventExecutionMessage) +
-                ": strict trigger equals its threshold at the initial time");
+        if (isStrictTrigger(event.trigger)) {
+            const double rootValue = eventRootValue(
+                event.trigger, opts.tStart, initialState.data());
+            if (std::abs(rootValue) <= 1e-14) {
+                // IDA retains the existing near-root refusal unless the
+                // strict surface is exactly zero and its right-limit is
+                // established by a positive derivative.
+                std::vector<double> initialRates(nSpecies_);
+                derivs(opts.tStart, initialState.data(), initialRates.data());
+                const auto surface = triggerSurface(
+                    event.trigger, opts.tStart, initialState.data(), initialRates);
+                if (surface.difference == 0.0 && surface.derivative > 0.0) {
+                    PendingEvent pending;
+                    pending.event = index;
+                    pending.executionTime = opts.tStart +
+                        eventDelay(event, opts.tStart, initialState.data());
+                    if (event.useValuesFromTriggerTime) {
+                        pending.values = eventValues(
+                            event, opts.tStart, initialState.data());
+                    }
+                    triggerRoseAt_[index] = opts.tStart;
+                    pendingEvents_.push_back(std::move(pending));
+                } else if (surface.difference == 0.0 &&
+                           surface.derivative == 0.0) {
+                    throw std::runtime_error(
+                        std::string(ast::kUnsupportedEventExecutionMessage) +
+                        ": strict trigger direction is unresolved at the initial time");
+                } else if (surface.difference != 0.0) {
+                    throw std::runtime_error(
+                        std::string(ast::kUnsupportedEventExecutionMessage) +
+                        ": strict trigger equals its threshold at the initial time");
+                }
+            }
         }
         if (!event.initialValue &&
             triggerHolds(event.trigger, opts.tStart, initialState.data())) {

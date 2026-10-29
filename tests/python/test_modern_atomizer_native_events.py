@@ -421,10 +421,7 @@ def test_sbml_export_keeps_the_event_executable_after_a_reimport(tmp_path):
     assert "delay: 1.5" in reimported.bngl
 
 
-def test_runtime_refusal_of_an_initial_rising_edge_stays_unsupported(tmp_path):
-    # A strict trigger that equals its threshold at the start of the
-    # simulation and rises immediately has no crossing to attribute.  The
-    # refusal has to read as an unsupported construct, not as a failure.
+def test_runtime_executes_a_strict_trigger_rising_from_initial_equality(tmp_path):
     from bionetgen.model import BioNetGenModel
 
     source = tmp_path / "rising.bngl"
@@ -456,13 +453,8 @@ end bng3_events
 end model
 """)
     model = cpp.parse_file(str(source))
-    with pytest.raises(RuntimeError) as error:
-        BioNetGenModel(model).simulate(method="ode", t_end=1, n_steps=1)
-    message = str(error.value)
-    assert "strict trigger equals its threshold at the initial time" in message
-    # The harness classifies a refusal by its text, so the refusal has to
-    # carry a marker that reads as "unsupported".
-    assert "not implemented" in message
+    result = BioNetGenModel(model).simulate(method="ode", t_end=1, n_steps=1)
+    assert result.observables["X"][-1] == pytest.approx(0.0, abs=1e-12)
 
 
 def _load(result, tmp_path):
