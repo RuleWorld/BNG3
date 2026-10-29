@@ -2458,6 +2458,14 @@ double OdeIntegrator::eventAssignmentValue(const ast::Expression& expression,
     sampleDraws = [&](const ast::Expression& current) -> ast::Expression {
         const auto& args = current.args();
         if (current.kind() == ast::ExpressionKind::Function &&
+            current.name() == "if" && args.size() == 3) {
+            // An event samples only the selected branch. Traversing both
+            // branches would consume unused distribution draws and change
+            // subsequent event values even when the condition selects a constant.
+            const auto condition = sampleDraws(args[0]);
+            return sampleDraws(args[eventValue(condition, time, state) != 0.0 ? 1 : 2]);
+        }
+        if (current.kind() == ast::ExpressionKind::Function &&
             current.name().rfind("distrib_", 0) == 0) {
             std::vector<double> parameters;
             parameters.reserve(args.size());

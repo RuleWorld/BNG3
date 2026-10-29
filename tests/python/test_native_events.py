@@ -398,3 +398,15 @@ def test_event_assignment_samples_a_piecewise_value(tmp_path, threshold, expecte
         method="ode", t_end=1, n_steps=1
     )
     assert result.observables["Y"][-1] == pytest.approx(expected)
+
+
+def test_piecewise_assignment_does_not_sample_an_unselected_distribution(tmp_path):
+    plain = model(tmp_path, "X <= 5", "Y = 7; X = distrib_uniform(1, 2)")
+    expected = plain.simulate(method="ode", t_end=1, n_steps=1, seed=17)
+    conditional = model(
+        tmp_path,
+        "X <= 5",
+        "Y = if(X > 4, 7, distrib_uniform(1, 2)); X = distrib_uniform(1, 2)",
+    )
+    actual = conditional.simulate(method="ode", t_end=1, n_steps=1, seed=17)
+    np.testing.assert_array_equal(actual.concentrations, expected.concentrations)
