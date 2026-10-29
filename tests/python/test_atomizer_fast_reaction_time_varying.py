@@ -820,11 +820,16 @@ def test_event_that_zeroes_a_switching_rate_constant_is_refused():
 def test_stoichiometry_event_with_a_time_varying_rate_constant_is_refused():
     """Both moving would need a pool assignment computed from the state."""
 
-    xml = event_changes_balance_stoichiometry().replace(
-        '<parameter id="kf" value="2" constant="true"/>',
-        '<parameter id="kf" value="2" constant="false"/>',
-    ).replace(
-        "</listOfEvents>", _time_event("E2", 2.5, [("kf", _cn(3))]) + "</listOfEvents>"
+    xml = (
+        event_changes_balance_stoichiometry()
+        .replace(
+            '<parameter id="kf" value="2" constant="true"/>',
+            '<parameter id="kf" value="2" constant="false"/>',
+        )
+        .replace(
+            "</listOfEvents>",
+            _time_event("E2", 2.5, [("kf", _cn(3))]) + "</listOfEvents>",
+        )
     )
     assert "needs an assignment computed from the state" in _refusal(xml)
 

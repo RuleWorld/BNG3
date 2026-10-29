@@ -175,6 +175,34 @@ inline void validateNativeEventSubset(const Model& model) {
             continuous(expression.args()[1]);
             return;
         }
+        // Assignment values are sampled at an event instant; unlike trigger
+        // surfaces they may select a discontinuous branch at that instant.
+        if (allowDistributionAssignment &&
+            expression.kind() == ExpressionKind::Function &&
+            expression.name() == "if" && expression.args().size() == 3) {
+            std::function<void(const Expression&)> condition = [&](const Expression& test) {
+                if (test.kind() == ExpressionKind::Binary &&
+                    (test.name() == "&&" || test.name() == "||")) {
+                    for (const auto& child : test.args()) condition(child);
+                    return;
+                }
+                if (test.kind() == ExpressionKind::Unary && test.name() == "!") {
+                    condition(test.args().front());
+                    return;
+                }
+                if (test.kind() != ExpressionKind::Binary || test.args().size() != 2 ||
+                    (test.name() != ">" && test.name() != ">=" &&
+                     test.name() != "<" && test.name() != "<=" &&
+                     test.name() != "==" && test.name() != "!=")) {
+                    fail("conditional event assignment requires an arithmetic comparison");
+                }
+                for (const auto& child : test.args()) continuous(child);
+            };
+            condition(expression.args()[0]);
+            continuous(expression.args()[1]);
+            continuous(expression.args()[2]);
+            return;
+        }
         if (allowDistributionAssignment &&
             expression.kind() == ExpressionKind::Function &&
             expression.name().rfind("distrib_", 0) == 0) {

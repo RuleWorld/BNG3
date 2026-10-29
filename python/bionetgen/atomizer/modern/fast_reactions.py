@@ -1270,7 +1270,6 @@ def _rate_terms(
     return visit(node)
 
 
-
 # ---------------------------------------------------------------------------
 # Reduction through the fast subsystem's conserved pool
 # ---------------------------------------------------------------------------
@@ -1592,9 +1591,7 @@ def _reduce_with_pool(
             denominator = f"(({nu_p_text}) + ({nu_r_text}) * {ratio})"
             state_species, other_species = reactant_species, product_species
             state_rate = (
-                f"({weighted(nu_p_text, nu_r_text)}) / {denominator}"
-                if slow
-                else "0"
+                f"({weighted(nu_p_text, nu_r_text)}) / {denominator}" if slow else "0"
             )
             ratio_value = plan.forward_value / plan.backward_value
             state_amount = initial_pool / (nu_p_value + nu_r_value * ratio_value)
@@ -1628,9 +1625,7 @@ def _reduce_with_pool(
         # state, and the two amounts are functions of T and the current rate
         # constants, so an event or a rule that moves the rate constants
         # moves the steady state at once.
-        pool = _unique_identifier(
-            model, f"__fast_pool_{standardize_name(reaction.id)}"
-        )
+        pool = _unique_identifier(model, f"__fast_pool_{standardize_name(reaction.id)}")
         amount_r, amount_p = plan.amounts(pool, nu_r_text, nu_p_text)
         model.parameters[pool] = SBMLParameter(
             id=pool,

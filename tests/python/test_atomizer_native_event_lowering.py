@@ -76,11 +76,12 @@ def test_non_strict_time_threshold_stays_untranslated_for_ssa():
     assert "begin bng3_events version 1" not in bngl
 
 
-def test_native_engine_executes_the_non_strict_time_threshold(tmp_path):
+def test_native_engine_executes_the_non_strict_time_threshold(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     import bionetgen
 
     # S1' = -p*S1 with p = 1 until t = 1.5, then p = 2*S2(1.5).
-    bngl = _convert()
+    bngl = _convert(actions='simulate({method=>"ode", t_end=>3, n_steps=>6})')
     source = tmp_path / "model.bngl"
     source.write_text(bngl, encoding="utf-8")
     bionetgen.load(str(source)).execute()
@@ -176,7 +177,8 @@ def test_state_against_a_moving_threshold_reaches_the_native_runtime(size, rende
     assert f"trigger: {rendered}" in bngl
 
 
-def test_native_engine_resets_at_the_moving_threshold(tmp_path):
+def test_native_engine_resets_at_the_moving_threshold(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     import bionetgen
 
     # S1 = e^-t and S2 = 1 - e^-t until S2 = 0.1*t + 0.5; then S1 := 1.
@@ -188,7 +190,10 @@ def test_native_engine_resets_at_the_moving_threshold(tmp_path):
         else:
             high = middle
     crossing = (low + high) / 2
-    bngl = _convert(_moving_threshold_source())
+    bngl = _convert(
+        _moving_threshold_source(),
+        actions='simulate({method=>"ode", t_end=>3, n_steps=>6})',
+    )
     source = tmp_path / "model.bngl"
     source.write_text(bngl, encoding="utf-8")
     bionetgen.load(str(source)).execute()
@@ -200,9 +205,7 @@ def test_native_engine_resets_at_the_moving_threshold(tmp_path):
             fields = [float(field) for field in line.split()]
             rows[round(fields[0], 9)] = dict(zip(header, fields))
     for time in (0.5, 1.0, 2.0, 3.0):
-        expected = (
-            math.exp(-time) if time < crossing else math.exp(-(time - crossing))
-        )
+        expected = math.exp(-time) if time < crossing else math.exp(-(time - crossing))
         assert rows[round(time, 9)]["S1_amt"] == pytest.approx(
             expected, rel=1e-5, abs=1e-7
         )
@@ -256,11 +259,15 @@ def test_piecewise_assignment_value_reaches_the_native_runtime(size, rendered):
     assert rendered in bngl
 
 
-def test_native_engine_applies_the_piecewise_assignment(tmp_path):
+def test_native_engine_applies_the_piecewise_assignment(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
     import bionetgen
 
     # S2(1.5) = 1 - e^-1.5 > 0.5, so S1 := 1 at t = 1.5 and then decays.
-    bngl = _convert(_piecewise_value_source())
+    bngl = _convert(
+        _piecewise_value_source(),
+        actions='simulate({method=>"ode", t_end=>3, n_steps=>6})',
+    )
     source = tmp_path / "model.bngl"
     source.write_text(bngl, encoding="utf-8")
     bionetgen.load(str(source)).execute()
