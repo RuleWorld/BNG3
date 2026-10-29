@@ -1847,17 +1847,23 @@ def test_structural_xml_comparator_reports_categorized_element_differences(tmp_p
         if difference.kind == "missing"
     ]
     extra = [
-        difference for difference in comparison.differences if difference.kind == "extra"
+        difference
+        for difference in comparison.differences
+        if difference.kind == "extra"
     ]
     assert any("Species[name='B']" in difference.path for difference in missing)
     assert any("Species[name='C']" in difference.path for difference in extra)
-    assert any("ReactionRule[name='release']" in difference.path for difference in missing)
+    assert any(
+        "ReactionRule[name='release']" in difference.path for difference in missing
+    )
     assert any("ReactionRule[name='extra']" in difference.path for difference in extra)
 
     formatted = format_structural_xml_differences(comparison)
     assert formatted
     assert any("RateConstant/@value" in line for line in formatted)
-    assert any("MapItem[sourceID=" in line and "/@targetID" in line for line in formatted)
+    assert any(
+        "MapItem[sourceID=" in line and "/@targetID" in line for line in formatted
+    )
     assert all("BNG2=" in line and "C++=" in line for line in formatted)
 
 
