@@ -13,6 +13,8 @@
 #include "engine/NetworkGenerator.hpp"
 #include "engine/DelayedSemanticsGuard.hpp"
 #include "SbmlUnitWriter.hpp"
+#include "SbmlWriter.hpp"
+#include "compile/TotalRate.hpp"
 
 namespace bng::io {
 
@@ -471,97 +473,61 @@ std::string SbmlMultiWriter::writeSeedSpecies(
 }
 
 std::string SbmlMultiWriter::writeReactionRules(const ast::Model& model) {
+    if (model.getReactionRules().empty()) return {};
     std::ostringstream sbml;
-
-    if (model.getReactionRules().empty()) {
-        return {};
-    }
-
-    // SBML Multi v1 does not define a reactionRule/listOfReactionRules
-    // vocabulary.  Rule-based patterns are represented as Multi species in
-    // the core listOfSpecies and connected by ordinary core Reactions.
+    const auto symbols = SbmlWriter::computeSymbolIds(model, nullptr, {});
     sbml << "    <listOfReactions>\n";
-
-    for (std::size_t r = 0; r < model.getReactionRules().size(); ++r) {
-        const auto& rule = model.getReactionRules()[r];
-        std::string ruleId = "RR" + std::to_string(r + 1);
-
-        // Use rule name/label if available, fall back to generated id
-        std::string ruleName = rule.getRuleName();
-        if (ruleName.empty()) {
-            ruleName = rule.getLabel();
-        }
-        if (ruleName.empty()) {
-            ruleName = ruleId;
-        }
-
-        sbml << "      <reaction id=\"" << makeValidSBMLId(ruleId)
-             << "\" name=\"" << escapeXml(ruleName)
-             << "\" reversible=\"" << (rule.isBidirectional() ? "true" : "false")
-             << "\" fast=\"false\">\n";
-
-        // Pattern species are emitted by writeSeedSpecies with deterministic
-        // ids.  Simple patterns receive Multi speciesType references; richer
-        // patterns remain core species names because Multi v1 has no rule
-        // element.  The modern importer reconstructs these only when the name
-        // is a valid BNGL pattern.
-        if (!rule.getReactants().empty()) {
-            sbml << "        <listOfReactants>\n";
-            for (std::size_t i = 0; i < rule.getReactants().size(); ++i) {
-                sbml << "          <speciesReference id=\"" << ruleId << "_R"
-                     << (i + 1) << "\" species=\"" << ruleId << "_R"
-                     << (i + 1) << "\" constant=\"false\"/>\n";
+    for (std::size_t index = 0; index < model.getReactionRules().size(); ++index) {
+        const auto& rule = model.getReactionRules()[index];
+        const std::string patternPrefix = "RR" + std::to_string(index + 1);
+        const auto direction = [&](bool reverse) {
+            const auto& reactants = reverse ? rule.getProducts() : rule.getReactants();
+            const auto& products = reverse ? rule.getReactants() : rule.getProducts();
+            const auto rateIndex = reverse ? 1u : 0u;
+            if (rule.getRates().size() <= rateIndex) {
+                throw std::invalid_argument("SBML-Multi rule direction has no rate law");
             }
-            sbml << "        </listOfReactants>\n";
-        }
-
-        // Product pattern species use the same ids as the species list above.
-        if (!rule.getProducts().empty()) {
-            sbml << "        <listOfProducts>\n";
-            for (std::size_t i = 0; i < rule.getProducts().size(); ++i) {
-                sbml << "          <speciesReference id=\"" << ruleId << "_P"
-                     << (i + 1) << "\" species=\"" << ruleId << "_P"
-                     << (i + 1) << "\" constant=\"false\"/>\n";
-            }
-            sbml << "        </listOfProducts>\n";
-        }
-
-        // Rate law
-        const auto& rates = rule.getRates();
-        if (!rates.empty()) {
-            sbml << "        <kineticLaw>\n";
-            sbml << "          <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
-
-            const auto& rateExpr = rates[0];
-            if (rateExpr.kind() == ast::ExpressionKind::Number) {
-                sbml << "            <cn> " << rateExpr.name() << " </cn>\n";
-            } else if (rateExpr.kind() == ast::ExpressionKind::Identifier) {
-                sbml << "            <ci> " << escapeXml(rateExpr.name()) << " </ci>\n";
-            } else {
-                // For complex expressions, emit the top-level name/value
-                sbml << "            <ci> " << escapeXml(rateExpr.name()) << " </ci>\n";
-            }
-
-            sbml << "          </math>\n";
-
-            // If bidirectional, also emit reverse rate
-            if (rule.isBidirectional() && rates.size() > 1) {
-                sbml << "          <!-- Reverse rate -->\n";
-                sbml << "          <!-- ";
-                if (rates[1].kind() == ast::ExpressionKind::Number) {
-                    sbml << rates[1].name();
-                } else {
-                    sbml << escapeXml(rates[1].name());
+            const auto id = patternPrefix + (reverse ? "r" : "");
+            auto name = rule.getRuleName().empty() ? rule.getLabel() : rule.getRuleName();
+            if (name.empty()) name = patternPrefix;
+            if (reverse) name = "_reverse__" + name;
+            sbml << "      <reaction id=\"" << id << "\" name=\""
+                 << escapeXml(name) << "\" reversible=\"false\" fast=\"false\">\n";
+            std::vector<std::string> reactantIds;
+            const auto writeSide = [&](const std::vector<std::string>& patterns,
+                                       bool product) {
+                if (patterns.empty()) return;
+                sbml << (product ? "        <listOfProducts>\n" : "        <listOfReactants>\n");
+                for (std::size_t position = 0; position < patterns.size(); ++position) {
+                    // Both directions reference the same pattern-species objects.
+                    const auto species = patternPrefix + ((product != reverse) ? "_P" : "_R") +
+                                         std::to_string(position + 1);
+                    const auto reference = id + (product ? "_P" : "_R") +
+                                           std::to_string(position + 1);
+                    if (!product) reactantIds.push_back(species);
+                    sbml << "          <speciesReference id=\"" << reference
+                         << "\" species=\"" << species << "\" constant=\"false\"/>\n";
                 }
-                sbml << " -->\n";
+                sbml << (product ? "        </listOfProducts>\n" : "        </listOfReactants>\n");
+            };
+            writeSide(reactants, false);
+            writeSide(products, true);
+            sbml << "        <kineticLaw>\n"
+                 << "          <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
+            const bool absolute = compile::isAbsoluteFluxReaction(model, rule.getRuleName());
+            if (!absolute && !reactantIds.empty()) sbml << "            <apply><times/>\n";
+            sbml << SbmlWriter::exprToMathML(rule.getRates()[rateIndex], "              ", symbols);
+            if (!absolute) {
+                for (const auto& species : reactantIds) {
+                    sbml << "              <ci>" << species << "</ci>\n";
+                }
             }
-
-            sbml << "        </kineticLaw>\n";
-        }
-
-        sbml << "      </reaction>\n";
+            if (!absolute && !reactantIds.empty()) sbml << "            </apply>\n";
+            sbml << "          </math>\n        </kineticLaw>\n      </reaction>\n";
+        };
+        direction(false);
+        if (rule.isBidirectional()) direction(true);
     }
-
     sbml << "    </listOfReactions>\n";
     return sbml.str();
 }

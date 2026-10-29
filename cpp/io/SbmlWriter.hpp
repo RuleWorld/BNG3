@@ -59,6 +59,8 @@ public:
     );
 
 private:
+    friend class SbmlMultiWriter;
+
     struct SymbolIds {
         std::unordered_map<std::string, std::string> parameters;
         std::unordered_map<std::string, std::string> functions;
