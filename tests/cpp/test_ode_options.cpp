@@ -1733,13 +1733,12 @@ end bng3_events
         Catch::Matchers::ContainsSubstring("bng3_events expression is nonfinite"));
 }
 
-TEST_CASE("CVODE refuses a native trigger that rises at the first instant",
+TEST_CASE("CVODE executes a native trigger that rises from the initial root",
           "[OdeOptions][Events]") {
     auto model = parseDecayModel();
     ast::Event event;
     event.id = "rising";
-    // The trigger holds immediately, so the crossing has no instant to be
-    // attributed to.
+    // The strict surface is exactly zero at tStart and rises immediately.
     event.trigger = ast::Expression::binary(">", ast::Expression::identifier("time"),
                                             ast::Expression::number(0));
     event.assignments.push_back({"Xtot", ast::Expression::number(1)});
@@ -1751,10 +1750,10 @@ TEST_CASE("CVODE refuses a native trigger that rises at the first instant",
     options.method = "cvode";
     options.tEnd = 1.0;
     options.nSteps = 1;
-    REQUIRE_THROWS_WITH(
-        engine::OdeIntegrator(*model, network).integrate(options),
-        Catch::Matchers::ContainsSubstring(
-            "strict trigger equals its threshold at the initial time"));
+    const auto result = engine::OdeIntegrator(*model, network).integrate(options);
+    REQUIRE_FALSE(result.concentrations.empty());
+    CHECK_THAT(result.concentrations.back().front(),
+               Catch::Matchers::WithinAbs(std::exp(-0.1), 2e-6));
 }
 
 TEST_CASE("CVODE carries a non-finite native event assignment to output",

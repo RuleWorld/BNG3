@@ -2452,9 +2452,8 @@ def test_shared_quadratic_simultaneous_crossings_execute_together(tmp_path):
         np.testing.assert_allclose(bng_values, rr_values, rtol=1e-5, atol=5e-10)
 
 
-def test_shared_quadratic_simultaneous_initial_entries_report_runtime_boundary_limit(
-    tmp_path,
-):
+def test_shared_quadratic_simultaneous_initial_entries_match_libroadrunner(tmp_path):
+    import numpy as np
     import pytest
 
     from bionetgen.atomizer.modern import Atomizer
@@ -2477,11 +2476,84 @@ def test_shared_quadratic_simultaneous_initial_entries_report_runtime_boundary_l
 
     model_path = tmp_path / "shared_quadratic_simultaneous_initial_entries.bngl"
     model_path.write_text(result.bngl, encoding="utf-8")
-    with pytest.raises(
-        RuntimeError,
-        match="strict trigger equals its threshold at the initial time",
-    ):
-        load(model_path).simulate(method="ode", t_end=0.1, n_steps=10)
+    simulation = load(model_path).simulate(
+        method="ode", t_end=0.1, n_steps=10, rtol=1e-10, atol=1e-12
+    )
+    native = np.column_stack(
+        [simulation.observables[f"{species}_amt"] for species in ("S1", "S2", "S3")]
+    )
+
+    # Both strict triggers are false at t=0 and enter their true regions
+    # immediately after it.  RoadRunner retains the pre-event initial row,
+    # then reports the trigger-time assignment to S2 and the coupled trajectory.
+    roadrunner = pytest.importorskip("roadrunner")
+    reference_engine = roadrunner.RoadRunner(xml)
+    reference_engine.integrator.setValue("relative_tolerance", 1e-10)
+    reference_engine.integrator.setValue("absolute_tolerance", 1e-12)
+    reference_engine.timeCourseSelections = ["time", "[S1]", "[S2]", "[S3]"]
+    reference = reference_engine.simulate(times=simulation.time)
+    positive_time = simulation.time > 0
+    for index, species in enumerate(("S1", "S2", "S3")):
+        expected = reference[positive_time, reference.colnames.index(f"[{species}]")]
+        np.testing.assert_allclose(
+            native[positive_time, index], expected, rtol=1e-5, atol=5e-10
+        )
+
+    # Native records the right-limit assignment on its t=0 row; RoadRunner
+    # exposes the pre-event state there, so compare the trajectories only for
+    # positive times.  Event 2 also assigns S1=1, which is already its value.
+    assert native[0, 1] == pytest.approx(1.0, abs=5e-10)
+
+
+def test_shared_quadratic_initial_event_pair_applies_both_assignments(tmp_path):
+    import numpy as np
+    import pytest
+
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
+
+    # Keep the strict triggers at their original equal thresholds. This
+    # diagnostic companion changes only event 2's assignment so its execution
+    # is visible; event 1 still assigns S2=1 and does not suppress event 2.
+    xml = (
+        _shared_quadratic_event_pair_model()
+        .replace(
+            "<apply><lt/><ci>S1</ci><cn>0.75</cn></apply>",
+            "<apply><lt/><ci>S1</ci><cn>1</cn></apply>",
+        )
+        .replace("<cn>1.4</cn>", "<cn>1</cn>")
+    )
+    event2_start = xml.index('<event id="event2"')
+    event2 = xml[event2_start:]
+    event2 = event2.replace("<cn>1.0</cn>", "<cn>0</cn>", 1)
+    xml = xml[:event2_start] + event2
+
+    result = Atomizer(quiet_mode=True, t_end=0.1, n_steps=100).atomize(xml)
+    assert result.success, result.error
+    model_path = tmp_path / "shared_quadratic_initial_event_pair_assignments.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    simulation = load(model_path).simulate(
+        method="ode", t_end=0.1, n_steps=100, rtol=1e-10, atol=1e-12
+    )
+    native = np.column_stack(
+        [simulation.observables[f"{species}_amt"] for species in ("S1", "S2", "S3")]
+    )
+
+    roadrunner = pytest.importorskip("roadrunner")
+    reference_engine = roadrunner.RoadRunner(xml)
+    reference_engine.integrator.setValue("relative_tolerance", 1e-10)
+    reference_engine.integrator.setValue("absolute_tolerance", 1e-12)
+    reference_engine.timeCourseSelections = ["time", "[S1]", "[S2]", "[S3]"]
+    reference = reference_engine.simulate(times=simulation.time)
+    positive_time = simulation.time > 0
+    for index, species in enumerate(("S1", "S2", "S3")):
+        expected = reference[positive_time, reference.colnames.index(f"[{species}]")]
+        np.testing.assert_allclose(
+            native[positive_time, index], expected, rtol=1e-5, atol=5e-10
+        )
+
+    assert native[0, 1] == pytest.approx(1.0, abs=5e-10)
+    assert native[0, 0] == pytest.approx(0.0, abs=5e-10)
 
 
 def test_shared_quadratic_trigger_entering_at_initial_time_matches_libroadrunner(

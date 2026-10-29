@@ -91,11 +91,11 @@ def test_nonstrict_initial_equality_fires(tmp_path):
     assert result.observables["X"][0] == 0
 
 
-def test_strict_initial_threshold_equality_is_explicitly_unsupported(tmp_path):
-    with pytest.raises(
-        RuntimeError, match="strict trigger equals its threshold at the initial time"
-    ):
-        model(tmp_path, "time > 0", "X = 0").simulate(method="ode", t_end=1, n_steps=1)
+def test_strict_initial_threshold_equality_fires_on_a_rising_surface(tmp_path):
+    result = model(tmp_path, "time > 0", "X = 0").simulate(
+        method="ode", t_end=1, n_steps=1
+    )
+    assert result.observables["X"][-1] == pytest.approx(0.0, abs=1e-12)
 
 
 @pytest.mark.parametrize("trigger", ["(time-1)*(time-1) <= 0", "X*X <= 25"])
