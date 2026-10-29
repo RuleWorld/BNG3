@@ -337,12 +337,19 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
 
         // For each population, check if the observable pattern matches the
         // population's species graph. If so, add the population pattern.
+        // A Molecules observable counts embeddings, so the population enters
+        // once per embedding of the pattern in its species (Rfree R(l,l): 2).
+        // A Species observable counts each matching species once per
+        // pattern, so the population enters once; adding it per embedding
+        // counted every R_pop twice.  BNG2 writes the Species case as
+        // {MatchOnce}<pattern> <pop>() for NFsim.
+        const bool speciesObservable = obs.getType() == "Species";
         for (const auto& pop : populations) {
             for (const auto& obsPattern : obs.getPatterns()) {
                 std::size_t matches = countMatches(obsPattern, pop.speciesPattern);
                 if (matches > 0) {
-                    // Add population pattern for each match
-                    for (std::size_t m = 0; m < matches; ++m) {
+                    const std::size_t copies = speciesObservable ? 1 : matches;
+                    for (std::size_t m = 0; m < copies; ++m) {
                         patterns.push_back(pop.populationName + "()");
                     }
                     if (opts.verbose) {

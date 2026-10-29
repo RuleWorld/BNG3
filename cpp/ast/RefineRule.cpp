@@ -318,6 +318,32 @@ void safeDeleteNode(BNGcore::PatternGraph& graph, BNGcore::Node* node) {
 } // anonymous namespace
 
 
+namespace {
+
+// Symmetry scale of a rule's reactant side, BNG2's MultScale for the cases
+// BNG3's network generation represents: 1/n! for each group of n reactant
+// patterns that are the same graph (ReactionRule::buildReaction applies the
+// same convention).  Correspondence tags are ignored: two copies of A(a)
+// carrying different temporary tags are still the same pattern.
+double reactantSymmetryScale(const std::vector<SpeciesGraph>& patterns) {
+    std::unordered_map<std::string, int> groups;
+    for (const auto& pattern : patterns) {
+        BNGcore::PatternGraph untagged;
+        cloneGraphInto(pattern.getGraph(), untagged);
+        for (auto node = untagged.begin(); node != untagged.end(); ++node) {
+            (*node)->set_label_tag("");
+        }
+        ++groups[SpeciesGraph(std::move(untagged), pattern.getCompartment()).canonicalLabel()];
+    }
+    double scale = 1.0;
+    for (const auto& [label, count] : groups) {
+        for (int k = 2; k <= count; ++k) scale /= static_cast<double>(k);
+    }
+    return scale;
+}
+
+} // namespace
+
 // ---- factorial ----
 // Perl lines 756-761
 double factorial(int n) {
@@ -336,6 +362,38 @@ ExpandRuleResult expandRule(
     const RefineRuleParams& params)
 {
     ExpandRuleResult result;
+
+    // BNG2 refines the two directions of a reversible rule separately: the
+    // reverse rule's reactant is the forward product, whose population
+    // substitutions and embeddings differ from the forward reactants'.  A
+    // child left bidirectional would reverse once per forward child, so a
+    // complex matched by two forward children dissociated at twice the rate.
+    // Children of the reverse direction are named _reverse_<rule>_v<n>.
+    if (rule.isBidirectional() && rule.getRates().size() == 2 &&
+        !rule.hasDrivingWork()) {
+        ReactionRule forward(rule.getRuleName(), rule.getLabel(), rule.getReactants(),
+                             rule.getProducts(), {rule.getRates()[0]}, rule.getModifiers(),
+                             false, rule.getReactantPatterns(), rule.getProductPatterns());
+        ReactionRule reverse("_reverse_" + rule.getRuleName(), "_reverse_" + rule.getLabel(),
+                             rule.getProducts(), rule.getReactants(), {rule.getRates()[1]},
+                             rule.getModifiers(), false, rule.getProductPatterns(),
+                             rule.getReactantPatterns());
+        if (rule.getDelayExpression()) {
+            forward.setDelay(*rule.getDelayExpression(), rule.isNonConsuming());
+            reverse.setDelay(*rule.getDelayExpression(), rule.isNonConsuming());
+        }
+        for (auto* direction : {&forward, &reverse}) {
+            auto expanded = expandRule(*direction, sgList, model, hybridModel, params);
+            if (!expanded.error.empty()) {
+                result.error = expanded.error;
+                return result;
+            }
+            for (auto& child : expanded.childRules) {
+                result.childRules.push_back(std::move(child));
+            }
+        }
+        return result;
+    }
 
     const auto& reactantPatterns = rule.getReactantPatterns();
     const std::size_t nReactants = reactantPatterns.size();
@@ -431,7 +489,14 @@ ExpandRuleResult expandRule(
         }
     }
 
-    if (!hasEmpty && nReactants > 0) {
+    if (nReactants == 0) {
+        // A rule with no reactant patterns (0 -> A()) has exactly one rule
+        // instance, the empty one; BNG2's CartesianProduct yields it once.
+        auto childRule = restrictRule(rule, {}, model, hybridModel, params);
+        if (childRule) {
+            result.childRules.push_back(std::move(*childRule));
+        }
+    } else if (!hasEmpty) {
         bool done = false;
         while (!done) {
             // Build rule instance: one embedding per reactant
@@ -509,7 +574,12 @@ ExpandRuleResult expandRule(
 
     // If we need stat factors, recount (only if there were duplicates)
     {
-        // Re-iterate Cartesian product to count multiplicities
+        // Re-iterate Cartesian product to count multiplicities. Each rule
+        // instance adds parent.MultScale / child.MultScale (RefineRule.pm
+        // 739-745): a child that no longer has the parent's symmetric
+        // reactant pair (A(a) + A_pop() from A(a) + A(a)) counts each
+        // instance once per ordering, which the parent's 1/2 compensates.
+        const double parentScale = reactantSymmetryScale(rule.getReactantPatterns());
         std::unordered_map<std::string, double> factorMap;
         std::fill(indices.begin(), indices.end(), 0);
         bool done2 = hasEmpty || nReactants == 0;
@@ -529,7 +599,7 @@ ExpandRuleResult expandRule(
                     crProducts.push_back(p);
                 std::string sid = buildStringID(
                     crReactants, crProducts, rule.getProductPatterns().size());
-                factorMap[sid] += 1.0;
+                factorMap[sid] += parentScale / reactantSymmetryScale(crReactants);
             }
 
             std::size_t carry = nReactants;
@@ -708,6 +778,16 @@ std::unique_ptr<ReactionRule> restrictRule(
         cloneMaps.push_back(cloneGraphInto(reactant.getGraph(), aggregateGraph));
     }
 
+    // A reactant pattern without a product counterpart deletes the whole
+    // matched species, unless DeleteMolecules is given (BNG2's species
+    // deletion; the same rule ReactionRule::deletesWholeReactantPattern
+    // applies during network generation).  A pure degradation A() -> 0 has
+    // no explicit operation at all, so its species have to be removed here.
+    std::vector<bool> deletesSpecies(nReactants, false);
+    for (std::size_t i = 0; i < nReactants && i < reactantPatterns.size(); ++i) {
+        deletesSpecies[i] = rule.deletesWholeReactantPattern(i);
+    }
+
     // Apply each transformation operation
     for (const auto& op : rule.getOperations()) {
         switch (op.type) {
@@ -859,6 +939,7 @@ std::unique_ptr<ReactionRule> restrictRule(
         }
         case ReactionRule::TransformOp::Type::DeleteMolecule: {
             if (op.patternIndex >= nReactants) break;
+            if (deletesSpecies[op.patternIndex]) break;  // removed whole below
             const auto& patt = reactantPatterns[op.patternIndex];
             std::size_t mi = 0;
             for (auto nIt = patt.getGraph().begin(); nIt != patt.getGraph().end(); ++nIt) {
@@ -920,6 +1001,14 @@ std::unique_ptr<ReactionRule> restrictRule(
             break;
         }
         } // switch
+    }
+
+    for (std::size_t i = 0; i < nReactants; ++i) {
+        if (!deletesSpecies[i]) continue;
+        std::vector<BNGcore::Node*> speciesNodes;
+        speciesNodes.reserve(cloneMaps[i].size());
+        for (const auto& entry : cloneMaps[i]) speciesNodes.push_back(entry.second);
+        for (auto* node : speciesNodes) safeDeleteNode(aggregateGraph, node);
     }
 
     // Split aggregate into product species graphs
@@ -1050,9 +1139,48 @@ std::unique_ptr<ReactionRule> restrictRule(
     }
 
     // ---- Step 8: Check DeleteMolecules flag (Perl lines 722-735) ----
-    // If the child rule has molecule deletion transforms that reference
-    // specific molecules (contain '.'), set DeleteMolecules flag.
-    // This is handled by the modifier already if present on the parent rule.
+    // A child that deletes molecules out of a complex it otherwise keeps (a
+    // particle unbinding into a population: A(b!1).B(a!1) -> A(b) + B_pop())
+    // needs DeleteMolecules; without it the deletion means the whole species,
+    // as BNG2 and NFsim read it.  BNG2 sets the flag whenever a child has a
+    // molecule deletion; a pattern deleted as a whole species is not one.
+    bool hasDeleteMolecules = false;
+    for (const auto& mod : childRule->getModifiers()) {
+        std::string lower = mod;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        if (lower == "deletemolecules") hasDeleteMolecules = true;
+    }
+    bool deletesMoleculesFromKeptComplex = false;
+    for (const auto& op : childRule->getOperations()) {
+        if (op.type == ReactionRule::TransformOp::Type::DeleteMolecule &&
+            !childRule->deletesWholeReactantPattern(op.patternIndex)) {
+            deletesMoleculesFromKeptComplex = true;
+        }
+    }
+    if (deletesMoleculesFromKeptComplex && !hasDeleteMolecules) {
+        if (params.verbose) {
+            std::cerr << "DeleteMolecules flag added to rule " << childName << ".\n";
+        }
+        auto flagged = childRule->getModifiers();
+        flagged.push_back("DeleteMolecules");
+        auto rebuilt = std::make_unique<ReactionRule>(
+            childRule->getRuleName(),
+            childRule->getLabel(),
+            childRule->getReactants(),
+            childRule->getProducts(),
+            childRule->getRates(),
+            std::move(flagged),
+            childRule->isBidirectional(),
+            childRule->getReactantPatterns(),
+            childRule->getProductPatterns());
+        if (childRule->getDelayExpression()) {
+            rebuilt->setDelay(*childRule->getDelayExpression(), childRule->isNonConsuming());
+        }
+        if (childRule->hasDrivingWork()) {
+            rebuilt->setDrivingWorkExpression(childRule->drivingWorkExpression());
+        }
+        childRule = std::move(rebuilt);
+    }
 
     return childRule;
 }

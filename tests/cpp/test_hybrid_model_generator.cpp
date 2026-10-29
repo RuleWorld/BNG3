@@ -371,3 +371,201 @@ end molecule types
         CHECK(name.find("!2!") == std::string::npos);
     }
 }
+
+namespace {
+
+struct HybridChild {
+    double multiplier = 0.0;
+    bool deleteMolecules = false;
+};
+
+// Generate the hybrid model of `source` and return each child rule's rate
+// multiplier relative to its parent rule's rate parameter.
+std::map<std::string, HybridChild> hybridChildren(const std::string& prefix,
+                                                  const std::string& source) {
+    auto model = bng::parser::parseModel(source);
+    REQUIRE(model != nullptr);
+    // Forward children scale the first rate; children of a reversible rule's
+    // reverse direction (_reverse_<rule>_v<n>) scale its second rate.
+    std::map<std::string, std::string> parentRate;
+    for (const auto& rule : model->getReactionRules()) {
+        parentRate[rule.getRuleName()] = rule.getRates().front().toString();
+        if (rule.isBidirectional() && rule.getRates().size() == 2) {
+            parentRate["_reverse_" + rule.getRuleName()] = rule.getRates()[1].toString();
+        }
+    }
+    HybridModelGenerator generator(*model);
+    HybridModelGenerator::Options opts;
+    opts.prefix = prefix;
+    opts.overwrite = true;
+    opts.safe = false;
+    generator.generate(prefix + ".bngl", opts);
+    auto hybrid = bng::parser::parseModel(slurp(prefix + "_hpp.bngl"));
+    REQUIRE(hybrid != nullptr);
+    std::map<std::string, HybridChild> children;
+    for (const auto& rule : hybrid->getReactionRules()) {
+        const auto& name = rule.getRuleName();
+        const auto cut = name.rfind("_v");
+        if (cut == std::string::npos || !parentRate.count(name.substr(0, cut))) continue;
+        HybridChild child;
+        const auto& parameters = hybrid->getParameters();
+        child.multiplier = parameters.evaluate(rule.getRates().front().toString()) /
+                           parameters.evaluate(parentRate[name.substr(0, cut)]);
+        for (const auto& modifier : rule.getModifiers()) {
+            if (modifier == "DeleteMolecules") child.deleteMolecules = true;
+        }
+        children[name] = child;
+    }
+    return children;
+}
+
+std::string hybridSource(const std::string& molecules, const std::string& seeds,
+                         const std::string& rules, const std::string& maps) {
+    return "begin model\nbegin parameters\n  k 2\n  kg 100\nend parameters\n"
+           "begin molecule types\n" + molecules + "end molecule types\n"
+           "begin seed species\n" + seeds + "end seed species\n"
+           "begin reaction rules\n" + rules + "end reaction rules\n"
+           "begin population maps\n" + maps + "end population maps\nend model\n";
+}
+
+} // namespace
+
+// Expected values below come from pinned BNG2 (RuleWorld/bionetgen@9601746f
+// RefineRule.pm) on the same sources, generate_hybrid_model with safe=>0.
+TEST_CASE("hybrid children of a symmetric rule carry BNG2's symmetry ratio",
+          "[hybrid][RefineRule]") {
+    // Each instance adds parent.MultScale / child.MultScale: 1/2 for the
+    // mixed particle/population children of A(a) + A(a), two instances each.
+    auto children = hybridChildren(
+        "test_hybrid_symmetric",
+        hybridSource("  A(a,a)\n", "  A(a,a) 100\n",
+                     "  R1: A(a) + A(a) -> A(a!1).A(a!1) k\n",
+                     "  A(a,a) -> A_pop() kg\n"));
+    REQUIRE(children.size() == 4);
+    CHECK(children["R1_v1"].multiplier == Catch::Approx(1.0));
+    CHECK(children["R1_v2"].multiplier == Catch::Approx(1.0));
+    CHECK(children["R1_v3"].multiplier == Catch::Approx(1.0));
+    CHECK(children["R1_v4"].multiplier == Catch::Approx(4.0));
+}
+
+TEST_CASE("hybrid children of degradation and synthesis rules are kept",
+          "[hybrid][RefineRule]") {
+    // A() -> 0 deletes the whole matched species, including a population;
+    // 0 -> A(x~u) has one, empty, rule instance.  Both used to give no child.
+    auto degradation = hybridChildren(
+        "test_hybrid_degradation",
+        hybridSource("  A(x~u~p)\n", "  A(x~u) 10\n", "  R1: A() -> 0 k\n",
+                     "  A(x~u) -> Au_pop() kg\n"));
+    REQUIRE(degradation.size() == 2);
+    CHECK(degradation["R1_v1"].multiplier == Catch::Approx(1.0));
+    CHECK(degradation["R1_v2"].multiplier == Catch::Approx(1.0));
+
+    auto synthesis = hybridChildren(
+        "test_hybrid_synthesis",
+        hybridSource("  A(x~u~p)\n", "  A(x~u) 10\n", "  R1: 0 -> A(x~u) k\n",
+                     "  A(x~u) -> Au_pop() kg\n"));
+    REQUIRE(synthesis.size() == 1);
+    CHECK(synthesis["R1_v1"].multiplier == Catch::Approx(1.0));
+}
+
+TEST_CASE("a hybrid child that unbinds into a population deletes molecules",
+          "[hybrid][RefineRule]") {
+    // A(b!1).B(a!1) -> A(b) + B_pop() deletes B out of a complex whose A it
+    // keeps; BNG2 adds DeleteMolecules so the deletion is not whole-species.
+    auto children = hybridChildren(
+        "test_hybrid_unbinding",
+        hybridSource("  A(b,b)\n  B(a)\n", "  A(b,b) 10\n  B(a) 10\n",
+                     "  R1: A(b) + B(a) -> A(b!1).B(a!1) k\n"
+                     "  R2: A(b!1).B(a!1) -> A(b) + B(a) kg\n",
+                     "  A(b,b) -> A_pop() kg\n  B(a) -> B_pop() kg\n"));
+    CHECK(children["R1_v1"].multiplier == Catch::Approx(1.0));
+    CHECK(children["R1_v2"].multiplier == Catch::Approx(2.0));
+    REQUIRE(children.count("R2_v1") == 1);
+    CHECK(children["R2_v1"].deleteMolecules);
+    CHECK_FALSE(children["R1_v2"].deleteMolecules);
+}
+
+TEST_CASE("the reverse direction of a reversible rule is refined on its own",
+          "[hybrid][RefineRule]") {
+    // BNG2 gives two forward children and one reverse child here.  Keeping
+    // both forward children bidirectional made each reverse a dissociation
+    // of A(b!1).B(a!1,s~u), at twice BNG2's rate.
+    auto children = hybridChildren(
+        "test_hybrid_reversible",
+        hybridSource("  A(b)\n  B(a,s~u~p)\n", "  A(b) 10\n  B(a,s~u) 10\n",
+                     "  R1: A(b) + B(a) <-> A(b!1).B(a!1) k, kg\n",
+                     "  B(a,s~u) -> Bu_pop() kg\n"));
+    CHECK(children.count("R1_v1") == 1);
+    CHECK(children.count("R1_v2") == 1);
+    CHECK(children.count("_reverse_R1_v1") == 1);
+    CHECK(children.count("_reverse_R1_v2") == 0);
+}
+
+TEST_CASE("a Species observable counts each population once",
+          "[hybrid][observables]") {
+    // BNG2 (generate_hybrid_model) writes
+    //   Molecules Mfree R(l,l) R_pop() R_pop()
+    //   Species   Sfree {MatchOnce}R(l,l) R_pop()
+    // A Species observable sums over its patterns, each counting a species
+    // once, so a second R_pop() would count every population twice.
+    auto model = bng::parser::parseModel(R"(
+begin model
+begin parameters
+  k 1
+  kg 100
+end parameters
+begin molecule types
+  R(l,l)
+  L(r)
+end molecule types
+begin seed species
+  R(l,l) 10
+  L(r) 10
+end seed species
+begin observables
+  Molecules Mfree R(l,l)
+  Species Sfree R(l,l)
+end observables
+begin reaction rules
+  R1: R(l) + L(r) -> R(l!1).L(r!1) k
+end reaction rules
+begin population maps
+  R(l,l) -> R_pop() kg
+end population maps
+end model
+)");
+    REQUIRE(model != nullptr);
+    HybridModelGenerator generator(*model);
+    HybridModelGenerator::Options opts;
+    opts.prefix = "test_hybrid_species_observable";
+    opts.overwrite = true;
+    opts.safe = false;
+    generator.generate("test_hybrid_species_observable.bngl", opts);
+    auto hybrid = bng::parser::parseModel(slurp("test_hybrid_species_observable_hpp.bngl"));
+    REQUIRE(hybrid != nullptr);
+    std::map<std::string, std::size_t> populationTerms;
+    for (const auto& observable : hybrid->getObservables()) {
+        for (const auto& pattern : observable.getPatterns()) {
+            if (pattern.find("R_pop") != std::string::npos) ++populationTerms[observable.getName()];
+        }
+    }
+    CHECK(populationTerms["Mfree"] == 2);
+    CHECK(populationTerms["Sfree"] == 1);
+}
+
+TEST_CASE("state changes between populations count equivalent sites",
+          "[hybrid][RefineRule]") {
+    // R(s~0) -> R(s~1) moves R00_pop to R01_pop at 2*kp (two s~0 sites) and
+    // R01_pop to R11_pop at kp; the reverse rule mirrors it (BNG2).
+    auto children = hybridChildren(
+        "test_hybrid_state_sites",
+        hybridSource("  R(s~0~1,s~0~1)\n", "  R(s~0,s~0) 10\n",
+                     "  R1: R(s~0) -> R(s~1) k\n  R2: R(s~1) -> R(s~0) k\n",
+                     "  R(s~0,s~0) -> R00_pop() kg\n  R(s~0,s~1) -> R01_pop() kg\n"
+                     "  R(s~1,s~1) -> R11_pop() kg\n"));
+    CHECK(children["R1_v1"].multiplier == Catch::Approx(1.0));
+    CHECK(children["R1_v2"].multiplier == Catch::Approx(2.0));
+    CHECK(children["R1_v3"].multiplier == Catch::Approx(1.0));
+    CHECK(children["R2_v2"].multiplier == Catch::Approx(1.0));
+    CHECK(children["R2_v3"].multiplier == Catch::Approx(2.0));
+}
