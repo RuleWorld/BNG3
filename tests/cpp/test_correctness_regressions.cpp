@@ -309,3 +309,44 @@ TEST_CASE("batchTrajectorySeed decorrelates adjacent base seeds", "[correctness]
     }
     REQUIRE(wide.size() == 256 * 64);
 }
+
+// ---------------------------------------------------------------------------
+// Defect: a bond from a matched reactant site to a molecule the rule creates
+// was not part of the reaction center, so embeddings that bind the new
+// molecule at different sites collapsed into one reaction.
+//
+// BNG2 is the oracle: `syn: A(b) -> A(b!1).B(a!1) k` on A(b,b) gives the
+// reaction A(b,b) -> A(b!1,b).B(a!1) at rate 2*k, one for each b site
+// (measured with BNG2.pl generate_network).  BNG3 gave rate k.
+// ---------------------------------------------------------------------------
+TEST_CASE("a site that binds a newly created molecule is in the reaction center",
+          "[correctness][network]") {
+    auto model = parse(R"(
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A(b,b)
+  B(a)
+end molecule types
+begin seed species
+  A(b,b) 1
+end seed species
+begin reaction rules
+  syn: A(b) -> A(b!1).B(a!1) k
+end reaction rules
+end model
+)");
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    std::vector<double> factors;
+    for (const auto& reaction : network.reactions.all()) {
+        if (reaction.getReactants() == std::vector<std::size_t>{0}) {
+            factors.push_back(reaction.getFactor());
+        }
+    }
+    REQUIRE(factors.size() == 1);
+    CHECK_THAT(factors.front(), Catch::Matchers::WithinRel(2.0, 1e-12));
+}

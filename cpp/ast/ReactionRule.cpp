@@ -1412,9 +1412,18 @@ void ReactionRule::initialize() {
         } else if (lhs != productToReactantComponent.end() && rhs == productToReactantComponent.end()) {
             // Bond from matched reactant component to new product molecule component
             crossBonds_.push_back(CrossBondRef{lhs->second, productBond.second});
+            // The matched component gains a bond, so it is part of the
+            // reaction center: A(b) -> A(b!1).B(a!1) on A(b,b) has one
+            // reaction per b site, as BNG2 counts it (rate 2*k).
+            reactionCenter_[lhs->second.patternIndex].push_back(ReactionCenterRef{
+                lhs->second.patternIndex, lhs->second.moleculeIndex, true,
+                lhs->second.componentIndex});
         } else if (lhs == productToReactantComponent.end() && rhs != productToReactantComponent.end()) {
             // Bond from new product molecule component to matched reactant component
             crossBonds_.push_back(CrossBondRef{rhs->second, productBond.first});
+            reactionCenter_[rhs->second.patternIndex].push_back(ReactionCenterRef{
+                rhs->second.patternIndex, rhs->second.moleculeIndex, true,
+                rhs->second.componentIndex});
         } else {
             // Both sides unmapped: bond between two newly-added molecules.
             // Only record inter-molecule bonds (different molecules); intra-molecule
