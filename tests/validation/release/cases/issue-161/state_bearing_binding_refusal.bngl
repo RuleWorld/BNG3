@@ -1,0 +1,18 @@
+# Diagnostic-only control for the currently unsupported combined feature and
+# binding-site representation. A refusal is not counted as Multi support.
+begin model
+begin molecule types
+    R(l~u~p)
+    L(r)
+end molecule types
+begin seed species
+    R(l~u) 100
+    L(r)   100
+end seed species
+begin reaction rules
+    R(l~u) + L(r) <-> R(l~u!1).L(r!1) 0.01,0.1
+end reaction rules
+end model
+
+## actions ##
+writeSBMLMulti();

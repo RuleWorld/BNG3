@@ -1,0 +1,23 @@
+# Reduced authored Multi parity case: the same composite molecule type is
+# instantiated with two distinct ligand binding configurations.
+begin model
+begin parameters
+    kon  0.001
+    koff 0.1
+end parameters
+begin molecule types
+    R(l,l)
+    L(r,r,r)
+end molecule types
+begin seed species
+    R(l,l)     300
+    L(r,r,r)  1200
+end seed species
+begin reaction rules
+    R(l) + L(r,r,r)   <-> R(l!1).L(r!1,r,r)   kon,koff
+    R(l) + L(r,r,r!+) <-> R(l!1).L(r!1,r,r!+) kon,koff
+end reaction rules
+end model
+
+## actions ##
+writeSBMLMulti();

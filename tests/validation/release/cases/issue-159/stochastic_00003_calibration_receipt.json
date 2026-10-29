@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "classification": "independent source-law diagnostic; not a BNG3 result and not an SSTS verdict",
+  "source_case": {
+    "suite_repository": "https://github.com/sbmlteam/sbml-test-suite.git",
+    "suite_revision": "cf38585fac5de8e0e90112febb62851ee2181816",
+    "case": "stochastic/00003",
+    "source_sha256": "c58a50dd86f981150b533dd9af25c38f9ef3aeeedad2f679400e022add77f50e",
+    "settings_sha256": "9472de7498a16b035f60764a99512d2ee3e3e06968f0d37774cbcb51b6e1471d",
+    "model": "X -> 2X at rate 1*X; X -> 0 at rate 1.1*X; X(0)=100"
+  },
+  "source_law": {
+    "conditional_transition": "Binomial surviving ancestral lineages plus negative-binomial geometric descendants",
+    "mean": "100*exp(-0.1*t)",
+    "variance": "100*(2.1/0.1)*exp(-0.1*t)*(1-exp(-0.1*t))",
+    "fourth_moment": "derived from the one-lineage zero-inflated geometric PGF; summed cumulants for 100 initial lineages"
+  },
+  "calibration": {
+    "generator": "numpy.random.PCG64",
+    "seed": 2581028,
+    "numpy_version": "2.5.2",
+    "python_version": "3.14.6",
+    "independent_ensembles": 100,
+    "trajectories_per_ensemble": 40000,
+    "output_times": "integer t=1..50; paths are reused across times",
+    "statistic": "sqrt(n/2)*(sample_sd^2/exact_source_sd^2-1)",
+    "range": [-5, 5],
+    "ensembles_with_at_least_5_violations": 49,
+    "fraction_at_least_5_violations": 0.49,
+    "wilson_95_interval_at_least_5_violations": [0.3942, 0.5865],
+    "ensembles_with_5_consecutive_violations": 30,
+    "fraction_with_5_consecutive_violations": 0.3,
+    "wilson_95_interval_5_consecutive_violations": [0.2189, 0.3958],
+    "mean_violations_per_ensemble": 5.41,
+    "maximum_violations_in_an_ensemble": 27,
+    "elapsed_seconds": 13.7
+  },
+  "archived_bng3_run": {
+    "workflow_run": 40797931585,
+    "bng3_revision": "da285a8b8311ad4b959919649a5682b77d995dcb",
+    "seed_base": 1000000,
+    "trajectories": 40000,
+    "official_sd_violations": [41, 43, 44, 45, 46],
+    "official_mean_violations": []
+  },
+  "interpretation": "The exact source-law simulation shows the fixed normal-theory SD criterion can exceed its 1-3 violation guidance even with a correct source sampler. It supports recalibrating a separate diagnostic; it does not establish correctness of the archived BNG3 sample or final-main behavior."
+}
