@@ -39,8 +39,9 @@ LOCKED_BNG2_REVISION = load_oracle_source(load_lock(), "bionetgen")["revision"]
 
 
 def _git_identity(path: Path) -> dict:
+    git_path = path if path.is_dir() else path.parent
     root = subprocess.run(
-        ["git", "-C", str(path), "rev-parse", "--show-toplevel"],
+        ["git", "-C", str(git_path), "rev-parse", "--show-toplevel"],
         check=True,
         capture_output=True,
         text=True,
