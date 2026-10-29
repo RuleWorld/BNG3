@@ -11,7 +11,10 @@ Usage:
     python scripts/regen_golden.py --models blbr egfr_net
     python scripts/regen_golden.py --tier s                  # deterministic goldens
 
-Requires a working Perl BNG2 (set BNG2_PERL, or have legacy/perl/BNG2.pl present).
+Requires BNG2_PERL to point into an explicitly checked-out, locked BNG2 oracle.
+Create it with `python scripts/ci/checkout_oracle.py --name bionetgen
+--destination /tmp/oracle-bionetgen`, then set BNG2_PERL to
+`/tmp/oracle-bionetgen/bng2/BNG2.pl`.
 """
 
 from __future__ import annotations
@@ -19,6 +22,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -31,6 +35,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from tests.validation import corpus, oracle_perl  # noqa: E402
+from scripts.ci.oracle_sources import load_lock, load_oracle_source  # noqa: E402
 
 GOLDEN = corpus.REPO / "tests" / "validation" / "golden"
 ENSEMBLE_EVIDENCE = (
@@ -42,20 +47,108 @@ ENSEMBLE_MIN_RUNS = 200
 
 
 def ensemble_seeds(n_runs: int) -> list[int]:
-    """Stable, dispersed positive C-int seeds, avoiding libc small-seed bias."""
+    """Return the frozen ensemble seed contract: seeds ``1..n_runs``.
+
+    The committed references (``tests/validation/golden/<model>.ens``) and
+    their manifest record ``seed_range [1, 200]``, and
+    ``tests/test_ci_contract.py`` checks that contract.  Regeneration keeps
+    the same seeds so that a new reference can be compared member by member
+    with the one it replaces.
+    """
     if n_runs < 1:
         raise ValueError("ensemble requires at least one seed")
-    seeds = []
-    seen = set()
-    index = 0
-    while len(seeds) < n_runs:
-        digest = hashlib.sha256(f"BNG3 SSA ensemble v1:{index}".encode()).digest()
-        seed = 1 + int.from_bytes(digest[:8], "big") % (2**31 - 2)
-        index += 1
-        if seed not in seen:
-            seeds.append(seed)
-            seen.add(seed)
-    return seeds
+    return list(range(1, n_runs + 1))
+
+
+# BNG2's run_network seeds the C library generator with srand(seed) and reads
+# rand()/RAND_MAX.  On a C library whose first rand() after srand(seed) is a
+# small multiple of the seed (the 16807 Lehmer generator of macOS libc), the
+# consecutive seeds 1..200 give first uniforms below 0.002, which biases every
+# member's first SSA draw.  glibc does not have that property.  The check below
+# runs the generator of the C library on this host, the one run_network links,
+# and refuses to generate references when the first draws are not uniform.
+_FIRST_DRAW_UNIFORMITY_ALPHA = 1e-3
+
+
+def _c_library_first_draws(seeds) -> tuple[list[float], str]:
+    import ctypes
+    import ctypes.util
+
+    if sys.platform == "win32":
+        library_name = "msvcrt"
+        rand_max = 32767
+    else:
+        library_name = ctypes.util.find_library("c") or "libc.so.6"
+        rand_max = 2147483647
+    library = ctypes.CDLL(library_name)
+    library.srand.argtypes = [ctypes.c_uint]
+    library.srand.restype = None
+    library.rand.argtypes = []
+    library.rand.restype = ctypes.c_int
+    draws = []
+    for seed in seeds:
+        library.srand(int(seed))
+        draws.append(library.rand() / rand_max)
+    return draws, library_name
+
+
+def _uniform_ks_test(values) -> tuple[float, float]:
+    """One-sample Kolmogorov-Smirnov statistic and asymptotic p-value for U(0, 1)."""
+
+    ordered = sorted(min(max(float(value), 0.0), 1.0) for value in values)
+    count = len(ordered)
+    statistic = max(
+        max((index + 1) / count - value, value - index / count)
+        for index, value in enumerate(ordered)
+    )
+    # Kolmogorov's limiting distribution with Stephens' finite-sample scaling.
+    root = math.sqrt(count)
+    scaled = (root + 0.12 + 0.11 / root) * statistic
+    if scaled < 1e-3:
+        return statistic, 1.0
+    pvalue = 2.0 * sum(
+        (-1.0) ** (term - 1) * math.exp(-2.0 * term * term * scaled * scaled)
+        for term in range(1, 101)
+    )
+    return statistic, min(max(pvalue, 0.0), 1.0)
+
+
+def check_seed_first_draws(seeds, *, draws=None) -> dict:
+    """Fail when the host C library's first draws over ``seeds`` are not uniform.
+
+    ``draws`` replaces the host generator in tests.  The decision is a
+    one-sample Kolmogorov-Smirnov test against U(0, 1) at a fixed level, so a
+    generator whose first draws cluster near zero is rejected.
+    """
+    seed_list = list(seeds)
+    library = "supplied"
+    if draws is None:
+        draws, library = _c_library_first_draws(seed_list)
+    draws = [float(value) for value in draws]
+    if len(draws) != len(seed_list):
+        raise ValueError("one first draw is required per seed")
+    statistic, pvalue = _uniform_ks_test(draws)
+    summary = {
+        "c_library": library,
+        "platform": sys.platform,
+        "seed_count": len(seed_list),
+        "mean": sum(draws) / len(draws),
+        "minimum": min(draws),
+        "maximum": max(draws),
+        "ks_statistic": statistic,
+        "ks_pvalue": pvalue,
+        "alpha": _FIRST_DRAW_UNIFORMITY_ALPHA,
+    }
+    if pvalue < _FIRST_DRAW_UNIFORMITY_ALPHA:
+        raise RuntimeError(
+            "the C library's first rand() after srand(seed) is not uniform over "
+            f"seeds {seed_list[0]}..{seed_list[-1]} on {sys.platform} "
+            f"(mean {summary['mean']:.6f}, KS p={pvalue:.3g}); run_network "
+            "would give every reference member a biased first SSA draw. "
+            "Generate the references on a host whose C library passes this "
+            "check (glibc does)."
+        )
+    return summary
 
 
 def ensemble_model_source(
@@ -103,15 +196,16 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _ensemble_oracle_identity() -> dict:
+def _bng2_oracle_identity(*, require_network: bool = False) -> dict:
     bng2 = oracle_perl._bng2_path()
     if bng2 is None:
         raise RuntimeError("Perl BNG2 not available (set BNG2_PERL)")
     helper_paths = {
         "BNG2.pl": bng2,
         "Perl2/BNGAction.pm": bng2.parent / "Perl2" / "BNGAction.pm",
-        "bin/run_network": bng2.parent / "bin" / "run_network",
     }
+    if require_network:
+        helper_paths["bin/run_network"] = bng2.parent / "bin" / "run_network"
     revision = None
     try:
         revision = subprocess.run(
@@ -123,6 +217,13 @@ def _ensemble_oracle_identity() -> dict:
         ).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         pass
+    expected_revision = load_oracle_source(load_lock(), "bionetgen")["revision"]
+    if revision != expected_revision:
+        raise RuntimeError(
+            f"BNG2 oracle revision {revision or 'unknown'} does not match locked "
+            f"revision {expected_revision}; run scripts/ci/checkout_oracle.py "
+            "--name bionetgen and set BNG2_PERL to that checkout"
+        )
     missing = [str(path) for path in helper_paths.values() if not path.is_file()]
     if missing:
         raise RuntimeError("missing BNG2 oracle files: " + ", ".join(missing))
@@ -277,18 +378,19 @@ def _generate_ensemble(
     }
 
 
-def _write_ensemble_manifest(models: dict, identity: dict, n_runs: int) -> None:
+def _write_ensemble_manifest(
+    models: dict, identity: dict, n_runs: int, first_draws: dict | None = None
+) -> None:
     ENSEMBLE_EVIDENCE.mkdir(parents=True, exist_ok=True)
     manifest = {
-        "schema_version": 2,
+        "schema_version": 1,
         "oracle": identity,
         "generation": {
             "method": "ssa",
             "t_start": 0,
             "t_end": ENSEMBLE_T_END,
             "n_steps": ENSEMBLE_N_STEPS,
-            "seed_schedule": "sha256:BNG3 SSA ensemble v1:<index>",
-            "seeds": ensemble_seeds(n_runs),
+            "seed_range": [1, n_runs],
             "reset_before_each_member": True,
             "command_template": [
                 "perl",
@@ -302,6 +404,8 @@ def _write_ensemble_manifest(models: dict, identity: dict, n_runs: int) -> None:
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
         "models": models,
     }
+    if first_draws is not None:
+        manifest["generation"]["c_library_first_draws"] = first_draws
     path = ENSEMBLE_EVIDENCE / "manifest.json"
     temporary = path.with_suffix(".json.tmp")
     temporary.write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
@@ -309,6 +413,11 @@ def _write_ensemble_manifest(models: dict, identity: dict, n_runs: int) -> None:
 
 
 def regen(models: list[str], ensemble: int) -> int:
+    try:
+        identity = _bng2_oracle_identity()
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 2
     if ensemble:
         if ensemble < ENSEMBLE_MIN_RUNS:
             print(
@@ -319,12 +428,13 @@ def regen(models: list[str], ensemble: int) -> int:
         if not oracle_perl.perl_available():
             print("ERROR: Perl BNG2 not available (set BNG2_PERL).", file=sys.stderr)
             return 2
+        results = {}
         try:
-            identity = _ensemble_oracle_identity()
+            identity = _bng2_oracle_identity(require_network=True)
+            first_draws = check_seed_first_draws(ensemble_seeds(ensemble))
         except RuntimeError as exc:
             print(f"ERROR: {exc}", file=sys.stderr)
             return 2
-        results = {}
         for name in models:
             stem = Path(name).stem
             try:
@@ -334,7 +444,7 @@ def regen(models: list[str], ensemble: int) -> int:
                 continue
             print(f"  OK   {stem} ({ensemble} fixed-seed SSA members)")
         if results:
-            _write_ensemble_manifest(results, identity, ensemble)
+            _write_ensemble_manifest(results, identity, ensemble, first_draws)
         print(
             f"\n{len(results)}/{len(models)} ensembles regenerated into {GOLDEN}; "
             f"provenance: {ENSEMBLE_EVIDENCE / 'manifest.json'}"

@@ -35,6 +35,39 @@ def test_artifact_selection_rejects_ambiguous_variants(tmp_path):
     assert selected is None
 
 
+def test_bng2_path_requires_explicit_configuration(monkeypatch, tmp_path):
+    legacy = tmp_path / "legacy" / "perl" / "BNG2.pl"
+    legacy.parent.mkdir(parents=True)
+    legacy.write_text("legacy", encoding="utf-8")
+    monkeypatch.setattr(oracle_perl, "REPO", tmp_path)
+    monkeypatch.delenv("BNG2_PERL", raising=False)
+
+    assert oracle_perl._bng2_path() is None
+
+
+def test_bng2_path_uses_only_explicit_file(monkeypatch, tmp_path):
+    configured = tmp_path / "locked" / "bng2" / "BNG2.pl"
+    configured.parent.mkdir(parents=True)
+    configured.write_text("pinned", encoding="utf-8")
+    monkeypatch.setenv("BNG2_PERL", str(configured))
+    monkeypatch.setattr(oracle_perl, "_is_locked_bng2", lambda _path: True)
+
+    assert oracle_perl._bng2_path() == configured
+
+    monkeypatch.setenv("BNG2_PERL", str(configured.parent / "missing.pl"))
+    assert oracle_perl._bng2_path() is None
+
+
+def test_bng2_path_rejects_an_unlocked_checkout(monkeypatch, tmp_path):
+    configured = tmp_path / "bng2" / "BNG2.pl"
+    configured.parent.mkdir()
+    configured.write_text("not pinned", encoding="utf-8")
+    monkeypatch.setenv("BNG2_PERL", str(configured))
+    monkeypatch.setattr(oracle_perl, "_is_locked_bng2", lambda _path: False)
+
+    assert oracle_perl._bng2_path() is None
+
+
 def test_network_oracle_can_skip_nf_simulation(monkeypatch, tmp_path):
     model = tmp_path / "source.bngl"
     model.write_text("", encoding="utf-8")
