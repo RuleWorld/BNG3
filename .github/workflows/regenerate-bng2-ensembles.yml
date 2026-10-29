@@ -1,0 +1,58 @@
+name: Regenerate pinned BNG2 ensembles
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - tests/validation/golden/**
+      - tests/validation/evidence/bng2-ssa-ensembles/**
+      - .github/workflows/regenerate-bng2-ensembles.yml
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  regenerate:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install generator dependencies
+        run: python -m pip install numpy scipy
+      - name: Build the locked independent BNG2 oracle
+        run: |
+          python scripts/ci/checkout_oracle.py --name bionetgen \
+            --destination "$RUNNER_TEMP/ensemble-bng2" --summary-file "$GITHUB_STEP_SUMMARY"
+          make -C "$RUNNER_TEMP/ensemble-bng2/bng2/Network3" -f Makefile.cmake --jobs=1
+          echo "BNG2_PERL=$RUNNER_TEMP/ensemble-bng2/bng2/BNG2.pl" >> "$GITHUB_ENV"
+          {
+            uname -a
+            gcc --version
+            ldd --version
+            sha256sum "$RUNNER_TEMP/ensemble-bng2/bng2/bin/run_network"
+          } > ensemble-build.txt
+      - name: Regenerate all 600 frozen-seed members
+        run: |
+          python scripts/regen_golden.py --models gene_expr michment simple_system --ensemble 200
+          git rev-parse HEAD > ensemble-source-revision.txt
+      - name: Preserve generated references and provenance for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pinned-bng2-ensembles-${{ github.run_id }}
+          if-no-files-found: error
+          path: |
+            tests/validation/golden/gene_expr.ens/
+            tests/validation/golden/michment.ens/
+            tests/validation/golden/simple_system.ens/
+            tests/validation/evidence/bng2-ssa-ensembles/
+            ensemble-build.txt
+            ensemble-source-revision.txt
