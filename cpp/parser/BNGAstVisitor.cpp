@@ -1479,8 +1479,78 @@ ast::Expression parseExpressionImpl(const std::string& exprText) {
 
 } // namespace
 
+namespace {
+
+// BNG2 drops a commented simulate line before checking for a trailing
+// backslash, then warns on and ignores its following physical input line.
+// BNG3's strict grammar rejects that same line, so mask only the explicitly
+// continued physical lines after this commented action. Leave later input to
+// the grammar so unrelated malformed source still fails.
+std::string normalizeCommentedSimulateContinuations(const std::string& source) {
+    std::string result;
+    result.reserve(source.size());
+    const auto lineEnd = [&source](std::size_t start) {
+        const auto end = source.find_first_of("\r\n", start);
+        return end == std::string::npos ? source.size() : end;
+    };
+    const auto newlineEnd = [&source](std::size_t end) {
+        if (end == source.size()) return end;
+        if (source[end] == '\r' && end + 1 < source.size() && source[end + 1] == '\n') {
+            return end + 2;
+        }
+        return end + 1;
+    };
+    const auto appendMasked = [&result, &source](std::size_t start, std::size_t end,
+                                                  std::size_t after) {
+        result.append(end - start, ' ');
+        result.append(source, end, after - end);
+    };
+    const auto hasTrailingContinuation = [](std::string_view line) {
+        if (const auto comment = line.find('#'); comment != std::string_view::npos) {
+            line = line.substr(0, comment);
+        }
+        const auto last = line.find_last_not_of(" \t");
+        return last != std::string_view::npos && line[last] == '\\';
+    };
+
+    std::size_t start = 0;
+    bool skipContinuation = false;
+    while (start < source.size()) {
+        const auto end = lineEnd(start);
+        const auto after = newlineEnd(end);
+        const std::string_view line(source.data() + start, end - start);
+        if (skipContinuation) {
+            appendMasked(start, end, after);
+            skipContinuation = hasTrailingContinuation(line);
+        } else {
+            result.append(source, start, after - start);
+            const auto first = line.find_first_not_of(" \t");
+            if (first != std::string_view::npos && line[first] == '#') {
+                const auto action = line.find_first_not_of(" \t", first + 1);
+                if (action != std::string_view::npos && line.substr(action, 8) == "simulate") {
+                    const auto afterAction = action + 8;
+                    const bool tokenBoundary = afterAction < line.size() &&
+                                               (line[afterAction] == '(' ||
+                                                line[afterAction] == ' ' ||
+                                                line[afterAction] == '\t');
+                    const auto openParen = line.find_first_not_of(" \t", afterAction);
+                    const auto last = line.find_last_not_of(" \t");
+                    skipContinuation = tokenBoundary && openParen != std::string_view::npos &&
+                                       line[openParen] == '(' && last != std::string_view::npos &&
+                                       line[last] == '\\';
+                }
+            }
+        }
+        start = after;
+    }
+    return result;
+}
+
+} // namespace
+
 std::string normalizeBNGLSource(const std::string& sourceText) {
-    auto normalized = normalizeTfunSyntax(sourceText);
+    auto normalized = normalizeCommentedSimulateContinuations(sourceText);
+    normalized = normalizeTfunSyntax(normalized);
     normalized = normalizeLegacyBlockHeaders(normalized);
     normalized = normalizeFixedSeedCompartmentMarkers(normalized);
     normalized = normalizePopulationMapRates(normalized);

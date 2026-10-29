@@ -2393,8 +2393,11 @@ def test_shared_quadratic_event_pair_proves_constant_boundary_trigger_inactive()
         assert "Events NOT simulated" not in result.bngl
 
 
-def test_shared_quadratic_simultaneous_crossings_stay_unsupported():
+def test_shared_quadratic_simultaneous_crossings_execute_together(tmp_path):
+    import numpy as np
+
     from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
 
     xml = (
         _shared_quadratic_event_pair_model(assignment_value=0.0)
@@ -2405,12 +2408,57 @@ def test_shared_quadratic_simultaneous_crossings_stay_unsupported():
     result = Atomizer(quiet_mode=True, t_end=2, n_steps=400).atomize(xml)
 
     assert result.success, result.error
-    assert "state-dependent or non-constant event" in result.bngl
-    assert "Events NOT simulated" in result.bngl
+    assert "state-dependent or non-constant event" not in result.bngl
+    assert "Events NOT simulated" not in result.bngl
+    assert "begin bng3_events version 1" in result.bngl
+
+    model_path = tmp_path / "shared_quadratic_simultaneous_crossings.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    simulation = load(model_path).simulate(
+        method="ode", t_end=2, n_steps=400, rtol=1e-10, atol=1e-12
+    )
+    times = simulation.time
+    states = np.column_stack(
+        [simulation.observables[f"{species}_amt"] for species in ("S1", "S2", "S3")]
+    )
+    jumps = np.flatnonzero(np.max(np.abs(np.diff(states, axis=0)), axis=1) > 0.1)
+    assert len(jumps) == 1
+
+    jump = jumps[0]
+    # S1 + S3 is conserved, so S1 < 0.75 and S3 > 1.25 become true at the same
+    # instant. The simultaneous group applies S2 = 0 and S3 = 0, leaving
+    # S1 = 0.75 with no reaction flux.
+    assert states[jump, 0] >= 0.75 - 1e-9
+    assert states[jump, 2] <= 1.25 + 1e-9
+    np.testing.assert_allclose(states[jump + 1 :, 0], 0.75, rtol=0, atol=1e-9)
+    np.testing.assert_allclose(states[jump + 1 :, 1], 0.0, rtol=0, atol=1e-12)
+    np.testing.assert_allclose(states[jump + 1 :, 2], 0.0, rtol=0, atol=1e-12)
+
+    # Before the shared crossing the trajectory must match the independent
+    # RoadRunner source model. RoadRunner's root finder is unstable exactly at
+    # the shared crossing, so the boundary itself is checked analytically above.
+    import pytest
+
+    roadrunner = pytest.importorskip("roadrunner")
+    reference_engine = roadrunner.RoadRunner(xml)
+    reference_engine.integrator.setValue("relative_tolerance", 1e-10)
+    reference_engine.integrator.setValue("absolute_tolerance", 1e-12)
+    reference_engine.timeCourseSelections = ["time", "[S1]", "[S2]", "[S3]"]
+    reference = reference_engine.simulate(times=times)
+    pre_crossing = np.arange(len(times)) <= jump
+    for index, species in enumerate(("S1", "S2", "S3")):
+        bng_values = states[pre_crossing, index]
+        rr_values = reference[pre_crossing, reference.colnames.index(f"[{species}]")]
+        np.testing.assert_allclose(bng_values, rr_values, rtol=1e-5, atol=5e-10)
 
 
-def test_shared_quadratic_simultaneous_initial_entries_stay_unsupported():
+def test_shared_quadratic_simultaneous_initial_entries_report_runtime_boundary_limit(
+    tmp_path,
+):
+    import pytest
+
     from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.model import load
 
     xml = (
         _shared_quadratic_event_pair_model()
@@ -2423,8 +2471,17 @@ def test_shared_quadratic_simultaneous_initial_entries_stay_unsupported():
     result = Atomizer(quiet_mode=True, t_end=0.1, n_steps=10).atomize(xml)
 
     assert result.success, result.error
-    assert "state-dependent or non-constant event" in result.bngl
-    assert "Events NOT simulated" in result.bngl
+    assert "begin bng3_events version 1" in result.bngl
+    assert 'event "event1"' in result.bngl
+    assert 'event "event2"' in result.bngl
+
+    model_path = tmp_path / "shared_quadratic_simultaneous_initial_entries.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    with pytest.raises(
+        RuntimeError,
+        match="strict trigger equals its threshold at the initial time",
+    ):
+        load(model_path).simulate(method="ode", t_end=0.1, n_steps=10)
 
 
 def test_shared_quadratic_trigger_entering_at_initial_time_matches_libroadrunner(
@@ -5156,23 +5213,63 @@ def _state_triggered_priority_pair_model(assignment_target: str = "p2") -> str:
     </sbml>"""
 
 
-def test_state_triggered_group_with_a_dynamic_priority_is_ordered():
+def test_state_triggered_group_with_a_dynamic_priority_executes_in_order(tmp_path):
     # SBML L3V2 Core Sec. 4.12.3: the priority orders the events that are
     # executed simultaneously, and Sec. 4.12.3 also says the priority is
     # evaluated at the execution instant, so a priority that reads the model
     # state orders the group as well.
     from bionetgen.atomizer.modern import Atomizer
 
-    result = Atomizer(quiet_mode=True).atomize(_state_triggered_priority_pair_model())
+    import numpy as np
+    import pytest
+
+    from bionetgen.model import load
+
+    xml = _state_triggered_priority_pair_model(assignment_target="S").replace(
+        '<model id="state_triggered_priority_pair">',
+        '<model id="state_triggered_priority_pair">'
+        '<listOfCompartments><compartment id="C" size="1" constant="true"/>'
+        '</listOfCompartments><listOfSpecies><species id="S" compartment="C" '
+        'initialAmount="0" hasOnlySubstanceUnits="true"/></listOfSpecies>',
+    )
+    result = Atomizer(quiet_mode=True, t_end=6, n_steps=60).atomize(xml)
 
     assert result.success, result.error
     assert "Events NOT simulated" not in result.bngl
     # The constant priority 5 is higher than the state's value 3 at the
     # crossing, so the constant-priority event runs first and the other
     # event's value is the one that survives.
-    assert result.bngl.index('setParameter("p2", "2")') < result.bngl.index(
-        'setParameter("p2", "1")'
+    assert result.bngl.index('setConcentration("@C:M_S()", "2")') < result.bngl.index(
+        'setConcentration("@C:M_S()", "1")'
     )
+
+    # Execute the authored event actions in the native engine. The event with
+    # constant priority 5 runs first; the dynamic priority evaluates to 3 at
+    # the trigger and runs second, so its assignment to the shared target wins.
+    model_path = tmp_path / "state_triggered_priority_pair.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    load(model_path).execute()
+    rows = model_path.with_suffix(".gdat").read_text(encoding="utf-8").splitlines()
+    columns = rows[0].lstrip("# ").split()
+    native = np.loadtxt(rows[1:])
+    native_times = native[:, columns.index("time")]
+    native_state = native[:, columns.index("S")]
+    np.testing.assert_allclose(native_state[native_times < 1], 0, rtol=0, atol=1e-12)
+    np.testing.assert_allclose(native_state[native_times > 1], 1, rtol=0, atol=1e-12)
+
+    # RoadRunner independently confirms the SBML source trajectory away from
+    # the exact event instant, where output sampling conventions can differ.
+    roadrunner = pytest.importorskip("roadrunner")
+    reference_engine = roadrunner.RoadRunner(xml)
+    reference_engine.integrator.setValue("relative_tolerance", 1e-10)
+    reference_engine.integrator.setValue("absolute_tolerance", 1e-12)
+    reference_engine.timeCourseSelections = ["time", "S"]
+    reference = reference_engine.simulate(times=np.unique(native_times))
+    reference_times = reference[:, reference.colnames.index("time")]
+    compare = (native_times != 1) & (np.diff(np.r_[native_times, np.inf]) != 0)
+    rr_indices = np.searchsorted(reference_times, native_times[compare])
+    rr_values = reference[rr_indices, reference.colnames.index("S")]
+    np.testing.assert_allclose(native_state[compare], rr_values, rtol=1e-5, atol=5e-10)
 
 
 def test_state_triggered_group_that_assigns_the_trigger_state_stays_unsupported():

@@ -508,7 +508,9 @@ class BioNetGenModel:
         rtol, atol : float
             Relative and absolute tolerances (ODE only).
         seed : int
-            Random seed (SSA/NF only; 0 = system default).
+            Random seed for SSA/NF and random SBML event assignments in ODE
+            simulations (0 = system default). It has no effect on deterministic
+            ODE trajectories without random event assignments.
         pla_config : str
             PLA configuration string (PLA only).
         psa_poplevel : float
@@ -864,6 +866,7 @@ class BioNetGenModel:
                             rtol=rtol,
                             atol=atol,
                             method="cvode",
+                            seed=seed,
                             max_step=max_step,
                             steady_state=steady_state,
                             steady_state_tol=steady_state_tol,

@@ -19,6 +19,8 @@ import subprocess
 import sys
 import tempfile
 import xml.etree.ElementTree as ET
+from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Iterable, Optional, Union
 
@@ -134,6 +136,296 @@ _XML_NAMED_ID_TAGS = {
     "species",
     "speciesType",
 }
+_XML_LABEL_ATTRIBUTES = (
+    "name",
+    "id",
+    "variable",
+    "symbol",
+    "species",
+    "speciesType",
+    "component",
+    "reactant",
+    "product",
+    "sourceID",
+    "targetID",
+)
+_XML_COMPONENT_MAPPING_TAGS = {
+    "map",
+    "mapitem",
+    "listofspeciestypecomponentindexes",
+    "speciestypecomponentindex",
+    "speciestypecomponentmapinproduct",
+    "speciestypeinstance",
+    "listofspeciestypeinstances",
+    "listofoutwardbindingsites",
+    "outwardbindingsite",
+    "listofspeciesfeatures",
+    "speciesfeature",
+}
+_XML_RATE_LAW_TAGS = {
+    "ratelaw",
+    "listofrateconstants",
+    "rateconstant",
+    "kineticlaw",
+    "rate",
+    "listoflocalparameters",
+    "localparameter",
+}
+
+
+@dataclass(frozen=True)
+class XmlDifference:
+    """One structural XML difference with an element path and both values."""
+
+    path: str
+    reference: object
+    test: object
+    category: str
+    kind: str
+
+
+@dataclass(frozen=True)
+class StructuralXmlComparison:
+    """Structural XML differences plus canonically equal sections with raw differences."""
+
+    sections: tuple[str, ...]
+    differences: tuple[XmlDifference, ...]
+    representation_only: tuple[str, ...]
+
+    @property
+    def equal(self) -> bool:
+        return not self.sections
+
+    def counts(self) -> dict[str, dict[str, int]]:
+        counts: dict[str, Counter[str]] = {}
+        for difference in self.differences:
+            counts.setdefault(difference.category, Counter())[difference.kind] += 1
+        return {category: dict(counter) for category, counter in counts.items()}
+
+    def summary(self) -> str:
+        if self.equal:
+            return "canonical XML equal"
+        parts = [
+            f"{category} ({', '.join(f'{count} {kind}' for kind, count in sorted(kinds.items()))})"
+            for category, kinds in self.counts().items()
+        ]
+        text = "; ".join(parts)
+        if self.representation_only:
+            text += "; representation-only differences in " + ", ".join(
+                self.representation_only
+            )
+        return text
+
+
+@dataclass(frozen=True)
+class _XmlNode:
+    tag: str
+    attributes: tuple[tuple[str, str], ...]
+    text: Optional[str]
+    children: tuple["_XmlNode", ...]
+    label: str
+
+    @property
+    def signature(self) -> tuple:
+        return (
+            self.tag,
+            self.attributes,
+            self.text,
+            tuple(child.signature for child in self.children),
+        )
+
+
+def _xml_node_label(tag: str, attributes: tuple[tuple[str, str], ...]) -> str:
+    values = dict(attributes)
+    for name in _XML_LABEL_ATTRIBUTES:
+        if values.get(name):
+            return f"{tag}[{name}={values[name]!r}]"
+    return tag
+
+
+_XML_IDENTITY_ATTRIBUTES = ("name", "id")
+
+
+def _xml_node_key(node: _XmlNode) -> tuple:
+    """Group elements that name the same entity across the two exports.
+
+    Only ``name``/``id`` identify an element. Positional lists such as
+    ``Map``/``MapItem`` or ``ListOfRateConstants`` carry no identity, so their
+    members pair by position and surface as value differences instead of a
+    spurious missing/extra pair.
+    """
+
+    values = dict(node.attributes)
+    for name in _XML_IDENTITY_ATTRIBUTES:
+        if values.get(name):
+            return node.tag, name, values[name]
+    return node.tag, "", ""
+
+
+def _xml_node_summary(node: _XmlNode, limit: int = 160) -> str:
+    attributes = ", ".join(
+        f"{name}={value!r}"
+        for name, value in node.attributes
+        if name in _XML_LABEL_ATTRIBUTES
+        or name in {"value", "type", "population", "bindingStatus"}
+    )
+    text = f" text={node.text!r}" if node.text else ""
+    summary = f"{node.tag}({attributes}){text}" if attributes or text else node.tag
+    return summary if len(summary) <= limit else summary[: limit - 3] + "..."
+
+
+def _format_xml_value(value: object, limit: int = 160) -> str:
+    if value is None:
+        return "<missing>"
+    text = value if isinstance(value, str) else repr(value)
+    return text if len(text) <= limit else text[: limit - 3] + "..."
+
+
+def _classify_xml_difference(path: str, section: str) -> str:
+    tags = {part.split("[", 1)[0].lower() for part in path.split("/")}
+    if tags & _XML_COMPONENT_MAPPING_TAGS:
+        return "component mapping"
+    if tags & _XML_RATE_LAW_TAGS:
+        return "rate law"
+    if section == "ListOfSpecies" or section == "listOfSpecies":
+        return "species"
+    if section == "ListOfReactionRules" or section == "listOfReactions":
+        return "reaction rule"
+    if section == "ListOfMoleculeTypes":
+        return "molecule type"
+    if section == "listOfSpeciesTypes":
+        return "species type"
+    if section == "ListOfObservables":
+        return "observable"
+    if section == "ListOfFunctions":
+        return "function"
+    return "other"
+
+
+def _xml_child_path(parent: str, node: _XmlNode, index: int, total: int) -> str:
+    suffix = f"#{index}" if total > 1 else ""
+    return f"{parent}/{node.label}{suffix}"
+
+
+def _diff_xml_node_lists(
+    reference: tuple[_XmlNode, ...],
+    test: tuple[_XmlNode, ...],
+    path: str,
+    section: str,
+) -> list[XmlDifference]:
+    reference_by_key: dict[tuple, list[_XmlNode]] = {}
+    test_by_key: dict[tuple, list[_XmlNode]] = {}
+    for node in reference:
+        reference_by_key.setdefault(_xml_node_key(node), []).append(node)
+    for node in test:
+        test_by_key.setdefault(_xml_node_key(node), []).append(node)
+
+    differences: list[XmlDifference] = []
+    for key in sorted(set(reference_by_key) | set(test_by_key), key=repr):
+        reference_nodes = reference_by_key.get(key, [])
+        test_nodes = test_by_key.get(key, [])
+        total = max(len(reference_nodes), len(test_nodes))
+        for index in range(total):
+            reference_node = (
+                reference_nodes[index] if index < len(reference_nodes) else None
+            )
+            test_node = test_nodes[index] if index < len(test_nodes) else None
+            if reference_node is None:
+                child_path = _xml_child_path(path, test_node, index, total)
+                differences.append(
+                    XmlDifference(
+                        child_path,
+                        None,
+                        _xml_node_summary(test_node),
+                        _classify_xml_difference(child_path, section),
+                        "extra",
+                    )
+                )
+            elif test_node is None:
+                child_path = _xml_child_path(path, reference_node, index, total)
+                differences.append(
+                    XmlDifference(
+                        child_path,
+                        _xml_node_summary(reference_node),
+                        None,
+                        _classify_xml_difference(child_path, section),
+                        "missing",
+                    )
+                )
+            else:
+                child_path = _xml_child_path(path, reference_node, index, total)
+                differences.extend(
+                    _diff_xml_nodes(reference_node, test_node, child_path, section)
+                )
+    return differences
+
+
+def _diff_xml_nodes(
+    reference: _XmlNode,
+    test: _XmlNode,
+    path: str,
+    section: str,
+) -> list[XmlDifference]:
+    if reference.signature == test.signature:
+        return []
+    if reference.tag != test.tag:
+        return [
+            XmlDifference(
+                path,
+                reference.tag,
+                test.tag,
+                _classify_xml_difference(path, section),
+                "value",
+            )
+        ]
+
+    differences: list[XmlDifference] = []
+    reference_attributes = dict(reference.attributes)
+    test_attributes = dict(test.attributes)
+    for name in sorted(set(reference_attributes) | set(test_attributes)):
+        if reference_attributes.get(name) != test_attributes.get(name):
+            attribute_path = f"{path}/@{name}"
+            differences.append(
+                XmlDifference(
+                    attribute_path,
+                    reference_attributes.get(name),
+                    test_attributes.get(name),
+                    _classify_xml_difference(attribute_path, section),
+                    "value",
+                )
+            )
+    if reference.text != test.text:
+        text_path = f"{path}/text()"
+        differences.append(
+            XmlDifference(
+                text_path,
+                reference.text,
+                test.text,
+                _classify_xml_difference(text_path, section),
+                "value",
+            )
+        )
+    differences.extend(
+        _diff_xml_node_lists(reference.children, test.children, path, section)
+    )
+    return differences
+
+
+def format_structural_xml_differences(
+    comparison: StructuralXmlComparison, *, limit: int = 20
+) -> list[str]:
+    """Format the first element-level differences with paths and both values."""
+
+    lines = [
+        f"{difference.path}: BNG2={_format_xml_value(difference.reference)} "
+        f"C++={_format_xml_value(difference.test)} "
+        f"[{difference.category}, structural; semantic impact unclassified]"
+        for difference in comparison.differences[:limit]
+    ]
+    remaining = len(comparison.differences) - limit
+    if remaining > 0:
+        lines.append(f"... {remaining} more element-level difference(s) omitted")
+    return lines
 
 
 def _network_only_text(
@@ -325,21 +617,26 @@ def _semantic_xml_ids(model: ET.Element) -> dict[str, str]:
     return aliases
 
 
-def _xml_element_signature(
+def _normalize_expression_text(expression: str) -> str:
+    """Remove insignificant whitespace and redundant outer grouping only."""
+
+    return _canon_expr(expression)
+
+
+def _xml_element_node(
     element: ET.Element,
     aliases: dict[str, str],
     parameter_values: dict[str, str],
-) -> tuple:
-    """Return a whitespace- and namespace-prefix-independent XML signature."""
+) -> _XmlNode:
+    """Return a whitespace- and namespace-prefix-independent XML node."""
 
     tag = element.tag.rsplit("}", 1)[-1]
-    tag_name = element.tag.rsplit("}", 1)[-1]
     normalized_attributes = dict(element.attrib)
-    if tag_name == "ReactionRule" and re.fullmatch(
+    if tag == "ReactionRule" and re.fullmatch(
         r"_R\d+", normalized_attributes.get("name", "")
     ):
         normalized_attributes["name"] = normalized_attributes["name"][1:]
-    if tag_name == "ReactionRule":
+    if tag == "ReactionRule":
         normalized_attributes.setdefault("symmetry_factor", "1")
     if tag == "Observable":
         normalized_attributes.setdefault("output", "1")
@@ -388,22 +685,24 @@ def _xml_element_signature(
         else " ".join(raw_text.split())
     ) or None
     children = tuple(
-        _xml_element_signature(child, aliases, parameter_values) for child in element
+        _xml_element_node(child, aliases, parameter_values) for child in element
     )
     if (tag.startswith("ListOf") and tag != "ListOfArguments") or tag == "Map":
-        children = tuple(sorted(children, key=repr))
-    return tag, attributes, text, children
+        children = tuple(sorted(children, key=lambda child: repr(child.signature)))
+    return _XmlNode(tag, attributes, text, children, _xml_node_label(tag, attributes))
 
 
-def _normalize_expression_text(expression: str) -> str:
-    """Remove insignificant whitespace and redundant outer grouping only."""
+def _xml_element_signature(
+    element: ET.Element,
+    aliases: dict[str, str],
+    parameter_values: dict[str, str],
+) -> tuple:
+    """Return a whitespace- and namespace-prefix-independent XML signature."""
 
-    return _canon_expr(expression)
+    return _xml_element_node(element, aliases, parameter_values).signature
 
 
-def _structural_xml_signature(path: Path, sections: Iterable[str]) -> dict[str, tuple]:
-    """Extract selected model XML sections for BNG2/BNG3 structural checks."""
-
+def _model_element(path: Path) -> ET.Element:
     root = ET.parse(path).getroot()
     model = next(
         (
@@ -415,10 +714,11 @@ def _structural_xml_signature(path: Path, sections: Iterable[str]) -> dict[str, 
     )
     if model is None:
         raise ValueError(f"{path.name} has no model element")
+    return model
 
-    requested = set(sections)
-    aliases = _semantic_xml_ids(model)
-    parameter_values = {
+
+def _parameter_values(model: ET.Element) -> dict[str, str]:
+    return {
         element.attrib["id"]: element.attrib["value"]
         for element in model.iter()
         if element.tag.rsplit("}", 1)[-1] == "Parameter"
@@ -426,23 +726,102 @@ def _structural_xml_signature(path: Path, sections: Iterable[str]) -> dict[str, 
         and "value" in element.attrib
         and element.attrib.get("type") == "Constant"
     }
-    observed: dict[str, tuple] = {}
+
+
+def _structural_xml_nodes(
+    path: Path, sections: Iterable[str]
+) -> dict[str, tuple[_XmlNode, ...]]:
+    """Extract selected model XML sections as canonical nodes."""
+
+    model = _model_element(path)
+    requested = set(sections)
+    aliases = _semantic_xml_ids(model)
+    parameter_values = _parameter_values(model)
+    observed: dict[str, tuple[_XmlNode, ...]] = {}
     for child in model:
         name = child.tag.rsplit("}", 1)[-1]
         if name in requested:
             observed[name] = tuple(
                 sorted(
                     (
-                        _xml_element_signature(item, aliases, parameter_values)
+                        _xml_element_node(item, aliases, parameter_values)
                         for item in child
                     ),
-                    key=repr,
+                    key=lambda node: repr(node.signature),
                 )
             )
 
     for name in requested - set(observed):
         observed[name] = ()
     return observed
+
+
+def _structural_xml_signature(path: Path, sections: Iterable[str]) -> dict[str, tuple]:
+    """Extract selected model XML sections for BNG2/BNG3 structural checks."""
+
+    return {
+        name: tuple(node.signature for node in nodes)
+        for name, nodes in _structural_xml_nodes(path, sections).items()
+    }
+
+
+def _raw_structural_xml_signature(
+    path: Path, sections: Iterable[str]
+) -> dict[str, tuple[str, ...]]:
+    """Extract selected sections without canonicalization to identify representation."""
+
+    model = _model_element(path)
+    requested = set(sections)
+    observed: dict[str, tuple[str, ...]] = {}
+    for child in model:
+        name = child.tag.rsplit("}", 1)[-1]
+        if name in requested:
+            observed[name] = tuple(
+                " ".join(ET.tostring(item, encoding="unicode").split())
+                for item in child
+            )
+    for name in requested - set(observed):
+        observed[name] = ()
+    return observed
+
+
+def diff_structural_xml(
+    reference_xml: Union[Path, str],
+    test_xml: Union[Path, str],
+    *,
+    sections: Iterable[str],
+) -> StructuralXmlComparison:
+    """Return categorized, element-level differences between two XML exports."""
+
+    selected_sections = tuple(sections)
+    reference_path = Path(reference_xml)
+    test_path = Path(test_xml)
+    reference = _structural_xml_nodes(reference_path, selected_sections)
+    test = _structural_xml_nodes(test_path, selected_sections)
+    reference_raw = _raw_structural_xml_signature(reference_path, selected_sections)
+    test_raw = _raw_structural_xml_signature(test_path, selected_sections)
+
+    differing_sections: list[str] = []
+    representation_only: list[str] = []
+    differences: list[XmlDifference] = []
+    for section in selected_sections:
+        reference_nodes = reference.get(section, ())
+        test_nodes = test.get(section, ())
+        reference_signatures = tuple(node.signature for node in reference_nodes)
+        test_signatures = tuple(node.signature for node in test_nodes)
+        if reference_signatures != test_signatures:
+            differing_sections.append(section)
+            differences.extend(
+                _diff_xml_node_lists(reference_nodes, test_nodes, section, section)
+            )
+        elif reference_raw.get(section, ()) != test_raw.get(section, ()):
+            representation_only.append(section)
+
+    return StructuralXmlComparison(
+        sections=tuple(differing_sections),
+        differences=tuple(differences),
+        representation_only=tuple(representation_only),
+    )
 
 
 def compare_structural_xml(
@@ -453,13 +832,8 @@ def compare_structural_xml(
 ) -> tuple[bool, list[str]]:
     """Compare declared species/rule/function or SBML-Multi XML sections."""
 
-    selected_sections = tuple(sections)
-    reference = _structural_xml_signature(Path(reference_xml), selected_sections)
-    test = _structural_xml_signature(Path(test_xml), selected_sections)
-    differences = sorted(
-        section for section in reference if reference[section] != test.get(section)
-    )
-    return not differences, differences
+    comparison = diff_structural_xml(reference_xml, test_xml, sections=sections)
+    return comparison.equal, list(comparison.sections)
 
 
 _CONTINUATION_BASES = {
@@ -609,6 +983,26 @@ def _run_engine(
         return None, f"could not launch engine: {exc}"
 
 
+def _preserve_xml_artifacts(
+    artifact_dir: Optional[Path],
+    model_name: str,
+    cpp_xml: Path,
+    perl_xml: Path,
+) -> list[Path]:
+    """Copy both generated XML exports aside for CI inspection on failure."""
+
+    if artifact_dir is None:
+        return []
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    preserved: list[Path] = []
+    for engine, source in (("cpp", cpp_xml), ("bng2", perl_xml)):
+        if source.is_file():
+            destination = artifact_dir / f"{model_name}.{engine}.xml"
+            shutil.copy2(source, destination)
+            preserved.append(destination)
+    return preserved
+
+
 def _run_authored_export_comparison(
     model: Path,
     cpp_path: Path,
@@ -616,6 +1010,8 @@ def _run_authored_export_comparison(
     models_dir: Path,
     perl_executable: str,
     timeout: float,
+    *,
+    artifact_dir: Optional[Path] = None,
 ) -> tuple[str, str]:
     """Run a fixture's authored export action in both engines and compare XML."""
 
@@ -673,22 +1069,47 @@ def _run_authored_export_comparison(
             if not path.is_file() or path.stat().st_size == 0
         ]
         if missing:
-            return (
-                "error",
-                f"ERROR {model.stem} (missing authored output: {', '.join(missing)})",
+            preserved = _preserve_xml_artifacts(
+                artifact_dir, model.stem, cpp_xml, perl_xml
             )
+            detail = (
+                f"ERROR {model.stem} (missing authored output: {', '.join(missing)})"
+            )
+            if preserved:
+                detail += "\n  preserved artifacts: " + ", ".join(
+                    str(path) for path in preserved
+                )
+            return "error", detail
 
         try:
-            equal, differences = compare_structural_xml(
-                perl_xml, cpp_xml, sections=sections
-            )
+            comparison = diff_structural_xml(perl_xml, cpp_xml, sections=sections)
         except (ET.ParseError, OSError, ValueError) as exc:
-            return "fail", f"FAIL {model.stem} (invalid structural XML: {exc})"
-        if not equal:
-            return (
-                "fail",
-                f"FAIL {model.stem} (C++/BNG2 structural XML differs: {', '.join(differences)})",
+            preserved = _preserve_xml_artifacts(
+                artifact_dir, model.stem, cpp_xml, perl_xml
             )
+            detail = f"FAIL {model.stem} (invalid structural XML: {exc})"
+            if preserved:
+                detail += "\n  preserved artifacts: " + ", ".join(
+                    str(path) for path in preserved
+                )
+            return "fail", detail
+        if not comparison.equal:
+            preserved = _preserve_xml_artifacts(
+                artifact_dir, model.stem, cpp_xml, perl_xml
+            )
+            lines = [
+                f"FAIL {model.stem} (C++/BNG2 structural XML differs: {', '.join(comparison.sections)})",
+                f"  canonical structural differences: {comparison.summary()}",
+            ]
+            lines.extend(
+                f"  {line}" for line in format_structural_xml_differences(comparison)
+            )
+            if preserved:
+                lines.append(
+                    "  preserved artifacts: "
+                    + ", ".join(str(path) for path in preserved)
+                )
+            return "fail", "\n".join(lines)
         return "pass", f"PASS  {model.stem} (authored export: {label})"
 
 
@@ -701,6 +1122,7 @@ def run_cross_validation(
     timeout: float = 60,
     model_names: Optional[Iterable[str]] = None,
     verbose: bool = False,
+    artifact_dir: Optional[Path] = None,
 ) -> tuple[dict[str, int], list[str]]:
     """Generate and structurally compare C++/Perl networks for each model."""
 
@@ -727,6 +1149,7 @@ def run_cross_validation(
                 corpus,
                 perl_executable,
                 timeout,
+                artifact_dir=artifact_dir,
             )
             results[status] += 1
             details.append(detail)
@@ -905,6 +1328,11 @@ def main() -> None:
     parser.add_argument("--timeout", type=float, default=60)
     parser.add_argument("--model", action="append", dest="model_names")
     parser.add_argument("--summary-file", type=Path)
+    parser.add_argument(
+        "--artifact-dir",
+        type=Path,
+        help="Preserve generated XML exports here when an authored export differs",
+    )
     parser.add_argument("--verbose", action="store_true")
     args = parser.parse_args()
 
@@ -925,6 +1353,7 @@ def main() -> None:
         timeout=args.timeout,
         model_names=args.model_names,
         verbose=args.verbose,
+        artifact_dir=args.artifact_dir,
     )
     for detail in details:
         print(detail)
