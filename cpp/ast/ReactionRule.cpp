@@ -907,6 +907,17 @@ bool verifyBondTopology(const BNGcore::PatternGraph& graph) {
 
 } // namespace
 
+double identicalReactantPatternPermutationFactor(
+    const std::vector<SpeciesGraph>& patterns) {
+    std::unordered_map<std::string, std::size_t> counts;
+    double factor = 1.0;
+    for (const auto& pattern : patterns) {
+        const auto count = ++counts[pattern.canonicalLabel()];
+        factor /= static_cast<double>(count);
+    }
+    return factor;
+}
+
 // Pattern metadata points into the immutable rule pattern graphs. Keeping it
 // per rule avoids rebuilding the same molecule/component descriptions for
 // every embedding search and generated reaction.
@@ -3296,7 +3307,7 @@ bool ReactionRule::buildReaction(
     //
     // For all other rules, the reaction center signature and/or the normal
     // RxnList dedup already handle symmetry correctly.
-    double factor = 1.0;
+    double factor = identicalReactantPatternPermutationFactor(reactantPatterns_);
     // NOTE: For -> 0 DeleteMolecules rules (operations_ empty, productPatterns_
     // empty), we intentionally do NOT apply the embedding multiplicity as a stat
     // factor.  The multiplicity counts automorphic embeddings that map the pattern
@@ -3310,24 +3321,6 @@ bool ReactionRule::buildReaction(
     // represent the same physical reaction and should have factor 1, not
     // multiplicity.  In Perl each automorphic embedding carries a 1/auto_pattern
     // correction that exactly cancels the multiplicity, yielding factor 1.
-    if (reactantPatterns_.size() > 1) {
-        // Group reactant patterns by canonical label, compute 1/n! per group
-        std::unordered_map<std::string, int> patternGroupCounts;
-        for (const auto& rp : reactantPatterns_) {
-            patternGroupCounts[rp.canonicalLabel()]++;
-        }
-        for (const auto& [label, count] : patternGroupCounts) {
-            if (count > 1) {
-                // 1/n! for this group
-                // Keep the accumulator floating-point. An integer factorial
-                // overflows at 13!, producing an infinite statistical factor.
-                double factorial = 1.0;
-                for (int i = 2; i <= count; ++i) factorial *= i;
-                factor /= factorial;
-            }
-        }
-    }
-
     // For scope-prefix rules, compute observable-count fingerprint for the scoped molecule
     // and include it in the rate law string. This prevents RxnList from merging
     // reactions with different local function contexts.

@@ -16,6 +16,7 @@
 #include "SbmlWriter.hpp"
 #include "compile/TotalRate.hpp"
 #include "compile/Pattern.hpp"
+#include "ast/ReactionRule.hpp"
 #include <map>
 #include <set>
 
@@ -951,10 +952,15 @@ std::string SbmlMultiWriter::writeReactionRules(const ast::Model& model) {
         const auto direction = [&](bool reverse) {
             const auto& reactants = reverse ? rule.getProducts() : rule.getReactants();
             const auto& products = reverse ? rule.getReactants() : rule.getProducts();
+            const auto& reactantPatterns = reverse
+                ? rule.getProductPatterns() : rule.getReactantPatterns();
             const auto rateIndex = reverse ? 1u : 0u;
             if (rule.getRates().size() <= rateIndex) {
                 throw std::invalid_argument("SBML-Multi rule direction has no rate law");
             }
+            const bool absolute = rule.isAbsoluteFlux() && compile::isTotalRateRule(rule);
+            const double permutationFactor = absolute ? 1.0
+                : bng::ast::identicalReactantPatternPermutationFactor(reactantPatterns);
             const auto id = patternPrefix + (reverse ? "r" : "");
             auto name = rule.getRuleName().empty() ? rule.getLabel() : rule.getRuleName();
             if (name.empty()) name = patternPrefix;
@@ -1020,17 +1026,24 @@ std::string SbmlMultiWriter::writeReactionRules(const ast::Model& model) {
             // The semantic flag belongs to this exact rule, including
             // unnamed rules.  A name-based lookup loses absolute-flux
             // semantics when no rule name was authored.
-            const bool absolute = rule.isAbsoluteFlux() && compile::isTotalRateRule(rule);
             const auto volume = absolute ? std::string{} : multiMassActionVolume(model, reactants);
             if (!volume.empty()) sbml << "            <apply><divide/>\n";
-            if (!absolute && !reactantIds.empty()) sbml << "            <apply><times/>\n";
+            if (!absolute && (!reactantIds.empty() || permutationFactor != 1.0)) {
+                sbml << "            <apply><times/>\n";
+            }
+            if (permutationFactor != 1.0) {
+                sbml << "              <cn> " << std::setprecision(17)
+                     << permutationFactor << " </cn>\n";
+            }
             sbml << SbmlWriter::exprToMathML(rule.getRates()[rateIndex], "              ", symbols);
             if (!absolute) {
                 for (const auto& species : reactantIds) {
                     sbml << "              <ci>" << species << "</ci>\n";
                 }
             }
-            if (!absolute && !reactantIds.empty()) sbml << "            </apply>\n";
+            if (!absolute && (!reactantIds.empty() || permutationFactor != 1.0)) {
+                sbml << "            </apply>\n";
+            }
             if (!volume.empty()) {
                 if (reactantIds.size() == 2) {
                     sbml << "              <ci>" << makeValidSBMLId(volume) << "</ci>\n";

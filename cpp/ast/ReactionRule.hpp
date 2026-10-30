@@ -21,6 +21,11 @@ namespace bng::ast {
 
 class Model;  // forward declaration
 
+// BNG's statistical correction for permutations of identical whole reactant
+// patterns. Shared by network reactions and rule-level export.
+double identicalReactantPatternPermutationFactor(
+    const std::vector<SpeciesGraph>& patterns);
+
 class ReactionRule {
 public:
     // Optional backend-owned execution hooks. These let compiled backends
