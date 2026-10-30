@@ -1805,3 +1805,115 @@ TEST_CASE("OdeIntegrator recovers after late stop condition failure", "[OdeOptio
     // The existing ASan job runs this test alone with leak detection enabled.
     // Functional recovery does not itself demonstrate native resource cleanup.
 }
+
+namespace {
+
+const char* kDiscreteTriggerModel = R"(
+begin molecule types
+    Reset()
+    Tick()
+    Complete()
+end molecule types
+begin seed species
+    Reset() 0
+    Tick() 0
+    Complete() 0
+end seed species
+begin observables
+    Molecules reset Reset()
+    Molecules ticks Tick()
+    Molecules complete Complete()
+end observables
+begin bng3_events version 1
+    event "tick"
+        trigger: time >= reset + 0.01
+        initial_value: false
+        persistent: false
+        use_values_from_trigger_time: true
+        priority: 10
+        assignment: reset = time
+        assignment: ticks = ticks + 1
+    end event
+    event "complete_after_sixteen_ticks"
+        trigger: floor(ticks / 16) >= 1
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: true
+        priority: 5
+        assignment: complete = 1
+    end event
+end bng3_events
+)";
+
+} // namespace
+
+TEST_CASE("CVODE re-tests a trigger over species that only events change",
+          "[OdeOptions][Events]") {
+    // Issue #157 (semantic/00966 reduced): no reaction changes `ticks`, so
+    // floor(ticks / 16) >= 1 is piecewise constant and has no continuous
+    // root.  It becomes true when the sixteenth tick at t = 0.16 assigns
+    // ticks = 16, and the re-test after that execution fires it at once.
+    // libRoadRunner on the SBML source: complete = 0 at t = 0.085 and 1 at
+    // t = 0.165.
+    auto model = parser::parseModel(kDiscreteTriggerModel);
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 0.165;
+    options.nSteps = 33;
+    const auto result = integrator.integrate(options);
+    REQUIRE(result.timePoints.size() == result.observables.size());
+    std::size_t middleRow = result.timePoints.size();
+    for (std::size_t row = 0; row < result.timePoints.size(); ++row) {
+        if (std::abs(result.timePoints[row] - 0.085) < 1e-9) middleRow = row;
+    }
+    REQUIRE(middleRow < result.timePoints.size());
+    const auto& middle = result.observables[middleRow];  // t = 0.085
+    const auto& last = result.observables.back();        // t = 0.165
+    CHECK_THAT(middle[1], Catch::Matchers::WithinAbs(8.0, 1e-9));
+    CHECK_THAT(middle[2], Catch::Matchers::WithinAbs(0.0, 1e-9));
+    CHECK_THAT(last[0], Catch::Matchers::WithinAbs(0.16, 1e-9));
+    CHECK_THAT(last[1], Catch::Matchers::WithinAbs(16.0, 1e-9));
+    CHECK_THAT(last[2], Catch::Matchers::WithinAbs(1.0, 1e-9));
+}
+
+TEST_CASE("a composite trigger over continuously changing species stays refused",
+          "[OdeOptions][Events]") {
+    // floor(b * 2) jumps while B is produced by a reaction; it has neither a
+    // continuous root nor the event-only dependency that lets the runtime
+    // re-test it at event executions, so the runtime refuses it.
+    auto model = parser::parseModel(R"(
+begin molecule types
+    A()
+    B()
+    X()
+end molecule types
+begin seed species
+    A() 1
+    X() 0
+end seed species
+begin observables
+    Molecules b B()
+    Molecules x X()
+end observables
+begin reaction rules
+    fire: A() -> B() 1
+end reaction rules
+begin bng3_events version 1
+    event "jump"
+        trigger: floor(b * 2) >= 1
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: true
+        assignment: x = 1
+    end event
+end bng3_events
+)");
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    CHECK_THROWS_AS(engine::OdeIntegrator(*model, network), std::runtime_error);
+}
