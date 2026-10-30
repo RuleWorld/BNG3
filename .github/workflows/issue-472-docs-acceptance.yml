@@ -1,0 +1,56 @@
+name: Issue 472 documentation acceptance
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'README.md'
+      - 'docs/**'
+      - 'provenance/capability-matrix.yml'
+      - 'tests/validation/release/cases/issue-472/**'
+      - '.github/workflows/issue-472-docs-acceptance.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: issue-472-docs-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  docs-acceptance:
+    name: Issue 472 documentation acceptance
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install pytest
+        run: python -m pip install pytest
+
+      - name: Evaluate release-docs-links and release-docs-decisions
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/issue-472-artifacts"
+          python tests/validation/release/cases/issue-472/docs_checks.py \
+            --docs-root "$GITHUB_WORKSPACE" \
+            --report "$RUNNER_TEMP/issue-472-artifacts/assessment.json"
+
+      - name: Run focused documentation checker regressions
+        run: |
+          python -m pytest -q -p no:cacheprovider \
+            --confcutdir=tests/validation/release/cases/issue-472 \
+            tests/validation/release/cases/issue-472/test_docs.py \
+            --junitxml="$RUNNER_TEMP/issue-472-artifacts/pytest.xml"
+
+      - name: Upload documentation acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
