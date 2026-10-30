@@ -1,20 +1,10 @@
 #!/usr/bin/env python3
-"""Fail when the strict provenance gate's failure set drifts from the ratchet.
+"""Fail when the strict provenance gate's current error set drifts from its ratchet.
 
-``scripts/validate_provenance.py --require-approved`` fails at every head to
-date because no maintainer has approved the upstream baseline. That gate used
-to run in no CI job at all, so it read as a passing gate to anyone who saw it
-in the tree. This checker makes the failure set machine-checked instead:
-
-* it runs the strict gate and compares the error set to
-  ``provenance/strict-gate-ratchet.json``;
-* it fails if the set *grows* (new unrecorded provenance debt) or *shrinks*
-  (a decision was made, so the ratchet is now stale);
-* it fails if the strict gate starts passing, because the ratchet exists only
-  to describe that failure and would otherwise hide it.
-
-The ratchet records unapproved status transitions, not unsupported claims. It
-is not a waiver: no entry may be removed to make the gate green.
+The checker runs ``validate_provenance.py --require-approved`` and compares
+its complete error set to ``provenance/strict-gate-ratchet.json``. Both a new
+blocker and a stale recorded blocker fail. An empty ratchet is valid only when
+the strict gate passes; it therefore detects later unaccepted pins or hashes.
 """
 
 from __future__ import annotations
@@ -87,26 +77,20 @@ def main() -> int:
 
     returncode, actual, raw = run_strict_gate(args.lock)
 
-    # The strict gate passing is itself drift: the ratchet exists to describe
-    # this failure, so a green gate means the ratchet is hiding a real change.
-    if returncode == 0:
-        print(
-            "ERROR: the strict provenance gate now passes, but "
-            f"{args.ratchet} still records {len(expected)} blocker(s).\n"
-            "The baseline was approved. Delete the ratchet and the CI step that "
-            "runs this checker, and record the decision in "
-            "provenance/upstreams.lock.yml in the same change.",
-            file=sys.stderr,
-        )
-        return 1
-
-    # A returncode of 2 means the gate could not run at all. Surface it raw
-    # rather than reporting an empty error set as a ratchet mismatch.
+    # The validator's return code 2 means it could not parse or run the gate.
+    # Surface that error instead of treating it as a blocker-set comparison.
     if returncode not in (0, 1):
         print(raw, file=sys.stderr, end="")
         print(
             f"ERROR: strict provenance gate exited {returncode}; it did not report "
             "a normal blocker set",
+            file=sys.stderr,
+        )
+        return 2
+    if returncode == 1 and not actual:
+        print(raw, file=sys.stderr, end="")
+        print(
+            "ERROR: strict provenance gate failed without reporting a blocker",
             file=sys.stderr,
         )
         return 2
@@ -133,18 +117,23 @@ def main() -> int:
 
     if new or gone:
         print(
-            "\nUpdate the ratchet in the same change that moves the baseline. "
-            "Do not delete an entry to make this check pass.",
+            "\nReconcile the blocker set against the accepted source lock and "
+            "recorded maintainer decision. Do not change locked pins or hashes "
+            "to make this check pass.",
             file=sys.stderr,
         )
         return 1
 
-    print(
-        f"provenance ratchet holds: {len(actual_set)} known strict-gate blocker(s), "
-        "unchanged. The strict gate still fails by design; see "
-        f"{args.ratchet.relative_to(REPO) if args.ratchet.is_relative_to(REPO) else args.ratchet} "
-        "for what each one is waiting on."
-    )
+    if returncode == 0:
+        print(
+            "provenance ratchet holds: strict gate passes with "
+            f"{len(actual_set)} blocker(s) recorded in {args.ratchet.relative_to(REPO) if args.ratchet.is_relative_to(REPO) else args.ratchet}."
+        )
+    else:
+        print(
+            f"provenance ratchet holds: {len(actual_set)} known strict-gate "
+            "blocker(s), unchanged."
+        )
     return 0
 
 

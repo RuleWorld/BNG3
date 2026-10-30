@@ -32,6 +32,12 @@ jobs:
             exit 1
           }
 
+      - name: Enforce strict provenance gate for H01 (#179)
+        id: provenance
+        run: |
+          python scripts/validate_provenance.py --require-approved
+          python scripts/check_provenance_ratchet.py
+
       - name: Require the exact-main weekly mutation artifact and ratchet
         env:
           GH_TOKEN: ${{ github.token }}
