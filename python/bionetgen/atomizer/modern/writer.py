@@ -6451,6 +6451,15 @@ def _multi_product_structure(
                 source_molecule.components[source_component_index],
                 target_molecule.components[target_component_index],
             )
+    retained_positions = model.multi_species_component_positions.get(species_id)
+    if retained_positions is not None:
+        retained = set(tuple(position) for position in retained_positions)
+        for molecule_index, molecule in enumerate(result.molecules):
+            molecule.components = [
+                component
+                for component_index, component in enumerate(molecule.components)
+                if (molecule_index, component_index) in retained
+            ]
     result.renumber_bonds()
     return result
 

@@ -11,6 +11,103 @@ import pytest
 from bionetgen.atomizer.modern import parse_multi_package
 
 
+def test_zero_valued_multi_patterns_are_not_seeded_but_exact_zero_species_are():
+    from bionetgen.atomizer.modern import (
+        SBMLParser,
+        build_species_composition_table,
+        get_seed_species,
+    )
+
+    xml = """<?xml version="1.0"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      level="3" version="1" multi:required="true">
+  <model id="multi_zero_patterns">
+    <listOfSpecies>
+      <species id="free_zero" initialAmount="0" multi:speciesType="AType">
+        <multi:listOfOutwardBindingSites>
+          <multi:outwardBindingSite multi:component="site"
+            multi:bindingStatus="unbound"/>
+        </multi:listOfOutwardBindingSites>
+      </species>
+      <species id="free_positive" initialAmount="2" multi:speciesType="AType">
+        <multi:listOfOutwardBindingSites>
+          <multi:outwardBindingSite multi:component="site"
+            multi:bindingStatus="unbound"/>
+        </multi:listOfOutwardBindingSites>
+      </species>
+      <species id="bound_pattern" initialAmount="0" multi:speciesType="AType">
+        <multi:listOfOutwardBindingSites>
+          <multi:outwardBindingSite multi:component="site"
+            multi:bindingStatus="bound"/>
+        </multi:listOfOutwardBindingSites>
+      </species>
+      <species id="either_pattern" initialAmount="0" multi:speciesType="AType"/>
+      <species id="dimer_zero" initialAmount="0" multi:speciesType="AAType"/>
+      <species id="dimer_positive" initialAmount="1" multi:speciesType="AAType"/>
+    </listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType multi:id="binding" multi:name="site"/>
+      <multi:bindingSiteSpeciesType multi:id="binding_b" multi:name="site_b"/>
+      <multi:speciesType multi:id="AType" multi:name="A">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="site"
+            multi:speciesType="binding" multi:name="site"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+      <multi:speciesType multi:id="BType" multi:name="B">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="site_b"
+            multi:speciesType="binding_b" multi:name="site_b"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+      <multi:speciesType multi:id="AAType" multi:name="AA">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="dimer_a"
+            multi:speciesType="AType"/>
+          <multi:speciesTypeInstance multi:id="dimer_b"
+            multi:speciesType="BType"/>
+        </multi:listOfSpeciesTypeInstances>
+        <multi:listOfSpeciesTypeComponentIndexes>
+          <multi:speciesTypeComponentIndex multi:id="dimer_a_site"
+            multi:component="site" multi:identifyingParent="dimer_a"/>
+          <multi:speciesTypeComponentIndex multi:id="dimer_b_site"
+            multi:component="site_b" multi:identifyingParent="dimer_b"/>
+        </multi:listOfSpeciesTypeComponentIndexes>
+        <multi:listOfInSpeciesTypeBonds>
+          <multi:inSpeciesTypeBond multi:bindingSite1="dimer_a_site"
+            multi:bindingSite2="dimer_b_site"/>
+        </multi:listOfInSpeciesTypeBonds>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    model = SBMLParser().parse(xml)
+    assert model.multi_executable is True
+    composition = build_species_composition_table(model)
+    seeds = get_seed_species(composition, model)
+
+    assert {seed.sbml_id for seed in seeds} == {
+        "free_zero",
+        "free_positive",
+        "dimer_zero",
+        "dimer_positive",
+    }
+    assert model.multi_abstract_species_ids == {"bound_pattern", "either_pattern"}
+
+    positive_pattern = xml.replace(
+        'id="bound_pattern" initialAmount="0"',
+        'id="bound_pattern" initialAmount="1"',
+    )
+    unsupported = SBMLParser().parse(positive_pattern)
+    assert unsupported.multi_executable is False
+    assert any(
+        warning.severity == "dropped" and "positive initial pool" in warning.message
+        for warning in unsupported.import_warnings
+    )
+
+
 def test_parse_multi_package_empty_input_is_an_empty_result():
     result = parse_multi_package("")
 

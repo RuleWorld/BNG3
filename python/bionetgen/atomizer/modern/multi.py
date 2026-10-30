@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
+from typing import Any, Dict, List, NamedTuple, Optional, Set, Tuple, Union
 
 from .structures import read_from_string
 from .types import SBMLImportWarning, SBMLMultiComponentMap
@@ -123,6 +123,10 @@ class MultiParseResult:
     complex_patterns: List[MultiComplexPattern] = field(default_factory=list)
     seed_patterns: List[Tuple[str, str]] = field(default_factory=list)
     species_patterns: Dict[str, str] = field(default_factory=dict)
+    species_component_positions: Dict[str, List[Tuple[int, int]]] = field(
+        default_factory=dict
+    )
+    abstract_species_ids: Set[str] = field(default_factory=set)
     type_patterns: Dict[str, str] = field(default_factory=dict)
     component_aliases: Dict[str, Dict[str, List[Tuple[str, int, int]]]] = field(
         default_factory=dict
@@ -1115,6 +1119,7 @@ def _flatten_type(
                     states=list(dict.fromkeys(states)),
                     feature_ids=feature_ids,
                     feature_values=feature_values,
+                    binding_status="either",
                     is_binding_site=True,
                 )
             )
@@ -1336,6 +1341,8 @@ def _species_pattern_from_multi(
     compartment_types: Optional[Dict[str, str]] = None,
     species_compartment: str = "",
     initialized_by_assignment: bool = False,
+    abstract_species_ids: Optional[Set[str]] = None,
+    species_component_positions: Optional[Dict[str, List[Tuple[int, int]]]] = None,
 ) -> Optional[str]:
     flat = _flatten_type(
         type_id,
@@ -1540,6 +1547,22 @@ def _species_pattern_from_multi(
             continue
         targets[0].binding_status = status
 
+    if abstract_species_ids is not None:
+        bonded = {id(component) for bond in flat.bonds for component in bond}
+        is_abstract = any(
+            component.is_binding_site
+            and id(component) not in bonded
+            and component.binding_status != "unbound"
+            for molecule in flat.molecules
+            for component in molecule.components
+        ) or any(
+            component.feature_ids and not component.active_state
+            for molecule in flat.molecules
+            for component in molecule.components
+        )
+        if is_abstract:
+            abstract_species_ids.add(_attribute(species, "id"))
+
     # A positive initial pool must denote one fully defined species, rather
     # than a pattern that still stands for many pools.  Zero-valued pattern
     # species are common and remain valid templates.  This mirrors Multi
@@ -1582,6 +1605,30 @@ def _species_pattern_from_multi(
                             "dropped",
                         )
                     )
+    # An outward binding status of "either" imposes no bond constraint. In a
+    # BNGL pattern, omitting that site preserves the source's don't-care
+    # context; !? instead requires the site to be present in the pattern and
+    # changes reaction automorphisms. Keep explicitly state-constrained sites
+    # and sites participating in an in-species-type bond.
+    species_id = _attribute(species, "id")
+    bonded_components = {id(endpoint) for bond in flat.bonds for endpoint in bond}
+    retained_positions: List[Tuple[int, int]] = []
+    for molecule_index, molecule in enumerate(flat.molecules):
+        retained = []
+        for component_index, component in enumerate(molecule.components):
+            if (
+                component.is_binding_site
+                and component.binding_status == "either"
+                and id(component) not in bonded_components
+                and not component.active_state
+            ):
+                continue
+            retained.append(component)
+            retained_positions.append((molecule_index, component_index))
+        molecule.components = retained
+    if species_component_positions is not None:
+        species_component_positions[species_id] = retained_positions
+
     # Core Species.name is a human-readable label, not a pattern-bearing
     # attribute.  A Multi speciesType is therefore always reconstructed from
     # the package graph and per-species annotations; accepting a parseable
@@ -2990,6 +3037,8 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
         )
 
     species_patterns: Dict[str, str] = {}
+    species_component_positions: Dict[str, List[Tuple[int, int]]] = {}
+    abstract_species_ids: Set[str] = set()
     seed_patterns: List[Tuple[str, str]] = []
     species_type_by_species: Dict[str, str] = {}
     species_compartments: Dict[str, str] = {}
@@ -3368,6 +3417,8 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                 species_compartment if package_valid and not namespace_violation else ""
             ),
             initialized_by_assignment=species_id in initial_assignment_symbols,
+            abstract_species_ids=abstract_species_ids,
+            species_component_positions=species_component_positions,
         )
         if pattern:
             species_patterns[species_id] = pattern
@@ -3989,6 +4040,8 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
         complex_patterns=complex_patterns,
         seed_patterns=seed_patterns,
         species_patterns=species_patterns,
+        species_component_positions=species_component_positions,
+        abstract_species_ids=abstract_species_ids,
         type_patterns=type_patterns,
         component_aliases=component_aliases,
         reaction_product_maps=reaction_product_maps,
