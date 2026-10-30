@@ -1,0 +1,173 @@
+"""Independent SBML Core oracles for issue #161 kinetic edge cases.
+
+New source-authored BNGL examples test three-body volume scaling,
+heterodimerization with identically named binding sites, repeated-site
+multiplicity, and zero-order synthesis/degradation. Reference fluxes are
+specified here, independently of the candidate's Multi export.
+"""
+
+from pathlib import Path
+
+import bionetgen
+import libsbml
+import numpy as np
+import pytest
+import roadrunner
+from bionetgen import BioNetGenModel, _bionetgen_cpp as cpp
+from bionetgen.atomizer.modern import Atomizer, SBMLParser
+
+MATH_NS = 'xmlns="http://www.w3.org/1998/Math/MathML"'
+
+
+def _core(volume, species, rate):
+    """Explicit chemical-state Core source; never enumerated from Multi."""
+    declarations = "\n".join(
+        f'<species id="{name}" compartment="cell" initialAmount="{amount}" '
+        'hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>'
+        for name, amount in species.items()
+    )
+    reactions = "\n".join(
+        f'<reaction id="r_{i}" reversible="false" fast="false">'
+        + (
+            "<listOfReactants>"
+            + "".join(
+                f'<speciesReference species="{name}" stoichiometry="{stoich}" constant="true"/>'
+                for name, stoich in reactants.items()
+            )
+            + "</listOfReactants>"
+            if reactants
+            else ""
+        )
+        + (
+            "<listOfProducts>"
+            + "".join(
+                f'<speciesReference species="{name}" stoichiometry="{stoich}" constant="true"/>'
+                for name, stoich in products.items()
+            )
+            + "</listOfProducts>"
+            if products
+            else ""
+        )
+        + f"<kineticLaw><math {MATH_NS}>{math}</math></kineticLaw></reaction>"
+        for i, (reactants, products, math) in enumerate(rate)
+    )
+    return (
+        '<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1">'
+        '<model id="independent_multi_rate_oracle"><listOfCompartments>'
+        f'<compartment id="cell" size="{volume:g}" spatialDimensions="3" constant="true"/>'
+        f"</listOfCompartments><listOfSpecies>{declarations}</listOfSpecies>"
+        f'<listOfParameters><parameter id="k" value="0.02" constant="true"/>'
+        f'<parameter id="d" value="0.1" constant="true"/>'
+        f"</listOfParameters><listOfReactions>{reactions}</listOfReactions></model></sbml>"
+    )
+
+
+def _mul(*args):
+    return "<apply><times/>" + "".join("<ci>" + x + "</ci>" for x in args) + "</apply>"
+
+
+def _div(numerator, divisor):
+    return f"<apply><divide/>{numerator}<ci>{divisor}</ci></apply>"
+
+
+def _source(volume, molecule_types, initial, rules):
+    return (
+        "begin model\nbegin parameters\n  k 0.02\n  d 0.1\n"
+        "end parameters\nbegin compartments\n  cell 3 "
+        f"{volume:g}\nend compartments\nbegin molecule types\n"
+        + "".join(f"  {mol}\n" for mol in molecule_types)
+        + "end molecule types\nbegin seed species\n"
+        + "".join(f"  @cell:{pattern} {amount}\n" for pattern, amount in initial)
+        + "end seed species\nbegin reaction rules\n"
+        + "".join(
+            f"  {name}: {lhs} -> {rhs} {rate}\n" for name, lhs, rhs, rate in rules
+        )
+        + "end reaction rules\nend model\n"
+    )
+
+
+CASES = {
+    "three_body": dict(
+        types=["A()", "B()", "C()", "D()"],
+        seeds=[("A()", 8), ("B()", 6), ("C()", 5)],
+        rules=[("combine", "@cell:A() + @cell:B() + @cell:C()", "@cell:D()", "k")],
+        species={"A": 8, "B": 6, "C": 5, "D": 0},
+        kinetics=[
+            (
+                {"A": 1, "B": 1, "C": 1},
+                {"D": 1},
+                _div(_mul("k", "A", "B", "C"), "cell_squared"),
+            )
+        ],
+        multi_ids={"S1": "A", "S2": "B", "S3": "C", "RR1_P1": "D"},
+    ),
+    "heterodimer_shared_b": dict(
+        types=["A(b)", "B(b)"],
+        seeds=[("A(b)", 8), ("B(b)", 6)],
+        rules=[("bind", "@cell:A(b) + @cell:B(b)", "@cell:A(b!1).B(b!1)", "k")],
+        species={"A": 8, "B": 6, "AB": 0},
+        kinetics=[({"A": 1, "B": 1}, {"AB": 1}, _div(_mul("k", "A", "B"), "cell"))],
+        multi_ids={"S1": "A", "S2": "B", "RR1_P1": "AB"},
+    ),
+    "repeated_binding_site": dict(
+        types=["A(b,b)", "B(x)"],
+        seeds=[("A(b,b)", 8), ("B(x)", 6)],
+        rules=[("bind", "@cell:A(b,b) + @cell:B(x)", "@cell:A(b!1,b).B(x!1)", "k")],
+        species={"A": 8, "B": 6, "AB": 0},
+        # Two independent equivalent binding positions create multiplicity 2.
+        kinetics=[
+            ({"A": 1, "B": 1}, {"AB": 1}, _div(_mul("k", "A", "B", "two"), "cell"))
+        ],
+        multi_ids={"S1": "A", "S2": "B", "RR1_P1": "AB"},
+    ),
+    "zeroth_order": dict(
+        types=["A()"],
+        seeds=[("A()", 2)],
+        rules=[("make", "0", "@cell:A()", "k"), ("decay", "@cell:A()", "0", "d")],
+        species={"A": 2},
+        kinetics=[({}, {"A": 1}, "<ci>k</ci>"), ({"A": 1}, {}, _mul("d", "A"))],
+        multi_ids={"S1": "A"},
+    ),
+}
+
+
+@pytest.mark.parametrize("atomize", [False, True])
+@pytest.mark.parametrize("volume", [0.5, 2.0])
+@pytest.mark.parametrize("case", list(CASES))
+def test_multi_export_matches_independent_kinetics(case, volume, atomize, tmp_path):
+    data = CASES[case]
+    path = Path(tmp_path) / "source.bngl"
+    path.write_text(_source(volume, data["types"], data["seeds"], data["rules"]))
+    source = bionetgen.load(str(path))
+    multi_xml = source.sbml_multi()
+    reference_xml = _core(volume, data["species"], data["kinetics"])
+    # Resolve only explicit analytic numeric constants defined by this fixture;
+    # no part of the reference comes from candidate-generated output.
+    reference_xml = reference_xml.replace(
+        "<ci>cell_squared</ci>", "<apply><power/><ci>cell</ci><cn>2</cn></apply>"
+    )
+    reference_xml = reference_xml.replace("<ci>two</ci>", "<cn>2</cn>")
+    for xml in (multi_xml, reference_xml):
+        doc = libsbml.readSBMLFromString(xml)
+        assert doc.getNumErrors() == 0, doc.getErrorLog().toString()
+    parsed = SBMLParser().parse(multi_xml)
+    assert parsed.multi_executable
+    imported = Atomizer(atomize=atomize, quiet_mode=True).atomize(multi_xml)
+    assert imported.success, imported.error
+    trajectory = BioNetGenModel(cpp.parse_string(imported.bngl)).simulate(
+        method="ode", t_end=3, n_steps=30
+    )
+    oracle = roadrunner.RoadRunner(reference_xml)
+    oracle.integrator.relative_tolerance = 1e-10
+    oracle.integrator.absolute_tolerance = 1e-12
+    expected = oracle.simulate(
+        times=trajectory.time, selections=["time", *data["species"]]
+    )
+    for i, (_, species_id) in enumerate(data["multi_ids"].items(), 1):
+        multi_id = list(data["multi_ids"])[i - 1]
+        np.testing.assert_allclose(
+            trajectory.observables[imported.observable_map[multi_id]],
+            expected[:, list(data["species"]).index(species_id) + 1],
+            rtol=1e-6,
+            atol=1e-8,
+        )

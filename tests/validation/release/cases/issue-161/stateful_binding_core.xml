@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1">
+  <model id="stateful_binding_core">
+    <listOfCompartments>
+      <compartment id="cell" size="0.5" spatialDimensions="3" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="Au" compartment="cell" initialAmount="20" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+      <species id="Ap" compartment="cell" initialAmount="0" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+      <species id="B" compartment="cell" initialAmount="12" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+      <species id="AuB" compartment="cell" initialAmount="0" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+      <species id="ApB" compartment="cell" initialAmount="0" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k_bind" value="0.025" constant="true"/>
+      <parameter id="k_unbind" value="0.1" constant="true"/>
+      <parameter id="k_activate" value="0.04" constant="true"/>
+      <parameter id="k_activate_bound" value="0.03" constant="true"/>
+      <parameter id="k_bind_p" value="0.015" constant="true"/>
+      <parameter id="k_unbind_p" value="0.075" constant="true"/>
+    </listOfParameters>
+    <listOfReactions>
+      <reaction id="bind" reversible="false" fast="false">
+        <listOfReactants>
+          <speciesReference species="Au" stoichiometry="1" constant="true"/>
+          <speciesReference species="B" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <listOfProducts><speciesReference species="AuB" stoichiometry="1" constant="true"/></listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><divide/><apply><times/><ci>k_bind</ci><ci>Au</ci><ci>B</ci></apply><ci>cell</ci></apply>
+        </math></kineticLaw>
+      </reaction>
+      <reaction id="unbind" reversible="false" fast="false">
+        <listOfReactants><speciesReference species="AuB" stoichiometry="1" constant="true"/></listOfReactants>
+        <listOfProducts>
+          <speciesReference species="Au" stoichiometry="1" constant="true"/>
+          <speciesReference species="B" stoichiometry="1" constant="true"/>
+        </listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><times/><ci>k_unbind</ci><ci>AuB</ci></apply>
+        </math></kineticLaw>
+      </reaction>
+      <reaction id="activate" reversible="false" fast="false">
+        <listOfReactants><speciesReference species="Au" stoichiometry="1" constant="true"/></listOfReactants>
+        <listOfProducts><speciesReference species="Ap" stoichiometry="1" constant="true"/></listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><times/><ci>k_activate</ci><ci>Au</ci></apply>
+        </math></kineticLaw>
+      </reaction>
+      <reaction id="activate_bound" reversible="false" fast="false">
+        <listOfReactants><speciesReference species="AuB" stoichiometry="1" constant="true"/></listOfReactants>
+        <listOfProducts><speciesReference species="ApB" stoichiometry="1" constant="true"/></listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><times/><ci>k_activate_bound</ci><ci>AuB</ci></apply>
+        </math></kineticLaw>
+      </reaction>
+      <reaction id="bind_p" reversible="false" fast="false">
+        <listOfReactants>
+          <speciesReference species="Ap" stoichiometry="1" constant="true"/>
+          <speciesReference species="B" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <listOfProducts><speciesReference species="ApB" stoichiometry="1" constant="true"/></listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><divide/><apply><times/><ci>k_bind_p</ci><ci>Ap</ci><ci>B</ci></apply><ci>cell</ci></apply>
+        </math></kineticLaw>
+      </reaction>
+      <reaction id="unbind_p" reversible="false" fast="false">
+        <listOfReactants><speciesReference species="ApB" stoichiometry="1" constant="true"/></listOfReactants>
+        <listOfProducts>
+          <speciesReference species="Ap" stoichiometry="1" constant="true"/>
+          <speciesReference species="B" stoichiometry="1" constant="true"/>
+        </listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><times/><ci>k_unbind_p</ci><ci>ApB</ci></apply>
+        </math></kineticLaw>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>
