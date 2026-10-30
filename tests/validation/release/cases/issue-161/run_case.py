@@ -27,6 +27,11 @@ from scripts.cross_validate import (  # noqa: E402
 from tests.validation.compare import compare_net, parse_net  # noqa: E402
 from scripts.ci.oracle_sources import load_lock, load_oracle_source  # noqa: E402
 from tests.validation.oracle_perl import _is_locked_bng2  # noqa: E402
+from multi_contract import (  # noqa: E402
+    _source_semantic_contract,
+    _source_contract_mutation_controls,
+    _xml_mutation_controls,
+)
 
 # Keep this acceptance process bound to the checkout under test when another
 # environment installed an editable BNG3 package earlier in the interpreter.
@@ -50,6 +55,7 @@ CASES = (
     "test_write_sbml_multi.bngl",
     "state_bearing_binding_refusal.bngl",
 )
+
 LOCKED_BNG2_REVISION = load_oracle_source(load_lock(), "bionetgen")["revision"]
 if not Path(modern_parser.__file__).resolve().is_relative_to(ROOT.resolve()):
     raise RuntimeError(
@@ -360,9 +366,9 @@ def _compare_bounded_source_and_reimport(
             perl=perl,
             work_dir=work_dir / "one-rule-bng2",
             timeout=timeout,
-            artifact_path=(artifact_dir / "bng2-one-rule.net")
-            if artifact_dir
-            else None,
+            artifact_path=(
+                (artifact_dir / "bng2-one-rule.net") if artifact_dir else None
+            ),
         )
     )
     one_rule_bng3 = parse_net(
@@ -374,9 +380,9 @@ def _compare_bounded_source_and_reimport(
             perl=perl,
             work_dir=work_dir / "one-rule-bng3",
             timeout=timeout,
-            artifact_path=(artifact_dir / "bng3-one-rule.net")
-            if artifact_dir
-            else None,
+            artifact_path=(
+                (artifact_dir / "bng3-one-rule.net") if artifact_dir else None
+            ),
         )
     )
     if one_rule_bng2 is None or one_rule_bng3 is None:
@@ -500,13 +506,15 @@ def main() -> int:
                 perl_executable=args.perl,
                 timeout=args.timeout,
                 model_names=[MODEL_NAME],
-                artifact_dir=(evidence_dir / "strict-authored-xml")
-                if evidence_dir
-                else None,
+                artifact_dir=(
+                    (evidence_dir / "strict-authored-xml") if evidence_dir else None
+                ),
             )
             consumer = None
             candidate_artifact = None
             reference_artifact = None
+            semantic_contract = {"status": "error", "error": "candidate export missing"}
+            contract_mutations = {}
             reference_validity = {
                 "status": "error",
                 "error": "BNG2 authored XML was not validated",
@@ -538,6 +546,17 @@ def main() -> int:
                 else:
                     consumer_error = None
                     candidate_validity = _sbml_validity(output)
+                    mutation_controls = _xml_mutation_controls(output)
+                    semantic_contract = _source_semantic_contract(source, output)
+                    contract_mutations = _source_contract_mutation_controls(
+                        source, output
+                    )
+                    if candidate_validity["status"] != "valid":
+                        semantic_contract = {
+                            "status": "error",
+                            "error": "candidate SBML is invalid",
+                            "details": semantic_contract,
+                        }
                     candidate_artifact = (
                         _preserve_evidence_file(
                             output,
@@ -613,6 +632,9 @@ def main() -> int:
                         "reference_xml_artifact": reference_artifact,
                         "candidate_xml_artifact": candidate_artifact,
                     },
+                    "xml_mutation_controls": mutation_controls,
+                    "source_semantic_contract": semantic_contract,
+                    "source_contract_mutation_controls": contract_mutations,
                     "reimport_network_smoke": {
                         "status": "pass" if consumer_error is None else "error",
                         "details": consumer,
@@ -638,9 +660,11 @@ def main() -> int:
                                 if case == CASES[0]
                                 else {"0.01", "0.1"}
                             ),
-                            artifact_dir=(evidence_dir / Path(case).stem / "networks")
-                            if evidence_dir
-                            else None,
+                            artifact_dir=(
+                                (evidence_dir / Path(case).stem / "networks")
+                                if evidence_dir
+                                else None
+                            ),
                         ),
                     }
                 except Exception as exc:
@@ -660,21 +684,51 @@ def main() -> int:
                     "details": None,
                     "error": consumer_error,
                 }
+    mutation_control_coverage = {
+        control_name: (
+            "pass"
+            if any(
+                entry["xml_mutation_controls"].get(control_name, {}).get("status")
+                == "pass"
+                for entry in case_results
+            )
+            else "fail"
+        )
+        for control_name in (
+            "bond",
+            "state",
+            "component_map_target",
+            "initial_quantity",
+            "compartment_volume",
+            "reaction_rate",
+        )
+    }
     report = {
         "case": "issue-161/authored-multi-and-reimport-network-smoke",
         "evidence_directory": str(evidence_dir) if evidence_dir else None,
         "provenance": provenance,
         "cases": case_results,
+        "mutation_control_coverage": mutation_control_coverage,
         "classification": (
             "pass"
             if provenance["eligible"]
             and all(
                 entry["authored_export"]["counts"] == {"pass": 1, "fail": 0, "error": 0}
                 and entry["reimport_network_smoke"]["status"] == "pass"
+                and entry["source_semantic_contract"]["status"] == "pass"
+                and all(
+                    control["status"] == "pass"
+                    for control in entry["source_contract_mutation_controls"].values()
+                )
+                and all(
+                    control["status"] in {"pass", "not-applicable"}
+                    for control in entry["xml_mutation_controls"].values()
+                )
                 and entry["bounded_source_rate_parity"]["status"]
                 in {"pass", "not-applicable"}
                 for entry in case_results
             )
+            and all(status == "pass" for status in mutation_control_coverage.values())
             else "failed-or-error"
         ),
     }

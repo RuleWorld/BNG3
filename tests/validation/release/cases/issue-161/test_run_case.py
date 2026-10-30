@@ -11,6 +11,7 @@ from run_case import (
     _preserve_evidence_file,
     _reference_sbml_validity,
     _sbml_validity,
+    _xml_mutation_controls,
     _unit_compartment_source,
 )
 
@@ -125,3 +126,55 @@ def test_bounded_source_transform_handles_both_issue_161_models():
     assert "@default:R(l~u) 100" in state_bearing
     assert "@default:L(r)   100" in state_bearing
     assert "@default:R(l~u) + @default:L(r)" in state_bearing
+
+
+def test_structural_comparator_detects_all_semantic_mutation_controls(tmp_path: Path):
+    xml = tmp_path / "candidate.xml"
+    xml.write_text(
+        """<sbml xmlns:multi="urn:multi"><model>
+  <listOfCompartments><compartment id="c" size="1"/></listOfCompartments>
+  <listOfParameters/>
+  <listOfSpeciesTypes>
+    <speciesType id="T"><listOfSpeciesTypeInstances>
+      <speciesTypeInstance id="a" speciesType="R"><listOfSpeciesTypeComponentIndexes>
+        <speciesTypeComponentIndex id="a1" component="x"/>
+      </listOfSpeciesTypeComponentIndexes></speciesTypeInstance>
+      <speciesTypeInstance id="b" speciesType="L"><listOfSpeciesTypeComponentIndexes>
+        <speciesTypeComponentIndex id="b1" component="y"/>
+        <speciesTypeComponentIndex id="b2" component="z"/>
+      </listOfSpeciesTypeComponentIndexes></speciesTypeInstance>
+    </listOfSpeciesTypeInstances><listOfSpeciesTypeBindings>
+      <inSpeciesTypeBond id="bond" bindingSite1="a1" bindingSite2="b1"/>
+    </listOfSpeciesTypeBindings></speciesType>
+    <speciesType id="State"><listOfSpeciesFeatures>
+      <speciesFeature id="s"><listOfPossibleSpeciesFeatureValues>
+        <possibleSpeciesFeatureValue id="u"/><possibleSpeciesFeatureValue id="p"/>
+      </listOfPossibleSpeciesFeatureValues></speciesFeature></listOfSpeciesFeatures>
+    </speciesType>
+  </listOfSpeciesTypes>
+  <listOfSpecies><species id="s" initialAmount="100">
+    <speciesFeature id="f"><speciesFeatureValue value="u"/></speciesFeature>
+  </species></listOfSpecies>
+  <listOfReactions><reaction id="r"><listOfReactants/><listOfProducts/>
+    <listOfSpeciesTypeComponentMapInProducts>
+      <speciesTypeComponentMapInProduct reactant="a" reactantComponent="a1" productComponent="a1"/>
+      <speciesTypeComponentMapInProduct reactant="b" reactantComponent="b1" productComponent="b2"/>
+    </listOfSpeciesTypeComponentMapInProducts>
+    <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><apply>
+      <times/><cn>0.1</cn><ci>s</ci>
+    </apply></math></kineticLaw>
+  </reaction></listOfReactions>
+</model></sbml>""",
+        encoding="utf-8",
+    )
+
+    controls = _xml_mutation_controls(xml)
+
+    assert {name: result["status"] for name, result in controls.items()} == {
+        "bond": "pass",
+        "state": "pass",
+        "component_map_target": "pass",
+        "initial_quantity": "pass",
+        "compartment_volume": "pass",
+        "reaction_rate": "pass",
+    }
