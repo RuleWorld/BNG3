@@ -7,15 +7,19 @@ import argparse
 import hashlib
 import json
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 
+import libsbml
+
 ROOT = Path(__file__).resolve().parents[5]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "python"))
 from scripts.cross_validate import (  # noqa: E402
+    _AUTHORED_EXPORTS,
     _run_engine,
     _stage_authored_action_model,
     run_cross_validation,
@@ -83,6 +87,44 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _sbml_validity(path: Path) -> dict:
+    """Record libSBML consistency errors without treating invalid XML as parity."""
+
+    document = libsbml.readSBMLFromFile(str(path))
+    if document is None:
+        return {
+            "status": "invalid",
+            "severity_error_count": 1,
+            "diagnostics": ["libSBML could not read the document"],
+        }
+    document.checkConsistency()
+    diagnostics = []
+    for index in range(document.getNumErrors()):
+        error = document.getError(index)
+        if error.getSeverity() >= libsbml.LIBSBML_SEV_ERROR:
+            diagnostics.append(
+                {
+                    "id": error.getErrorId(),
+                    "line": error.getLine(),
+                    "message": error.getMessage().strip().splitlines()[0],
+                }
+            )
+    return {
+        "status": "valid" if not diagnostics else "invalid",
+        "severity_error_count": len(diagnostics),
+        "diagnostics": diagnostics,
+    }
+
+
+def _reference_sbml_validity(path: Path) -> dict:
+    """Classify invalid BNG2 output as an ineligible structural reference."""
+
+    validity = _sbml_validity(path)
+    if validity["status"] == "invalid":
+        validity["classification"] = "reference-invalid"
+    return validity
+
+
 def _consume_and_reimport(
     xml_path: Path, bng_cpp: Path, work_dir: Path, timeout: float
 ) -> dict:
@@ -127,24 +169,32 @@ def _consume_and_reimport(
 
 
 def _unit_compartment_source(source: Path) -> str:
-    """Give source and reimport the same explicit unit-volume compartment."""
+    """Give each fixture an explicit unit-volume compartment for parity."""
 
     text = source.read_text(encoding="utf-8").split("## actions ##", 1)[0]
-    marker = "end parameters\nbegin molecule types"
-    if text.count(marker) != 1:
+    marker = "begin molecule types"
+    if text.count(marker) != 1 or "begin compartments" in text:
         raise RuntimeError("issue-161 source no longer has its expected header")
     text = text.replace(
         marker,
-        "end parameters\nbegin compartments\n    default 3 1\n"
-        "end compartments\nbegin molecule types",
+        "begin compartments\n    default 3 1\nend compartments\n" + marker,
     )
-    for old, new in (
-        ("    R(l,l)     300", "    @default:R(l,l)     300"),
-        ("    L(r,r,r)  1200", "    @default:L(r,r,r)  1200"),
-    ):
-        if text.count(old) != 1:
-            raise RuntimeError(f"issue-161 source changed at seed {old!r}")
-        text = text.replace(old, new)
+
+    seed_start = text.index("begin seed species")
+    seed_end = text.index("end seed species", seed_start)
+    seed_lines = text[seed_start:seed_end].splitlines()
+    qualified_seeds = []
+    for line in seed_lines:
+        if not line.strip() or line.strip() == "begin seed species":
+            qualified_seeds.append(line)
+            continue
+        match = re.fullmatch(r"(\s*)([^\s@][^\s]*)(\s+)([^\s]+)(\s*)", line)
+        if match is None:
+            raise RuntimeError(f"unexpected issue-161 seed species: {line!r}")
+        qualified_seeds.append(
+            f"{match[1]}@default:{match[2]}{match[3]}{match[4]}{match[5]}"
+        )
+    text = text[:seed_start] + "\n".join(qualified_seeds) + "\n" + text[seed_end:]
 
     start = text.index("begin reaction rules")
     end = text.index("end reaction rules", start)
@@ -155,14 +205,23 @@ def _unit_compartment_source(source: Path) -> str:
         if not stripped or stripped == "begin reaction rules":
             rendered.append(line)
             continue
-        if "<->" not in stripped:
+        arrow = next(
+            (candidate for candidate in ("<->", "->", "<-") if candidate in stripped),
+            None,
+        )
+        if arrow is None:
             raise RuntimeError(f"unexpected issue-161 rule: {line}")
-        reactants, product_and_rate = stripped.split("<->", 1)
+
+        def qualify(pattern: str) -> str:
+            pattern = pattern.strip()
+            return pattern if pattern.startswith("@") else f"@default:{pattern}"
+
+        reactants, product_and_rate = stripped.split(arrow, 1)
         product, rate = product_and_rate.rsplit(None, 1)
         reactants = " + ".join(
-            f"@default:{participant.strip()}" for participant in reactants.split(" + ")
+            qualify(participant) for participant in reactants.split(" + ")
         )
-        rendered.append(f"    {reactants} <-> @default:{product.strip()} {rate}")
+        rendered.append(f"    {reactants} {arrow} {qualify(product)} {rate}")
     text = text[:start] + "\n".join(rendered) + "\n" + text[end:]
     return text
 
@@ -207,8 +266,8 @@ def _first_reversible_rule(source_text: str) -> str:
     end = source_text.index("end reaction rules", start)
     block = source_text[start:end].splitlines()
     rules = [line for line in block[1:] if line.strip()]
-    if len(rules) != 2:
-        raise RuntimeError("issue-161 source should contain exactly two rules")
+    if not rules:
+        raise RuntimeError("issue-161 source has no reaction rule")
     return (
         source_text[:start]
         + "\n".join([block[0], rules[0], "end reaction rules"])
@@ -225,6 +284,7 @@ def _compare_bounded_source_and_reimport(
     perl: str,
     work_dir: Path,
     timeout: float,
+    expected_one_rule_rates: set[str],
 ) -> dict:
     """Compare bounded graph and rates to pinned BNG2 and direct BNG3."""
 
@@ -285,10 +345,10 @@ def _compare_bounded_source_and_reimport(
         raise RuntimeError("the one-rule source oracle network could not be parsed")
     one_rule_diff = compare_net(one_rule_bng2, one_rule_bng3)
     one_rule_rates = {reaction[-1] for reaction in one_rule_bng2.reaction_multiset}
-    if not one_rule_diff.ok or one_rule_rates != {"0.006", "0.1"}:
+    if not one_rule_diff.ok or one_rule_rates != expected_one_rule_rates:
         raise RuntimeError(
-            "one-rule BNG2 parity did not preserve the sixfold forward rate and "
-            f"reverse rate: rates={sorted(one_rule_rates)}, diff={one_rule_diff.summary()}"
+            "one-rule BNG2 parity did not preserve the expected forward and reverse rates "
+            f"rates={sorted(one_rule_rates)}, diff={one_rule_diff.summary()}"
         )
 
     imported_diff = compare_net(
@@ -387,6 +447,14 @@ def main() -> int:
                 model_names=[MODEL_NAME],
             )
             consumer = None
+            reference_validity = {
+                "status": "error",
+                "error": "BNG2 authored XML was not validated",
+            }
+            candidate_validity = {
+                "status": "error",
+                "error": "BNG3 authored XML was not validated",
+            }
             cpp_dir = root / "consumer-cpp"
             cpp_dir.mkdir()
             cpp_model = _stage_authored_action_model(staged, models, cpp_dir)
@@ -409,17 +477,62 @@ def main() -> int:
                     consumer_error = "C++ authored export output is missing or empty"
                 else:
                     consumer_error = None
+                    candidate_validity = _sbml_validity(output)
                     try:
                         consumer = _consume_and_reimport(
                             output, args.bng_cpp.resolve(), cpp_dir, args.timeout
                         )
                     except Exception as exc:  # the report preserves the failing stage
                         consumer_error = str(exc)
+            reference_dir = root / "authored-bng2"
+            reference_dir.mkdir()
+            reference_model = _stage_authored_action_model(
+                staged, models, reference_dir
+            )
+            reference_result, reference_error = _run_engine(
+                [
+                    args.perl,
+                    str(args.bng2.resolve()),
+                    "--outdir",
+                    str(reference_dir),
+                    str(reference_model),
+                ],
+                reference_dir,
+                args.timeout,
+                environment={"BNGPATH": str(args.bng2.resolve().parent)},
+            )
+            if reference_error:
+                reference_validity = {
+                    "status": "error",
+                    "error": reference_error,
+                }
+            elif reference_result is None or reference_result.returncode != 0:
+                reference_validity = {
+                    "status": "error",
+                    "error": (
+                        "BNG2 authored export process did not return"
+                        if reference_result is None
+                        else reference_result.stderr.strip()
+                    ),
+                }
+            else:
+                reference_xml = reference_dir / _AUTHORED_EXPORTS[MODEL_NAME][0]["perl"]
+                if not reference_xml.is_file() or not reference_xml.stat().st_size:
+                    reference_validity = {
+                        "status": "error",
+                        "error": "BNG2 authored XML is missing or empty",
+                    }
+                else:
+                    reference_validity = _reference_sbml_validity(reference_xml)
             case_results.append(
                 {
                     "source": case,
                     "source_sha256": _sha256(source),
                     "authored_export": {"counts": counts, "details": details},
+                    "xml_validity": {
+                        "reference_bng2": reference_validity,
+                        "candidate_bng3": candidate_validity,
+                    },
                     "reimport_network_smoke": {
                         "status": "pass" if consumer_error is None else "error",
                         "details": consumer,
@@ -428,7 +541,7 @@ def main() -> int:
                 }
             )
             entry = case_results[-1]
-            if case == CASES[0] and consumer_error is None:
+            if consumer_error is None:
                 try:
                     entry["bounded_source_rate_parity"] = {
                         "status": "pass",
@@ -440,6 +553,11 @@ def main() -> int:
                             perl=args.perl,
                             work_dir=root / "bounded-source-parity",
                             timeout=args.timeout,
+                            expected_one_rule_rates=(
+                                {"0.006", "0.1"}
+                                if case == CASES[0]
+                                else {"0.01", "0.1"}
+                            ),
                         ),
                     }
                 except Exception as exc:
@@ -450,9 +568,9 @@ def main() -> int:
                     }
             else:
                 entry["bounded_source_rate_parity"] = {
-                    "status": "error" if case == CASES[0] else "not-applicable",
+                    "status": "error",
                     "details": None,
-                    "error": consumer_error if case == CASES[0] else None,
+                    "error": consumer_error,
                 }
     report = {
         "case": "issue-161/authored-multi-and-reimport-network-smoke",

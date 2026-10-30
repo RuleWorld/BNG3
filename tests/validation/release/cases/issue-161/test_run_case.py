@@ -5,7 +5,12 @@ from __future__ import annotations
 from pathlib import Path
 import subprocess
 
-from run_case import _git_identity
+from run_case import (
+    _git_identity,
+    _reference_sbml_validity,
+    _sbml_validity,
+    _unit_compartment_source,
+)
 
 
 def test_git_identity_accepts_bng2_file_path_and_reports_checkout_dirty_state(
@@ -39,3 +44,51 @@ def test_git_identity_accepts_bng2_file_path_and_reports_checkout_dirty_state(
     assert dirty["root"] == str(checkout)
     assert dirty["revision"] == clean["revision"]
     assert dirty["dirty"] is True
+
+
+def test_sbml_validity_marks_invalid_reference_without_relabeling_candidate(
+    tmp_path: Path,
+):
+    invalid = tmp_path / "invalid.xml"
+    invalid.write_text("<notSBML/>", encoding="utf-8")
+
+    reference = _reference_sbml_validity(invalid)
+    candidate = _sbml_validity(invalid)
+
+    assert reference["classification"] == "reference-invalid"
+    assert reference["severity_error_count"] > 0
+    assert candidate["status"] == "invalid"
+    assert "classification" not in candidate
+
+
+def test_sbml_validity_accepts_a_valid_level_three_document(tmp_path: Path):
+    valid = tmp_path / "valid.xml"
+    valid.write_text(
+        """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1">
+  <model id="m"/>
+</sbml>""",
+        encoding="utf-8",
+    )
+
+    result = _sbml_validity(valid)
+
+    assert result["status"] == "valid"
+    assert result["severity_error_count"] == 0
+
+
+def test_bounded_source_transform_handles_both_issue_161_models():
+    cases = Path(__file__).parent
+    main = _unit_compartment_source(cases / "test_write_sbml_multi.bngl")
+    state_bearing = _unit_compartment_source(
+        cases / "state_bearing_binding_refusal.bngl"
+    )
+
+    assert "begin compartments\n    default 3 1\nend compartments" in main
+    assert "@default:R(l,l)     300" in main
+    assert "@default:L(r,r,r)  1200" in main
+    assert "@default:R(l) + @default:L(r,r,r)" in main
+    assert "begin compartments\n    default 3 1\nend compartments" in state_bearing
+    assert "@default:R(l~u) 100" in state_bearing
+    assert "@default:L(r)   100" in state_bearing
+    assert "@default:R(l~u) + @default:L(r)" in state_bearing
