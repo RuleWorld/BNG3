@@ -1722,7 +1722,13 @@ std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddingsForSpecie
         // added product, while the matched D pattern is still removed as one species.
         // Preserve that rule-level matching semantics here, so symmetric embeddings
         // of the same species do not create duplicate reaction pathways.
-        const bool speciesLevelTransport = reactantPatterns_.at(patternIndex).isCompartmentPrefix();
+        const auto& reactantPattern = reactantPatterns_.at(patternIndex);
+        const bool speciesLevelTransport = reactantPattern.isCompartmentPrefix() &&
+            std::any_of(productPatterns_.begin(), productPatterns_.end(),
+                [&reactantPattern](const SpeciesGraph& productPattern) {
+                    return productPattern.isCompartmentPrefix() &&
+                        productPattern.getCompartment() != reactantPattern.getCompartment();
+                });
         const bool speciesLevelDeletion = deletesWholeReactantPatternForExecution(
             *this, patternIndex, hooks);
         bool foundEmbeddingForSpecies = false;
