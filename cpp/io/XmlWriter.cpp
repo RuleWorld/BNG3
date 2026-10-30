@@ -7,12 +7,6 @@
 #include "compile/CompiledRule.hpp"
 #include "compile/SymbolTable.hpp"
 #include "core/PatternMatching.hpp"
-#include "generated/BNGLexer.h"
-#include "generated/BNGParser.h"
-#include "parser/PatternGraphBuilder.hpp"
-#include "parser/antlr_compat.hpp"
-
-#include <antlr4-runtime.h>
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
@@ -2215,17 +2209,8 @@ std::string XmlWriter::writeObservables(const ast::Model& model) {
             const bool hasQuantifier =
                 stripPatternQuantifier(patternText, relation, quantity);
             auto parsed = parsePattern(patternText);
-            antlr4::ANTLRInputStream input(patternText);
-            BNGLexer lexer(&input);
-            antlr4::CommonTokenStream tokens(&lexer);
-            BNGParser parser(&tokens);
-            auto* species = parser.species_def();
-            if (parser.getNumberOfSyntaxErrors() != 0) {
-                throw std::runtime_error(
-                    "Could not parse observable pattern for XML: " + patternText);
-            }
-            auto patternGraph = bng::parser::buildPatternGraph(
-                species, const_cast<ast::Model&>(model), false);
+            auto patternGraph = bng::compile::Pattern::parse(patternText).toPatternGraph(
+                const_cast<ast::Model&>(model));
             const auto automorphisms =
                 bng::core::countPatternMatches(patternGraph, patternGraph);
             if (automorphisms == 0) {
