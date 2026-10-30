@@ -325,6 +325,11 @@ Node::get_BNG2_string ( link_index_t & link_index, int & next_bond ) const
         
         // add type_name
         s += get_type().get_BNG2_string( true );
+        // Preserve BNGL component mapping tags (for example r%T1) when a
+        // refined rule carries source-to-product correspondence labels.
+        if (get_type() < ENTITY_NODE_TYPE && !get_label_tag().empty()) {
+            s += "%" + get_label_tag();
+        }
         // add state
         s += get_state().get_BNG2_string( );
         
