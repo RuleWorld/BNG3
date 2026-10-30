@@ -71,6 +71,14 @@ def _div(numerator, divisor):
 
 
 def _source(volume, molecule_types, initial, rules):
+    def rule_line(rule):
+        if len(rule) == 4:
+            name, lhs, rhs, rate = rule
+            arrow = "->"
+        else:
+            name, lhs, rhs, arrow, rate = rule
+        return f"  {name}: {lhs} {arrow} {rhs} {rate}\n"
+
     return (
         "begin model\nbegin parameters\n  k 0.02\n  d 0.1\n"
         "end parameters\nbegin compartments\n  cell 3 "
@@ -79,9 +87,7 @@ def _source(volume, molecule_types, initial, rules):
         + "end molecule types\nbegin seed species\n"
         + "".join(f"  @cell:{pattern} {amount}\n" for pattern, amount in initial)
         + "end seed species\nbegin reaction rules\n"
-        + "".join(
-            f"  {name}: {lhs} -> {rhs} {rate}\n" for name, lhs, rhs, rate in rules
-        )
+        + "".join(rule_line(rule) for rule in rules)
         + "end reaction rules\nend model\n"
     )
 
@@ -163,8 +169,13 @@ CASES = {
         types=["A(b)"],
         seeds=[("A(b)", 8)],
         rules=[
-            ("bind", "@cell:A(b) + @cell:A(b)", "@cell:A(b!1).A(b!1)", "k"),
-            ("unbind", "@cell:A(b!1).A(b!1)", "@cell:A(b) + @cell:A(b)", "d"),
+            (
+                "bind",
+                "@cell:A(b) + @cell:A(b)",
+                "@cell:A(b!1).A(b!1)",
+                "<->",
+                "k, d",
+            ),
         ],
         species={"A": 8, "AA": 0},
         kinetics=[
