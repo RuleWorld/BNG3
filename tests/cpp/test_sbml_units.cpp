@@ -659,6 +659,47 @@ end model
           std::string::npos);
 }
 
+TEST_CASE("SBML-Multi reuses a species object for repeated reaction patterns",
+          "[sbml][multi]") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A(x~u~p,y)
+  B(y)
+  C(z)
+end molecule types
+begin seed species
+  A(x~u,y) 10
+  A(y,x~u) 5
+end seed species
+begin reaction rules
+  first: A(x~u,y) -> B(y) k
+  second: A(y,x~u) -> C(z) k
+  third: A(x~p,y) -> B(y) k
+  fourth: A(x!+,y) -> C(z) k
+end reaction rules
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+
+    const auto xml = bng::io::SbmlMultiWriter::write(*model);
+    CHECK(xml.find("<species id=\"S1\"") != std::string::npos);
+    CHECK(xml.find("<species id=\"S2\"") == std::string::npos);
+    CHECK(xml.find("initialAmount=\"15\"") != std::string::npos);
+    CHECK(xml.find("<species id=\"RR1_R1\"") == std::string::npos);
+    CHECK(xml.find("<species id=\"RR2_R1\"") == std::string::npos);
+    CHECK(xml.find("species=\"S1\"") != std::string::npos);
+    CHECK(xml.find("species=\"RR1_R1\"") == std::string::npos);
+    CHECK(xml.find("species=\"RR2_R1\"") == std::string::npos);
+    CHECK(xml.find("<species id=\"RR3_R1\"") != std::string::npos);
+    CHECK(xml.find("<species id=\"RR4_R1\"") != std::string::npos);
+    CHECK(xml.find("species=\"RR3_R1\"") != std::string::npos);
+    CHECK(xml.find("species=\"RR4_R1\"") != std::string::npos);
+}
+
 TEST_CASE("SBML-Multi writes observables as Core assignment rules over pattern species",
           "[sbml][multi]") {
     // Issue #161 item B: BNG2's Multi export carries one Core assignment rule

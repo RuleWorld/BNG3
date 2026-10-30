@@ -85,19 +85,81 @@ struct MultiObservableSpecies {
     std::vector<std::pair<std::string, std::string>> added;   // (text, id)
 };
 
-MultiObservableSpecies multiObservableSpecies(const bng::ast::Model& model) {
-    std::map<std::string, std::string> known;
+std::string multiPatternIdentityKey(const bng::ast::Model& model,
+                                    const std::string& pattern) {
+    const auto key = [](const bng::ast::SpeciesGraph& graph,
+                        const std::string& compartment,
+                        bool compartmentPrefix) {
+        return graph.canonicalLabel() + "|graph=" +
+               graph.getGraph().get_BNG2_string_with_compartments() +
+               "|compartment=" + compartment +
+               "|prefix=" + (compartmentPrefix ? "1" : "0");
+    };
+    for (const auto& seed : model.getSeedSpecies()) {
+        if (seed.getPattern() == pattern) {
+            return key(bng::ast::SpeciesGraph(seed.getGraph()), seed.getCompartment(), false);
+        }
+    }
+    for (const auto& rule : model.getReactionRules()) {
+        const auto find = [&](const std::vector<std::string>& texts,
+                              const std::vector<bng::ast::SpeciesGraph>& graphs)
+            -> std::optional<std::string> {
+            for (std::size_t index = 0; index < texts.size() && index < graphs.size(); ++index) {
+                if (texts[index] == pattern) {
+                    return key(graphs[index], graphs[index].getCompartment(),
+                               graphs[index].isCompartmentPrefix());
+                }
+            }
+            return std::nullopt;
+        };
+        if (const auto found = find(rule.getReactants(), rule.getReactantPatterns())) return *found;
+        if (const auto found = find(rule.getProducts(), rule.getProductPatterns())) return *found;
+    }
+    return "text=" + pattern;
+}
+
+std::string multiPatternSpeciesId(const bng::ast::Model& model,
+                                  const std::string& pattern,
+                                  const std::string& fallback) {
+    const auto identity = multiPatternIdentityKey(model, pattern);
     for (std::size_t index = 0; index < model.getSeedSpecies().size(); ++index) {
-        known.emplace(model.getSeedSpecies()[index].getPattern(), "S" + std::to_string(index + 1));
+        if (multiPatternIdentityKey(model, model.getSeedSpecies()[index].getPattern()) == identity) {
+            return "S" + std::to_string(index + 1);
+        }
     }
     for (std::size_t index = 0; index < model.getReactionRules().size(); ++index) {
         const auto& rule = model.getReactionRules()[index];
         const auto prefix = "RR" + std::to_string(index + 1);
         for (std::size_t p = 0; p < rule.getReactants().size(); ++p) {
-            known.emplace(rule.getReactants()[p], prefix + "_R" + std::to_string(p + 1));
+            if (multiPatternIdentityKey(model, rule.getReactants()[p]) == identity) {
+                return prefix + "_R" + std::to_string(p + 1);
+            }
         }
         for (std::size_t p = 0; p < rule.getProducts().size(); ++p) {
-            known.emplace(rule.getProducts()[p], prefix + "_P" + std::to_string(p + 1));
+            if (multiPatternIdentityKey(model, rule.getProducts()[p]) == identity) {
+                return prefix + "_P" + std::to_string(p + 1);
+            }
+        }
+    }
+    return fallback;
+}
+
+MultiObservableSpecies multiObservableSpecies(const bng::ast::Model& model) {
+    std::map<std::string, std::string> known;
+    for (std::size_t index = 0; index < model.getSeedSpecies().size(); ++index) {
+        known.emplace(multiPatternIdentityKey(model, model.getSeedSpecies()[index].getPattern()),
+                      "S" + std::to_string(index + 1));
+    }
+    for (std::size_t index = 0; index < model.getReactionRules().size(); ++index) {
+        const auto& rule = model.getReactionRules()[index];
+        const auto prefix = "RR" + std::to_string(index + 1);
+        for (std::size_t p = 0; p < rule.getReactants().size(); ++p) {
+            known.emplace(multiPatternIdentityKey(model, rule.getReactants()[p]),
+                          prefix + "_R" + std::to_string(p + 1));
+        }
+        for (std::size_t p = 0; p < rule.getProducts().size(); ++p) {
+            known.emplace(multiPatternIdentityKey(model, rule.getProducts()[p]),
+                          prefix + "_P" + std::to_string(p + 1));
         }
     }
     MultiObservableSpecies result;
@@ -106,10 +168,11 @@ MultiObservableSpecies multiObservableSpecies(const bng::ast::Model& model) {
         std::vector<std::string> terms;
         for (std::size_t p = 0; p < patterns.size(); ++p) {
             if (!multiObservablePatternSupported(patterns[p])) continue;
-            auto found = known.find(patterns[p]);
+            const auto identity = multiPatternIdentityKey(model, patterns[p]);
+            auto found = known.find(identity);
             if (found == known.end()) {
                 const auto id = multiObservableSpeciesId(index, p);
-                found = known.emplace(patterns[p], id).first;
+                found = known.emplace(identity, id).first;
                 result.added.emplace_back(patterns[p], id);
             }
             terms.push_back(found->second);
@@ -123,24 +186,28 @@ MultiObservableSpecies multiObservableSpecies(const bng::ast::Model& model) {
 // those objects, so component maps can refer to the same structural types.
 template<class Visitor>
 void visitMultiPatterns(const bng::ast::Model& model, Visitor visit) {
+    std::set<std::string> visited;
+    const auto visitUnique = [&](const std::string& text, const std::string& id) {
+        if (visited.insert(multiPatternIdentityKey(model, text)).second) visit(text, id);
+    };
     for (std::size_t index = 0; index < model.getSeedSpecies().size(); ++index) {
-        visit(model.getSeedSpecies()[index].getPattern(), "S" + std::to_string(index + 1));
+        visitUnique(model.getSeedSpecies()[index].getPattern(), "S" + std::to_string(index + 1));
     }
     for (std::size_t index = 0; index < model.getReactionRules().size(); ++index) {
         const auto& rule = model.getReactionRules()[index];
         const auto prefix = "RR" + std::to_string(index + 1);
         for (std::size_t p = 0; p < rule.getReactants().size(); ++p) {
-            visit(rule.getReactants()[p], prefix + "_R" + std::to_string(p + 1));
+            visitUnique(rule.getReactants()[p], prefix + "_R" + std::to_string(p + 1));
         }
         for (std::size_t p = 0; p < rule.getProducts().size(); ++p) {
-            visit(rule.getProducts()[p], prefix + "_P" + std::to_string(p + 1));
+            visitUnique(rule.getProducts()[p], prefix + "_P" + std::to_string(p + 1));
         }
     }
     // Observable patterns are species too: an SBML-Multi species that leaves
     // sites unspecified stands for every species it matches, and BNG2 sums
     // those pattern species in each observable's assignment rule
     // (BNGOutput.pm writeSBMLMulti, "Assignment rules (for observables)").
-    for (const auto& [text, id] : multiObservableSpecies(model).added) visit(text, id);
+    for (const auto& [text, id] : multiObservableSpecies(model).added) visitUnique(text, id);
 }
 // The components that take part in a bond somewhere in the model (an exact
 // bond, !+ or !?), by molecule type and component name.  BNG2 calls them the
@@ -531,17 +598,19 @@ std::string SbmlMultiWriter::writeSeedSpecies(
         double amount = 0;
         bool constant = false;
         std::string compartment = pattern.compartment().empty() ? "default" : pattern.compartment();
+        const auto identity = multiPatternIdentityKey(model, text);
         for (std::size_t index = 0; index < model.getSeedSpecies().size(); ++index) {
-            if (id != "S" + std::to_string(index + 1)) continue;
             const auto& seed = model.getSeedSpecies()[index];
-            amount = seed.getAmount().evaluate([&](const std::string& name) {
+            if (multiPatternIdentityKey(model, seed.getPattern()) != identity) continue;
+            double seedAmount = seed.getAmount().evaluate([&](const std::string& name) {
                 return model.getParameters().evaluate(name);
             }, 0.0);
             if (sbml_units::enabled(compiled)) {
-                amount = engine::NetworkGenerator::normalizeSeedAmount(compiled, compiled.seeds()[index]);
+                seedAmount = engine::NetworkGenerator::normalizeSeedAmount(compiled, compiled.seeds()[index]);
             }
+            amount += seedAmount;
             if (!seed.getCompartment().empty()) compartment = seed.getCompartment();
-            constant = seed.isConstant();
+            constant = constant || seed.isConstant();
         }
         sbml << "      <species id=\"" << id << "\" name=\"" << escapeXml(text)
              << "\" compartment=\"" << makeValidSBMLId(compartment)
@@ -684,8 +753,9 @@ std::string SbmlMultiWriter::writeReactionRules(const ast::Model& model) {
                 sbml << (product ? "        <listOfProducts>\n" : "        <listOfReactants>\n");
                 for (std::size_t position = 0; position < patterns.size(); ++position) {
                     // Both directions reference the same pattern-species objects.
-                    const auto species = patternPrefix + ((product != reverse) ? "_P" : "_R") +
-                                         std::to_string(position + 1);
+                    const auto patternId = patternPrefix + ((product != reverse) ? "_P" : "_R") +
+                                           std::to_string(position + 1);
+                    const auto species = multiPatternSpeciesId(model, patterns[position], patternId);
                     const auto reference = "ref_" + id + (product ? "_P" : "_R") +
                                            std::to_string(position + 1);
                     if (!product) reactantIds.push_back(species);
@@ -697,8 +767,10 @@ std::string SbmlMultiWriter::writeReactionRules(const ast::Model& model) {
                             const auto& target = reverse ? mapping.second : mapping.first;
                             const auto& source = reverse ? mapping.first : mapping.second;
                             if (target.patternIndex != position) continue;
-                            const auto sourceSpecies = patternPrefix + (reverse ? "_P" : "_R") +
+                            const auto sourcePatternId = patternPrefix + (reverse ? "_P" : "_R") +
                                 std::to_string(source.patternIndex + 1);
+                            const auto sourceSpecies = multiPatternSpeciesId(
+                                model, reactants.at(source.patternIndex), sourcePatternId);
                             const auto sourcePattern = MultiPattern::parse(reactants.at(source.patternIndex));
                             const auto targetPattern = MultiPattern::parse(products.at(target.patternIndex));
                             const auto component = [&](const MultiPattern& pattern,
