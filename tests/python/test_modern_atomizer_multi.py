@@ -1210,7 +1210,7 @@ def test_multi_initial_assignment_initializes_species_for_definition_checks():
 
     result = parse_multi_package(xml)
 
-    # Multi §3.15.2 says an omitted OutwardBindingSite has bindingStatus
+    # Under the SBML Multi specification (clause 3.15.2), an omitted OutwardBindingSite has bindingStatus
     # "either"; the site is unconstrained rather than explicitly unbound.
     assert result.seed_patterns == [("a0", "aType()")]
     assert result.executable is False
