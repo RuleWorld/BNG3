@@ -86,7 +86,97 @@ def _source(volume, molecule_types, initial, rules):
     )
 
 
+def _math_value(node, values):
+    """Evaluate the small arithmetic subset used by generated mass-action laws."""
+    if node.isNumber():
+        return node.getReal()
+    if node.isName():
+        return values[node.getName()]
+    children = [node.getChild(i) for i in range(node.getNumChildren())]
+    operands = [_math_value(child, values) for child in children]
+    if node.getType() == libsbml.AST_TIMES:
+        return np.prod(operands)
+    if node.getType() == libsbml.AST_DIVIDE:
+        return operands[0] / operands[1]
+    if node.getType() == libsbml.AST_PLUS:
+        return sum(operands)
+    if node.getType() == libsbml.AST_MINUS:
+        return operands[0] - operands[1]
+    if node.getType() == libsbml.AST_POWER:
+        return operands[0] ** operands[1]
+    raise AssertionError(f"unsupported candidate MathML operator {node.getType()}")
+
+
+def _homodimer_export_rates(xml, parsed, volume, monomer_amount, dimer_amount):
+    """Evaluate writer-authored SBML laws directly, without BNG3 re-import."""
+    doc = libsbml.readSBMLFromString(xml)
+    model = doc.getModel()
+    values = {"k": 0.02, "d": 0.1, "cell": volume}
+    for species_id, pattern in parsed.multi_species_patterns.items():
+        # This fixture has one unbound monomer and one two-molecule complex.
+        values[species_id] = (
+            dimer_amount if pattern.count("A(") == 2 else monomer_amount
+        )
+
+    observed = {}
+    for reaction in model.getListOfReactions():
+        reactants = [
+            parsed.multi_species_patterns[ref.getSpecies()]
+            for ref in reaction.getListOfReactants()
+        ]
+        products = [
+            parsed.multi_species_patterns[ref.getSpecies()]
+            for ref in reaction.getListOfProducts()
+        ]
+        reactant_monomers = sum(
+            ref.getStoichiometry()
+            for ref, pattern in zip(reaction.getListOfReactants(), reactants)
+            if pattern.count("A(") == 1 and "!" not in pattern
+        )
+        product_dimers = sum(
+            ref.getStoichiometry()
+            for ref, pattern in zip(reaction.getListOfProducts(), products)
+            if pattern.count("A(") == 2 and "!" in pattern
+        )
+        reactant_dimers = sum(
+            ref.getStoichiometry()
+            for ref, pattern in zip(reaction.getListOfReactants(), reactants)
+            if pattern.count("A(") == 2 and "!" in pattern
+        )
+        product_monomers = sum(
+            ref.getStoichiometry()
+            for ref, pattern in zip(reaction.getListOfProducts(), products)
+            if pattern.count("A(") == 1 and "!" not in pattern
+        )
+        if reactant_monomers == 2 and product_dimers == 1:
+            direction = "association"
+        elif reactant_dimers == 1 and product_monomers == 2:
+            direction = "dissociation"
+        else:
+            continue
+        observed[direction] = _math_value(reaction.getKineticLaw().getMath(), values)
+    return observed
+
+
 CASES = {
+    "homodimer": dict(
+        types=["A(b)"],
+        seeds=[("A(b)", 8)],
+        rules=[
+            ("bind", "@cell:A(b) + @cell:A(b)", "@cell:A(b!1).A(b!1)", "k"),
+            ("unbind", "@cell:A(b!1).A(b!1)", "@cell:A(b) + @cell:A(b)", "d"),
+        ],
+        species={"A": 8, "AA": 0},
+        kinetics=[
+            (
+                {"A": 2},
+                {"AA": 1},
+                "<apply><times/><cn>0.5</cn><ci>k</ci><ci>A</ci><ci>A</ci></apply>",
+            ),
+            ({"AA": 1}, {"A": 2}, _mul("d", "AA")),
+        ],
+        multi_ids={"S1": "A", "RR1_P1": "AA"},
+    ),
     "three_body": dict(
         types=["A()", "B()", "C()", "D()"],
         seeds=[("A()", 8), ("B()", 6), ("C()", 5)],
@@ -159,6 +249,16 @@ def test_multi_export_matches_independent_kinetics(case, volume, atomize, tmp_pa
         assert consistency_errors == [], doc.getErrorLog().toString()
     parsed = SBMLParser().parse(multi_xml)
     assert parsed.multi_executable
+    if case == "homodimer":
+        observed = _homodimer_export_rates(
+            multi_xml, parsed, volume, monomer_amount=7, dimer_amount=3
+        )
+        assert observed == pytest.approx(
+            {
+                "association": 0.5 * 0.02 * 7**2 / volume,
+                "dissociation": 0.1 * 3,
+            }
+        )
     imported = Atomizer(atomize=atomize, quiet_mode=True).atomize(multi_xml)
     assert imported.success, imported.error
     trajectory = BioNetGenModel(cpp.parse_string(imported.bngl)).simulate(
