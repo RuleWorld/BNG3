@@ -609,3 +609,52 @@ TEST_CASE("SBML Core writer and reader preserve unit metadata together") {
     REQUIRE(parsed.speciesInitialConcentrations.size() == 1);
     CHECK_FALSE(parsed.speciesInitialConcentrations.front());
 }
+
+TEST_CASE("SBML-Multi writes a state-bearing binding site as a binding site with features",
+          "[sbml][multi]") {
+    // Issue #161: x has states and binds, which the writer refused.  SBML
+    // Multi lets a binding-site species type carry species feature types;
+    // BNG2 (ComponentType.pm toSBMLMultiSpeciesTypeBinding) writes such a
+    // component as a bindingSiteSpeciesType with its own feature type, the
+    // state as a species feature on the binding-site instance, and the bond
+    // status as an outward binding site.
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A(x~u~p,y)
+  B(a)
+end molecule types
+begin seed species
+  A(x~u,y) 10
+  B(a) 10
+end seed species
+begin reaction rules
+  bind: A(x~p) + B(a) -> A(x~p!1).B(a!1) k
+  phos: A(x~u) -> A(x~p) k
+end reaction rules
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::SbmlMultiWriter::write(*model);
+    CHECK(xml.find("<multi:bindingSiteSpeciesType multi:id=\"bst_A_x_1\" multi:name=\"x\">") !=
+          std::string::npos);
+    CHECK(xml.find("multi:speciesFeatureType multi:id=\"bst_A_x_1_state\"") != std::string::npos);
+    CHECK(xml.find("multi:possibleSpeciesFeatureValue multi:id=\"bst_A_x_1_state_p\"") !=
+          std::string::npos);
+    // The molecule type carries x as an instance of its binding site, not as
+    // a molecule-level feature type.
+    CHECK(xml.find("multi:speciesTypeInstance multi:id=\"st_A_component_1\" multi:name=\"x\" "
+                   "multi:speciesType=\"bst_A_x_1\"") != std::string::npos);
+    CHECK(xml.find("multi:speciesFeatureType multi:id=\"st_A_x_1\"") == std::string::npos);
+    // The seed's state is a feature of that instance; its bond status is
+    // an outward binding site.
+    CHECK(xml.find("multi:speciesFeatureType=\"bst_A_x_1_state\" multi:occur=\"1\" "
+                   "multi:component=\"st_A_component_1\"") != std::string::npos);
+    CHECK(xml.find("multi:speciesFeatureValue multi:value=\"bst_A_x_1_state_u\"") !=
+          std::string::npos);
+    CHECK(xml.find("multi:outwardBindingSite multi:component=\"st_A_component_1\"") !=
+          std::string::npos);
+}

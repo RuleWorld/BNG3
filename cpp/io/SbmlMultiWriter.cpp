@@ -17,6 +17,7 @@
 #include "compile/TotalRate.hpp"
 #include "compile/Pattern.hpp"
 #include <map>
+#include <set>
 
 namespace bng::io {
 
@@ -79,6 +80,42 @@ void visitMultiPatterns(const bng::ast::Model& model, Visitor visit) {
             visit(rule.getProducts()[p], prefix + "_P" + std::to_string(p + 1));
         }
     }
+}
+// The components that take part in a bond somewhere in the model (an exact
+// bond, !+ or !?), by molecule type and component name.  BNG2 calls them the
+// binding components (SBMLMultiAux.pm extractBindingComponents); a binding
+// component that also has states is a binding-site species type carrying its
+// own species feature type (ComponentType.pm toSBMLMultiSpeciesTypeBinding).
+std::map<std::string, std::set<std::string>> multiBindingComponents(
+    const bng::ast::Model& model) {
+    std::map<std::string, std::set<std::string>> binding;
+    visitMultiPatterns(model, [&](const std::string& text, const std::string&) {
+        const auto pattern = MultiPattern::parse(text);
+        for (const auto& molecule : pattern.molecules()) {
+            for (const auto& site : molecule.sites) {
+                if (site.bondKind == BondKind::Exact || site.bondKind == BondKind::Bound ||
+                    site.bondKind == BondKind::Any) {
+                    binding[molecule.moleculeType].insert(site.componentName);
+                }
+            }
+        }
+    });
+    return binding;
+}
+
+// A component is a binding site when it has no states (a pure binding site)
+// or when it has states and binds somewhere in the model.
+bool isMultiBindingSite(const std::map<std::string, std::set<std::string>>& binding,
+                        const std::string& moleculeType,
+                        const bng::ast::ComponentType& component) {
+    if (component.allowedStates.empty()) return true;
+    const auto found = binding.find(moleculeType);
+    return found != binding.end() && found->second.count(component.name) != 0;
+}
+
+std::string multiBindingSiteId(const std::string& validMolecule,
+                               const std::string& validComponent, std::size_t index) {
+    return "bst_" + validMolecule + "_" + validComponent + "_" + std::to_string(index + 1);
 }
 } // namespace
 
@@ -219,6 +256,7 @@ std::string SbmlMultiWriter::writeSpeciesTypes(const ast::Model& model) {
     // Multi distinguishes a bindingSiteSpeciesType from a state-bearing
     // speciesFeatureType.  Build stable binding-site type ids first so every
     // molecule component can reference the correct package object.
+    const auto binding = multiBindingComponents(model);
     std::vector<std::vector<std::string>> bindingSiteIds;
     bindingSiteIds.reserve(model.getMoleculeTypes().size());
     for (const auto& molType : model.getMoleculeTypes()) {
@@ -226,10 +264,9 @@ std::string SbmlMultiWriter::writeSpeciesTypes(const ast::Model& model) {
         ids.reserve(molType.getComponents().size());
         for (std::size_t index = 0; index < molType.getComponents().size(); ++index) {
             const auto& component = molType.getComponents()[index];
-            if (component.allowedStates.empty()) {
-                ids.push_back(
-                    "bst_" + makeValidSBMLId(molType.getName()) + "_" +
-                    makeValidSBMLId(component.name) + "_" + std::to_string(index + 1));
+            if (isMultiBindingSite(binding, molType.getName(), component)) {
+                ids.push_back(multiBindingSiteId(makeValidSBMLId(molType.getName()),
+                                                 makeValidSBMLId(component.name), index));
             } else {
                 ids.emplace_back();
             }
@@ -246,11 +283,32 @@ std::string SbmlMultiWriter::writeSpeciesTypes(const ast::Model& model) {
              ++componentIndex) {
             const auto& component = molType.getComponents()[componentIndex];
             const auto& bindingId = bindingSiteIds[molIndex][componentIndex];
-            if (!bindingId.empty()) {
+            if (bindingId.empty()) continue;
+            if (component.allowedStates.empty()) {
                 sbml << "      <multi:bindingSiteSpeciesType multi:id=\""
                      << bindingId << "\" multi:name=\""
                      << escapeXml(component.name) << "\"/>\n";
+                continue;
             }
+            // A binding site that also has states: its states are a species
+            // feature type of the binding-site species type itself.
+            const std::string featureId = bindingId + "_state";
+            sbml << "      <multi:bindingSiteSpeciesType multi:id=\""
+                 << bindingId << "\" multi:name=\"" << escapeXml(component.name) << "\">\n"
+                 << "        <multi:listOfSpeciesFeatureTypes>\n"
+                 << "          <multi:speciesFeatureType multi:id=\"" << featureId
+                 << "\" multi:name=\"" << escapeXml(component.name)
+                 << "\" multi:occur=\"1\">\n"
+                 << "            <multi:listOfPossibleSpeciesFeatureValues>\n";
+            for (const auto& state : component.allowedStates) {
+                sbml << "              <multi:possibleSpeciesFeatureValue multi:id=\""
+                     << featureId << "_" << makeValidSBMLId(state) << "\" multi:name=\""
+                     << escapeXml(state) << "\"/>\n";
+            }
+            sbml << "            </multi:listOfPossibleSpeciesFeatureValues>\n"
+                 << "          </multi:speciesFeatureType>\n"
+                 << "        </multi:listOfSpeciesFeatureTypes>\n"
+                 << "      </multi:bindingSiteSpeciesType>\n";
         }
     }
 
@@ -262,8 +320,10 @@ std::string SbmlMultiWriter::writeSpeciesTypes(const ast::Model& model) {
 
         // State-bearing components are represented by speciesFeatureTypes.
         bool hasStateComponents = false;
-        for (const auto& component : molType.getComponents()) {
-            hasStateComponents = hasStateComponents || !component.allowedStates.empty();
+        for (std::size_t componentIndex = 0;
+             componentIndex < molType.getComponents().size(); ++componentIndex) {
+            hasStateComponents = hasStateComponents ||
+                bindingSiteIds[molIndex][componentIndex].empty();
         }
         if (hasStateComponents) {
             sbml << "        <multi:listOfSpeciesFeatureTypes>\n";
@@ -272,7 +332,8 @@ std::string SbmlMultiWriter::writeSpeciesTypes(const ast::Model& model) {
                  componentIndex < molType.getComponents().size();
                  ++componentIndex) {
                 const auto& component = molType.getComponents()[componentIndex];
-                if (component.allowedStates.empty()) {
+                // Binding sites, with or without states, are instances below.
+                if (!bindingSiteIds[molIndex][componentIndex].empty()) {
                     continue;
                 }
                 std::string compId = stId + "_" + makeValidSBMLId(component.name) +
@@ -337,7 +398,10 @@ std::string SbmlMultiWriter::writeSpeciesTypes(const ast::Model& model) {
             const auto& molecule = pattern.molecules()[m];
             const auto& declaration = multiMoleculeType(model, molecule.moleculeType);
             for (std::size_t c = 0; c < declaration.getComponents().size(); ++c) {
-                if (!declaration.getComponents()[c].allowedStates.empty()) continue;
+                if (!isMultiBindingSite(binding, molecule.moleculeType,
+                                        declaration.getComponents()[c])) {
+                    continue;
+                }
                 sbml << "          <multi:speciesTypeComponentIndex multi:id=\""
                      << multiComponentId(type, m, c, true)
                      << "\" multi:component=\"st_" << escapeXml(molecule.moleculeType)
@@ -388,6 +452,7 @@ std::string SbmlMultiWriter::writeSeedSpecies(
     if (model.getSeedSpecies().empty() && model.getReactionRules().empty()) return {};
     std::ostringstream sbml;
     sbml << std::setprecision(17) << "    <listOfSpecies>\n";
+    const auto binding = multiBindingComponents(model);
     visitMultiPatterns(model, [&](const std::string& text, const std::string& id) {
         const auto pattern = MultiPattern::parse(text);
         if (pattern.moleculeCount() == 0) return;
@@ -427,7 +492,29 @@ std::string SbmlMultiWriter::writeSeedSpecies(
                 for (std::size_t p = 0; p < indexes.size(); ++p) {
                     if (indexes[p] == c) site = &molecule.sites[p];
                 }
-                if (!component.allowedStates.empty()) {
+                const bool bindingSite = isMultiBindingSite(binding, molecule.moleculeType, component);
+                if (!component.allowedStates.empty() && bindingSite) {
+                    // The state is a feature of the binding-site instance; the
+                    // bond status is an outward binding site, as for any site.
+                    if (site != nullptr && !site->stateConstraint.empty() &&
+                        site->stateConstraint != "?" && site->stateConstraint != "*") {
+                        if (std::find(component.allowedStates.begin(), component.allowedStates.end(),
+                                      site->stateConstraint) == component.allowedStates.end()) {
+                            throw std::invalid_argument("SBML-Multi requires a single declared state in a species feature");
+                        }
+                        const auto feature = multiBindingSiteId(
+                            makeValidSBMLId(molecule.moleculeType),
+                            makeValidSBMLId(component.name), c) + "_state";
+                        features.push_back("          <multi:speciesFeature multi:speciesFeatureType=\"" + feature +
+                            "\" multi:occur=\"1\" multi:component=\"" +
+                            multiComponentId(type, m, c, pattern.moleculeCount() > 1) +
+                            "\"><multi:listOfSpeciesFeatureValues>"
+                            "<multi:speciesFeatureValue multi:value=\"" + feature + "_" +
+                            makeValidSBMLId(site->stateConstraint) +
+                            "\"/></multi:listOfSpeciesFeatureValues></multi:speciesFeature>\n");
+                    }
+                }
+                if (!component.allowedStates.empty() && !bindingSite) {
                     if (site != nullptr && !site->stateConstraint.empty() && site->stateConstraint != "?" && site->stateConstraint != "*") {
                         if (std::find(component.allowedStates.begin(), component.allowedStates.end(),
                                       site->stateConstraint) == component.allowedStates.end()) {
@@ -442,8 +529,11 @@ std::string SbmlMultiWriter::writeSeedSpecies(
                             "<multi:speciesFeatureValue multi:value=\"" + feature + "_" + makeValidSBMLId(site->stateConstraint) +
                             "\"/></multi:listOfSpeciesFeatureValues></multi:speciesFeature>\n");
                     }
-                    if (site != nullptr && site->bondKind != BondKind::Unspecified) {
-                        throw std::invalid_argument("SBML-Multi state-bearing binding sites require a combined feature type");
+                    // A state component that never binds in this model is only
+                    // a feature; an explicitly unbound site says nothing more.
+                    if (site != nullptr && site->bondKind != BondKind::Unspecified &&
+                        site->bondKind != BondKind::Unbound) {
+                        throw std::invalid_argument("SBML-Multi state component binds but is not a binding site");
                     }
                     continue;
                 }
