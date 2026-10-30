@@ -138,15 +138,33 @@ end reaction rules
 end model
 )");
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
-        "<Pattern id=\"O1_P1\" relation=\"==\" quantity=\"1\">"));
+        "<Pattern id=\"O1_P1\" automorphisms=\"1\" relation=\"==\" quantity=\"1\">"));
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
-        "<Pattern id=\"O2_P1\" relation=\"&gt;\" quantity=\"20\">"));
+        "<Pattern id=\"O2_P1\" automorphisms=\"1\" relation=\"&gt;\" quantity=\"20\">"));
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
-        "<Pattern id=\"O3_P1\" relation=\"&lt;=\" quantity=\"3\">"));
+        "<Pattern id=\"O3_P1\" automorphisms=\"1\" relation=\"&lt;=\" quantity=\"3\">"));
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
         "<Molecule id=\"O1_P1_M1\" name=\"R\">"));
     CHECK(xml.find("name=\"R==") == std::string::npos);
     CHECK(xml.find("name=\"R&gt;") == std::string::npos);
+}
+
+TEST_CASE("XmlWriter includes observable pattern automorphism counts") {
+    // BNG2 SpeciesGraph::readString counts self-embeddings for XML patterns.
+    // Two equivalent sites on R give the symmetric pattern R(x,x) two
+    // automorphisms, which consumers use for molecule-observable semantics.
+    const std::string xml = writeXml(R"(
+begin model
+begin molecule types
+    R(x,x)
+end molecule types
+begin observables
+    Molecules Rfree R(x,x)
+end observables
+end model
+)");
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<Pattern id=\"O1_P1\" automorphisms=\"2\">"));
 }
 
 TEST_CASE("XmlWriter orders DeleteBond before AddBond in bond-swap rules") {
@@ -570,7 +588,7 @@ end reaction rules
 end model
 )");
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
-        "<Pattern id=\"O1_P1\" compartment=\"cell\">"));
+        "<Pattern id=\"O1_P1\" automorphisms=\"1\" compartment=\"cell\">"));
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
         "<Molecule id=\"O1_P1_M1\" name=\"M_A\">"));
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
