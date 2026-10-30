@@ -2,6 +2,8 @@
 
 from typing import Dict, List, Optional, Tuple
 
+import numpy as np
+
 class ParseError(Exception):
     """Raised when BNGL parsing fails."""
 
@@ -190,6 +192,10 @@ class GeneratedNetwork:
 
     @property
     def reaction_strings(self) -> List[str]: ...
+    @property
+    def reaction_participants(self) -> List[Tuple[List[int], List[int]]]: ...
+    @property
+    def stoichiometric_matrix(self) -> np.ndarray: ...
     def __repr__(self) -> str: ...
 
 class OdeOptions:
