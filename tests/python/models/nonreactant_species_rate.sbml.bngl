@@ -1,0 +1,141 @@
+###
+#@notes:'This is a plain translation of an SBML model created on 30/10/2026. The original model has 25 molecules and 1 reactions. The translated model has 1 molecules and 1 rules'
+###
+begin model
+begin parameters
+  S 1.0
+  Ksm 0.1
+  Kdm 0.1
+  Kscycdm 0.004
+  Kscycds 0.004
+  Kdcycd 0.008
+  Kscyceb 0.0001
+  Kscycem 0
+  Kscyce 0.004
+  Kdcyce 0.001
+  Kdcycea 0.01
+  Khcyce 0.25
+  Kscyca 0.008
+  Kdcyca 0.004
+  Kdcycac 0.5
+  Khcyca 0.1
+  Kse2fm 0
+  Kse2f 0.004
+  Kde2f 0.003
+  Kde2fa 0.01
+  Khe2f 0.25
+  RbT 1.0
+  Kase2f 100.0
+  Kdise2f 1.0
+  Kprb 5.0
+  Kdprbp 1.0
+  Kppeb 0.5
+  Kdprbpp 0.1
+  Kprbp 2.0
+  JpRb 0.01
+  JpRbp 0.05
+  JdpRb 0.05
+  JppRb 0.5
+  Kscki 0.04
+  Kdcki 0.2
+  Kascki 100.0
+  Kdiscki 0.1
+  Ksub1 0.004
+  Kdub1 0.002
+  Kdub1c 0.2
+  Ksemi1 0.45
+  Kdemi1 0.2
+  Kdemi1c 2.0
+  Khemi1 0.1
+  Kascdh1 100.0
+  Kdiscdh1 0.1
+  Kacdh1 0.1
+  Kicdh1e 0.14
+  Kicdh1a 0.2
+  JdpCdh1 0.02
+  JpCdh1 0.25
+  Kse2fb 0.0003
+  Kdckic 1.0
+end parameters
+begin molecule types
+  Myc()
+  CycDT()
+  CycET()
+  CycAT()
+  E2FT()
+  Comp1()
+  Comp2()
+  Rbp()
+  CkiT()
+  CycECki()
+  CycDCki()
+  CycACki()
+  Cdh1dp()
+  Emi1T()
+  EmiC()
+  Cdh1()
+  UbI()
+  E2F()
+  Rb()
+  Rbpp()
+  CycE()
+  CycD()
+  CycA()
+  Cdh1p()
+  Cdh1T()
+end molecule types
+begin seed species
+  CycET() 0.119 #CycET #CycET #CycET
+  E2FT() 0.106 #E2FT #E2FT #E2FT
+  Comp1() 0.105 #Comp1 #Comp1 #Comp1
+  CkiT() 0.2 #CkiT #CkiT #CkiT
+  CycECki() 0.115 #CycECki #CycECki #CycECki
+  Cdh1dp() 1.0 #Cdh1dp #Cdh1dp
+  Emi1T() 0.002 #Emi1T #Emi1T #Emi1T
+  EmiC() 0.002 #EmiC #EmiC #EmiC
+  Cdh1() 0.998 #Cdh1 #Cdh1 #Cdh1
+  UbI() 0.02 #UbI #UbI #UbI
+  $E2F() 0.001 #E2F #E2F #E2F
+  $Rb() 0.894 #Rb #Rb #Rb
+  Rbpp() 0.001 #Rbpp #Rbpp #Rbpp
+  $CycE() 0.00399999999999999 #CycE #CycE #CycE
+  $CycD() 0.0 #CycD #CycD
+  $CycA() 0.0 #CycA #CycA
+  $Cdh1p() 0 #Cdh1p #Cdh1p #Cdh1p
+  $Cdh1T() 1.0 #Cdh1T #Cdh1T #Cdh1T
+end seed species
+begin observables
+  Species Myc Myc() #Myc
+  Species CycDT CycDT() #CycDT
+  Species CycET CycET() #CycET
+  Species CycAT CycAT() #CycAT
+  Species E2FT E2FT() #E2FT
+  Species Comp1 Comp1() #Comp1
+  Species Comp2 Comp2() #Comp2
+  Species Rbp Rbp() #Rbp
+  Species CkiT CkiT() #CkiT
+  Species CycECki CycECki() #CycECki
+  Species CycDCki CycDCki() #CycDCki
+  Species CycACki CycACki() #CycACki
+  Species Cdh1dp Cdh1dp() #Cdh1dp
+  Species Emi1T Emi1T() #Emi1T
+  Species EmiC EmiC() #EmiC
+  Species Cdh1 Cdh1() #Cdh1
+  Species UbI UbI() #UbI
+  Species E2F E2F() #E2F
+  Species Rb Rb() #Rb
+  Species Rbpp Rbpp() #Rbpp
+  Species CycE CycE() #CycE
+  Species CycD CycD() #CycD
+  Species CycA CycA() #CycA
+  Species Cdh1p Cdh1p() #Cdh1p
+  Species Cdh1T Cdh1T() #Cdh1T
+end observables
+begin functions
+  fRate0() = Cdh1T*Kacdh1/(Cdh1T - Cdh1dp + JdpCdh1)
+  fRate0m() = Kacdh1/(Cdh1T - Cdh1dp + JdpCdh1)
+end functions
+begin reaction rules
+  reaction_for_Cdh1dp_production: 0 <-> Cdh1dp() fRate0(),fRate0m() #Modifiers(Cdh1T)
+end reaction rules
+end model
