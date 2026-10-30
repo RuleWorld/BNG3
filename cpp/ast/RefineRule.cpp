@@ -249,7 +249,7 @@ int assignTempLabels(BNGcore::PatternGraph& graph,
             // Generate a unique label that doesn't collide with used labels
             std::string label;
             do {
-                label = "_t" + std::to_string(idx++);
+                label = "t" + std::to_string(idx++);
             } while (usedLabels.count(label));
             (*it)->set_label_tag(label);
             tempLabels[label] = true;
@@ -332,6 +332,17 @@ std::string authoredPattern(const SpeciesGraph& pattern) {
         text.erase(doubleColon, 1);
     }
     return text;
+}
+
+// Parsed rules keep an internal R<n> identity and the authored rule name in
+// label_ (including its colon). Hybrid child names follow BNG2's authored
+// name when present; programmatically constructed rules use their identity.
+std::string hybridRuleBaseName(const ReactionRule& rule) {
+    const auto& label = rule.getLabel();
+    if (!label.empty() && label.back() == ':') {
+        return label.substr(0, label.size() - 1);
+    }
+    return rule.getRuleName();
 }
 
 // Symmetry scale of a rule's reactant side, BNG2's MultScale for the cases
@@ -580,7 +591,7 @@ ExpandRuleResult expandRule(
     // Assign names to distinct refined rules after deduplication. Automorphic
     // embeddings that collapse to one child must not consume a child number.
     for (std::size_t i = 0; i < result.childRules.size(); ++i) {
-        std::string name = rule.getRuleName() + "_v" + std::to_string(i + 1);
+        std::string name = hybridRuleBaseName(rule) + "_v" + std::to_string(i + 1);
         std::size_t reversePos = 0;
         while ((reversePos = name.find("(reverse)", reversePos)) != std::string::npos) {
             name.replace(reversePos, 9, "_rev");

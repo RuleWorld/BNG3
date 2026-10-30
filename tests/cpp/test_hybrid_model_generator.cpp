@@ -9,6 +9,7 @@
 #include <iostream>
 #include <map>
 #include <memory>
+#include <regex>
 #include <string>
 #include <vector>
 
@@ -101,9 +102,8 @@ TEST_CASE("HybridModelGenerator tests", "[hybrid]") {
         std::ifstream bngl("test_rules_hpp.bngl");
         std::string content((std::istreambuf_iterator<char>(bngl)), std::istreambuf_iterator<char>());
 
-        REQUIRE(content.find("rule_B:") != std::string::npos);
-        REQUIRE(content.find("rule_A:") != std::string::npos);
-        REQUIRE(content.find("rule_A_pop:") != std::string::npos);
+        REQUIRE(content.find("rule_B_v1:") != std::string::npos);
+        REQUIRE(content.find("rule_A_v1:") != std::string::npos);
         REQUIRE(content.find("_map_pop_A:") != std::string::npos);
     }
 
@@ -210,8 +210,10 @@ end reaction rules
     REQUIRE(refined.error.empty());
     REQUIRE(refined.childRules.size() == 1);
     REQUIRE(refined.childRules.front().getProducts().size() == 1);
-    CHECK(refined.childRules.front().getProducts().front().find("x~p") !=
-          std::string::npos);
+    const auto product = std::regex_replace(
+        refined.childRules.front().getProducts().front(),
+        std::regex(R"(%t[0-9]+)"), "");
+    CHECK(product == "A(x~p)");
 }
 
 namespace {
@@ -257,6 +259,12 @@ std::string slurp(const std::string& path) {
     return std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
 }
 
+std::string authoredRuleName(const ReactionRule& rule) {
+    std::string name = rule.getLabel();
+    if (!name.empty() && name.back() == ':') name.pop_back();
+    return name.empty() ? rule.getRuleName() : name;
+}
+
 } // namespace
 
 TEST_CASE("hybrid children carry BNG2's reaction-center multiplicities",
@@ -283,7 +291,7 @@ TEST_CASE("hybrid children carry BNG2's reaction-center multiplicities",
     std::map<std::string, std::pair<std::string, double>> children;
     for (const auto& rule : hybrid->getReactionRules()) {
         const auto& rate = rule.getRates().front().toString();
-        children[rule.getRuleName()] = {rate, parameters.evaluate(rate)};
+        children[authoredRuleName(rule)] = {rate, parameters.evaluate(rate)};
     }
     const std::map<std::string, double> expected{
         {"R2_v1", 3 * 2.0}, {"R2_v2", 6 * 2.0},
@@ -314,7 +322,7 @@ TEST_CASE("hybrid child rules keep the source's bound-to-anything context",
     auto hybrid = bng::parser::parseModel(slurp("test_hybrid_context_hpp.bngl"));
     REQUIRE(hybrid != nullptr);
     for (const auto& rule : hybrid->getReactionRules()) {
-        const auto& name = rule.getRuleName();
+        const auto name = authoredRuleName(rule);
         if (name.rfind("R3_", 0) != 0 && name.rfind("R4_", 0) != 0) continue;
         INFO(name);
         std::size_t wildcards = 0;
@@ -389,9 +397,9 @@ std::map<std::string, HybridChild> hybridChildren(const std::string& prefix,
     // reverse direction (_reverse_<rule>_v<n>) scale its second rate.
     std::map<std::string, std::string> parentRate;
     for (const auto& rule : model->getReactionRules()) {
-        parentRate[rule.getRuleName()] = rule.getRates().front().toString();
+        parentRate[authoredRuleName(rule)] = rule.getRates().front().toString();
         if (rule.isBidirectional() && rule.getRates().size() == 2) {
-            parentRate["_reverse_" + rule.getRuleName()] = rule.getRates()[1].toString();
+            parentRate["_reverse_" + authoredRuleName(rule)] = rule.getRates()[1].toString();
         }
     }
     HybridModelGenerator generator(*model);
@@ -404,7 +412,7 @@ std::map<std::string, HybridChild> hybridChildren(const std::string& prefix,
     REQUIRE(hybrid != nullptr);
     std::map<std::string, HybridChild> children;
     for (const auto& rule : hybrid->getReactionRules()) {
-        const auto& name = rule.getRuleName();
+        const auto name = authoredRuleName(rule);
         const auto cut = name.rfind("_v");
         if (cut == std::string::npos || !parentRate.count(name.substr(0, cut))) continue;
         HybridChild child;
@@ -621,14 +629,15 @@ end model
     auto hybrid = bng::parser::parseModel(slurp("test_hybrid_compartments_hpp.bngl"));
     REQUIRE(hybrid != nullptr);
     for (const auto& rule : hybrid->getReactionRules()) {
-        INFO(rule.getRuleName());
-        if (rule.getRuleName() == "R3_v1") {
+        const auto name = authoredRuleName(rule);
+        INFO(name);
+        if (name == "R3_v1") {
             REQUIRE(rule.getReactants().size() == 1);
             REQUIRE(rule.getProducts().size() == 1);
             CHECK(rule.getReactants()[0].find("CP") != std::string::npos);
             CHECK(rule.getProducts()[0].find("EC") != std::string::npos);
         }
-        if (rule.getRuleName() == "R2_v2") {
+        if (name == "R2_v2") {
             REQUIRE(rule.getReactants().size() == 2);
             CHECK(rule.getReactants()[0].find("L_pop") != std::string::npos);
             CHECK(rule.getReactants()[0].find("EC") != std::string::npos);
