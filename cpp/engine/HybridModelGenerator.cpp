@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iostream>
 #include <set>
+#include <unordered_map>
 #include <sstream>
 #include <stdexcept>
 
@@ -42,6 +43,13 @@ bool HybridModelGenerator::isIsomorphic(const std::string& pattern1,
         auto* species2 = parser2.species_def();
         if (parser2.getNumberOfSyntaxErrors() != 0) return false;
         const auto graph2 = bng::parser::buildPatternGraph(species2, mutableModel, true);
+
+        // A population lumps the particles of one compartment: @EC:L(r) and
+        // @CP:L(r) are different species even though their graphs match.
+        if (bng::parser::extractSpeciesCompartment(species1) !=
+            bng::parser::extractSpeciesCompartment(species2)) {
+            return false;
+        }
 
         // Check both directions for isomorphism
         BNGcore::UllmannSGIso matcher1(graph1, graph2);
@@ -199,7 +207,14 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
         result.nCompartments = model_.getCompartments().size();
         std::cerr << indent << "found " << result.nCompartments << " compartments.\n";
         if (result.nCompartments > 0) {
-            std::cerr << "WARNING: generate_hybrid_model() does not support compartments at this time.\n";
+            // BNG2 warns that it does not support compartments here and fails
+            // to build its mapping rules.  BNG3 places each population in the
+            // compartment of its mapped species, keeps the compartment on
+            // child rule species, and applies BNG2's interacting-set check;
+            // there is no BNG2 result to compare this with.
+            std::cerr << "WARNING: generate_hybrid_model() with compartments has no BNG2 "
+                         "reference: populations are placed in the compartment of their "
+                         "mapped species.\n";
         }
     }
 
@@ -260,12 +275,23 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
     struct PopInfo {
         std::string speciesPattern;   // The species graph pattern
         std::string populationName;   // The population molecule type name
+        std::string compartment;      // Species-level compartment of the pattern
+    };
+    auto speciesCompartmentOf = [](const std::string& text) {
+        antlr4::ANTLRInputStream input(text);
+        BNGLexer lexer(&input);
+        antlr4::CommonTokenStream tokens(&lexer);
+        BNGParser parser(&tokens);
+        auto* species = parser.species_def();
+        if (parser.getNumberOfSyntaxErrors() != 0) return std::string();
+        return bng::parser::extractSpeciesCompartment(species);
     };
     std::vector<PopInfo> populations;
     for (const auto& pm : model_.getPopulationMaps()) {
         PopInfo pi;
         pi.speciesPattern = pm.patternText;
         pi.populationName = !pm.populationName.empty() ? pm.populationName : pm.populationFunction;
+        pi.compartment = speciesCompartmentOf(pm.patternText);
         // Build the population species string: just the population function name with args
         // In Perl: $pop->Population is the population molecule SpeciesGraph
         populations.push_back(pi);
@@ -318,7 +344,8 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
             hybridModel.addSeedSpecies(ast::SeedSpecies(
                 pop.populationName + "()",
                 ast::Expression::number(0),
-                false));
+                false,
+                pop.compartment));
             addedPopulations.insert(pop.populationName);
             ++zeroPops;
         }
@@ -398,7 +425,8 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
                                      pop.speciesPattern);
         }
         popSpeciesPatterns.emplace_back(
-            bng::parser::buildPatternGraph(particleSpecies, model_, false));
+            bng::parser::buildPatternGraph(particleSpecies, model_, false),
+            bng::parser::extractSpeciesCompartment(particleSpecies));
 
         antlr4::ANTLRInputStream populationInput(pop.populationName + "()");
         BNGLexer populationLexer(&populationInput);
@@ -410,8 +438,21 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
                                      pop.populationName);
         }
         populationGraphs.emplace_back(
-            bng::parser::buildPatternGraph(populationSpecies, hybridModel, true));
+            bng::parser::buildPatternGraph(populationSpecies, hybridModel, true),
+            pop.compartment);
     }
+
+    // Compartment topology for the interacting-set check in restrictRule,
+    // as network generation installs it.
+    std::unordered_map<std::string, int> compartmentDimensions;
+    std::unordered_map<std::string, std::string> compartmentParents;
+    for (const auto& compartment : model_.getCompartments()) {
+        compartmentDimensions[compartment.getName()] = compartment.getDimension();
+        if (!compartment.getParent().empty()) {
+            compartmentParents[compartment.getName()] = compartment.getParent();
+        }
+    }
+    ast::CompartmentContextScope compartmentScope(compartmentDimensions, compartmentParents);
 
     std::size_t ruleCount = 0;
     for (const auto& rule : model_.getReactionRules()) {
@@ -459,6 +500,10 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
             populationPattern += args[i];
         }
         populationPattern += ")";
+        const auto mapCompartment = speciesCompartmentOf(pm.patternText);
+        if (!mapCompartment.empty()) {
+            populationPattern = "@" + mapCompartment + ":" + populationPattern;
+        }
 
         std::string mapRuleName = "_map_" + populationName;
         hybridModel.addReactionRule(ast::ReactionRule(

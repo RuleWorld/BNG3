@@ -132,6 +132,45 @@ static bool isAdjacentToSurface(const std::string& volume, const std::string& su
     return false;
 }
 
+bool compartmentsFormInteractingSet(const std::vector<std::string>& compartments) {
+    if (g_compartmentDimensions.empty()) return true;
+    std::string surface;
+    std::string volume;
+    std::size_t missing = 0;
+    for (const auto& compartment : compartments) {
+        if (compartment.empty()) {
+            ++missing;
+            continue;
+        }
+        const auto dimension = g_compartmentDimensions.find(compartment);
+        if (dimension == g_compartmentDimensions.end()) continue;
+        if (dimension->second == 2) {
+            if (!surface.empty() && surface != compartment) return false;
+            surface = compartment;
+        } else if (dimension->second == 3) {
+            if (!volume.empty() && volume != compartment) return false;
+            volume = compartment;
+        }
+    }
+    if (!surface.empty() && !volume.empty() && !isAdjacentToSurface(volume, surface)) {
+        return false;
+    }
+    // A mixture of reactants with and without a compartment.
+    return missing == 0 || missing == compartments.size();
+}
+
+std::string surfaceOfInteractingSet(const std::vector<std::string>& compartments) {
+    if (!compartmentsFormInteractingSet(compartments)) return {};
+    for (const auto& compartment : compartments) {
+        const auto dimension = g_compartmentDimensions.find(compartment);
+        if (dimension != g_compartmentDimensions.end() && dimension->second == 2) {
+            return compartment;
+        }
+    }
+    return {};
+}
+
+
 namespace {
 
 struct ComponentInfo {

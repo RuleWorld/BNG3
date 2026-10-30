@@ -375,6 +375,17 @@ void setCompartmentDimensions(const std::unordered_map<std::string, int>& dims);
 // Set compartment parent map for transport (endocytosis/exocytosis)
 void setCompartmentParents(const std::unordered_map<std::string, std::string>& parents);
 
+// BNG2 SpeciesGraph::interactingSet on species-level compartments, under the
+// compartment context installed for this thread: at most one surface and one
+// volume, an adjacent pair if both occur, and either every compartment given
+// or none.  An empty compartment means "no compartment".  With no compartment
+// context installed (a model without compartments) every set interacts.
+bool compartmentsFormInteractingSet(const std::vector<std::string>& compartments);
+
+// The surface compartment among the given ones when they form an interacting
+// set that contains exactly one surface, else empty.
+std::string surfaceOfInteractingSet(const std::vector<std::string>& compartments);
+
 // Temporarily installs compartment metadata for one network-generation pass.
 // The metadata is thread-local and restored when the pass returns or throws.
 class CompartmentContextScope {

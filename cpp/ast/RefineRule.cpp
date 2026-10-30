@@ -320,6 +320,20 @@ void safeDeleteNode(BNGcore::PatternGraph& graph, BNGcore::Node* node) {
 
 namespace {
 
+// BNGL text of a refined pattern.  toString() drops compartments, which a
+// compartmental child rule needs: @EC:L(r) is not L(r).
+std::string authoredPattern(const SpeciesGraph& pattern) {
+    if (pattern.getCompartment().empty()) {
+        return pattern.getGraph().get_BNG2_string_with_compartments();
+    }
+    std::string text = pattern.toStringForDedup();  // "@C::..." form
+    const auto doubleColon = text.find("::");
+    if (!text.empty() && text[0] == '@' && doubleColon != std::string::npos) {
+        text.erase(doubleColon, 1);
+    }
+    return text;
+}
+
 // Symmetry scale of a rule's reactant side, BNG2's MultScale for the cases
 // BNG3's network generation represents: 1/n! for each group of n reactant
 // patterns that are the same graph (ReactionRule::buildReaction applies the
@@ -425,6 +439,10 @@ ExpandRuleResult expandRule(
             // to any species in sgList (Perl lines 343-362)
             bool isIsomorph = false;
             for (const auto& sg : sgList) {
+                // A pattern without a compartment also matches particles in
+                // compartments the population does not lump, so it is not
+                // isomorphic to @EC:L(r) even when the graphs are.
+                if (sg.getCompartment() != patt.getCompartment()) continue;
                 if (hasSubgraphIso(sg.getGraph(), patt.getGraph())) {
                     isIsomorph = true;
                     break;
@@ -746,11 +764,47 @@ std::unique_ptr<ReactionRule> restrictRule(
         // Transfer labels from pattern to target copy (Perl line 469)
         transferLabels(mapCopy);
 
+        // The species-level compartment of the copied target: the pattern's
+        // own for a self-embedding, the population species' otherwise.
+        std::string compartment;
+        if (embed.speciesIndex == static_cast<std::size_t>(-1)) {
+            compartment = reactantPatterns[i].getCompartment();
+        } else if (params.populationParticleGraphs != nullptr &&
+                   embed.speciesIndex < params.populationParticleGraphs->size()) {
+            compartment = (*params.populationParticleGraphs)[embed.speciesIndex].getCompartment();
+        }
+
         // The embedding maps into the cloned target graph. Preserve that node
         // identity and point the map at the graph object that now owns it.
-        reactants.emplace_back(std::move(targetCopy));
+        reactants.emplace_back(std::move(targetCopy), compartment);
         mapCopy.set_target_graph(&reactants.back().getGraph());
         matches.push_back(std::move(mapCopy));
+    }
+
+    // Reactant species must form an interacting set (RefineRule.pm 496-498,
+    // SpeciesGraph::interactingSet): one surface and one volume at most, and
+    // an adjacent pair if both.
+    // A reactant without a compartment is a pattern copy that matches
+    // particles in any compartment; network generation checks the species it
+    // meets.  Here only reactants that are fixed to a compartment (named in
+    // the rule, or a population) have to interact.  BNG2 also rejects the
+    // mixture, which would drop L(r) + @PM:R_pop() although L particles in an
+    // adjacent volume react with that population.
+    if (reactants.size() > 1) {
+        std::vector<std::string> compartments;
+        compartments.reserve(reactants.size());
+        for (const auto& reactant : reactants) {
+            if (!reactant.getCompartment().empty()) {
+                compartments.push_back(reactant.getCompartment());
+            }
+        }
+        if (!compartmentsFormInteractingSet(compartments)) {
+            if (params.verbose) {
+                std::cerr << "Rule " << rule.getRuleName()
+                          << ": reactant compartments do not interact\n";
+            }
+            return nullptr;
+        }
     }
 
     // ---- Step 2: Gather labels and assign temp labels (Perl lines 477-493) ----
@@ -1066,6 +1120,57 @@ std::unique_ptr<ReactionRule> restrictRule(
         // filtering happens during rule application.
     }
 
+    // Product species compartments.  A product pattern that names its
+    // compartment (@EC:A()) places the product there; otherwise a product
+    // stays where its reactants are when they share one compartment.  The
+    // aggregate split does not keep product-pattern order, so a product is
+    // matched to the product pattern with the same molecule types.
+    {
+        std::string sharedReactantCompartment;
+        bool shared = !reactants.empty();
+        for (std::size_t i = 0; i < reactants.size(); ++i) {
+            if (i == 0) sharedReactantCompartment = reactants[i].getCompartment();
+            else if (reactants[i].getCompartment() != sharedReactantCompartment) shared = false;
+        }
+        if (!shared) sharedReactantCompartment.clear();
+        auto moleculeTypes = [](const BNGcore::PatternGraph& graph) {
+            std::vector<std::string> names;
+            for (auto node = graph.begin(); node != graph.end(); ++node) {
+                if (isMoleculeNode(**node)) names.push_back((*node)->get_type().get_type_name());
+            }
+            std::sort(names.begin(), names.end());
+            return names;
+        };
+        std::vector<bool> usedPattern(nProducts, false);
+        for (std::size_t ip = 0; ip < products.size(); ++ip) {
+            std::string compartment;
+            const auto types = moleculeTypes(products[ip].getGraph());
+            std::size_t matched = nProducts;
+            for (std::size_t pp = 0; pp < nProducts; ++pp) {
+                if (!usedPattern[pp] && moleculeTypes(productPatterns[pp].getGraph()) == types) {
+                    matched = pp;
+                    break;
+                }
+            }
+            if (matched == nProducts && ip < nProducts && !usedPattern[ip]) matched = ip;
+            if (matched < nProducts) {
+                usedPattern[matched] = true;
+                compartment = productPatterns[matched].getCompartment();
+            }
+            if (compartment.empty()) compartment = sharedReactantCompartment;
+            if (compartment.empty()) {
+                // Reactants on a surface and in an adjacent volume make a
+                // complex that lives on the surface (BNG2's cBNGL rule).
+                std::vector<std::string> reactantCompartments;
+                for (const auto& reactant : reactants) {
+                    reactantCompartments.push_back(reactant.getCompartment());
+                }
+                compartment = surfaceOfInteractingSet(reactantCompartments);
+            }
+            if (!compartment.empty()) products[ip].setCompartment(compartment);
+        }
+    }
+
     // ---- Step 5: Replace complete mapped complexes with populations ----
     if (params.populationParticleGraphs && params.populationGraphs) {
         const auto count = std::min(params.populationParticleGraphs->size(),
@@ -1078,7 +1183,8 @@ std::unique_ptr<ReactionRule> restrictRule(
                 }
                 BNGcore::PatternGraph populationCopy;
                 cloneGraphInto((*params.populationGraphs)[i].getGraph(), populationCopy);
-                const std::string compartment = species.getCompartment();
+                std::string compartment = (*params.populationGraphs)[i].getCompartment();
+                if (compartment.empty()) compartment = species.getCompartment();
                 species = SpeciesGraph(std::move(populationCopy), compartment);
                 return;
             }
@@ -1103,10 +1209,11 @@ std::unique_ptr<ReactionRule> restrictRule(
         childName.replace(revPos, 9, "_rev");
     }
 
-    // Build string representations
+    // Build string representations, with the species-level compartment as
+    // an @C: prefix and molecule compartments that differ from it.
     std::vector<std::string> reactantStrs, productStrs;
-    for (const auto& r : reactants) reactantStrs.push_back(r.toString());
-    for (const auto& p : products) productStrs.push_back(p.toString());
+    for (const auto& r : reactants) reactantStrs.push_back(authoredPattern(r));
+    for (const auto& p : products) productStrs.push_back(authoredPattern(p));
 
     // Copy rates from parent rule
     std::vector<Expression> rates;

@@ -569,3 +569,71 @@ TEST_CASE("state changes between populations count equivalent sites",
     CHECK(children["R2_v2"].multiplier == Catch::Approx(1.0));
     CHECK(children["R2_v3"].multiplier == Catch::Approx(2.0));
 }
+
+TEST_CASE("hybrid refinement keeps compartments and their interactions",
+          "[hybrid][RefineRule][compartments]") {
+    // BNG2 warns that generate_hybrid_model does not support compartments
+    // and aborts building its mapping rules, so these expectations follow
+    // BNG2's restrict_rule semantics instead: a population lives in the
+    // compartment of its mapped species, a reactant fixed to a compartment
+    // must interact with the others (SpeciesGraph::interactingSet), and a
+    // product keeps the compartment its rule names.
+    auto children = hybridChildren(
+        "test_hybrid_compartments",
+        R"(begin model
+begin parameters
+  k 2
+  kg 100
+end parameters
+begin compartments
+  EC 3 1.0
+  PM 2 1.0 EC
+  CP 3 1.0 PM
+end compartments
+begin molecule types
+  L(r)
+  R(l,l)
+  A()
+end molecule types
+begin seed species
+  @EC:L(r) 10
+  @PM:R(l,l) 10
+  @CP:A() 10
+end seed species
+begin reaction rules
+  R2: @EC:L(r) + @PM:R(l) -> @PM:L(r!1).R(l!1) k
+  R3: @CP:A() -> @EC:A() k
+  R4: @EC:L(r) + @CP:A() -> @EC:L(r) k
+end reaction rules
+begin population maps
+  @EC:L(r) -> L_pop() kg
+  @PM:R(l,l) -> R_pop() kg
+end population maps
+end model
+)");
+    // @EC:L(r) is lumped completely, so only population children remain.
+    CHECK(children["R2_v1"].multiplier == Catch::Approx(1.0));
+    CHECK(children["R2_v2"].multiplier == Catch::Approx(2.0));
+    CHECK(children.count("R3_v1") == 1);
+    // EC and CP are two volumes, so R4 can never fire.
+    CHECK(children.count("R4_v1") == 0);
+
+    auto hybrid = bng::parser::parseModel(slurp("test_hybrid_compartments_hpp.bngl"));
+    REQUIRE(hybrid != nullptr);
+    for (const auto& rule : hybrid->getReactionRules()) {
+        INFO(rule.getRuleName());
+        if (rule.getRuleName() == "R3_v1") {
+            REQUIRE(rule.getReactants().size() == 1);
+            REQUIRE(rule.getProducts().size() == 1);
+            CHECK(rule.getReactants()[0].find("CP") != std::string::npos);
+            CHECK(rule.getProducts()[0].find("EC") != std::string::npos);
+        }
+        if (rule.getRuleName() == "R2_v2") {
+            REQUIRE(rule.getReactants().size() == 2);
+            CHECK(rule.getReactants()[0].find("L_pop") != std::string::npos);
+            CHECK(rule.getReactants()[0].find("EC") != std::string::npos);
+            CHECK(rule.getReactants()[1].find("R_pop") != std::string::npos);
+            CHECK(rule.getReactants()[1].find("PM") != std::string::npos);
+        }
+    }
+}
