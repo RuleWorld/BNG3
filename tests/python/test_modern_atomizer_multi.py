@@ -440,7 +440,10 @@ def test_playground_multi_reports_missing_species_type_list():
     assert "no listOfSpeciesTypes" in result.warnings[0].message
 
 
-def test_multi_product_component_map_carries_source_wildcard_binding_status():
+@pytest.mark.parametrize("product_unbound", [False, True])
+def test_multi_product_component_map_respects_explicit_product_binding(
+    product_unbound,
+):
     from bionetgen.atomizer.modern import (
         SBMLParser,
         build_species_composition_table,
@@ -498,16 +501,143 @@ def test_multi_product_component_map_carries_source_wildcard_binding_status():
   </model>
 </sbml>"""
 
+    if product_unbound:
+        # A component map preserves source context only where the product
+        # leaves the binding status unspecified.  An explicit unbound product
+        # must not inherit the reactant's bound wildcard.
+        assert xml.count('name="A()"/>') == 1
+        xml = xml.replace(
+            'name="A()"/>',
+            """name="A()">
+          <multi:listOfOutwardBindingSites>
+            <multi:outwardBindingSite multi:component="x"
+              multi:bindingStatus="unbound"/>
+          </multi:listOfOutwardBindingSites>
+        </species>""",
+        )
+
     model = SBMLParser().parse(xml)
     assert model.multi_executable is True
     assert model.reactions["r"].multi_intra_species is False
     assert model.reactions["r"].products[0].multi_component_maps
+    assert model.multi_species_patterns["A1"] == (
+        "A(x)@c" if product_unbound else "A()@c"
+    )
     sct = build_species_composition_table(model)
     molecule_types = get_molecule_types(sct, model.multi_type_patterns.values())
     bngl, _ = generate_bngl(model, sct, molecule_types, get_seed_species(sct, model))
 
     reaction = next(line for line in bngl.splitlines() if line.startswith("  r:"))
-    assert "@c:M_A(x!+) -> @c:M_A(x!+)" in reaction
+    expected_product = "@c:M_A(x)" if product_unbound else "@c:M_A(x!+)"
+    assert f"@c:M_A(x!+) -> {expected_product}" in reaction
+
+
+def _mapped_state_change_product_reaction(explicit_unbound):
+    from bionetgen.atomizer.modern import (
+        SBMLParser,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    product_binding = (
+        """<multi:listOfOutwardBindingSites>
+              <multi:outwardBindingSite multi:component="x"
+                                        multi:bindingStatus="unbound"/>
+            </multi:listOfOutwardBindingSites>"""
+        if explicit_unbound
+        else ""
+    )
+    xml = f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      multi:required="true">
+  <model id="mapped_state_product">
+    <listOfCompartments>
+      <compartment id="c" size="1" multi:isType="false"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="A0" compartment="c" initialAmount="0"
+               multi:speciesType="AType">
+        <multi:listOfSpeciesFeatures>
+          <multi:speciesFeature multi:speciesFeatureType="state" multi:component="x" multi:occur="1">
+            <multi:listOfSpeciesFeatureValues>
+              <multi:speciesFeatureValue multi:value="u"/>
+            </multi:listOfSpeciesFeatureValues>
+          </multi:speciesFeature>
+        </multi:listOfSpeciesFeatures>
+        <multi:listOfOutwardBindingSites>
+          <multi:outwardBindingSite multi:component="x"
+                                    multi:bindingStatus="bound"/>
+        </multi:listOfOutwardBindingSites>
+      </species>
+      <species id="A1" compartment="c" initialAmount="0"
+               multi:speciesType="AType">
+        <multi:listOfSpeciesFeatures>
+          <multi:speciesFeature multi:speciesFeatureType="state" multi:component="x" multi:occur="1">
+            <multi:listOfSpeciesFeatureValues>
+              <multi:speciesFeatureValue multi:value="p"/>
+            </multi:listOfSpeciesFeatureValues>
+          </multi:speciesFeature>
+        </multi:listOfSpeciesFeatures>
+        {product_binding}
+      </species>
+    </listOfSpecies>
+    <listOfReactions>
+      <reaction id="r" reversible="false">
+        <listOfReactants><speciesReference id="r1" species="A0"/></listOfReactants>
+        <listOfProducts>
+          <speciesReference id="p1" species="A1">
+            <multi:listOfSpeciesTypeComponentMapsInProduct>
+              <multi:speciesTypeComponentMapInProduct
+                multi:reactant="r1" multi:reactantComponent="AType"
+                multi:productComponent="AType"/>
+            </multi:listOfSpeciesTypeComponentMapsInProduct>
+          </speciesReference>
+        </listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></kineticLaw>
+      </reaction>
+    </listOfReactions>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType multi:id="xType" multi:name="x">
+        <multi:listOfSpeciesFeatureTypes>
+          <multi:speciesFeatureType multi:id="state" multi:name="x" multi:occur="1">
+            <multi:listOfPossibleSpeciesFeatureValues>
+              <multi:possibleSpeciesFeatureValue multi:id="u" multi:name="u"/>
+              <multi:possibleSpeciesFeatureValue multi:id="p" multi:name="p"/>
+            </multi:listOfPossibleSpeciesFeatureValues>
+          </multi:speciesFeatureType>
+        </multi:listOfSpeciesFeatureTypes>
+      </multi:bindingSiteSpeciesType>
+      <multi:speciesType multi:id="AType" multi:name="A">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="x" multi:name="x"
+                                     multi:speciesType="xType"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    model = SBMLParser().parse(xml)
+    assert model.multi_executable is True
+    assert model.reactions["r"].products[0].multi_component_maps
+    sct = build_species_composition_table(model)
+    molecule_types = get_molecule_types(sct, model.multi_type_patterns.values())
+    bngl, _ = generate_bngl(model, sct, molecule_types, get_seed_species(sct, model))
+    return next(line for line in bngl.splitlines() if line.startswith("  r:"))
+
+
+def test_mapped_state_change_inherits_omitted_outward_binding_status():
+    reaction = _mapped_state_change_product_reaction(explicit_unbound=False)
+
+    assert "@c:M_A(x!+~u) -> @c:M_A(x!+~p)" in reaction
+
+
+def test_mapped_state_change_honors_explicit_product_unbound_status():
+    reaction = _mapped_state_change_product_reaction(explicit_unbound=True)
+
+    assert "@c:M_A(x!+~u) -> @c:M_A(x~p)" in reaction
 
 
 def test_multi_intra_species_reaction_requires_association_or_dissociation_shape():

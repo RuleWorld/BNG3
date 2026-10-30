@@ -3954,6 +3954,9 @@ class SBMLParser:
         result.multi_species_component_positions = dict(
             multi.species_component_positions
         )
+        result.multi_species_explicit_binding_positions = dict(
+            multi.species_explicit_binding_positions
+        )
         result.multi_abstract_species_ids = set(multi.abstract_species_ids)
         result.multi_type_patterns = dict(multi.type_patterns)
         result.multi_component_aliases = dict(multi.component_aliases)

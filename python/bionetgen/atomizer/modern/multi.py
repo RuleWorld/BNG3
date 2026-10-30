@@ -126,6 +126,9 @@ class MultiParseResult:
     species_component_positions: Dict[str, List[Tuple[int, int]]] = field(
         default_factory=dict
     )
+    species_explicit_binding_positions: Dict[str, List[Tuple[int, int]]] = field(
+        default_factory=dict
+    )
     abstract_species_ids: Set[str] = field(default_factory=set)
     type_patterns: Dict[str, str] = field(default_factory=dict)
     component_aliases: Dict[str, Dict[str, List[Tuple[str, int, int]]]] = field(
@@ -1342,6 +1345,9 @@ def _species_pattern_from_multi(
     initialized_by_assignment: bool = False,
     abstract_species_ids: Optional[Set[str]] = None,
     species_component_positions: Optional[Dict[str, List[Tuple[int, int]]]] = None,
+    species_explicit_binding_positions: Optional[
+        Dict[str, List[Tuple[int, int]]]
+    ] = None,
 ) -> Optional[str]:
     flat = _flatten_type(
         type_id,
@@ -1482,6 +1488,7 @@ def _species_pattern_from_multi(
                 )
             )
 
+    explicit_binding_positions: List[Tuple[int, int]] = []
     seen_outward_components = set()
     for outward in _children(
         _first_child(species, "listOfOutwardBindingSites", namespace),
@@ -1554,6 +1561,14 @@ def _species_pattern_from_multi(
             )
             continue
         targets[0].binding_status = status
+        if status in {"unbound", "bound"}:
+            for molecule_index, molecule in enumerate(flat.molecules):
+                for component_index, component in enumerate(molecule.components):
+                    if component is targets[0]:
+                        explicit_binding_positions.append(
+                            (molecule_index, component_index)
+                        )
+                        break
 
     if abstract_species_ids is not None:
         bonded = {id(component) for bond in flat.bonds for component in bond}
@@ -1636,6 +1651,8 @@ def _species_pattern_from_multi(
         molecule.components = retained
     if species_component_positions is not None:
         species_component_positions[species_id] = retained_positions
+    if species_explicit_binding_positions is not None:
+        species_explicit_binding_positions[species_id] = explicit_binding_positions
 
     # Core Species.name is a human-readable label, not a pattern-bearing
     # attribute.  A Multi speciesType is therefore always reconstructed from
@@ -2668,14 +2685,8 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                     )
                 )
                 continue
-            if binding_type1 and binding_type1 == binding_type2:
-                warnings.append(
-                    _warning(
-                        f'Multi inSpeciesTypeBond in "{species_type.id}" joins '
-                        f'two binding sites of the same type "{binding_type1}".',
-                        "dropped",
-                    )
-                )
+            # Equal types may describe distinct binding-site instances in a
+            # homodimer. Endpoint identity and occupancy are checked below.
 
     if not types:
         warnings.append(
@@ -3046,6 +3057,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
 
     species_patterns: Dict[str, str] = {}
     species_component_positions: Dict[str, List[Tuple[int, int]]] = {}
+    species_explicit_binding_positions: Dict[str, List[Tuple[int, int]]] = {}
     abstract_species_ids: Set[str] = set()
     seed_patterns: List[Tuple[str, str]] = []
     species_type_by_species: Dict[str, str] = {}
@@ -3427,6 +3439,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
             initialized_by_assignment=species_id in initial_assignment_symbols,
             abstract_species_ids=abstract_species_ids,
             species_component_positions=species_component_positions,
+            species_explicit_binding_positions=species_explicit_binding_positions,
         )
         if pattern:
             species_patterns[species_id] = pattern
@@ -4049,6 +4062,7 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
         seed_patterns=seed_patterns,
         species_patterns=species_patterns,
         species_component_positions=species_component_positions,
+        species_explicit_binding_positions=species_explicit_binding_positions,
         abstract_species_ids=abstract_species_ids,
         type_patterns=type_patterns,
         component_aliases=component_aliases,

@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <cmath>
+#include <stdexcept>
 #include <string>
 
 #include "io/BnglWriter.hpp"
@@ -676,6 +677,62 @@ end model
           std::string::npos);
     CHECK(xml.find("multi:outwardBindingSite multi:component=\"st_A_component_1\"") !=
           std::string::npos);
+}
+
+TEST_CASE("SBML-Multi absolute-flux rules use their own provenance without a name",
+          "[sbml][multi][totalrate]") {
+    auto model = bng::parser::parseModel(R"BNGL(
+begin model
+begin parameters
+  k 2
+end parameters
+begin molecule types
+  A(x)
+  B(y)
+end molecule types
+begin seed species
+  A(x) 4
+  B(y) 0
+end seed species
+begin reaction rules
+  flux: A(x) -> B(y) k TotalRate
+end reaction rules
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getReactionRules().size() == 1);
+    model->getReactionRules()[0].setAbsoluteFlux(true);
+    model->getReactionRules()[0].setRuleName("");
+    const auto xml = bng::io::SbmlMultiWriter::write(*model);
+    const auto law = xml.substr(xml.find("<kineticLaw>"),
+                                xml.find("</kineticLaw>") - xml.find("<kineticLaw>"));
+    CHECK(law.find("<ci> k </ci>") != std::string::npos);
+    CHECK(law.find("<ci>S1</ci>") == std::string::npos);
+}
+
+TEST_CASE("SBML-Multi refuses source TotalRate match normalization without absolute flux",
+          "[sbml][multi][totalrate]") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin model
+begin parameters
+  k 2
+end parameters
+begin molecule types
+  A(x)
+  B(y)
+end molecule types
+begin seed species
+  A(x) 4
+  B(y) 0
+end seed species
+begin reaction rules
+  flux: A(x) -> B(y) k TotalRate
+end reaction rules
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+    CHECK_FALSE(model->getReactionRules()[0].isAbsoluteFlux());
+    CHECK_THROWS_AS(bng::io::SbmlMultiWriter::write(*model), std::invalid_argument);
 }
 
 TEST_CASE("SBML-Multi reuses a species object for repeated reaction patterns",

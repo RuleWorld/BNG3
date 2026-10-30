@@ -63,6 +63,39 @@ std::string multiComponentId(const std::string& type, std::size_t molecule,
         : type + "_component_" + std::to_string(component + 1);
 }
 
+// SBML Multi species below are amount-valued. An elementary BNGL rule with m
+// reactant patterns in one compartment has extent flux k * product(n_i) / V^(m-1).
+// Keep that volume factor in the exported kinetic law, not just the source
+// BNGL simulator. Multi-compartment encounter geometry needs a separate
+// lowering and must not be silently treated as a single-compartment rule.
+std::string multiMassActionVolume(const bng::ast::Model& model,
+                                  const std::vector<std::string>& reactants) {
+    if (reactants.size() < 2 || model.getCompartments().empty()) return {};
+    std::string common;
+    for (const auto& text : reactants) {
+        const auto pattern = MultiPattern::parse(text);
+        for (const auto& molecule : pattern.molecules()) {
+            const auto compartment = molecule.compartment.empty()
+                ? pattern.compartment() : molecule.compartment;
+            if (compartment.empty()) {
+                throw std::invalid_argument(
+                    "SBML-Multi mass-action volume requires an explicit reaction compartment");
+            }
+            if (!common.empty() && compartment != common) {
+                throw std::invalid_argument(
+                    "SBML-Multi mass-action volume cannot use one compartment for mixed reactants");
+            }
+            common = compartment;
+        }
+    }
+    if (std::none_of(model.getCompartments().begin(), model.getCompartments().end(),
+                     [&](const auto& compartment) { return compartment.getName() == common; })) {
+        throw std::invalid_argument(
+            "SBML-Multi mass-action volume references an undeclared compartment");
+    }
+    return common;
+}
+
 std::string multiObservableSpeciesId(std::size_t observable, std::size_t pattern) {
     return "O" + std::to_string(observable + 1) + "_P" + std::to_string(pattern + 1);
 }
@@ -733,6 +766,11 @@ std::string SbmlMultiWriter::writeReactionRules(const ast::Model& model) {
     sbml << "    <listOfReactions>\n";
     for (std::size_t index = 0; index < model.getReactionRules().size(); ++index) {
         const auto& rule = model.getReactionRules()[index];
+        if (compile::isTotalRateRule(rule) && !rule.isAbsoluteFlux()) {
+            throw std::invalid_argument(
+                "SBML-Multi cannot lower BNGL TotalRate match normalization "
+                "without a complete absolute-flux rate law");
+        }
         const std::string patternPrefix = "RR" + std::to_string(index + 1);
         const auto direction = [&](bool reverse) {
             const auto& reactants = reverse ? rule.getProducts() : rule.getReactants();
@@ -803,7 +841,12 @@ std::string SbmlMultiWriter::writeReactionRules(const ast::Model& model) {
             writeSide(products, true);
             sbml << "        <kineticLaw>\n"
                  << "          <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
-            const bool absolute = compile::isAbsoluteFluxReaction(model, rule.getRuleName());
+            // The semantic flag belongs to this exact rule, including
+            // unnamed rules.  A name-based lookup loses absolute-flux
+            // semantics when no rule name was authored.
+            const bool absolute = rule.isAbsoluteFlux() && compile::isTotalRateRule(rule);
+            const auto volume = absolute ? std::string{} : multiMassActionVolume(model, reactants);
+            if (!volume.empty()) sbml << "            <apply><divide/>\n";
             if (!absolute && !reactantIds.empty()) sbml << "            <apply><times/>\n";
             sbml << SbmlWriter::exprToMathML(rule.getRates()[rateIndex], "              ", symbols);
             if (!absolute) {
@@ -812,6 +855,15 @@ std::string SbmlMultiWriter::writeReactionRules(const ast::Model& model) {
                 }
             }
             if (!absolute && !reactantIds.empty()) sbml << "            </apply>\n";
+            if (!volume.empty()) {
+                if (reactantIds.size() == 2) {
+                    sbml << "              <ci>" << makeValidSBMLId(volume) << "</ci>\n";
+                } else {
+                    sbml << "              <apply><power/><ci>" << makeValidSBMLId(volume)
+                         << "</ci><cn>" << (reactantIds.size() - 1) << "</cn></apply>\n";
+                }
+                sbml << "            </apply>\n";
+            }
             sbml << "          </math>\n        </kineticLaw>\n      </reaction>\n";
         };
         direction(false);

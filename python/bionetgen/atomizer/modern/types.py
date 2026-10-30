@@ -368,6 +368,9 @@ class SBMLModel:
     multi_species_component_positions: Mapping[str, Any] = field(
         default_factory=OrderedDict
     )
+    multi_species_explicit_binding_positions: Mapping[str, Any] = field(
+        default_factory=OrderedDict
+    )
     multi_abstract_species_ids: Set[str] = field(default_factory=set)
     multi_type_patterns: Mapping[str, str] = field(default_factory=OrderedDict)
     multi_component_aliases: Mapping[str, Any] = field(default_factory=OrderedDict)
