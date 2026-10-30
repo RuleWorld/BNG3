@@ -1881,7 +1881,7 @@ def test_multi_mathml_ci_extensions_are_validated_and_reconstructed():
     molecule_types = get_molecule_types(sct, model.multi_type_patterns.values())
     bngl, _ = generate_bngl(model, sct, molecule_types, get_seed_species(sct, model))
     assert "Molecules __multi_sum_A0" in bngl
-    assert "__multi_sum_A0 + p" in bngl
+    assert "(__multi_sum_A0 / __compartment_c__) + p" in bngl
 
 
 def test_multi_mathml_species_reference_compartment_amount_fails_closed():

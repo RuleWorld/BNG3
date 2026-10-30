@@ -14,7 +14,7 @@ from pathlib import Path
 import libsbml
 import numpy as np
 import pytest
-import roadrunner
+roadrunner = pytest.importorskip("roadrunner")
 
 import bionetgen
 from bionetgen import BioNetGenModel, _bionetgen_cpp as cpp

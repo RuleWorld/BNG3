@@ -12,7 +12,7 @@ import bionetgen
 import libsbml
 import numpy as np
 import pytest
-import roadrunner
+roadrunner = pytest.importorskip("roadrunner")
 from bionetgen import BioNetGenModel, _bionetgen_cpp as cpp
 from bionetgen.atomizer.modern import Atomizer, SBMLParser
 
@@ -135,22 +135,22 @@ def _homodimer_export_rates(xml, parsed, volume, monomer_amount, dimer_amount):
             for ref in reaction.getListOfProducts()
         ]
         reactant_monomers = sum(
-            ref.getStoichiometry()
+            (ref.getStoichiometry() if ref.isSetStoichiometry() else 1.0)
             for ref, pattern in zip(reaction.getListOfReactants(), reactants)
             if pattern.count("A(") == 1 and "!" not in pattern
         )
         product_dimers = sum(
-            ref.getStoichiometry()
+            (ref.getStoichiometry() if ref.isSetStoichiometry() else 1.0)
             for ref, pattern in zip(reaction.getListOfProducts(), products)
             if pattern.count("A(") == 2 and "!" in pattern
         )
         reactant_dimers = sum(
-            ref.getStoichiometry()
+            (ref.getStoichiometry() if ref.isSetStoichiometry() else 1.0)
             for ref, pattern in zip(reaction.getListOfReactants(), reactants)
             if pattern.count("A(") == 2 and "!" in pattern
         )
         product_monomers = sum(
-            ref.getStoichiometry()
+            (ref.getStoichiometry() if ref.isSetStoichiometry() else 1.0)
             for ref, pattern in zip(reaction.getListOfProducts(), products)
             if pattern.count("A(") == 1 and "!" not in pattern
         )

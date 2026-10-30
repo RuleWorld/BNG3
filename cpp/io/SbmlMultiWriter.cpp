@@ -981,7 +981,7 @@ std::string SbmlMultiWriter::writeReactionRules(const ast::Model& model) {
                                            std::to_string(position + 1);
                     if (!product) reactantIds.push_back(species);
                     sbml << "          <speciesReference id=\"" << reference
-                         << "\" species=\"" << species << "\" constant=\"false\"";
+                         << "\" species=\"" << species << "\" stoichiometry=\"1\" constant=\"false\"";
                     std::vector<std::string> maps;
                     if (product) {
                         for (const auto& mapping : rule.getMoleculeMappings()) {

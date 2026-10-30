@@ -8,7 +8,7 @@ BNG3 network. In particular, V=0.5 and V=2 give different rates.
 import libsbml
 import numpy as np
 import pytest
-import roadrunner
+roadrunner = pytest.importorskip("roadrunner")
 from bionetgen import BioNetGenModel, _bionetgen_cpp as cpp
 from bionetgen.atomizer.modern import Atomizer
 

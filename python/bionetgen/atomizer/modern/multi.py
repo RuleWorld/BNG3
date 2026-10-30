@@ -1507,10 +1507,18 @@ def _species_pattern_from_multi(
             values.append(_clean(value_labels[raw_value]))
         if not values:
             continue
+        # Multi §3.18.5 gives these values OR semantics. The complete
+        # occur=1 domain imposes no state constraint, matching an omitted
+        # feature and BNGL's state-less site pattern.
+        full_domain = (
+            occur == 1
+            and len(raw_values) == len(value_labels)
+            and set(raw_values) == set(value_labels)
+        )
         if len(values) == 1:
             for target in occurrence_targets:
                 target.active_state = values[0]
-        elif len(values) > 1:
+        elif len(values) > 1 and not full_domain:
             warnings.append(
                 _warning(
                     f'Multi speciesFeature "{feature_id}" has multiple values; '
