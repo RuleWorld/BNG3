@@ -466,6 +466,7 @@ def parse_multi_package(document: Union[str, Any]) -> MultiParseResult:
         type_id = _attribute(item, "id")
         if not type_id:
             continue
+        is_binding_site = type_id in binding_sites
         species_type = _SpeciesType(
             id=type_id,
             name=_clean(_attribute(item, "name") or type_id),

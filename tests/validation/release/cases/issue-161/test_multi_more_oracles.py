@@ -12,6 +12,7 @@ import bionetgen
 import libsbml
 import numpy as np
 import pytest
+
 roadrunner = pytest.importorskip("roadrunner")
 from bionetgen import BioNetGenModel, _bionetgen_cpp as cpp
 from bionetgen.atomizer.modern import Atomizer, SBMLParser
