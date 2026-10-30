@@ -1932,7 +1932,9 @@ def _prepared_kinetic_math(
                     # hasOnlySubstanceUnits is false.  The BNGL Molecules
                     # observable is an amount, so use the current compartment
                     # size to recover that concentration.
-                    volume = f"__compartment_{standardize_name(compartment_id)}__"
+                    volume = _current_compartment_size_expression(
+                        compartment_id, model
+                    )
                     return f"({observable} / {volume})"
                 _record_import_warning(
                     model,
@@ -2069,6 +2071,25 @@ def _prepared_kinetic_math(
         exclude_reaction_id=reaction_id or reaction.id,
     )
     return math_expression
+
+
+def _current_compartment_size_expression(
+    compartment_id: str, model: SBMLModel
+) -> str:
+    """Return the BNGL expression for a compartment's current size."""
+
+    name = standardize_name(compartment_id)
+    if any(
+        rule.variable == compartment_id and rule.type == "rate"
+        for rule in model.rules
+    ):
+        return f"{name}_amt"
+    if any(
+        rule.variable == compartment_id
+        for rule in _assignment_rules_for_writer(model)
+    ):
+        return f"{name}()"
+    return f"__compartment_{name}__"
 
 
 def _dynamic_species_reference_expression(
