@@ -3,6 +3,7 @@
 // Each case reproduces a validated difference between BNG3 XML output and
 // BNG2 (bionetgen 0.8.7) writeXML, with BNG2's RxnRule.pm / SpeciesGraph.pm
 // as oracle. Expected strings were diffed against BNG2-generated XML.
+#include <algorithm>
 #include <string>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -10,6 +11,7 @@
 
 #include "ast/Model.hpp"
 #include "compile/RuleUnitConversion.hpp"
+#include "io/BnglWriter.hpp"
 #include "io/XmlWriter.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
@@ -24,6 +26,37 @@ std::string writeXml(const char* source) {
 }
 
 } // namespace
+
+TEST_CASE("XmlWriter preserves population molecule types and species syntax") {
+    const auto model = parser::parseModel(R"BNGL(
+begin model
+begin molecule types
+    A(a)
+    P() population
+end molecule types
+begin seed species
+    P() 10
+end seed species
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+
+    const auto bngl = io::BnglWriter::write(*model);
+    CHECK_THAT(bngl, Catch::Matchers::ContainsSubstring("P population"));
+    const auto roundTrip = parser::parseModel(bngl);
+    REQUIRE(roundTrip != nullptr);
+    const auto populationType = std::find_if(
+        roundTrip->getMoleculeTypes().begin(), roundTrip->getMoleculeTypes().end(),
+        [](const auto& type) { return type.getName() == "P"; });
+    REQUIRE(populationType != roundTrip->getMoleculeTypes().end());
+    CHECK(populationType->isPopulation());
+
+    const auto xml = io::XmlWriter::write(*roundTrip);
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<MoleculeType id=\"P\" population=\"1\"/>"));
+    CHECK(xml.find("<MoleculeType id=\"P\">\n        <ListOfComponentTypes>") == std::string::npos);
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring("name=\"P()\""));
+}
 
 TEST_CASE("XmlWriter degrades a single molecule per molecule with DeleteMolecules") {
     // BNG2 RxnRule.pm findMap: with the DeleteMolecules modifier every deleted

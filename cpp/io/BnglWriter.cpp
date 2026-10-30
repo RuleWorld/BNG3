@@ -222,6 +222,8 @@ std::string BnglWriter::writeMoleculeTypes(const ast::Model& model) {
             bngl << ")";
         }
 
+        if (mt.isPopulation()) bngl << " population";
+
         bngl << "\n";
     }
 

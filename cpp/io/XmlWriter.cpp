@@ -1529,7 +1529,12 @@ std::string XmlWriter::writeMoleculeTypes(const ast::Model& model) {
 
     for (const auto* mtPtr : moleculeTypes) {
         const auto& mt = *mtPtr;
-        xml << "      <MoleculeType id=\"" << escapeXml(mt.getName()) << "\">\n";
+        xml << "      <MoleculeType id=\"" << escapeXml(mt.getName()) << "\"";
+        if (mt.isPopulation()) {
+            xml << " population=\"1\"/>\n";
+            continue;
+        }
+        xml << ">\n";
         xml << "        <ListOfComponentTypes>\n";
 
         for (const auto& comp : mt.getComponents()) {
@@ -1603,18 +1608,35 @@ std::string XmlWriter::writeSpecies(const ast::Model& model, const engine::Gener
     std::ostringstream xml;
     xml << "    <ListOfSpecies>\n";
 
+    const auto markPopulationName = [&](std::string name, const ParsedPattern& pattern) {
+        if (pattern.molecules.size() != 1 || !pattern.molecules.front().components.empty()) {
+            return name;
+        }
+        const auto type = std::find_if(
+            model.getMoleculeTypes().begin(), model.getMoleculeTypes().end(),
+            [&](const auto& moleculeType) {
+                return moleculeType.getName() == pattern.molecules.front().name;
+            });
+        if (type != model.getMoleculeTypes().end() && type->isPopulation() &&
+            (name.size() < 2 || name.compare(name.size() - 2, 2, "()") != 0)) {
+            name += "()";
+        }
+        return name;
+    };
+
     if (network) {
         for (std::size_t i = 0; i < network->species.size(); ++i) {
             const auto& species = network->species.get(i);
             std::string spId = "S" + std::to_string(i + 1);
             std::string patternStr = species.getSpeciesGraph().toString();
+            auto parsed = parsePattern(patternStr);
+            patternStr = markPopulationName(std::move(patternStr), parsed);
 
             xml << "      <Species id=\"" << spId
                 << "\" concentration=\"" << species.getAmount()
                 << "\" name=\"" << escapeXml(patternStr) << "\">\n";
 
             // Serialize species pattern
-            auto parsed = parsePattern(patternStr);
             xml << patternToXml(parsed, spId, "        ");
 
             xml << "      </Species>\n";
@@ -1635,7 +1657,8 @@ std::string XmlWriter::writeSpecies(const ast::Model& model, const engine::Gener
                 parsed.compartment = seed.getCompartment();
             }
             canonicalizeParsedPattern(parsed);
-            const std::string patternStr = patternToBngl(parsed, seed.isConstant());
+            const std::string patternStr = markPopulationName(
+                patternToBngl(parsed, seed.isConstant()), parsed);
 
             auto amountValue = seed.getAmount().evaluate([&](const std::string& name) {
                 return model.getParameters().evaluate(name);
