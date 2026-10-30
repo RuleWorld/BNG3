@@ -1053,7 +1053,11 @@ def _preserve_source_contract_report(
     artifact_dir.mkdir(parents=True, exist_ok=True)
     destination = artifact_dir / f"{model_name}.source-contract-comparison.json"
     payload = {
-        "strict_comparison_status": "reference-invalid",
+        "strict_comparison_status": (
+            "reference-invalid"
+            if reference_validity["status"] == "invalid"
+            else "reference-validity-unavailable"
+        ),
         "strict_comparison_sections": list(comparison.sections),
         "representation_only_sections": list(comparison.representation_only),
         "strict_difference_count": len(comparison.differences),
@@ -1214,7 +1218,7 @@ def _run_authored_export_comparison(
                 for control in comparator_controls.values()
             )
             comparison_report = None
-            if reference_validity["status"] == "invalid":
+            if reference_validity["status"] in {"invalid", "unavailable"}:
                 comparison_report = _preserve_source_contract_report(
                     artifact_dir,
                     model.stem,
@@ -1225,6 +1229,27 @@ def _run_authored_export_comparison(
                     contract_controls=contract_controls,
                     comparator_controls=comparator_controls,
                 )
+            if "unavailable" in {
+                reference_validity["status"],
+                candidate_validity["status"],
+            }:
+                preserved = _preserve_xml_artifacts(
+                    artifact_dir, model.stem, cpp_xml, perl_xml
+                )
+                detail = (
+                    f"ERROR {model.stem} (libSBML validity checks unavailable; "
+                    "structural comparison cannot qualify the export)\n"
+                    f"  BNG2 validity: {reference_validity['status']}; "
+                    f"BNG3 validity: {candidate_validity['status']}\n"
+                    f"  raw structural diff: {comparison.summary()}"
+                )
+                if preserved:
+                    detail += "\n  preserved artifacts: " + ", ".join(
+                        str(path) for path in preserved
+                    )
+                if comparison_report is not None:
+                    detail += f"\n  full comparison report: {comparison_report}"
+                return "error", detail
             if reference_validity["status"] == "invalid":
                 if (
                     source_contract_eligible(

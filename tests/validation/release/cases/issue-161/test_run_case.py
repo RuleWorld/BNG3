@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import builtins
 from pathlib import Path
 import subprocess
 
@@ -11,6 +12,8 @@ from run_case import (
     _git_identity,
     _preserve_evidence_file,
     _reference_sbml_validity,
+    sbml_validity,
+    source_contract_eligible,
     _sbml_validity,
     _xml_mutation_controls,
     _unit_compartment_source,
@@ -110,6 +113,34 @@ def test_sbml_validity_accepts_a_valid_level_three_document(tmp_path: Path):
 
     assert result["status"] == "valid"
     assert result["severity_error_count"] == 0
+
+
+def test_missing_libsbml_is_unavailable_and_cannot_enable_source_fallback(
+    tmp_path: Path, monkeypatch
+):
+    xml = tmp_path / "candidate.xml"
+    xml.write_text("<sbml/>", encoding="utf-8")
+    original_import = builtins.__import__
+
+    def import_without_libsbml(name, *args, **kwargs):
+        if name == "libsbml":
+            raise ModuleNotFoundError("No module named 'libsbml'")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", import_without_libsbml)
+
+    result = sbml_validity(xml)
+
+    assert result == {
+        "status": "unavailable",
+        "error": "python-libsbml is required for SBML validity checks",
+    }
+    assert not source_contract_eligible(
+        {"status": "invalid"},
+        result,
+        {"status": "pass"},
+        {"bond": {"status": "pass"}},
+    )
 
 
 def test_bounded_source_transform_handles_both_issue_161_models():

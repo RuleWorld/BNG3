@@ -2048,6 +2048,17 @@ def test_cross_validation_runs_authored_export_actions_without_network_generatio
         return subprocess.CompletedProcess(command, 0, "", ""), None
 
     monkeypatch.setattr("scripts.cross_validate._run_engine", run_engine)
+    if model_name == "test_write_sbml_multi":
+        # These tiny files exercise cross-validation orchestration only; the
+        # real Issue 161 acceptance uses libSBML on its hash-pinned fixtures.
+        monkeypatch.setattr(
+            "scripts.issue161_multi_contract.sbml_validity",
+            lambda _path: {
+                "status": "valid",
+                "severity_error_count": 0,
+                "diagnostics": [],
+            },
+        )
 
     results, details = run_cross_validation(
         cpp,
@@ -2059,6 +2070,49 @@ def test_cross_validation_runs_authored_export_actions_without_network_generatio
     assert results == {"pass": 1, "fail": 0, "error": 0}
     assert details == [f"PASS  {model_name} (authored export: {action_label})"]
     assert len(calls) == 2
+
+
+def test_multi_authored_export_fails_closed_when_libsbml_is_unavailable(
+    tmp_path, monkeypatch
+):
+    import builtins
+
+    models = tmp_path / "Validate"
+    models.mkdir()
+    model = models / "test_write_sbml_multi.bngl"
+    model.write_text("begin model\nend model\nwriteSBMLMulti();\n", encoding="utf-8")
+    cpp = tmp_path / "bng_cpp"
+    perl = tmp_path / "BNG2.pl"
+    cpp.touch()
+    perl.touch()
+    xml = "<sbml xmlns:multi='urn:multi'><model/></sbml>"
+
+    def run_engine(command, work_dir, timeout, environment=None):
+        del timeout, environment
+        output_name = (
+            "test_write_sbml_multi_sbml_multi.xml"
+            if command[0] == str(cpp)
+            else "test_write_sbml_multi_sbml_sbmlmulti.xml"
+        )
+        (work_dir / output_name).write_text(xml, encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", ""), None
+
+    original_import = builtins.__import__
+
+    def import_without_libsbml(name, *args, **kwargs):
+        if name == "libsbml":
+            raise ModuleNotFoundError("No module named 'libsbml'")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("scripts.cross_validate._run_engine", run_engine)
+    monkeypatch.setattr(builtins, "__import__", import_without_libsbml)
+
+    results, details = run_cross_validation(
+        cpp, perl, models, model_names=["test_write_sbml_multi"]
+    )
+
+    assert results == {"pass": 0, "fail": 0, "error": 1}
+    assert "libSBML validity checks unavailable" in details[0]
 
 
 def test_authored_export_reports_perl_when_cpp_times_out(tmp_path, monkeypatch):

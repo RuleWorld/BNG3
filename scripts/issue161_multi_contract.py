@@ -28,7 +28,13 @@ def _source_manifest_for(source: Path) -> dict | None:
 
 def sbml_validity(path: Path) -> dict:
     """Return libSBML consistency errors for source-contract eligibility."""
-    import libsbml
+    try:
+        import libsbml
+    except ModuleNotFoundError:
+        return {
+            "status": "unavailable",
+            "error": "python-libsbml is required for SBML validity checks",
+        }
 
     document = libsbml.readSBMLFromFile(str(path))
     if document is None:
