@@ -183,7 +183,10 @@ CASES = {
             (
                 {"A": 2},
                 {"AA": 1},
-                "<apply><times/><cn>0.5</cn><ci>k</ci><ci>A</ci><ci>A</ci></apply>",
+                _div(
+                    "<apply><times/><cn>0.5</cn><ci>k</ci><ci>A</ci><ci>A</ci></apply>",
+                    "cell",
+                ),
             ),
             ({"AA": 1}, {"A": 2}, _mul("d", "AA")),
         ],
