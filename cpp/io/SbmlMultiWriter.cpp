@@ -16,7 +16,6 @@
 #include "SbmlWriter.hpp"
 #include "compile/TotalRate.hpp"
 #include "compile/Pattern.hpp"
-#include "ast/ReactionRule.hpp"
 #include <map>
 #include <set>
 
