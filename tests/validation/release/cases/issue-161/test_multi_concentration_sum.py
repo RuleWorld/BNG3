@@ -32,6 +32,13 @@ def test_multi_sum_with_concentration_coordinates(atomize, volume):
     for source in (multi, core):
         doc = libsbml.readSBMLFromString(source)
         assert doc.getNumErrors() == 0, doc.getErrorLog().toString()
+        doc.checkConsistency()
+        consistency_errors = [
+            doc.getError(index).getErrorId()
+            for index in range(doc.getNumErrors())
+            if doc.getError(index).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
+        ]
+        assert consistency_errors == [], doc.getErrorLog().toString()
     converted = Atomizer(atomize=atomize, quiet_mode=True).atomize(multi)
     assert converted.success, converted.error
     model = BioNetGenModel(cpp.parse_string(converted.bngl))

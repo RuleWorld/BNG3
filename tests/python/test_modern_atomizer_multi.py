@@ -182,19 +182,25 @@ def test_parse_multi_package_matches_reference_result_field_names_and_patterns()
       <model id="multi_complex" multi:speciesType="ABType">
         <multi:listOfSpeciesTypes>
           <multi:bindingSiteSpeciesType id="bindSite" name="bind"/>
+          <multi:bindingSiteSpeciesType id="bindSite2" name="bind"/>
           <multi:speciesType id="AType" name="A">
             <multi:listOfSpeciesTypeInstances>
               <multi:speciesTypeInstance id="bind1" speciesType="bindSite" name="bind"/>
             </multi:listOfSpeciesTypeInstances>
           </multi:speciesType>
+          <multi:speciesType id="AType2" name="A">
+            <multi:listOfSpeciesTypeInstances>
+              <multi:speciesTypeInstance id="bind2" speciesType="bindSite2" name="bind"/>
+            </multi:listOfSpeciesTypeInstances>
+          </multi:speciesType>
           <multi:speciesType id="ABType" name="ABComplex">
             <multi:listOfSpeciesTypeInstances>
               <multi:speciesTypeInstance id="A1" speciesType="AType"/>
-              <multi:speciesTypeInstance id="A2" speciesType="AType"/>
+              <multi:speciesTypeInstance id="A2" speciesType="AType2"/>
             </multi:listOfSpeciesTypeInstances>
             <multi:listOfSpeciesTypeComponentIndexes>
               <multi:speciesTypeComponentIndex id="bind1_1" component="bind1" identifyingParent="A1"/>
-              <multi:speciesTypeComponentIndex id="bind1_2" component="bind1" identifyingParent="A2"/>
+              <multi:speciesTypeComponentIndex id="bind1_2" component="bind2" identifyingParent="A2"/>
             </multi:listOfSpeciesTypeComponentIndexes>
             <multi:listOfInSpeciesTypeBonds>
               <multi:inSpeciesTypeBond bindingSite1="bind1_1" bindingSite2="bind1_2"/>
@@ -1198,7 +1204,9 @@ def test_multi_initial_assignment_initializes_species_for_definition_checks():
 
     result = parse_multi_package(xml)
 
-    assert result.seed_patterns == [("a0", "aType(siteType)")]
+    # Multi §3.15.2 says an omitted OutwardBindingSite has bindingStatus
+    # "either"; the site is unconstrained rather than explicitly unbound.
+    assert result.seed_patterns == [("a0", "aType()")]
     assert result.executable is False
     assert any(
         "positive initial pool" in warning.message for warning in result.warnings

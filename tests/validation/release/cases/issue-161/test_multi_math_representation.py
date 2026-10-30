@@ -110,18 +110,22 @@ CORE_SUM_ORACLE = CORE_ORACLE.replace(
 # Aany is an unseeded wildcard state pattern, so its Multi sum counts both Au
 # and Ap.  The independently authored Core law is (Au + Ap) * Au.  In
 # particular, a missing wildcard observable must not silently become zero.
-MULTI_WILDCARD_SUM_SOURCE = MULTI_SUM_SOURCE.replace(
-    "</listOfSpecies>",
-    '<species id="Aany" compartment="cell" initialAmount="0" '
-    'hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false" '
-    'multi:speciesType="AType"/></listOfSpecies>',
-).replace(
-    "</listOfProducts>\n      <kineticLaw>",
-    "</listOfProducts><listOfModifiers>"
-    '<modifierSpeciesReference species="Aany"/></listOfModifiers>\n      <kineticLaw>',
-).replace(
-    'multi:representationType="sum">Au</ci>',
-    'multi:representationType="sum">Aany</ci>',
+MULTI_WILDCARD_SUM_SOURCE = (
+    MULTI_SUM_SOURCE.replace(
+        "</listOfSpecies>",
+        '<species id="Aany" compartment="cell" initialAmount="0" '
+        'hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false" '
+        'multi:speciesType="AType"/></listOfSpecies>',
+    )
+    .replace(
+        "</listOfProducts>\n      <kineticLaw>",
+        "</listOfProducts><listOfModifiers>"
+        '<modifierSpeciesReference species="Aany"/></listOfModifiers>\n      <kineticLaw>',
+    )
+    .replace(
+        'multi:representationType="sum">Au</ci>',
+        'multi:representationType="sum">Aany</ci>',
+    )
 )
 CORE_WILDCARD_SUM_ORACLE = CORE_ORACLE.replace(
     "<apply><times/><ci>k</ci><ci>Au</ci></apply>",
@@ -169,6 +173,30 @@ def test_multi_math_representation_preserves_core_dynamics(
     for source in (multi_source, core_oracle):
         document = libsbml.readSBMLFromString(source)
         assert document.getNumErrors() == 0, document.getErrorLog().toString()
+        document.checkConsistency()
+        consistency_errors = [
+            document.getError(index).getErrorId()
+            for index in range(document.getNumErrors())
+            if document.getError(index).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
+        ]
+        # libSBML's Core-only MathML identifier check reports 10215 for the
+        # Multi §3.26.2 numericValue form: its ci text is a
+        # PossibleSpeciesFeatureValue id, and Multi explicitly requires
+        # speciesReference for that form. Preserve that single known Core /
+        # package-boundary diagnostic; all other package and Core consistency
+        # errors remain failures.
+        expected_errors = (
+            [10215]
+            if source == multi_source
+            and mode
+            in {
+                "numericValue",
+                "repeated_feature",
+                "conjunction",
+            }
+            else []
+        )
+        assert consistency_errors == expected_errors, document.getErrorLog().toString()
 
     parsed = SBMLParser().parse(multi_source)
     assert parsed.multi_executable

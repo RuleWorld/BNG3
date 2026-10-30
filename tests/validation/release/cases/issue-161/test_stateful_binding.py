@@ -55,9 +55,23 @@ def test_stateful_binding_export_reimport_matches_explicit_core(
     multi_xml = source.sbml_multi()
     candidate = libsbml.readSBMLFromString(multi_xml)
     assert candidate.getNumErrors() == 0, candidate.getErrorLog().toString()
+    candidate.checkConsistency()
+    candidate_errors = [
+        candidate.getError(index).getErrorId()
+        for index in range(candidate.getNumErrors())
+        if candidate.getError(index).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
+    ]
+    assert candidate_errors == [], candidate.getErrorLog().toString()
 
     core = libsbml.readSBMLFromString(core_text)
     assert core.getNumErrors() == 0, core.getErrorLog().toString()
+    core.checkConsistency()
+    core_errors = [
+        core.getError(index).getErrorId()
+        for index in range(core.getNumErrors())
+        if core.getError(index).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
+    ]
+    assert core_errors == [], core.getErrorLog().toString()
 
     parsed = SBMLParser().parse(multi_xml)
     assert parsed.multi_executable

@@ -150,6 +150,13 @@ def test_multi_export_matches_independent_kinetics(case, volume, atomize, tmp_pa
     for xml in (multi_xml, reference_xml):
         doc = libsbml.readSBMLFromString(xml)
         assert doc.getNumErrors() == 0, doc.getErrorLog().toString()
+        doc.checkConsistency()
+        consistency_errors = [
+            doc.getError(index).getErrorId()
+            for index in range(doc.getNumErrors())
+            if doc.getError(index).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
+        ]
+        assert consistency_errors == [], doc.getErrorLog().toString()
     parsed = SBMLParser().parse(multi_xml)
     assert parsed.multi_executable
     imported = Atomizer(atomize=atomize, quiet_mode=True).atomize(multi_xml)
