@@ -1119,7 +1119,6 @@ def _flatten_type(
                     states=list(dict.fromkeys(states)),
                     feature_ids=feature_ids,
                     feature_values=feature_values,
-                    binding_status="either",
                     is_binding_site=True,
                 )
             )
@@ -1353,6 +1352,15 @@ def _species_pattern_from_multi(
     )
     if not flat.molecules:
         return None
+    # Binding status belongs to each core Species, not its reusable
+    # SpeciesType declaration.  An outward site with no explicit status is
+    # unconstrained in this species; setting that here keeps it out of
+    # molecule-type declarations produced by _flatten_type.
+    bonded_components = {id(endpoint) for bond in flat.bonds for endpoint in bond}
+    for molecule in flat.molecules:
+        for component in molecule.components:
+            if component.is_binding_site and id(component) not in bonded_components:
+                component.binding_status = "either"
     type_compartment = types[type_id].compartment
     if species_compartment and type_compartment != species_compartment:
         if not type_compartment:

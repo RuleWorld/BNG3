@@ -85,6 +85,9 @@ def test_zero_valued_multi_patterns_are_not_seeded_but_exact_zero_species_are():
 
     model = SBMLParser().parse(xml)
     assert model.multi_executable is True
+    assert model.multi_species_patterns["free_zero"] == "A(site)"
+    assert model.multi_species_patterns["bound_pattern"] == "A(site!+)"
+    assert model.multi_species_patterns["either_pattern"] == "A()"
     composition = build_species_composition_table(model)
     seeds = get_seed_species(composition, model)
 
