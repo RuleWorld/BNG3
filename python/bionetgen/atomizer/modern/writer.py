@@ -1922,7 +1922,27 @@ def _prepared_kinetic_math(
     def replace_sum(match: re.Match[str]) -> str:
         species_id = match.group(1)
         if model.multi_executable and model.multi_species_patterns.get(species_id):
-            return f"__multi_sum_{standardize_name(species_id)}"
+            observable = f"__multi_sum_{standardize_name(species_id)}"
+            species = model.species.get(species_id)
+            if species is not None and not species.has_only_substance_units:
+                compartment_id = species.compartment
+                if compartment_id and compartment_id in model.compartments:
+                    # Multi's sum representation has the same quantity as
+                    # the referenced SBML species: concentration when
+                    # hasOnlySubstanceUnits is false.  The BNGL Molecules
+                    # observable is an amount, so use the current compartment
+                    # size to recover that concentration.
+                    volume = f"__compartment_{standardize_name(compartment_id)}__"
+                    return f"({observable} / {volume})"
+                _record_import_warning(
+                    model,
+                    f'Multi sum representation for concentration species '
+                    f'"{species_id}" has no executable compartment size.',
+                    category="package:multi",
+                    severity="dropped",
+                )
+                return standardize_name(species_id)
+            return observable
         _record_import_warning(
             model,
             f'Multi sum representation for species "{species_id}" could not be '
