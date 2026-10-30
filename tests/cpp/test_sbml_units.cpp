@@ -658,3 +658,43 @@ end model
     CHECK(xml.find("multi:outwardBindingSite multi:component=\"st_A_component_1\"") !=
           std::string::npos);
 }
+
+TEST_CASE("SBML-Multi writes observables as Core assignment rules over pattern species",
+          "[sbml][multi]") {
+    // Issue #161 item B: BNG2's Multi export carries one Core assignment rule
+    // per observable (BNGOutput.pm writeSBMLMulti), summing the species that
+    // stand for its patterns; a pattern written like a seed or rule pattern
+    // reuses that species.  BNG3 wrote none.
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A(x~u~p,y)
+  B(a)
+end molecule types
+begin seed species
+  A(x~u,y) 10
+  B(a) 10
+end seed species
+begin observables
+  Molecules AB A(x!1).B(a!1)
+  Molecules Bfree B(a)
+end observables
+begin reaction rules
+  bind: A(x~p) + B(a) -> A(x~p!1).B(a!1) k
+  phos: A(x~u) -> A(x~p) k
+end reaction rules
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::SbmlMultiWriter::write(*model);
+    CHECK(xml.find("<parameter id=\"AB\" name=\"AB\" value=\"0\" constant=\"false\"/>") !=
+          std::string::npos);
+    CHECK(xml.find("<assignmentRule variable=\"AB\">") != std::string::npos);
+    CHECK(xml.find("<ci> O1_P1 </ci>") != std::string::npos);
+    CHECK(xml.find("<species id=\"O1_P1\"") != std::string::npos);
+    CHECK(xml.find("<assignmentRule variable=\"Bfree\">") != std::string::npos);
+    CHECK(xml.find("<ci> S2 </ci>") != std::string::npos);
+}

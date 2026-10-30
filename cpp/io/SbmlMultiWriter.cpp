@@ -63,6 +63,62 @@ std::string multiComponentId(const std::string& type, std::size_t molecule,
         : type + "_component_" + std::to_string(component + 1);
 }
 
+std::string multiObservableSpeciesId(std::size_t observable, std::size_t pattern) {
+    return "O" + std::to_string(observable + 1) + "_P" + std::to_string(pattern + 1);
+}
+
+// A stoichiometry or count comparison (R==1, A()>5) is not a species pattern.
+bool multiObservablePatternSupported(const std::string& text) {
+    if (text.find_first_of("<>=") != std::string::npos) return false;
+    try {
+        return MultiPattern::parse(text).moleculeCount() > 0;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
+// The species each observable sums.  A pattern written exactly like a seed
+// species or a rule pattern refers to that species, as BNG2's species set
+// (keyed by the exact pattern string) does; any other pattern adds a species.
+struct MultiObservableSpecies {
+    std::vector<std::vector<std::string>> terms;              // per observable
+    std::vector<std::pair<std::string, std::string>> added;   // (text, id)
+};
+
+MultiObservableSpecies multiObservableSpecies(const bng::ast::Model& model) {
+    std::map<std::string, std::string> known;
+    for (std::size_t index = 0; index < model.getSeedSpecies().size(); ++index) {
+        known.emplace(model.getSeedSpecies()[index].getPattern(), "S" + std::to_string(index + 1));
+    }
+    for (std::size_t index = 0; index < model.getReactionRules().size(); ++index) {
+        const auto& rule = model.getReactionRules()[index];
+        const auto prefix = "RR" + std::to_string(index + 1);
+        for (std::size_t p = 0; p < rule.getReactants().size(); ++p) {
+            known.emplace(rule.getReactants()[p], prefix + "_R" + std::to_string(p + 1));
+        }
+        for (std::size_t p = 0; p < rule.getProducts().size(); ++p) {
+            known.emplace(rule.getProducts()[p], prefix + "_P" + std::to_string(p + 1));
+        }
+    }
+    MultiObservableSpecies result;
+    for (std::size_t index = 0; index < model.getObservables().size(); ++index) {
+        const auto& patterns = model.getObservables()[index].getPatterns();
+        std::vector<std::string> terms;
+        for (std::size_t p = 0; p < patterns.size(); ++p) {
+            if (!multiObservablePatternSupported(patterns[p])) continue;
+            auto found = known.find(patterns[p]);
+            if (found == known.end()) {
+                const auto id = multiObservableSpeciesId(index, p);
+                found = known.emplace(patterns[p], id).first;
+                result.added.emplace_back(patterns[p], id);
+            }
+            terms.push_back(found->second);
+        }
+        result.terms.push_back(std::move(terms));
+    }
+    return result;
+}
+
 // Every pattern location has a stable species object. Reverse directions reuse
 // those objects, so component maps can refer to the same structural types.
 template<class Visitor>
@@ -80,6 +136,11 @@ void visitMultiPatterns(const bng::ast::Model& model, Visitor visit) {
             visit(rule.getProducts()[p], prefix + "_P" + std::to_string(p + 1));
         }
     }
+    // Observable patterns are species too: an SBML-Multi species that leaves
+    // sites unspecified stands for every species it matches, and BNG2 sums
+    // those pattern species in each observable's assignment rule
+    // (BNGOutput.pm writeSBMLMulti, "Assignment rules (for observables)").
+    for (const auto& [text, id] : multiObservableSpecies(model).added) visit(text, id);
 }
 // The components that take part in a bond somewhere in the model (an exact
 // bond, !+ or !?), by molecule type and component name.  BNG2 calls them the
@@ -205,6 +266,9 @@ std::string SbmlMultiWriter::write(const ast::Model& model, const Options& optio
 
     // Seed species with multi:speciesType references
     sbml << writeSeedSpecies(model, compiled);
+
+    // Observable projections as Core assignment rules
+    sbml << writeObservableRules(model);
 
     // Reaction rules with pattern matching
     sbml << writeReactionRules(model);
@@ -442,6 +506,13 @@ std::string SbmlMultiWriter::writeParameters(
              << "\" constant=\"true\""
              << sbml_units::attribute(compiled, param.getUnitName()) << "/>\n";
     }
+    // Observables are Core parameters that assignment rules keep equal to
+    // the sum of their pattern species (BNG2 writeSBMLParameters).
+    for (const auto& observable : model.getObservables()) {
+        sbml << "      <parameter id=\"" << makeValidSBMLId(observable.getName())
+             << "\" name=\"" << escapeXml(observable.getName())
+             << "\" value=\"0\" constant=\"false\"/>\n";
+    }
 
     sbml << "    </listOfParameters>\n";
     return sbml.str();
@@ -557,6 +628,31 @@ std::string SbmlMultiWriter::writeSeedSpecies(
         sbml << "      </species>\n";
     });
     sbml << "    </listOfSpecies>\n";
+    return sbml.str();
+}
+
+std::string SbmlMultiWriter::writeObservableRules(const ast::Model& model) {
+    if (model.getObservables().empty()) return {};
+    std::ostringstream sbml;
+    sbml << "    <listOfRules>\n";
+    const auto species = multiObservableSpecies(model);
+    for (std::size_t index = 0; index < model.getObservables().size(); ++index) {
+        const auto& observable = model.getObservables()[index];
+        const auto& terms = species.terms[index];
+        sbml << "      <assignmentRule variable=\"" << makeValidSBMLId(observable.getName())
+             << "\">\n        <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
+        if (terms.empty()) {
+            sbml << "          <cn> 0 </cn>\n";
+        } else if (terms.size() == 1) {
+            sbml << "          <ci> " << terms.front() << " </ci>\n";
+        } else {
+            sbml << "          <apply>\n            <plus/>\n";
+            for (const auto& term : terms) sbml << "            <ci> " << term << " </ci>\n";
+            sbml << "          </apply>\n";
+        }
+        sbml << "        </math>\n      </assignmentRule>\n";
+    }
+    sbml << "    </listOfRules>\n";
     return sbml.str();
 }
 
