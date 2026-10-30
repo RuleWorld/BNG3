@@ -602,7 +602,7 @@ def _semantic_xml_ids(model: ET.Element) -> dict[str, str]:
             continue
         if tag == "ReactionRule" and identity:
             name, value = identity[0]
-            if name == "name" and re.fullmatch(r"_R\d+", value):
+            if name == "name" and re.fullmatch(r"_R\d+(?:_v\d+)?", value):
                 identity = ((name, value[1:]), *identity[1:])
         label = f"{tag}:{identity!r}"
         occurrence = counts.get(label, 0)
@@ -643,13 +643,15 @@ def _xml_element_node(
     element: ET.Element,
     aliases: dict[str, str],
     parameter_values: dict[str, str],
+    *,
+    reaction_pattern_aliases: bool = False,
 ) -> _XmlNode:
     """Return a whitespace- and namespace-prefix-independent XML node."""
 
     tag = element.tag.rsplit("}", 1)[-1]
     normalized_attributes = dict(element.attrib)
     if tag == "ReactionRule" and re.fullmatch(
-        r"_R\d+", normalized_attributes.get("name", "")
+        r"_R\d+(?:_v\d+)?", normalized_attributes.get("name", "")
     ):
         normalized_attributes["name"] = normalized_attributes["name"][1:]
     if tag == "ReactionRule":
@@ -658,6 +660,10 @@ def _xml_element_node(
         normalized_attributes.setdefault("output", "1")
     if tag == "Pattern":
         normalized_attributes.setdefault("automorphisms", "1")
+    if reaction_pattern_aliases and tag in {"Molecule", "Component"}:
+        # Reaction-pattern labels are local aliases. Explicit MapItems and
+        # rate-law ObjectReferences carry the semantic correspondence.
+        normalized_attributes.pop("label", None)
     if tag in {"Bond", "AddBond", "DeleteBond"}:
         if "site1" in normalized_attributes and "site2" in normalized_attributes:
             ends = sorted(normalized_attributes[key] for key in ("site1", "site2"))
@@ -701,7 +707,13 @@ def _xml_element_node(
         else " ".join(raw_text.split())
     ) or None
     children = tuple(
-        _xml_element_node(child, aliases, parameter_values) for child in element
+        _xml_element_node(
+            child,
+            aliases,
+            parameter_values,
+            reaction_pattern_aliases=reaction_pattern_aliases,
+        )
+        for child in element
     )
     if (tag.startswith("ListOf") and tag != "ListOfArguments") or tag == "Map":
         children = tuple(sorted(children, key=lambda child: repr(child.signature)))
@@ -760,7 +772,12 @@ def _structural_xml_nodes(
             observed[name] = tuple(
                 sorted(
                     (
-                        _xml_element_node(item, aliases, parameter_values)
+                        _xml_element_node(
+                            item,
+                            aliases,
+                            parameter_values,
+                            reaction_pattern_aliases=(name == "ListOfReactionRules"),
+                        )
                         for item in child
                     ),
                     key=lambda node: repr(node.signature),

@@ -1648,12 +1648,14 @@ def test_structural_xml_comparator_normalizes_export_defaults_and_expression_tex
     reference.write_text(
         """<sbml><model><ListOfReactionRules>
 <ReactionRule id="RR1" name="_R1" symmetry_factor="1"><Expression> ( 1 + (k) ) </Expression></ReactionRule>
+<ReactionRule id="RR2" name="_R2_v1" symmetry_factor="1"><Expression>k</Expression></ReactionRule>
 </ListOfReactionRules></model></sbml>""",
         encoding="utf-8",
     )
     generated.write_text(
         """<sbml><model><ListOfReactionRules>
 <ReactionRule id="RR1" name="R1"><Expression>1+(k)</Expression></ReactionRule>
+<ReactionRule id="RR2" name="R2_v1"><Expression>k</Expression></ReactionRule>
 </ListOfReactionRules></model></sbml>""",
         encoding="utf-8",
     )
@@ -1666,6 +1668,64 @@ def test_structural_xml_comparator_normalizes_export_defaults_and_expression_tex
 
     assert equal is True
     assert differences == []
+
+
+def test_structural_xml_comparator_uses_reaction_maps_not_pattern_aliases(
+    tmp_path,
+):
+    reference = tmp_path / "reference-pattern-aliases.xml"
+    generated = tmp_path / "generated-pattern-aliases.xml"
+    reference.write_text(
+        """<sbml><model><ListOfReactionRules><ReactionRule id="r1">
+<ListOfReactantPatterns><ReactantPattern id="r1_rp"><ListOfMolecules>
+<Molecule id="r1_rp_m1" name="A" label="authored"/><Component id="r1_rp_m1_c1" name="x" label="authored_site"/>
+</ListOfMolecules></ReactantPattern></ListOfReactantPatterns>
+<ListOfProductPatterns><ProductPattern id="r1_pp"><ListOfMolecules>
+<Molecule id="r1_pp_m1" name="A" label="generated"/><Component id="r1_pp_m1_c1" name="x" label="generated_site"/>
+</ListOfMolecules></ProductPattern></ListOfProductPatterns>
+<Map><MapItem sourceID="r1_rp_m1" targetID="r1_pp_m1"/><MapItem sourceID="r1_rp_m1_c1" targetID="r1_pp_m1_c1"/></Map>
+</ReactionRule></ListOfReactionRules></model></sbml>""",
+        encoding="utf-8",
+    )
+    generated.write_text(
+        reference.read_text(encoding="utf-8")
+        .replace('label="authored"', 'label="t0"')
+        .replace('label="authored_site"', 'label="t1"')
+        .replace('label="generated"', 'label="t0"')
+        .replace('label="generated_site"', 'label="t1"'),
+        encoding="utf-8",
+    )
+
+    equal, differences = compare_structural_xml(
+        reference, generated, sections=("ListOfReactionRules",)
+    )
+
+    assert equal is True
+    assert differences == []
+
+    generated.write_text(
+        generated.read_text(encoding="utf-8").replace(
+            'targetID="r1_pp_m1_c1"', 'targetID="r1_pp_m1"'
+        ),
+        encoding="utf-8",
+    )
+    equal, differences = compare_structural_xml(
+        reference, generated, sections=("ListOfReactionRules",)
+    )
+    assert equal is False
+    assert differences == ["ListOfReactionRules"]
+
+    generated.write_text(
+        generated.read_text(encoding="utf-8").replace(
+            '<MapItem sourceID="r1_rp_m1" targetID="r1_pp_m1"/>', ""
+        ),
+        encoding="utf-8",
+    )
+    equal, differences = compare_structural_xml(
+        reference, generated, sections=("ListOfReactionRules",)
+    )
+    assert equal is False
+    assert differences == ["ListOfReactionRules"]
 
 
 def test_structural_xml_comparator_treats_omitted_empty_sections_as_empty(

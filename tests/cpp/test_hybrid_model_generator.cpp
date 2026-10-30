@@ -104,7 +104,7 @@ TEST_CASE("HybridModelGenerator tests", "[hybrid]") {
 
         REQUIRE(content.find("rule_B_v1:") != std::string::npos);
         REQUIRE(content.find("rule_A_v1:") != std::string::npos);
-        REQUIRE(content.find("_map_pop_A:") != std::string::npos);
+        REQUIRE(content.find("_MapRule0:") != std::string::npos);
     }
 
     SECTION("Preconditions validation") {
@@ -509,13 +509,10 @@ TEST_CASE("the reverse direction of a reversible rule is refined on its own",
     CHECK(children.count("_reverse_R1_v2") == 0);
 }
 
-TEST_CASE("a Species observable counts each population once",
+TEST_CASE("Species observables match population graphs and qualifiers",
           "[hybrid][observables]") {
-    // BNG2 (generate_hybrid_model) writes
-    //   Molecules Mfree R(l,l) R_pop() R_pop()
-    //   Species   Sfree {MatchOnce}R(l,l) R_pop()
-    // A Species observable sums over its patterns, each counting a species
-    // once, so a second R_pop() would count every population twice.
+    // BNG2 adds a plain Species pattern once and evaluates stoichiometry
+    // predicates against the concrete graph represented by each population.
     auto model = bng::parser::parseModel(R"(
 begin model
 begin parameters
@@ -533,12 +530,17 @@ end seed species
 begin observables
   Molecules Mfree R(l,l)
   Species Sfree R(l,l)
+  Species R1 R()==1
+  Species Rpositive R>0
+  Species R2 R()==2
+  Species R2plus R>1
 end observables
 begin reaction rules
   R1: R(l) + L(r) -> R(l!1).L(r!1) k
 end reaction rules
 begin population maps
   R(l,l) -> R_pop() kg
+  R(l,l).R(l,l) -> R_pair_pop() kg
 end population maps
 end model
 )");
@@ -554,11 +556,15 @@ end model
     std::map<std::string, std::size_t> populationTerms;
     for (const auto& observable : hybrid->getObservables()) {
         for (const auto& pattern : observable.getPatterns()) {
-            if (pattern.find("R_pop") != std::string::npos) ++populationTerms[observable.getName()];
+            if (pattern.find("_pop") != std::string::npos) ++populationTerms[observable.getName()];
         }
     }
-    CHECK(populationTerms["Mfree"] == 2);
-    CHECK(populationTerms["Sfree"] == 1);
+    CHECK(populationTerms["Mfree"] == 6);
+    CHECK(populationTerms["Sfree"] == 2);
+    CHECK(populationTerms["R1"] == 1);
+    CHECK(populationTerms["Rpositive"] == 2);
+    CHECK(populationTerms["R2"] == 1);
+    CHECK(populationTerms["R2plus"] == 1);
 }
 
 TEST_CASE("state changes between populations count equivalent sites",

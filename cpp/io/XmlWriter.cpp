@@ -1906,8 +1906,11 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
         const bool isArrheniusRate =
             rate != nullptr && rate->kind() == ast::ExpressionKind::Function &&
             lowercase(rate->name()) == "arrhenius" && rate->args().size() >= 2;
+        std::string xmlRuleName = rule.getLabel().empty()
+            ? rule.getRuleName() : rule.getLabel();
+        if (!xmlRuleName.empty() && xmlRuleName.back() == ':') xmlRuleName.pop_back();
         xml << "      <ReactionRule id=\"" << rrId
-            << "\" name=\"" << escapeXml(rule.getRuleName()) << "\"";
+            << "\" name=\"" << escapeXml(xmlRuleName) << "\"";
         const double permutationFactor = rule.getModifiers().empty()
             ? direction.wholeReactantPermutationFactor() : 1.0;
         if (permutationFactor != 1.0) {
@@ -2002,9 +2005,29 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
         }
 
         xml << "        <Map>\n";
+        std::set<std::pair<std::size_t, std::size_t>> mappedReactants;
         for (const auto& [product, reactant] : rule.getMoleculeMappings()) {
+            mappedReactants.emplace(reactant.patternIndex, reactant.moleculeIndex);
             xml << "          <MapItem sourceID=\"" << moleculeId(rrId, false, reactant)
                 << "\" targetID=\"" << moleculeId(rrId, true, product) << "\"/>\n";
+        }
+        for (std::size_t patternIndex = 0;
+             patternIndex < rule.getReactants().size(); ++patternIndex) {
+            const auto pattern = parsePattern(rule.getReactants()[patternIndex]);
+            for (std::size_t moleculeIndex = 0;
+                 moleculeIndex < pattern.molecules.size(); ++moleculeIndex) {
+                if (mappedReactants.count({patternIndex, moleculeIndex}) != 0) continue;
+                xml << "          <MapItem sourceID=\"" << rrId << "_RP"
+                    << patternIndex + 1 << "_M" << moleculeIndex + 1 << "\"/>\n";
+                for (std::size_t componentIndex = 0;
+                     componentIndex < pattern.molecules[moleculeIndex].components.size();
+                     ++componentIndex) {
+                    xml << "          <MapItem sourceID=\""
+                        << rrId << "_RP" << patternIndex + 1 << "_M"
+                        << moleculeIndex + 1 << "_C" << componentIndex + 1
+                        << "\"/>\n";
+                }
+            }
         }
         for (const auto& [product, reactant] : rule.getComponentMappings()) {
             xml << "          <MapItem sourceID=\"" << componentId(rrId, false, reactant)

@@ -243,6 +243,7 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
     // Extract population type names from population maps
     // The population function typically creates a new molecule type for the population
     std::set<std::string> popTypeNames;
+    std::size_t populationMapRuleIndex = 0;
     for (const auto& pm : model_.getPopulationMaps()) {
         // The population function name is used as a molecule type for the population
         // In Perl: PopulationTypesList->MolTypes contains the population molecule types
@@ -358,23 +359,71 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
               << ":Fetching observables and adding population matches..\n";
     ++stepIndex;
 
+    struct ObservableCountPredicate {
+        std::string pattern;
+        std::string relation;
+        std::size_t quantity;
+    };
+    const auto countPredicate = [](const std::string& text)
+        -> std::optional<ObservableCountPredicate> {
+        antlr4::ANTLRInputStream input(text);
+        BNGLexer lexer(&input);
+        antlr4::CommonTokenStream tokens(&lexer);
+        BNGParser parser(&tokens);
+        auto* predicate = parser.observable_pattern();
+        if (parser.getNumberOfSyntaxErrors() != 0 || predicate->INT() == nullptr) {
+            return std::nullopt;
+        }
+        std::string relation;
+        if (predicate->EQUALS() != nullptr) relation = "==";
+        else if (predicate->GTE() != nullptr) relation = ">=";
+        else if (predicate->LTE() != nullptr) relation = "<=";
+        else if (predicate->GT() != nullptr) relation = ">";
+        else if (predicate->LT() != nullptr) relation = "<";
+        if (relation.empty()) return std::nullopt;
+
+        std::string pattern;
+        if (predicate->species_def() != nullptr) {
+            pattern = predicate->species_def()->getText();
+        } else if (predicate->STRING() != nullptr) {
+            pattern = predicate->STRING()->getText();
+            if (predicate->LPAREN() != nullptr) pattern += "()";
+        } else {
+            return std::nullopt;
+        }
+        return ObservableCountPredicate {
+            std::move(pattern), std::move(relation),
+            static_cast<std::size_t>(std::stoull(predicate->INT()->getText()))};
+    };
+    const auto satisfiesPredicate = [](std::size_t matches,
+                                       const ObservableCountPredicate& predicate) {
+        if (predicate.relation == "==") return matches == predicate.quantity;
+        if (predicate.relation == ">=") return matches >= predicate.quantity;
+        if (predicate.relation == "<=") return matches <= predicate.quantity;
+        if (predicate.relation == ">") return matches > predicate.quantity;
+        if (predicate.relation == "<") return matches < predicate.quantity;
+        return false;
+    };
+
     for (const auto& obs : model_.getObservables()) {
         // Copy the observable
         std::vector<std::string> patterns = obs.getPatterns();
 
-        // For each population, check if the observable pattern matches the
-        // population's species graph. If so, add the population pattern.
-        // A Molecules observable counts embeddings, so the population enters
-        // once per embedding of the pattern in its species (Rfree R(l,l): 2).
-        // A Species observable counts each matching species once per
-        // pattern, so the population enters once; adding it per embedding
-        // counted every R_pop twice.  BNG2 writes the Species case as
-        // {MatchOnce}<pattern> <pop>() for NFsim.
+        // A Molecules observable counts embeddings, while a Species
+        // observable contributes once when its pattern (and any stoichiometry
+        // predicate) matches the concrete graph represented by a population.
         const bool speciesObservable = obs.getType() == "Species";
         for (const auto& pop : populations) {
             for (const auto& obsPattern : obs.getPatterns()) {
-                std::size_t matches = countMatches(obsPattern, pop.speciesPattern);
-                if (matches > 0) {
+                const auto predicate = speciesObservable
+                    ? countPredicate(obsPattern) : std::nullopt;
+                const std::size_t matches = predicate
+                    ? countMatches(predicate->pattern, pop.speciesPattern)
+                    : countMatches(obsPattern, pop.speciesPattern);
+                const bool speciesMatch = predicate
+                    ? satisfiesPredicate(matches, *predicate)
+                    : matches > 0;
+                if (speciesObservable ? speciesMatch : matches > 0) {
                     const std::size_t copies = speciesObservable ? 1 : matches;
                     for (std::size_t m = 0; m < copies; ++m) {
                         patterns.push_back(pop.populationName + "()");
@@ -505,7 +554,7 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
             populationPattern = "@" + mapCompartment + ":" + populationPattern;
         }
 
-        std::string mapRuleName = "_map_" + populationName;
+        std::string mapRuleName = "_MapRule" + std::to_string(populationMapRuleIndex++);
         hybridModel.addReactionRule(ast::ReactionRule(
             mapRuleName,
             mapRuleName + ":",
