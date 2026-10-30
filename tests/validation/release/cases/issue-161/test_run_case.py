@@ -6,6 +6,7 @@ from pathlib import Path
 import subprocess
 
 from run_case import (
+    _authored_export_acceptance,
     _compare_source_networks,
     _git_identity,
     _preserve_evidence_file,
@@ -178,3 +179,32 @@ def test_structural_comparator_detects_all_semantic_mutation_controls(tmp_path: 
         "compartment_volume": "pass",
         "reaction_rate": "pass",
     }
+
+
+def test_invalid_reference_uses_source_contract_without_passing_strict_diff():
+    result = _authored_export_acceptance(
+        strict_match=False,
+        reference_validity={"status": "invalid"},
+        candidate_validity={"status": "valid"},
+        semantic_contract={"status": "pass"},
+        contract_mutations={"missing_bond": {"status": "pass"}},
+    )
+
+    assert result == {
+        "acceptance_status": "pass",
+        "oracle": "source-authored-contract",
+        "strict_comparison_status": "reference-invalid",
+    }
+
+
+def test_valid_reference_still_requires_strict_structural_match():
+    result = _authored_export_acceptance(
+        strict_match=False,
+        reference_validity={"status": "valid"},
+        candidate_validity={"status": "valid"},
+        semantic_contract={"status": "pass"},
+        contract_mutations={"missing_bond": {"status": "pass"}},
+    )
+
+    assert result["acceptance_status"] == "fail"
+    assert result["oracle"] == "none"

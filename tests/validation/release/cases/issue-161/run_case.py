@@ -156,6 +156,42 @@ def _reference_sbml_validity(path: Path) -> dict:
     return validity
 
 
+def _authored_export_acceptance(
+    *,
+    strict_match: bool,
+    reference_validity: dict,
+    candidate_validity: dict,
+    semantic_contract: dict,
+    contract_mutations: dict,
+) -> dict:
+    """Select only a validated BNG2 oracle or a valid source-derived contract."""
+    if strict_match and reference_validity["status"] == "valid":
+        return {
+            "acceptance_status": "pass",
+            "oracle": "validated-bng2",
+            "strict_comparison_status": "pass",
+        }
+    contract_controls_pass = bool(contract_mutations) and all(
+        control["status"] == "pass" for control in contract_mutations.values()
+    )
+    if (
+        reference_validity["status"] == "invalid"
+        and candidate_validity["status"] == "valid"
+        and semantic_contract["status"] == "pass"
+        and contract_controls_pass
+    ):
+        return {
+            "acceptance_status": "pass",
+            "oracle": "source-authored-contract",
+            "strict_comparison_status": "reference-invalid",
+        }
+    return {
+        "acceptance_status": "fail",
+        "oracle": "none",
+        "strict_comparison_status": "different" if not strict_match else "invalid",
+    }
+
+
 def _consume_and_reimport(
     xml_path: Path, bng_cpp: Path, work_dir: Path, timeout: float
 ) -> dict:
@@ -643,6 +679,20 @@ def main() -> int:
                 }
             )
             entry = case_results[-1]
+            strict_match = entry["authored_export"]["counts"] == {
+                "pass": 1,
+                "fail": 0,
+                "error": 0,
+            }
+            entry["authored_export"].update(
+                _authored_export_acceptance(
+                    strict_match=strict_match,
+                    reference_validity=reference_validity,
+                    candidate_validity=candidate_validity,
+                    semantic_contract=semantic_contract,
+                    contract_mutations=contract_mutations,
+                )
+            )
             if consumer_error is None:
                 try:
                     entry["bounded_source_rate_parity"] = {
@@ -705,6 +755,7 @@ def main() -> int:
     }
     report = {
         "case": "issue-161/authored-multi-and-reimport-network-smoke",
+        "acceptance_scope": "two source-hash-pinned SBML Multi fixtures only",
         "evidence_directory": str(evidence_dir) if evidence_dir else None,
         "provenance": provenance,
         "cases": case_results,
@@ -713,7 +764,7 @@ def main() -> int:
             "pass"
             if provenance["eligible"]
             and all(
-                entry["authored_export"]["counts"] == {"pass": 1, "fail": 0, "error": 0}
+                entry["authored_export"]["acceptance_status"] == "pass"
                 and entry["reimport_network_smoke"]["status"] == "pass"
                 and entry["source_semantic_contract"]["status"] == "pass"
                 and all(
