@@ -85,6 +85,47 @@ std::vector<double> speciesAtTimeZero(ast::Model& model, std::size_t species) {
 
 } // namespace
 
+// Component labels connect repeated component names while a rule is matched.
+// They are not part of a generated species identity or observable group.
+TEST_CASE("authored component correspondence labels do not split species",
+          "[correctness][network]") {
+    auto model = parse(R"(
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A(c1~0~1)
+  B(c1~0~1,c1~0~1)
+end molecule types
+begin seed species
+  A(c1~0) 1
+  A(c1~1) 1
+end seed species
+begin reaction rules
+  A(c1%1) + A(c1%2) -> B(c1%1,c1%2) k
+end reaction rules
+end model
+)");
+    REQUIRE(model != nullptr);
+
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    std::unordered_set<std::string> speciesNames;
+    for (const auto& species : network.species.all()) {
+        const auto name = species.canonicalName();
+        INFO(name);
+        CHECK(name.find('%') == std::string::npos);
+        speciesNames.insert(name);
+    }
+    CHECK(speciesNames.count("A(c1~0)") == 1);
+    CHECK(speciesNames.count("A(c1~1)") == 1);
+    CHECK(speciesNames.count("B(c1~0,c1~0)") == 1);
+    CHECK(speciesNames.count("B(c1~0,c1~1)") == 1);
+    CHECK(speciesNames.count("B(c1~1,c1~1)") == 1);
+    CHECK(speciesNames.size() == 5);
+}
+
 // ---------------------------------------------------------------------------
 // Defect: a stoichiometric comparison on a Molecules observable was applied to
 // the per-species EMBEDDING count, so `A()>5` on one species holding 10

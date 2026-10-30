@@ -220,6 +220,15 @@ bool isComponentNode(const BNGcore::Node& node) {
     return false;
 }
 
+void clearComponentLabels(BNGcore::PatternGraph& graph) {
+    for (auto node = graph.begin(); node != graph.end(); ++node) {
+        if (isComponentNode(**node)) {
+            (*node)->set_label_tag("");
+        }
+    }
+    graph.reset_index();
+}
+
 bool isMoleculeNode(const BNGcore::Node& node) {
     return !isBondNode(node) && !isComponentNode(node);
 }
@@ -2960,6 +2969,7 @@ bool ReactionRule::buildReaction(
                         }
                     }
                 }
+                clearComponentLabels(productGraph.getGraph());
                 auto prodSp = Species(std::move(productGraph), 0.0, false, compartmentToUse);
                 std::string exact;
                 const auto exactIndex = speciesList.findExact(prodSp, exact);
@@ -3243,6 +3253,7 @@ bool ReactionRule::buildReaction(
             // GPCR(l,b!1,loc~cyt,s~P).Arrestin(b!1) from applying to species where
             // GPCR has 'l' bonded: the product pattern says 'l' should be unbound.
             // (Product pattern bond constraint check would go here in a future version)
+            clearComponentLabels(productGraph.getGraph());
             auto prodSp = Species(std::move(productGraph), 0.0, false, compartmentToUse);
             std::string exact;
             const auto exactIndex = speciesList.findExact(prodSp, exact);
