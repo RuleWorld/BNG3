@@ -134,7 +134,11 @@ _XML_NAMED_ID_TAGS = {
     "ReactionRule",
     "Species",
     "species",
+    "bindingSiteSpeciesType",
+    "speciesFeatureType",
     "speciesType",
+    "speciesTypeInstance",
+    "possibleSpeciesFeatureValue",
 }
 _XML_LABEL_ATTRIBUTES = (
     "name",
@@ -569,18 +573,30 @@ def _stage_authored_action_model(model: Path, models_dir: Path, work_dir: Path) 
 def _semantic_xml_ids(model: ET.Element) -> dict[str, str]:
     """Map generated XML IDs to stable element labels for reference comparison."""
 
+    def local_attributes(element: ET.Element) -> dict[str, str]:
+        # SBML Multi qualifies ids, names, and references in the package
+        # namespace. Compare their local attribute names just as the element
+        # serializer does, while preferring a Core attribute if both exist.
+        result: dict[str, str] = {}
+        for name, value in element.attrib.items():
+            local_name = name.rsplit("}", 1)[-1]
+            if local_name not in result or name == local_name:
+                result[local_name] = value
+        return result
+
     aliases: dict[str, str] = {}
     counts: dict[str, int] = {}
     identity_attributes = ("name", "symbol", "variable")
     for element in model.iter():
-        identifier = element.attrib.get("id")
+        attributes = local_attributes(element)
+        identifier = attributes.get("id")
         tag = element.tag.rsplit("}", 1)[-1]
         if not identifier or tag not in _XML_NAMED_ID_TAGS:
             continue
         identity = tuple(
-            (name, " ".join(element.attrib[name].split()))
+            (name, " ".join(attributes[name].split()))
             for name in identity_attributes
-            if name in element.attrib
+            if name in attributes
         )
         if not identity:
             continue

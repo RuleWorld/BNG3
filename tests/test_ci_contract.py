@@ -1752,7 +1752,7 @@ def test_structural_xml_comparator_checks_multi_species_types_and_reactions(
     generated = tmp_path / "generated-multi.xml"
     reference.write_text(
         """<sbml xmlns:multi="urn:multi"><model>
-<multi:listOfSpeciesTypes><multi:speciesType id="st_R" name="R"><multi:listOfSpeciesFeatureTypes><multi:speciesFeatureType id="state"/></multi:listOfSpeciesFeatureTypes></multi:speciesType></multi:listOfSpeciesTypes>
+<multi:listOfSpeciesTypes><multi:speciesType multi:id="st_R" multi:name="R"><multi:listOfSpeciesFeatureTypes><multi:speciesFeatureType multi:id="state" multi:name="state"/></multi:listOfSpeciesFeatureTypes></multi:speciesType></multi:listOfSpeciesTypes>
 <listOfSpecies><species id="S1" multi:speciesType="st_R"/></listOfSpecies>
 <listOfReactions><reaction id="RR1"><listOfReactants><speciesReference species="RR1_R1"/></listOfReactants><listOfProducts><speciesReference species="RR1_P1"/></listOfProducts></reaction></listOfReactions>
 </model></sbml>""",
@@ -1760,7 +1760,7 @@ def test_structural_xml_comparator_checks_multi_species_types_and_reactions(
     )
     generated.write_text(
         """<sbml xmlns:multi="urn:multi"><model>
-<multi:listOfSpeciesTypes><multi:speciesType id="st_other" name="R"><multi:listOfSpeciesFeatureTypes><multi:speciesFeatureType id="state"/></multi:listOfSpeciesFeatureTypes></multi:speciesType></multi:listOfSpeciesTypes>
+<multi:listOfSpeciesTypes><multi:speciesType multi:id="st_other" multi:name="R"><multi:listOfSpeciesFeatureTypes><multi:speciesFeatureType multi:id="state_other" multi:name="state"/></multi:listOfSpeciesFeatureTypes></multi:speciesType></multi:listOfSpeciesTypes>
 <listOfSpecies><species id="S1" multi:speciesType="st_other"/></listOfSpecies>
 <listOfReactions><reaction id="RR1"><listOfReactants><speciesReference species="RR1_R1"/></listOfReactants><listOfProducts><speciesReference species="RR1_P1"/></listOfProducts></reaction></listOfReactions>
 </model></sbml>""",
@@ -1778,6 +1778,20 @@ def test_structural_xml_comparator_checks_multi_species_types_and_reactions(
 
     generated.write_text(
         generated.read_text(encoding="utf-8").replace('name="R"', 'name="L"'),
+        encoding="utf-8",
+    )
+    equal, differences = compare_structural_xml(
+        reference,
+        generated,
+        sections=("listOfSpeciesTypes", "listOfSpecies", "listOfReactions"),
+    )
+    assert equal is False
+    assert "listOfSpeciesTypes" in differences
+
+    generated.write_text(
+        generated.read_text(encoding="utf-8").replace(
+            'multi:name="state"', 'multi:name="other-state"'
+        ),
         encoding="utf-8",
     )
     equal, differences = compare_structural_xml(
