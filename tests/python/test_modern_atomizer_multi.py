@@ -454,29 +454,33 @@ def test_multi_product_component_map_respects_explicit_product_binding(
 
     xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
       xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
-      multi:required="true">
+      level="3" version="1" multi:required="true">
   <model id="mapped_product">
     <listOfCompartments>
-      <compartment id="c" size="1" multi:isType="false"/>
+      <compartment id="c" size="1" spatialDimensions="3" constant="true"
+                   multi:isType="false"/>
     </listOfCompartments>
     <listOfSpecies>
           <species id="A0" compartment="c" initialAmount="0"
-                   multi:speciesType="AType" name="human-readable A">
+                   hasOnlySubstanceUnits="true" boundaryCondition="false"
+                   constant="false" multi:speciesType="AType"
+                   name="human-readable A">
             <multi:listOfOutwardBindingSites>
               <multi:outwardBindingSite multi:component="x"
                                         multi:bindingStatus="bound"/>
             </multi:listOfOutwardBindingSites>
           </species>
-      <species id="A1" compartment="c" multi:speciesType="AType"
-               name="A()"/>
+      <species id="A1" compartment="c" initialAmount="0"
+               hasOnlySubstanceUnits="true" boundaryCondition="false"
+               constant="false" multi:speciesType="AType" name="A()"/>
     </listOfSpecies>
     <listOfReactions>
-      <reaction id="r" reversible="false">
+      <reaction id="r" reversible="false" fast="false">
         <listOfReactants>
-          <speciesReference id="r1" species="A0"/>
+          <speciesReference id="r1" species="A0" stoichiometry="1" constant="true"/>
         </listOfReactants>
         <listOfProducts>
-          <speciesReference id="p1" species="A1">
+          <speciesReference id="p1" species="A1" stoichiometry="1" constant="true">
             <multi:listOfSpeciesTypeComponentMapsInProduct>
               <multi:speciesTypeComponentMapInProduct
                 multi:reactant="r1" multi:reactantComponent="AType"
@@ -551,14 +555,16 @@ def _mapped_state_change_product_reaction(explicit_unbound):
     )
     xml = f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
       xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
-      multi:required="true">
+      level="3" version="1" multi:required="true">
   <model id="mapped_state_product">
     <listOfCompartments>
-      <compartment id="c" size="1" multi:isType="false"/>
+      <compartment id="c" size="1" spatialDimensions="3" constant="true"
+                   multi:isType="false"/>
     </listOfCompartments>
     <listOfSpecies>
       <species id="A0" compartment="c" initialAmount="0"
-               multi:speciesType="AType">
+               hasOnlySubstanceUnits="true" boundaryCondition="false"
+               constant="false" multi:speciesType="AType">
         <multi:listOfSpeciesFeatures>
           <multi:speciesFeature multi:speciesFeatureType="state" multi:component="x" multi:occur="1">
             <multi:listOfSpeciesFeatureValues>
@@ -572,7 +578,8 @@ def _mapped_state_change_product_reaction(explicit_unbound):
         </multi:listOfOutwardBindingSites>
       </species>
       <species id="A1" compartment="c" initialAmount="0"
-               multi:speciesType="AType">
+               hasOnlySubstanceUnits="true" boundaryCondition="false"
+               constant="false" multi:speciesType="AType">
         <multi:listOfSpeciesFeatures>
           <multi:speciesFeature multi:speciesFeatureType="state" multi:component="x" multi:occur="1">
             <multi:listOfSpeciesFeatureValues>
@@ -584,10 +591,11 @@ def _mapped_state_change_product_reaction(explicit_unbound):
       </species>
     </listOfSpecies>
     <listOfReactions>
-      <reaction id="r" reversible="false">
-        <listOfReactants><speciesReference id="r1" species="A0"/></listOfReactants>
+      <reaction id="r" reversible="false" fast="false">
+        <listOfReactants><speciesReference id="r1" species="A0"
+          stoichiometry="1" constant="true"/></listOfReactants>
         <listOfProducts>
-          <speciesReference id="p1" species="A1">
+          <speciesReference id="p1" species="A1" stoichiometry="1" constant="true">
             <multi:listOfSpeciesTypeComponentMapsInProduct>
               <multi:speciesTypeComponentMapInProduct
                 multi:reactant="r1" multi:reactantComponent="AType"
@@ -806,7 +814,7 @@ def test_multi_repeated_feature_occurrences_and_numeric_values_are_executable():
               <multi:speciesFeatureValue multi:value="u"/>
             </multi:listOfSpeciesFeatureValues>
           </multi:speciesFeature>
-          <multi:speciesFeature multi:speciesFeatureType="state" multi:occur="2">
+          <multi:speciesFeature multi:speciesFeatureType="state" multi:occur="1">
             <multi:listOfSpeciesFeatureValues>
               <multi:speciesFeatureValue multi:value="x"/>
             </multi:listOfSpeciesFeatureValues>

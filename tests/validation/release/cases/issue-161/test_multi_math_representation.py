@@ -116,6 +116,10 @@ MULTI_WILDCARD_SUM_SOURCE = MULTI_SUM_SOURCE.replace(
     'hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false" '
     'multi:speciesType="AType"/></listOfSpecies>',
 ).replace(
+    "</listOfProducts>\n      <kineticLaw>",
+    "</listOfProducts><listOfModifiers>"
+    '<modifierSpeciesReference species="Aany"/></listOfModifiers>\n      <kineticLaw>',
+).replace(
     'multi:representationType="sum">Au</ci>',
     'multi:representationType="sum">Aany</ci>',
 )
@@ -124,13 +128,13 @@ CORE_WILDCARD_SUM_ORACLE = CORE_ORACLE.replace(
     "<apply><times/><apply><plus/><ci>Au</ci><ci>Ap</ci></apply><ci>Au</ci></apply>",
 )
 
-# Two occurrences of one feature type are not two values of a single site.
-# The second state site is p for both Au and Ap; only the first is converted.
-# The corresponding Core source is the original one-step k*Au model.
+# SpeciesFeature.occur is a count, not an occurrence ordinal.  The two
+# feature records each describe one instance, as in Multi §3.18.3's example.
+# The valid states are {u,p} -> {p,p}; the Core oracle is k*Au.
 MULTI_REPEATED_FEATURE_SOURCE = MULTI_SOURCE.replace(
     "</multi:speciesFeature></multi:listOfSpeciesFeatures>",
     """</multi:speciesFeature>
-          <multi:speciesFeature multi:speciesFeatureType="state" multi:occur="2">
+          <multi:speciesFeature multi:speciesFeatureType="state" multi:occur="1">
             <multi:listOfSpeciesFeatureValues>
               <multi:speciesFeatureValue multi:value="state_p"/>
             </multi:listOfSpeciesFeatureValues>
