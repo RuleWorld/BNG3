@@ -744,7 +744,6 @@ class _FlatComponent:
     active_state: str = ""
     binding_status: str = ""
     bonds: List[int] = field(default_factory=list)
-    feature_occurrence: int = 1
     is_binding_site: bool = False
 
 
@@ -1027,7 +1026,6 @@ def _flatten_type(
                             species_type.feature_definitions[feature_id][1]
                         )
                     },
-                    feature_occurrence=occurrence,
                 )
             )
         for instance in species_type.instances:
@@ -1403,6 +1401,7 @@ def _species_pattern_from_multi(
                     )
                 )
 
+    used_feature_occurrences = set()
     for feature, inherited_component in feature_entries:
         feature_id = _attribute(feature, "speciesFeatureType")
         component_token = _attribute(feature, "component") or inherited_component
@@ -1445,23 +1444,32 @@ def _species_pattern_from_multi(
             )
             continue
 
-        occurrence_targets = [
-            target for target in targets if target.feature_occurrence == occur
+        available_targets = [
+            target
+            for target in targets
+            if (feature_id, id(target)) not in used_feature_occurrences
         ]
-        if len(occurrence_targets) != 1:
+        # SpeciesFeature.occur is a count, not an ordinal. Multiple feature
+        # elements therefore consume subsequent repeated instances in the
+        # flattened species type, as in the specification's occur=1 example.
+        if len(available_targets) < occur:
             warnings.append(
                 _warning(
-                    f'Multi speciesFeature "{feature_id}" occurrence {occur} on '
+                    f'Multi speciesFeature "{feature_id}" occur={occur} on '
                     f'species "{_attribute(species, "id")}" is '
                     + (
-                        "ambiguous or unresolved."
-                        if occurrence_targets
+                        "ambiguous or exceeds the remaining feature instances."
+                        if available_targets
                         else "not resolvable."
                     ),
                     "dropped",
                 )
             )
             continue
+        occurrence_targets = available_targets[:occur]
+        used_feature_occurrences.update(
+            (feature_id, id(target)) for target in occurrence_targets
+        )
         value_labels = occurrence_targets[0].feature_values.get(feature_id, {})
         values = []
         for raw_value in raw_values:
@@ -1478,7 +1486,8 @@ def _species_pattern_from_multi(
         if not values:
             continue
         if len(values) == 1:
-            occurrence_targets[0].active_state = values[0]
+            for target in occurrence_targets:
+                target.active_state = values[0]
         elif len(values) > 1:
             warnings.append(
                 _warning(
@@ -3269,7 +3278,6 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                 feature_elements.extend(
                     (feature, inherited_component) for feature in nested_features
                 )
-        seen_feature_occurrences = set()
         # SpeciesFeature and SubListOfSpeciesFeatures ids share the Species
         # object's local id scope, which includes the core species id.
         seen_feature_ids = {species_id}
@@ -3336,20 +3344,6 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                     )
                 )
                 continue
-            feature_key = (
-                feature_id,
-                occur,
-                component_token,
-            )
-            if feature_key in seen_feature_occurrences:
-                warnings.append(
-                    _warning(
-                        f'Multi species "{species_id}" repeats speciesFeature '
-                        f'occurrence "{feature_id}:{occur}" for the same component.',
-                        "dropped",
-                    )
-                )
-            seen_feature_occurrences.add(feature_key)
             known = known_feature_types.get(feature_id)
             if feature_id in ambiguous_feature_ids and component_token:
                 scoped_definitions = [
