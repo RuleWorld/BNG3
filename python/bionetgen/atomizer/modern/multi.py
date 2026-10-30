@@ -738,6 +738,7 @@ def parse_multi_package(document: Union[str, Any]) -> MultiParseResult:
 class _FlatComponent:
     label: str
     aliases: set = field(default_factory=set)
+    binding_site_type_id: str = ""
     states: List[str] = field(default_factory=list)
     feature_ids: set = field(default_factory=set)
     feature_values: Dict[str, Dict[str, str]] = field(default_factory=dict)
@@ -1117,6 +1118,7 @@ def _flatten_type(
                 _FlatComponent(
                     label=label,
                     aliases={alias for alias in aliases if alias},
+                    binding_site_type_id=instance.type_id,
                     states=list(dict.fromkeys(states)),
                     feature_ids=feature_ids,
                     feature_values=feature_values,
@@ -1142,6 +1144,16 @@ def _flatten_type(
                     _warning(
                         f'Multi bond in speciesType "{type_id}" must connect two '
                         "binding-site components.",
+                        "dropped",
+                    )
+                )
+                continue
+            if endpoint1[1].binding_site_type_id == endpoint2[1].binding_site_type_id:
+                warnings.append(
+                    _warning(
+                        f'Multi bond in speciesType "{type_id}" uses endpoints '
+                        "of the same type; a bond must "
+                        "connect different BindingSiteSpeciesType objects.",
                         "dropped",
                     )
                 )
@@ -1253,6 +1265,16 @@ def _flatten_type(
                 _warning(
                     f'Multi bond in speciesType "{type_id}" must connect two '
                     "binding-site components.",
+                    "dropped",
+                )
+            )
+            continue
+        if endpoint1[1].binding_site_type_id == endpoint2[1].binding_site_type_id:
+            warnings.append(
+                _warning(
+                    f'Multi bond in speciesType "{type_id}" uses endpoints '
+                    "of the same type; a bond must "
+                    "connect different BindingSiteSpeciesType objects.",
                     "dropped",
                 )
             )
@@ -1498,6 +1520,7 @@ def _species_pattern_from_multi(
             )
 
     explicit_binding_positions: List[Tuple[int, int]] = []
+    explicit_either_components = set()
     seen_outward_components = set()
     for outward in _children(
         _first_child(species, "listOfOutwardBindingSites", namespace),
@@ -1578,6 +1601,8 @@ def _species_pattern_from_multi(
                             (molecule_index, component_index)
                         )
                         break
+        elif status == "either":
+            explicit_either_components.add(id(targets[0]))
 
     if abstract_species_ids is not None:
         bonded = {id(component) for bond in flat.bonds for component in bond}
@@ -1652,6 +1677,7 @@ def _species_pattern_from_multi(
                 component.is_binding_site
                 and component.binding_status == "either"
                 and id(component) not in bonded_components
+                and id(component) not in explicit_either_components
                 and not component.active_state
             ):
                 continue

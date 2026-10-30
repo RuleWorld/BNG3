@@ -278,6 +278,61 @@ std::string multiBindingSiteId(const std::string& validMolecule,
                                const std::string& validComponent, std::size_t index) {
     return "bst_" + validMolecule + "_" + validComponent + "_" + std::to_string(index + 1);
 }
+
+std::string multiValidId(const std::string& text) {
+    std::string result;
+    bool first = true;
+    for (char c : text) {
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_') {
+            result += c;
+            first = false;
+        } else if (!first) {
+            result += '_';
+        }
+    }
+    if (!result.empty() && std::isdigit(static_cast<unsigned char>(result.front()))) result.insert(0, "_");
+    return result.empty() ? "species" : result;
+}
+
+std::vector<bool> multiRoleClonedMolecules(const bng::ast::Model& model,
+                                           const MultiPattern& pattern) {
+    std::vector<bool> cloned(pattern.moleculeCount(), false);
+    std::map<std::size_t, std::vector<std::pair<std::size_t, std::size_t>>> bonds;
+    for (std::size_t m = 0; m < pattern.moleculeCount(); ++m) {
+        const auto& molecule = pattern.molecules()[m];
+        const auto indexes = multiComponentIndexes(model, molecule);
+        for (std::size_t site = 0; site < molecule.sites.size(); ++site) {
+            if (molecule.sites[site].bondKind == BondKind::Exact) {
+                bonds[molecule.sites[site].bondGroup.value].emplace_back(m, indexes[site]);
+            }
+        }
+    }
+    for (const auto& [group, endpoints] : bonds) {
+        (void)group;
+        if (endpoints.size() != 2 || endpoints[0].first == endpoints[1].first) continue;
+        const auto& a = pattern.molecules()[endpoints[0].first];
+        const auto& b = pattern.molecules()[endpoints[1].first];
+        const auto& aComponent = multiMoleculeType(model, a.moleculeType).getComponents()[endpoints[0].second];
+        const auto& bComponent = multiMoleculeType(model, b.moleculeType).getComponents()[endpoints[1].second];
+        const bool sameType = multiBindingSiteId(
+            multiValidId(a.moleculeType), multiValidId(aComponent.name), endpoints[0].second) ==
+            multiBindingSiteId(multiValidId(b.moleculeType),
+                               multiValidId(bComponent.name), endpoints[1].second);
+        if (sameType) cloned[std::max(endpoints[0].first, endpoints[1].first)] = true;
+    }
+    return cloned;
+}
+
+std::string multiRoleSpeciesTypeId(const std::string& moleculeType,
+                                   const std::string& patternType,
+                                   std::size_t molecule) {
+    return "st_" + multiValidId(moleculeType) + "_role_" +
+           multiValidId(patternType) + "_M" + std::to_string(molecule + 1);
+}
+
+std::string multiRoleId(const std::string& base, const std::string& roleType) {
+    return base + "_role_" + roleType.substr(3);
+}
 } // namespace
 
 std::string SbmlMultiWriter::escapeXml(const std::string& text) {
@@ -544,20 +599,115 @@ std::string SbmlMultiWriter::writeSpeciesTypes(const ast::Model& model) {
         sbml << "      </multi:speciesType>\n";
     }
 
+    // Multi requires the two ends of an InSpeciesTypeBond to resolve to
+    // different BindingSiteSpeciesType objects.  When a BNGL homodimer uses
+    // the same site type twice, emit a role-specific copy for the second
+    // molecular instance.  Its multi:name remains the original molecule name,
+    // so import reconstructs the same BNGL molecule type.
+    visitMultiPatterns(model, [&](const std::string& text, const std::string& id) {
+        const auto pattern = MultiPattern::parse(text);
+        if (pattern.moleculeCount() < 2) return;
+        const auto patternType = multiTypeId(pattern, id);
+        const auto cloned = multiRoleClonedMolecules(model, pattern);
+        for (std::size_t m = 0; m < cloned.size(); ++m) {
+            if (!cloned[m]) continue;
+            const auto& molecule = pattern.molecules()[m];
+            const auto& molType = multiMoleculeType(model, molecule.moleculeType);
+            const auto roleType = multiRoleSpeciesTypeId(molecule.moleculeType, patternType, m);
+            const auto molIndex = static_cast<std::size_t>(
+                &molType - model.getMoleculeTypes().data());
+            std::vector<std::string> roleBindingIds(molType.getComponents().size());
+            for (std::size_t c = 0; c < molType.getComponents().size(); ++c) {
+                if (bindingSiteIds[molIndex][c].empty()) continue;
+                const auto base = multiBindingSiteId(makeValidSBMLId(molecule.moleculeType),
+                    makeValidSBMLId(molType.getComponents()[c].name), c);
+                roleBindingIds[c] = multiRoleId(base, roleType);
+                const auto& component = molType.getComponents()[c];
+                if (component.allowedStates.empty()) {
+                    sbml << "      <multi:bindingSiteSpeciesType multi:id=\"" << roleBindingIds[c]
+                         << "\" multi:name=\"" << escapeXml(component.name) << "\"/>\n";
+                } else {
+                    const auto feature = roleBindingIds[c] + "_state";
+                    sbml << "      <multi:bindingSiteSpeciesType multi:id=\"" << roleBindingIds[c]
+                         << "\" multi:name=\"" << escapeXml(component.name) << "\">\n"
+                         << "        <multi:listOfSpeciesFeatureTypes>\n"
+                         << "          <multi:speciesFeatureType multi:id=\"" << feature
+                         << "\" multi:name=\"" << escapeXml(component.name)
+                         << "\" multi:occur=\"1\">\n"
+                         << "            <multi:listOfPossibleSpeciesFeatureValues>\n";
+                    for (const auto& state : component.allowedStates) {
+                        sbml << "              <multi:possibleSpeciesFeatureValue multi:id=\""
+                             << feature << "_" << makeValidSBMLId(state) << "\" multi:name=\""
+                             << escapeXml(state) << "\"/>\n";
+                    }
+                    sbml << "            </multi:listOfPossibleSpeciesFeatureValues>\n"
+                         << "          </multi:speciesFeatureType>\n"
+                         << "        </multi:listOfSpeciesFeatureTypes>\n"
+                         << "      </multi:bindingSiteSpeciesType>\n";
+                }
+            }
+            sbml << "      <multi:speciesType multi:id=\"" << roleType << "\" multi:name=\""
+                 << escapeXml(molecule.moleculeType) << "\">\n";
+            bool hasFeatures = false;
+            for (std::size_t c = 0; c < molType.getComponents().size(); ++c) {
+                hasFeatures = hasFeatures || (roleBindingIds[c].empty() &&
+                    !molType.getComponents()[c].allowedStates.empty());
+            }
+            if (hasFeatures) {
+                sbml << "        <multi:listOfSpeciesFeatureTypes>\n";
+                for (std::size_t c = 0; c < molType.getComponents().size(); ++c) {
+                    const auto& component = molType.getComponents()[c];
+                    if (!roleBindingIds[c].empty() || component.allowedStates.empty()) continue;
+                    const auto feature = roleType + "_" + makeValidSBMLId(component.name) + "_" +
+                        std::to_string(c + 1);
+                    sbml << "          <multi:speciesFeatureType multi:id=\"" << feature
+                         << "\" multi:name=\"" << escapeXml(component.name)
+                         << "\" multi:occur=\"1\">\n"
+                         << "            <multi:listOfPossibleSpeciesFeatureValues>\n";
+                    for (const auto& state : component.allowedStates) {
+                        sbml << "              <multi:possibleSpeciesFeatureValue multi:id=\""
+                             << feature << "_" << makeValidSBMLId(state) << "\" multi:name=\""
+                             << escapeXml(state) << "\"/>\n";
+                    }
+                    sbml << "            </multi:listOfPossibleSpeciesFeatureValues>\n"
+                         << "          </multi:speciesFeatureType>\n";
+                }
+                sbml << "        </multi:listOfSpeciesFeatureTypes>\n";
+            }
+            if (std::any_of(roleBindingIds.begin(), roleBindingIds.end(),
+                            [](const auto& value) { return !value.empty(); })) {
+                sbml << "        <multi:listOfSpeciesTypeInstances>\n";
+                for (std::size_t c = 0; c < molType.getComponents().size(); ++c) {
+                    if (roleBindingIds[c].empty()) continue;
+                    sbml << "          <multi:speciesTypeInstance multi:id=\"" << roleType
+                         << "_component_" << c + 1 << "\" multi:name=\""
+                         << escapeXml(molType.getComponents()[c].name)
+                         << "\" multi:speciesType=\"" << roleBindingIds[c] << "\"/>\n";
+                }
+                sbml << "        </multi:listOfSpeciesTypeInstances>\n";
+            }
+            sbml << "      </multi:speciesType>\n";
+        }
+    });
+
     visitMultiPatterns(model, [&](const std::string& text, const std::string& id) {
         const auto pattern = MultiPattern::parse(text);
         if (pattern.moleculeCount() < 2) return;
         const auto type = multiTypeId(pattern, id);
+        const auto cloned = multiRoleClonedMolecules(model, pattern);
         sbml << "      <multi:speciesType multi:id=\"" << type << "\">\n"
              << "        <multi:listOfSpeciesTypeInstances>\n";
         for (std::size_t m = 0; m < pattern.moleculeCount(); ++m) {
             sbml << "          <multi:speciesTypeInstance multi:id=\"" << type << "_M" << m + 1
-                 << "\" multi:speciesType=\"st_" << escapeXml(pattern.molecules()[m].moleculeType)
+                 << "\" multi:speciesType=\""
+                 << (cloned[m] ? multiRoleSpeciesTypeId(pattern.molecules()[m].moleculeType, type, m)
+                               : "st_" + escapeXml(pattern.molecules()[m].moleculeType))
                  << "\"/>\n";
         }
         sbml << "        </multi:listOfSpeciesTypeInstances>\n"
              << "        <multi:listOfSpeciesTypeComponentIndexes>\n";
         std::map<std::size_t, std::vector<std::string>> bonds;
+        std::map<std::size_t, std::vector<std::string>> bondSiteTypes;
         for (std::size_t m = 0; m < pattern.moleculeCount(); ++m) {
             const auto& molecule = pattern.molecules()[m];
             const auto& declaration = multiMoleculeType(model, molecule.moleculeType);
@@ -568,7 +718,9 @@ std::string SbmlMultiWriter::writeSpeciesTypes(const ast::Model& model) {
                 }
                 sbml << "          <multi:speciesTypeComponentIndex multi:id=\""
                      << multiComponentId(type, m, c, true)
-                     << "\" multi:component=\"st_" << escapeXml(molecule.moleculeType)
+                     << "\" multi:component=\""
+                     << (cloned[m] ? multiRoleSpeciesTypeId(molecule.moleculeType, type, m)
+                                    : "st_" + escapeXml(molecule.moleculeType))
                      << "_component_" << c + 1 << "\" multi:identifyingParent=\""
                      << type << "_M" << m + 1 << "\"/>\n";
             }
@@ -577,6 +729,13 @@ std::string SbmlMultiWriter::writeSpeciesTypes(const ast::Model& model) {
                 if (molecule.sites[site].bondKind == BondKind::Exact) {
                     bonds[molecule.sites[site].bondGroup.value].push_back(
                         multiComponentId(type, m, indexes[site], true));
+                    const auto& component = declaration.getComponents()[indexes[site]];
+                    const auto baseSiteType = multiBindingSiteId(
+                            makeValidSBMLId(molecule.moleculeType),
+                            makeValidSBMLId(component.name), indexes[site]);
+                    bondSiteTypes[molecule.sites[site].bondGroup.value].push_back(
+                        cloned[m] ? multiRoleId(baseSiteType,
+                            multiRoleSpeciesTypeId(molecule.moleculeType, type, m)) : baseSiteType);
                 }
             }
         }
@@ -584,6 +743,12 @@ std::string SbmlMultiWriter::writeSpeciesTypes(const ast::Model& model) {
         if (!bonds.empty()) sbml << "        <multi:listOfInSpeciesTypeBonds>\n";
         for (const auto& [group, endpoints] : bonds) {
             if (endpoints.size() != 2) throw std::invalid_argument("SBML-Multi bond requires two endpoints");
+            const auto& siteTypes = bondSiteTypes.at(group);
+            if (siteTypes.size() != 2 || siteTypes[0] == siteTypes[1]) {
+                throw std::invalid_argument(
+                    "SBML-Multi cannot encode a bond between the same "
+                    "BindingSiteSpeciesType at both endpoints (Multi section 3.13.2)");
+            }
             sbml << "          <multi:inSpeciesTypeBond multi:bindingSite1=\"" << endpoints[0]
                  << "\" multi:bindingSite2=\"" << endpoints[1] << "\"/>\n";
         }
@@ -629,6 +794,9 @@ std::string SbmlMultiWriter::writeSeedSpecies(
         const auto pattern = MultiPattern::parse(text);
         if (pattern.moleculeCount() == 0) return;
         const auto type = multiTypeId(pattern, id);
+        const auto cloned = pattern.moleculeCount() > 1
+            ? multiRoleClonedMolecules(model, pattern)
+            : std::vector<bool>(pattern.moleculeCount(), false);
         double amount = 0;
         bool constant = false;
         std::string compartment = pattern.compartment().empty() ? "default" : pattern.compartment();
@@ -676,9 +844,13 @@ std::string SbmlMultiWriter::writeSeedSpecies(
                                       site->stateConstraint) == component.allowedStates.end()) {
                             throw std::invalid_argument("SBML-Multi requires a single declared state in a species feature");
                         }
-                        const auto feature = multiBindingSiteId(
+                        const auto baseFeature = multiBindingSiteId(
                             makeValidSBMLId(molecule.moleculeType),
-                            makeValidSBMLId(component.name), c) + "_state";
+                            makeValidSBMLId(component.name), c);
+                        const auto feature = (cloned[m]
+                            ? multiRoleId(baseFeature, multiRoleSpeciesTypeId(
+                                  molecule.moleculeType, type, m))
+                            : baseFeature) + "_state";
                         features.push_back("          <multi:speciesFeature multi:speciesFeatureType=\"" + feature +
                             "\" multi:occur=\"1\" multi:component=\"" +
                             multiComponentId(type, m, c, pattern.moleculeCount() > 1) +
@@ -694,8 +866,12 @@ std::string SbmlMultiWriter::writeSeedSpecies(
                                       site->stateConstraint) == component.allowedStates.end()) {
                             throw std::invalid_argument("SBML-Multi requires a single declared state in a species feature");
                         }
-                        const auto feature = "st_" + makeValidSBMLId(molecule.moleculeType) + "_" +
+                        const auto baseFeature = "st_" + makeValidSBMLId(molecule.moleculeType) + "_" +
                             makeValidSBMLId(component.name) + "_" + std::to_string(c + 1);
+                        const auto feature = cloned[m]
+                            ? multiRoleSpeciesTypeId(molecule.moleculeType, type, m) + "_" +
+                                  makeValidSBMLId(component.name) + "_" + std::to_string(c + 1)
+                            : baseFeature;
                         const auto parent = pattern.moleculeCount() > 1
                             ? " multi:component=\"" + type + "_M" + std::to_string(m + 1) + "\"" : "";
                         features.push_back("          <multi:speciesFeature multi:speciesFeatureType=\"" + feature +
