@@ -1376,7 +1376,7 @@ def test_python_test_jobs_download_the_matching_native_cli_artifact():
     }
     assert artifacts == {
         "ubuntu-22.04": "bng_cpp-ubuntu-22.04-gcc-12",
-        "macos-14": "bng_cpp-macos-14-clang-arm64",
+        "macos-15": "bng_cpp-macos-15-clang-arm64",
         "windows-2022": "bng_cpp-windows-2022-msvc",
     }
     assert "${{ github.workspace }}/build/cpp/bng_cpp" in matrix_job["env"]["BNG_CPP"]
