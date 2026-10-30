@@ -119,6 +119,25 @@ TEST_CASE("SBML-Multi reuses Core units without a second unit system") {
     CHECK(xml.find("multi:units") == std::string::npos);
 }
 
+TEST_CASE("SBML writers omit empty parameter lists") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin model
+  begin molecule types
+    A()
+  end molecule types
+  begin seed species
+    A() 1
+  end seed species
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+
+    const auto core = bng::io::SbmlWriter::write(*model, nullptr);
+    const auto multi = bng::io::SbmlMultiWriter::write(*model);
+    CHECK(core.find("<listOfParameters>") == std::string::npos);
+    CHECK(multi.find("<listOfParameters>") == std::string::npos);
+}
+
 TEST_CASE("SBML-Multi rejects unit-aware reaction rates it cannot convert") {
     const auto model = bng::parser::parseModel(R"BNGL(
 begin model

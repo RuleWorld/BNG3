@@ -563,6 +563,7 @@ std::string SbmlMultiWriter::writeSpeciesTypes(const ast::Model& model) {
 
 std::string SbmlMultiWriter::writeParameters(
     const ast::Model& model, const compile::CompiledModel& compiled) {
+    if (model.getParameters().all().empty() && model.getObservables().empty()) return {};
     std::ostringstream sbml;
     sbml << "    <listOfParameters>\n";
 
