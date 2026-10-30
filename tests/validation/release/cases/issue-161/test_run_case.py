@@ -6,11 +6,44 @@ from pathlib import Path
 import subprocess
 
 from run_case import (
+    _compare_source_networks,
     _git_identity,
+    _preserve_evidence_file,
     _reference_sbml_validity,
     _sbml_validity,
     _unit_compartment_source,
 )
+
+
+def test_evidence_file_is_copied_to_requested_artifact_path(tmp_path: Path):
+    source = tmp_path / "generated.xml"
+    source.write_text("<sbml/>", encoding="utf-8")
+    artifacts = tmp_path / "evidence"
+
+    path = _preserve_evidence_file(source, artifacts, "candidate.xml")
+
+    assert Path(path) == artifacts / "candidate.xml"
+    assert Path(path).read_text(encoding="utf-8") == "<sbml/>"
+
+
+def test_source_network_oracle_comparison_detects_seed_quantity_changes(
+    tmp_path: Path,
+):
+    reference = tmp_path / "reference.net"
+    candidate = tmp_path / "candidate.net"
+    prefix = """begin species
+    1 A() {amount} 0
+end species
+begin reactions
+end reactions
+"""
+    reference.write_text(prefix.format(amount="100"), encoding="utf-8")
+    candidate.write_text(prefix.format(amount="101"), encoding="utf-8")
+
+    diff = _compare_source_networks(reference, candidate)
+
+    assert not diff.ok
+    assert diff.initial_amounts_changed == {"A()"}
 
 
 def test_git_identity_accepts_bng2_file_path_and_reports_checkout_dirty_state(

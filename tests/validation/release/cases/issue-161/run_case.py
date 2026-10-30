@@ -87,6 +87,31 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def _compare_source_networks(reference, candidate, *, molecule_name_aliases=None):
+    """Compare source and reconstructed networks, including initial quantities."""
+    if isinstance(reference, (str, Path)):
+        reference = parse_net(reference)
+    if isinstance(candidate, (str, Path)):
+        candidate = parse_net(candidate)
+    if reference is None or candidate is None:
+        raise ValueError("an issue-161 source network could not be parsed")
+    return compare_net(
+        reference,
+        candidate,
+        compare_initial_amounts=True,
+        molecule_name_aliases=molecule_name_aliases,
+    )
+
+
+def _preserve_evidence_file(source: Path, directory: Path, name: str) -> str:
+    """Copy one generated input/output into the uploaded acceptance evidence."""
+
+    directory.mkdir(parents=True, exist_ok=True)
+    destination = directory / name
+    shutil.copy2(source, destination)
+    return str(destination)
+
+
 def _sbml_validity(path: Path) -> dict:
     """Record libSBML consistency errors without treating invalid XML as parity."""
 
@@ -235,6 +260,7 @@ def _bounded_network(
     perl: str,
     work_dir: Path,
     timeout: float,
+    artifact_path: Path | None = None,
 ) -> Path:
     work_dir.mkdir(parents=True, exist_ok=True)
     model = work_dir / "issue161_source.bngl"
@@ -258,6 +284,9 @@ def _bounded_network(
     network = work_dir / "issue161_source.net"
     if not network.is_file() or not network.stat().st_size:
         raise RuntimeError(f"{engine} bounded source network is missing")
+    if artifact_path is not None:
+        artifact_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(network, artifact_path)
     return network
 
 
@@ -285,6 +314,7 @@ def _compare_bounded_source_and_reimport(
     work_dir: Path,
     timeout: float,
     expected_one_rule_rates: set[str],
+    artifact_dir: Path | None = None,
 ) -> dict:
     """Compare bounded graph and rates to pinned BNG2 and direct BNG3."""
 
@@ -297,6 +327,7 @@ def _compare_bounded_source_and_reimport(
         perl=perl,
         work_dir=work_dir / "bng2",
         timeout=timeout,
+        artifact_path=(artifact_dir / "bng2-source.net") if artifact_dir else None,
     )
     bng3_net = _bounded_network(
         source_text,
@@ -306,13 +337,14 @@ def _compare_bounded_source_and_reimport(
         perl=perl,
         work_dir=work_dir / "bng3",
         timeout=timeout,
+        artifact_path=(artifact_dir / "bng3-source.net") if artifact_dir else None,
     )
     oracle = parse_net(bng2_net)
     direct = parse_net(bng3_net)
     imported = parse_net(reimported_net)
     if oracle is None or direct is None or imported is None:
         raise RuntimeError("a bounded issue-161 network could not be parsed")
-    direct_diff = compare_net(oracle, direct)
+    direct_diff = _compare_source_networks(oracle, direct)
     if not direct_diff.ok:
         raise RuntimeError(
             f"direct BNG3 source differs from pinned BNG2: {direct_diff.summary()}"
@@ -328,6 +360,9 @@ def _compare_bounded_source_and_reimport(
             perl=perl,
             work_dir=work_dir / "one-rule-bng2",
             timeout=timeout,
+            artifact_path=(artifact_dir / "bng2-one-rule.net")
+            if artifact_dir
+            else None,
         )
     )
     one_rule_bng3 = parse_net(
@@ -339,11 +374,14 @@ def _compare_bounded_source_and_reimport(
             perl=perl,
             work_dir=work_dir / "one-rule-bng3",
             timeout=timeout,
+            artifact_path=(artifact_dir / "bng3-one-rule.net")
+            if artifact_dir
+            else None,
         )
     )
     if one_rule_bng2 is None or one_rule_bng3 is None:
         raise RuntimeError("the one-rule source oracle network could not be parsed")
-    one_rule_diff = compare_net(one_rule_bng2, one_rule_bng3)
+    one_rule_diff = _compare_source_networks(one_rule_bng2, one_rule_bng3)
     one_rule_rates = {reaction[-1] for reaction in one_rule_bng2.reaction_multiset}
     if not one_rule_diff.ok or one_rule_rates != expected_one_rule_rates:
         raise RuntimeError(
@@ -351,7 +389,7 @@ def _compare_bounded_source_and_reimport(
             f"rates={sorted(one_rule_rates)}, diff={one_rule_diff.summary()}"
         )
 
-    imported_diff = compare_net(
+    imported_diff = _compare_source_networks(
         oracle, imported, molecule_name_aliases=MOLECULE_ALIASES
     )
     topology_and_rates_match = (
@@ -368,6 +406,17 @@ def _compare_bounded_source_and_reimport(
             "reimported Multi network differs from pinned BNG2 in species, "
             f"reaction topology, or rates: {imported_diff.summary()}"
         )
+    artifact_files = {}
+    if artifact_dir is not None:
+        artifact_files = {
+            "bng2_source": str(artifact_dir / "bng2-source.net"),
+            "bng3_source": str(artifact_dir / "bng3-source.net"),
+            "bng2_one_rule": str(artifact_dir / "bng2-one-rule.net"),
+            "bng3_one_rule": str(artifact_dir / "bng3-one-rule.net"),
+            "sbml_multi_reimport": _preserve_evidence_file(
+                reimported_net, artifact_dir, "sbml-multi-reimport.net"
+            ),
+        }
     return {
         "bounded_depth": 2,
         "network_counts": {
@@ -389,6 +438,7 @@ def _compare_bounded_source_and_reimport(
         "one_rule_source_diff": one_rule_diff.summary(),
         "reimport_topology_and_rates": "pass",
         "reimport_helper_observable_groups": len(imported_diff.groups_only_test),
+        "network_artifacts": artifact_files,
     }
 
 
@@ -400,6 +450,11 @@ def main() -> int:
     parser.add_argument("--timeout", type=float, default=60)
     parser.add_argument("--report", type=Path)
     args = parser.parse_args()
+    evidence_dir = (
+        args.report.with_suffix("").with_name(args.report.stem + "_evidence")
+        if args.report
+        else None
+    )
 
     for name, path in (("bng_cpp", args.bng_cpp), ("BNG2.pl", args.bng2)):
         if not path.is_file():
@@ -445,8 +500,13 @@ def main() -> int:
                 perl_executable=args.perl,
                 timeout=args.timeout,
                 model_names=[MODEL_NAME],
+                artifact_dir=(evidence_dir / "strict-authored-xml")
+                if evidence_dir
+                else None,
             )
             consumer = None
+            candidate_artifact = None
+            reference_artifact = None
             reference_validity = {
                 "status": "error",
                 "error": "BNG2 authored XML was not validated",
@@ -478,6 +538,15 @@ def main() -> int:
                 else:
                     consumer_error = None
                     candidate_validity = _sbml_validity(output)
+                    candidate_artifact = (
+                        _preserve_evidence_file(
+                            output,
+                            evidence_dir / "authored-xml",
+                            f"{Path(case).stem}.bng3.xml",
+                        )
+                        if evidence_dir
+                        else None
+                    )
                     try:
                         consumer = _consume_and_reimport(
                             output, args.bng_cpp.resolve(), cpp_dir, args.timeout
@@ -524,6 +593,15 @@ def main() -> int:
                     }
                 else:
                     reference_validity = _reference_sbml_validity(reference_xml)
+                    reference_artifact = (
+                        _preserve_evidence_file(
+                            reference_xml,
+                            evidence_dir / "authored-xml",
+                            f"{Path(case).stem}.bng2.xml",
+                        )
+                        if evidence_dir
+                        else None
+                    )
             case_results.append(
                 {
                     "source": case,
@@ -532,6 +610,8 @@ def main() -> int:
                     "xml_validity": {
                         "reference_bng2": reference_validity,
                         "candidate_bng3": candidate_validity,
+                        "reference_xml_artifact": reference_artifact,
+                        "candidate_xml_artifact": candidate_artifact,
                     },
                     "reimport_network_smoke": {
                         "status": "pass" if consumer_error is None else "error",
@@ -558,6 +638,9 @@ def main() -> int:
                                 if case == CASES[0]
                                 else {"0.01", "0.1"}
                             ),
+                            artifact_dir=(evidence_dir / Path(case).stem / "networks")
+                            if evidence_dir
+                            else None,
                         ),
                     }
                 except Exception as exc:
@@ -565,6 +648,11 @@ def main() -> int:
                         "status": "error",
                         "details": None,
                         "error": str(exc),
+                        "artifact_directory": (
+                            str(evidence_dir / Path(case).stem / "networks")
+                            if evidence_dir
+                            else None
+                        ),
                     }
             else:
                 entry["bounded_source_rate_parity"] = {
@@ -574,6 +662,7 @@ def main() -> int:
                 }
     report = {
         "case": "issue-161/authored-multi-and-reimport-network-smoke",
+        "evidence_directory": str(evidence_dir) if evidence_dir else None,
         "provenance": provenance,
         "cases": case_results,
         "classification": (
