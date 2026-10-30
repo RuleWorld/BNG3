@@ -1,6 +1,14 @@
 name: Issue 472 documentation acceptance
 
 on:
+  push:
+    branches: [main]
+    paths:
+      - 'README.md'
+      - 'docs/**'
+      - 'provenance/capability-matrix.yml'
+      - 'tests/validation/release/cases/issue-472/**'
+      - '.github/workflows/issue-472-docs-acceptance.yml'
   pull_request:
     branches: [main]
     paths:
@@ -54,3 +62,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
+          name: issue-472-docs-acceptance-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/issue-472-artifacts/
+          if-no-files-found: error
+          retention-days: 30
