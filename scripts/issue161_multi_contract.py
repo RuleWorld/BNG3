@@ -6,12 +6,69 @@ import hashlib
 from pathlib import Path
 import tempfile
 import xml.etree.ElementTree as ET
-
-from scripts.cross_validate import diff_structural_xml
+from collections import Counter
+from scripts.issue161_multi_expected import SOURCE_SEMANTICS
 
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _source_manifest_for(source: Path) -> dict | None:
+    digest = _sha256(source)
+    return next(
+        (
+            manifest
+            for manifest in SOURCE_SEMANTICS.values()
+            if manifest["sha256"] == digest
+        ),
+        None,
+    )
+
+
+def sbml_validity(path: Path) -> dict:
+    """Return libSBML consistency errors for source-contract eligibility."""
+    import libsbml
+
+    document = libsbml.readSBMLFromFile(str(path))
+    if document is None:
+        return {
+            "status": "invalid",
+            "severity_error_count": 1,
+            "diagnostics": ["libSBML could not read the document"],
+        }
+    document.checkConsistency()
+    diagnostics = []
+    for index in range(document.getNumErrors()):
+        error = document.getError(index)
+        if error.getSeverity() >= libsbml.LIBSBML_SEV_ERROR:
+            diagnostics.append(
+                {
+                    "id": error.getErrorId(),
+                    "line": error.getLine(),
+                    "message": error.getMessage().strip().splitlines()[0],
+                }
+            )
+    return {
+        "status": "valid" if not diagnostics else "invalid",
+        "severity_error_count": len(diagnostics),
+        "diagnostics": diagnostics,
+    }
+
+
+def source_contract_eligible(
+    reference_validity: dict,
+    candidate_validity: dict,
+    semantic_contract: dict,
+    mutation_controls: dict,
+) -> bool:
+    """Allow a source contract to replace only an invalid reference document."""
+    return bool(mutation_controls) and (
+        reference_validity["status"] == "invalid"
+        and candidate_validity["status"] == "valid"
+        and semantic_contract["status"] == "pass"
+        and all(control["status"] == "pass" for control in mutation_controls.values())
+    )
 
 
 MULTI_SEMANTIC_SECTIONS = (
@@ -21,95 +78,6 @@ MULTI_SEMANTIC_SECTIONS = (
     "listOfSpecies",
     "listOfReactions",
 )
-SOURCE_SEMANTICS = {
-    "test_write_sbml_multi.bngl": {
-        "sha256": "226d9719593f806eb766c1641b9815675e6b98590a6a6f264719b7c7f7c3e13b",
-        "molecules": {"R": ["l", "l"], "L": ["r", "r", "r"]},
-        "seeds": {"R(l,l)": 300.0, "L(r,r,r)": 1200.0},
-        "species": {
-            "R(l,l)",
-            "L(r,r,r)",
-            "R(l)",
-            "R(l!1).L(r!1,r,r)",
-            "L(r,r,r!+)",
-            "R(l!1).L(r!1,r,r!+)",
-        },
-        "bindings": {
-            "R(l,l)": {("R", "l", 1, "unbound"), ("R", "l", 2, "unbound")},
-            "L(r,r,r)": {
-                ("L", "r", 1, "unbound"),
-                ("L", "r", 2, "unbound"),
-                ("L", "r", 3, "unbound"),
-            },
-            "R(l)": {("R", "l", 1, "unbound"), ("R", "l", 2, "either")},
-            "R(l!1).L(r!1,r,r)": {
-                ("R", "l", 2, "either"),
-                ("L", "r", 2, "unbound"),
-                ("L", "r", 3, "unbound"),
-            },
-            "L(r,r,r!+)": {
-                ("L", "r", 1, "unbound"),
-                ("L", "r", 2, "unbound"),
-                ("L", "r", 3, "bound"),
-            },
-            "R(l!1).L(r!1,r,r!+)": {
-                ("R", "l", 2, "either"),
-                ("L", "r", 2, "unbound"),
-                ("L", "r", 3, "bound"),
-            },
-        },
-        "reactions": {"RR1", "RR1r", "RR2", "RR2r"},
-        "stoichiometry": {
-            "RR1": ({"R(l)", "L(r,r,r)"}, {"R(l!1).L(r!1,r,r)"}),
-            "RR1r": ({"R(l!1).L(r!1,r,r)"}, {"R(l)", "L(r,r,r)"}),
-            "RR2": ({"R(l)", "L(r,r,r!+)"}, {"R(l!1).L(r!1,r,r!+)"}),
-            "RR2r": (
-                {"R(l!1).L(r!1,r,r!+)"},
-                {"R(l)", "L(r,r,r!+)"},
-            ),
-        },
-        "rate_operator": "times",
-        "parameters": {"kon": "0.001", "koff": "0.1"},
-        "states": {},
-        "kinetics": {
-            "RR1": {"kon", "RR1_R1", "S2"},
-            "RR1r": {"koff", "RR1_P1"},
-            "RR2": {"kon", "RR1_R1", "RR2_R2"},
-            "RR2r": {"koff", "RR2_P1"},
-        },
-    },
-    "state_bearing_binding_refusal.bngl": {
-        "sha256": "57b53ca1d4aa9708aa8722a363142ec05188ccb982cd4d253bb71bcd59ba9627",
-        "molecules": {"R": ["l"], "L": ["r"]},
-        "features": {("R", "l", 1): {"u", "p"}},
-        "seeds": {"R(l~u)": 100.0, "L(r)": 100.0},
-        "species": {
-            "R(l~u)",
-            "L(r)",
-            "R(l~u!1).L(r!1)",
-        },
-        "bindings": {
-            "R(l~u)": {("R", "l", 1, "unbound")},
-            "L(r)": {("L", "r", 1, "unbound")},
-            "R(l~u!1).L(r!1)": set(),
-        },
-        "reactions": {"RR1", "RR1r"},
-        "stoichiometry": {
-            "RR1": ({"R(l~u)", "L(r)"}, {"R(l~u!1).L(r!1)"}),
-            "RR1r": ({"R(l~u!1).L(r!1)"}, {"R(l~u)", "L(r)"}),
-        },
-        "rate_operator": "times",
-        "parameters": {},
-        "states": {
-            ("R(l~u)", "R", "l", "u"),
-            ("R(l~u!1).L(r!1)", "R", "l", "u"),
-        },
-        "kinetics": {
-            "RR1": {"0.01", "S1", "S2"},
-            "RR1r": {"0.1", "RR1_P1"},
-        },
-    },
-}
 
 
 def _local_attribute(element: ET.Element, name: str) -> str | None:
@@ -255,6 +223,8 @@ def _xml_mutation_controls(xml_path: Path) -> dict:
                 continue
             path = root / f"{name}.xml"
             modified.write(path, encoding="utf-8", xml_declaration=True)
+            from scripts.cross_validate import diff_structural_xml
+
             difference = diff_structural_xml(
                 xml_path, path, sections=MULTI_SEMANTIC_SECTIONS
             )
@@ -267,8 +237,8 @@ def _xml_mutation_controls(xml_path: Path) -> dict:
 
 def _source_semantic_contract(source: Path, xml_path: Path) -> dict:
     """Check SBML against a fixture-scoped contract derived from its BNGL."""
-    manifest = SOURCE_SEMANTICS.get(source.name)
-    if manifest is None or _sha256(source) != manifest["sha256"]:
+    manifest = _source_manifest_for(source)
+    if manifest is None:
         return {"status": "error", "error": "source contract or BNGL hash mismatch"}
 
     root = ET.parse(xml_path).getroot()
@@ -280,6 +250,12 @@ def _source_semantic_contract(source: Path, xml_path: Path) -> dict:
         return _local_attribute(node, name)
 
     problems = []
+    if (
+        attribute(root, "level") != "3"
+        or attribute(root, "version") != "1"
+        or attribute(root, "required") != "true"
+    ):
+        problems.append("SBML Level 3 / Multi required package flags differ")
     base_types = {
         attribute(node, "name"): node
         for node in elements("speciesType")
@@ -295,10 +271,20 @@ def _source_semantic_contract(source: Path, xml_path: Path) -> dict:
     }
     if actual_molecules != manifest["molecules"]:
         problems.append(f"molecule sites differ: {actual_molecules}")
+    missing_types = set(manifest["molecules"]) - set(base_types)
+    if missing_types:
+        problems.append(f"missing molecule species types: {sorted(missing_types)}")
+        return {
+            "status": "fail",
+            "source_sha256": manifest["sha256"],
+            "checks": ["molecule sites"],
+            "problems": problems,
+        }
     binding_site_types = {
         attribute(node, "id"): node for node in elements("bindingSiteSpeciesType")
     }
     actual_features = {}
+    feature_occurrences = {}
     for molecule, base_type in base_types.items():
         site_ordinals = {}
         for component in base_type.iter():
@@ -320,13 +306,23 @@ def _source_semantic_contract(source: Path, xml_path: Path) -> dict:
                 actual_features[(molecule, site_name, site_ordinals[site_name])] = (
                     values
                 )
+                feature_occurrences[(molecule, site_name, site_ordinals[site_name])] = [
+                    attribute(feature, "occur")
+                    for feature in binding_type.iter()
+                    if feature.tag.rsplit("}", 1)[-1] == "speciesFeatureType"
+                ]
     if actual_features != manifest.get("features", {}):
         problems.append(f"site feature values differ: {actual_features}")
+    if any(values != ["1"] for values in feature_occurrences.values()):
+        problems.append(f"site feature occurrences differ: {feature_occurrences}")
 
     species = {attribute(node, "name"): node for node in elements("species")}
     if set(species) != manifest["species"]:
         problems.append(f"species patterns differ: {sorted(species)}")
-    for name, amount in manifest["seeds"].items():
+    expected_amounts = {
+        name: manifest["seeds"].get(name, 0.0) for name in manifest["species"]
+    }
+    for name, amount in expected_amounts.items():
         node = species.get(name)
         if node is None or attribute(node, "initialAmount") is None:
             problems.append(f"missing initial amount for {name}")
@@ -334,7 +330,11 @@ def _source_semantic_contract(source: Path, xml_path: Path) -> dict:
             problems.append(f"initial amount differs for {name}")
 
     compartments = elements("compartment")
-    if len(compartments) != 1 or attribute(compartments[0], "size") != "1":
+    if (
+        len(compartments) != 1
+        or attribute(compartments[0], "size") != "1"
+        or attribute(compartments[0], "spatialDimensions") != "3"
+    ):
         problems.append("expected one unit-volume compartment")
     elif any(
         attribute(node, "compartment") != attribute(compartments[0], "id")
@@ -348,6 +348,19 @@ def _source_semantic_contract(source: Path, xml_path: Path) -> dict:
         for node in elements("speciesType")
         if attribute(node, "id")
     }
+    complex_type_ids = {
+        attribute(node, "id")
+        for node in elements("speciesType")
+        if attribute(node, "name") not in manifest["molecules"]
+    }
+    for pattern, species_node in species.items():
+        type_id = attribute(species_node, "speciesType")
+        if "." in pattern:
+            expected_type = type_id in complex_type_ids
+        else:
+            expected_type = type_by_id.get(type_id) == pattern.split("(", 1)[0]
+        if not expected_type:
+            problems.append(f"species type assignment differs for {pattern}")
     instance_by_id = {
         attribute(node, "id"): type_by_id.get(attribute(node, "speciesType"))
         for node in elements("speciesTypeInstance")
@@ -406,17 +419,17 @@ def _source_semantic_contract(source: Path, xml_path: Path) -> dict:
         return (molecule, site_name, ordinal) if ordinal else None
 
     for pattern, species_node in species.items():
-        bindings = set()
+        bindings = []
         unresolved_bindings = []
         for outward in species_node.iter():
             if outward.tag.rsplit("}", 1)[-1] != "outwardBindingSite":
                 continue
             identity = site_identity(attribute(outward, "component"))
             if identity is not None:
-                bindings.add((*identity, attribute(outward, "bindingStatus")))
+                bindings.append((*identity, attribute(outward, "bindingStatus")))
             else:
                 unresolved_bindings.append(attribute(outward, "component"))
-        if bindings != manifest["bindings"][pattern]:
+        if Counter(bindings) != Counter(manifest["bindings"][pattern]):
             problems.append(
                 f"binding sites differ for {pattern}: {bindings}; unresolved={unresolved_bindings}"
             )
@@ -438,15 +451,64 @@ def _source_semantic_contract(source: Path, xml_path: Path) -> dict:
             for node in complex_type.iter()
             if node.tag.rsplit("}", 1)[-1] == "speciesTypeInstance"
         }
+        if Counter(complex_instances.values()) != Counter({"R": 1, "L": 1}):
+            problems.append(
+                f"complex molecule composition differs: {complex_instances}"
+            )
+            if any(
+                molecule not in base_types for molecule in complex_instances.values()
+            ):
+                continue
         indexes = {
             attribute(node, "id"): node
             for node in complex_type.iter()
             if node.tag.rsplit("}", 1)[-1] == "speciesTypeComponentIndex"
         }
+        for instance_id, molecule in complex_instances.items():
+            expected_components = Counter()
+            expected_ordinals = {}
+            for node in base_types[molecule].iter():
+                if node.tag.rsplit("}", 1)[-1] != "speciesTypeInstance":
+                    continue
+                site_name = attribute(node, "name")
+                expected_ordinals[site_name] = expected_ordinals.get(site_name, 0) + 1
+                expected_components[(site_name, expected_ordinals[site_name])] += 1
+            actual_components = Counter()
+            for index in indexes.values():
+                if attribute(index, "identifyingParent") != instance_id:
+                    continue
+                component_id = attribute(index, "component")
+                component = base_components.get(component_id)
+                if component is None:
+                    actual_components[("invalid", 0)] += 1
+                    continue
+                site_name = component[0]
+                matching_sites = [
+                    node
+                    for node in base_types[molecule].iter()
+                    if node.tag.rsplit("}", 1)[-1] == "speciesTypeInstance"
+                    and attribute(node, "name") == site_name
+                ]
+                ordinal = next(
+                    (
+                        position
+                        for position, node in enumerate(matching_sites, 1)
+                        if attribute(node, "id") == component_id
+                    ),
+                    0,
+                )
+                actual_components[(site_name, ordinal)] += 1
+            if actual_components != expected_components:
+                problems.append(
+                    f"complex component inventory differs for {instance_id}: "
+                    f"{actual_components}"
+                )
         observed_bonds = set()
+        bond_count = 0
         for bond in complex_type.iter():
             if bond.tag.rsplit("}", 1)[-1] != "inSpeciesTypeBond":
                 continue
+            bond_count += 1
             for side in ("bindingSite1", "bindingSite2"):
                 index = indexes.get(attribute(bond, side))
                 if index is None:
@@ -477,10 +539,12 @@ def _source_semantic_contract(source: Path, xml_path: Path) -> dict:
                     0,
                 )
                 observed_bonds.add((molecule, site_name, site_number))
-        if observed_bonds != expected_bond:
-            problems.append(f"bond graph differs: {observed_bonds}")
+        if observed_bonds != expected_bond or bond_count != 1:
+            problems.append(
+                f"bond graph differs: endpoints={observed_bonds}, count={bond_count}"
+            )
 
-    observed_states = set()
+    observed_states = []
     feature_types = {
         attribute(node, "id"): attribute(node, "name")
         for node in elements("speciesFeatureType")
@@ -493,6 +557,8 @@ def _source_semantic_contract(source: Path, xml_path: Path) -> dict:
         for feature in species_node.iter():
             if feature.tag.rsplit("}", 1)[-1] != "speciesFeature":
                 continue
+            if attribute(feature, "occur") != "1":
+                problems.append(f"site feature occurrence differs for {species_name}")
             component = attribute(feature, "component")
             molecule = None
             component_node = instances_by_id.get(component)
@@ -515,7 +581,7 @@ def _source_semantic_contract(source: Path, xml_path: Path) -> dict:
             for value in feature.iter():
                 if value.tag.rsplit("}", 1)[-1] != "speciesFeatureValue":
                     continue
-                observed_states.add(
+                observed_states.append(
                     (
                         species_name,
                         molecule,
@@ -527,20 +593,42 @@ def _source_semantic_contract(source: Path, xml_path: Path) -> dict:
         (species_name, molecule, site, value)
         for species_name, molecule, site, value in manifest["states"]
     }
-    if observed_states != expected_states:
+    if Counter(observed_states) != Counter(expected_states):
         problems.append(f"site states differ: {observed_states}")
 
     parameters = {
         attribute(node, "id"): attribute(node, "value")
         for node in elements("parameter")
     }
-    if parameters != manifest["parameters"]:
+    normalized_parameters = {
+        key: str(float(value)) if _is_number(value) else value
+        for key, value in parameters.items()
+    }
+    expected_parameters = {
+        key: str(float(value)) if _is_number(value) else value
+        for key, value in manifest["parameters"].items()
+    }
+    if normalized_parameters != expected_parameters:
         problems.append(f"rate parameters differ: {parameters}")
-    actual_maps = {}
-    actual_stoichiometry = {}
-    actual_operators = {}
+    parameter_constants = {
+        attribute(node, "id"): attribute(node, "constant")
+        for node in elements("parameter")
+    }
+    if parameter_constants != manifest["parameter_constants"]:
+        problems.append(f"parameter mutability differs: {parameter_constants}")
+    actual_reactions = []
+    species_names_by_id = {
+        attribute(node, "id"): attribute(node, "name") for node in species.values()
+    }
+
+    def normalized_tokens(tokens):
+        return tuple(
+            sorted(
+                str(float(token)) if _is_number(token) else token for token in tokens
+            )
+        )
+
     for reaction in elements("reaction"):
-        reaction_id = attribute(reaction, "id")
         pairs = []
         participant_names = {}
         for direction in ("listOfReactants", "listOfProducts"):
@@ -552,7 +640,7 @@ def _source_semantic_contract(source: Path, xml_path: Path) -> dict:
                 ),
                 None,
             )
-            participants = set()
+            participants = []
             if participant_list is not None:
                 for ref in participant_list.iter():
                     if ref.tag.rsplit("}", 1)[-1] != "speciesReference":
@@ -567,12 +655,8 @@ def _source_semantic_contract(source: Path, xml_path: Path) -> dict:
                         None,
                     )
                     if participant is not None:
-                        participants.add(attribute(participant, "name"))
+                        participants.append(attribute(participant, "name"))
             participant_names[direction] = participants
-        actual_stoichiometry[reaction_id] = (
-            participant_names["listOfReactants"],
-            participant_names["listOfProducts"],
-        )
         apply_node = next(
             (
                 node
@@ -581,10 +665,13 @@ def _source_semantic_contract(source: Path, xml_path: Path) -> dict:
             ),
             None,
         )
-        actual_operators[reaction_id] = (
+        operator = (
             list(apply_node)[0].tag.rsplit("}", 1)[-1]
             if apply_node is not None and list(apply_node)
             else None
+        )
+        apply_count = sum(
+            node.tag.rsplit("}", 1)[-1] == "apply" for node in reaction.iter()
         )
         for mapping in reaction.iter():
             if mapping.tag.rsplit("}", 1)[-1] != "speciesTypeComponentMapInProduct":
@@ -596,40 +683,42 @@ def _source_semantic_contract(source: Path, xml_path: Path) -> dict:
             target_id = attribute(mapping, "productComponent")
             target_type = type_by_id.get(target_id) or instance_by_id.get(target_id)
             pairs.append((source_type, target_type))
-        actual_maps[reaction_id] = pairs
-    if set(actual_maps) != manifest["reactions"]:
-        problems.append(f"reaction ids differ: {sorted(actual_maps)}")
-    if actual_stoichiometry != manifest["stoichiometry"]:
-        problems.append(f"reaction participants differ: {actual_stoichiometry}")
-    if any(
-        operator != manifest["rate_operator"] for operator in actual_operators.values()
-    ):
-        problems.append(f"reaction rate operators differ: {actual_operators}")
-    if any(sorted(pairs) != [("L", "L"), ("R", "R")] for pairs in actual_maps.values()):
-        problems.append(f"reaction component maps differ: {actual_maps}")
-
-    actual_kinetics = {}
-    for reaction in elements("reaction"):
-        actual_kinetics[attribute(reaction, "id")] = {
-            text.strip()
+        rate_terms = [
+            species_names_by_id.get(text.strip(), text.strip())
             for node in reaction.iter()
             if node.tag.rsplit("}", 1)[-1] in {"ci", "cn"}
             and (text := (node.text or "").strip())
-        }
-    normalized_kinetics = {
-        reaction_id: {
-            str(float(token)) if _is_number(token) else token for token in tokens
-        }
-        for reaction_id, tokens in actual_kinetics.items()
-    }
-    normalized_expected = {
-        reaction_id: {
-            str(float(token)) if _is_number(token) else token for token in tokens
-        }
-        for reaction_id, tokens in manifest["kinetics"].items()
-    }
-    if normalized_kinetics != normalized_expected:
-        problems.append(f"reaction rate laws differ: {normalized_kinetics}")
+        ]
+        actual_reactions.append(
+            (
+                tuple(sorted(participant_names["listOfReactants"])),
+                tuple(sorted(participant_names["listOfProducts"])),
+                tuple(sorted(pairs)),
+                operator,
+                apply_count,
+                attribute(reaction, "reversible"),
+                normalized_tokens(rate_terms),
+            )
+        )
+    expected_maps = tuple(sorted([("L", "L"), ("R", "R")]))
+    expected_reactions = [
+        (
+            tuple(sorted(reactants)),
+            tuple(sorted(products)),
+            expected_maps,
+            manifest["rate_operator"],
+            1,
+            manifest["reaction_reversible"],
+            normalized_tokens(rate_terms),
+        )
+        for (reactants, products), rate_terms in zip(
+            manifest["stoichiometry"], manifest["kinetics"], strict=True
+        )
+    ]
+    if len(actual_reactions) != manifest["reaction_count"]:
+        problems.append(f"reaction count differs: {len(actual_reactions)}")
+    if Counter(actual_reactions) != Counter(expected_reactions):
+        problems.append(f"reaction signatures differ: {actual_reactions}")
 
     return {
         "status": "pass" if not problems else "fail",
@@ -650,32 +739,58 @@ def _source_semantic_contract(source: Path, xml_path: Path) -> dict:
 
 
 def _source_contract_mutation_controls(source: Path, xml_path: Path) -> dict:
-    """Require the source contract to reject deleted or rewired Multi structure."""
+    """Require rejection of semantic mutations to the authored SBML structure."""
+    manifest = _source_manifest_for(source)
+    if manifest is None:
+        return {"source_hash": {"status": "fail"}}
     controls = {}
     with tempfile.TemporaryDirectory(
         prefix="bng3-issue-161-contract-mutations-"
     ) as raw:
         directory = Path(raw)
-        for name in ("missing_complex_type", "missing_bond", "wrong_bond_endpoint"):
+        mutation_names = (
+            "missing_molecule_type",
+            "missing_complex_type",
+            "missing_bond",
+            "wrong_bond_endpoint",
+            "wrong_state",
+            "wrong_component_map_target",
+            "wrong_initial_quantity",
+            "wrong_compartment_volume",
+            "wrong_rate_parameter",
+            "wrong_rate_operator",
+        )
+        for name in mutation_names:
             tree = ET.parse(xml_path)
             root = tree.getroot()
             parent_by_child = {
                 child: parent for parent in root.iter() for child in list(parent)
             }
-            if name == "missing_complex_type":
+            if name == "missing_molecule_type":
                 target = next(
                     (
                         node
                         for node in root.iter()
                         if node.tag.rsplit("}", 1)[-1] == "speciesType"
-                        and _local_attribute(node, "name")
-                        not in SOURCE_SEMANTICS[source.name]["molecules"]
+                        and _local_attribute(node, "name") in manifest["molecules"]
                     ),
                     None,
                 )
                 if target is not None:
                     parent_by_child[target].remove(target)
-            else:
+            elif name == "missing_complex_type":
+                target = next(
+                    (
+                        node
+                        for node in root.iter()
+                        if node.tag.rsplit("}", 1)[-1] == "speciesType"
+                        and _local_attribute(node, "name") not in manifest["molecules"]
+                    ),
+                    None,
+                )
+                if target is not None:
+                    parent_by_child[target].remove(target)
+            elif name in {"missing_bond", "wrong_bond_endpoint"}:
                 bond = next(
                     (
                         node
@@ -698,14 +813,144 @@ def _source_contract_mutation_controls(source: Path, xml_path: Path) -> dict:
                     )
                     if alternative is not None:
                         _set_local_attribute(bond, "bindingSite2", alternative)
+            elif name == "wrong_state":
+                values = [
+                    node
+                    for node in root.iter()
+                    if node.tag.rsplit("}", 1)[-1] == "speciesFeatureValue"
+                ]
+                if values:
+                    possible = {
+                        _local_attribute(node, "id")
+                        for node in root.iter()
+                        if node.tag.rsplit("}", 1)[-1] == "possibleSpeciesFeatureValue"
+                    }
+                    current = _local_attribute(values[0], "value")
+                    alternative = next(
+                        (value for value in possible if value != current), None
+                    )
+                    if alternative is not None:
+                        _set_local_attribute(values[0], "value", alternative)
+                else:
+                    species = next(
+                        node
+                        for node in root.iter()
+                        if node.tag.rsplit("}", 1)[-1] == "species"
+                    )
+                    feature_list = ET.SubElement(species, "listOfSpeciesFeatures")
+                    feature = ET.SubElement(
+                        feature_list,
+                        "speciesFeature",
+                        {
+                            "component": "unexpected-component",
+                            "speciesFeatureType": "unexpected-feature",
+                        },
+                    )
+                    values = ET.SubElement(feature, "listOfSpeciesFeatureValues")
+                    ET.SubElement(
+                        values, "speciesFeatureValue", {"value": "unexpected-state"}
+                    )
+            elif name == "wrong_component_map_target":
+                mappings = [
+                    node
+                    for node in root.iter()
+                    if node.tag.rsplit("}", 1)[-1] == "speciesTypeComponentMapInProduct"
+                ]
+                if mappings:
+                    current = _local_attribute(mappings[0], "productComponent")
+                    alternatives = [
+                        _local_attribute(node, "productComponent")
+                        for node in mappings[1:]
+                    ]
+                    if not alternatives:
+                        alternatives = [
+                            _local_attribute(node, "id")
+                            for node in root.iter()
+                            if node.tag.rsplit("}", 1)[-1] == "speciesTypeInstance"
+                        ]
+                    alternative = next(
+                        (value for value in alternatives if value != current), None
+                    )
+                    if alternative is not None:
+                        _set_local_attribute(
+                            mappings[0], "productComponent", alternative
+                        )
+            elif name == "wrong_initial_quantity":
+                species = next(
+                    node
+                    for node in root.iter()
+                    if node.tag.rsplit("}", 1)[-1] == "species"
+                )
+                attribute_name = next(
+                    (
+                        key.rsplit("}", 1)[-1]
+                        for key in species.attrib
+                        if key.rsplit("}", 1)[-1]
+                        in {"initialAmount", "initialConcentration"}
+                    ),
+                    None,
+                )
+                if attribute_name:
+                    current = _local_attribute(species, attribute_name)
+                    _set_local_attribute(
+                        species, attribute_name, str(float(current) + 1)
+                    )
+            elif name == "wrong_compartment_volume":
+                compartment = next(
+                    node
+                    for node in root.iter()
+                    if node.tag.rsplit("}", 1)[-1] == "compartment"
+                )
+                current = _local_attribute(compartment, "size")
+                _set_local_attribute(compartment, "size", str(float(current) + 1))
+            elif name == "wrong_rate_parameter":
+                parameter = next(
+                    (
+                        node
+                        for node in root.iter()
+                        if node.tag.rsplit("}", 1)[-1] == "parameter"
+                        and _local_attribute(node, "value") is not None
+                    ),
+                    None,
+                )
+                constants = [
+                    node for node in root.iter() if node.tag.rsplit("}", 1)[-1] == "cn"
+                ]
+                if parameter is not None:
+                    current = _local_attribute(parameter, "value")
+                    _set_local_attribute(parameter, "value", str(float(current) + 1))
+                elif constants:
+                    current = (constants[0].text or "0").strip()
+                    constants[0].text = str(float(current) + 1)
+            elif name == "wrong_rate_operator":
+                operator = next(
+                    (
+                        node
+                        for node in root.iter()
+                        if node.tag.rsplit("}", 1)[-1] == "times"
+                    ),
+                    None,
+                )
+                if operator is not None:
+                    operator.tag = operator.tag.replace("times", "plus")
             mutated = directory / f"{name}.xml"
             tree.write(mutated, encoding="utf-8", xml_declaration=True)
             result = _source_semantic_contract(source, mutated)
             controls[name] = {
-                "status": "pass" if result["status"] == "fail" else "fail",
+                "status": ("pass" if result["status"] in {"fail", "error"} else "fail"),
                 "contract_status_after_mutation": result["status"],
                 "problems": result.get("problems", []),
             }
+        changed_source = directory / "changed-source.bngl"
+        changed_source.write_text(
+            source.read_text(encoding="utf-8") + "\n",
+            encoding="utf-8",
+        )
+        hash_result = _source_semantic_contract(changed_source, xml_path)
+        controls["changed_source_hash"] = {
+            "status": "pass" if hash_result["status"] == "error" else "fail",
+            "contract_status_after_mutation": hash_result["status"],
+        }
     return controls
 
 

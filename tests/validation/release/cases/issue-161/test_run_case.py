@@ -208,3 +208,26 @@ def test_valid_reference_still_requires_strict_structural_match():
 
     assert result["acceptance_status"] == "fail"
     assert result["oracle"] == "none"
+
+
+def test_invalid_reference_contract_cannot_pass_invalid_candidate_or_failed_control():
+    common = {
+        "strict_match": False,
+        "reference_validity": {"status": "invalid"},
+        "semantic_contract": {"status": "pass"},
+        "contract_mutations": {"missing_bond": {"status": "pass"}},
+    }
+    invalid_candidate = _authored_export_acceptance(
+        **common,
+        candidate_validity={"status": "invalid"},
+    )
+    failed_control = _authored_export_acceptance(
+        **{
+            **common,
+            "contract_mutations": {"missing_bond": {"status": "fail"}},
+        },
+        candidate_validity={"status": "valid"},
+    )
+
+    assert invalid_candidate["acceptance_status"] == "fail"
+    assert failed_control["acceptance_status"] == "fail"

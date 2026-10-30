@@ -21,6 +21,8 @@ on:
       - 'scripts/ci/checkout_oracle.py'
       - 'scripts/ci/oracle_sources.py'
       - 'scripts/cross_validate.py'
+      - 'scripts/issue161_multi_contract.py'
+      - 'scripts/issue161_multi_expected.py'
       - 'scripts/validate.py'
       - 'tests/validation/compare.py'
       - 'tests/validation/oracle_perl.py'

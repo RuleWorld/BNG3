@@ -1,17 +1,17 @@
 """Run structural C++ versus Perl network/export cross-validation.
 
-The Perl engine is the independent BNG2 oracle for this gate.  Both engines
-run in isolated temporary directories and their generated ``.net`` files are
-compared through the typed graph-aware comparator used by the other validation
-tiers.  The ANx, hybrid_test, and test_write_sbml_multi fixtures retain their
-authored XML-export actions and compare the generated model sections instead.
-A species-count match is not sufficient evidence of parity.
+The Perl engine is the independent BNG2 oracle for network and authored export
+comparisons. Both engines run in isolated directories. For the exact
+source-hash-pinned SBML Multi fixture, invalid BNG2 XML is ineligible as an
+oracle; a validated candidate may instead pass a separate BNGL-derived
+structural contract. The strict raw diff remains reference-invalid evidence.
 """
 
 from __future__ import annotations
 
 import argparse
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -1036,6 +1036,67 @@ def _preserve_xml_artifacts(
     return preserved
 
 
+def _preserve_source_contract_report(
+    artifact_dir: Optional[Path],
+    model_name: str,
+    comparison: StructuralXmlComparison,
+    *,
+    source_contract: dict,
+    reference_validity: dict,
+    candidate_validity: dict,
+    contract_controls: dict,
+    comparator_controls: dict,
+) -> Optional[Path]:
+    """Persist every strict structural difference beside both XML documents."""
+    if artifact_dir is None:
+        return None
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    destination = artifact_dir / f"{model_name}.source-contract-comparison.json"
+    payload = {
+        "strict_comparison_status": "reference-invalid",
+        "strict_comparison_sections": list(comparison.sections),
+        "representation_only_sections": list(comparison.representation_only),
+        "strict_difference_count": len(comparison.differences),
+        "strict_differences": [
+            {
+                "path": difference.path,
+                "category": difference.category,
+                "kind": difference.kind,
+                "bng2": _format_xml_value(difference.reference),
+                "bng3": _format_xml_value(difference.test),
+            }
+            for difference in comparison.differences
+        ],
+        "reference_libsbml": reference_validity,
+        "candidate_libsbml": candidate_validity,
+        "source_contract": source_contract,
+        "source_contract_implementation": {
+            "checker": {
+                "path": str(
+                    Path(__file__).resolve().parents[0] / "issue161_multi_contract.py"
+                ),
+                "sha256": _sha256_file(
+                    Path(__file__).resolve().parents[0] / "issue161_multi_contract.py"
+                ),
+            },
+            "manifest": {
+                "path": str(
+                    Path(__file__).resolve().parents[0] / "issue161_multi_expected.py"
+                ),
+                "sha256": _sha256_file(
+                    Path(__file__).resolve().parents[0] / "issue161_multi_expected.py"
+                ),
+            },
+        },
+        "source_contract_mutation_controls": contract_controls,
+        "comparator_mutation_controls": comparator_controls,
+    }
+    destination.write_text(
+        json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
+    return destination
+
+
 def _run_authored_export_comparison(
     model: Path,
     cpp_path: Path,
@@ -1126,6 +1187,112 @@ def _run_authored_export_comparison(
                     str(path) for path in preserved
                 )
             return "fail", detail
+        if model.stem == "test_write_sbml_multi":
+            from scripts import issue161_multi_contract as multi_contract_module
+            from scripts import issue161_multi_expected as multi_expected_module
+            from scripts.issue161_multi_contract import (
+                _source_contract_mutation_controls,
+                _source_semantic_contract,
+                _xml_mutation_controls,
+                sbml_validity,
+                source_contract_eligible,
+            )
+
+            if any(
+                not Path(module.__file__).resolve().is_relative_to(REPO.resolve())
+                for module in (multi_contract_module, multi_expected_module)
+            ):
+                return "error", "Issue 161 contract imported outside this checkout"
+
+            reference_validity = sbml_validity(perl_xml)
+            candidate_validity = sbml_validity(cpp_xml)
+            source_contract = _source_semantic_contract(model, cpp_xml)
+            contract_controls = _source_contract_mutation_controls(model, cpp_xml)
+            comparator_controls = _xml_mutation_controls(cpp_xml)
+            comparator_controls_pass = all(
+                control["status"] in {"pass", "not-applicable"}
+                for control in comparator_controls.values()
+            )
+            comparison_report = None
+            if reference_validity["status"] == "invalid":
+                comparison_report = _preserve_source_contract_report(
+                    artifact_dir,
+                    model.stem,
+                    comparison,
+                    source_contract=source_contract,
+                    reference_validity=reference_validity,
+                    candidate_validity=candidate_validity,
+                    contract_controls=contract_controls,
+                    comparator_controls=comparator_controls,
+                )
+            if reference_validity["status"] == "invalid":
+                if (
+                    source_contract_eligible(
+                        reference_validity,
+                        candidate_validity,
+                        source_contract,
+                        contract_controls,
+                    )
+                    and comparator_controls_pass
+                ):
+                    preserved = _preserve_xml_artifacts(
+                        artifact_dir, model.stem, cpp_xml, perl_xml
+                    )
+                    strict_result = (
+                        "canonical XML equal"
+                        if comparison.equal
+                        else comparison.summary()
+                    )
+                    detail = (
+                        f"PASS  {model.stem} (source-authored structural contract; "
+                        "BNG2 reference invalid)\n"
+                        f"  strict comparison status: reference-invalid; raw diff: {strict_result}\n"
+                        f"  libSBML errors: BNG2={reference_validity['severity_error_count']}, "
+                        f"BNG3={candidate_validity['severity_error_count']}\n"
+                        f"  source contract checks: {', '.join(source_contract['checks'])}"
+                    )
+                    if not comparison.equal:
+                        detail += "\n  structural diff details:\n" + "\n".join(
+                            f"    {line}"
+                            for line in format_structural_xml_differences(comparison)
+                        )
+                    if preserved:
+                        detail += "\n  preserved artifacts: " + ", ".join(
+                            str(path) for path in preserved
+                        )
+                    if comparison_report is not None:
+                        detail += f"\n  full comparison report: {comparison_report}"
+                    return "pass", detail
+                preserved = _preserve_xml_artifacts(
+                    artifact_dir, model.stem, cpp_xml, perl_xml
+                )
+                detail = (
+                    f"FAIL {model.stem} (invalid BNG2 reference and no eligible "
+                    "source-authored contract)\n"
+                    f"  source contract: {source_contract['status']}\n"
+                    f"  candidate libSBML: {candidate_validity['status']}\n"
+                    f"  strict comparison: reference-invalid; raw diff: {comparison.summary()}"
+                )
+                if preserved:
+                    detail += "\n  preserved artifacts: " + ", ".join(
+                        str(path) for path in preserved
+                    )
+                if comparison_report is not None:
+                    detail += f"\n  full comparison report: {comparison_report}"
+                return "fail", detail
+            if candidate_validity["status"] != "valid":
+                preserved = _preserve_xml_artifacts(
+                    artifact_dir, model.stem, cpp_xml, perl_xml
+                )
+                detail = (
+                    f"FAIL {model.stem} (candidate SBML Multi is invalid; "
+                    f"severity errors={candidate_validity['severity_error_count']})"
+                )
+                if preserved:
+                    detail += "\n  preserved artifacts: " + ", ".join(
+                        str(path) for path in preserved
+                    )
+                return "fail", detail
         if not comparison.equal:
             preserved = _preserve_xml_artifacts(
                 artifact_dir, model.stem, cpp_xml, perl_xml

@@ -13,8 +13,6 @@ import subprocess
 import sys
 import tempfile
 
-import libsbml
-
 ROOT = Path(__file__).resolve().parents[5]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / "python"))
@@ -27,11 +25,15 @@ from scripts.cross_validate import (  # noqa: E402
 from tests.validation.compare import compare_net, parse_net  # noqa: E402
 from scripts.ci.oracle_sources import load_lock, load_oracle_source  # noqa: E402
 from tests.validation.oracle_perl import _is_locked_bng2  # noqa: E402
-from multi_contract import (  # noqa: E402
+from scripts.issue161_multi_contract import (  # noqa: E402
     _source_semantic_contract,
     _source_contract_mutation_controls,
     _xml_mutation_controls,
+    sbml_validity,
+    source_contract_eligible,
 )
+from scripts import issue161_multi_contract as multi_contract_module  # noqa: E402
+from scripts import issue161_multi_expected as multi_expected_module  # noqa: E402
 
 # Keep this acceptance process bound to the checkout under test when another
 # environment installed an editable BNG3 package earlier in the interpreter.
@@ -62,6 +64,12 @@ if not Path(modern_parser.__file__).resolve().is_relative_to(ROOT.resolve()):
         "issue-161 acceptance imported the wrong atomizer source: "
         f"{modern_parser.__file__}"
     )
+for module in (multi_contract_module, multi_expected_module):
+    if not Path(module.__file__).resolve().is_relative_to(ROOT.resolve()):
+        raise RuntimeError(
+            "issue-161 acceptance imported a contract outside this checkout: "
+            f"{module.__file__}"
+        )
 
 
 def _git_identity(path: Path) -> dict:
@@ -120,31 +128,7 @@ def _preserve_evidence_file(source: Path, directory: Path, name: str) -> str:
 
 def _sbml_validity(path: Path) -> dict:
     """Record libSBML consistency errors without treating invalid XML as parity."""
-
-    document = libsbml.readSBMLFromFile(str(path))
-    if document is None:
-        return {
-            "status": "invalid",
-            "severity_error_count": 1,
-            "diagnostics": ["libSBML could not read the document"],
-        }
-    document.checkConsistency()
-    diagnostics = []
-    for index in range(document.getNumErrors()):
-        error = document.getError(index)
-        if error.getSeverity() >= libsbml.LIBSBML_SEV_ERROR:
-            diagnostics.append(
-                {
-                    "id": error.getErrorId(),
-                    "line": error.getLine(),
-                    "message": error.getMessage().strip().splitlines()[0],
-                }
-            )
-    return {
-        "status": "valid" if not diagnostics else "invalid",
-        "severity_error_count": len(diagnostics),
-        "diagnostics": diagnostics,
-    }
+    return sbml_validity(path)
 
 
 def _reference_sbml_validity(path: Path) -> dict:
@@ -171,14 +155,11 @@ def _authored_export_acceptance(
             "oracle": "validated-bng2",
             "strict_comparison_status": "pass",
         }
-    contract_controls_pass = bool(contract_mutations) and all(
-        control["status"] == "pass" for control in contract_mutations.values()
-    )
-    if (
-        reference_validity["status"] == "invalid"
-        and candidate_validity["status"] == "valid"
-        and semantic_contract["status"] == "pass"
-        and contract_controls_pass
+    if source_contract_eligible(
+        reference_validity,
+        candidate_validity,
+        semantic_contract,
+        contract_mutations,
     ):
         return {
             "acceptance_status": "pass",
@@ -506,6 +487,16 @@ def main() -> int:
     provenance = {
         "product": product,
         "atomizer_parser": str(Path(modern_parser.__file__).resolve()),
+        "source_semantic_contract": {
+            "checker": {
+                "path": str(Path(multi_contract_module.__file__).resolve()),
+                "sha256": _sha256(Path(multi_contract_module.__file__)),
+            },
+            "manifest": {
+                "path": str(Path(multi_expected_module.__file__).resolve()),
+                "sha256": _sha256(Path(multi_expected_module.__file__)),
+            },
+        },
         "bng_cpp": {
             "path": str(args.bng_cpp.resolve()),
             "sha256": _sha256(args.bng_cpp),

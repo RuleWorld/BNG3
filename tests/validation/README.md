@@ -439,7 +439,13 @@ primary behavior is an action output (`ANx`, `hybrid_test`, `test_tfun`,
 test_write_sbml_multi in both BNG3 and pinned BNG2, then compares the structural
 XML species/rule/observable/function sections or Multi species types/species/
 reactions. It does not force these three models through full network
-generation. Other fixtures remain checked against BNG2 network references.
+generation. The full authored Multi fixture is hash-pinned to a BNGL-derived
+source contract that checks species/site patterns, binding statuses, bond
+graphs, component maps, participant patterns, amounts, volumes, and rate laws.
+When BNG2's Multi XML fails libSBML, that contract can qualify the BNG3 output;
+the strict structural diff remains `reference-invalid` and every difference is
+saved in the parity artifact directory. A valid BNG2 XML must still pass strict
+comparison. Other fixtures remain checked against BNG2 network references.
 The native reader also has a narrow legacy structured-SBML `atomize=>1`
 contract for the `plain2` validation model.
 
