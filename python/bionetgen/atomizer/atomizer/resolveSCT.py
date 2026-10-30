@@ -1710,9 +1710,9 @@ class SCTSolver:
     # 2) python internal hashing function is used for the hashing
     # 3) should be very collision proof
     def make_key_from_graph(self, graph):
-        # ⚡ Bolt: Optimized to avoid deepcopy and functools.reduce for ~3x speedup
+        hashable_tuples = []
         if not graph:
-            return marshal.dumps([])
+            return marshal.dumps(hashable_tuples)
 
         all_elems = set()
         for sublists in graph.values():
@@ -1722,7 +1722,6 @@ class SCTSolver:
 
         all_keys = set(graph.keys()) | all_elems
 
-        hashable_tuples = []
         for key in sorted(all_keys):
             sublists = graph.get(key, [])
             flattened = tuple(item for sublist in sorted(sublists) for item in sublist)
