@@ -2297,7 +2297,7 @@ def test_authored_export_preserves_both_xml_files_on_failure(tmp_path, monkeypat
     assert "preserved artifacts" in detail
 
 
-def test_cross_validation_stages_generation_without_simulation_actions():
+def test_cross_validation_retains_pre_generation_rate_setters():
     """Network parity must not accidentally execute a model's simulations."""
 
     staged = _network_only_text("""begin parameters
@@ -2316,6 +2316,19 @@ end actions
         'begin actions\n  setParameter("k", 2)\n'
         "  generate_network({overwrite=>1})\nend actions\n"
     )
+
+
+def test_cross_validation_retains_setters_used_by_later_generation():
+    staged = _network_only_text("""begin actions
+generate_network({overwrite=>1})
+setParameter("k",2)
+generate_network({overwrite=>1})
+simulate_ode({t_start=>0,t_end=>1,n_steps=>1})
+end actions
+""")
+
+    assert staged.count("generate_network(") == 2
+    assert staged.index('setParameter("k",2)') < staged.rindex("generate_network(")
 
 
 def test_cross_validation_keeps_the_generation_time_rate_snapshot():
