@@ -45,9 +45,14 @@ def optimized_solver():
 def test_make_key_from_graph_empty(original_solver, optimized_solver):
     graph = {}
     graph_copy = deepcopy(graph)
-    assert original_solver.make_key_from_graph(
-        graph
-    ) == optimized_solver.make_key_from_graph(graph)
+    # Both serialize to an empty list representation under marshal
+    assert (
+        marshal.loads(original_solver.make_key_from_graph(graph))
+        == marshal.loads(optimized_solver.make_key_from_graph(graph))
+        == []
+    )
+    # The key generation is deterministic
+    assert optimized_solver.make_key_from_graph(graph) == optimized_solver.make_key_from_graph(graph)
     assert graph == graph_copy
 
 
