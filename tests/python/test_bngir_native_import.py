@@ -2987,3 +2987,179 @@ def test_native_import_reconstructs_symmetric_dimer_binding_and_unbinding():
             restored._model, restored_network, 0.0, state
         )
         assert restored_rhs == pytest.approx(source_rhs)
+
+
+BNGIR_MULTIMOL_STATES_SOURCE = r"""
+version("2.2")
+setModelName("native_bngir_multimolecule_with_states")
+begin model
+begin parameters
+    kon 0.15
+    koff 0.3
+    kp 0.5
+    kdeph 0.1
+end parameters
+begin molecule types
+    A(b,s~U~P)
+    B(a)
+end molecule types
+begin seed species
+    A(b,s~U) 50
+    A(b,s~P) 20
+    B(a) 100
+    A(b!1,s~U).B(a!1) 10
+    A(b!1,s~P).B(a!1) 5
+end seed species
+begin observables
+    Species AB_U A(b!1,s~U).B(a!1)
+    Species AB_P A(b!1,s~P).B(a!1)
+    Molecules A_bound A(b!+)
+    Molecules A_phos A(s~P)
+    Molecules B_free B(a)
+end observables
+begin reaction rules
+    bind_U: A(b,s~U) + B(a) <-> A(b!1,s~U).B(a!1) kon, koff
+    bind_P: A(b,s~P) + B(a) <-> A(b!1,s~P).B(a!1) kon, koff
+    phos_free: A(b,s~U) -> A(b,s~P) kp
+    deph_free: A(b,s~P) -> A(b,s~U) kdeph
+end reaction rules
+end model
+"""
+
+
+def test_native_import_reconstructs_multimolecule_complex_with_internal_states(
+    monkeypatch,
+):
+    source_model = bionetgen.BioNetGenModel(
+        _cpp.parse_string(BNGIR_MULTIMOL_STATES_SOURCE)
+    )
+    document = json.loads(source_model.to_bngir(version="0.2"))
+
+    # Verify structural presence of multi-molecule patterns with states
+    assert len(document["model"]["seeds"][3]["pattern"]["molecules"]) == 2
+    assert (
+        document["model"]["seeds"][3]["pattern"]["molecules"][0]["sites"][1]["state"][
+            "value"
+        ]
+        == "U"
+    )
+    assert len(document["model"]["seeds"][4]["pattern"]["molecules"]) == 2
+    assert (
+        document["model"]["seeds"][4]["pattern"]["molecules"][0]["sites"][1]["state"][
+            "value"
+        ]
+        == "P"
+    )
+
+    bngir_module = importlib.import_module("bionetgen.bngir")
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("native BNGIR import rendered or parsed BNGL source")
+
+    monkeypatch.setattr(_cpp, "parse_string", forbidden)
+    monkeypatch.setattr(bngir_module, "_as_bngl_v02", forbidden)
+
+    restored = bionetgen.from_bngir(document, native=True)
+    assert json.loads(restored.to_bngir(version="0.2")) == document
+
+    source_network = source_model.generate_network()
+    restored_network = restored.generate_network()
+    assert source_network.species_names == restored_network.species_names
+    assert source_network.num_reactions == restored_network.num_reactions == 6
+
+    initial = [
+        (
+            50.0
+            if name == "A(b,s~U)"
+            else (
+                20.0
+                if name == "A(b,s~P)"
+                else (
+                    100.0
+                    if name == "B(a)"
+                    else (
+                        10.0
+                        if name == "A(b!1,s~U).B(a!1)"
+                        else 5.0 if name == "A(b!1,s~P).B(a!1)" else 0.0
+                    )
+                )
+            )
+        )
+        for name in source_network.species_names
+    ]
+
+    source_rhs = _cpp._validation_ode_rhs(
+        source_model._model, source_network, 0.0, initial
+    )
+    restored_rhs = _cpp._validation_ode_rhs(
+        restored._model, restored_network, 0.0, initial
+    )
+    assert restored_rhs == pytest.approx(source_rhs)
+
+    source_sim = source_model.simulate(
+        method="ode", t_end=1.0, n_steps=5
+    ).concentrations
+    restored_sim = restored.simulate(method="ode", t_end=1.0, n_steps=5).concentrations
+    assert restored_sim == pytest.approx(source_sim)
+
+
+BNGIR_TRIMER_COMPLEX_SOURCE = r"""
+version("2.2")
+setModelName("native_bngir_trimer_complex")
+begin model
+begin parameters
+    k1 0.1
+    k2 0.2
+end parameters
+begin molecule types
+    A(b)
+    B(a,c)
+    C(b)
+end molecule types
+begin seed species
+    A(b!1).B(a!1,c!2).C(b!2) 25
+    A(b) 10
+    B(a,c) 10
+    C(b) 10
+    A(b!1).C(b!1) 0
+    B(a,c!1).C(b!1) 0
+end seed species
+begin observables
+    Species ABC A(b!1).B(a!1,c!2).C(b!2)
+    Molecules B_tot B()
+end observables
+begin reaction rules
+    bind_AC: A(b) + C(b) -> A(b!1).C(b!1) k1
+    bind_BC: B(a,c) + C(b) -> B(a,c!1).C(b!1) k2
+end reaction rules
+end model
+"""
+
+
+def test_native_import_reconstructs_trimer_complex_seed_and_observables(monkeypatch):
+    source_model = bionetgen.BioNetGenModel(
+        _cpp.parse_string(BNGIR_TRIMER_COMPLEX_SOURCE)
+    )
+    document = json.loads(source_model.to_bngir(version="0.2"))
+    assert len(document["model"]["seeds"][0]["pattern"]["molecules"]) == 3
+    assert (
+        len(document["model"]["observables"][0]["terms"][0]["pattern"]["molecules"])
+        == 3
+    )
+
+    bngir_module = importlib.import_module("bionetgen.bngir")
+
+    def forbidden(*_args, **_kwargs):
+        pytest.fail("native BNGIR import rendered or parsed BNGL source")
+
+    monkeypatch.setattr(_cpp, "parse_string", forbidden)
+    monkeypatch.setattr(bngir_module, "_as_bngl_v02", forbidden)
+
+    # Reconstruct through parser-free native boundary
+    restored = bionetgen.from_bngir(document, native=True)
+    assert json.loads(restored.to_bngir(version="0.2")) == document
+
+    source_net = source_model.generate_network()
+    restored_net = restored.generate_network()
+    assert source_net.species_names == restored_net.species_names
+    assert source_net.num_reactions == restored_net.num_reactions
