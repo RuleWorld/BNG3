@@ -3,6 +3,7 @@
 import subprocess
 import sys
 
+import numpy as np
 import pytest
 
 from bionetgen import _bionetgen_cpp as cpp
@@ -91,6 +92,103 @@ def test_jax_ssa_import_safety():
         ],
         check=True,
     )
+
+
+def test_jax_ssa_executes_batch_simulation():
+    """Verify batch SSA execution produces valid trajectories with mass conservation."""
+    pytest.importorskip("jax")
+    model = cpp.parse_file("models/isomerization.bngl")
+    network = cpp.generate_network(model)
+
+    result = jax_ssa.simulate(
+        model,
+        network,
+        batch_size=100,
+        t_end=5.0,
+        base_seed=42,
+        n_steps=10,
+    )
+
+    assert result["batch_size"] == 100
+    assert result["total_events"] > 0
+    assert len(result["time"]) == 11
+    assert "A_confR" in result["observable_means"]
+    assert "A_total" in result["observable_means"]
+
+    # Check shape of final observables and species
+    assert result["final_observables"].shape == (100, 3)
+    assert result["final_species"].shape == (100, 2)
+
+    # Conservation: A + B == 20 for all trajectories in the batch
+    final_sums = np.sum(result["final_species"], axis=1)
+    np.testing.assert_array_equal(final_sums, np.full(100, 20))
+
+    # Timing and throughput metrics exist and are positive
+    assert result["trajectories_per_sec_sim"] > 0
+    assert result["simulation_time_ms"] > 0
+
+
+def test_jax_ssa_batch_reproducibility():
+    """Identical base seeds must produce identical batch results."""
+    pytest.importorskip("jax")
+    model = cpp.parse_file("models/isomerization.bngl")
+    network = cpp.generate_network(model)
+
+    res1 = jax_ssa.simulate(model, network, batch_size=50, t_end=2.0, base_seed=12345)
+    res2 = jax_ssa.simulate(model, network, batch_size=50, t_end=2.0, base_seed=12345)
+    res3 = jax_ssa.simulate(model, network, batch_size=50, t_end=2.0, base_seed=99999)
+
+    np.testing.assert_array_equal(res1["final_species"], res2["final_species"])
+    np.testing.assert_array_equal(res1["final_observables"], res2["final_observables"])
+    assert not np.array_equal(res1["final_species"], res3["final_species"])
+
+
+def test_jax_ssa_bimolecular_conservation():
+    """Verify stoichiometry and conservation on bimolecular binding model."""
+    pytest.importorskip("jax")
+    model = cpp.parse_string("""begin model
+begin parameters
+kf 0.1
+kr 0.05
+end parameters
+begin molecule types
+A(b)
+B(a)
+end molecule types
+begin seed species
+A(b) 15
+B(a) 25
+end seed species
+begin observables
+Molecules FreeA A(b)
+Molecules FreeB B(a)
+Molecules Complex A(b!1).B(a!1)
+end observables
+begin reaction rules
+A(b) + B(a) <-> A(b!1).B(a!1) kf, kr
+end reaction rules
+end model""")
+    network = cpp.generate_network(model)
+    res = jax_ssa.simulate(model, network, batch_size=80, t_end=3.0, base_seed=777)
+
+    # Species: A(b), B(a), A(b!1).B(a!1)
+    # Total A = A + Complex == 15
+    # Total B = B + Complex == 25
+    final_sp = res["final_species"]
+    assert final_sp.shape == (80, 3)
+    np.testing.assert_array_equal(final_sp[:, 0] + final_sp[:, 2], np.full(80, 15))
+    np.testing.assert_array_equal(final_sp[:, 1] + final_sp[:, 2], np.full(80, 25))
+
+
+def test_jax_ssa_max_steps_guard():
+    """When max_steps is set, event count per trajectory must not exceed it."""
+    pytest.importorskip("jax")
+    model = cpp.parse_file("models/isomerization.bngl")
+    network = cpp.generate_network(model)
+    res = jax_ssa.simulate(
+        model, network, batch_size=50, t_end=100.0, base_seed=42, max_steps=5
+    )
+    assert np.all(res["event_counts"] <= 5)
 
 
 if __name__ == "__main__":
