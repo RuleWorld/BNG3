@@ -58,13 +58,35 @@ class CRNSpecies:
 
 
 @dataclass(frozen=True)
+class CRNComplex:
+    """One reaction complex (multiset of species) in a reaction network."""
+
+    index: int
+    species: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class CRNRateLaw:
+    """Rate law and parameters for one generated reaction."""
+
+    type: str
+    expression: str
+    factor: float = 1.0
+    rule_name: str = ""
+    parameters: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class CRNReaction:
-    """One generated reaction with participant species indices."""
+    """One generated reaction with participant species and complex indices."""
 
     index: int
     label: str
     reactants: tuple[int, ...]
     products: tuple[int, ...]
+    reactant_complex: int = -1
+    product_complex: int = -1
+    rate_law: Optional[CRNRateLaw] = None
 
 
 class BioNetGenModel:
@@ -119,20 +141,120 @@ class BioNetGenModel:
         )
 
     @property
+    def complexes(self) -> tuple[CRNComplex, ...]:
+        """Unique reaction complexes (multisets of species) in network order."""
+        network = self._get_crn_network()
+        complex_map: dict[tuple[int, ...], int] = {}
+        complex_list: list[CRNComplex] = []
+        for reactants, products in network.reaction_participants:
+            for multiset in (tuple(sorted(reactants)), tuple(sorted(products))):
+                if multiset not in complex_map:
+                    idx = len(complex_list)
+                    complex_map[multiset] = idx
+                    complex_list.append(CRNComplex(idx, multiset))
+        return tuple(complex_list)
+
+    @property
     def reactions(self) -> tuple[CRNReaction, ...]:
         """Generated reactions in native network order."""
         network = self._get_crn_network()
-        return tuple(
-            CRNReaction(index, label, tuple(reactants), tuple(products))
-            for index, (label, (reactants, products)) in enumerate(
-                zip(network.reaction_strings, network.reaction_participants)
+        complexes = self.complexes
+        complex_map = {c.species: c.index for c in complexes}
+
+        rate_laws = getattr(network, "reaction_rate_laws", None)
+        factors = getattr(network, "reaction_factors", None)
+        rule_names = getattr(network, "reaction_rules", None)
+
+        model_params = {p.name for p in self.parameters}
+
+        result = []
+        for index, (label, (reactants, products)) in enumerate(
+            zip(network.reaction_strings, network.reaction_participants)
+        ):
+            r_c = complex_map[tuple(sorted(reactants))]
+            p_c = complex_map[tuple(sorted(products))]
+            expr = (
+                rate_laws[index]
+                if rate_laws is not None and index < len(rate_laws)
+                else ""
             )
-        )
+            factor = (
+                factors[index] if factors is not None and index < len(factors) else 1.0
+            )
+            rname = (
+                rule_names[index]
+                if rule_names is not None and index < len(rule_names)
+                else ""
+            )
+
+            words = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expr))
+            referenced_params = tuple(sorted(words & model_params))
+            rl_type = "mass_action"
+            rate_law = CRNRateLaw(
+                type=rl_type,
+                expression=expr,
+                factor=factor,
+                rule_name=rname,
+                parameters=referenced_params,
+            )
+            result.append(
+                CRNReaction(
+                    index=index,
+                    label=label,
+                    reactants=tuple(reactants),
+                    products=tuple(products),
+                    reactant_complex=r_c,
+                    product_complex=p_c,
+                    rate_law=rate_law,
+                )
+            )
+        return tuple(result)
 
     @property
     def stoichiometric_matrix(self):
         """Dense integer N[species, reaction] matrix from the native network."""
         return self._get_crn_network().stoichiometric_matrix
+
+    def to_crn(self) -> dict:
+        """Export the chemical reaction network as a portable dictionary."""
+        return {
+            "version": "1.0",
+            "name": self.name,
+            "species": [{"index": s.index, "name": s.name} for s in self.species],
+            "complexes": [
+                {"index": c.index, "species": list(c.species)} for c in self.complexes
+            ],
+            "reactions": [
+                {
+                    "index": r.index,
+                    "label": r.label,
+                    "reactants": list(r.reactants),
+                    "products": list(r.products),
+                    "reactant_complex": r.reactant_complex,
+                    "product_complex": r.product_complex,
+                    "rate_law": (
+                        {
+                            "type": r.rate_law.type,
+                            "expression": r.rate_law.expression,
+                            "factor": r.rate_law.factor,
+                            "rule_name": r.rate_law.rule_name,
+                            "parameters": list(r.rate_law.parameters),
+                        }
+                        if r.rate_law is not None
+                        else None
+                    ),
+                }
+                for r in self.reactions
+            ],
+            "stoichiometric_matrix": self.stoichiometric_matrix.tolist(),
+        }
+
+    def write_crn(self, path: Union[str, Path]) -> None:
+        """Write the generated CRN to a JSON file."""
+        import json
+
+        p = Path(path)
+        p.write_text(json.dumps(self.to_crn(), indent=2), encoding="utf-8")
 
     @property
     def observables(self) -> list:
