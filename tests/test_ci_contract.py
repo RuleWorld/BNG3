@@ -2318,6 +2318,17 @@ end actions
     )
 
 
+def test_cross_validation_keeps_the_generation_time_rate_snapshot():
+    """Post-generation protocol setters are exercised by simulation parity."""
+
+    source = VALIDATE_DIR / "heise.bngl"
+    staged = _network_only_text(source.read_text(encoding="utf-8"))
+
+    assert "generate_network({overwrite=>1})" in staged
+    assert 'setParameter("vu",0)' not in staged
+    assert 'setParameter("vl",1)' not in staged
+
+
 def test_cross_validation_can_preserve_network_writer_for_continuations(tmp_path):
     source = tmp_path / "continuation.bngl"
     source.write_text(
