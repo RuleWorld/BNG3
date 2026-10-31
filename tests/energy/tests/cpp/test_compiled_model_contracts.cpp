@@ -5,7 +5,9 @@
 #include "compile/Capabilities.hpp"
 #include "compile/Document.hpp"
 #include "compile/CompiledModel.hpp"
+#include "compile/PatternLowering.hpp"
 #include "compile/SymbolTable.hpp"
+#include "engine/NetworkRulePlan.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
 TEST_CASE("typed symbol table resolves names and rejects duplicate declarations") {
@@ -394,4 +396,47 @@ end reaction rules
     REQUIRE(c.rules().size()==1);
     CHECK(c.rules()[0].isBidirectional());
     CHECK(c.rules()[0].rateLaws().size()==2);
+}
+
+TEST_CASE("CompiledModel functions completely independently after source ast::Model destruction") {
+    std::optional<bng::compile::CompiledModel> compiled;
+    {
+        auto model = bng::parser::parseModel(R"BNG(
+begin parameters
+  k1 1.5
+  k2 0.5
+end parameters
+begin molecule types
+  A(x~0~1)
+  B(y)
+end molecule types
+begin seed species
+  A(x~0) 10
+  B(y) 20
+end seed species
+begin observables
+  Molecules Atot A()
+  Molecules Btot B()
+end observables
+begin reaction rules
+  r1: A(x~0) -> A(x~1) k1
+  r2: A(x~1) + B(y) -> A(x~1!1).B(y!1) k2
+end reaction rules
+)BNG");
+        REQUIRE(model != nullptr);
+        compiled.emplace(*model);
+    }
+    REQUIRE(compiled.has_value());
+    CHECK(compiled->rules().size() == 2);
+    CHECK(compiled->rules()[0].name() == "R1");
+    CHECK(compiled->rules()[1].name() == "R2");
+    CHECK(compiled->observables().size() == 2);
+    CHECK(compiled->seeds().size() == 2);
+    CHECK(compiled->parameters().size() == 2);
+
+    bng::compile::BNGcoreLoweringContext loweringContext(*compiled);
+    auto rulePlans = bng::engine::lowerNetworkRules(*compiled, loweringContext);
+    CHECK(rulePlans.size() == 2);
+    CHECK(rulePlans[0].name() == "R1");
+    CHECK(rulePlans[1].name() == "R2");
 }
