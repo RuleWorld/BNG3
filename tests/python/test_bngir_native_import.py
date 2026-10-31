@@ -3027,7 +3027,9 @@ end model
 """
 
 
-def test_native_import_reconstructs_multimolecule_complex_with_internal_states(monkeypatch):
+def test_native_import_reconstructs_multimolecule_complex_with_internal_states(
+    monkeypatch,
+):
     source_model = bionetgen.BioNetGenModel(
         _cpp.parse_string(BNGIR_MULTIMOL_STATES_SOURCE)
     )
@@ -3035,9 +3037,19 @@ def test_native_import_reconstructs_multimolecule_complex_with_internal_states(m
 
     # Verify structural presence of multi-molecule patterns with states
     assert len(document["model"]["seeds"][3]["pattern"]["molecules"]) == 2
-    assert document["model"]["seeds"][3]["pattern"]["molecules"][0]["sites"][1]["state"]["value"] == "U"
+    assert (
+        document["model"]["seeds"][3]["pattern"]["molecules"][0]["sites"][1]["state"][
+            "value"
+        ]
+        == "U"
+    )
     assert len(document["model"]["seeds"][4]["pattern"]["molecules"]) == 2
-    assert document["model"]["seeds"][4]["pattern"]["molecules"][0]["sites"][1]["state"]["value"] == "P"
+    assert (
+        document["model"]["seeds"][4]["pattern"]["molecules"][0]["sites"][1]["state"][
+            "value"
+        ]
+        == "P"
+    )
 
     bngir_module = importlib.import_module("bionetgen.bngir")
 
@@ -3055,18 +3067,38 @@ def test_native_import_reconstructs_multimolecule_complex_with_internal_states(m
     assert source_network.species_names == restored_network.species_names
     assert source_network.num_reactions == restored_network.num_reactions == 6
 
-    initial = [50.0 if name == "A(b,s~U)" else
-               20.0 if name == "A(b,s~P)" else
-               100.0 if name == "B(a)" else
-               10.0 if name == "A(b!1,s~U).B(a!1)" else
-               5.0 if name == "A(b!1,s~P).B(a!1)" else 0.0
-               for name in source_network.species_names]
+    initial = [
+        (
+            50.0
+            if name == "A(b,s~U)"
+            else (
+                20.0
+                if name == "A(b,s~P)"
+                else (
+                    100.0
+                    if name == "B(a)"
+                    else (
+                        10.0
+                        if name == "A(b!1,s~U).B(a!1)"
+                        else 5.0 if name == "A(b!1,s~P).B(a!1)" else 0.0
+                    )
+                )
+            )
+        )
+        for name in source_network.species_names
+    ]
 
-    source_rhs = _cpp._validation_ode_rhs(source_model._model, source_network, 0.0, initial)
-    restored_rhs = _cpp._validation_ode_rhs(restored._model, restored_network, 0.0, initial)
+    source_rhs = _cpp._validation_ode_rhs(
+        source_model._model, source_network, 0.0, initial
+    )
+    restored_rhs = _cpp._validation_ode_rhs(
+        restored._model, restored_network, 0.0, initial
+    )
     assert restored_rhs == pytest.approx(source_rhs)
 
-    source_sim = source_model.simulate(method="ode", t_end=1.0, n_steps=5).concentrations
+    source_sim = source_model.simulate(
+        method="ode", t_end=1.0, n_steps=5
+    ).concentrations
     restored_sim = restored.simulate(method="ode", t_end=1.0, n_steps=5).concentrations
     assert restored_sim == pytest.approx(source_sim)
 
@@ -3110,7 +3142,10 @@ def test_native_import_reconstructs_trimer_complex_seed_and_observables(monkeypa
     )
     document = json.loads(source_model.to_bngir(version="0.2"))
     assert len(document["model"]["seeds"][0]["pattern"]["molecules"]) == 3
-    assert len(document["model"]["observables"][0]["terms"][0]["pattern"]["molecules"]) == 3
+    assert (
+        len(document["model"]["observables"][0]["terms"][0]["pattern"]["molecules"])
+        == 3
+    )
 
     bngir_module = importlib.import_module("bionetgen.bngir")
 
