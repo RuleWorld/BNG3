@@ -44,7 +44,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install CI contract dependencies
-        run: python -m pip install pytest numpy pyyaml scipy jsonschema
+        run: python -m pip install pytest numpy pyyaml scipy jsonschema python-libsbml sympy
 
       - name: Validate locked sources
         run: python scripts/ci/checkout_oracle.py --validate-only
@@ -79,6 +79,14 @@ jobs:
             tests/validation/test_harness_paths.py::test_required_oracle_fails_in_strict_ci \
             tests/validation/test_harness_paths.py::test_api_fixture_fails_in_strict_ci_and_skips_locally \
             -q -ra
+
+      - name: Run Issue 160 diagnostic controls (not capability acceptance)
+        env:
+          PYTHONPATH: python:.
+        run: >-
+          python -m pytest -q
+          --confcutdir=tests/validation/release/cases/issue-160
+          tests/validation/release/cases/issue-160/test_sbml_semantic_families.py
 
   bng2-parity:
     name: BNG3 numerical, expression and export parity
