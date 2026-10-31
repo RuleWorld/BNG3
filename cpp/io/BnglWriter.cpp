@@ -222,6 +222,8 @@ std::string BnglWriter::writeMoleculeTypes(const ast::Model& model) {
             bngl << ")";
         }
 
+        if (mt.isPopulation()) bngl << " population";
+
         bngl << "\n";
     }
 
@@ -348,9 +350,13 @@ std::string BnglWriter::writeReactionRules(const ast::Model& model) {
 
         // Reactants (these are pattern strings)
         const auto& reactants = rule.getReactants();
-        for (std::size_t i = 0; i < reactants.size(); ++i) {
-            if (i > 0) bngl << " + ";
-            bngl << reactants[i];  // Already strings
+        if (reactants.empty()) {
+            bngl << "0";
+        } else {
+            for (std::size_t i = 0; i < reactants.size(); ++i) {
+                if (i > 0) bngl << " + ";
+                bngl << reactants[i];  // Already strings
+            }
         }
 
         // Arrow
@@ -362,9 +368,13 @@ std::string BnglWriter::writeReactionRules(const ast::Model& model) {
 
         // Products (these are pattern strings)
         const auto& products = rule.getProducts();
-        for (std::size_t i = 0; i < products.size(); ++i) {
-            if (i > 0) bngl << " + ";
-            bngl << products[i];  // Already strings
+        if (products.empty()) {
+            bngl << "0";
+        } else {
+            for (std::size_t i = 0; i < products.size(); ++i) {
+                if (i > 0) bngl << " + ";
+                bngl << products[i];  // Already strings
+            }
         }
 
         // Rates

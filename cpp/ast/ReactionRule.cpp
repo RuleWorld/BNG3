@@ -132,6 +132,45 @@ static bool isAdjacentToSurface(const std::string& volume, const std::string& su
     return false;
 }
 
+bool compartmentsFormInteractingSet(const std::vector<std::string>& compartments) {
+    if (g_compartmentDimensions.empty()) return true;
+    std::string surface;
+    std::string volume;
+    std::size_t missing = 0;
+    for (const auto& compartment : compartments) {
+        if (compartment.empty()) {
+            ++missing;
+            continue;
+        }
+        const auto dimension = g_compartmentDimensions.find(compartment);
+        if (dimension == g_compartmentDimensions.end()) continue;
+        if (dimension->second == 2) {
+            if (!surface.empty() && surface != compartment) return false;
+            surface = compartment;
+        } else if (dimension->second == 3) {
+            if (!volume.empty() && volume != compartment) return false;
+            volume = compartment;
+        }
+    }
+    if (!surface.empty() && !volume.empty() && !isAdjacentToSurface(volume, surface)) {
+        return false;
+    }
+    // A mixture of reactants with and without a compartment.
+    return missing == 0 || missing == compartments.size();
+}
+
+std::string surfaceOfInteractingSet(const std::vector<std::string>& compartments) {
+    if (!compartmentsFormInteractingSet(compartments)) return {};
+    for (const auto& compartment : compartments) {
+        const auto dimension = g_compartmentDimensions.find(compartment);
+        if (dimension != g_compartmentDimensions.end() && dimension->second == 2) {
+            return compartment;
+        }
+    }
+    return {};
+}
+
+
 namespace {
 
 struct ComponentInfo {
@@ -179,6 +218,15 @@ bool isComponentNode(const BNGcore::Node& node) {
         }
     }
     return false;
+}
+
+void clearComponentLabels(BNGcore::PatternGraph& graph) {
+    for (auto node = graph.begin(); node != graph.end(); ++node) {
+        if (isComponentNode(**node)) {
+            (*node)->set_label_tag("");
+        }
+    }
+    graph.reset_index();
 }
 
 bool isMoleculeNode(const BNGcore::Node& node) {
@@ -859,6 +907,17 @@ bool verifyBondTopology(const BNGcore::PatternGraph& graph) {
 
 } // namespace
 
+double identicalReactantPatternPermutationFactor(
+    const std::vector<SpeciesGraph>& patterns) {
+    std::unordered_map<std::string, std::size_t> counts;
+    double factor = 1.0;
+    for (const auto& pattern : patterns) {
+        const auto count = ++counts[pattern.canonicalLabel()];
+        factor /= static_cast<double>(count);
+    }
+    return factor;
+}
+
 // Pattern metadata points into the immutable rule pattern graphs. Keeping it
 // per rule avoids rebuilding the same molecule/component descriptions for
 // every embedding search and generated reaction.
@@ -965,6 +1024,10 @@ void ReactionRule::setRuleName(std::string ruleName) {
 
 const std::string& ReactionRule::getLabel() const {
     return label_;
+}
+
+void ReactionRule::setLabel(std::string label) {
+    label_ = std::move(label);
 }
 
 const std::vector<std::string>& ReactionRule::getReactants() const {
@@ -1299,6 +1362,25 @@ void ReactionRule::initialize() {
         for (std::size_t i = 0; i < reactantMol.components.size(); ++i) {
             reactantComponentsByName[reactantMol.components[i].name].push_back(i);
         }
+        // A tag pins its product component to the tagged reactant component;
+        // the untagged components then correspond in order among those left.
+        // Claim the tagged reactant components before any untagged product
+        // component takes the front of its name bucket: otherwise an untagged
+        // product component listed before the tagged one is mapped onto the
+        // tagged reactant component, which is then mapped twice.
+        for (const auto& productComponent : productMol.components) {
+            if (productComponent.label.empty()) continue;
+            auto tagIt = globalReactantComponentsByTag.find(productComponent.label);
+            if (tagIt == globalReactantComponentsByTag.end()) continue;
+            const auto& tagged = tagIt->second;
+            if (tagged.patternIndex != reactantMolRef.base.patternIndex ||
+                tagged.moleculeIndex != reactantMolRef.base.moleculeIndex) {
+                continue;
+            }
+            auto& bucket = reactantComponentsByName[productComponent.name];
+            auto claimed = std::find(bucket.begin(), bucket.end(), tagged.componentIndex);
+            if (claimed != bucket.end()) bucket.erase(claimed);
+        }
 
         for (std::size_t i = 0; i < productMol.components.size(); ++i) {
             const auto& productComponent = productMol.components[i];
@@ -1389,9 +1471,18 @@ void ReactionRule::initialize() {
         } else if (lhs != productToReactantComponent.end() && rhs == productToReactantComponent.end()) {
             // Bond from matched reactant component to new product molecule component
             crossBonds_.push_back(CrossBondRef{lhs->second, productBond.second});
+            // The matched component gains a bond, so it is part of the
+            // reaction center: A(b) -> A(b!1).B(a!1) on A(b,b) has one
+            // reaction per b site, as BNG2 counts it (rate 2*k).
+            reactionCenter_[lhs->second.patternIndex].push_back(ReactionCenterRef{
+                lhs->second.patternIndex, lhs->second.moleculeIndex, true,
+                lhs->second.componentIndex});
         } else if (lhs == productToReactantComponent.end() && rhs != productToReactantComponent.end()) {
             // Bond from new product molecule component to matched reactant component
             crossBonds_.push_back(CrossBondRef{rhs->second, productBond.first});
+            reactionCenter_[rhs->second.patternIndex].push_back(ReactionCenterRef{
+                rhs->second.patternIndex, rhs->second.moleculeIndex, true,
+                rhs->second.componentIndex});
         } else {
             // Both sides unmapped: bond between two newly-added molecules.
             // Only record inter-molecule bonds (different molecules); intra-molecule
@@ -1521,6 +1612,31 @@ std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddings(
     return findEmbeddingsForSpecies(patternIndex, speciesList, allSpecies, state);
 }
 
+std::vector<BNGcore::Map> ReactionRule::filterIdenticalByReactionCenter(
+    std::size_t patternIndex, std::vector<BNGcore::Map> maps) const {
+    if (maps.size() < 2) return maps;
+    if (!patternCache_ || patternIndex >= reactionCenter_.size()) {
+        throw std::logic_error(
+            "filterIdenticalByReactionCenter requires an initialized rule");
+    }
+    const auto& center = reactionCenter_[patternIndex];
+    if (center.empty()) {
+        maps.resize(1);
+        return maps;
+    }
+    const auto& infos = patternCache_->reactantInfo;
+    std::vector<BNGcore::Map> kept;
+    std::unordered_set<std::string> seen;
+    for (auto& map : maps) {
+        const auto* target = map.get_target_graph();
+        if (target == nullptr) continue;
+        if (seen.insert(reactionCenterSignature(infos, center, map, *target)).second) {
+            kept.push_back(std::move(map));
+        }
+    }
+    return kept;
+}
+
 std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddingsForSpecies(
     std::size_t patternIndex,
     const SpeciesList& speciesList,
@@ -1626,7 +1742,13 @@ std::vector<ReactionRule::EmbeddingResult> ReactionRule::findEmbeddingsForSpecie
         // added product, while the matched D pattern is still removed as one species.
         // Preserve that rule-level matching semantics here, so symmetric embeddings
         // of the same species do not create duplicate reaction pathways.
-        const bool speciesLevelTransport = reactantPatterns_.at(patternIndex).isCompartmentPrefix();
+        const auto& reactantPattern = reactantPatterns_.at(patternIndex);
+        const bool speciesLevelTransport = reactantPattern.isCompartmentPrefix() &&
+            std::any_of(productPatterns_.begin(), productPatterns_.end(),
+                [&reactantPattern](const SpeciesGraph& productPattern) {
+                    return productPattern.isCompartmentPrefix() &&
+                        productPattern.getCompartment() != reactantPattern.getCompartment();
+                });
         const bool speciesLevelDeletion = deletesWholeReactantPatternForExecution(
             *this, patternIndex, hooks);
         bool foundEmbeddingForSpecies = false;
@@ -2858,6 +2980,7 @@ bool ReactionRule::buildReaction(
                         }
                     }
                 }
+                clearComponentLabels(productGraph.getGraph());
                 auto prodSp = Species(std::move(productGraph), 0.0, false, compartmentToUse);
                 std::string exact;
                 const auto exactIndex = speciesList.findExact(prodSp, exact);
@@ -3141,6 +3264,7 @@ bool ReactionRule::buildReaction(
             // GPCR(l,b!1,loc~cyt,s~P).Arrestin(b!1) from applying to species where
             // GPCR has 'l' bonded: the product pattern says 'l' should be unbound.
             // (Product pattern bond constraint check would go here in a future version)
+            clearComponentLabels(productGraph.getGraph());
             auto prodSp = Species(std::move(productGraph), 0.0, false, compartmentToUse);
             std::string exact;
             const auto exactIndex = speciesList.findExact(prodSp, exact);
@@ -3183,7 +3307,7 @@ bool ReactionRule::buildReaction(
     //
     // For all other rules, the reaction center signature and/or the normal
     // RxnList dedup already handle symmetry correctly.
-    double factor = 1.0;
+    double factor = identicalReactantPatternPermutationFactor(reactantPatterns_);
     // NOTE: For -> 0 DeleteMolecules rules (operations_ empty, productPatterns_
     // empty), we intentionally do NOT apply the embedding multiplicity as a stat
     // factor.  The multiplicity counts automorphic embeddings that map the pattern
@@ -3197,24 +3321,6 @@ bool ReactionRule::buildReaction(
     // represent the same physical reaction and should have factor 1, not
     // multiplicity.  In Perl each automorphic embedding carries a 1/auto_pattern
     // correction that exactly cancels the multiplicity, yielding factor 1.
-    if (reactantPatterns_.size() > 1) {
-        // Group reactant patterns by canonical label, compute 1/n! per group
-        std::unordered_map<std::string, int> patternGroupCounts;
-        for (const auto& rp : reactantPatterns_) {
-            patternGroupCounts[rp.canonicalLabel()]++;
-        }
-        for (const auto& [label, count] : patternGroupCounts) {
-            if (count > 1) {
-                // 1/n! for this group
-                // Keep the accumulator floating-point. An integer factorial
-                // overflows at 13!, producing an infinite statistical factor.
-                double factorial = 1.0;
-                for (int i = 2; i <= count; ++i) factorial *= i;
-                factor /= factorial;
-            }
-        }
-    }
-
     // For scope-prefix rules, compute observable-count fingerprint for the scoped molecule
     // and include it in the rate law string. This prevents RxnList from merging
     // reactions with different local function contexts.

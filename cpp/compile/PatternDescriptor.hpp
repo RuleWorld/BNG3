@@ -106,6 +106,11 @@ public:
     static Pattern fromPatternGraph(const BNGcore::PatternGraph& graph,
                                     std::string_view compartment = {});
 
+    // Materialize a resolved compatibility pattern with the model's graph
+    // types. This keeps consumers such as writers out of the ANTLR parser.
+    BNGcore::PatternGraph toPatternGraph(ast::Model& model,
+                                         bool treatUnspecifiedBondAsWildcard = false) const;
+
     // Resolve a parsed/value-like pattern against the semantic declarations.
     // Returns false and emits diagnostics for unknown declarations/states.
     bool resolve(const ast::Model& model,

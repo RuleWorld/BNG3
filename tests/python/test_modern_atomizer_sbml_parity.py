@@ -5096,15 +5096,38 @@ def test_quadratic_delayed_event_group_supports_species_difference_trigger(tmp_p
         assert float(np.max(np.abs(bng_values - rr_values))) <= max(5e-10, 1e-5 * scale)
 
 
-def test_quadratic_difference_group_keeps_rank_two_events_unsupported():
-    from bionetgen.atomizer.modern import Atomizer
+def test_quadratic_difference_group_executes_rank_two_events(tmp_path):
+    import numpy as np
 
-    result = Atomizer(quiet_mode=True, t_end=4, n_steps=40).atomize(
-        _quadratic_species_difference_multi_delay_model(rank_two=True)
-    )
+    roadrunner = pytest.importorskip("roadrunner")
+    from bionetgen.atomizer.modern import Atomizer
+    import bionetgen
+
+    xml = _quadratic_species_difference_multi_delay_model(rank_two=True)
+    result = Atomizer(quiet_mode=True, t_end=4, n_steps=800).atomize(xml)
 
     assert result.success, result.error
-    assert "Events NOT simulated" in result.bngl
+    assert "Events NOT simulated" not in result.bngl
+    assert "begin bng3_events version 1" in result.bngl
+
+    model_path = tmp_path / "quadratic_rank_two_events.bngl"
+    model_path.write_text(result.bngl, encoding="utf-8")
+    model = bionetgen.load(str(model_path))
+    trajectory = model.simulate(
+        method="ode", t_end=4, n_steps=800, rtol=1e-9, atol=1e-12
+    )
+
+    rr = roadrunner.RoadRunner(xml)
+    rr.integrator.setValue("relative_tolerance", 1e-9)
+    rr.integrator.setValue("absolute_tolerance", 1e-12)
+    rr.timeCourseSelections = ["time", "S1", "S2", "S3", "S4"]
+    reference = rr.simulate(times=trajectory.time)
+
+    for name in ("S1", "S2", "S3", "S4"):
+        bng_values = trajectory.observables[name]
+        rr_values = reference[name]
+        scale = max(float(np.max(np.abs(bng_values))), float(np.max(np.abs(rr_values))))
+        assert float(np.max(np.abs(bng_values - rr_values))) <= max(5e-10, 1e-5 * scale)
 
 
 @pytest.mark.parametrize(
