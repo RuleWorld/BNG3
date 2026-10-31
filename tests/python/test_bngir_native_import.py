@@ -2485,6 +2485,7 @@ def test_native_import_reconstructs_model_functions_and_executes(tmp_path):
 def test_native_import_reconstructs_a_function_body_naming_an_observable():
     document = _function_document()
     assert document["model"]["functions"][2]["expression"] == {
+        "call": True,
         "kind": "observable_ref",
         "symbol": {"kind": "observable", "index": 0},
     }
