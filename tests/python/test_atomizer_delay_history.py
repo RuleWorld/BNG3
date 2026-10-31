@@ -24,6 +24,7 @@ considerations") fix the two boundary rules that the Atomizer has to honour:
 from __future__ import annotations
 
 import numpy as np
+import pytest
 
 from bionetgen.atomizer.modern import Atomizer
 from bionetgen.atomizer.modern.parser import SBMLParser
@@ -165,6 +166,49 @@ _DELAYED_CONSTANT_ASSIGNMENT = """<sbml xmlns="http://www.sbml.org/sbml/level3/v
 </sbml>"""
 
 
+_CASE_SENSITIVE_TIME_ID = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+    level="3" version="2">
+  <model id="case_sensitive_time_id">
+    <listOfParameters>
+      <parameter id="Time" value="2" constant="false"/>
+      <parameter id="y" value="1" constant="false"/>
+      <parameter id="z" value="1" constant="false"/>
+    </listOfParameters>
+    <listOfRules>
+      <rateRule variable="Time">
+        <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0</cn></math>
+      </rateRule>
+      <assignmentRule variable="y">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <piecewise>
+            <piece>
+              <cn>1</cn>
+              <apply>
+                <geq/>
+                <csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol>
+                <cn>0</cn>
+              </apply>
+            </piece>
+            <otherwise><cn>0</cn></otherwise>
+          </piecewise>
+        </math>
+      </assignmentRule>
+      <algebraicRule>
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply>
+            <minus/><ci>z</ci>
+            <apply>
+              <csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/delay">delay</csymbol>
+              <ci>y</ci><ci>Time</ci>
+            </apply>
+          </apply>
+        </math>
+      </algebraicRule>
+    </listOfRules>
+  </model>
+</sbml>"""
+
+
 def _atomize(xml: str) -> str:
     result = Atomizer(atomize=False, quiet_mode=True).atomize(xml)
     assert result.success, result.error
@@ -283,6 +327,10 @@ def test_bounded_dynamic_delay_of_constant_assignment_is_folded_exactly():
     The dynamic lag is finite and nonnegative throughout this requested
     simulation interval, so lowering it to the proven value is exact.
     """
+    libsbml = pytest.importorskip("libsbml", exc_type=ImportError)
+    source_document = libsbml.readSBMLFromString(_DELAYED_CONSTANT_ASSIGNMENT)
+    assert source_document.getNumErrors() == 0, source_document.getErrorLog().toString()
+
     model = SBMLParser().parse(_DELAYED_CONSTANT_ASSIGNMENT)
 
     lowered = _lower_bounded_event_state_delays(model, 1.0)
@@ -329,4 +377,21 @@ def test_bounded_dynamic_delay_does_not_assume_history_outside_horizon():
 
     rules = {rule.variable: rule.math for rule in model.rules if rule.variable}
     assert "delay(" in rules["y"].lower()
+    assert "delay(" in rules["z"].lower()
+
+
+def test_sbml_parameter_named_time_is_not_the_time_csymbol():
+    """SBML SIds are case-sensitive; `Time` here stays equal to 2."""
+    model = SBMLParser().parse(_CASE_SENSITIVE_TIME_ID)
+
+    # The parser's MathML printer uses its own geq(...) spelling, whereas the
+    # bounded-expression prover consumes the normalized if/comparison form
+    # emitted by this same writer. Keep the source fixture authoritative for
+    # identifiers, and express the equivalent assignment in that form here.
+    y_rule = next(rule for rule in model.rules if rule.variable == "y")
+    y_rule.math = "if(time >= 0, 1, 0)"
+
+    _lower_bounded_event_state_delays(model, 1.0)
+
+    rules = {rule.variable: rule.math for rule in model.rules if rule.variable}
     assert "delay(" in rules["z"].lower()

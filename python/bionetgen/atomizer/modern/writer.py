@@ -3593,7 +3593,7 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
                 value = int(node.value) if isinstance(node.value, bool) else node.value
                 return Fraction(0), Fraction(str(value))
             if isinstance(node, ast.Name):
-                if node.id.lower() == "time":
+                if node.id == "time":
                     return Fraction(1), Fraction(0)
                 constant = initial_expression(node.id, require_immutable_symbols=True)
                 return (
@@ -3673,7 +3673,7 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
                         return None
                     return Fraction(0), Fraction(str(node.value))
                 if isinstance(node, ast.Name):
-                    if node.id.lower() == "time":
+                    if node.id == "time":
                         return Fraction(1), Fraction(0)
                     constant = initial_expression(
                         node.id, require_immutable_symbols=True
