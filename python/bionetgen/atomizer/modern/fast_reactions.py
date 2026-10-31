@@ -296,6 +296,13 @@ def _reduce_bimolecular_equilibrium(
     if len(set(identifiers)) != 3:
         return refuse("the fast reaction does not convert three distinct species")
     if any(
+        re.search(r"\bdelay\s*\(", expression, flags=re.IGNORECASE)
+        for expression in _model_expressions(model)
+    ):
+        return refuse(
+            "the bimolecular pool projection cannot preserve delayed prehistory"
+        )
+    if any(
         reference.variable_stoichiometry or float(reference.stoichiometry) != 1
         for reference in (*reactants, product)
     ):

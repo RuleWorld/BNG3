@@ -136,6 +136,77 @@ def test_bimolecular_fast_subsystem_tracks_both_conserved_pools():
     )
 
 
+def test_bimolecular_fast_reduction_refuses_compound_delayed_history():
+    """A compound delay expression can observe the projected initial state."""
+
+    import libsbml
+
+    xml = _model("""
+        <listOfCompartments>
+          <compartment id="cell" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="cell" initialAmount="1" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+          <species id="B" compartment="cell" initialAmount="1" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+          <species id="C" compartment="cell" initialAmount="0" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="history" constant="false"/>
+        </listOfParameters>
+        <listOfRules>
+          <assignmentRule variable="history">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply>
+                <csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/delay">delay</csymbol>
+                <apply><plus/><ci>A</ci><ci>B</ci></apply>
+                <cn>0.5</cn>
+              </apply>
+            </math>
+          </assignmentRule>
+        </listOfRules>
+        <listOfReactions>
+          <reaction id="fast" reversible="true" fast="true">
+            <listOfReactants>
+              <speciesReference species="A" stoichiometry="1" constant="true"/>
+              <speciesReference species="B" stoichiometry="1" constant="true"/>
+            </listOfReactants>
+            <listOfProducts>
+              <speciesReference species="C" stoichiometry="1" constant="true"/>
+            </listOfProducts>
+            <kineticLaw>
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><minus/><apply><times/><ci>A</ci><ci>B</ci></apply><ci>C</ci></apply>
+              </math>
+            </kineticLaw>
+          </reaction>
+          <reaction id="inflow" reversible="false" fast="false">
+            <listOfProducts>
+              <speciesReference species="A" stoichiometry="1" constant="true"/>
+            </listOfProducts>
+            <kineticLaw>
+              <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+            </kineticLaw>
+          </reaction>
+        </listOfReactions>
+        """).replace('timeUnits="time"', 'timeUnits="second"')
+
+    # Validate the source independently before asserting BNG3's refusal.
+    document = libsbml.readSBMLFromString(xml)
+    document.checkConsistency()
+    errors = [
+        document.getError(index).getMessage()
+        for index in range(document.getNumErrors())
+        if document.getError(index).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
+    ]
+    assert not errors, errors
+
+    atomized = Atomizer(atomize=False, quiet_mode=True).atomize(xml)
+    assert atomized.success, atomized.error
+    assert "  fast:" in atomized.bngl
+    fast_warnings = _fast_warnings(xml)
+    assert any("delay" in warning.message for warning in fast_warnings)
+
+
 def test_fast_reaction_is_reduced_to_its_pseudo_steady_state():
     """A fast reaction proportional to one species is held at zero."""
 
