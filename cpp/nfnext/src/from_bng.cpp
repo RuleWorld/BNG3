@@ -4,6 +4,7 @@
 #include "nfnext/compiler.hpp"
 #include "nfnext/counter_rng.hpp"
 #include "nfnext/generic_matcher.hpp"
+#include "nfnext/transformation.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -797,6 +798,90 @@ void addDirection(const bng::compile::CompiledRule& rule,
     result.model.expanded_rules.push_back(std::move(lowered));
 }
 
+TransformationIR buildRuleTransformation(const ExpandedRuleIR& rule) {
+    TransformationIR transformation;
+    const std::size_t reactant_node_count = rule.pattern.nodes.size();
+
+    std::map<PatternNodeId, CreatedMoleculeId> node_to_created;
+    std::map<PatternNodeId, TypeId> created_types;
+    std::map<PatternNodeId, std::vector<std::pair<std::uint32_t, std::int32_t>>> created_states;
+
+    CreatedMoleculeId next_created = 0;
+    for (const auto& action : rule.actions) {
+        if (action.kind == ActionKind::Create) {
+            PatternNodeId node = action.target_node;
+            if (node_to_created.find(node) == node_to_created.end()) {
+                CreatedMoleculeId cid = next_created++;
+                node_to_created[node] = cid;
+                created_types[node] = action.molecule_type;
+            }
+        } else if (action.kind == ActionKind::SetSiteState && action.target_node >= reactant_node_count) {
+            created_states[action.target_node].push_back({action.site, action.value});
+        }
+    }
+
+    // 1. Create all newly synthesized molecules with their initial site states
+    for (const auto& [node, cid] : node_to_created) {
+        transformation.createMoleculeWithId(cid, created_types[node], created_states[node]);
+    }
+
+    // 2. Perform state updates, unbinding, and binding
+    std::vector<ActionIR> destructions;
+    for (const auto& action : rule.actions) {
+        switch (action.kind) {
+        case ActionKind::Create:
+            break;
+        case ActionKind::SetSiteState:
+            if (action.target_node < reactant_node_count) {
+                transformation.setState(action.target_node, action.site, action.value);
+            }
+            break;
+        case ActionKind::Unbind:
+            transformation.deleteBond(action.target_node, action.site,
+                                      action.partner_node, action.partner_site);
+            break;
+        case ActionKind::Bind: {
+            const bool first_created = (action.target_node >= reactant_node_count);
+            const bool second_created = (action.partner_node >= reactant_node_count);
+            if (!first_created && !second_created) {
+                transformation.addBond(action.target_node, action.site,
+                                       action.partner_node, action.partner_site);
+            } else if (!first_created && second_created) {
+                transformation.addBondExistingToCreated(
+                    action.target_node, action.site,
+                    node_to_created.at(action.partner_node), action.partner_site);
+            } else if (first_created && !second_created) {
+                transformation.addBondExistingToCreated(
+                    action.partner_node, action.partner_site,
+                    node_to_created.at(action.target_node), action.site);
+            } else {
+                transformation.addBondCreated(
+                    node_to_created.at(action.target_node), action.site,
+                    node_to_created.at(action.partner_node), action.partner_site);
+            }
+            break;
+        }
+        case ActionKind::Destroy:
+        case ActionKind::DestroyComplex:
+            destructions.push_back(action);
+            break;
+        case ActionKind::MovePosition:
+            throw std::runtime_error("NFnext MovePosition action not supported in standard BNG");
+        }
+    }
+
+    // 3. Perform destructions
+    for (const auto& action : destructions) {
+        if (action.kind == ActionKind::Destroy) {
+            transformation.destroyMolecule(action.target_node);
+        } else if (action.kind == ActionKind::DestroyComplex) {
+            transformation.destroyComplexContaining(action.target_node);
+        }
+    }
+
+    return transformation;
+}
+
 } // namespace
 
 bool BngLoweringResult::ok() const noexcept {
@@ -864,7 +949,7 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
 BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& source,
                                       const BngExecutionRequest& request) {
     const auto refuse = [](const std::string& reason) {
-        throw std::runtime_error("NFnext unary execution unsupported: " + reason);
+        throw std::runtime_error("NFnext execution unsupported: " + reason);
     };
     if (request.sample_times.empty()) refuse("sample_times must not be empty");
     double previous = -1.0;
@@ -897,13 +982,6 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             if (issue.severity == BngLoweringSeverity::Error) refuse(issue.message);
     }
     const auto& model = lowered.model;
-    for (const auto& rule : model.expanded_rules) {
-        if (rule.pattern.nodes.size() != 1 || !rule.pattern.bonds.empty() ||
-            rule.actions.empty()) refuse("only unary site-state rules are executable");
-        for (const auto& action : rule.actions)
-            if (action.kind != ActionKind::SetSiteState || action.target_node != 0)
-                refuse("only unary site-state actions are executable");
-    }
     if (request.max_particles > std::numeric_limits<std::uint32_t>::max())
         refuse("particle budget exceeds native index capacity");
     GenericGraphState state(model);
@@ -911,68 +989,106 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         const auto amount = constantExpression(seed.amount, source);
         if (seed.constant || seed.declaredUnit || !seed.compartment.empty() ||
             !amount || !std::isfinite(*amount) || *amount < 0.0 ||
-            std::floor(*amount) != *amount ||
-            *amount > static_cast<double>(request.max_particles - state.liveCount()))
+            std::floor(*amount) != *amount)
             refuse("seeds require bounded static integer particle counts");
-        for (const auto& molecule : seed.pattern.molecules())
+        for (const auto& molecule : seed.pattern.molecules()) {
             for (const auto& site : molecule.sites) {
-                const auto freeBond = [](bng::compile::BondConstraintKind kind) {
+                const auto allowedBond = [](bng::compile::BondConstraintKind kind) {
                     return kind == bng::compile::BondConstraintKind::Unspecified ||
-                           kind == bng::compile::BondConstraintKind::Unbound;
+                           kind == bng::compile::BondConstraintKind::Unbound ||
+                           kind == bng::compile::BondConstraintKind::Exact;
                 };
-                if (!freeBond(site.bondKind)) refuse("seed bond wildcards");
+                if (!allowedBond(site.bondKind)) refuse("seed bond wildcards");
                 for (const auto& bond : site.bondConstraints)
-                    if (!freeBond(bond.kind)) refuse("seed bond wildcards");
+                    if (!allowedBond(bond.kind)) refuse("seed bond wildcards");
             }
+        }
         BngLoweringResult validation;
         const auto pattern = flattenReactants({seed.pattern}, validation, "seed");
-        if (!pattern || !validation.ok() || pattern->pattern.nodes.size() != 1 ||
-            !pattern->pattern.bonds.empty()) refuse("seeds require isolated molecules");
-        const auto& node = pattern->pattern.nodes.front();
-        const auto& type = model.molecule_types.at(node.molecule_type);
-        std::vector<std::optional<std::int32_t>> states(type.sites.size());
-        for (const auto& constraint : node.constraints) {
-            if (constraint.kind == PatternIR::SiteConstraintKind::State)
-                states.at(constraint.site) = constraint.state;
-            else if (constraint.kind != PatternIR::SiteConstraintKind::Free)
-                refuse("seeds require exact states and free sites");
+        if (!pattern || !validation.ok()) refuse("seeds require valid patterns");
+
+        const auto& pat = pattern->pattern;
+        for (std::size_t nodeIdx = 0; nodeIdx < pat.nodes.size(); ++nodeIdx) {
+            const auto& node = pat.nodes[nodeIdx];
+            const auto& type = model.molecule_types.at(node.molecule_type);
+            std::vector<std::optional<std::int32_t>> states(type.sites.size());
+            for (const auto& constraint : node.constraints) {
+                if (constraint.kind == PatternIR::SiteConstraintKind::State)
+                    states.at(constraint.site) = constraint.state;
+                else if (constraint.kind != PatternIR::SiteConstraintKind::Free)
+                    refuse("seeds require exact states and free sites");
+            }
+            for (std::size_t site = 0; site < type.sites.size(); ++site)
+                if (!type.sites[site].states.empty() && !states[site])
+                    refuse("seeds must explicitly initialize every stateful site");
         }
-        for (std::size_t site = 0; site < type.sites.size(); ++site)
-            if (!type.sites[site].states.empty() && !states[site])
-                refuse("seeds must explicitly initialize every stateful site");
-        for (std::size_t count = 0; count < static_cast<std::size_t>(*amount); ++count) {
-            const auto particle = state.create(node.molecule_type);
-            for (std::size_t site = 0; site < states.size(); ++site)
-                if (states[site]) state.setSiteState(particle, site, *states[site]);
+
+        const std::size_t copy_count = static_cast<std::size_t>(*amount);
+        const std::size_t seed_particles = copy_count * pat.nodes.size();
+        if (seed_particles > static_cast<std::size_t>(request.max_particles - state.liveCount()))
+            refuse("particle budget exceeded by seeds");
+
+        for (std::size_t count = 0; count < copy_count; ++count) {
+            std::vector<ParticleId> particles;
+            particles.reserve(pat.nodes.size());
+            for (std::size_t nodeIdx = 0; nodeIdx < pat.nodes.size(); ++nodeIdx) {
+                const auto& node = pat.nodes[nodeIdx];
+                const auto particle = state.create(node.molecule_type);
+                particles.push_back(particle);
+                for (const auto& constraint : node.constraints) {
+                    if (constraint.kind == PatternIR::SiteConstraintKind::State) {
+                        state.setSiteState(particle, static_cast<std::uint16_t>(constraint.site), constraint.state);
+                    }
+                }
+            }
+            for (const auto& bond : pat.bonds) {
+                state.bind(particles.at(bond.first), static_cast<std::uint16_t>(bond.first_site),
+                           particles.at(bond.second), static_cast<std::uint16_t>(bond.second_site));
+            }
         }
     }
-    std::vector<std::vector<PatternIR>> observables;
+    struct ObservableDef {
+        std::string name;
+        bng::compile::ObservableKind kind;
+        std::vector<PatternIR> terms;
+    };
+    std::vector<ObservableDef> observables;
     BngExecutionResult output;
     output.columns.push_back("time");
     for (const auto& observable : source.observables()) {
-        if (observable.kind != bng::compile::ObservableKind::Molecules ||
-            observable.terms.empty()) refuse("only unary Molecules observables");
+        if (observable.kind != bng::compile::ObservableKind::Molecules &&
+            observable.kind != bng::compile::ObservableKind::Species)
+            refuse("only Molecules and Species observables");
+        if (observable.terms.empty()) refuse("empty observable terms");
         std::vector<PatternIR> terms;
         for (const auto& term : observable.terms) {
+            if (!term.relation.empty()) refuse("observable relations not supported");
             BngLoweringResult validation;
             const auto pattern = flattenReactants({term.pattern}, validation, observable.name);
-            if (!term.relation.empty() || !pattern || !validation.ok() ||
-                pattern->pattern.nodes.size() != 1 || !pattern->pattern.bonds.empty())
-                refuse("only unary Molecules observable patterns");
+            if (!pattern || !validation.ok())
+                refuse("invalid observable pattern");
             terms.push_back(pattern->pattern);
         }
         if (std::find(output.columns.begin(), output.columns.end(), observable.name) !=
             output.columns.end()) refuse("duplicate output column names");
         output.columns.push_back(observable.name);
-        observables.push_back(std::move(terms));
+        observables.push_back({observable.name, observable.kind, std::move(terms)});
     }
+
+    std::vector<CompiledTransformation> compiled_transformations;
+    compiled_transformations.reserve(model.expanded_rules.size());
+    for (const auto& rule : model.expanded_rules) {
+        compiled_transformations.push_back(
+            compileTransformation(buildRuleTransformation(rule), model));
+    }
+
     GenericMatcher matcher(model);
     CounterRng rng(request.seed, 0);
     const auto layout = RngLayout::exactSSA();
     double time = 0.0;
     double next_time = std::numeric_limits<double>::infinity();
     std::size_t selected_rule = 0;
-    ParticleId selected_particle;
+    Embedding selected_match;
     bool pending = false;
     for (const double sample : request.sample_times) {
         for (;;) {
@@ -997,7 +1113,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                             choice -= rule.rate;
                             if (choice < 0.0) {
                                 selected_rule = index;
-                                selected_particle = match.particle(0);
+                                selected_match = match;
                                 found = true;
                                 break;
                             }
@@ -1011,15 +1127,32 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             if (output.event_count >= request.max_events) refuse("event budget exhausted");
             if (!(next_time > time)) refuse("event clock cannot advance");
             time = next_time;
-            for (const auto& action : model.expanded_rules[selected_rule].actions)
-                state.setSiteState(selected_particle, action.site, action.value);
+            MatchEmbedding match_embedding;
+            for (std::size_t node = 0; node < selected_match.particles().size(); ++node) {
+                match_embedding.bindNode(node, selected_match.particle(node));
+            }
+            applyTransformation(compiled_transformations[selected_rule], match_embedding, state);
+            if (state.liveCount() > request.max_particles) refuse("particle budget exhausted");
             ++output.event_count;
             pending = false;
         }
         std::vector<double> row{sample};
-        for (const auto& terms : observables) {
+        for (const auto& obs : observables) {
             double value = 0.0;
-            for (const auto& term : terms) value += matcher.enumerate(term, state).size();
+            if (obs.kind == bng::compile::ObservableKind::Molecules) {
+                for (const auto& term : obs.terms)
+                    value += matcher.enumerate(term, state).size();
+            } else if (obs.kind == bng::compile::ObservableKind::Species) {
+                std::set<std::uint32_t> matched_complexes;
+                for (const auto& term : obs.terms) {
+                    for (const auto& match : matcher.enumerate(term, state)) {
+                        if (!match.particles().empty()) {
+                            matched_complexes.insert(state.complexId(match.particle(0)));
+                        }
+                    }
+                }
+                value = static_cast<double>(matched_complexes.size());
+            }
             row.push_back(value);
         }
         output.rows.push_back(std::move(row));

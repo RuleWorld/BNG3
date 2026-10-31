@@ -30,6 +30,10 @@ struct ParticleId {
         return a.index == b.index && a.generation == b.generation;
     }
     friend bool operator!=(const ParticleId& a, const ParticleId& b) noexcept { return !(a == b); }
+    friend bool operator<(const ParticleId& a, const ParticleId& b) noexcept {
+        if (a.index != b.index) return a.index < b.index;
+        return a.generation < b.generation;
+    }
 };
 
 enum class BackendKind : std::uint8_t {
