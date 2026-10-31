@@ -626,9 +626,7 @@ class EventTranslationContext:
     )
     # Return the BNGL parameter name for an event-mutable global SBML
     # parameter, when its event assignment can be represented natively.
-    resolve_native_parameter: Callable[[str], Optional[str]] = (
-        lambda _identifier: None
-    )
+    resolve_native_parameter: Callable[[str], Optional[str]] = lambda _identifier: None
 
     @property
     def resolveSpeciesPattern(self):

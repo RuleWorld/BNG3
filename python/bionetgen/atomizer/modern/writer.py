@@ -8288,8 +8288,7 @@ def generate_bngl(
                 return None
             if any(
                 rule.variable
-                and standardize_name(str(rule.variable))
-                == standardize_name(identifier)
+                and standardize_name(str(rule.variable)) == standardize_name(identifier)
                 for rule in model.rules
             ):
                 return None

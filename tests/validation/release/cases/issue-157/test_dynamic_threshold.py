@@ -11,9 +11,9 @@ import bionetgen
 from bionetgen.atomizer.modern import Atomizer
 
 SOURCE = Path(__file__).with_name("periodic_threshold.xml").read_text(encoding="utf-8")
-PARAMETER_SWITCH_SOURCE = Path(__file__).with_name(
-    "event_parameter_switch.xml"
-).read_text(encoding="utf-8")
+PARAMETER_SWITCH_SOURCE = (
+    Path(__file__).with_name("event_parameter_switch.xml").read_text(encoding="utf-8")
+)
 
 
 def _native_bngl(include_floor_trigger: bool = True) -> str:
@@ -186,9 +186,7 @@ def test_parameter_switch_source_is_valid_and_matches_the_independent_oracle(
         ),
         dtype=float,
     )
-    assert values[1, 1] == pytest.approx(
-        10 * math.exp(-before_event), rel=1e-8
-    )
+    assert values[1, 1] == pytest.approx(10 * math.exp(-before_event), rel=1e-8)
     assert values[1, 2] == pytest.approx(0.0, abs=1e-12)
     assert values[1, 3] == pytest.approx(1.0, abs=1e-12)
     assert values[2, 1] == pytest.approx(
@@ -211,9 +209,7 @@ def test_native_event_parameter_assignment_matches_the_public_api(
     expected_amount = _analytic_parameter_switch_amount(switch_time)
 
     direct_path = tmp_path / f"direct-{switch_time}-{steps}.bngl"
-    direct_path.write_text(
-        _native_parameter_switch_bngl(switch_time), encoding="utf-8"
-    )
+    direct_path.write_text(_native_parameter_switch_bngl(switch_time), encoding="utf-8")
     direct = bionetgen.load(str(direct_path)).simulate(
         method="ode", t_end=2.0, n_steps=steps
     )
@@ -276,12 +272,15 @@ def test_coupled_event_parameter_assignment_lowers_to_bng3_events(tmp_path):
     </listOfEvents>
   </model>
 </sbml>"""
-    result = Atomizer(atomize=False, quiet_mode=True, t_end=2.0, n_steps=10).atomize(xml)
+    result = Atomizer(atomize=False, quiet_mode=True, t_end=2.0, n_steps=10).atomize(
+        xml
+    )
     assert result.success, result.error
     assert "begin bng3_events version 1" in result.bngl
     assert "assignment: k_amt = 2" in result.bngl or "assignment: k = 2" in result.bngl
     atomized_path = tmp_path / "coupled_atomized.bngl"
     atomized_path.write_text(result.bngl, encoding="utf-8")
-    atomized = bionetgen.load(str(atomized_path)).simulate(method="ode", t_end=2.0, n_steps=10)
+    atomized = bionetgen.load(str(atomized_path)).simulate(
+        method="ode", t_end=2.0, n_steps=10
+    )
     assert atomized.observables["marker_amt"][-1] == pytest.approx(1.0, abs=1e-12)
-
