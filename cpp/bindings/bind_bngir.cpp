@@ -492,12 +492,45 @@ void requireNativeStateTransition(const py::dict& rule,
     }
     const auto reactantSites = py::cast<py::list>(reactantMolecule["sites"]);
     const auto productSites = py::cast<py::list>(productMolecule["sites"]);
-    if (reactantSites.size() != 1 || productSites.size() != 1) {
+    if (reactantSites.size() != productSites.size() || reactantSites.empty()) {
         throw std::runtime_error(
-            "native BNGIR state transitions require exactly one site on each side");
+            "native BNGIR state transitions require matching nonempty site counts");
     }
-    const auto reactantSite = py::cast<py::dict>(reactantSites[0]);
-    const auto productSite = py::cast<py::dict>(productSites[0]);
+
+    const auto mutations = py::cast<py::list>(direction["mutations"]);
+    if (mutations.size() != 1) {
+        throw std::runtime_error(
+            "native BNGIR state transitions require one change_state mutation");
+    }
+    const auto mutation = py::cast<py::dict>(mutations[0]);
+    requireObjectKeys(mutation, {"kind", "source", "state", "state_index"},
+                      {"kind", "source", "state", "state_index"},
+                      "state transition mutation");
+    if (!py::isinstance<py::str>(mutation["kind"]) ||
+        py::cast<std::string>(mutation["kind"]) != "change_state") {
+        throw std::runtime_error(
+            "native BNGIR state transitions require one change_state mutation");
+    }
+
+    const auto sourceDict = py::cast<py::dict>(mutation["source"]);
+    requireObjectKeys(sourceDict, {"side", "pattern", "molecule", "site"},
+                      {"side", "pattern", "molecule", "site"},
+                      "state transition mutation source");
+    if (!py::isinstance<py::str>(sourceDict["side"]) ||
+        py::cast<std::string>(sourceDict["side"]) != "reactant" ||
+        indexFromBngir(sourceDict["pattern"], "mutation pattern") != 0 ||
+        indexFromBngir(sourceDict["molecule"], "mutation molecule") != 0) {
+        throw std::runtime_error(
+            "native BNGIR " + where + " has an out-of-slice mapping reference");
+    }
+    const auto targetSite = indexFromBngir(sourceDict["site"], "mutation site");
+    if (targetSite >= reactantSites.size()) {
+        throw std::runtime_error(
+            "native BNGIR " + where + " has an out-of-slice mapping reference");
+    }
+
+    const auto reactantSite = py::cast<py::dict>(reactantSites[targetSite]);
+    const auto productSite = py::cast<py::dict>(productSites[targetSite]);
     const auto reactantState = py::cast<py::dict>(reactantSite["state"]);
     const auto productState = py::cast<py::dict>(productSite["state"]);
     const auto beforeIndex = indexFromBngir(reactantState["index"], "reactant state");
@@ -510,10 +543,29 @@ void requireNativeStateTransition(const py::dict& rule,
         throw std::runtime_error(
             "native BNGIR state transitions must change the finite site state");
     }
+    if (!py::isinstance<py::str>(mutation["state"]) ||
+        py::cast<std::string>(mutation["state"]) !=
+            py::cast<std::string>(productState["value"]) ||
+        indexFromBngir(mutation["state_index"], "mutation state") != afterIndex) {
+        throw std::runtime_error(
+            "native BNGIR state transition mutation does not match its product state");
+    }
+
+    for (std::size_t siteIdx = 0; siteIdx < reactantSites.size(); ++siteIdx) {
+        if (siteIdx == targetSite) continue;
+        const auto rSite = py::cast<py::dict>(reactantSites[siteIdx]);
+        const auto pSite = py::cast<py::dict>(productSites[siteIdx]);
+        if (!pythonObjectsEqual(rSite["state"], pSite["state"]) ||
+            !pythonObjectsEqual(rSite["bond"], pSite["bond"])) {
+            throw std::runtime_error(
+                "native BNGIR state transitions must preserve unmodified sites");
+        }
+    }
 
     const auto checkReference = [&](const py::handle& rawReference,
                                     const std::string& side,
                                     bool hasSite,
+                                    std::size_t expectedSite,
                                     const std::string& referenceWhere) {
         const auto reference = py::cast<py::dict>(rawReference);
         const std::vector<std::string> referenceKeys = hasSite
@@ -524,7 +576,7 @@ void requireNativeStateTransition(const py::dict& rule,
             py::cast<std::string>(reference["side"]) != side ||
             indexFromBngir(reference["pattern"], "mapping pattern") != 0 ||
             indexFromBngir(reference["molecule"], "mapping molecule") != 0 ||
-            (hasSite && indexFromBngir(reference["site"], "mapping site") != 0)) {
+            (hasSite && indexFromBngir(reference["site"], "mapping site") != expectedSite)) {
             throw std::runtime_error(
                 "native BNGIR " + where + " has an out-of-slice mapping reference");
         }
@@ -539,45 +591,26 @@ void requireNativeStateTransition(const py::dict& rule,
         const auto moleculeMapping = py::cast<py::dict>(moleculeMappings[0]);
         requireObjectKeys(moleculeMapping, {"product", "reactant"},
                           {"product", "reactant"}, "molecule mapping");
-        checkReference(moleculeMapping["product"], "product", false,
+        checkReference(moleculeMapping["product"], "product", false, 0,
                        "product molecule mapping");
-        checkReference(moleculeMapping["reactant"], "reactant", false,
+        checkReference(moleculeMapping["reactant"], "reactant", false, 0,
                        "reactant molecule mapping");
 
         const auto componentMappings = py::cast<py::list>(rule["component_mappings"]);
-        if (componentMappings.size() != 1) {
+        if (componentMappings.size() != reactantSites.size()) {
             throw std::runtime_error(
-                "native BNGIR state transitions require one explicit site mapping");
+                "native BNGIR state transitions require one explicit site mapping per site");
         }
-        const auto componentMapping = py::cast<py::dict>(componentMappings[0]);
-        requireObjectKeys(componentMapping, {"product", "reactant"},
-                          {"product", "reactant"}, "component mapping");
-        checkReference(componentMapping["product"], "product", true,
-                       "product site mapping");
-        checkReference(componentMapping["reactant"], "reactant", true,
-                       "reactant site mapping");
+        for (std::size_t siteIdx = 0; siteIdx < reactantSites.size(); ++siteIdx) {
+            const auto componentMapping = py::cast<py::dict>(componentMappings[siteIdx]);
+            requireObjectKeys(componentMapping, {"product", "reactant"},
+                              {"product", "reactant"}, "component mapping");
+            checkReference(componentMapping["product"], "product", true, siteIdx,
+                           "product site mapping");
+            checkReference(componentMapping["reactant"], "reactant", true, siteIdx,
+                           "reactant site mapping");
+        }
     }
-
-    const auto mutations = py::cast<py::list>(direction["mutations"]);
-    if (mutations.size() != 1) {
-        throw std::runtime_error(
-            "native BNGIR state transitions require one change_state mutation");
-    }
-    const auto mutation = py::cast<py::dict>(mutations[0]);
-    requireObjectKeys(mutation, {"kind", "source", "state", "state_index"},
-                      {"kind", "source", "state", "state_index"},
-                      "state transition mutation");
-    if (!py::isinstance<py::str>(mutation["kind"]) ||
-        py::cast<std::string>(mutation["kind"]) != "change_state" ||
-        !py::isinstance<py::str>(mutation["state"]) ||
-        py::cast<std::string>(mutation["state"]) !=
-            py::cast<std::string>(productState["value"]) ||
-        indexFromBngir(mutation["state_index"], "mutation state") != afterIndex) {
-        throw std::runtime_error(
-            "native BNGIR state transition mutation does not match its product state");
-    }
-    checkReference(mutation["source"], "reactant", true,
-                   "state transition mutation source");
 }
 
 void requireNativeBondChange(const py::dict& rule,
@@ -666,6 +699,45 @@ void requireNativeBondChange(const py::dict& rule,
             }
         }
     }
+    const auto sourceDict = py::cast<py::dict>(mutation["source"]);
+    const auto partnerDict = py::cast<py::dict>(mutation["partner"]);
+    requireObjectKeys(sourceDict, {"side", "pattern", "molecule", "site"},
+                      {"side", "pattern", "molecule", "site"}, "bond mutation source");
+    requireObjectKeys(partnerDict, {"side", "pattern", "molecule", "site"},
+                      {"side", "pattern", "molecule", "site"}, "bond mutation partner");
+    if (!py::isinstance<py::str>(sourceDict["side"]) ||
+        py::cast<std::string>(sourceDict["side"]) != "reactant" ||
+        !py::isinstance<py::str>(partnerDict["side"]) ||
+        py::cast<std::string>(partnerDict["side"]) != "reactant") {
+        throw std::runtime_error("native BNGIR bond mutation endpoints must be on reactant side");
+    }
+    const auto sourcePattern = indexFromBngir(sourceDict["pattern"], "mutation source pattern");
+    const auto sourceMol = indexFromBngir(sourceDict["molecule"], "mutation source molecule");
+    const auto sourceSite = indexFromBngir(sourceDict["site"], "mutation source site");
+
+    const auto partnerPattern = indexFromBngir(partnerDict["pattern"], "mutation partner pattern");
+    const auto partnerMol = indexFromBngir(partnerDict["molecule"], "mutation partner molecule");
+    const auto partnerSite = indexFromBngir(partnerDict["site"], "mutation partner site");
+
+    if (sourcePattern != 0 || sourceMol != 0) {
+        throw std::runtime_error(
+            std::string("native BNGIR bond change has contradictory ") +
+            mutationKind + " endpoint");
+    }
+    if (association) {
+        if (partnerPattern != 1 || partnerMol != 0) {
+            throw std::runtime_error(
+                std::string("native BNGIR bond change has contradictory ") +
+                mutationKind + " endpoint");
+        }
+    } else {
+        if (partnerPattern != 0 || partnerMol != 1) {
+            throw std::runtime_error(
+                std::string("native BNGIR bond change has contradictory ") +
+                mutationKind + " endpoint");
+        }
+    }
+
     for (std::size_t index = 0; index < 2; ++index) {
         const auto& reactantMolecule = reactantMolecules[index];
         const auto& productMolecule = productMolecules[index];
@@ -680,25 +752,23 @@ void requireNativeBondChange(const py::dict& rule,
                 throw std::runtime_error(
                     "native BNGIR bond changes do not support molecule compartments");
             }
-            const auto sites = py::cast<py::list>(molecule["sites"]);
-            if (sites.size() != 1) {
-                throw std::runtime_error(
-                    "native BNGIR bond changes require exactly one site per molecule");
-            }
-            const auto site = py::cast<py::dict>(sites[0]);
-            const auto state = py::cast<py::dict>(site["state"]);
-            py::dict anyState;
-            anyState["kind"] = "any";
-            if (!pythonObjectsEqual(state, anyState)) {
-                throw std::runtime_error(
-                    "native BNGIR bond changes support binding-only sites");
-            }
+        }
+        const auto rSites = py::cast<py::list>(reactantMolecule["sites"]);
+        const auto pSites = py::cast<py::list>(productMolecule["sites"]);
+        if (rSites.size() != pSites.size() || rSites.empty()) {
+            throw std::runtime_error("native BNGIR bond changes require matching site counts");
         }
     }
 
-    const auto exactBondGroup = [](const py::dict& molecule, const std::string& where) {
-        const auto sites = py::cast<py::list>(molecule["sites"]);
-        const auto site = py::cast<py::dict>(sites[0]);
+    const auto rSites0 = py::cast<py::list>(reactantMolecules[0]["sites"]);
+    const auto pSites0 = py::cast<py::list>(productMolecules[0]["sites"]);
+    const auto rSites1 = py::cast<py::list>(reactantMolecules[1]["sites"]);
+    const auto pSites1 = py::cast<py::list>(productMolecules[1]["sites"]);
+    if (sourceSite >= rSites0.size() || partnerSite >= rSites1.size()) {
+        throw std::runtime_error("native BNGIR bond change site index out of range");
+    }
+
+    const auto getBondGroup = [](const py::dict& site, const std::string& where) {
         const auto bond = py::cast<py::dict>(site["bond"]);
         if (!py::isinstance<py::str>(bond["kind"]) ||
             py::cast<std::string>(bond["kind"]) != "exact") {
@@ -707,26 +777,53 @@ void requireNativeBondChange(const py::dict& rule,
         requireObjectKeys(bond, {"kind", "group"}, {"kind", "group"}, "exact bond");
         return indexFromBngir(bond["group"], "exact bond group");
     };
-    std::array<std::size_t, 2> groups{};
-    for (std::size_t index = 0; index < 2; ++index) {
-        const auto& molecule = association ? productMolecules[index]
-                                           : reactantMolecules[index];
-        groups[index] = exactBondGroup(molecule, "bond change");
-    }
-    if (groups[0] != groups[1]) {
-        throw std::runtime_error("native BNGIR bond change endpoints do not correspond");
-    }
-    const auto unbound = [](const py::dict& molecule) {
-        const auto sites = py::cast<py::list>(molecule["sites"]);
-        const auto site = py::cast<py::dict>(sites[0]);
+    const auto isUnbound = [](const py::dict& site) {
         const auto bond = py::cast<py::dict>(site["bond"]);
         return bond.size() == 1 && py::isinstance<py::str>(bond["kind"]) &&
             py::cast<std::string>(bond["kind"]) == "unbound";
     };
-    const auto& unboundMolecules = association ? reactantMolecules : productMolecules;
-    if (!unbound(unboundMolecules[0]) || !unbound(unboundMolecules[1])) {
-        throw std::runtime_error(
-            "native BNGIR bond change requires unbound sites on its unbound side");
+
+    if (association) {
+        if (!isUnbound(py::cast<py::dict>(rSites0[sourceSite])) ||
+            !isUnbound(py::cast<py::dict>(rSites1[partnerSite]))) {
+            throw std::runtime_error(
+                "native BNGIR bond change requires unbound sites on its unbound side");
+        }
+        const auto g0 = getBondGroup(py::cast<py::dict>(pSites0[sourceSite]), "bond change");
+        const auto g1 = getBondGroup(py::cast<py::dict>(pSites1[partnerSite]), "bond change");
+        if (g0 != g1) {
+            throw std::runtime_error("native BNGIR bond change endpoints do not correspond");
+        }
+    } else {
+        const auto g0 = getBondGroup(py::cast<py::dict>(rSites0[sourceSite]), "bond change");
+        const auto g1 = getBondGroup(py::cast<py::dict>(rSites1[partnerSite]), "bond change");
+        if (g0 != g1) {
+            throw std::runtime_error("native BNGIR bond change endpoints do not correspond");
+        }
+        if (!isUnbound(py::cast<py::dict>(pSites0[sourceSite])) ||
+            !isUnbound(py::cast<py::dict>(pSites1[partnerSite]))) {
+            throw std::runtime_error(
+                "native BNGIR bond change requires unbound sites on its unbound side");
+        }
+    }
+
+    for (std::size_t s = 0; s < rSites0.size(); ++s) {
+        if (s == sourceSite) continue;
+        const auto rs = py::cast<py::dict>(rSites0[s]);
+        const auto ps = py::cast<py::dict>(pSites0[s]);
+        if (!pythonObjectsEqual(rs["state"], ps["state"]) ||
+            !pythonObjectsEqual(rs["bond"], ps["bond"])) {
+            throw std::runtime_error("native BNGIR bond change must preserve unmodified sites");
+        }
+    }
+    for (std::size_t s = 0; s < rSites1.size(); ++s) {
+        if (s == partnerSite) continue;
+        const auto rs = py::cast<py::dict>(rSites1[s]);
+        const auto ps = py::cast<py::dict>(pSites1[s]);
+        if (!pythonObjectsEqual(rs["state"], ps["state"]) ||
+            !pythonObjectsEqual(rs["bond"], ps["bond"])) {
+            throw std::runtime_error("native BNGIR bond change must preserve unmodified sites");
+        }
     }
 
     if (validateMappings) {
@@ -750,20 +847,23 @@ void requireNativeBondChange(const py::dict& rule,
             moleculeMapping["reactant"] = reactantReference;
             moleculeMappings.append(moleculeMapping);
 
-            py::dict componentMapping;
-            py::dict componentProductReference;
-            componentProductReference["side"] = "product";
-            componentProductReference["pattern"] = productPattern;
-            componentProductReference["molecule"] = productMolecule;
-            componentProductReference["site"] = 0;
-            py::dict componentReactantReference;
-            componentReactantReference["side"] = "reactant";
-            componentReactantReference["pattern"] = reactantPattern;
-            componentReactantReference["molecule"] = reactantMolecule;
-            componentReactantReference["site"] = 0;
-            componentMapping["product"] = componentProductReference;
-            componentMapping["reactant"] = componentReactantReference;
-            componentMappings.append(componentMapping);
+            const auto curSites = py::cast<py::list>(reactantMolecules[index]["sites"]);
+            for (std::size_t s = 0; s < curSites.size(); ++s) {
+                py::dict componentMapping;
+                py::dict compProdRef;
+                compProdRef["side"] = "product";
+                compProdRef["pattern"] = productPattern;
+                compProdRef["molecule"] = productMolecule;
+                compProdRef["site"] = s;
+                py::dict compReactRef;
+                compReactRef["side"] = "reactant";
+                compReactRef["pattern"] = reactantPattern;
+                compReactRef["molecule"] = reactantMolecule;
+                compReactRef["site"] = s;
+                componentMapping["product"] = compProdRef;
+                componentMapping["reactant"] = compReactRef;
+                componentMappings.append(componentMapping);
+            }
         }
         if (!pythonObjectsEqual(rule["molecule_mappings"], moleculeMappings)) {
             throw std::runtime_error(
@@ -777,17 +877,18 @@ void requireNativeBondChange(const py::dict& rule,
 
     py::dict expectedMutation;
     expectedMutation["kind"] = mutationKind;
-    const auto makeEndpoint = [](std::size_t pattern, std::size_t molecule) {
-        py::dict endpoint;
-        endpoint["side"] = "reactant";
-        endpoint["pattern"] = pattern;
-        endpoint["molecule"] = molecule;
-        endpoint["site"] = 0;
-        return endpoint;
-    };
-    expectedMutation["source"] = makeEndpoint(0, 0);
-    expectedMutation["partner"] = makeEndpoint(association ? 1 : 0,
-                                                 association ? 0 : 1);
+    py::dict sourceEp;
+    sourceEp["side"] = "reactant";
+    sourceEp["pattern"] = 0;
+    sourceEp["molecule"] = 0;
+    sourceEp["site"] = sourceSite;
+    py::dict partnerEp;
+    partnerEp["side"] = "reactant";
+    partnerEp["pattern"] = association ? 1 : 0;
+    partnerEp["molecule"] = association ? 0 : 1;
+    partnerEp["site"] = partnerSite;
+    expectedMutation["source"] = sourceEp;
+    expectedMutation["partner"] = partnerEp;
     py::list expectedMutations;
     expectedMutations.append(expectedMutation);
     if (!pythonObjectsEqual(direction["mutations"], expectedMutations)) {
@@ -797,7 +898,7 @@ void requireNativeBondChange(const py::dict& rule,
     }
 }
 
-SpeciesGraph patternFromBngir(Model& model, const py::dict& pattern) {
+SpeciesGraph patternFromBngir(Model& model, const py::dict& pattern, bool requireComplete = false) {
     static const std::vector<std::string> requiredPatternKeys = {
         "compartment_prefix", "molecules",
     };
@@ -905,7 +1006,8 @@ SpeciesGraph patternFromBngir(Model& model, const py::dict& pattern) {
         }
         const auto& moleculeType = model.getMoleculeTypes()[typeId];
         const auto sites = py::cast<py::list>(molecule["sites"]);
-        if (sites.size() != moleculeType.getComponents().size()) {
+        if (requireComplete ? (sites.size() != moleculeType.getComponents().size())
+                            : (sites.size() > moleculeType.getComponents().size())) {
             throw std::runtime_error(
                 "native BNGIR molecule site count does not match its type");
         }
@@ -957,20 +1059,27 @@ SpeciesGraph patternFromBngir(Model& model, const py::dict& pattern) {
         }
 
         auto* moleculeNode = graph.add_node(node);
-        if (!sites.empty()) {
-            const auto& componentType = moleculeType.getComponents().front();
-            const auto& componentNodeType =
-                model.getGraphTypeRegistry().ensureComponentType(
-                    moleculeType, componentType);
-            const auto site = py::cast<py::dict>(sites[0]);
+        std::set<std::size_t> seenComponentIndices;
+        for (std::size_t siteIndex = 0; siteIndex < sites.size(); ++siteIndex) {
+            const auto site = py::cast<py::dict>(sites[siteIndex]);
             requireObjectKeys(
                 site,
                 {"occurrence", "component", "component_index", "state", "bond"},
                 {"occurrence", "component", "component_index", "state", "bond", "label"},
                 "pattern site");
-            if (indexFromBngir(site["occurrence"], "site occurrence") != 0 ||
-                indexFromBngir(site["component_index"], "component reference") != 0 ||
-                !py::isinstance<py::str>(site["component"]) ||
+            const auto componentIndex = indexFromBngir(
+                site["component_index"], "component reference");
+            if (componentIndex >= moleculeType.getComponents().size() ||
+                !seenComponentIndices.insert(componentIndex).second) {
+                throw std::runtime_error(
+                    "native BNGIR pattern site has an unknown component reference");
+            }
+            const auto& componentType = moleculeType.getComponents()[componentIndex];
+            const auto& componentNodeType =
+                model.getGraphTypeRegistry().ensureComponentType(
+                    moleculeType, componentType);
+            (void)indexFromBngir(site["occurrence"], "site occurrence");
+            if (!py::isinstance<py::str>(site["component"]) ||
                 py::cast<std::string>(site["component"]) != componentType.name) {
                 throw std::runtime_error(
                     "native BNGIR pattern site has an unknown component reference");
@@ -1183,30 +1292,31 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
                 "native BNGIR population molecule types are unsupported");
         }
         const auto components = py::cast<py::list>(moleculeType["components"]);
-        if (components.size() > 1) {
-            throw std::runtime_error(
-                "native BNGIR supports at most one finite-state molecule component");
-        }
         std::vector<ComponentType> declaredComponents;
-        if (!components.empty()) {
-            const auto component = py::cast<py::dict>(components[0]);
+        std::set<std::string> uniqueComponentNames;
+        bool hasFiniteState = false;
+        bool hasBindingOnly = false;
+        for (std::size_t compIndex = 0; compIndex < components.size(); ++compIndex) {
+            const auto component = py::cast<py::dict>(components[compIndex]);
             requireObjectKeys(component, {"index", "name", "states"},
                               {"index", "name", "states"},
                               "molecule type component");
-            if (indexFromBngir(component["index"], "component index") != 0 ||
+            if (indexFromBngir(component["index"], "component index") != compIndex ||
                 !py::isinstance<py::str>(component["name"])) {
                 throw std::runtime_error(
-                    "native BNGIR supports only component index zero with a string name");
+                    "native BNGIR supports ordered component indices with string names");
             }
             const auto componentName = py::cast<std::string>(component["name"]);
-            if (!isNativeIdentifier(componentName)) {
+            if (!isNativeIdentifier(componentName) ||
+                !uniqueComponentNames.insert(componentName).second) {
                 throw std::runtime_error(
-                    "native BNGIR component name must be a valid identifier");
+                    "native BNGIR component name must be a valid identifier and unique");
             }
             const auto states = py::cast<py::list>(component["states"]);
             if (states.empty()) {
-                bindingOnlyTypeIds.insert(indexFromBngir(
-                    moleculeType["id"], "molecule type id"));
+                hasBindingOnly = true;
+            } else {
+                hasFiniteState = true;
             }
             if (!states.empty() && states.size() < 2) {
                 throw std::runtime_error(
@@ -1229,6 +1339,10 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
             }
             declaredComponents.push_back(
                 ComponentType{componentName, std::move(stateNames)});
+        }
+        if (hasBindingOnly && !hasFiniteState) {
+            bindingOnlyTypeIds.insert(indexFromBngir(
+                moleculeType["id"], "molecule type id"));
         }
         moleculeTypeComponents.push_back(std::move(declaredComponents));
     }
@@ -1405,7 +1519,7 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
 
     for (const auto& rawSeed : seeds) {
         const auto seed = py::cast<py::dict>(rawSeed);
-        auto graph = patternFromBngir(*model, py::cast<py::dict>(seed["pattern"]));
+        auto graph = patternFromBngir(*model, py::cast<py::dict>(seed["pattern"]), true);
         auto amount = expressionFromBngir(
             py::cast<py::dict>(seed["amount"]), modelScope);
         std::string seedCompartment;
