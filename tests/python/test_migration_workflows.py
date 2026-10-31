@@ -23,7 +23,6 @@ import pytest
 import bionetgen
 from bionetgen.builder import ModelBuilder
 
-
 TEST_BNGL = """begin model
 begin parameters
   k_on 1.0
