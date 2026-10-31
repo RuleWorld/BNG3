@@ -45,6 +45,7 @@ struct SimulationSession {
     std::vector<PendingCompletion> pendingCompletions;
     std::vector<PendingNativeEvent> pendingNativeEvents;
     std::vector<double> eventTriggerRoseAt;
+    std::unordered_map<std::string, double> eventParameterValues;
     std::mt19937_64 rng;
     bool rngInitialized = false;
     bool ssaHazardInitialized = false;
@@ -64,6 +65,7 @@ struct SimulationSession {
         pendingCompletions.clear();
         pendingNativeEvents.clear();
         eventTriggerRoseAt.clear();
+        eventParameterValues.clear();
         rngInitialized = false;
         ssaHazardInitialized = false;
         ssaRemainingHazard = 0.0;
