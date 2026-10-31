@@ -3393,8 +3393,12 @@ def _native_comparison_expression(
         # Compound arithmetic on the continuous side (e.g. division by
         # volume or non-unity stoichiometry) cannot be evaluated as an
         # elementary event root and must fail closed as unsupported.
-        left_is_bare = bool(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", left_dynamic[0].strip()))
-        right_is_bare = bool(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", right_dynamic[0].strip()))
+        left_is_bare = bool(
+            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", left_dynamic[0].strip())
+        )
+        right_is_bare = bool(
+            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", right_dynamic[0].strip())
+        )
         if not (left_is_bare or right_is_bare):
             return None
         return f"{left_dynamic[0]} {symbol} {right_dynamic[0]}"
