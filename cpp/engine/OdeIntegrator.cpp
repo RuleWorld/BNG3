@@ -364,6 +364,41 @@ OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& ne
                 nativeEventRoots_.emplace_back(group, conjunct);
             }
         }
+        for (const auto& event : nativeEvents_) {
+            for (const auto& assignment : event.assignments) {
+                if (model_.getParameters().contains(assignment.target)) {
+                    eventAssignedParameterNames_.insert(assignment.target);
+                    eventDependentParameterNames_.insert(assignment.target);
+                }
+            }
+        }
+        bool addedParameterDependency = true;
+        while (addedParameterDependency) {
+            addedParameterDependency = false;
+            for (const auto& parameter : model_.getParameters().all()) {
+                if (eventDependentParameterNames_.find(parameter.getName()) !=
+                    eventDependentParameterNames_.end()) {
+                    continue;
+                }
+                ast::Expression expression = parameter.getExpression();
+                try {
+                    expression = functionEvaluator_.expandFunctions(expression);
+                } catch (...) {
+                    // The compiled semantic model reports invalid recursive
+                    // functions; keep this dependency pass conservative.
+                }
+                const auto dependencies = expression.getDependencies();
+                if (std::any_of(
+                        dependencies.begin(), dependencies.end(),
+                        [&](const std::string& dependency) {
+                            return eventDependentParameterNames_.find(dependency) !=
+                                   eventDependentParameterNames_.end();
+                        })) {
+                    eventDependentParameterNames_.insert(parameter.getName());
+                    addedParameterDependency = true;
+                }
+            }
+        }
     }
     compile();
     markContinuousSpecies();
@@ -555,6 +590,13 @@ void OdeIntegrator::compile() {
                 reference.index < parameters.size() &&
                 model_.getParameters().isTimeDependent(
                     parameters[reference.index].getName())) {
+                return true;
+            }
+            if (reference.kind == bng::compile::SymbolKind::Parameter &&
+                reference.index < parameters.size() &&
+                eventDependentParameterNames_.find(
+                    parameters[reference.index].getName()) !=
+                    eventDependentParameterNames_.end()) {
                 return true;
             }
         }
@@ -1844,7 +1886,11 @@ void OdeIntegrator::evaluateFunctionalRateCoefficients(
 
         // `t` must be passed: a parameter whose expression reads `time` is
         // evaluated at the current derivative time, not memoized at t=0.
-        return model_.getParameters().evaluate(name, t);
+        static const std::unordered_map<std::string, double> noEventValues;
+        const auto& eventValues = activeSimulationSession_
+            ? activeSimulationSession_->eventParameterValues
+            : noEventValues;
+        return evaluateParameterWithEventState(name, t, eventValues);
     };
 
     for (const auto idx : functionalRxnIndices_) {
@@ -2061,10 +2107,15 @@ std::unordered_map<std::string, double> OdeIntegrator::historyParametersAt(
     if (time <= history.front().time) return history.front().parameters;
     if (time > history.back().time + 1e-14) {
         std::unordered_map<std::string, double> current;
+        static const std::unordered_map<std::string, double> noEventValues;
+        const auto& eventValues = activeSimulationSession_
+            ? activeSimulationSession_->eventParameterValues
+            : noEventValues;
         for (const auto& parameter : model_.getParameters().all()) {
             try {
                 current[parameter.getName()] =
-                    model_.getParameters().evaluate(parameter.getName(), time);
+                    evaluateParameterWithEventState(
+                        parameter.getName(), time, eventValues);
             } catch (...) {}
         }
         return current;
@@ -2096,10 +2147,11 @@ double OdeIntegrator::evaluateExpressionWithHistory(
     const ast::Expression& expression, double time, const double* state,
     bool discreteReactantCounts) const {
     std::function<double(const ast::Expression&, double, const double*,
-                         const std::unordered_map<std::string, double>&)> evaluateAt;
+                         const std::unordered_map<std::string, double>&, bool)> evaluateAt;
     evaluateAt = [&](const ast::Expression& current, double currentTime,
                      const double* currentState,
-                     const std::unordered_map<std::string, double>& parameters) {
+                     const std::unordered_map<std::string, double>& parameters,
+                     bool useCurrentEventValues) {
         std::vector<double> groupValues;
         updateGroups(currentState, groupValues);
         const auto resolver = [&](const std::string& name) -> double {
@@ -2145,22 +2197,34 @@ double OdeIntegrator::evaluateExpressionWithHistory(
                 observable->second < groupValues.size()) {
                 return groupValues[observable->second];
             }
+            static const std::unordered_map<std::string, double> noEventValues;
+            const auto& eventValues = activeSimulationSession_
+                ? activeSimulationSession_->eventParameterValues
+                : noEventValues;
+            if (useCurrentEventValues && !eventValues.empty() &&
+                eventDependentParameterNames_.find(name) !=
+                    eventDependentParameterNames_.end()) {
+                return evaluateParameterWithEventState(
+                    name, currentTime, eventValues);
+            }
             const auto historicalParameter = parameters.find(name);
             if (historicalParameter != parameters.end()) {
                 return historicalParameter->second;
             }
-            return model_.getParameters().evaluate(name, currentTime);
+            return evaluateParameterWithEventState(
+                name, currentTime,
+                useCurrentEventValues ? eventValues : noEventValues);
         };
         const ast::Expression::DelayedEvaluator delayed =
             [&](const ast::Expression& delayedExpression, double delayedTime) {
                 const auto delayedState = historyStateAt(delayedTime);
                 const auto delayedParameters = historyParametersAt(delayedTime);
                 return evaluateAt(delayedExpression, delayedTime,
-                                  delayedState.data(), delayedParameters);
+                                  delayedState.data(), delayedParameters, false);
             };
         return functionEvaluator_.evaluate(current, resolver, currentTime, delayed);
     };
-    return evaluateAt(expression, time, state, historyParametersAt(time));
+    return evaluateAt(expression, time, state, historyParametersAt(time), true);
 }
 
 void OdeIntegrator::recordHistoryPoint(double time,
@@ -2176,7 +2240,8 @@ void OdeIntegrator::recordHistoryPoint(double time,
     for (const auto& parameter : model_.getParameters().all()) {
         try {
             point.parameters[parameter.getName()] =
-                model_.getParameters().evaluate(parameter.getName(), time);
+                evaluateParameterWithEventState(
+                    parameter.getName(), time, session->eventParameterValues);
         } catch (...) {}
     }
     if (!session->history.empty() &&
@@ -2200,7 +2265,8 @@ void OdeIntegrator::recordHistoryJump(double time,
     for (const auto& parameter : model_.getParameters().all()) {
         try {
             point.parameters[parameter.getName()] =
-                model_.getParameters().evaluate(parameter.getName(), time);
+                evaluateParameterWithEventState(
+                    parameter.getName(), time, session->eventParameterValues);
         } catch (...) {}
     }
     if (!session->history.empty() &&
@@ -2310,7 +2376,11 @@ bool OdeIntegrator::stopConditionMet(const ast::Expression& condition,
         if (observable != observableIndex_.end()) {
             return groupValues[observable->second];
         }
-        return model_.getParameters().evaluate(name, time);
+        static const std::unordered_map<std::string, double> noEventValues;
+        const auto& eventValues = activeSimulationSession_
+            ? activeSimulationSession_->eventParameterValues
+            : noEventValues;
+        return evaluateParameterWithEventState(name, time, eventValues);
     };
 
     try {
@@ -2464,13 +2534,66 @@ void OdeIntegrator::validateEventRootSurface() {
     // needs a monotonicity proof on the state.
 }
 
+double OdeIntegrator::evaluateParameterWithEventState(
+    const std::string& name, double time,
+    const std::unordered_map<std::string, double>& eventValues) const {
+    const auto assigned = eventValues.find(name);
+    if (assigned != eventValues.end()) return assigned->second;
+    if (eventDependentParameterNames_.find(name) ==
+        eventDependentParameterNames_.end()) {
+        return model_.getParameters().evaluate(name, time);
+    }
+
+    std::unordered_set<std::string> visiting;
+    std::function<double(const std::string&)> resolve =
+        [&](const std::string& parameterName) -> double {
+            const auto value = eventValues.find(parameterName);
+            if (value != eventValues.end()) return value->second;
+            if (eventDependentParameterNames_.find(parameterName) ==
+                eventDependentParameterNames_.end()) {
+                return model_.getParameters().evaluate(parameterName, time);
+            }
+            if (!model_.getParameters().contains(parameterName)) {
+                return model_.getParameters().evaluate(parameterName, time);
+            }
+            if (!visiting.insert(parameterName).second) {
+                throw std::runtime_error(
+                    "Circular parameter dependency detected at '" +
+                    parameterName + "'");
+            }
+            const auto resolvedValue = functionEvaluator_.evaluate(
+                model_.getParameters().get(parameterName).getExpression(),
+                resolve, time);
+            visiting.erase(parameterName);
+            return resolvedValue;
+        };
+    return resolve(name);
+}
+
 void OdeIntegrator::validateEventTargets() {
     if (nativeEvents_.empty()) return;
     for (auto& event : nativeEvents_) {
         for (const auto& assignment : event.assignments) {
             const auto found = observableIndex_.find(assignment.target);
             if (found == observableIndex_.end()) {
-                throw std::runtime_error("bng3_events assignment target has no observable");
+                if (!model_.getParameters().contains(assignment.target) ||
+                    model_.getParameters().isTimeDependent(assignment.target)) {
+                    throw std::runtime_error(
+                        "bng3_events assignment target must be a species observable or static parameter");
+                }
+                const auto duplicate = std::find_if(
+                    event.targets.begin(), event.targets.end(),
+                    [&](const NativeEventTarget& target) {
+                        return target.kind == NativeEventTarget::Kind::Parameter &&
+                               target.parameterName == assignment.target;
+                    });
+                if (duplicate != event.targets.end()) {
+                    throw std::runtime_error(
+                        "bng3_events assignments alias the same parameter");
+                }
+                event.targets.push_back({
+                    NativeEventTarget::Kind::Parameter, 0, assignment.target});
+                continue;
             }
             const auto& entries = compiledGroups_[found->second].entries;
             if (entries.size() != 1 || entries.front().second != 1.0 ||
@@ -2478,10 +2601,16 @@ void OdeIntegrator::validateEventTargets() {
                 throw std::runtime_error("bng3_events assignment target must identify one nonconstant species with weight one");
             }
             const auto target = entries.front().first;
-            if (std::find(event.targets.begin(), event.targets.end(), target) != event.targets.end()) {
+            const auto duplicate = std::find_if(
+                event.targets.begin(), event.targets.end(),
+                [&](const NativeEventTarget& existing) {
+                    return existing.kind == NativeEventTarget::Kind::Species &&
+                           existing.speciesIndex == target;
+                });
+            if (duplicate != event.targets.end()) {
                 throw std::runtime_error("bng3_events assignments alias the same species");
             }
-            event.targets.push_back(target);
+            event.targets.push_back({NativeEventTarget::Kind::Species, target, {}});
         }
     }
 }
@@ -2766,8 +2895,23 @@ std::vector<double> OdeIntegrator::eventValues(const NativeEvent& event, double 
 }
 
 void OdeIntegrator::assignEventValues(const NativeEvent& event, std::vector<double>& state,
-                                       const std::vector<double>& values) const {
-    for (std::size_t i = 0; i < values.size(); ++i) state[event.targets[i]] = values[i];
+                                      const std::vector<double>& values) {
+    if (values.size() != event.targets.size()) {
+        throw std::runtime_error("bng3_events assignment values do not match targets");
+    }
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        const auto& target = event.targets[i];
+        if (target.kind == NativeEventTarget::Kind::Species) {
+            state[target.speciesIndex] = values[i];
+            continue;
+        }
+        if (!activeSimulationSession_) {
+            throw std::runtime_error(
+                "bng3_events parameter assignments require a simulation session");
+        }
+        activeSimulationSession_->eventParameterValues[target.parameterName] =
+            values[i];
+    }
 }
 
 bool OdeIntegrator::triggerHolds(const ast::Expression& trigger, double time,
@@ -3136,8 +3280,9 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
             const auto& previousParameters = working.history.back().parameters;
             for (const auto& parameter : model_.getParameters().all()) {
                 try {
-                    const double current = model_.getParameters().evaluate(
-                        parameter.getName(), options.tStart);
+                    const double current = evaluateParameterWithEventState(
+                        parameter.getName(), options.tStart,
+                        working.eventParameterValues);
                     const auto previous = previousParameters.find(parameter.getName());
                     if (previous != previousParameters.end() &&
                         std::abs(previous->second - current) > 1e-12) {

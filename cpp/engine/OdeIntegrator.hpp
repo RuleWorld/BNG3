@@ -214,6 +214,11 @@ private:
     // trigger and the execution, the priority that orders it against the
     // other events executed at the same instant, and the assignments it
     // performs.
+    struct NativeEventTarget {
+        enum class Kind { Species, Parameter } kind = Kind::Species;
+        std::size_t speciesIndex = 0;
+        std::string parameterName;
+    };
     struct NativeEvent {
         std::string id;
         ast::Expression trigger;
@@ -224,8 +229,8 @@ private:
         double priority = 0.0;
         std::optional<ast::Expression> dynamicPriority;
         std::vector<ast::EventAssignment> assignments;
-        // The species each assignment writes, in the order of `assignments`.
-        std::vector<std::size_t> targets;
+        // The state target each assignment writes, in assignment order.
+        std::vector<NativeEventTarget> targets;
     };
     // The events that share one trigger are triggered at the same instant,
     // so they share one root function.
@@ -277,7 +282,7 @@ private:
     double eventDelay(const NativeEvent& event, double time,
                       const double* state) const;
     void assignEventValues(const NativeEvent& event, std::vector<double>& state,
-                            const std::vector<double>& values) const;
+                            const std::vector<double>& values);
     // True when the trigger expression holds at the given instant.
     bool triggerHolds(const ast::Expression& trigger, double time,
                       const double* state) const;
@@ -292,6 +297,8 @@ private:
     void retestTriggers(double time, std::vector<double>& state,
                         const std::vector<bool>& heldBefore);
     std::vector<NativeEvent> nativeEvents_;
+    std::unordered_set<std::string> eventAssignedParameterNames_;
+    std::unordered_set<std::string> eventDependentParameterNames_;
     std::vector<NativeEventGroup> nativeEventGroups_;
     // CVODE needs a monotonic root function for each conjunct. A minimum of
     // several surfaces can enter and leave a narrow conjunction between two
@@ -314,6 +321,9 @@ private:
     // The instant at which each event's trigger last rose.
     std::vector<double> triggerRoseAt_;
     void validateEventRootSurface();
+    double evaluateParameterWithEventState(
+        const std::string& name, double time,
+        const std::unordered_map<std::string, double>& eventValues) const;
     void compile();
     void compileGroups();
     // Evaluate the runtime rate coefficients of every functional-rate reaction

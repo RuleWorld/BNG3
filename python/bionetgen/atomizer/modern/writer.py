@@ -8280,6 +8280,20 @@ def generate_bngl(
             compartment = model.compartments.get(identifier)
             return compartment.size if compartment is not None else None
 
+        def resolve_native_parameter(identifier: str) -> Optional[str]:
+            parameter = model.parameters.get(identifier)
+            if parameter is None or parameter.constant:
+                return None
+            if identifier in event_species_reference_targets:
+                return None
+            if any(
+                rule.variable
+                and standardize_name(str(rule.variable)) == standardize_name(identifier)
+                for rule in model.rules
+            ):
+                return None
+            return standardize_name(identifier)
+
         def resolve_constant(identifier: str) -> Optional[float]:
             species = next(
                 (
@@ -11705,6 +11719,7 @@ def generate_bngl(
             resolve_rate_reset=resolve_rate_event_reset,
             static_event_state=static_event_state,
             resolve_native_state=resolve_native_state,
+            resolve_native_parameter=resolve_native_parameter,
         )
         if native_dae_runtime and any(rule.type == "algebraic" for rule in model.rules):
             event_result = EventTranslationResult(
