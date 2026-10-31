@@ -489,13 +489,16 @@ void bind_engine(py::module_& m) {
     m.def("continue_simulation_from", [](const GeneratedNetwork& previous,
                                           GeneratedNetwork& regenerated) {
         auto session = previous.snapshotSimulationSession();
-        regenerated.replaceSimulationSession(session);
         if (session.state.size() == regenerated.species.size()) {
+            session.initialState = session.state;
+            session.networkAmountVersions.resize(regenerated.species.size());
             for (std::size_t i = 0; i < regenerated.species.size(); ++i) {
-                regenerated.species.get(i).setAmount(
-                    session.state[i]);
+                regenerated.species.get(i).setAmount(session.state[i]);
+                session.networkAmountVersions[i] =
+                    regenerated.species.get(i).getAmountVersion();
             }
         }
+        regenerated.replaceSimulationSession(std::move(session));
     }, py::arg("previous"), py::arg("regenerated"),
        "Carry a successful native trajectory into a regenerated network");
 
@@ -647,6 +650,23 @@ void bind_engine(py::module_& m) {
         auto t_ctor = std::chrono::steady_clock::now();
         const bool probe = probeOn();
         OdeResult result = integrator.integrate(opts);
+        if (!result.concentrations.empty()) {
+            const auto& finalState = result.concentrations.back();
+            if (finalState.size() == network.species.size()) {
+                for (std::size_t i = 0; i < network.species.size(); ++i) {
+                    network.species.get(i).setAmount(finalState[i]);
+                }
+                auto session = network.snapshotSimulationSession();
+                if (session.initialized) {
+                    session.networkAmountVersions.resize(network.species.size());
+                    for (std::size_t i = 0; i < network.species.size(); ++i) {
+                        session.networkAmountVersions[i] =
+                            network.species.get(i).getAmountVersion();
+                    }
+                    network.replaceSimulationSession(std::move(session));
+                }
+            }
+        }
         auto t_eng = std::chrono::steady_clock::now();
 
         py::gil_scoped_acquire acquire;
@@ -714,6 +734,23 @@ void bind_engine(py::module_& m) {
 
         OdeIntegrator integrator(model, network);
         OdeResult result = integrator.integrate(opts);
+        if (!result.concentrations.empty()) {
+            const auto& finalState = result.concentrations.back();
+            if (finalState.size() == network.species.size()) {
+                for (std::size_t i = 0; i < network.species.size(); ++i) {
+                    network.species.get(i).setAmount(finalState[i]);
+                }
+                auto session = network.snapshotSimulationSession();
+                if (session.initialized) {
+                    session.networkAmountVersions.resize(network.species.size());
+                    for (std::size_t i = 0; i < network.species.size(); ++i) {
+                        session.networkAmountVersions[i] =
+                            network.species.get(i).getAmountVersion();
+                    }
+                    network.replaceSimulationSession(std::move(session));
+                }
+            }
+        }
 
         py::gil_scoped_acquire acquire;
         return result_to_dict(result, model);

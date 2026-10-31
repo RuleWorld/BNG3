@@ -174,12 +174,54 @@ model = builder.build()
 
 ## PyBioNetGen API Differences
 
-docs/PYBIONETGEN_API_AUDIT.md compares every public symbol of pinned PyBioNetGen 28bf351 with BNG3. The differences that affect callers:
+The migration reference is PyBioNetGen revision
+`28bf351a9bbfc197e19487c26dedda683716bb64`, the accepted pin in
+[`provenance/upstreams.lock.yml`](../provenance/upstreams.lock.yml). The mapping
+below separates workflows exercised by BNG3 tests from replacements and
+unqualified areas. The tests verify BNG3 behavior; they do not establish that
+the same models produce the same trajectories or side effects in both packages.
 
-- `bionetgen.modelapi.runner.run` accepts PyBioNetGen's `simulator`, `format`, `method`, `t_span` and `n_points` arguments. Passing `method`, `t_span` or `n_points` runs one simulation instead of the model's actions. `simulator="bngsim"` uses the BNGsim backend; `simulator="subprocess"` forces the BNG2.pl route. Only BNGL input is accepted; convert SBML with the Atomizer first.
-- The BNGsim helper and bridge modules (`core.tools.bngsim_backend_helper`, `core.tools.bngsim_bridge`, `core.tools.bngsim_parameter_scan`) are replaced by the native BNGsim backend: `bionetgen.load(path).simulate(..., backend="bngsim")`. `BNGCLI(..., bngsim_backend=True)` raises `BNGSimError` with that replacement.
-- `simulator.csimulator` (compile-to-C simulation) is replaced by native simulation; its classes are not provided.
-- `network.*` (the Python `.net` object model) is not provided. BNG3 reads `.net` files natively.
+| Common workflow | BNG3 entry point | Evidence and limit |
+| --- | --- | --- |
+| Load a BNGL file and simulate it | `bionetgen.load(path).simulate(...)` | Executable migration example in `tests/python/test_migration_workflows.py`; tested on the BNG3 engine. |
+| Run a single simulation from a file | `bionetgen.run(path, method=..., t_end=..., n_steps=...)` | `tests/python/test_compatibility_contract.py` exercises supported methods, results, and dispatch. The modern API returns `SimResult`, not the old file result. |
+| Run declared model actions into an output directory | `bionetgen.run(path, out=...)` | BNG3 compatibility tests exercise generated `.xml`, `.net`, `.gdat`, and `.cdat` outputs and action preservation. This uses BNG3's in-process runner; it does not promise PyBioNetGen backend or time-grid parity. |
+| Inspect simulation results | `SimResult.time`, `.observables`, `.to_dataframe()` | The migration workflow test checks the documented fields and dataframe shape. |
+| Scan a parameter | `model.parameter_scan(...)` | The migration workflow test checks a small ODE scan. Cross-package scan equivalence is not established. |
+| Build a model in Python | `ModelBuilder` | A construction and simulation smoke test exists; full equivalence to direct edits of PyBioNetGen's block model is not established. |
+| Import SBML | `bionetgen.from_sbml(path, atomize=True)` | The migration test covers one simple SBML model. It is not evidence for all SBML Core or package semantics; see the SBML qualification records. |
+| Use the command line | `bng3 run`, `bng3 check`, `bng3 export`, and other BNG3 commands | The migration test checks CLI version/help, and compatibility tests cover notebook generation. The old CLI option inventory is not fully mapped or parity-tested. |
+
+CI's `pybionetgen-compat` job checks selected root exports and runner parameters
+from the locked source, then runs `tests/python/test_compatibility_contract.py`
+against the installed BNG3 package. `tests/python/test_migration_workflows.py`
+executes the examples above against BNG3. These checks do not import both
+packages and compare all 4.7 inventory rows, do not validate every legacy
+module or CLI option, and do not qualify every workflow listed here as
+source-semantic parity.
+
+The pinned PyBioNetGen `run` accepts `simulator`, `format`, `method`, `t_span`,
+and `n_points`. Its `simulator="bngsim"` and `simulator="subprocess"` choices
+select distinct upstream routes. BNG3's `bionetgen.run(path, out=...)` is a
+separate compatibility entry point: it supports `simulator="auto"` and BNGL
+input only, and rejects a non-`None` `timeout`. An explicit `method` requests
+one BNG3 simulation; time-grid-only overrides preserve declared direct
+simulation actions subject to the limits above. These BNG3 contracts are tested
+locally, but have not been differentially checked against the pinned runner.
+
+Other API boundaries:
+
+- PyBioNetGen's BNGsim helper, bridge, and parameter-scan modules do not have
+  module-for-module replacements. `BioNetGenModel.simulate` exposes a BNGsim
+  backend, while `model.parameter_scan` does not expose a backend selector.
+  The legacy compatibility runner does not route via PyBioNetGen's
+  `simulator="bngsim"` choice. These are distinct workflows and their parity
+  remains unqualified.
+- PyBioNetGen's `simulator.csimulator` compile-to-C classes are not exposed.
+  Use the BNG3 simulation API for its supported methods; this does not preserve
+  C compiler or generated-library workflows.
+- The PyBioNetGen Python `.net` object model is not exposed. Native BNG3 file
+  handling does not provide that Python object's editing and inspection API.
 - `BNGFormatError` and `BNGSimError` are available in `bionetgen.core.exc`.
 
 ## Removed Dependencies
@@ -196,8 +238,9 @@ Optional legacy compatibility still exists behind `BIONETGEN_USE_PERL=1`, but th
 
 ## Breaking Changes
 
-- `bngmodel()` is replaced by `load()`.
-- Results are in-memory objects instead of flat files.
+- `bngmodel()` is replaced by `load()` as the recommended model-loading API.
+- Single-simulation calls return in-memory `SimResult` objects; the action-preserving
+  file runner continues to write files and returns a compatibility-style `BNGResult`.
 - `model.actions` is a structured list of action objects, not a parsed dict.
 - `execute()` is now a method on `BioNetGenModel`.
 - The default simulation path is C++-backed and synchronous.

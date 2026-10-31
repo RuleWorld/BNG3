@@ -101,3 +101,43 @@ def test_native_acceptance_preserves_failure_artifacts():
         in step.get("run", "")
         for step in issue_161
     )
+
+
+def test_issue160_runs_bounded_native_core_execution_with_fresh_build():
+    triggers = WORKFLOW.get("on") or WORKFLOW.get(True) or {}
+    paths = triggers["pull_request"]["paths"]
+    assert {
+        "python/bionetgen/sbml.py",
+        "tests/python/test_atomizer_dae_ida.py",
+        "tests/python/test_atomizer_delay_history.py",
+        "tests/python/test_atomizer_fast_reaction.py",
+    } <= set(paths)
+    choice = triggers["workflow_dispatch"]["inputs"]["run_issue_160"]
+    assert choice["type"] == "boolean" and choice["default"] is False
+    job = WORKFLOW["jobs"]["issue-160"]
+    assert job["if"] == "github.event_name == 'pull_request' || inputs.run_issue_160"
+    assert "bounded" in job["name"]
+    assert "-DBUILD_PYTHON_BINDINGS=ON" in job["env"]["CMAKE_ARGS"]
+    build = next(s for s in job["steps"] if s.get("id") == "build_native")
+    assert "--config-settings=build-dir=build" in build["run"]
+    execute = next(
+        s
+        for s in job["steps"]
+        if s.get("name") == "Run bounded Core execution regressions"
+    )
+    assert execute["if"] == "always() && steps.build_native.outcome == 'success'"
+    assert execute["env"]["BNG3_PYTHON_TEST_MODE"] == "source"
+    for test in (
+        "test_atomizer_dae_ida.py",
+        "test_atomizer_delay_history.py",
+        "test_atomizer_fast_reaction.py",
+    ):
+        assert "tests/python/" + test in execute["run"]
+    assert not any(s.get("continue-on-error", False) for s in job["steps"])
+    upload = next(
+        s
+        for s in job["steps"]
+        if s.get("uses", "").startswith("actions/upload-artifact@")
+    )
+    assert upload["if"] == "always()"
+    assert upload["with"]["retention-days"] == 30

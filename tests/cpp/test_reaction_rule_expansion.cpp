@@ -214,6 +214,64 @@ TEST_CASE("parameter-backed simulation n_steps remain execution-time values") {
     CHECK_FALSE(action.simulationOptions->nStepsDiagnostic.has_value());
 }
 
+TEST_CASE("simulation time options compile finite static arithmetic") {
+    const auto model = modelWithSimulationAction(
+        "simulate_ode({t_start=>2**3,t_end=>1e1,n_steps=>2})");
+    REQUIRE(model != nullptr);
+    const compile::Document document(*model);
+    REQUIRE(document.protocol().actions.size() == 1);
+    const auto& action = document.protocol().actions.front();
+    REQUIRE(action.simulationOptions.has_value());
+    REQUIRE(action.simulationOptions->tStart.has_value());
+    CHECK(*action.simulationOptions->tStart == 8.0);
+    REQUIRE(action.simulationOptions->tEnd.has_value());
+    CHECK(*action.simulationOptions->tEnd == 10.0);
+    CHECK_FALSE(action.simulationOptions->tStartDiagnostic.has_value());
+    CHECK_FALSE(action.simulationOptions->tEndDiagnostic.has_value());
+
+    const auto defaultStart = modelWithSimulationAction(
+        "simulate_ode({t_end=>1,n_steps=>2})");
+    REQUIRE(defaultStart != nullptr);
+    const compile::Document defaultDocument(*defaultStart);
+    REQUIRE(defaultDocument.protocol().actions.front().simulationOptions.has_value());
+    CHECK_FALSE(defaultDocument.protocol().actions.front().simulationOptions->tStart.has_value());
+}
+
+TEST_CASE("simulation time options defer dynamic values and invalid diagnostics") {
+    const auto dynamic = modelWithSimulationAction(
+        "simulate({method=>\"ode\",t_start=>N,t_end=>N+1,n_steps=>2})", true);
+    REQUIRE(dynamic != nullptr);
+    const compile::Document dynamicDocument(*dynamic);
+    const auto& dynamicOptions =
+        *dynamicDocument.protocol().actions.front().simulationOptions;
+    CHECK_FALSE(dynamicOptions.tStart.has_value());
+    CHECK_FALSE(dynamicOptions.tEnd.has_value());
+    CHECK_FALSE(dynamicOptions.tStartDiagnostic.has_value());
+    CHECK_FALSE(dynamicOptions.tEndDiagnostic.has_value());
+
+    for (const auto& [field, expression] : {
+             std::pair{"t_start", "2^3"}, std::pair{"t_start", "1e309"},
+             std::pair{"t_start", "1/0"}, std::pair{"t_end", "1/0"},
+             std::pair{"t_end", "1e309"}}) {
+        INFO(field << " expression: " << expression);
+        const auto timeArguments = std::string(field) == "t_start"
+            ? std::string("t_start=>") + expression + ",t_end=>1"
+            : std::string("t_start=>0,t_end=>") + expression;
+        auto model = modelWithSimulationAction(
+            "simulate_ode({" + timeArguments + ",n_steps=>2})");
+        REQUIRE(model != nullptr);
+        const compile::Document document(*model);
+        CHECK(document.valid());
+        const auto& options = *document.protocol().actions.front().simulationOptions;
+        const auto& diagnostic = std::string(field) == "t_start"
+            ? options.tStartDiagnostic
+            : options.tEndDiagnostic;
+        REQUIRE(diagnostic.has_value());
+        CHECK(diagnostic->message.find(field) != std::string::npos);
+        CHECK(diagnostic->message.find(expression) != std::string::npos);
+    }
+}
+
 TEST_CASE("setParameter compiles static arithmetic while retaining dynamic values") {
     struct StaticCase {
         const char* expression;
