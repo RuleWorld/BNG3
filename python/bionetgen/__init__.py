@@ -13,7 +13,13 @@ if _USE_LEGACY:
     from bionetgen.compat.legacy_runner import load, run
     from bionetgen.compat.legacy_runner import LegacyModel as BioNetGenModel
 else:
-    from bionetgen.model import BioNetGenModel, load, run as _modern_run
+    from bionetgen.model import (
+        BioNetGenModel,
+        CRNReaction,
+        CRNSpecies,
+        load,
+        run as _modern_run,
+    )
 
     _MODERN_METHODS = frozenset({"ode", "ssa", "nf", "pla", "psa"})
     _RUN_OUT_MISSING = object()
@@ -225,3 +231,6 @@ __all__ = [
     "semantic_equal",
     "__version__",
 ]
+
+if not _USE_LEGACY:
+    __all__.extend(["CRNSpecies", "CRNReaction"])

@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import re
 import sys
+from dataclasses import dataclass
 from typing import Optional, Union
 
 # Development builds: the native extension may live in build/cpp (the CMake
@@ -48,6 +49,24 @@ except ModuleNotFoundError as exc:
 from bionetgen.result import SimResult
 
 
+@dataclass(frozen=True)
+class CRNSpecies:
+    """One species in a generated reaction network."""
+
+    index: int
+    name: str
+
+
+@dataclass(frozen=True)
+class CRNReaction:
+    """One generated reaction with participant species indices."""
+
+    index: int
+    label: str
+    reactants: tuple[int, ...]
+    products: tuple[int, ...]
+
+
 class BioNetGenModel:
     """A BNGL model backed by the C++ engine.
 
@@ -85,6 +104,35 @@ class BioNetGenModel:
     @property
     def seed_species(self) -> list:
         return self._model.seed_species
+
+    def _get_crn_network(self):
+        if self._network is None:
+            self.generate_network()
+        return self._network
+
+    @property
+    def species(self) -> tuple[CRNSpecies, ...]:
+        """Generated network species in native network order."""
+        network = self._get_crn_network()
+        return tuple(
+            CRNSpecies(index, name) for index, name in enumerate(network.species_names)
+        )
+
+    @property
+    def reactions(self) -> tuple[CRNReaction, ...]:
+        """Generated reactions in native network order."""
+        network = self._get_crn_network()
+        return tuple(
+            CRNReaction(index, label, tuple(reactants), tuple(products))
+            for index, (label, (reactants, products)) in enumerate(
+                zip(network.reaction_strings, network.reaction_participants)
+            )
+        )
+
+    @property
+    def stoichiometric_matrix(self):
+        """Dense integer N[species, reaction] matrix from the native network."""
+        return self._get_crn_network().stoichiometric_matrix
 
     @property
     def observables(self) -> list:

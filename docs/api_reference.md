@@ -105,6 +105,9 @@ High-level wrapper around the parsed C++ model.
 | `parameters` | Model parameters as `Parameter` objects |
 | `molecule_types` | Molecule type definitions |
 | `seed_species` | Seed species definitions |
+| `species` | Tuple of `CRNSpecies` records for the generated network |
+| `reactions` | Tuple of `CRNReaction` records for the generated network |
+| `stoichiometric_matrix` | Dense integer NumPy array with species rows and reaction columns |
 | `observables` | Observable definitions |
 | `reaction_rules` | Reaction rules |
 | `functions` | User-defined functions |
@@ -112,6 +115,37 @@ High-level wrapper around the parsed C++ model.
 | `actions` | Action block entries |
 | `name` | Model name |
 | `source_path` | Original BNGL file path when available |
+
+### CRN structure properties
+
+Accessing `species`, `reactions`, or `stoichiometric_matrix` lazily generates
+the network with the default `max_iter=100` when the model has no cached
+network. The three properties use the same cached generated network. Calling
+`generate_network(max_iter=...)` first selects the network used by the properties.
+`seed_species` continues to expose the BNGL seed block; `species` enumerates all
+species in the generated network.
+
+`species` is a tuple of public `bionetgen.CRNSpecies` records. Each record has a
+zero-based `index` and the native network's canonical `name`. Indices follow
+the native generated species list: seeds are inserted in source order, followed
+by species added during rule expansion. `reactions` is a tuple of public
+`bionetgen.CRNReaction` records with a zero-based `index`, native `label`, and
+`reactants` and `products` tuples. Participant entries are species indices;
+repeated entries preserve multiplicity (for example, `2 A -> B` stores A's
+index twice in `reactants`). Reaction indices follow native reaction insertion
+order during rule expansion. The record tuples are immutable, and each index
+is the position used by the matrix axes for that generated network.
+
+`stoichiometric_matrix` is a dense `numpy.ndarray` with integer (`int64`)
+entries and shape `(len(species), len(reactions))`. Rows follow `species` order,
+columns follow `reactions` order, and
+`N[species.index, reaction.index] = product multiplicity - reactant
+multiplicity`. A model with no species and no reactions has shape `(0, 0)`; a
+seed-only network with S species has shape `(S, 0)`.
+
+This initial structure API covers species identities, reaction participants,
+and stoichiometry. Complex details and structured rate laws are outside this
+slice.
 
 ### Methods
 
