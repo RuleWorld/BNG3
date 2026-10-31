@@ -36,6 +36,10 @@ struct ProtocolAction {
         std::optional<Diagnostic> maxStoichDiagnostic;
     };
     struct SimulationOptions {
+        std::optional<double> tStart;
+        std::optional<double> tEnd;
+        std::optional<Diagnostic> tStartDiagnostic;
+        std::optional<Diagnostic> tEndDiagnostic;
         std::optional<std::size_t> nSteps;
         // Action diagnostics are deferred until execution, so unused actions
         // do not invalidate otherwise usable model metadata.

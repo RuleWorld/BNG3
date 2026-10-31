@@ -3145,7 +3145,12 @@ def _lower_delays_of_static_expressions(model: SBMLModel) -> None:
 class SBMLParser:
     """Parse SBML text into the atomizer's stable intermediate model."""
 
-    def parse(self, sbml_string: str, source_path: Optional[Path] = None) -> SBMLModel:
+    def parse(
+        self,
+        sbml_string: str,
+        source_path: Optional[Path] = None,
+        native_dae_runtime: bool = False,
+    ) -> SBMLModel:
         original_packages = _declared_package_uris(sbml_string)
         original_comp_constructs = _has_comp_constructs(sbml_string)
         sbml_string, comp_failure = _flatten_comp_package(sbml_string, source_path)
@@ -3202,7 +3207,12 @@ class SBMLParser:
         if model_element is None:
             raise ValueError("SBML document has no model")
         declared_packages = _declared_package_uris(sbml_string)
-        result = self._parse_xml_model(root, model_element, declared_packages)
+        result = self._parse_xml_model(
+            root,
+            model_element,
+            declared_packages,
+            native_dae_runtime=native_dae_runtime,
+        )
         if "comp" in original_packages and original_comp_constructs:
             if comp_failure is None:
                 result.import_warnings.append(
@@ -3442,6 +3452,7 @@ class SBMLParser:
         root: Any,
         model: Any,
         declared_packages: Optional[Any] = None,
+        native_dae_runtime: bool = False,
     ) -> SBMLModel:
         compartments = SBMLParser._parse_xml_compartments(model)
         species = SBMLParser._parse_xml_species(model)
@@ -3976,6 +3987,20 @@ class SBMLParser:
                     "severity": "info",
                 }
             )
+        if native_dae_runtime:
+            try:
+                from bionetgen.atomizer.modern.writer import native_algebraic_targets
+
+                if native_algebraic_targets(result):
+                    result.import_warnings = [
+                        warning
+                        for warning in result.import_warnings
+                        if warning.get("category") != "algebraicRule"
+                    ]
+            except ValueError:
+                # Keep the explicit loss diagnostic when the native state
+                # coordinates cannot represent this algebraic system.
+                pass
         result.import_warnings = [
             coerce_import_warning(warning) for warning in result.import_warnings
         ]

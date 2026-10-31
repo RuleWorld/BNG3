@@ -161,6 +161,16 @@ def _reduce_fast_reaction(
         for reference in reaction.products
         if reference.species and reference.species != "EmptySet"
     ]
+    if len(reactants) == 2 and len(products) == 1:
+        for identifier in _reaction_species_ids(reaction):
+            owners = shared.get(identifier)
+            if owners:
+                others = ", ".join(f'"{owner}"' for owner in owners)
+                return refuse(
+                    f'species "{identifier}" also takes part in the fast reaction '
+                    f"{others}, so the fast subsystem is not an isolated equilibrium"
+                )
+        return _reduce_bimolecular_equilibrium(model, reaction, reactants, products[0])
     if len(reactants) != 1 or len(products) != 1:
         return refuse(
             "the fast reaction does not convert exactly one species into "
@@ -261,6 +271,239 @@ def _reduce_fast_reaction(
         "the fast reaction's rate is a sum of more than two terms, so its "
         "pseudo steady state is a multi-term balance that needs an "
         "algebraic solve in the simulation engine"
+    )
+
+
+def _reduce_bimolecular_equilibrium(
+    model: SBMLModel,
+    reaction: SBMLReaction,
+    reactants: Sequence[Any],
+    product: Any,
+) -> FastReactionOutcome:
+    """Lower A+B<->C to its exact equilibrium on its two evolving pools.
+
+    This bounded form requires unit stoichiometry and constant positive forward
+    and reverse coefficients.  The coordinates P=A+C and Q=B+C are the two
+    independent invariants of the fast reaction; slow reactions evolve those
+    pools, while the quadratic root reconstructs the fast equilibrium.
+    """
+
+    def refuse(reason: str) -> FastReactionOutcome:
+        return FastReactionOutcome(reaction.id, False, reason=reason)
+
+    a_ref, b_ref = reactants
+    identifiers = (a_ref.species, b_ref.species, product.species)
+    if len(set(identifiers)) != 3:
+        return refuse("the fast reaction does not convert three distinct species")
+    if any(
+        re.search(r"\bdelay\s*\(", expression, flags=re.IGNORECASE)
+        for expression in _model_expressions(model)
+    ):
+        return refuse(
+            "the bimolecular pool projection cannot preserve delayed prehistory"
+        )
+    if any(
+        reference.variable_stoichiometry or float(reference.stoichiometry) != 1
+        for reference in (*reactants, product)
+    ):
+        return refuse("the bimolecular fast reaction requires unit stoichiometry")
+    species = [model.species.get(identifier) for identifier in identifiers]
+    if any(item is None for item in species):
+        return refuse("the fast reaction refers to a species the model does not define")
+    a_species, b_species, c_species = species
+    assert a_species is not None and b_species is not None and c_species is not None
+    if len({item.compartment for item in species}) != 1:
+        return refuse("the fast reaction's species must share one compartment")
+    if len({item.has_only_substance_units for item in species}) != 1:
+        return refuse("the fast reaction's species must use the same quantity kind")
+    for item in species:
+        if item.constant or item.boundary_condition:
+            return refuse(f'species "{item.id}" must be mutable and non-boundary')
+        if not (item.initial_amount_set or item.initial_concentration_set):
+            return refuse(f'species "{item.id}" has no initial value')
+        if item.conversion_factor or getattr(model, "conversion_factor", None):
+            return refuse(
+                "the bimolecular pool lowering does not carry conversion factors"
+            )
+        if standardize_name(item.id) in _controlled_symbols(model):
+            return refuse(f'species "{item.id}" is reassigned by a rule or event')
+        if standardize_name(item.id) in _delayed_species(model):
+            return refuse(f'species "{item.id}" is read by a delay expression')
+    compartment = model.compartments.get(a_species.compartment or "")
+    if compartment is None or not compartment.constant:
+        return refuse("the fast reaction requires a constant shared compartment")
+    if standardize_name(compartment.id) in _controlled_symbols(model):
+        return refuse(
+            f'compartment "{compartment.id}" is reassigned by a rule or event'
+        )
+    volume = _compartment_volume(model, a_species)
+    if not math.isfinite(volume) or volume <= 0:
+        return refuse("the fast reaction's compartment has no usable volume")
+
+    expression = _parse_expression(_kinetic_law_math(reaction))
+    if expression is None:
+        return refuse("the fast reaction's kinetic law is not a supported expression")
+    expression = _inline_function_calls(expression, model.function_definitions)
+    resolver = _ConstantResolver(model, reaction)
+    terms = _rate_terms(expression, model, resolver)
+    if terms is None or len(terms) != 2:
+        return refuse(
+            "the fast rate must be a two-term constant-coefficient mass action law"
+        )
+    terms = [term for term in terms if term.coefficient]
+    reactant_term = next(
+        (
+            term
+            for term in terms
+            if term.species == tuple(sorted(((a_ref.species, 1), (b_ref.species, 1))))
+        ),
+        None,
+    )
+    product_term = next(
+        (term for term in terms if term.species == ((product.species, 1),)), None
+    )
+    if (
+        len(terms) != 2
+        or reactant_term is None
+        or product_term is None
+        or reactant_term.coefficient <= 0
+        or product_term.coefficient >= 0
+    ):
+        return refuse("the fast rate must be positive kf*A*B minus positive kr*C")
+    forward = reactant_term.coefficient
+    backward = -product_term.coefficient
+    equilibrium_constant = backward / forward
+    if not math.isfinite(equilibrium_constant) or equilibrium_constant <= 0:
+        return refuse("the fast rate has no finite positive equilibrium constant")
+
+    initial = [_species_amount(model, item) for item in species]
+    if any(value is None for value in initial):
+        return refuse("the fast reaction's species have no usable initial amount")
+    amount_a, amount_b, amount_c = (float(value) for value in initial)
+    if min(amount_a, amount_b, amount_c) < 0:
+        return refuse("the fast reaction's species have a negative initial amount")
+    if a_species.has_only_substance_units:
+        pool_a0, pool_b0 = amount_a + amount_c, amount_b + amount_c
+    else:
+        pool_a0, pool_b0 = (amount_a + amount_c) / volume, (
+            amount_b + amount_c
+        ) / volume
+
+    from .types import SBMLModifierSpeciesReference, SBMLParameter, SBMLRule
+
+    pool_a = _unique_identifier(model, f"__fast_pool_a_{standardize_name(reaction.id)}")
+    pool_b = _unique_identifier(model, f"__fast_pool_b_{standardize_name(reaction.id)}")
+    symbol_scale = 1.0 if a_species.has_only_substance_units else 1.0 / volume
+
+    pool_rate_a: List[str] = []
+    pool_rate_b: List[str] = []
+    for slow in model.reactions.values():
+        if slow.id == reaction.id:
+            continue
+        if any(
+            reference.species in identifiers and reference.variable_stoichiometry
+            for reference in [*slow.reactants, *slow.products]
+        ):
+            return refuse(
+                f'reaction "{slow.id}" changes a fast-equilibrium species with '
+                "variable stoichiometry"
+            )
+        sigma_a = _signed_stoichiometry(slow, a_species.id)
+        sigma_b = _signed_stoichiometry(slow, b_species.id)
+        sigma_c = _signed_stoichiometry(slow, c_species.id)
+        if sigma_a + sigma_c:
+            rate = _global_kinetic_law(slow)
+            if rate is None:
+                return refuse(
+                    f'reaction "{slow.id}" has no usable kinetic law for pool A'
+                )
+            pool_rate_a.append(
+                f"({format_number(symbol_scale * (sigma_a + sigma_c))}) * ({rate})"
+            )
+        if sigma_b + sigma_c:
+            rate = _global_kinetic_law(slow)
+            if rate is None:
+                return refuse(
+                    f'reaction "{slow.id}" has no usable kinetic law for pool B'
+                )
+            pool_rate_b.append(
+                f"({format_number(symbol_scale * (sigma_b + sigma_c))}) * ({rate})"
+            )
+
+    # Reject initial pools outside the real, nonnegative equilibrium branch.
+    discriminant = (
+        pool_a0 + pool_b0 + equilibrium_constant
+    ) ** 2 - 4 * pool_a0 * pool_b0
+    if pool_a0 < 0 or pool_b0 < 0 or discriminant < 0:
+        return refuse("the initial pools have no real nonnegative fast equilibrium")
+    c0 = (pool_a0 + pool_b0 + equilibrium_constant - math.sqrt(discriminant)) / 2
+    if c0 < 0 or c0 > min(pool_a0, pool_b0):
+        return refuse("the initial fast equilibrium is outside the nonnegative branch")
+
+    pool_a_expr, pool_b_expr = pool_a, pool_b
+    c_expr = (
+        f"(({pool_a_expr} + {pool_b_expr} + {format_number(equilibrium_constant)}) "
+        f"- sqrt(({pool_a_expr} + {pool_b_expr} + {format_number(equilibrium_constant)})^2 "
+        f"- 4 * {pool_a_expr} * {pool_b_expr})) / 2"
+    )
+    reconstructed = {
+        a_species.id: f"{pool_a_expr} - {c_expr}",
+        b_species.id: f"{pool_b_expr} - {c_expr}",
+        c_species.id: c_expr,
+    }
+    for item, amount in zip(species, (pool_a0 - c0, pool_b0 - c0, c0)):
+        _set_species_amount(
+            model, item, amount if item.has_only_substance_units else amount * volume
+        )
+    for name, initial_value in ((pool_a, pool_a0), (pool_b, pool_b0)):
+        model.parameters[name] = SBMLParameter(
+            id=name, name=name, value=initial_value, constant=False, value_set=True
+        )
+    model.rules.extend(
+        [
+            SBMLRule(type="rate", variable=pool_a, math=" + ".join(pool_rate_a) or "0"),
+            SBMLRule(type="rate", variable=pool_b, math=" + ".join(pool_rate_b) or "0"),
+            *[
+                SBMLRule(
+                    type="assignment",
+                    variable=item.id,
+                    math=reconstructed[item.id],
+                )
+                for item in species
+            ],
+        ]
+    )
+    del model.reactions[reaction.id]
+    participants = set(identifiers)
+    for slow in model.reactions.values():
+        moved = [
+            reference
+            for reference in [*slow.reactants, *slow.products]
+            if reference.species in participants
+        ]
+        slow.reactants = [
+            reference
+            for reference in slow.reactants
+            if reference.species not in participants
+        ]
+        slow.products = [
+            reference
+            for reference in slow.products
+            if reference.species not in participants
+        ]
+        present = {_modifier_species(modifier) for modifier in slow.modifiers}
+        for reference in moved:
+            if reference.species not in present:
+                slow.modifiers.append(SBMLModifierSpeciesReference(reference.species))
+                present.add(reference.species)
+    return FastReactionOutcome(
+        reaction.id,
+        True,
+        detail=(
+            f"the fast equilibrium is reconstructed on the conserved pools "
+            f"{pool_a}={a_species.id}+{c_species.id} and "
+            f"{pool_b}={b_species.id}+{c_species.id}"
+        ),
     )
 
 

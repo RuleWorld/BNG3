@@ -440,11 +440,32 @@ def _network_only_text(
 ) -> str:
     """Keep model setup and generation actions; remove simulation/output actions."""
 
+    lines = source.splitlines()
+    last_network_action: Optional[int] = None
+    scan_section: Optional[str] = None
+    for line_index, line in enumerate(lines):
+        stripped = line.strip()
+        begin = re.match(r"^begin\s+(.+?)\s*$", stripped, re.IGNORECASE)
+        end = re.match(r"^end\s+(.+?)\s*$", stripped, re.IGNORECASE)
+        if begin:
+            scan_section = begin.group(1).strip().lower()
+            continue
+        if end:
+            scan_section = None
+            continue
+        match = _ACTION_LINE.match(line)
+        if (
+            match
+            and match.group(1).lower() == "generate_network"
+            and scan_section != "protocol"
+        ):
+            last_network_action = line_index
+
     kept_lines: list[str] = []
     kept_actions: list[str] = []
     has_network_action = False
     section: Optional[str] = None
-    for line in source.splitlines():
+    for line_index, line in enumerate(lines):
         stripped = line.strip()
         begin = re.match(r"^begin\s+(.+?)\s*$", stripped, re.IGNORECASE)
         end = re.match(r"^end\s+(.+?)\s*$", stripped, re.IGNORECASE)
@@ -469,6 +490,20 @@ def _network_only_text(
             if match and match.group(1) == "generate_network":
                 kept_actions.append(line.strip())
                 has_network_action = True
+                continue
+            if (
+                match
+                and match.group(1).lower() == "setparameter"
+                and not preserve_network_writer
+                and last_network_action is not None
+                and line_index > last_network_action
+            ):
+                # A network-only replay removes the simulations that consume
+                # these post-generation updates.  Keep the emitted .net as the
+                # generation snapshot; live-rate updates are checked by the
+                # simulation parity tests. Continuation staging retains an
+                # authored writeNetwork action, whose snapshot includes any
+                # preceding setParameter updates under BNG2 semantics.
                 continue
             if (
                 preserve_network_writer
