@@ -3594,19 +3594,25 @@ def test_playground_parser_extracts_canonical_sbml_multi_as_comment_only():
         </listOfSpecies>
         <multi:listOfSpeciesTypes>
           <multi:bindingSiteSpeciesType id="bindSite" name="bind"/>
+          <multi:bindingSiteSpeciesType id="bindSite2" name="bind"/>
           <multi:speciesType id="AType" name="A">
             <multi:listOfSpeciesTypeInstances>
               <multi:speciesTypeInstance id="bind1" speciesType="bindSite" name="bind"/>
             </multi:listOfSpeciesTypeInstances>
           </multi:speciesType>
+          <multi:speciesType id="AType2" name="A">
+            <multi:listOfSpeciesTypeInstances>
+              <multi:speciesTypeInstance id="bind2" speciesType="bindSite2" name="bind"/>
+            </multi:listOfSpeciesTypeInstances>
+          </multi:speciesType>
           <multi:speciesType id="ABType" name="ABComplex">
             <multi:listOfSpeciesTypeInstances>
               <multi:speciesTypeInstance id="A1" speciesType="AType"/>
-              <multi:speciesTypeInstance id="A2" speciesType="AType"/>
+              <multi:speciesTypeInstance id="A2" speciesType="AType2"/>
             </multi:listOfSpeciesTypeInstances>
             <multi:listOfSpeciesTypeComponentIndexes>
               <multi:speciesTypeComponentIndex id="bind1_1" component="bind1" identifyingParent="A1"/>
-              <multi:speciesTypeComponentIndex id="bind1_2" component="bind1" identifyingParent="A2"/>
+              <multi:speciesTypeComponentIndex id="bind1_2" component="bind2" identifyingParent="A2"/>
             </multi:listOfSpeciesTypeComponentIndexes>
             <multi:listOfInSpeciesTypeBonds>
               <multi:inSpeciesTypeBond bindingSite1="bind1_1" bindingSite2="bind1_2"/>

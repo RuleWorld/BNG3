@@ -1324,7 +1324,6 @@ def _parse_scaled_time_threshold(trigger: str) -> Optional[Tuple[str, str]]:
 # deliberately absent: they are not order comparisons, and these resolvers
 # lower order comparisons and equality gates used inside a conjunction.
 _COMPARISON_ALIASES = {
-    "eq": "eq",
     "gt": "gt",
     "greaterthan": "gt",
     "geq": "geq",
@@ -1375,6 +1374,29 @@ _RESERVED_TRIGGER_SYMBOLS = frozenset(
         "times",
     }
 )
+
+
+# Equality names a value, not an order.  A continuous quantity equals a value
+# only at isolated instants, so an equality has no rising edge the order
+# resolvers can schedule; it is exact only as a gate on state that changes at
+# event instants, which the native runtime evaluates inside a conjunction.
+# It is matched separately so that no order resolver can claim it.
+_EQUALITY_ALIASES = {"eq": "eq", "neq": "neq"}
+_EQUALITY_ALIAS_PATTERN = "|".join(
+    sorted(_EQUALITY_ALIASES, key=lambda alias: (-len(alias), alias))
+)
+
+
+def _match_equality_call(expression: str) -> Optional[Tuple[str, str]]:
+    """Return ``("eq" | "neq", argument text)`` for an equality call."""
+    match = re.match(
+        rf"^({_EQUALITY_ALIAS_PATTERN})\s*\((.*)\)$",
+        str(expression or "").strip(),
+        re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    return _EQUALITY_ALIASES[match.group(1).lower()], match.group(2)
 
 
 def _match_comparison_call(expression: str) -> Optional[Tuple[str, str]]:
@@ -3163,7 +3185,7 @@ def complement_negated_comparison(trigger: str) -> str:
             return trigger
     if depth != 0:
         return trigger
-    comparison = _match_comparison_call(inner)
+    comparison = _match_comparison_call(inner) or _match_equality_call(inner)
     if comparison is None:
         return trigger
     operator, arguments_text = comparison
@@ -3384,7 +3406,9 @@ def _native_conjunction_expression(
         return None
     rendered: List[str] = []
     for term in terms:
-        comparison = _match_comparison_call(term)
+        # An equality conjunct is an exact gate; the other conjuncts supply
+        # the continuous surface whose crossing is the rising edge.
+        comparison = _match_comparison_call(term) or _match_equality_call(term)
         if comparison is None:
             return None
         operator, arguments_text = comparison

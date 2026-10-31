@@ -3951,6 +3951,13 @@ class SBMLParser:
             f"{species}: {pattern}" for species, pattern in multi.seed_patterns
         ]
         result.multi_species_patterns = dict(multi.species_patterns)
+        result.multi_species_component_positions = dict(
+            multi.species_component_positions
+        )
+        result.multi_species_explicit_binding_positions = dict(
+            multi.species_explicit_binding_positions
+        )
+        result.multi_abstract_species_ids = set(multi.abstract_species_ids)
         result.multi_type_patterns = dict(multi.type_patterns)
         result.multi_component_aliases = dict(multi.component_aliases)
         result.multi_reaction_mappings = dict(multi.reaction_product_maps)

@@ -21,6 +21,11 @@ namespace bng::ast {
 
 class Model;  // forward declaration
 
+// BNG's statistical correction for permutations of identical whole reactant
+// patterns. Shared by network reactions and rule-level export.
+double identicalReactantPatternPermutationFactor(
+    const std::vector<SpeciesGraph>& patterns);
+
 class ReactionRule {
 public:
     // Optional backend-owned execution hooks. These let compiled backends
@@ -140,6 +145,7 @@ public:
     ReactionRule& operator=(const ReactionRule&) = delete;
 
     const std::string& getRuleName() const;
+    void setLabel(std::string label);
     // Used only by the parser's post-parse pass, which removes synthetic
     // barrier rules from the model and renumbers the remaining ordinary rules
     // so the model matches one written without a barrier patterns block.
@@ -206,6 +212,13 @@ public:
     void clearPatternMatchCache() const;
     void clearPatternMatchCache(ExecutionState& state) const;
     std::unique_ptr<ExecutionState> createExecutionState() const;
+    // Keep one of the given maps of reactant pattern ``patternIndex`` into a
+    // single target graph per distinct image of that pattern's reaction
+    // center (BNG2 RxnRule::filter_identical_by_rxn_center, called from
+    // find_embeddings).  A pattern without a reaction center keeps the first
+    // map only.  Maps that differ elsewhere describe the same transition.
+    std::vector<BNGcore::Map> filterIdenticalByReactionCenter(
+        std::size_t patternIndex, std::vector<BNGcore::Map> maps) const;
     std::vector<EmbeddingResult> findEmbeddings(std::size_t patternIndex, const SpeciesList& speciesList) const;
     std::vector<EmbeddingResult> findEmbeddings(
         std::size_t patternIndex,
@@ -366,6 +379,17 @@ private:
 void setCompartmentDimensions(const std::unordered_map<std::string, int>& dims);
 // Set compartment parent map for transport (endocytosis/exocytosis)
 void setCompartmentParents(const std::unordered_map<std::string, std::string>& parents);
+
+// BNG2 SpeciesGraph::interactingSet on species-level compartments, under the
+// compartment context installed for this thread: at most one surface and one
+// volume, an adjacent pair if both occur, and either every compartment given
+// or none.  An empty compartment means "no compartment".  With no compartment
+// context installed (a model without compartments) every set interacts.
+bool compartmentsFormInteractingSet(const std::vector<std::string>& compartments);
+
+// The surface compartment among the given ones when they form an interacting
+// set that contains exactly one surface, else empty.
+std::string surfaceOfInteractingSet(const std::vector<std::string>& compartments);
 
 // Temporarily installs compartment metadata for one network-generation pass.
 // The metadata is thread-local and restored when the pass returns or throws.

@@ -12,7 +12,7 @@ from __future__ import annotations
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, NamedTuple, Optional, Tuple, Union
+from typing import Any, Dict, List, NamedTuple, Optional, Set, Tuple, Union
 
 from .structures import read_from_string
 from .types import SBMLImportWarning, SBMLMultiComponentMap
@@ -123,6 +123,13 @@ class MultiParseResult:
     complex_patterns: List[MultiComplexPattern] = field(default_factory=list)
     seed_patterns: List[Tuple[str, str]] = field(default_factory=list)
     species_patterns: Dict[str, str] = field(default_factory=dict)
+    species_component_positions: Dict[str, List[Tuple[int, int]]] = field(
+        default_factory=dict
+    )
+    species_explicit_binding_positions: Dict[str, List[Tuple[int, int]]] = field(
+        default_factory=dict
+    )
+    abstract_species_ids: Set[str] = field(default_factory=set)
     type_patterns: Dict[str, str] = field(default_factory=dict)
     component_aliases: Dict[str, Dict[str, List[Tuple[str, int, int]]]] = field(
         default_factory=dict
@@ -459,6 +466,7 @@ def parse_multi_package(document: Union[str, Any]) -> MultiParseResult:
         type_id = _attribute(item, "id")
         if not type_id:
             continue
+        is_binding_site = type_id in binding_sites
         species_type = _SpeciesType(
             id=type_id,
             name=_clean(_attribute(item, "name") or type_id),
@@ -731,13 +739,13 @@ def parse_multi_package(document: Union[str, Any]) -> MultiParseResult:
 class _FlatComponent:
     label: str
     aliases: set = field(default_factory=set)
+    binding_site_type_id: str = ""
     states: List[str] = field(default_factory=list)
     feature_ids: set = field(default_factory=set)
     feature_values: Dict[str, Dict[str, str]] = field(default_factory=dict)
     active_state: str = ""
     binding_status: str = ""
     bonds: List[int] = field(default_factory=list)
-    feature_occurrence: int = 1
     is_binding_site: bool = False
 
 
@@ -1020,7 +1028,6 @@ def _flatten_type(
                             species_type.feature_definitions[feature_id][1]
                         )
                     },
-                    feature_occurrence=occurrence,
                 )
             )
         for instance in species_type.instances:
@@ -1112,6 +1119,7 @@ def _flatten_type(
                 _FlatComponent(
                     label=label,
                     aliases={alias for alias in aliases if alias},
+                    binding_site_type_id=instance.type_id,
                     states=list(dict.fromkeys(states)),
                     feature_ids=feature_ids,
                     feature_values=feature_values,
@@ -1137,6 +1145,16 @@ def _flatten_type(
                     _warning(
                         f'Multi bond in speciesType "{type_id}" must connect two '
                         "binding-site components.",
+                        "dropped",
+                    )
+                )
+                continue
+            if endpoint1[1].binding_site_type_id == endpoint2[1].binding_site_type_id:
+                warnings.append(
+                    _warning(
+                        f'Multi bond in speciesType "{type_id}" uses endpoints '
+                        "of the same type; a bond must "
+                        "connect different BindingSiteSpeciesType objects.",
                         "dropped",
                     )
                 )
@@ -1252,6 +1270,16 @@ def _flatten_type(
                 )
             )
             continue
+        if endpoint1[1].binding_site_type_id == endpoint2[1].binding_site_type_id:
+            warnings.append(
+                _warning(
+                    f'Multi bond in speciesType "{type_id}" uses endpoints '
+                    "of the same type; a bond must "
+                    "connect different BindingSiteSpeciesType objects.",
+                    "dropped",
+                )
+            )
+            continue
         if (
             endpoint1[1] is endpoint2[1]
             or _bonded_component(flat, endpoint1[1])
@@ -1336,6 +1364,11 @@ def _species_pattern_from_multi(
     compartment_types: Optional[Dict[str, str]] = None,
     species_compartment: str = "",
     initialized_by_assignment: bool = False,
+    abstract_species_ids: Optional[Set[str]] = None,
+    species_component_positions: Optional[Dict[str, List[Tuple[int, int]]]] = None,
+    species_explicit_binding_positions: Optional[
+        Dict[str, List[Tuple[int, int]]]
+    ] = None,
 ) -> Optional[str]:
     flat = _flatten_type(
         type_id,
@@ -1346,6 +1379,15 @@ def _species_pattern_from_multi(
     )
     if not flat.molecules:
         return None
+    # Binding status belongs to each core Species, not its reusable
+    # SpeciesType declaration.  An outward site with no explicit status is
+    # unconstrained in this species; setting that here keeps it out of
+    # molecule-type declarations produced by _flatten_type.
+    bonded_components = {id(endpoint) for bond in flat.bonds for endpoint in bond}
+    for molecule in flat.molecules:
+        for component in molecule.components:
+            if component.is_binding_site and id(component) not in bonded_components:
+                component.binding_status = "either"
     type_compartment = types[type_id].compartment
     if species_compartment and type_compartment != species_compartment:
         if not type_compartment:
@@ -1382,6 +1424,7 @@ def _species_pattern_from_multi(
                     )
                 )
 
+    used_feature_occurrences = set()
     for feature, inherited_component in feature_entries:
         feature_id = _attribute(feature, "speciesFeatureType")
         component_token = _attribute(feature, "component") or inherited_component
@@ -1424,23 +1467,32 @@ def _species_pattern_from_multi(
             )
             continue
 
-        occurrence_targets = [
-            target for target in targets if target.feature_occurrence == occur
+        available_targets = [
+            target
+            for target in targets
+            if (feature_id, id(target)) not in used_feature_occurrences
         ]
-        if len(occurrence_targets) != 1:
+        # SpeciesFeature.occur is a count, not an ordinal. Multiple feature
+        # elements therefore consume subsequent repeated instances in the
+        # flattened species type, as in the specification's occur=1 example.
+        if len(available_targets) < occur:
             warnings.append(
                 _warning(
-                    f'Multi speciesFeature "{feature_id}" occurrence {occur} on '
+                    f'Multi speciesFeature "{feature_id}" occur={occur} on '
                     f'species "{_attribute(species, "id")}" is '
                     + (
-                        "ambiguous or unresolved."
-                        if occurrence_targets
+                        "ambiguous or exceeds the remaining feature instances."
+                        if available_targets
                         else "not resolvable."
                     ),
                     "dropped",
                 )
             )
             continue
+        occurrence_targets = available_targets[:occur]
+        used_feature_occurrences.update(
+            (feature_id, id(target)) for target in occurrence_targets
+        )
         value_labels = occurrence_targets[0].feature_values.get(feature_id, {})
         values = []
         for raw_value in raw_values:
@@ -1456,9 +1508,18 @@ def _species_pattern_from_multi(
             values.append(_clean(value_labels[raw_value]))
         if not values:
             continue
+        # Multi §3.18.5 gives these values OR semantics. The complete
+        # occur=1 domain imposes no state constraint, matching an omitted
+        # feature and BNGL's state-less site pattern.
+        full_domain = (
+            occur == 1
+            and len(raw_values) == len(value_labels)
+            and set(raw_values) == set(value_labels)
+        )
         if len(values) == 1:
-            occurrence_targets[0].active_state = values[0]
-        elif len(values) > 1:
+            for target in occurrence_targets:
+                target.active_state = values[0]
+        elif len(values) > 1 and not full_domain:
             warnings.append(
                 _warning(
                     f'Multi speciesFeature "{feature_id}" has multiple values; '
@@ -1467,6 +1528,8 @@ def _species_pattern_from_multi(
                 )
             )
 
+    explicit_binding_positions: List[Tuple[int, int]] = []
+    explicit_either_components = set()
     seen_outward_components = set()
     for outward in _children(
         _first_child(species, "listOfOutwardBindingSites", namespace),
@@ -1539,6 +1602,32 @@ def _species_pattern_from_multi(
             )
             continue
         targets[0].binding_status = status
+        if status in {"unbound", "bound"}:
+            for molecule_index, molecule in enumerate(flat.molecules):
+                for component_index, component in enumerate(molecule.components):
+                    if component is targets[0]:
+                        explicit_binding_positions.append(
+                            (molecule_index, component_index)
+                        )
+                        break
+        elif status == "either":
+            explicit_either_components.add(id(targets[0]))
+
+    if abstract_species_ids is not None:
+        bonded = {id(component) for bond in flat.bonds for component in bond}
+        is_abstract = any(
+            component.is_binding_site
+            and id(component) not in bonded
+            and component.binding_status != "unbound"
+            for molecule in flat.molecules
+            for component in molecule.components
+        ) or any(
+            component.feature_ids and not component.active_state
+            for molecule in flat.molecules
+            for component in molecule.components
+        )
+        if is_abstract:
+            abstract_species_ids.add(_attribute(species, "id"))
 
     # A positive initial pool must denote one fully defined species, rather
     # than a pattern that still stands for many pools.  Zero-valued pattern
@@ -1582,6 +1671,33 @@ def _species_pattern_from_multi(
                             "dropped",
                         )
                     )
+    # An outward binding status of "either" imposes no bond constraint. In a
+    # BNGL pattern, omitting that site preserves the source's don't-care
+    # context; !? instead requires the site to be present in the pattern and
+    # changes reaction automorphisms. Keep explicitly state-constrained sites
+    # and sites participating in an in-species-type bond.
+    species_id = _attribute(species, "id")
+    bonded_components = {id(endpoint) for bond in flat.bonds for endpoint in bond}
+    retained_positions: List[Tuple[int, int]] = []
+    for molecule_index, molecule in enumerate(flat.molecules):
+        retained = []
+        for component_index, component in enumerate(molecule.components):
+            if (
+                component.is_binding_site
+                and component.binding_status == "either"
+                and id(component) not in bonded_components
+                and id(component) not in explicit_either_components
+                and not component.active_state
+            ):
+                continue
+            retained.append(component)
+            retained_positions.append((molecule_index, component_index))
+        molecule.components = retained
+    if species_component_positions is not None:
+        species_component_positions[species_id] = retained_positions
+    if species_explicit_binding_positions is not None:
+        species_explicit_binding_positions[species_id] = explicit_binding_positions
+
     # Core Species.name is a human-readable label, not a pattern-bearing
     # attribute.  A Multi speciesType is therefore always reconstructed from
     # the package graph and per-species annotations; accepting a parseable
@@ -2613,14 +2729,8 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                     )
                 )
                 continue
-            if binding_type1 and binding_type1 == binding_type2:
-                warnings.append(
-                    _warning(
-                        f'Multi inSpeciesTypeBond in "{species_type.id}" joins '
-                        f'two binding sites of the same type "{binding_type1}".',
-                        "dropped",
-                    )
-                )
+            # Equal types may describe distinct binding-site instances in a
+            # homodimer. Endpoint identity and occupancy are checked below.
 
     if not types:
         warnings.append(
@@ -2990,6 +3100,9 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
         )
 
     species_patterns: Dict[str, str] = {}
+    species_component_positions: Dict[str, List[Tuple[int, int]]] = {}
+    species_explicit_binding_positions: Dict[str, List[Tuple[int, int]]] = {}
+    abstract_species_ids: Set[str] = set()
     seed_patterns: List[Tuple[str, str]] = []
     species_type_by_species: Dict[str, str] = {}
     species_compartments: Dict[str, str] = {}
@@ -3200,7 +3313,6 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                 feature_elements.extend(
                     (feature, inherited_component) for feature in nested_features
                 )
-        seen_feature_occurrences = set()
         # SpeciesFeature and SubListOfSpeciesFeatures ids share the Species
         # object's local id scope, which includes the core species id.
         seen_feature_ids = {species_id}
@@ -3267,20 +3379,6 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                     )
                 )
                 continue
-            feature_key = (
-                feature_id,
-                occur,
-                component_token,
-            )
-            if feature_key in seen_feature_occurrences:
-                warnings.append(
-                    _warning(
-                        f'Multi species "{species_id}" repeats speciesFeature '
-                        f'occurrence "{feature_id}:{occur}" for the same component.',
-                        "dropped",
-                    )
-                )
-            seen_feature_occurrences.add(feature_key)
             known = known_feature_types.get(feature_id)
             if feature_id in ambiguous_feature_ids and component_token:
                 scoped_definitions = [
@@ -3368,6 +3466,9 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                 species_compartment if package_valid and not namespace_violation else ""
             ),
             initialized_by_assignment=species_id in initial_assignment_symbols,
+            abstract_species_ids=abstract_species_ids,
+            species_component_positions=species_component_positions,
+            species_explicit_binding_positions=species_explicit_binding_positions,
         )
         if pattern:
             species_patterns[species_id] = pattern
@@ -3989,6 +4090,9 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
         complex_patterns=complex_patterns,
         seed_patterns=seed_patterns,
         species_patterns=species_patterns,
+        species_component_positions=species_component_positions,
+        species_explicit_binding_positions=species_explicit_binding_positions,
+        abstract_species_ids=abstract_species_ids,
         type_patterns=type_patterns,
         component_aliases=component_aliases,
         reaction_product_maps=reaction_product_maps,

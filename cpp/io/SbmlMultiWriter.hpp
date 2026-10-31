@@ -52,6 +52,7 @@ private:
     static std::string writeSeedSpecies(
         const ast::Model& model, const compile::CompiledModel& compiled);
     static std::string writeReactionRules(const ast::Model& model);
+    static std::string writeObservableRules(const ast::Model& model);
     static std::string writeParameters(
         const ast::Model& model, const compile::CompiledModel& compiled);
 };
