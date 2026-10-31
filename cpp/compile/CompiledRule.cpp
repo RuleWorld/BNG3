@@ -342,6 +342,15 @@ public:
         compiled.bidirectional_ = rule.isBidirectional();
         compiled.delayExpression_ = rule.getDelayExpression();
         compiled.nonConsuming_ = rule.isNonConsuming();
+        if (compiled.delayExpression_.has_value()) {
+            SymbolTable emptySymbols;
+            const SymbolTable* syms = symbols != nullptr ? symbols : &emptySymbols;
+            auto resolved = CompiledRateLaw::compile(*compiled.delayExpression_, *syms);
+            if (diagnostics != nullptr) {
+                diagnostics->insert(diagnostics->end(), resolved.diagnostics().begin(), resolved.diagnostics().end());
+            }
+            compiled.resolvedDelayExpression_ = resolved.resolvedExpression();
+        }
 
         // Reservoir work must be statically evaluable: a time- or
         // observable-dependent drive would change the cycle affinity during a

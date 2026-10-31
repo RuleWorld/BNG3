@@ -110,7 +110,8 @@ int ObservableProjection::weight(std::size_t observableIndex,
                 (!term.relation.empty() || matches)) {
                 break;
             }
-        } else if (observable.kind == compile::ObservableKind::Molecules) {
+        } else if (observable.kind == compile::ObservableKind::Molecules ||
+                   observable.kind == compile::ObservableKind::Counter) {
             if (moleculesMode_ == CountMode::CountUnique) {
                 // Symmetry correction: divide out the pattern's automorphisms.
                 //

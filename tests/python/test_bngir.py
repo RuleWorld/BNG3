@@ -40,8 +40,9 @@ end model
 
 def test_bngir_is_deterministic_and_source_free():
     model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(MODEL))
-    first = model.to_bngir(provenance={"source": "fixture"})
-    second = bionetgen.to_bngir(model, provenance={"source": "fixture"})
+    assert json.loads(model.to_bngir())["version"] == "0.2"
+    first = model.to_bngir(provenance={"source": "fixture"}, version="0.1")
+    second = bionetgen.to_bngir(model, provenance={"source": "fixture"}, version="0.1")
 
     assert first == second
     assert "begin model" not in first
@@ -61,7 +62,7 @@ def test_bngir_round_trip_semantic_equality():
     assert restored.name == "bngir_fixture"
 
 
-def test_bngir_refuses_delayed_rules_in_both_wire_versions():
+def test_bngir_round_trips_delayed_rules_in_both_wire_versions():
     source = r"""
 begin model
 begin parameters
@@ -75,31 +76,35 @@ begin seed species
     A() 1
 end seed species
 begin reaction rules
-    A() -> B() 1 delay=tau
+    A() -> B() 1 delay=tau NonConsuming
 end reaction rules
 end model
 """
     model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(source))
     for version in ("0.1", "0.2"):
-        with pytest.raises(ValueError, match="cannot represent delayed reaction rules"):
-            model.to_bngir(version=version)
-    with pytest.raises(RuntimeError, match="cannot represent delayed reaction rules"):
-        bionetgen.model._cpp._compiled_snapshot(model._model)
+        document = model.to_bngir(version=version)
+        restored = bionetgen.from_bngir(document)
+        assert bionetgen.semantic_equal(model, restored, version=version)
+        assert len(restored._model.reaction_rules) == 1
+        rule = restored._model.reaction_rules[0]
+        assert rule.has_delay
+        assert rule.delay_expression == "tau"
+        assert rule.is_non_consuming
 
 
 def test_bngir_document_conforms_to_published_schema():
     model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(MODEL))
-    document = json.loads(model.to_bngir())
-    schema_path = (
-        Path(__file__).parents[2] / "provenance" / "schemas" / "bngir-0.1.schema.json"
-    )
-
-    jsonschema.validate(document, json.loads(schema_path.read_text()))
+    for version in ("0.1", "0.2"):
+        document = json.loads(model.to_bngir(version=version))
+        schema_path = (
+            Path(__file__).parents[2] / "provenance" / "schemas" / f"bngir-{version}.schema.json"
+        )
+        jsonschema.validate(document, json.loads(schema_path.read_text()))
 
 
 def test_bngir_rejects_unknown_required_features():
     model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(MODEL))
-    document = json.loads(model.to_bngir())
+    document = json.loads(model.to_bngir(version="0.1"))
     document["features"]["required"] = ["future_backend_state"]
 
     with pytest.raises(ValueError, match="unsupported required BNGIR features"):
@@ -108,7 +113,7 @@ def test_bngir_rejects_unknown_required_features():
 
 def test_bngir_population_reconstruction_fails_closed():
     model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(MODEL))
-    document = json.loads(model.to_bngir())
+    document = json.loads(model.to_bngir(version="0.1"))
     document["model"]["population_maps"] = [
         {"label": "pop", "pattern": "X()", "function": "lumped", "args": []}
     ]
@@ -119,7 +124,7 @@ def test_bngir_population_reconstruction_fails_closed():
 
 def test_bngir_rejects_unknown_action_scope():
     model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(MODEL))
-    document = json.loads(model.to_bngir())
+    document = json.loads(model.to_bngir(version="0.1"))
     document["protocol"]["actions"] = [
         {"scope": "future", "name": "simulate", "arguments": {}}
     ]
@@ -134,15 +139,15 @@ def test_bngir_preserves_model_and_simulation_protocol_actions():
         "begin protocol\nsimulate({method=>ode,t_end=>1,n_steps=>2})\nend protocol\nend model\nbegin actions\ngenerate_network({overwrite=>1})\nend actions\n",
     )
     model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(source))
-    schema_path = (
-        Path(__file__).parents[2] / "provenance" / "schemas" / "bngir-0.1.schema.json"
-    )
-    jsonschema.validate(
-        json.loads(model.to_bngir()), json.loads(schema_path.read_text())
-    )
-    restored = bionetgen.from_bngir(model.to_bngir())
-
-    assert bionetgen.semantic_equal(model, restored)
+    for version in ("0.1", "0.2"):
+        schema_path = (
+            Path(__file__).parents[2] / "provenance" / "schemas" / f"bngir-{version}.schema.json"
+        )
+        jsonschema.validate(
+            json.loads(model.to_bngir(version=version)), json.loads(schema_path.read_text())
+        )
+        restored = bionetgen.from_bngir(model.to_bngir(version=version))
+        assert bionetgen.semantic_equal(model, restored, version=version)
 
 
 def test_bngir_round_trip_preserves_compartments_energy_and_population_types():
@@ -323,17 +328,20 @@ def test_bngir_v02_round_trip_preserves_unit_metadata():
     assert restored._model.seed_species[0].unit == "molecule"
 
 
-def test_bngir_v01_refuses_unit_metadata_instead_of_dropping_it():
+def test_bngir_v01_and_v02_preserve_unit_metadata():
     model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(UNIT_MODEL))
 
-    with pytest.raises(ValueError, match="physical-unit metadata"):
-        model.to_bngir()
-
-    # semantic_equal builds the wire form it compares, so it surfaces the
-    # same named refusal instead of silently comparing unit-stripped models.
-    with pytest.raises(ValueError, match="physical-unit metadata"):
-        bionetgen.semantic_equal(model, model)
-    assert bionetgen.semantic_equal(model, model, version="0.2")
+    for version in ("0.1", "0.2"):
+        restored = bionetgen.from_bngir(model.to_bngir(version=version))
+        assert bionetgen.semantic_equal(model, restored, version=version)
+        assert dict(restored._model.unit_defaults) == {
+            "timeUnits": "second",
+            "substanceUnits": "item",
+            "volumeUnits": "litre",
+        }
+        assert [p.unit for p in restored._model.parameters] == ["nM", "per_s"]
+        assert restored._model.compartments[0].unit == "fL"
+        assert restored._model.seed_species[0].unit == "molecule"
 
 
 COUNTER_MODEL = r"""
@@ -359,18 +367,16 @@ end model
 """
 
 
-def test_bngir_v02_refuses_counter_observables_and_v01_preserves_them():
+def test_bngir_v01_and_v02_preserve_counter_observables():
     model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(COUNTER_MODEL))
 
-    with pytest.raises(ValueError, match="observable kinds"):
-        model.to_bngir(version="0.2")
-
-    restored = bionetgen.from_bngir(model.to_bngir())
-    assert bionetgen.semantic_equal(model, restored)
-    assert [(o.name, o.type) for o in restored._model.observables] == [
-        ("Ma", "Molecules"),
-        ("Ca", "Counter"),
-    ]
+    for version in ("0.1", "0.2"):
+        restored = bionetgen.from_bngir(model.to_bngir(version=version))
+        assert bionetgen.semantic_equal(model, restored, version=version)
+        assert [(o.name, o.type) for o in restored._model.observables] == [
+            ("Ma", "Molecules"),
+            ("Ca", "Counter"),
+        ]
 
 
 def test_bngir_v02_rejects_unknown_observable_kind():
@@ -661,3 +667,218 @@ def test_bngir_optional_provenance_envelope_remains_valid(version):
     restored = bionetgen.from_bngir(document)
     assert "provenance" not in json.loads(bionetgen.to_bngir(model, version=version))
     assert bionetgen.semantic_equal(model, restored, version=version)
+
+
+def test_semantic_equal_split_rules():
+    src_base = r"""
+begin model
+begin parameters
+    k 1.2
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin reaction rules
+    A() -> B() k
+end reaction rules
+end model
+"""
+    src_split = r"""
+begin model
+begin parameters
+    k1 0.4
+    k2 0.8
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin reaction rules
+    r1: A() -> B() k1
+    r2: A() -> B() k2
+end reaction rules
+end model
+"""
+    src_diff = r"""
+begin model
+begin parameters
+    k1 0.4
+    k2 0.9
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin reaction rules
+    r1: A() -> B() k1
+    r2: A() -> B() k2
+end reaction rules
+end model
+"""
+    m_base = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(src_base))
+    m_split = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(src_split))
+    m_diff = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(src_diff))
+
+    assert bionetgen.semantic_equal(m_base, m_split)
+    assert not bionetgen.semantic_equal(m_base, m_diff)
+
+
+def test_semantic_equal_rule_order():
+    src1 = r"""
+begin model
+begin parameters
+    k1 1.0
+    k2 2.0
+end parameters
+begin molecule types
+    A()
+    B()
+    C()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin reaction rules
+    r1: A() -> B() k1
+    r2: B() -> C() k2
+end reaction rules
+end model
+"""
+    src2 = r"""
+begin model
+begin parameters
+    k1 1.0
+    k2 2.0
+end parameters
+begin molecule types
+    A()
+    B()
+    C()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin reaction rules
+    r2: B() -> C() k2
+    r1: A() -> B() k1
+end reaction rules
+end model
+"""
+    m1 = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(src1))
+    m2 = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(src2))
+    assert bionetgen.semantic_equal(m1, m2)
+
+
+def test_semantic_equal_renaming():
+    src1 = r"""
+begin model
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin reaction rules
+    A() -> B() k
+end reaction rules
+end model
+"""
+    src_renamed = r"""
+begin model
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    X()
+    Y()
+end molecule types
+begin seed species
+    X() 10
+end seed species
+begin reaction rules
+    X() -> Y() k
+end reaction rules
+end model
+"""
+    src_diff_amount = r"""
+begin model
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    X()
+    Y()
+end molecule types
+begin seed species
+    X() 20
+end seed species
+begin reaction rules
+    X() -> Y() k
+end reaction rules
+end model
+"""
+    m1 = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(src1))
+    m_renamed = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(src_renamed))
+    m_diff = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(src_diff_amount))
+
+    assert bionetgen.semantic_equal(m1, m_renamed)
+    assert not bionetgen.semantic_equal(m1, m_diff)
+
+
+def test_semantic_equal_unknown_raises_equality_undecided():
+    src_unknown = r"""
+begin model
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin functions
+    f() = unknown_symbolic_term()
+end functions
+begin reaction rules
+    A() -> B() k
+end reaction rules
+end model
+"""
+    src_other = r"""
+begin model
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin reaction rules
+    A() -> B() k
+end reaction rules
+end model
+"""
+    m_unknown = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(src_unknown))
+    m_other = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(src_other))
+
+    with pytest.raises(bionetgen.EqualityUndecided):
+        bionetgen.semantic_equal(m_unknown, m_other)

@@ -1518,7 +1518,7 @@ class BioNetGenModel:
         self._require_export_supported("BNGL export")
         return _cpp.io.write_bngl_string(self._model)
 
-    def to_bngir(self, *, provenance=None, version="0.1") -> str:
+    def to_bngir(self, *, provenance=None, version="0.2") -> str:
         """Serialize semantic model entities as deterministic BNGIR JSON.
 
         Version ``0.1`` is the compatibility wire format. Version ``0.2`` is

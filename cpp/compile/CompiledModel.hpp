@@ -101,6 +101,7 @@ struct CompiledCompartment {
 enum class ObservableKind {
     Molecules,
     Species,
+    Counter,
     Unknown,
 };
 

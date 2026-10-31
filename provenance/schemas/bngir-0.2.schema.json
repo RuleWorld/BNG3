@@ -654,6 +654,12 @@
         "reverse": {
           "$ref": "#/$defs/direction"
         },
+        "delay": {
+          "$ref": "#/$defs/expression"
+        },
+        "non_consuming": {
+          "type": "boolean"
+        },
         "modifiers": {
           "type": "array",
           "items": {
@@ -861,6 +867,7 @@
                 "enum": [
                   "molecules",
                   "species",
+                  "counter",
                   "unknown"
                 ]
               },

@@ -104,6 +104,13 @@ void bind_model(py::module_& m) {
         .def_property_readonly("has_delay", [](const ReactionRule& rule) {
             return rule.getDelayExpression().has_value();
         })
+        .def_property_readonly("delay_expression", [](const ReactionRule& rule) -> py::object {
+            if (rule.getDelayExpression().has_value()) {
+                return py::cast(rule.getDelayExpression()->toString());
+            }
+            return py::none();
+        })
+        .def_property_readonly("is_non_consuming", &ReactionRule::isNonConsuming)
         .def_property_readonly("has_driving_work", &ReactionRule::hasDrivingWork)
         .def_property_readonly("driving_work", [](const ReactionRule& rr) {
             return rr.drivingWorkExpression().toString();
@@ -216,6 +223,18 @@ void bind_model(py::module_& m) {
         .def_property_readonly("version", &Model::getVersion)
         .def_property_readonly("substance_units", &Model::getSubstanceUnits)
         .def_property_readonly("unit_defaults", &Model::getUnitDefaults)
+        .def_property_readonly("unit_definitions", [](const Model& model) {
+            py::list result;
+            for (const auto& def : model.getUnitSystem().definitions()) {
+                if (!def.builtin) {
+                    py::dict d;
+                    d["name"] = def.id;
+                    d["expression"] = def.expression;
+                    result.append(std::move(d));
+                }
+            }
+            return result;
+        })
         .def_property_readonly("options", &Model::getOptions)
         .def("set_model_name", &Model::setModelName, py::arg("name"))
         .def("addObservable", &Model::addObservable, py::arg("observable"))
