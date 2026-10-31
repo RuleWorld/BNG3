@@ -624,6 +624,11 @@ class EventTranslationContext:
     resolve_native_state: Callable[[str], Optional["NativeStateTarget"]] = (
         lambda _identifier: None
     )
+    # Return the BNGL parameter name for an event-mutable global SBML
+    # parameter, when its event assignment can be represented natively.
+    resolve_native_parameter: Callable[[str], Optional[str]] = (
+        lambda _identifier: None
+    )
 
     @property
     def resolveSpeciesPattern(self):
@@ -3797,13 +3802,18 @@ def _lower_native_event(
         variable, expression = _event_assignment(assignment)
         target = context.resolve_native_state(variable)
         if target is None:
-            # The native runtime assigns observable state; a parameter or
-            # compartment assignment has no equivalent there.
-            return None
-        value = _native_value_expression(expression, target, context)
-        if value is None:
-            return None
-        assignments.append((target.observable, value))
+            parameter = context.resolve_native_parameter(variable)
+            if parameter is None:
+                return None
+            value = _native_fold_term_text(expression, context)
+            if value is None or not math.isfinite(value):
+                return None
+            assignments.append((parameter, _format_number(value)))
+        else:
+            value = _native_value_expression(expression, target, context)
+            if value is None:
+                return None
+            assignments.append((target.observable, value))
     if not assignments:
         return None
     return NativeEventEntry(
