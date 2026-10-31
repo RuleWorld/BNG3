@@ -104,7 +104,7 @@ jobs:
           - os: macos-15-intel
             artifact_name: bionetgen-macos-x86_64
             binary_ext: ""
-          - os: macos-14
+          - os: macos-15
             artifact_name: bionetgen-macos-arm64
             binary_ext: ""
           - os: windows-2022
@@ -185,7 +185,7 @@ jobs:
           - os: macos-15-intel
             macos_arch: x86_64
             macos_deployment_target: "11.0"
-          - os: macos-14
+          - os: macos-15
             macos_arch: arm64
             macos_deployment_target: "11.0"
           - os: windows-2022

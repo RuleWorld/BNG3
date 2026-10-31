@@ -3,6 +3,7 @@
 #include <fstream>
 #include <iostream>
 #include <set>
+#include <unordered_map>
 #include <sstream>
 #include <stdexcept>
 
@@ -14,6 +15,7 @@
 #include "parser/PatternGraphBuilder.hpp"
 #include "core/Ullmann.hpp"
 #include "io/BnglWriter.hpp"
+#include "ast/RefineRule.hpp"
 
 namespace bng::engine {
 
@@ -41,6 +43,13 @@ bool HybridModelGenerator::isIsomorphic(const std::string& pattern1,
         auto* species2 = parser2.species_def();
         if (parser2.getNumberOfSyntaxErrors() != 0) return false;
         const auto graph2 = bng::parser::buildPatternGraph(species2, mutableModel, true);
+
+        // A population lumps the particles of one compartment: @EC:L(r) and
+        // @CP:L(r) are different species even though their graphs match.
+        if (bng::parser::extractSpeciesCompartment(species1) !=
+            bng::parser::extractSpeciesCompartment(species2)) {
+            return false;
+        }
 
         // Check both directions for isomorphism
         BNGcore::UllmannSGIso matcher1(graph1, graph2);
@@ -198,7 +207,14 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
         result.nCompartments = model_.getCompartments().size();
         std::cerr << indent << "found " << result.nCompartments << " compartments.\n";
         if (result.nCompartments > 0) {
-            std::cerr << "WARNING: generate_hybrid_model() does not support compartments at this time.\n";
+            // BNG2 warns that it does not support compartments here and fails
+            // to build its mapping rules.  BNG3 places each population in the
+            // compartment of its mapped species, keeps the compartment on
+            // child rule species, and applies BNG2's interacting-set check;
+            // there is no BNG2 result to compare this with.
+            std::cerr << "WARNING: generate_hybrid_model() with compartments has no BNG2 "
+                         "reference: populations are placed in the compartment of their "
+                         "mapped species.\n";
         }
     }
 
@@ -227,6 +243,7 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
     // Extract population type names from population maps
     // The population function typically creates a new molecule type for the population
     std::set<std::string> popTypeNames;
+    std::size_t populationMapRuleIndex = 0;
     for (const auto& pm : model_.getPopulationMaps()) {
         // The population function name is used as a molecule type for the population
         // In Perl: PopulationTypesList->MolTypes contains the population molecule types
@@ -242,7 +259,7 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
                 "PopulationType " + name + " clashes with MoleculeType of the same name");
         }
         // Add a simple population molecule type (no components)
-        ast::MoleculeType popMt(name, {});
+        ast::MoleculeType popMt(name, {}, true);
         hybridModel.addMoleculeType(popMt);
         ++nPopTypes;
     }
@@ -259,12 +276,23 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
     struct PopInfo {
         std::string speciesPattern;   // The species graph pattern
         std::string populationName;   // The population molecule type name
+        std::string compartment;      // Species-level compartment of the pattern
+    };
+    auto speciesCompartmentOf = [](const std::string& text) {
+        antlr4::ANTLRInputStream input(text);
+        BNGLexer lexer(&input);
+        antlr4::CommonTokenStream tokens(&lexer);
+        BNGParser parser(&tokens);
+        auto* species = parser.species_def();
+        if (parser.getNumberOfSyntaxErrors() != 0) return std::string();
+        return bng::parser::extractSpeciesCompartment(species);
     };
     std::vector<PopInfo> populations;
     for (const auto& pm : model_.getPopulationMaps()) {
         PopInfo pi;
         pi.speciesPattern = pm.patternText;
         pi.populationName = !pm.populationName.empty() ? pm.populationName : pm.populationFunction;
+        pi.compartment = speciesCompartmentOf(pm.patternText);
         // Build the population species string: just the population function name with args
         // In Perl: $pop->Population is the population molecule SpeciesGraph
         populations.push_back(pi);
@@ -317,7 +345,8 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
             hybridModel.addSeedSpecies(ast::SeedSpecies(
                 pop.populationName + "()",
                 ast::Expression::number(0),
-                false));
+                false,
+                pop.compartment));
             addedPopulations.insert(pop.populationName);
             ++zeroPops;
         }
@@ -330,18 +359,73 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
               << ":Fetching observables and adding population matches..\n";
     ++stepIndex;
 
+    struct ObservableCountPredicate {
+        std::string pattern;
+        std::string relation;
+        std::size_t quantity;
+    };
+    const auto countPredicate = [](const std::string& text)
+        -> std::optional<ObservableCountPredicate> {
+        antlr4::ANTLRInputStream input(text);
+        BNGLexer lexer(&input);
+        antlr4::CommonTokenStream tokens(&lexer);
+        BNGParser parser(&tokens);
+        auto* predicate = parser.observable_pattern();
+        if (parser.getNumberOfSyntaxErrors() != 0 || predicate->INT() == nullptr) {
+            return std::nullopt;
+        }
+        std::string relation;
+        if (predicate->EQUALS() != nullptr) relation = "==";
+        else if (predicate->GTE() != nullptr) relation = ">=";
+        else if (predicate->LTE() != nullptr) relation = "<=";
+        else if (predicate->GT() != nullptr) relation = ">";
+        else if (predicate->LT() != nullptr) relation = "<";
+        if (relation.empty()) return std::nullopt;
+
+        std::string pattern;
+        if (predicate->species_def() != nullptr) {
+            pattern = predicate->species_def()->getText();
+        } else if (predicate->STRING() != nullptr) {
+            pattern = predicate->STRING()->getText();
+            if (predicate->LPAREN() != nullptr) pattern += "()";
+        } else {
+            return std::nullopt;
+        }
+        return ObservableCountPredicate {
+            std::move(pattern), std::move(relation),
+            static_cast<std::size_t>(std::stoull(predicate->INT()->getText()))};
+    };
+    const auto satisfiesPredicate = [](std::size_t matches,
+                                       const ObservableCountPredicate& predicate) {
+        if (predicate.relation == "==") return matches == predicate.quantity;
+        if (predicate.relation == ">=") return matches >= predicate.quantity;
+        if (predicate.relation == "<=") return matches <= predicate.quantity;
+        if (predicate.relation == ">") return matches > predicate.quantity;
+        if (predicate.relation == "<") return matches < predicate.quantity;
+        return false;
+    };
+
     for (const auto& obs : model_.getObservables()) {
         // Copy the observable
         std::vector<std::string> patterns = obs.getPatterns();
 
-        // For each population, check if the observable pattern matches the
-        // population's species graph. If so, add the population pattern.
+        // A Molecules observable counts embeddings, while a Species
+        // observable contributes once when its pattern (and any stoichiometry
+        // predicate) matches the concrete graph represented by a population.
+        const bool speciesObservable = obs.getType() == "Species";
         for (const auto& pop : populations) {
             for (const auto& obsPattern : obs.getPatterns()) {
-                std::size_t matches = countMatches(obsPattern, pop.speciesPattern);
-                if (matches > 0) {
-                    // Add population pattern for each match
-                    for (std::size_t m = 0; m < matches; ++m) {
+                const auto predicate = speciesObservable
+                    ? countPredicate(obsPattern) : std::nullopt;
+                const std::size_t matches = predicate
+                    ? countMatches(predicate->pattern, pop.speciesPattern)
+                    : countMatches(obsPattern, pop.speciesPattern);
+                const bool speciesMatch = predicate
+                    ? satisfiesPredicate(matches, *predicate)
+                    : matches > 0;
+                if (speciesObservable ? speciesMatch : matches > 0) {
+                    const std::size_t copies = speciesObservable ? 1 : matches;
+                    for (std::size_t m = 0; m < copies; ++m) {
                         patterns.push_back(pop.populationName + "()");
                     }
                     if (opts.verbose) {
@@ -377,108 +461,68 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
     ++stepIndex;
 
     // Get the species patterns for each population
-    std::vector<std::string> popSpeciesPatterns;
+    std::vector<ast::SpeciesGraph> popSpeciesPatterns;
+    std::vector<ast::SpeciesGraph> populationGraphs;
     for (const auto& pop : populations) {
-        popSpeciesPatterns.push_back(pop.speciesPattern);
+        antlr4::ANTLRInputStream particleInput(pop.speciesPattern);
+        BNGLexer particleLexer(&particleInput);
+        antlr4::CommonTokenStream particleTokens(&particleLexer);
+        BNGParser particleParser(&particleTokens);
+        auto* particleSpecies = particleParser.species_def();
+        if (particleParser.getNumberOfSyntaxErrors() != 0) {
+            throw std::runtime_error("Invalid population map species pattern: " +
+                                     pop.speciesPattern);
+        }
+        popSpeciesPatterns.emplace_back(
+            bng::parser::buildPatternGraph(particleSpecies, model_, false),
+            bng::parser::extractSpeciesCompartment(particleSpecies));
+
+        antlr4::ANTLRInputStream populationInput(pop.populationName + "()");
+        BNGLexer populationLexer(&populationInput);
+        antlr4::CommonTokenStream populationTokens(&populationLexer);
+        BNGParser populationParser(&populationTokens);
+        auto* populationSpecies = populationParser.species_def();
+        if (populationParser.getNumberOfSyntaxErrors() != 0) {
+            throw std::runtime_error("Invalid population species type: " +
+                                     pop.populationName);
+        }
+        populationGraphs.emplace_back(
+            bng::parser::buildPatternGraph(populationSpecies, hybridModel, true),
+            pop.compartment);
     }
+
+    // Compartment topology for the interacting-set check in restrictRule,
+    // as network generation installs it.
+    std::unordered_map<std::string, int> compartmentDimensions;
+    std::unordered_map<std::string, std::string> compartmentParents;
+    for (const auto& compartment : model_.getCompartments()) {
+        compartmentDimensions[compartment.getName()] = compartment.getDimension();
+        if (!compartment.getParent().empty()) {
+            compartmentParents[compartment.getName()] = compartment.getParent();
+        }
+    }
+    ast::CompartmentContextScope compartmentScope(compartmentDimensions, compartmentParents);
 
     std::size_t ruleCount = 0;
     for (const auto& rule : model_.getReactionRules()) {
-        // In Perl: each element of @RxnRules is an array [forward, reverse].
-        // For bidirectional rules, we handle both directions.
-        // For now, copy the rule. In the full implementation, expandRule()
-        // would specialize the rule for population species.
-
-        // Check if any reactant matches a population species
-        bool matchesPopulation = false;
-        if (!opts.safe) {
-            for (const auto& reactant : rule.getReactants()) {
-                for (const auto& popPattern : popSpeciesPatterns) {
-                    if (isIsomorphic(reactant, popPattern)) {
-                        matchesPopulation = true;
-                        break;
-                    }
-                }
-                if (matchesPopulation) break;
-            }
+        ast::RefineRuleParams refineParams;
+        refineParams.verbose = opts.verbose;
+        refineParams.safe = opts.safe;
+        refineParams.populationParticleGraphs = &popSpeciesPatterns;
+        refineParams.populationGraphs = &populationGraphs;
+        auto expanded = ast::expandRule(
+            rule, popSpeciesPatterns, model_, hybridModel, refineParams);
+        const std::size_t childCount = expanded.childRules.size();
+        for (auto& childRule : expanded.childRules) {
+            hybridModel.addReactionRule(std::move(childRule));
+            ++ruleCount;
         }
 
-        if (matchesPopulation) {
-            // Create expanded copies that replace population-matching reactants
-            // with population variables. For now, we add the original rule
-            // plus a version with population reactants.
-            // This is the expandRule() stub -- in full implementation,
-            // RefineRule.pm logic would go here.
-
-            // First, add the original rule
-            hybridModel.addReactionRule(ast::ReactionRule(
-                rule.getRuleName(),
-                rule.getRuleName() + ":",
-                rule.getReactants(),
-                rule.getProducts(),
-                rule.getRates(),
-                rule.getModifiers(),
-                false,  // Each direction is separate in hybrid model
-                rule.getReactantPatterns(),
-                rule.getProductPatterns()));
-
-            // Create population-specialized version(s)
-            // Replace matching reactants with their population equivalents
-            auto reactantsCopy = rule.getReactants();
-            auto productsCopy = rule.getProducts();
-            bool modified = false;
-
-            for (auto& reactant : reactantsCopy) {
-                for (std::size_t p = 0; p < populations.size(); ++p) {
-                    if (isIsomorphic(reactant, populations[p].speciesPattern)) {
-                        reactant = populations[p].populationName + "()";
-                        modified = true;
-                        break;
-                    }
-                }
-            }
-            for (auto& product : productsCopy) {
-                for (std::size_t p = 0; p < populations.size(); ++p) {
-                    if (isIsomorphic(product, populations[p].speciesPattern)) {
-                        product = populations[p].populationName + "()";
-                        modified = true;
-                        break;
-                    }
-                }
-            }
-
-            if (modified) {
-                std::string popRuleName = rule.getRuleName() + "_pop";
-                hybridModel.addReactionRule(ast::ReactionRule(
-                    popRuleName,
-                    popRuleName + ":",
-                    reactantsCopy,
-                    productsCopy,
-                    rule.getRates(),
-                    rule.getModifiers(),
-                    false));
-            }
-
-            if (opts.verbose) {
-                std::cerr << indent << indent
-                          << "Rule '" << rule.getRuleName()
-                          << "': expanded to " << (modified ? 2 : 1) << " child rule"
-                          << (modified ? "s" : "") << ".\n";
-            }
-        } else {
-            // No population match: copy rule as-is
-            hybridModel.addReactionRule(ast::ReactionRule(
-                rule.getRuleName(),
-                rule.getRuleName() + ":",
-                rule.getReactants(),
-                rule.getProducts(),
-                rule.getRates(),
-                rule.getModifiers(),
-                false,
-                rule.getReactantPatterns(),
-                rule.getProductPatterns()));
+        if (opts.verbose) {
+            std::cerr << indent << indent << "Rule '" << rule.getRuleName()
+                      << "': expanded to " << childCount << " child rule"
+                      << (childCount == 1 ? "" : "s") << ".\n";
         }
-        ++ruleCount;
     }
     result.nRules = ruleCount;
     std::cerr << indent << "  ..finished processing " << ruleCount << " reaction rules.\n";
@@ -505,8 +549,12 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
             populationPattern += args[i];
         }
         populationPattern += ")";
+        const auto mapCompartment = speciesCompartmentOf(pm.patternText);
+        if (!mapCompartment.empty()) {
+            populationPattern = "@" + mapCompartment + ":" + populationPattern;
+        }
 
-        std::string mapRuleName = "_map_" + populationName;
+        std::string mapRuleName = "_MapRule" + std::to_string(populationMapRuleIndex++);
         hybridModel.addReactionRule(ast::ReactionRule(
             mapRuleName,
             mapRuleName + ":",

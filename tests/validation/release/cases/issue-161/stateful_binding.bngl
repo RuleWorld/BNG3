@@ -1,0 +1,27 @@
+begin model
+begin parameters
+  k_bind 0.025
+  k_unbind 0.1
+  k_activate 0.04
+  k_activate_bound 0.03
+  k_bind_p 0.015
+  k_unbind_p 0.075
+end parameters
+begin compartments
+  cell 3 0.5
+end compartments
+begin molecule types
+  A(x~u~p)
+  B(y)
+end molecule types
+begin seed species
+  @cell:A(x~u) 20
+  @cell:B(y) 12
+end seed species
+begin reaction rules
+  bind: @cell:A(x~u) + @cell:B(y) <-> @cell:A(x~u!1).B(y!1) k_bind, k_unbind
+  activate: @cell:A(x~u) -> @cell:A(x~p) k_activate
+  activate_bound: @cell:A(x~u!1).B(y!1) -> @cell:A(x~p!1).B(y!1) k_activate_bound
+  bind_p: @cell:A(x~p) + @cell:B(y) <-> @cell:A(x~p!1).B(y!1) k_bind_p, k_unbind_p
+end reaction rules
+end model

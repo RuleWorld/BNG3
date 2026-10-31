@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <fstream>
 #include <cmath>
+#include <stdexcept>
 #include <string>
 
 #include "io/BnglWriter.hpp"
@@ -117,6 +118,25 @@ TEST_CASE("SBML-Multi reuses Core units without a second unit system") {
     CHECK(xml.find("units=\"nM\"") != std::string::npos);
     CHECK(xml.find("units=\"fL\"") != std::string::npos);
     CHECK(xml.find("multi:units") == std::string::npos);
+}
+
+TEST_CASE("SBML writers omit empty parameter lists") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin model
+  begin molecule types
+    A()
+  end molecule types
+  begin seed species
+    A() 1
+  end seed species
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+
+    const auto core = bng::io::SbmlWriter::write(*model, nullptr);
+    const auto multi = bng::io::SbmlMultiWriter::write(*model);
+    CHECK(core.find("<listOfParameters>") == std::string::npos);
+    CHECK(multi.find("<listOfParameters>") == std::string::npos);
 }
 
 TEST_CASE("SBML-Multi rejects unit-aware reaction rates it cannot convert") {
@@ -608,4 +628,190 @@ TEST_CASE("SBML Core writer and reader preserve unit metadata together") {
     CHECK(parsed.speciesUnits.front() == "item");
     REQUIRE(parsed.speciesInitialConcentrations.size() == 1);
     CHECK_FALSE(parsed.speciesInitialConcentrations.front());
+}
+
+TEST_CASE("SBML-Multi writes a state-bearing binding site as a binding site with features",
+          "[sbml][multi]") {
+    // Issue #161: x has states and binds, which the writer refused.  SBML
+    // Multi lets a binding-site species type carry species feature types;
+    // BNG2 (ComponentType.pm toSBMLMultiSpeciesTypeBinding) writes such a
+    // component as a bindingSiteSpeciesType with its own feature type, the
+    // state as a species feature on the binding-site instance, and the bond
+    // status as an outward binding site.
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A(x~u~p,y)
+  B(a)
+end molecule types
+begin seed species
+  A(x~u,y) 10
+  B(a) 10
+end seed species
+begin reaction rules
+  bind: A(x~p) + B(a) -> A(x~p!1).B(a!1) k
+  phos: A(x~u) -> A(x~p) k
+end reaction rules
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::SbmlMultiWriter::write(*model);
+    CHECK(xml.find("<multi:bindingSiteSpeciesType multi:id=\"bst_A_x_1\" multi:name=\"x\">") !=
+          std::string::npos);
+    CHECK(xml.find("multi:speciesFeatureType multi:id=\"bst_A_x_1_state\"") != std::string::npos);
+    CHECK(xml.find("multi:possibleSpeciesFeatureValue multi:id=\"bst_A_x_1_state_p\"") !=
+          std::string::npos);
+    // The molecule type carries x as an instance of its binding site, not as
+    // a molecule-level feature type.
+    CHECK(xml.find("multi:speciesTypeInstance multi:id=\"st_A_component_1\" multi:name=\"x\" "
+                   "multi:speciesType=\"bst_A_x_1\"") != std::string::npos);
+    CHECK(xml.find("multi:speciesFeatureType multi:id=\"st_A_x_1\"") == std::string::npos);
+    // The seed's state is a feature of that instance; its bond status is
+    // an outward binding site.
+    CHECK(xml.find("multi:speciesFeatureType=\"bst_A_x_1_state\" multi:occur=\"1\" "
+                   "multi:component=\"st_A_component_1\"") != std::string::npos);
+    CHECK(xml.find("multi:speciesFeatureValue multi:value=\"bst_A_x_1_state_u\"") !=
+          std::string::npos);
+    CHECK(xml.find("multi:outwardBindingSite multi:component=\"st_A_component_1\"") !=
+          std::string::npos);
+}
+
+TEST_CASE("SBML-Multi absolute-flux rules use their own provenance without a name",
+          "[sbml][multi][totalrate]") {
+    auto model = bng::parser::parseModel(R"BNGL(
+begin model
+begin parameters
+  k 2
+end parameters
+begin molecule types
+  A(x)
+  B(y)
+end molecule types
+begin seed species
+  A(x) 4
+  B(y) 0
+end seed species
+begin reaction rules
+  flux: A(x) -> B(y) k TotalRate
+end reaction rules
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getReactionRules().size() == 1);
+    model->getReactionRules()[0].setAbsoluteFlux(true);
+    model->getReactionRules()[0].setRuleName("");
+    const auto xml = bng::io::SbmlMultiWriter::write(*model);
+    const auto law = xml.substr(xml.find("<kineticLaw>"),
+                                xml.find("</kineticLaw>") - xml.find("<kineticLaw>"));
+    CHECK(law.find("<ci> k </ci>") != std::string::npos);
+    CHECK(law.find("<ci>S1</ci>") == std::string::npos);
+}
+
+TEST_CASE("SBML-Multi refuses source TotalRate match normalization without absolute flux",
+          "[sbml][multi][totalrate]") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin model
+begin parameters
+  k 2
+end parameters
+begin molecule types
+  A(x)
+  B(y)
+end molecule types
+begin seed species
+  A(x) 4
+  B(y) 0
+end seed species
+begin reaction rules
+  flux: A(x) -> B(y) k TotalRate
+end reaction rules
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+    CHECK_FALSE(model->getReactionRules()[0].isAbsoluteFlux());
+    CHECK_THROWS_AS(bng::io::SbmlMultiWriter::write(*model), std::invalid_argument);
+}
+
+TEST_CASE("SBML-Multi reuses a species object for repeated reaction patterns",
+          "[sbml][multi]") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A(x~u~p,y)
+  B(y)
+  C(z)
+end molecule types
+begin seed species
+  A(x~u,y) 10
+  A(y,x~u) 5
+end seed species
+begin reaction rules
+  first: A(x~u,y) -> B(y) k
+  second: A(y,x~u) -> C(z) k
+  third: A(x~p,y) -> B(y) k
+  fourth: A(x!+,y) -> C(z) k
+end reaction rules
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+
+    const auto xml = bng::io::SbmlMultiWriter::write(*model);
+    CHECK(xml.find("<species id=\"S1\"") != std::string::npos);
+    CHECK(xml.find("<species id=\"S2\"") == std::string::npos);
+    CHECK(xml.find("initialAmount=\"15\"") != std::string::npos);
+    CHECK(xml.find("<species id=\"RR1_R1\"") == std::string::npos);
+    CHECK(xml.find("<species id=\"RR2_R1\"") == std::string::npos);
+    CHECK(xml.find("species=\"S1\"") != std::string::npos);
+    CHECK(xml.find("species=\"RR1_R1\"") == std::string::npos);
+    CHECK(xml.find("species=\"RR2_R1\"") == std::string::npos);
+    CHECK(xml.find("<species id=\"RR3_R1\"") != std::string::npos);
+    CHECK(xml.find("<species id=\"RR4_R1\"") != std::string::npos);
+    CHECK(xml.find("species=\"RR3_R1\"") != std::string::npos);
+    CHECK(xml.find("species=\"RR4_R1\"") != std::string::npos);
+}
+
+TEST_CASE("SBML-Multi writes observables as Core assignment rules over pattern species",
+          "[sbml][multi]") {
+    // Issue #161 item B: BNG2's Multi export carries one Core assignment rule
+    // per observable (BNGOutput.pm writeSBMLMulti), summing the species that
+    // stand for its patterns; a pattern written like a seed or rule pattern
+    // reuses that species.  BNG3 wrote none.
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A(x~u~p,y)
+  B(a)
+end molecule types
+begin seed species
+  A(x~u,y) 10
+  B(a) 10
+end seed species
+begin observables
+  Molecules AB A(x!1).B(a!1)
+  Molecules Bfree B(a)
+end observables
+begin reaction rules
+  bind: A(x~p) + B(a) -> A(x~p!1).B(a!1) k
+  phos: A(x~u) -> A(x~p) k
+end reaction rules
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+    const auto xml = bng::io::SbmlMultiWriter::write(*model);
+    CHECK(xml.find("<parameter id=\"AB\" name=\"AB\" value=\"0\" constant=\"false\"/>") !=
+          std::string::npos);
+    CHECK(xml.find("<assignmentRule variable=\"AB\">") != std::string::npos);
+    CHECK(xml.find("<ci> O1_P1 </ci>") != std::string::npos);
+    CHECK(xml.find("<species id=\"O1_P1\"") != std::string::npos);
+    CHECK(xml.find("<assignmentRule variable=\"Bfree\">") != std::string::npos);
+    CHECK(xml.find("<ci> S2 </ci>") != std::string::npos);
 }

@@ -274,6 +274,99 @@ Pattern Pattern::parse(std::string_view text) {
     return result;
 }
 
+BNGcore::PatternGraph Pattern::toPatternGraph(
+    ast::Model& model, bool treatUnspecifiedBondAsWildcard) const {
+    BNGcore::PatternGraph graph;
+    std::unordered_map<std::size_t, BNGcore::Node*> exactBonds;
+    auto& registry = model.getGraphTypeRegistry();
+
+    for (const auto& molecule : molecules_) {
+        const auto* moleculeType = model.findMoleculeType(molecule.moleculeType);
+        if (moleculeType == nullptr) {
+            throw std::invalid_argument(
+                "pattern references unknown molecule type: " + molecule.moleculeType);
+        }
+        BNGcore::Node moleculeValue(registry.ensureMoleculeType(*moleculeType));
+        auto* moleculeNode = graph.add_node(moleculeValue);
+        const auto compartment = molecule.compartment.empty()
+            ? compartment_ : molecule.compartment;
+        if (!compartment.empty() && !compartmentIsPrefix_) {
+            moleculeNode->set_compartment(compartment);
+        }
+
+        for (const auto& site : molecule.sites) {
+            const auto component = std::find_if(
+                moleculeType->getComponents().begin(), moleculeType->getComponents().end(),
+                [&](const ast::ComponentType& candidate) {
+                    return candidate.name == site.componentName;
+                });
+            if (component == moleculeType->getComponents().end()) {
+                continue;
+            }
+            BNGcore::Node componentValue(
+                registry.ensureComponentType(*moleculeType, *component));
+            auto* componentNode = graph.add_node(componentValue);
+            graph.add_edge(moleculeNode, componentNode);
+
+            const auto& stateType = componentNode->get_type().get_state_type();
+            if (const auto* labelStateType =
+                    dynamic_cast<const BNGcore::LabelStateType*>(&stateType)) {
+                BNGcore::LabelState state(
+                    *labelStateType,
+                    site.stateConstraint.empty() ? BNGcore::WILDCARD_STRING
+                                                 : site.stateConstraint);
+                componentNode->set_state(state);
+            }
+
+            const auto addBond = [&](const BNGcore::BondState& state) {
+                BNGcore::Node bondValue(BNGcore::BOND_NODE_TYPE);
+                auto* bondNode = graph.add_node(bondValue);
+                bondNode->set_state(state);
+                graph.add_edge(componentNode, bondNode);
+            };
+            if (site.bondConstraints.empty()) {
+                if (treatUnspecifiedBondAsWildcard) {
+                    BNGcore::BondState wildcard(
+                        BNGcore::BOND_STATE_TYPE, BNGcore::WILDCARD_STRING);
+                    addBond(wildcard);
+                } else {
+                    addBond(BNGcore::UNBOUND_STATE);
+                }
+                continue;
+            }
+            for (const auto& bond : site.bondConstraints) {
+                switch (bond.kind) {
+                    case BondConstraintKind::Exact: {
+                        auto [it, inserted] = exactBonds.emplace(bond.group.value, nullptr);
+                        if (inserted) {
+                            BNGcore::Node bondValue(BNGcore::BOND_NODE_TYPE);
+                            it->second = graph.add_node(bondValue);
+                            it->second->set_state(BNGcore::BOUND_STATE);
+                        }
+                        graph.add_edge(componentNode, it->second);
+                        break;
+                    }
+                    case BondConstraintKind::Bound:
+                        addBond(BNGcore::BOUND_STATE);
+                        break;
+                    case BondConstraintKind::Any: {
+                        BNGcore::BondState wildcard(
+                            BNGcore::BOND_STATE_TYPE, BNGcore::WILDCARD_STRING);
+                        addBond(wildcard);
+                        break;
+                    }
+                    case BondConstraintKind::Unbound:
+                    case BondConstraintKind::Unspecified:
+                        addBond(BNGcore::UNBOUND_STATE);
+                        break;
+                }
+            }
+            if (!site.label.empty()) componentNode->set_label_tag(site.label);
+        }
+    }
+    return graph;
+}
+
 Pattern Pattern::fromPatternGraph(const BNGcore::PatternGraph& graph,
                                    std::string_view compartment) {
     Pattern result;

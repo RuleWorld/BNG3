@@ -6,7 +6,7 @@
 #include "compile/energy/BarrierCompiler.hpp"
 #include "compile/CompiledRule.hpp"
 #include "compile/SymbolTable.hpp"
-
+#include "core/PatternMatching.hpp"
 #include <sstream>
 #include <iomanip>
 #include <algorithm>
@@ -1529,7 +1529,12 @@ std::string XmlWriter::writeMoleculeTypes(const ast::Model& model) {
 
     for (const auto* mtPtr : moleculeTypes) {
         const auto& mt = *mtPtr;
-        xml << "      <MoleculeType id=\"" << escapeXml(mt.getName()) << "\">\n";
+        xml << "      <MoleculeType id=\"" << escapeXml(mt.getName()) << "\"";
+        if (mt.isPopulation()) {
+            xml << " population=\"1\"/>\n";
+            continue;
+        }
+        xml << ">\n";
         xml << "        <ListOfComponentTypes>\n";
 
         for (const auto& comp : mt.getComponents()) {
@@ -1603,18 +1608,35 @@ std::string XmlWriter::writeSpecies(const ast::Model& model, const engine::Gener
     std::ostringstream xml;
     xml << "    <ListOfSpecies>\n";
 
+    const auto markPopulationName = [&](std::string name, const ParsedPattern& pattern) {
+        if (pattern.molecules.size() != 1 || !pattern.molecules.front().components.empty()) {
+            return name;
+        }
+        const auto type = std::find_if(
+            model.getMoleculeTypes().begin(), model.getMoleculeTypes().end(),
+            [&](const auto& moleculeType) {
+                return moleculeType.getName() == pattern.molecules.front().name;
+            });
+        if (type != model.getMoleculeTypes().end() && type->isPopulation() &&
+            (name.size() < 2 || name.compare(name.size() - 2, 2, "()") != 0)) {
+            name += "()";
+        }
+        return name;
+    };
+
     if (network) {
         for (std::size_t i = 0; i < network->species.size(); ++i) {
             const auto& species = network->species.get(i);
             std::string spId = "S" + std::to_string(i + 1);
             std::string patternStr = species.getSpeciesGraph().toString();
+            auto parsed = parsePattern(patternStr);
+            patternStr = markPopulationName(std::move(patternStr), parsed);
 
             xml << "      <Species id=\"" << spId
                 << "\" concentration=\"" << species.getAmount()
                 << "\" name=\"" << escapeXml(patternStr) << "\">\n";
 
             // Serialize species pattern
-            auto parsed = parsePattern(patternStr);
             xml << patternToXml(parsed, spId, "        ");
 
             xml << "      </Species>\n";
@@ -1635,7 +1657,8 @@ std::string XmlWriter::writeSpecies(const ast::Model& model, const engine::Gener
                 parsed.compartment = seed.getCompartment();
             }
             canonicalizeParsedPattern(parsed);
-            const std::string patternStr = patternToBngl(parsed, seed.isConstant());
+            const std::string patternStr = markPopulationName(
+                patternToBngl(parsed, seed.isConstant()), parsed);
 
             auto amountValue = seed.getAmount().evaluate([&](const std::string& name) {
                 return model.getParameters().evaluate(name);
@@ -1883,8 +1906,11 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
         const bool isArrheniusRate =
             rate != nullptr && rate->kind() == ast::ExpressionKind::Function &&
             lowercase(rate->name()) == "arrhenius" && rate->args().size() >= 2;
+        std::string xmlRuleName = rule.getLabel().empty()
+            ? rule.getRuleName() : rule.getLabel();
+        if (!xmlRuleName.empty() && xmlRuleName.back() == ':') xmlRuleName.pop_back();
         xml << "      <ReactionRule id=\"" << rrId
-            << "\" name=\"" << escapeXml(rule.getRuleName()) << "\"";
+            << "\" name=\"" << escapeXml(xmlRuleName) << "\"";
         const double permutationFactor = rule.getModifiers().empty()
             ? direction.wholeReactantPermutationFactor() : 1.0;
         if (permutationFactor != 1.0) {
@@ -1979,9 +2005,29 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
         }
 
         xml << "        <Map>\n";
+        std::set<std::pair<std::size_t, std::size_t>> mappedReactants;
         for (const auto& [product, reactant] : rule.getMoleculeMappings()) {
+            mappedReactants.emplace(reactant.patternIndex, reactant.moleculeIndex);
             xml << "          <MapItem sourceID=\"" << moleculeId(rrId, false, reactant)
                 << "\" targetID=\"" << moleculeId(rrId, true, product) << "\"/>\n";
+        }
+        for (std::size_t patternIndex = 0;
+             patternIndex < rule.getReactants().size(); ++patternIndex) {
+            const auto pattern = parsePattern(rule.getReactants()[patternIndex]);
+            for (std::size_t moleculeIndex = 0;
+                 moleculeIndex < pattern.molecules.size(); ++moleculeIndex) {
+                if (mappedReactants.count({patternIndex, moleculeIndex}) != 0) continue;
+                xml << "          <MapItem sourceID=\"" << rrId << "_RP"
+                    << patternIndex + 1 << "_M" << moleculeIndex + 1 << "\"/>\n";
+                for (std::size_t componentIndex = 0;
+                     componentIndex < pattern.molecules[moleculeIndex].components.size();
+                     ++componentIndex) {
+                    xml << "          <MapItem sourceID=\""
+                        << rrId << "_RP" << patternIndex + 1 << "_M"
+                        << moleculeIndex + 1 << "_C" << componentIndex + 1
+                        << "\"/>\n";
+                }
+            }
         }
         for (const auto& [product, reactant] : rule.getComponentMappings()) {
             xml << "          <MapItem sourceID=\"" << componentId(rrId, false, reactant)
@@ -2209,7 +2255,16 @@ std::string XmlWriter::writeObservables(const ast::Model& model) {
             const bool hasQuantifier =
                 stripPatternQuantifier(patternText, relation, quantity);
             auto parsed = parsePattern(patternText);
+            auto patternGraph = bng::compile::Pattern::parse(patternText).toPatternGraph(
+                const_cast<ast::Model&>(model));
+            const auto automorphisms =
+                bng::core::countPatternMatches(patternGraph, patternGraph);
+            if (automorphisms == 0) {
+                throw std::runtime_error(
+                    "Observable pattern has no self-embedding for XML: " + patternText);
+            }
             xml << "          <Pattern id=\"" << patId << "\"";
+            xml << " automorphisms=\"" << automorphisms << "\"";
             if (!parsed.compartment.empty()) {
                 xml << " compartment=\"" << parsed.compartment << "\"";
             }
