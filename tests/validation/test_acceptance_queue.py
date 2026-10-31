@@ -468,13 +468,14 @@ def test_issue160_requires_full_execution_scope_not_dispositions():
         "issue:160:for-each-class-implement-a-semantics-preserving-supported-subset",
         "issue:160:closure-record",
     }
-    assert historical_ids <= {o["id"] for o in issue["obligations"]}
-    historical_checks = {
-        check["id"]
-        for o in issue["obligations"]
-        if o["id"] in historical_ids
-        for check in o["required_checks"]
+    assert {o["id"] for o in issue["obligations"]} == {
+        "issue:160:release-sbml-core-comp",
+        "issue:160:release-sbml-source-fidelity",
+        "issue:160:release-capability-coverage-160",
     }
+    history = issue["historical_obligations"]
+    assert historical_ids == {o["id"] for o in history}
+    historical_checks = {check["id"] for o in history for check in o["required_checks"]}
     assert historical_checks == {
         "sbml-support-boundary:species-assignment-rule:named-diagnostic",
         "sbml-support-boundary:state-dependent-event:named-diagnostic",
@@ -489,9 +490,7 @@ def test_issue160_requires_full_execution_scope_not_dispositions():
         "qualification:issue:160:for-each-class-implement-a-semantics-preserving-supported-subset",
         "qualification:issue:160:closure-record",
     }
-    historical_obligations = [
-        o for o in issue["obligations"] if o["id"] in historical_ids
-    ]
+    historical_obligations = [o for o in history if o["id"] in historical_ids]
     assert all(o.get("scope_status") == "STALE_SCOPE" for o in historical_obligations)
     historical_report = dict(
         source=dict(revision=REV, dirty=False),

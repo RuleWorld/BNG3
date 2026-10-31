@@ -8182,200 +8182,6 @@
       "body_sha256": "70141b629d80219f8e6a0deef18d2bb0aabd0975217213435df926238542c8b1",
       "obligations": [
         {
-          "id": "issue:160:group-current-unsupported-cases-by-dynamic-rules-events-history",
-          "criterion": "Historical record (superseded; see issue:160:release-sbml-source-fidelity, issue:160:release-capability-coverage-160): Group current unsupported cases by dynamic rules/events, history, algebraic constraints, stoichiometry, fast reactions and packages.",
-          "scope": "Historical record (superseded; see issue:160:release-sbml-source-fidelity, issue:160:release-capability-coverage-160): Group current unsupported cases by dynamic rules/events, history, algebraic constraints, stoichiometry, fast reactions and packages.",
-          "dependencies": [],
-          "boundaries": [],
-          "required_checks": [
-            {
-              "id": "sbml-support-boundary:species-assignment-rule:named-diagnostic",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            },
-            {
-              "id": "sbml-support-boundary:state-dependent-event:named-diagnostic",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            },
-            {
-              "id": "sbml-support-boundary:delayed-history:named-diagnostic",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            },
-            {
-              "id": "sbml-support-boundary:algebraic-rule:named-diagnostic",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            },
-            {
-              "id": "sbml-support-boundary:sbml-constraint:named-diagnostic",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            },
-            {
-              "id": "sbml-support-boundary:negative-stoichiometry:named-diagnostic",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            },
-            {
-              "id": "sbml-support-boundary:fast-reaction:named-diagnostic",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            },
-            {
-              "id": "sbml-support-boundary:fbc-package:named-diagnostic",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            },
-            {
-              "id": "sbml-support-boundary:spatial-package:named-diagnostic",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            },
-            {
-              "id": "sbml-support-boundary:corpus:every-refusal-classified",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            }
-          ],
-          "test_references": [
-            "tests/cpp/test_sbml_reader.cpp",
-            "tests/cpp/test_sbml_units.cpp",
-            "tests/python/test_modern_atomizer_package_diagnostics.py",
-            "tests/python/test_modern_atomizer_units.py",
-            "tests/python/test_sbml_import.py",
-            "tests/validation/sbml_support_boundary.py"
-          ],
-          "completion_condition": "Exact-revision result satisfies this obligation.",
-          "decisions": [],
-          "unmapped_scope": [
-            "The named checks cover a generated corpus of one unsupported construct per class; the full current unsupported-case set of the issue scope is not yet enumerated.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
-          "evidence_on_this_tree": {
-            "executable_named_checks": 0,
-            "disposition_named_checks": 10,
-            "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          },
-          "not_reapplied_from_recorded_revision": [
-            "tests/python/test_modern_atomizer_scope.py",
-            "tests/validation/test_sbml_support_boundary.py",
-            "tests/validation/sbml_support_boundary.py"
-          ],
-          "scope_status": "STALE_SCOPE",
-          "historical": true,
-          "superseded_by": [
-            "issue:160:release-sbml-source-fidelity",
-            "issue:160:release-capability-coverage-160"
-          ],
-          "history_note": "Retained for stable identity and provenance; not a current acceptance criterion."
-        },
-        {
-          "id": "issue:160:for-each-class-implement-a-semantics-preserving-supported-subset",
-          "criterion": "Historical record (superseded; see issue:160:release-sbml-core-comp, issue:160:release-sbml-source-fidelity, issue:160:release-capability-coverage-160): For each class implement a semantics-preserving supported subset or record a specific maintained exclusion and diagnostic.",
-          "scope": "Historical record (superseded; see issue:160:release-sbml-core-comp, issue:160:release-sbml-source-fidelity, issue:160:release-capability-coverage-160): For each class implement a semantics-preserving supported subset or record a specific maintained exclusion and diagnostic.",
-          "dependencies": [],
-          "boundaries": [],
-          "required_checks": [
-            {
-              "id": "qualification:issue:160:for-each-class-implement-a-semantics-preserving-supported-subset",
-              "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            }
-          ],
-          "test_references": [],
-          "completion_condition": "Exact-revision result satisfies this obligation.",
-          "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:160:for-each-class-implement-a-semantics-preserving-supported-subset.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
-          "evidence_on_this_tree": {
-            "executable_named_checks": 0,
-            "disposition_named_checks": 1,
-            "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          },
-          "scope_status": "STALE_SCOPE",
-          "historical": true,
-          "superseded_by": [
-            "issue:160:release-sbml-core-comp",
-            "issue:160:release-sbml-source-fidelity",
-            "issue:160:release-capability-coverage-160"
-          ],
-          "history_note": "Retained for stable identity and provenance; not a current acceptance criterion."
-        },
-        {
-          "id": "issue:160:closure-record",
-          "criterion": "Historical record (superseded; see issue:160:release-sbml-core-comp, issue:160:release-sbml-source-fidelity, issue:160:release-capability-coverage-160): Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
-          "scope": "Historical record (superseded; see issue:160:release-sbml-core-comp, issue:160:release-sbml-source-fidelity, issue:160:release-capability-coverage-160): Record implementation or disposition, exact revision, validation commands and results, and remaining limits.",
-          "dependencies": [],
-          "boundaries": [],
-          "required_checks": [
-            {
-              "id": "qualification:issue:160:closure-record",
-              "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            }
-          ],
-          "test_references": [],
-          "completion_condition": "Exact-revision result satisfies this obligation.",
-          "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:160:closure-record.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
-          "evidence_on_this_tree": {
-            "executable_named_checks": 0,
-            "disposition_named_checks": 1,
-            "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          },
-          "scope_status": "STALE_SCOPE",
-          "historical": true,
-          "superseded_by": [
-            "issue:160:release-sbml-core-comp",
-            "issue:160:release-sbml-source-fidelity",
-            "issue:160:release-capability-coverage-160"
-          ],
-          "history_note": "Retained for stable identity and provenance; not a current acceptance criterion."
-        },
-        {
           "id": "issue:160:release-sbml-core-comp",
           "criterion": "`release-sbml-core-comp`: every assigned Core/comp row passes official expected values, independent flattening or analytic DAE/DDE checks.",
           "scope": "All 117 Core/comp inventory rows assigned to #160, including the full required semantics; no subset-or-exclusion alternative.",
@@ -9757,6 +9563,202 @@
           "completion_condition": "All named checks pass on exact clean main with independent row-oracle evidence. Missing cases, refusals, losses, timeouts and harness errors cannot pass. Diagnostic and historical tests are controls only.",
           "decisions": [],
           "unmapped_scope": []
+        }
+      ],
+      "historical_obligations": [
+        {
+          "id": "issue:160:group-current-unsupported-cases-by-dynamic-rules-events-history",
+          "criterion": "Historical record (superseded; see issue:160:release-sbml-source-fidelity, issue:160:release-capability-coverage-160): Group current unsupported cases by dynamic rules/events, history, algebraic constraints, stoichiometry, fast reactions and packages.",
+          "scope": "Historical record (superseded; see issue:160:release-sbml-source-fidelity, issue:160:release-capability-coverage-160): Group current unsupported cases by dynamic rules/events, history, algebraic constraints, stoichiometry, fast reactions and packages.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "sbml-support-boundary:species-assignment-rule:named-diagnostic",
+              "evidence_kind": "disposition",
+              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-support-boundary:state-dependent-event:named-diagnostic",
+              "evidence_kind": "disposition",
+              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-support-boundary:delayed-history:named-diagnostic",
+              "evidence_kind": "disposition",
+              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-support-boundary:algebraic-rule:named-diagnostic",
+              "evidence_kind": "disposition",
+              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-support-boundary:sbml-constraint:named-diagnostic",
+              "evidence_kind": "disposition",
+              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-support-boundary:negative-stoichiometry:named-diagnostic",
+              "evidence_kind": "disposition",
+              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-support-boundary:fast-reaction:named-diagnostic",
+              "evidence_kind": "disposition",
+              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-support-boundary:fbc-package:named-diagnostic",
+              "evidence_kind": "disposition",
+              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-support-boundary:spatial-package:named-diagnostic",
+              "evidence_kind": "disposition",
+              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            },
+            {
+              "id": "sbml-support-boundary:corpus:every-refusal-classified",
+              "evidence_kind": "disposition",
+              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/cpp/test_sbml_reader.cpp",
+            "tests/cpp/test_sbml_units.cpp",
+            "tests/python/test_modern_atomizer_package_diagnostics.py",
+            "tests/python/test_modern_atomizer_units.py",
+            "tests/python/test_sbml_import.py",
+            "tests/validation/sbml_support_boundary.py"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "The named checks cover a generated corpus of one unsupported construct per class; the full current unsupported-case set of the issue scope is not yet enumerated.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ],
+          "evidence_on_this_tree": {
+            "executable_named_checks": 0,
+            "disposition_named_checks": 10,
+            "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
+          },
+          "not_reapplied_from_recorded_revision": [
+            "tests/python/test_modern_atomizer_scope.py",
+            "tests/validation/test_sbml_support_boundary.py",
+            "tests/validation/sbml_support_boundary.py"
+          ],
+          "scope_status": "STALE_SCOPE",
+          "historical": true,
+          "superseded_by": [
+            "issue:160:release-sbml-source-fidelity",
+            "issue:160:release-capability-coverage-160"
+          ],
+          "history_note": "Retained for stable identity and provenance; not a current acceptance criterion."
+        },
+        {
+          "id": "issue:160:for-each-class-implement-a-semantics-preserving-supported-subset",
+          "criterion": "Historical record (superseded; see issue:160:release-sbml-core-comp, issue:160:release-sbml-source-fidelity, issue:160:release-capability-coverage-160): For each class implement a semantics-preserving supported subset or record a specific maintained exclusion and diagnostic.",
+          "scope": "Historical record (superseded; see issue:160:release-sbml-core-comp, issue:160:release-sbml-source-fidelity, issue:160:release-capability-coverage-160): For each class implement a semantics-preserving supported subset or record a specific maintained exclusion and diagnostic.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:160:for-each-class-implement-a-semantics-preserving-supported-subset",
+              "evidence_kind": "disposition",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:160:for-each-class-implement-a-semantics-preserving-supported-subset.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ],
+          "evidence_on_this_tree": {
+            "executable_named_checks": 0,
+            "disposition_named_checks": 1,
+            "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
+          },
+          "scope_status": "STALE_SCOPE",
+          "historical": true,
+          "superseded_by": [
+            "issue:160:release-sbml-core-comp",
+            "issue:160:release-sbml-source-fidelity",
+            "issue:160:release-capability-coverage-160"
+          ],
+          "history_note": "Retained for stable identity and provenance; not a current acceptance criterion."
+        },
+        {
+          "id": "issue:160:closure-record",
+          "criterion": "Historical record (superseded; see issue:160:release-sbml-core-comp, issue:160:release-sbml-source-fidelity, issue:160:release-capability-coverage-160): Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
+          "scope": "Historical record (superseded; see issue:160:release-sbml-core-comp, issue:160:release-sbml-source-fidelity, issue:160:release-capability-coverage-160): Record implementation or disposition, exact revision, validation commands and results, and remaining limits.",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "qualification:issue:160:closure-record",
+              "evidence_kind": "disposition",
+              "expectation": "Execute a retained exact-revision check for this scope.",
+              "identity_requirements": [
+                "source.revision"
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:160:closure-record.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ],
+          "evidence_on_this_tree": {
+            "executable_named_checks": 0,
+            "disposition_named_checks": 1,
+            "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
+          },
+          "scope_status": "STALE_SCOPE",
+          "historical": true,
+          "superseded_by": [
+            "issue:160:release-sbml-core-comp",
+            "issue:160:release-sbml-source-fidelity",
+            "issue:160:release-capability-coverage-160"
+          ],
+          "history_note": "Retained for stable identity and provenance; not a current acceptance criterion."
         }
       ]
     },
