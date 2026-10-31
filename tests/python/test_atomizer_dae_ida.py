@@ -54,10 +54,16 @@ def _load(tmp_path: Path, **options):
     return bionetgen.from_sbml(str(source))
 
 
-def _coupled_parameter_dae_sbml():
+def _coupled_parameter_dae_sbml(*, singular=False):
     """Three parameter states with a two-equation nonlinear DAE."""
 
-    return '''<?xml version="1.0"?>
+    second_constraint = (
+        "<apply><times/><cn>2</cn><apply><minus/><apply><plus/>"
+        "<ci>x</ci><ci>y</ci></apply><ci>T</ci></apply></apply>"
+        if singular
+        else "<apply><minus/><apply><times/><ci>x</ci><ci>y</ci></apply><cn>1</cn></apply>"
+    )
+    return f'''<?xml version="1.0" encoding="UTF-8"?>
 <sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
  <model id="coupled_parameter_dae">
   <listOfParameters>
@@ -68,10 +74,23 @@ def _coupled_parameter_dae_sbml():
   <listOfRules>
    <rateRule variable="T"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></rateRule>
    <algebraicRule><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><minus/><apply><plus/><ci>x</ci><ci>y</ci></apply><ci>T</ci></apply></math></algebraicRule>
-   <algebraicRule><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><minus/><apply><times/><ci>x</ci><ci>y</ci></apply><cn>1</cn></apply></math></algebraicRule>
+   <algebraicRule><math xmlns="http://www.w3.org/1998/Math/MathML">{second_constraint}</math></algebraicRule>
   </listOfRules>
  </model>
 </sbml>'''
+
+
+def _assert_libsbml_error_free(source):
+    import libsbml
+
+    document = libsbml.readSBMLFromString(source)
+    document.checkConsistency()
+    errors = [
+        document.getError(index).getMessage()
+        for index in range(document.getNumErrors())
+        if document.getError(index).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
+    ]
+    assert not errors, errors
 
 
 def _by_time_and_species(model, result):
@@ -89,6 +108,7 @@ def test_coupled_algebraic_rules_bind_all_free_parameter_states():
     from bionetgen.sbml import _native_algebraic_rules
 
     source = _coupled_parameter_dae_sbml()
+    _assert_libsbml_error_free(source)
     parsed = SBMLParser().parse(source)
     assert _native_algebraic_rules(parsed) == [
         ("x_amt", "__algebraic_residual_0()"),
@@ -117,19 +137,65 @@ def test_algebraic_parameter_without_initial_value_is_not_seeded_as_zero():
     assert "no defined time-zero value" in converted.error
 
 
+def test_algebraic_target_selection_preserves_case_sensitive_sbml_sids():
+    from bionetgen.atomizer.modern.parser import SBMLParser
+    from bionetgen.sbml import BioNetGenError, _native_algebraic_rules
+
+    source = '''<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+ <model id="case_sensitive_ids">
+  <listOfParameters>
+   <parameter id="x" value="1" constant="false"/>
+   <parameter id="X" value="1" constant="false"/>
+  </listOfParameters>
+  <listOfRules>
+   <algebraicRule><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><minus/><ci>X</ci><ci>x</ci></apply></math></algebraicRule>
+  </listOfRules>
+ </model>
+</sbml>'''
+    _assert_libsbml_error_free(source)
+    parsed = SBMLParser().parse(source)
+    with pytest.raises(BioNetGenError, match="square set of free mutable state"):
+        _native_algebraic_rules(parsed)
+
+
 def test_coupled_algebraic_parameter_system_follows_the_analytic_branch(tmp_path):
     source = tmp_path / "coupled-parameter-dae.xml"
     source.write_text(_coupled_parameter_dae_sbml(), encoding="utf-8")
     model = bionetgen.from_sbml(str(source))
-    result = model.simulate(method="ode", t_end=1.0, n_steps=2)
+    result = model.simulate(method="ode", t_end=2.0, n_steps=8)
 
     # x+y=T and xy=1, starting from x>y. The requested branch stays x>y.
+    assert len(result.time) > 3
+    assert result.time[0] == pytest.approx(0.0, abs=0.0)
+    assert result.time[-1] == pytest.approx(2.0, abs=0.0)
     for index, time in enumerate(result.time):
         total = 2.5 + time
         x = (total + (total * total - 4.0) ** 0.5) / 2.0
         y = 1.0 / x
-        assert result.observables["x_amt"][index] == pytest.approx(x, abs=2e-7)
-        assert result.observables["y_amt"][index] == pytest.approx(y, abs=2e-7)
+        observed_total = result.observables["T_amt"][index]
+        observed_x = result.observables["x_amt"][index]
+        observed_y = result.observables["y_amt"][index]
+        assert observed_total == pytest.approx(total, abs=2e-7)
+        assert observed_x + observed_y - observed_total == pytest.approx(
+            0.0, abs=2e-7
+        )
+        assert observed_x * observed_y - 1.0 == pytest.approx(0.0, abs=2e-7)
+        assert observed_x > observed_y
+        assert observed_x == pytest.approx(x, abs=2e-7)
+        assert observed_y == pytest.approx(y, abs=2e-7)
+
+
+def test_singular_square_algebraic_system_fails_consistent_initialization(tmp_path):
+    source_text = _coupled_parameter_dae_sbml(singular=True)
+    _assert_libsbml_error_free(source_text)
+    source = tmp_path / "singular-coupled-parameter-dae.xml"
+    source.write_text(source_text, encoding="utf-8")
+    model = bionetgen.from_sbml(str(source))
+    with pytest.raises(
+        RuntimeError, match="DAE.*consistent initial|algebraic.*singular"
+    ):
+        model.simulate(method="ode", t_end=0.5, n_steps=2)
 
 
 def test_nonlinear_algebraic_rule_is_enforced_during_ode_simulation(tmp_path):

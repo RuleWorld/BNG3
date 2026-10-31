@@ -5791,50 +5791,55 @@ def native_algebraic_targets(model: SBMLModel) -> List[str]:
     if not rules:
         return []
     controlled = {
-        str(rule.variable).casefold()
+        str(rule.variable)
         for rule in model.rules
         if rule.type in {"assignment", "rate"} and rule.variable
     }
     controlled.update(
-        str(assignment.variable).casefold()
+        str(assignment.variable)
         for event in model.events
         for assignment in event.assignments
         if assignment.variable
     )
     reaction_species = {
-        str(reference.species).casefold()
+        str(reference.species)
         for reaction in model.reactions.values()
         for reference in [*reaction.reactants, *reaction.products]
         if reference.species and reference.species != "EmptySet"
     }
     symbols = {
-        name.casefold()
+        name
         for rule in rules
         for name in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", rule.math)
     }
     candidates = {
-        str(identifier).casefold(): str(identifier)
+        str(identifier): str(identifier)
         for identifier, parameter in model.parameters.items()
-        if not parameter.constant and str(identifier).casefold() not in controlled
+        if not parameter.constant and str(identifier) not in controlled
     }
     candidates.update(
         {
-            str(identifier).casefold(): str(identifier)
+            str(identifier): str(identifier)
             for identifier, species in model.species.items()
             if not species.constant
             and not species.boundary_condition
-            and str(identifier).casefold() not in controlled
-            and str(identifier).casefold() not in reaction_species
+            and str(identifier) not in controlled
+            and str(identifier) not in reaction_species
         }
     )
     targets = sorted(
-        (identifier for key, identifier in candidates.items() if key in symbols),
+        (identifier for identifier in candidates if identifier in symbols),
         key=str.casefold,
     )
     if len(targets) != len(rules):
         raise ValueError(
             "SBML algebraic rules require a square set of free mutable state "
             "candidates for the native DAE runtime"
+        )
+    lowered_names = [standardize_name(target) for target in targets]
+    if len(set(lowered_names)) != len(lowered_names):
+        raise ValueError(
+            "SBML algebraic state identifiers collide after BNGL name normalization"
         )
     return targets
 
