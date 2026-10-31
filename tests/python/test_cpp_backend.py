@@ -3167,9 +3167,21 @@ end model
 """)
         model = bionetgen.load(str(bngl))
         model.execute()
-        gdat1 = [line.split() for line in (tmp_path / "phase1.gdat").read_text().splitlines() if line and not line.startswith("#")]
-        gdat2 = [line.split() for line in (tmp_path / "phase2.gdat").read_text().splitlines() if line and not line.startswith("#")]
-        gdat3 = [line.split() for line in (tmp_path / "phase3.gdat").read_text().splitlines() if line and not line.startswith("#")]
+        gdat1 = [
+            line.split()
+            for line in (tmp_path / "phase1.gdat").read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
+        gdat2 = [
+            line.split()
+            for line in (tmp_path / "phase2.gdat").read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
+        gdat3 = [
+            line.split()
+            for line in (tmp_path / "phase3.gdat").read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
 
         # In phase 1, at t=1, A decreases from 100 to ~90.48
         a_end_phase1 = float(gdat1[-1][1])
@@ -3179,6 +3191,7 @@ end model
         # The first recorded point is t=1.5, evolving from A=50 set by setConcentration:
         # A(1.5) = 50 * exp(-0.1 * 0.5) = 47.56147...
         import math
+
         a_t1_5_phase2 = float(gdat2[0][1])
         assert pytest.approx(a_t1_5_phase2, abs=1e-3) == 50.0 * math.exp(-0.05)
 
