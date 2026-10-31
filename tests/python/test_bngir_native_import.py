@@ -2486,6 +2486,7 @@ def test_native_import_reconstructs_a_function_body_naming_an_observable():
     document = _function_document()
     assert document["model"]["functions"][2]["expression"] == {
         "kind": "observable_ref",
+        "call": True,
         "symbol": {"kind": "observable", "index": 0},
     }
 
