@@ -109,6 +109,7 @@ def test_issue160_runs_bounded_native_core_execution_with_fresh_build():
     assert {
         "python/bionetgen/sbml.py",
         "tests/python/test_atomizer_dae_ida.py",
+        "tests/python/test_atomizer_delay_history.py",
         "tests/python/test_atomizer_fast_reaction.py",
     } <= set(paths)
     choice = triggers["workflow_dispatch"]["inputs"]["run_issue_160"]
@@ -126,7 +127,11 @@ def test_issue160_runs_bounded_native_core_execution_with_fresh_build():
     )
     assert execute["if"] == "always() && steps.build_native.outcome == 'success'"
     assert execute["env"]["BNG3_PYTHON_TEST_MODE"] == "source"
-    for test in ("test_atomizer_dae_ida.py", "test_atomizer_fast_reaction.py"):
+    for test in (
+        "test_atomizer_dae_ida.py",
+        "test_atomizer_delay_history.py",
+        "test_atomizer_fast_reaction.py",
+    ):
         assert "tests/python/" + test in execute["run"]
     assert not any(s.get("continue-on-error", False) for s in job["steps"])
     upload = next(
