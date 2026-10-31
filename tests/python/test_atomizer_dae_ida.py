@@ -63,7 +63,7 @@ def _coupled_parameter_dae_sbml(*, singular=False):
         if singular
         else "<apply><minus/><apply><times/><ci>x</ci><ci>y</ci></apply><cn>1</cn></apply>"
     )
-    return f'''<?xml version="1.0" encoding="UTF-8"?>
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
 <sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
  <model id="coupled_parameter_dae">
   <listOfParameters>
@@ -77,7 +77,7 @@ def _coupled_parameter_dae_sbml(*, singular=False):
    <algebraicRule><math xmlns="http://www.w3.org/1998/Math/MathML">{second_constraint}</math></algebraicRule>
   </listOfRules>
  </model>
-</sbml>'''
+</sbml>"""
 
 
 def _assert_libsbml_error_free(source):
@@ -141,7 +141,7 @@ def test_algebraic_target_selection_preserves_case_sensitive_sbml_sids():
     from bionetgen.atomizer.modern.parser import SBMLParser
     from bionetgen.sbml import BioNetGenError, _native_algebraic_rules
 
-    source = '''<?xml version="1.0" encoding="UTF-8"?>
+    source = """<?xml version="1.0" encoding="UTF-8"?>
 <sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
  <model id="case_sensitive_ids">
   <listOfParameters>
@@ -152,7 +152,7 @@ def test_algebraic_target_selection_preserves_case_sensitive_sbml_sids():
    <algebraicRule><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><minus/><ci>X</ci><ci>x</ci></apply></math></algebraicRule>
   </listOfRules>
  </model>
-</sbml>'''
+</sbml>"""
     _assert_libsbml_error_free(source)
     parsed = SBMLParser().parse(source)
     with pytest.raises(BioNetGenError, match="square set of free mutable state"):
@@ -177,9 +177,7 @@ def test_coupled_algebraic_parameter_system_follows_the_analytic_branch(tmp_path
         observed_x = result.observables["x_amt"][index]
         observed_y = result.observables["y_amt"][index]
         assert observed_total == pytest.approx(total, abs=2e-7)
-        assert observed_x + observed_y - observed_total == pytest.approx(
-            0.0, abs=2e-7
-        )
+        assert observed_x + observed_y - observed_total == pytest.approx(0.0, abs=2e-7)
         assert observed_x * observed_y - 1.0 == pytest.approx(0.0, abs=2e-7)
         assert observed_x > observed_y
         assert observed_x == pytest.approx(x, abs=2e-7)

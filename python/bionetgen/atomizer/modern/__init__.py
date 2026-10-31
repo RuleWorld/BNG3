@@ -411,9 +411,7 @@ class Atomizer:
             self.model = self.parser.parse(
                 sbml_string,
                 source_path=source_path,
-                native_dae_runtime=bool(
-                    self.options.get("native_dae_runtime", False)
-                ),
+                native_dae_runtime=bool(self.options.get("native_dae_runtime", False)),
             )
             logger.info(
                 "ATM004",

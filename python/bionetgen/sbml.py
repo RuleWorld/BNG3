@@ -30,9 +30,11 @@ def _native_algebraic_rules(model) -> list[tuple[str, str]]:
         raise BioNetGenError(str(exc)) from exc
     return [
         (
-            f"{standardize_name(target)}_amt"
-            if target not in model.species
-            else standardize_name(target),
+            (
+                f"{standardize_name(target)}_amt"
+                if target not in model.species
+                else standardize_name(target)
+            ),
             f"{algebraic_residual_name(index)}()",
         )
         for index, target in enumerate(targets)
