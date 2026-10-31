@@ -237,3 +237,141 @@ def test_fast_equilibrium_boundary_zero_order_to_first_order():
     # Rate of consumption in zero-order regime: delta_S / delta_t ~= - Vmax
     slope = (s_early[-1] - s_early[0]) / 10.0
     assert abs(slope - (-vmax * 10.0 / 10.5)) < 1e-3
+
+
+def test_fast_equilibrium_refuses_variable_compartment_volume():
+    """Verify Atomizer explicitly refuses bimolecular pool lowering when compartment volume is variable.
+
+    Per SBML Level 3 specifications and AGENTS.md, dynamic volume changes (e.g. rate rules,
+    non-constant compartments) alter concentrations and equilibrium positions continuously.
+    Because BNG3 does not approximate unsupported dynamic volume shifts during static
+    lowering, it must explicitly refuse the reduction with an informative diagnostic.
+    """
+    xml_var = FAST_HEADER + """<model id="mm_var_vol" timeUnits="second">
+      <listOfCompartments>
+        <compartment id="cell" size="1.0" constant="false"/>
+      </listOfCompartments>
+      <listOfSpecies>
+        <species id="E" compartment="cell" initialAmount="1.0" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+        <species id="S" compartment="cell" initialAmount="10.0" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+        <species id="ES" compartment="cell" initialAmount="0.0" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      </listOfSpecies>
+      <listOfParameters>
+        <parameter id="kf" value="2.0" constant="true"/>
+        <parameter id="kr" value="1.0" constant="true"/>
+      </listOfParameters>
+      <listOfReactions>
+        <reaction id="binding" reversible="true" fast="true">
+          <listOfReactants>
+            <speciesReference species="E" stoichiometry="1" constant="true"/>
+            <speciesReference species="S" stoichiometry="1" constant="true"/>
+          </listOfReactants>
+          <listOfProducts>
+            <speciesReference species="ES" stoichiometry="1" constant="true"/>
+          </listOfProducts>
+          <kineticLaw>
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><minus/>
+                <apply><times/><ci>kf</ci><ci>E</ci><ci>S</ci></apply>
+                <apply><times/><ci>kr</ci><ci>ES</ci></apply>
+              </apply>
+            </math>
+          </kineticLaw>
+        </reaction>
+      </listOfReactions>
+    </model></sbml>"""
+
+    atomized = Atomizer(atomize=False, quiet_mode=True).atomize(xml_var)
+    warnings = [
+        entry.message for entry in atomized.log if "[fastReaction]" in entry.message
+    ]
+    assert len(warnings) == 1
+    assert "requires a constant shared compartment" in warnings[0]
+    # Fast reaction was NOT stripped; kept explicitly in generated BNGL
+    assert "binding:" in atomized.bngl.split("begin reaction rules")[1]
+
+
+def test_fast_equilibrium_compartment_volume_scaling():
+    """Verify bimolecular fast equilibrium holds to machine precision in a non-unit compartment volume."""
+    vol = 2.5
+    e0_conc = 0.04  # concentration
+    s0_conc = 8.0  # concentration
+    e0_amt = e0_conc * vol  # amount = 0.1
+    s0_amt = s0_conc * vol  # amount = 20.0
+    kf = 2.0
+    kr = 1.0
+    kcat = 0.5
+
+    xml = FAST_HEADER + f"""<model id="mm_vol25" timeUnits="second">
+      <listOfCompartments>
+        <compartment id="cell" size="{vol}" constant="true"/>
+      </listOfCompartments>
+      <listOfSpecies>
+        <species id="E" compartment="cell" initialAmount="{e0_amt}" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+        <species id="S" compartment="cell" initialAmount="{s0_amt}" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+        <species id="ES" compartment="cell" initialAmount="0.0" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+        <species id="P" compartment="cell" initialAmount="0.0" hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      </listOfSpecies>
+      <listOfParameters>
+        <parameter id="kf" value="{kf}" constant="true"/>
+        <parameter id="kr" value="{kr}" constant="true"/>
+        <parameter id="kcat" value="{kcat}" constant="true"/>
+      </listOfParameters>
+      <listOfReactions>
+        <reaction id="binding" reversible="true" fast="true">
+          <listOfReactants>
+            <speciesReference species="E" stoichiometry="1" constant="true"/>
+            <speciesReference species="S" stoichiometry="1" constant="true"/>
+          </listOfReactants>
+          <listOfProducts>
+            <speciesReference species="ES" stoichiometry="1" constant="true"/>
+          </listOfProducts>
+          <kineticLaw>
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><minus/>
+                <apply><times/><ci>kf</ci><ci>E</ci><ci>S</ci></apply>
+                <apply><times/><ci>kr</ci><ci>ES</ci></apply>
+              </apply>
+            </math>
+          </kineticLaw>
+        </reaction>
+        <reaction id="catalysis" reversible="false" fast="false">
+          <listOfReactants>
+            <speciesReference species="ES" stoichiometry="1" constant="true"/>
+          </listOfReactants>
+          <listOfProducts>
+            <speciesReference species="E" stoichiometry="1" constant="true"/>
+            <speciesReference species="P" stoichiometry="1" constant="true"/>
+          </listOfProducts>
+          <kineticLaw>
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci>kcat</ci><ci>ES</ci></apply>
+            </math>
+          </kineticLaw>
+        </reaction>
+      </listOfReactions>
+    </model></sbml>"""
+
+    atomized = Atomizer(atomize=False, quiet_mode=True, t_end=100, n_steps=20).atomize(
+        xml
+    )
+    assert atomized.success, atomized.error
+
+    sample_times = np.array([0.0, 10.0, 20.0, 50.0, 100.0])
+    res = _simulate(atomized.bngl, sample_times)
+
+    e_sim = np.array(res.functions["E"])
+    s_sim = np.array(res.functions["S"])
+    es_sim = np.array(res.functions["ES"])
+    p_sim = np.array(res.observables["P"])
+
+    # 1. Exact Enzyme Concentration Conservation: E(t) + ES(t) == e0_conc
+    np.testing.assert_allclose(e_sim + es_sim, e0_conc, rtol=1e-6, atol=1e-8)
+
+    # 2. Exact Substrate Concentration Conservation: S(t) + ES(t) + P(t)/vol == s0_conc
+    np.testing.assert_allclose(
+        s_sim + es_sim + p_sim / vol, s0_conc, rtol=1e-6, atol=1e-8
+    )
+
+    # 3. Exact Instantaneous Fast Equilibrium Balance: kf * E * S == kr * ES
+    np.testing.assert_allclose(kf * e_sim * s_sim, kr * es_sim, rtol=1e-5, atol=1e-8)
