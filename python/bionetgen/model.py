@@ -382,6 +382,129 @@ class BioNetGenModel:
             raise ValueError("amount expression must be one nonempty line")
         return text
 
+    @staticmethod
+    def _format_parameter_value(value) -> str:
+        if isinstance(value, bool):
+            raise TypeError("parameter value must be a number or expression")
+        if isinstance(value, (int, float)):
+            if not math.isfinite(float(value)):
+                raise ValueError("parameter value must be finite")
+            return repr(float(value)) if isinstance(value, float) else str(value)
+        text = str(value).strip()
+        if not text or "\n" in text:
+            raise ValueError("parameter expression must be one nonempty line")
+        return text
+
+    def _parameter_line_indices(self, text: str, name: str):
+        span = self._block_body(text, "parameters")
+        if span is None:
+            return span, []
+        lines = text[span[0] : span[1]].split("\n")
+        matches = []
+        for index, line in enumerate(lines):
+            stripped = line.split("#", 1)[0].strip()
+            if not stripped:
+                continue
+            parts = stripped.split()
+            pname = parts[1] if parts[0].isdigit() and len(parts) > 1 else parts[0]
+            if pname == name:
+                matches.append(index)
+        return span, matches
+
+    def _rule_line_indices(self, text: str, name_or_label: str):
+        span = self._block_body(text, "reaction rules")
+        if span is None:
+            return span, []
+        lines = text[span[0] : span[1]].split("\n")
+        matches = []
+        target = name_or_label.strip()
+        for index, line in enumerate(lines):
+            stripped = line.split("#", 1)[0].strip()
+            if not stripped:
+                continue
+            match = re.match(r"^(?:(\d+)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$", stripped)
+            if match:
+                lbl = match.group(2)
+                rule_body = match.group(3).strip()
+                if lbl == target or stripped == target or rule_body == target:
+                    matches.append(index)
+                    continue
+            parts = stripped.split(None, 1)
+            body = parts[1] if parts[0].isdigit() and len(parts) > 1 else stripped
+            if body == target or stripped == target:
+                matches.append(index)
+        return span, matches
+
+    def _observable_line_indices(self, text: str, name: str):
+        span = self._block_body(text, "observables")
+        if span is None:
+            return span, []
+        lines = text[span[0] : span[1]].split("\n")
+        matches = []
+        for index, line in enumerate(lines):
+            stripped = line.split("#", 1)[0].strip()
+            if not stripped:
+                continue
+            parts = stripped.split()
+            idx = 1 if parts[0].isdigit() else 0
+            if len(parts) > idx + 1 and parts[idx + 1] == name:
+                matches.append(index)
+        return span, matches
+
+    def _compartment_line_indices(self, text: str, name: str):
+        span = self._block_body(text, "compartments")
+        if span is None:
+            return span, []
+        lines = text[span[0] : span[1]].split("\n")
+        matches = []
+        for index, line in enumerate(lines):
+            stripped = line.split("#", 1)[0].strip()
+            if not stripped:
+                continue
+            parts = stripped.split()
+            idx = 1 if parts[0].isdigit() else 0
+            if len(parts) > idx and parts[idx] == name:
+                matches.append(index)
+        return span, matches
+
+    def _molecule_type_line_indices(self, text: str, name_or_pattern: str):
+        span = self._block_body(text, "molecule types")
+        if span is None:
+            return span, []
+        lines = text[span[0] : span[1]].split("\n")
+        matches = []
+        target = name_or_pattern.strip()
+        target_name = target.split("(", 1)[0].strip()
+        for index, line in enumerate(lines):
+            stripped = line.split("#", 1)[0].strip()
+            if not stripped:
+                continue
+            parts = stripped.split(None, 1)
+            mol_def = parts[1] if parts[0].isdigit() and len(parts) > 1 else stripped
+            mol_name = mol_def.split("(", 1)[0].strip()
+            if mol_name == target_name or mol_def == target:
+                matches.append(index)
+        return span, matches
+
+    def _function_line_indices(self, text: str, name: str):
+        span = self._block_body(text, "functions")
+        if span is None:
+            return span, []
+        lines = text[span[0] : span[1]].split("\n")
+        matches = []
+        for index, line in enumerate(lines):
+            stripped = line.split("#", 1)[0].strip()
+            if not stripped:
+                continue
+            parts = stripped.split()
+            idx = 1 if parts[0].isdigit() else 0
+            if len(parts) > idx:
+                fn_token = parts[idx]
+                fn_name = fn_token.split("(", 1)[0].strip()
+                if fn_name == name:
+                    matches.append(index)
+        return span, matches
+
     def _edit_topology(self, operation: str, edit) -> None:
         self._require_export_supported(operation)
         if _cpp is None:
@@ -396,11 +519,48 @@ class BioNetGenModel:
             raise ValueError(f"{operation} produced an invalid model: {exc}") from exc
         for name, value in self.__dict__.get("_parameter_overrides", {}).items():
             model.set_parameter(name, value)
+        try:
+            _cpp.generate_network(model, max_iter=0)
+        except Exception as exc:
+            raise ValueError(f"{operation} produced an invalid model: {exc}") from exc
         self._model = model
         self._network = None
         self._continuation_network = None
         self._network_from_continuation = False
         self._simulation_has_run = False
+
+    def add_parameter(self, name: str, value) -> None:
+        """Add a parameter, as a line in the BNGL parameters block."""
+        if not self._IDENTIFIER.match(str(name)):
+            raise ValueError(f"invalid parameter name {name!r}")
+        val_str = self._format_parameter_value(value)
+        line = f"{name} {val_str}"
+
+        def edit(text: str) -> str:
+            _span, matches = self._parameter_line_indices(text, name)
+            if matches:
+                raise ValueError(f"parameter {name!r} already exists")
+            return self._insert_block_line(text, "parameters", line)
+
+        self._edit_topology("add_parameter", edit)
+
+    def remove_parameter(self, name: str) -> None:
+        """Remove one parameter by name."""
+        target = str(name).strip()
+        if not target:
+            raise ValueError("parameter name must be non-empty")
+
+        def edit(text: str) -> str:
+            span, matches = self._parameter_line_indices(text, target)
+            if not matches:
+                raise ValueError(f"no parameter {target!r}")
+            if len(matches) > 1:
+                raise ValueError(f"parameter {target!r} matches {len(matches)} entries")
+            lines = text[span[0] : span[1]].split("\n")
+            del lines[matches[0]]
+            return text[: span[0]] + "\n".join(lines) + text[span[1] :]
+
+        self._edit_topology("remove_parameter", edit)
 
     def add_compartment(
         self,
@@ -424,6 +584,46 @@ class BioNetGenModel:
             lambda text: self._insert_block_line(text, "compartments", line),
         )
 
+    def remove_compartment(self, name: str) -> None:
+        """Remove a compartment by name."""
+        target = str(name).strip()
+        if not target:
+            raise ValueError("compartment name must be non-empty")
+
+        def edit(text: str) -> str:
+            span, matches = self._compartment_line_indices(text, target)
+            if not matches:
+                raise ValueError(f"no compartment {target!r}")
+            if len(matches) > 1:
+                raise ValueError(f"compartment {target!r} matches {len(matches)} entries")
+            pattern = rf"@\s*{re.escape(target)}\b"
+            for block in ("seed species", "reaction rules", "observables", "compartments"):
+                bspan = self._block_body(text, block)
+                if bspan is not None:
+                    block_text = text[bspan[0] : bspan[1]]
+                    if block == "compartments":
+                        lines = [
+                            l
+                            for i, l in enumerate(block_text.split("\n"))
+                            if i != matches[0]
+                        ]
+                        if any(
+                            re.search(rf"\b{re.escape(target)}\b", l.split("#", 1)[0])
+                            for l in lines
+                        ):
+                            raise ValueError(
+                                f"compartment {target!r} is still referenced as parent in compartments"
+                            )
+                    elif re.search(pattern, block_text):
+                        raise ValueError(
+                            f"compartment {target!r} is still referenced in {block}"
+                        )
+            lines = text[span[0] : span[1]].split("\n")
+            del lines[matches[0]]
+            return text[: span[0]] + "\n".join(lines) + text[span[1] :]
+
+        self._edit_topology("remove_compartment", edit)
+
     def add_molecule_type(self, definition: str) -> None:
         """Add a molecule type, for example ``"A(b,s~U~P)"``."""
         text = str(definition).strip()
@@ -433,6 +633,33 @@ class BioNetGenModel:
             "add_molecule_type",
             lambda model: self._insert_block_line(model, "molecule types", text),
         )
+
+    def remove_molecule_type(self, name_or_definition: str) -> None:
+        """Remove a molecule type by name or definition."""
+        target = str(name_or_definition).strip()
+        if not target:
+            raise ValueError("molecule type name or definition must be non-empty")
+
+        def edit(text: str) -> str:
+            span, matches = self._molecule_type_line_indices(text, target)
+            if not matches:
+                raise ValueError(f"no molecule type {target!r}")
+            if len(matches) > 1:
+                raise ValueError(f"molecule type {target!r} matches {len(matches)} entries")
+            mol_name = target.split("(", 1)[0].strip()
+            pattern = rf"\b{re.escape(mol_name)}\s*\("
+            for block in ("seed species", "reaction rules", "observables"):
+                bspan = self._block_body(text, block)
+                if bspan is not None:
+                    if re.search(pattern, text[bspan[0] : bspan[1]]):
+                        raise ValueError(
+                            f"molecule type {target!r} is still referenced in {block}"
+                        )
+            lines = text[span[0] : span[1]].split("\n")
+            del lines[matches[0]]
+            return text[: span[0]] + "\n".join(lines) + text[span[1] :]
+
+        self._edit_topology("remove_molecule_type", edit)
 
     def add_seed_species(
         self,
@@ -501,6 +728,127 @@ class BioNetGenModel:
         self._replace_seed_line(
             "move_species_to_compartment", pattern, from_compartment, replace
         )
+
+    def add_observable(
+        self, name: str, pattern: str, obs_type: str = "Molecules"
+    ) -> None:
+        """Add an observable to the observables block."""
+        if not self._IDENTIFIER.match(str(name)):
+            raise ValueError(f"invalid observable name {name!r}")
+        if obs_type not in ("Molecules", "Species"):
+            raise ValueError(
+                f"observable type must be 'Molecules' or 'Species', got {obs_type!r}"
+            )
+        pat = str(pattern).strip()
+        if not pat or "\n" in pat:
+            raise ValueError("observable pattern must be a single non-empty expression")
+        line = f"{obs_type} {name} {pat}"
+
+        def edit(text: str) -> str:
+            _span, matches = self._observable_line_indices(text, name)
+            if matches:
+                raise ValueError(f"observable {name!r} already exists")
+            return self._insert_block_line(text, "observables", line)
+
+        self._edit_topology("add_observable", edit)
+
+    def remove_observable(self, name: str) -> None:
+        """Remove an observable by name."""
+        target = str(name).strip()
+        if not target:
+            raise ValueError("observable name must be non-empty")
+
+        def edit(text: str) -> str:
+            span, matches = self._observable_line_indices(text, target)
+            if not matches:
+                raise ValueError(f"no observable {target!r}")
+            if len(matches) > 1:
+                raise ValueError(f"observable {target!r} matches {len(matches)} entries")
+            lines = text[span[0] : span[1]].split("\n")
+            del lines[matches[0]]
+            return text[: span[0]] + "\n".join(lines) + text[span[1] :]
+
+        self._edit_topology("remove_observable", edit)
+
+    def add_reaction_rule(self, definition: str, name: Optional[str] = None) -> None:
+        """Add a reaction rule to the reaction rules block."""
+        text_def = str(definition).strip()
+        if not text_def or "\n" in text_def:
+            raise ValueError("reaction rule definition must be a single non-empty line")
+        if name is not None:
+            if not self._IDENTIFIER.match(str(name)):
+                raise ValueError(f"invalid reaction rule name {name!r}")
+            match = re.match(r"^([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$", text_def)
+            line = f"{name}: {match.group(2)}" if match else f"{name}: {text_def}"
+        else:
+            line = text_def
+
+        self._edit_topology(
+            "add_reaction_rule",
+            lambda text: self._insert_block_line(text, "reaction rules", line),
+        )
+
+    def remove_reaction_rule(self, name_or_label: str) -> None:
+        """Remove a reaction rule by name/label or definition."""
+        target = str(name_or_label).strip()
+        if not target:
+            raise ValueError("reaction rule name or definition must be non-empty")
+
+        def edit(text: str) -> str:
+            span, matches = self._rule_line_indices(text, target)
+            if not matches:
+                raise ValueError(f"no reaction rule {target!r}")
+            if len(matches) > 1:
+                raise ValueError(
+                    f"reaction rule {target!r} matches {len(matches)} entries"
+                )
+            lines = text[span[0] : span[1]].split("\n")
+            del lines[matches[0]]
+            return text[: span[0]] + "\n".join(lines) + text[span[1] :]
+
+        self._edit_topology("remove_reaction_rule", edit)
+
+    def add_function(self, definition: str, name: Optional[str] = None) -> None:
+        """Add a function to the functions block."""
+        text_def = str(definition).strip()
+        if not text_def or "\n" in text_def:
+            raise ValueError("function definition must be a single non-empty line")
+        if name is not None:
+            if not self._IDENTIFIER.match(str(name)):
+                raise ValueError(f"invalid function name {name!r}")
+            if not (
+                text_def.startswith(f"{name}(")
+                or text_def.startswith(f"{name} =")
+                or text_def.startswith(f"{name} ")
+            ):
+                line = f"{name}() = {text_def}"
+            else:
+                line = text_def
+        else:
+            line = text_def
+
+        self._edit_topology(
+            "add_function",
+            lambda text: self._insert_block_line(text, "functions", line),
+        )
+
+    def remove_function(self, name: str) -> None:
+        """Remove a function by name."""
+        target = str(name).strip()
+        if not target:
+            raise ValueError("function name must be non-empty")
+
+        def edit(text: str) -> str:
+            span, matches = self._function_line_indices(text, target)
+            if not matches:
+                raise ValueError(f"no function {target!r}")
+            if len(matches) > 1:
+                raise ValueError(f"function {target!r} matches {len(matches)} entries")
+            lines = text[span[0] : span[1]].split("\n")
+            del lines[matches[0]]
+            return text[: span[0]] + "\n".join(lines) + text[span[1] :]
+
+        self._edit_topology("remove_function", edit)
 
     def generate_network(self, max_iter: int = 100) -> _cpp.GeneratedNetwork:
         carrying_session = self._continuation_network is not None

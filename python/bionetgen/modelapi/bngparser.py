@@ -284,9 +284,10 @@ class BNGParser:
             elif listkey == "ListOfCompartments":
                 comp_list = xml_model[listkey]
                 if comp_list is not None:
-                    comps = comp_list["compartment"]
-                    xml_parser = CompartmentBlockXML(comps)
-                    model_obj.add_block(xml_parser.parsed_obj)
+                    comps = comp_list.get("Compartment", comp_list.get("compartment"))
+                    if comps is not None:
+                        xml_parser = CompartmentBlockXML(comps)
+                        model_obj.add_block(xml_parser.parsed_obj)
             elif listkey == "ListOfMoleculeTypes":
                 mtypes_list = xml_model[listkey]
                 if mtypes_list is not None:
