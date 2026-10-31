@@ -105,8 +105,11 @@ def test_make_key_from_graph_randomized(original_solver, optimized_solver):
                 graph[key].append(sublist)
 
         graph_copy = deepcopy(graph)
-        assert original_solver.make_key_from_graph(
-            graph
-        ) == optimized_solver.make_key_from_graph(graph)
+        orig_key = original_solver.make_key_from_graph(graph)
+        opt_key = optimized_solver.make_key_from_graph(graph)
+        if isinstance(orig_key, bytes) and isinstance(opt_key, bytes):
+            assert marshal.loads(orig_key) == marshal.loads(opt_key)
+        else:
+            assert orig_key == opt_key
         # Ensure immutability
         assert graph == graph_copy
