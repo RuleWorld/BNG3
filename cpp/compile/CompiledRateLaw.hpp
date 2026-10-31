@@ -199,11 +199,12 @@ struct RateDependencySummary {
     bool reactantCount = false;
     bool time = false;
     bool tableFunction = false;
+    bool delay = false;
     bool unresolved = false;
 
     bool requiresRuntimeEvaluation() const noexcept {
         return observable || function || local || reactantCount || time ||
-               tableFunction || unresolved;
+               tableFunction || delay || unresolved;
     }
 };
 
@@ -236,6 +237,7 @@ struct CompiledRateLaw {
     bool dependsOnObservables() const noexcept { return dependencies_.observable; }
     bool dependsOnReactantCounts() const noexcept { return dependencies_.reactantCount; }
     bool dependsOnParameters() const noexcept { return dependencies_.parameter; }
+    bool dependsOnDelay() const noexcept { return dependencies_.delay; }
     bool requiresRuntimeEvaluation() const noexcept {
         return dependencies_.requiresRuntimeEvaluation();
     }
@@ -245,10 +247,19 @@ struct CompiledRateLaw {
     bool dependsOnObservable(std::size_t observableIndex) const noexcept;
     bool dependsOnObservable(const std::string& name) const noexcept;
 
+    bool isInvalidatedBy(bool timeChanged) const noexcept {
+        return timeChanged && dependencies_.time;
+    }
+
     bool isInvalidatedBy(
         bool timeChanged,
-        const std::vector<std::size_t>& changedParameterIndices = {},
+        const std::vector<std::size_t>& changedParameterIndices,
         const std::vector<std::size_t>& changedObservableIndices = {}) const noexcept;
+
+    bool isInvalidatedBy(
+        bool timeChanged,
+        const std::vector<std::string>& changedParameterNames,
+        const std::vector<std::string>& changedObservableNames = {}) const noexcept;
 
     static CompiledRateLaw compile(const ast::Expression& expression);
     static CompiledRateLaw compile(const ast::Expression& expression,

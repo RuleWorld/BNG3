@@ -1856,11 +1856,14 @@ void OdeIntegrator::evaluateFunctionalRateCoefficients(
         const auto& rxn = compiledRxns_[idx];
         double rate;
         if (rxn.compiledRateLaw.has_value() &&
-            rxn.compiledRateLaw->resolvedExpression().fullyResolved()) {
+            rxn.compiledRateLaw->resolvedExpression().fullyResolved() &&
+            !rxn.compiledRateLaw->dependsOnDelay() &&
+            !hasPositiveExpressionDelay_) {
             try {
                 bng::compile::RateEvaluationContext ctx;
                 ctx.time = t;
                 ctx.resolveIdentifier = resolver;
+                ctx.resolveLocal = resolver;
                 ctx.resolveParameter = [&](std::size_t, const std::string& name) {
                     return resolver(name);
                 };

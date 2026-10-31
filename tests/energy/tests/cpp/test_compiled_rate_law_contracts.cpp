@@ -338,20 +338,28 @@ end observables
 
     // Invalidation behavior
     // Parameter 0 modified: rate1 invalidated, rate2 retained
-    CHECK(rate1.isInvalidatedBy(false, {0}, {}));
-    CHECK_FALSE(rate2.isInvalidatedBy(false, {0}, {}));
+    CHECK(rate1.isInvalidatedBy(false, std::vector<std::size_t>{0}, {}));
+    CHECK_FALSE(rate2.isInvalidatedBy(false, std::vector<std::size_t>{0}, {}));
 
     // Parameter 1 modified: rate1 retained, rate2 invalidated
-    CHECK_FALSE(rate1.isInvalidatedBy(false, {1}, {}));
-    CHECK(rate2.isInvalidatedBy(false, {1}, {}));
+    CHECK_FALSE(rate1.isInvalidatedBy(false, std::vector<std::size_t>{1}, {}));
+    CHECK(rate2.isInvalidatedBy(false, std::vector<std::size_t>{1}, {}));
 
     // Observable 0 modified: rate1 invalidated, rate2 retained
-    CHECK(rate1.isInvalidatedBy(false, {}, {0}));
-    CHECK_FALSE(rate2.isInvalidatedBy(false, {}, {0}));
+    CHECK(rate1.isInvalidatedBy(false, std::vector<std::size_t>{}, {0}));
+    CHECK_FALSE(rate2.isInvalidatedBy(false, std::vector<std::size_t>{}, {0}));
 
     // Time advanced: rate1 retained, rate2 invalidated
-    CHECK_FALSE(rate1.isInvalidatedBy(true, {}, {}));
-    CHECK(rate2.isInvalidatedBy(true, {}, {}));
+    CHECK_FALSE(rate1.isInvalidatedBy(true));
+    CHECK(rate2.isInvalidatedBy(true));
+
+    // Invalidation queries using parameter/observable names
+    CHECK(rate1.isInvalidatedBy(false, std::vector<std::string>{"k1"}, {}));
+    CHECK_FALSE(rate2.isInvalidatedBy(false, std::vector<std::string>{"k1"}, {}));
+    CHECK_FALSE(rate1.isInvalidatedBy(false, std::vector<std::string>{"k2"}, {}));
+    CHECK(rate2.isInvalidatedBy(false, std::vector<std::string>{"k2"}, {}));
+    CHECK(rate1.isInvalidatedBy(false, {}, std::vector<std::string>{"obs1"}));
+    CHECK_FALSE(rate2.isInvalidatedBy(false, {}, std::vector<std::string>{"obs1"}));
 }
 
 TEST_CASE("CompiledRateLaw evaluates after source ast::Model is destroyed (AST lifetime independence guard)") {
@@ -393,4 +401,62 @@ TEST_CASE("Shared evaluateRateString evaluates nested expressions, unary signs, 
     CHECK(bng::compile::evaluateRateString(" exp(0) ", resolver) == Catch::Approx(1.0));
     CHECK(bng::compile::evaluateRateString(" (k * c) / 8 ", resolver) == Catch::Approx(5.0));
     CHECK(bng::compile::evaluateRateString(" -k ", resolver) == Catch::Approx(-10.0));
+}
+
+TEST_CASE("CompiledRateLaw recognizes delay dependencies") {
+    auto model = bng::parser::parseModel(R"BNG(
+begin parameters
+  k 1
+  tau 2
+end parameters
+begin observables
+  Molecules obs A()
+end observables
+begin molecule types
+  A()
+end molecule types
+)BNG");
+    REQUIRE(model != nullptr);
+    const auto symbols = bng::compile::SymbolTable::fromModel(*model);
+    const auto rate = bng::compile::CompiledRateLaw::compile(
+        bng::parser::parseExpression("k * delay(obs, tau)"), symbols);
+    CHECK(rate.fullyResolved());
+    CHECK(rate.dependsOnDelay());
+    CHECK(rate.dependsOnTime());
+    CHECK(rate.dependsOnObservables());
+    CHECK(rate.dependsOnParameters());
+}
+
+TEST_CASE("CompiledRateLaw resolves synthetic substrate and tfun identifiers without AST fallback") {
+    auto model = bng::parser::parseModel(R"BNG(
+begin parameters
+  kcat 10
+  Km 2
+end parameters
+begin molecule types
+  A()
+end molecule types
+)BNG");
+    REQUIRE(model != nullptr);
+    const auto symbols = bng::compile::SymbolTable::fromModel(*model);
+    const auto rate = bng::compile::CompiledRateLaw::compile(
+        bng::parser::parseExpression("Sat(kcat, Km, __substrate_0)"), symbols);
+
+    REQUIRE(rate.diagnostics().empty());
+    CHECK(rate.fullyResolved());
+    CHECK(rate.dependsOnReactantCounts());
+
+    bng::compile::RateEvaluationContext ctx;
+    ctx.resolveParameter = [](std::size_t, const std::string& name) {
+        if (name == "kcat") return 10.0;
+        if (name == "Km") return 2.0;
+        return 0.0;
+    };
+    ctx.resolveLocal = [](const std::string& name) {
+        if (name == "__substrate_0") return 3.0;
+        return 0.0;
+    };
+
+    // Sat(10, 2, 3) = 10 * 3 / (2 + 3) = 30 / 5 = 6.0
+    CHECK(rate.evaluate(ctx) == Catch::Approx(6.0));
 }

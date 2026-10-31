@@ -161,6 +161,13 @@ ResolvedExpression resolveExpression(const ast::Expression& expression,
             resolved.localName = expression.name();
             return resolved;
         }
+        if (expression.name().rfind("__substrate_", 0) == 0 ||
+            (expression.name().rfind("__tfun_", 0) == 0 && expression.name().size() > 9 &&
+             expression.name().substr(expression.name().size() - 2) == "__")) {
+            resolved.kind = ResolvedExpressionKind::LocalRef;
+            resolved.localName = expression.name();
+            return resolved;
+        }
         if (expression.name() == "time" || expression.name() == "t") {
             resolved.kind = ResolvedExpressionKind::TimeRef;
             resolved.operation = expression.name();
@@ -320,6 +327,14 @@ void collectDependencies(const ResolvedExpression& expression,
         break;
     case ResolvedExpressionKind::LocalRef:
         dependencies.local = true;
+        if (expression.localName.rfind("__substrate_", 0) == 0) {
+            dependencies.reactantCount = true;
+        } else if (expression.localName.rfind("__tfun_", 0) == 0) {
+            dependencies.tableFunction = true;
+            if (expression.localName.find("_AT_") == std::string::npos) {
+                dependencies.time = true;
+            }
+        }
         break;
     case ResolvedExpressionKind::ReactantCountRef:
         dependencies.reactantCount = true;
@@ -337,6 +352,7 @@ void collectDependencies(const ResolvedExpression& expression,
         if (expression.builtin == BuiltinFunction::Delay) {
             dependencies.time = true;
             dependencies.observable = true;
+            dependencies.delay = true;
         }
         if (expression.builtin == BuiltinFunction::TableFunction) {
             dependencies.tableFunction = true;
@@ -823,6 +839,20 @@ bool CompiledRateLaw::isInvalidatedBy(
     }
     for (const auto obsIdx : changedObservableIndices) {
         if (dependsOnObservable(obsIdx)) return true;
+    }
+    return false;
+}
+
+bool CompiledRateLaw::isInvalidatedBy(
+    bool timeChanged,
+    const std::vector<std::string>& changedParameterNames,
+    const std::vector<std::string>& changedObservableNames) const noexcept {
+    if (timeChanged && dependencies_.time) return true;
+    for (const auto& paramName : changedParameterNames) {
+        if (dependsOnParameter(paramName)) return true;
+    }
+    for (const auto& obsName : changedObservableNames) {
+        if (dependsOnObservable(obsName)) return true;
     }
     return false;
 }
