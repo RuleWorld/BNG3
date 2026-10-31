@@ -9,6 +9,7 @@
 #include "ast/Model.hpp"
 #include "io/TfunReader.hpp"
 #include "ast/ModelFunctionEvaluator.hpp"
+#include "compile/CompiledRateLaw.hpp"
 #include "NetworkGenerator.hpp"
 
 namespace bng::engine {
@@ -132,6 +133,7 @@ public:
         double statFactor;            // statistical factor
         bool isFunctional = false;    // true if rate depends on time/observables
         bool isTimeDependent = false; // SSA cannot use the direct method for these rates
+        std::optional<compile::CompiledRateLaw> compiledRateLaw;  // compile-owned rate evaluation
         std::optional<ast::Expression> functionalRateExpr;  // for runtime evaluation
         // Preserve the source coefficient even when it is folded into
         // rateConstant. Delayed completion may evaluate this expression at a
