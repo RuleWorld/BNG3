@@ -985,9 +985,7 @@ class BioNetGenModel:
 
         self._edit_topology("remove_function", edit)
 
-    def generate_network(
-        self, max_iter: Optional[int] = None
-    ) -> _cpp.GeneratedNetwork:
+    def generate_network(self, max_iter: Optional[int] = None) -> _cpp.GeneratedNetwork:
         carrying_session = self._continuation_network is not None
         if max_iter is None:
             for action in getattr(self._model, "actions", []):
