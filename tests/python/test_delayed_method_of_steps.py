@@ -249,3 +249,67 @@ def test_delayed_parameter_change_preserves_prehistory():
 
     np.testing.assert_allclose(res2.observables["A_obs"][-1], A4_expected, rtol=1e-5)
     np.testing.assert_allclose(res2.observables["B_obs"][-1], B4_expected, rtol=1e-5)
+
+
+def test_delayed_prehistory_jump_across_delay_horizon():
+    """Verify discontinuous parameter jump during [0, tau] propagates across delay horizon to t = tau + t_jump.
+
+    System: A -> B delay=tau where tau = 2.0, A_0 = 100.
+    Phase 1: [0, 1.0] with k_1 = 0.5.
+      At t_jump = 1.0 < tau:
+        A(1) = 100 * exp(-0.5) = 60.653066
+        B(1) = 0
+    Intervention at t_jump = 1.0: parameter k jumps from 0.5 to 1.0.
+    Phase 2: [1.0, 4.0] continued with k_2 = 1.0.
+      For t in [1.0, 4.0]:
+        A(t) = A(1) * exp(-1.0 * (t - 1.0))
+        A(4) = 100 * exp(-0.5) * exp(-3.0) = 100 * exp(-3.5) = 3.019738
+      For delayed product B:
+        - On [1.0, 2.0] (t < tau): dB/dt = 0 => B = 0.
+        - On [2.0, 3.0] (t - tau in [0, 1.0]):
+            Initiated with k_1 = 0.5:
+            B(t) = 100 * (1 - exp(-0.5 * (t - 2)))
+            At t = 3.0: B(3) = 100 * (1 - exp(-0.5)) = 39.346934
+        - On [3.0, 4.0] (t - tau in [1.0, 2.0]):
+            Initiated with k_2 = 1.0:
+            dB/dt experiences jump at t = 3.0 from k_1 * A(1) = 30.3265 to k_2 * A(1) = 60.653
+            B(4) = B(3) + A(1) * (1 - exp(-1.0 * (4 - 3)))
+                 = 100 * (1 - exp(-0.5)) + 100 * exp(-0.5) * (1 - exp(-1.0))
+                 = 77.686984
+    """
+    model = BioNetGenModel(cpp.parse_string(DELAY_CONSUMING_BNGL))
+
+    # Phase 1: [0.0, 1.0] with k = 0.5
+    res1 = model.simulate(method="ode", t_start=0.0, t_end=1.0, n_steps=20)
+    np.testing.assert_allclose(res1.observables["B_obs"][-1], 0.0, atol=1e-8)
+
+    # Intervention at t = 1.0
+    model.set_parameter("k", 1.0)
+
+    # Phase 2: [1.0, 4.0] continued
+    res2 = model.simulate(
+        method="ode", t_start=1.0, t_end=4.0, n_steps=60, continue_simulation=True
+    )
+
+    t2 = np.array(res2.time)
+    A2 = np.array(res2.observables["A_obs"])
+    B2 = np.array(res2.observables["B_obs"])
+
+    A4_expected = 100.0 * np.exp(-0.5) * np.exp(-3.0)
+    B3_expected = 100.0 * (1.0 - np.exp(-0.5))
+    B4_expected = B3_expected + 100.0 * np.exp(-0.5) * (1.0 - np.exp(-1.0))
+
+    # 1. State at end of horizon matches analytical piecewise integral
+    np.testing.assert_allclose(A2[-1], A4_expected, rtol=1e-5)
+    np.testing.assert_allclose(B2[-1], B4_expected, rtol=1e-5)
+
+    # 2. Derivative jump at t = 3.0: completion rate jumps from ~35 to ~50+
+    idx_pre_3 = np.where((t2 >= 2.5) & (t2 <= 2.95))[0]
+    idx_post_3 = np.where((t2 >= 3.05) & (t2 <= 3.5))[0]
+    slope_pre = (B2[idx_pre_3[-1]] - B2[idx_pre_3[0]]) / (
+        t2[idx_pre_3[-1]] - t2[idx_pre_3[0]]
+    )
+    slope_post = (B2[idx_post_3[-1]] - B2[idx_post_3[0]]) / (
+        t2[idx_post_3[-1]] - t2[idx_post_3[0]]
+    )
+    assert slope_post > 1.25 * slope_pre
