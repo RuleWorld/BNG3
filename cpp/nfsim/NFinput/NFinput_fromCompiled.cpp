@@ -169,7 +169,20 @@ const char* builtinText(bng::compile::BuiltinFunction op) {
     case Fn::Arrhenius: return "Arrhenius"; case Fn::Saturation: return "Sat";
     case Fn::MichaelisMenten: return "MM"; case Fn::Hill: return "Hill";
     case Fn::FunctionProduct: return "FunctionProduct"; case Fn::Hybrid: return "Hybrid";
-    case Fn::TableFunction: return "tfun"; case Fn::Unknown: return "";
+    case Fn::TableFunction: return "tfun";
+    case Fn::DistribBernoulli: return "distrib_bernoulli";
+    case Fn::DistribBinomial: return "distrib_binomial";
+    case Fn::DistribCauchy: return "distrib_cauchy";
+    case Fn::DistribChisquare: return "distrib_chisquare";
+    case Fn::DistribExponential: return "distrib_exponential";
+    case Fn::DistribGamma: return "distrib_gamma";
+    case Fn::DistribLaplace: return "distrib_laplace";
+    case Fn::DistribLognormal: return "distrib_lognormal";
+    case Fn::DistribNormal: return "distrib_normal";
+    case Fn::DistribPoisson: return "distrib_poisson";
+    case Fn::DistribRayleigh: return "distrib_rayleigh";
+    case Fn::DistribUniform: return "distrib_uniform";
+    case Fn::Unknown: return "";
     }
     return "";
 }

@@ -17,6 +17,7 @@
 #include "parser/BNGAstVisitor.hpp"
 #include "parser/PatternGraphBuilder.hpp"
 #include "core/Ullmann.hpp"
+#include "compile/CompiledRateLaw.hpp"
 #include "io/NetWriter.hpp"
 #include "ast/ReactionRule.hpp"
 #include "compile/TotalRate.hpp"
@@ -25,62 +26,10 @@ namespace bng::engine {
 
 namespace {
 
-// Recursive expression evaluator (same as OdeIntegrator's internal helper)
+// Delegate to shared compile-owned rate string evaluator
 double evaluateRateString(const std::string& rateStr,
                           const std::function<double(const std::string&)>& resolve) {
-    std::string s = rateStr;
-    s.erase(0, s.find_first_not_of(" \t"));
-    if (s.empty()) return 0.0;
-    s.erase(s.find_last_not_of(" \t") + 1);
-
-    if (s.size() >= 2 && s.front() == '(' && s.back() == ')') {
-        int depth = 0;
-        bool outermost = true;
-        for (std::size_t i = 0; i < s.size() - 1; ++i) {
-            if (s[i] == '(') ++depth;
-            else if (s[i] == ')') { --depth; if (depth == 0) { outermost = false; break; } }
-        }
-        if (outermost) return evaluateRateString(s.substr(1, s.size() - 2), resolve);
-    }
-
-    int depth = 0;
-    int lastAddSub = -1;
-    char lastAddSubOp = 0;
-    int lastMulDiv = -1;
-    char lastMulDivOp = 0;
-    for (std::size_t i = 0; i < s.size(); ++i) {
-        if (s[i] == '(') ++depth;
-        else if (s[i] == ')') --depth;
-        else if (depth == 0 && i > 0) {
-            if (s[i] == '+' || s[i] == '-') { lastAddSub = static_cast<int>(i); lastAddSubOp = s[i]; }
-            if (s[i] == '*' || s[i] == '/') { lastMulDiv = static_cast<int>(i); lastMulDivOp = s[i]; }
-        }
-    }
-
-    if (lastAddSub >= 0) {
-        double l = evaluateRateString(s.substr(0, lastAddSub), resolve);
-        double r = evaluateRateString(s.substr(lastAddSub + 1), resolve);
-        return lastAddSubOp == '+' ? l + r : l - r;
-    }
-    if (lastMulDiv >= 0) {
-        double l = evaluateRateString(s.substr(0, lastMulDiv), resolve);
-        double r = evaluateRateString(s.substr(lastMulDiv + 1), resolve);
-        return lastMulDivOp == '*' ? l * r : l / r;
-    }
-
-    if (s.front() == '-') return -evaluateRateString(s.substr(1), resolve);
-
-    if (s.rfind("exp(", 0) == 0 && s.back() == ')') {
-        return std::exp(evaluateRateString(s.substr(4, s.size() - 5), resolve));
-    }
-
-    try {
-        std::size_t pos = 0;
-        double val = std::stod(s, &pos);
-        if (pos == s.size()) return val;
-    } catch (...) {}
-
-    return resolve(s);
+    return bng::compile::evaluateRateString(rateStr, resolve);
 }
 
 bool isParameterOnlyExpression(const ast::Expression& expression,

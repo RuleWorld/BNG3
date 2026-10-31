@@ -1,5 +1,6 @@
 #pragma once
 
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -11,6 +12,8 @@
 #include "units/Unit.hpp"
 
 namespace bng::compile {
+
+struct RateEvaluationContext;
 
 // True when a call spelled with this name resolves to a compiler builtin
 // rather than to a user-defined model function. The comparison is
@@ -146,6 +149,41 @@ struct ResolvedExpression {
     std::string tableMethod;
 
     bool fullyResolved() const noexcept;
+
+    // Direct semantic evaluation without AST dependence
+    double evaluate(const RateEvaluationContext& context) const;
+};
+
+// Evaluation context for resolved expressions and compiled rate laws.
+struct RateEvaluationContext {
+    double time = 0.0;
+
+    // Parameter lookup: by index if symbol has SymbolRef, and/or by name.
+    std::function<double(std::size_t index, const std::string& name)> resolveParameter;
+
+    // Observable lookup: by index if symbol has SymbolRef, and/or by name.
+    std::function<double(std::size_t index, const std::string& name)> resolveObservable;
+
+    // Reactant count lookup: 0-based index (0 for reactant_1, 1 for reactant_2, ...)
+    std::function<double(std::size_t reactantIndex)> resolveReactantCount;
+
+    // Local scope / argument lookup: by local name
+    std::function<double(const std::string& localName)> resolveLocal;
+
+    // User-defined function lookup: by name and evaluated argument values
+    std::function<double(const std::string& name, const std::vector<double>& args)> resolveFunction;
+
+    // Table lookup: by table file/name and argument value
+    std::function<double(const std::string& tableName, double arg)> resolveTable;
+
+    // Historical state lookup for delay(expr, tau)
+    std::function<double(const ResolvedExpression& expr, double delayTime)> resolveDelay;
+
+    // Fallback general identifier resolver
+    std::function<double(const std::string& name)> resolveIdentifier;
+
+    // Discrete reactant counts mode for stochastic propensities (e.g. max(0, X - offset))
+    bool discreteReactantCounts = false;
 };
 
 // Dependency kinds are derived from the typed expression tree. This keeps
@@ -161,11 +199,12 @@ struct RateDependencySummary {
     bool reactantCount = false;
     bool time = false;
     bool tableFunction = false;
+    bool delay = false;
     bool unresolved = false;
 
     bool requiresRuntimeEvaluation() const noexcept {
         return observable || function || local || reactantCount || time ||
-               tableFunction || unresolved;
+               tableFunction || delay || unresolved;
     }
 };
 
@@ -188,6 +227,40 @@ struct CompiledRateLaw {
     bool isEnergyCoupled() const { return kind == RateLawKind::ArrheniusEnergy; }
     bool fullyResolved() const noexcept { return resolved_.fullyResolved(); }
 
+    // Direct semantic evaluation without AST dependence
+    double evaluate(const RateEvaluationContext& context) const;
+    double evaluate(const std::function<double(const std::string&)>& resolver,
+                    double time = 0.0) const;
+
+    // Invalidation and dependency queries
+    bool dependsOnTime() const noexcept { return dependencies_.time; }
+    bool dependsOnObservables() const noexcept { return dependencies_.observable; }
+    bool dependsOnReactantCounts() const noexcept { return dependencies_.reactantCount; }
+    bool dependsOnParameters() const noexcept { return dependencies_.parameter; }
+    bool dependsOnDelay() const noexcept { return dependencies_.delay; }
+    bool requiresRuntimeEvaluation() const noexcept {
+        return dependencies_.requiresRuntimeEvaluation();
+    }
+
+    bool dependsOnParameter(std::size_t parameterIndex) const noexcept;
+    bool dependsOnParameter(const std::string& name) const noexcept;
+    bool dependsOnObservable(std::size_t observableIndex) const noexcept;
+    bool dependsOnObservable(const std::string& name) const noexcept;
+
+    bool isInvalidatedBy(bool timeChanged) const noexcept {
+        return timeChanged && dependencies_.time;
+    }
+
+    bool isInvalidatedBy(
+        bool timeChanged,
+        const std::vector<std::size_t>& changedParameterIndices,
+        const std::vector<std::size_t>& changedObservableIndices = {}) const noexcept;
+
+    bool isInvalidatedBy(
+        bool timeChanged,
+        const std::vector<std::string>& changedParameterNames,
+        const std::vector<std::string>& changedObservableNames = {}) const noexcept;
+
     static CompiledRateLaw compile(const ast::Expression& expression);
     static CompiledRateLaw compile(const ast::Expression& expression,
                                    const SymbolTable& symbols);
@@ -205,5 +278,10 @@ private:
     ResolvedExpression resolved_;
     RateDependencySummary dependencies_;
 };
+
+// Fast rate-string evaluation shared across engines (ODE, PLA, PSA).
+double evaluateRateString(
+    const std::string& rateStr,
+    const std::function<double(const std::string&)>& resolver);
 
 } // namespace bng::compile

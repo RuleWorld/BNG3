@@ -68,70 +68,10 @@ bool isResultFunction(const std::string& name) {
            name.rfind("__rate_rule_neg__", 0) != 0;
 }
 
-// Recursive expression evaluator for rate strings.
-// Handles: numbers, parameters, +, -, *, /, (), and nested expressions.
+// Delegate rate string evaluation to shared compile-owned implementation.
 double evaluateRateString(const std::string& rateStr,
                           const std::function<double(const std::string&)>& resolve) {
-    std::string s = rateStr;
-    // Trim whitespace
-    s.erase(0, s.find_first_not_of(" \t"));
-    if (s.empty()) return 0.0;
-    s.erase(s.find_last_not_of(" \t") + 1);
-
-    // Strip outermost balanced parentheses
-    if (s.size() >= 2 && s.front() == '(' && s.back() == ')') {
-        int depth = 0;
-        bool outermost = true;
-        for (std::size_t i = 0; i < s.size() - 1; ++i) {
-            if (s[i] == '(') ++depth;
-            else if (s[i] == ')') { --depth; if (depth == 0) { outermost = false; break; } }
-        }
-        if (outermost) return evaluateRateString(s.substr(1, s.size() - 2), resolve);
-    }
-
-    // Find lowest-precedence operator at depth 0 (right-to-left for left-assoc)
-    int depth = 0;
-    int lastAddSub = -1;
-    char lastAddSubOp = 0;
-    int lastMulDiv = -1;
-    char lastMulDivOp = 0;
-    for (std::size_t i = 0; i < s.size(); ++i) {
-        if (s[i] == '(') ++depth;
-        else if (s[i] == ')') --depth;
-        else if (depth == 0 && i > 0) {
-            if (s[i] == '+' || s[i] == '-') { lastAddSub = static_cast<int>(i); lastAddSubOp = s[i]; }
-            if (s[i] == '*' || s[i] == '/') { lastMulDiv = static_cast<int>(i); lastMulDivOp = s[i]; }
-        }
-    }
-
-    if (lastAddSub >= 0) {
-        double l = evaluateRateString(s.substr(0, lastAddSub), resolve);
-        double r = evaluateRateString(s.substr(lastAddSub + 1), resolve);
-        return lastAddSubOp == '+' ? l + r : l - r;
-    }
-    if (lastMulDiv >= 0) {
-        double l = evaluateRateString(s.substr(0, lastMulDiv), resolve);
-        double r = evaluateRateString(s.substr(lastMulDiv + 1), resolve);
-        return lastMulDivOp == '*' ? l * r : l / r;
-    }
-
-    // Handle unary minus
-    if (s.front() == '-') return -evaluateRateString(s.substr(1), resolve);
-
-    // Handle exp(...)
-    if (s.rfind("exp(", 0) == 0 && s.back() == ')') {
-        return std::exp(evaluateRateString(s.substr(4, s.size() - 5), resolve));
-    }
-
-    // Try as number
-    try {
-        std::size_t pos = 0;
-        double val = std::stod(s, &pos);
-        if (pos == s.size()) return val;
-    } catch (...) {}
-
-    // Must be a parameter name
-    return resolve(s);
+    return bng::compile::evaluateRateString(rateStr, resolve);
 }
 
 // Checks if 'target' exists in 'text' bounded by non-word characters
@@ -840,6 +780,8 @@ void OdeIntegrator::compile() {
                         std::move(rateExpression));
                 }
                 crxn.functionalRateExpr = std::move(rateExpression);
+                crxn.compiledRateLaw = bng::compile::CompiledRateLaw::compile(
+                    *crxn.functionalRateExpr, rateSymbols);
                 crxn.rateConstant = 0.0;
                 crxn.isFunctional = true;
                 std::unordered_set<std::string> visitedFunctions;
@@ -1419,6 +1361,13 @@ void OdeIntegrator::compile() {
             std::unordered_set<std::string> visitedFunctions;
             crxn.isTimeDependent = expressionReadsTime(
                 *crxn.functionalRateExpr, visitedFunctions);
+            if (!crxn.compiledRateLaw.has_value()) {
+                crxn.compiledRateLaw = bng::compile::CompiledRateLaw::compile(
+                    *crxn.functionalRateExpr, rateSymbols);
+            }
+        } else if (crxn.sourceRateExpr.has_value() && !crxn.compiledRateLaw.has_value()) {
+            crxn.compiledRateLaw = bng::compile::CompiledRateLaw::compile(
+                *crxn.sourceRateExpr, rateSymbols);
         }
         compiledRxns_.push_back(crxn);
         ++rxnIndex;
@@ -1890,16 +1839,84 @@ void OdeIntegrator::evaluateFunctionalRateCoefficients(
         const auto& eventValues = activeSimulationSession_
             ? activeSimulationSession_->eventParameterValues
             : noEventValues;
-        return evaluateParameterWithEventState(name, t, eventValues);
+        try {
+            return evaluateParameterWithEventState(name, t, eventValues);
+        } catch (...) {
+            for (const auto& func : model_.getFunctions()) {
+                if (func.getName() == name) {
+                    return functionEvaluator_.evaluate(
+                        ast::Expression::identifier(name), resolver, t);
+                }
+            }
+            throw;
+        }
     };
 
     for (const auto idx : functionalRxnIndices_) {
         const auto& rxn = compiledRxns_[idx];
         double rate;
-        if (rxn.functionalRateExpr.has_value()) {
+        if (rxn.compiledRateLaw.has_value() &&
+            rxn.compiledRateLaw->resolvedExpression().fullyResolved() &&
+            !rxn.compiledRateLaw->dependsOnDelay() &&
+            !hasPositiveExpressionDelay_) {
+            try {
+                bng::compile::RateEvaluationContext ctx;
+                ctx.time = t;
+                ctx.resolveIdentifier = resolver;
+                ctx.resolveLocal = resolver;
+                ctx.resolveParameter = [&](std::size_t, const std::string& name) {
+                    return resolver(name);
+                };
+                ctx.resolveObservable = [&](std::size_t, const std::string& name) {
+                    return resolver(name);
+                };
+                ctx.resolveFunction = [&](const std::string& funcName,
+                                          const std::vector<double>& args) -> double {
+                    if (args.empty()) {
+                        return functionEvaluator_.evaluate(
+                            ast::Expression::identifier(funcName), resolver, t);
+                    }
+                    std::vector<ast::Expression> argExprs;
+                    argExprs.reserve(args.size());
+                    for (double val : args) {
+                        argExprs.push_back(ast::Expression::number(val));
+                    }
+                    return functionEvaluator_.evaluate(
+                        ast::Expression::function(funcName, argExprs), resolver, t);
+                };
+                ctx.discreteReactantCounts = discreteReactantCounts;
+                ctx.resolveReactantCount = [&](std::size_t reactantIdx) {
+                    if (reactantIdx < rxn.reactantIndices.size()) {
+                        const std::size_t specIdx = rxn.reactantIndices[reactantIdx];
+                        return (specIdx < nSpecies_) ? y[specIdx] : 0.0;
+                    }
+                    return 0.0;
+                };
+                rate = rxn.compiledRateLaw->evaluate(ctx);
+            } catch (const std::exception& error) {
+                if (failOnError) {
+                    throw std::runtime_error(
+                        "SSA failed to evaluate functional rate coefficient for "
+                        "reaction " + std::to_string(idx + 1) + ": " + error.what());
+                }
+                rate = rxn.rateConstant;
+            }
+        } else if (rxn.functionalRateExpr.has_value()) {
             try {
                 rate = evaluateExpressionWithHistory(
                     *rxn.functionalRateExpr, t, y, discreteReactantCounts);
+            } catch (const std::exception& error) {
+                if (failOnError) {
+                    throw std::runtime_error(
+                        "SSA failed to evaluate functional rate coefficient for "
+                        "reaction " + std::to_string(idx + 1) + ": " + error.what());
+                }
+                rate = rxn.rateConstant;
+            }
+        } else if (rxn.sourceRateExpr.has_value()) {
+            try {
+                rate = evaluateExpressionWithHistory(
+                    *rxn.sourceRateExpr, t, y, discreteReactantCounts);
             } catch (const std::exception& error) {
                 if (failOnError) {
                     throw std::runtime_error(
