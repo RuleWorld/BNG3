@@ -99,6 +99,107 @@ def test_semantic_test_jobs_retain_reports_on_failure(job_id):
         assert "build/Testing/Temporary/" in paths
 
 
+def _run_provenance_command(script, *arguments):
+    return subprocess.run(
+        [sys.executable, str(REPO / "scripts" / script), *arguments],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+
+def test_release_provenance_accepts_current_lock_and_ratchet():
+    result = _run_provenance_command("validate_provenance.py", "--require-approved")
+    assert result.returncode == 0, result.stderr
+
+    result = _run_provenance_command("check_provenance_ratchet.py")
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize(
+    ("mutation", "expected_error"),
+    [
+        ("pin", "sources.bng3.revision must be a full lowercase Git SHA"),
+        ("hash", "python_lock.digest does not match the lock file bytes"),
+        ("acceptance", "strict gate requires sources.bng3.status=accepted"),
+    ],
+    ids=["pin", "hash", "acceptance"],
+)
+def test_release_provenance_negative_rejects_mutated_lock(
+    tmp_path, mutation, expected_error
+):
+    lock = json.loads(UPSTREAMS_LOCK.read_text(encoding="utf-8"))
+    if mutation == "pin":
+        lock["sources"]["bng3"]["revision"] = "bad"
+    elif mutation == "hash":
+        lock["dependencies"]["python_lock"]["digest"] = "sha256:" + "0" * 64
+    else:
+        lock["sources"]["bng3"]["status"] = "observed"
+
+    candidate = tmp_path / f"upstreams-{mutation}.lock.yml"
+    candidate.write_text(json.dumps(lock), encoding="utf-8")
+    result = _run_provenance_command(
+        "validate_provenance.py", "--lock", str(candidate), "--require-approved"
+    )
+    assert result.returncode == 1
+    assert expected_error in result.stderr
+
+    result = _run_provenance_command(
+        "check_provenance_ratchet.py", "--lock", str(candidate)
+    )
+    assert result.returncode == 1
+    assert expected_error in result.stderr
+
+
+def test_release_provenance_negative_rejects_stale_ratchet(tmp_path):
+    candidate = tmp_path / "stale-ratchet.json"
+    ratchet = json.loads(
+        (REPO / "provenance" / "strict-gate-ratchet.json").read_text(encoding="utf-8")
+    )
+    ratchet["errors"] = ["strict gate requires an approved baseline"]
+    candidate.write_text(
+        json.dumps(ratchet),
+        encoding="utf-8",
+    )
+    result = _run_provenance_command(
+        "check_provenance_ratchet.py", "--ratchet", str(candidate)
+    )
+    assert result.returncode == 1
+    assert "recorded blocker(s) no longer raised" in result.stderr
+
+
+def test_release_obligation_179_executes_strict_gate_before_release_evidence():
+    release = parse_workflow(RELEASE_WORKFLOW)
+    steps = release["jobs"]["qualify"]["steps"]
+    provenance_step = next(
+        (step for step in steps if step.get("id") == "provenance"), None
+    )
+    assert provenance_step is not None
+    commands = [
+        line.strip() for line in provenance_step["run"].splitlines() if line.strip()
+    ]
+    assert commands == [
+        "python scripts/validate_provenance.py --require-approved",
+        "python scripts/check_provenance_ratchet.py",
+    ]
+    assert steps.index(provenance_step) < next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("name")
+        == "Require the exact-main weekly mutation artifact and ratchet"
+    )
+
+    result = subprocess.run(
+        ["bash", "-e", "-c", provenance_step["run"]],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+
+
 def test_issue141_lifecycle_exposes_repo_root_for_tests_package_import():
     job = job_subtree_text(CI_WORKFLOW, "python-native-lifecycle")
     steps = parse_workflow(CI_WORKFLOW)["jobs"]["python-native-lifecycle"]["steps"]

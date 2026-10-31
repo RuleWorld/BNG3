@@ -26,26 +26,27 @@ def _run(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 @pytest.mark.smoke
-def test_pending_source_lock_is_structurally_valid():
+def test_accepted_source_lock_is_structurally_valid():
     result = _run()
     assert result.returncode == 0, result.stderr
-    assert "pending maintainer approval" in result.stdout
+    assert "provenance validation passed" in result.stdout
 
 
-def test_pending_source_lock_cannot_pass_release_gate():
+def test_accepted_source_lock_passes_strict_release_gate():
     result = _run("--require-approved")
-    assert result.returncode == 1
-    assert "strict gate requires an approved baseline" in result.stderr
+    assert result.returncode == 0, result.stderr
 
 
-def test_source_lock_does_not_claim_unmade_decisions():
+def test_source_lock_records_accepted_decisions():
     lock = json.loads(LOCK.read_text(encoding="utf-8"))
-    assert lock["baseline"]["status"] == "pending-maintainer-approval"
-    assert all(source["status"] == "observed" for source in lock["sources"].values())
-    assert all(oracle["status"] == "pending" for oracle in lock["oracles"].values())
+    assert lock["baseline"]["status"] == "approved"
+    assert all(source["status"] == "accepted" for source in lock["sources"].values())
+    assert all(oracle["status"] == "locked" for oracle in lock["oracles"].values())
+    assert lock["dependencies"]["compiler_images"]["status"] == "locked"
+    assert lock["dependencies"]["python_lock"]["status"] == "locked"
 
 
-def test_ssts_revision_is_locked_without_approving_the_source_baseline():
+def test_ssts_pin_is_accepted_without_changing_its_revision():
     lock = json.loads(LOCK.read_text(encoding="utf-8"))
     suite = lock["sources"]["sbml-test-suite"]
 
@@ -54,10 +55,10 @@ def test_ssts_revision_is_locked_without_approving_the_source_baseline():
         "branch": "3.5.0",
         "revision": "cf38585fac5de8e0e90112febb62851ee2181816",
         "role": "official-validation-corpus-not-oracle",
-        "status": "observed",
+        "status": "accepted",
         "evidence": {"kind": "remote-commit", "checked_at": "2026-10-08"},
     }
-    assert lock["baseline"]["status"] == "pending-maintainer-approval"
+    assert lock["baseline"]["status"] == "approved"
 
 
 def test_malformed_revision_is_rejected(tmp_path):
@@ -65,7 +66,7 @@ def test_malformed_revision_is_rejected(tmp_path):
     lock["sources"]["nfsim"]["revision"] = "short"
     candidate = tmp_path / "upstreams.lock.yml"
     candidate.write_text(json.dumps(lock), encoding="utf-8")
-    result = _run("--lock", str(candidate))
+    result = _run("--lock", str(candidate), "--require-approved")
     assert result.returncode == 1
     assert "sources.nfsim.revision" in result.stderr
 
@@ -81,21 +82,25 @@ def test_malformed_evidence_is_rejected_without_traceback(tmp_path):
     assert "Traceback" not in result.stderr
 
 
-def test_approval_cannot_hide_pending_components(tmp_path):
+def test_strict_gate_rejects_an_unaccepted_source(tmp_path):
     lock = json.loads(LOCK.read_text(encoding="utf-8"))
-    lock["baseline"].update(
-        {
-            "status": "approved",
-            "approved_by": "maintainer",
-            "approved_at": "2026-08-28T12:00:00Z",
-        }
-    )
+    lock["sources"]["bionetgen"]["status"] = "observed"
     candidate = tmp_path / "upstreams.lock.yml"
     candidate.write_text(json.dumps(lock), encoding="utf-8")
-    result = _run("--lock", str(candidate))
+    result = _run("--lock", str(candidate), "--require-approved")
     assert result.returncode == 1
     assert "sources.bionetgen.status=accepted" in result.stderr
-    assert "oracles.bng2.status=locked" in result.stderr
+
+
+def test_ratchet_accepts_a_passing_strict_gate():
+    result = subprocess.run(
+        [sys.executable, str(REPO / "scripts" / "check_provenance_ratchet.py")],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_reconciliation_schema_has_all_plan_classifications():

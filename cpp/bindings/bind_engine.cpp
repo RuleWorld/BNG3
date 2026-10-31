@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cctype>
+#include <cstdint>
 #include <map>
 #include <optional>
 #include <set>
@@ -377,6 +378,49 @@ void bind_engine(py::module_& m) {
             }
             return strs;
         })
+        .def_property_readonly("reaction_participants", [](const GeneratedNetwork& gn) {
+            std::vector<std::pair<std::vector<std::size_t>, std::vector<std::size_t>>>
+                participants;
+            participants.reserve(gn.reactions.size());
+            for (const auto& reaction : gn.reactions.all()) {
+                participants.emplace_back(
+                    reaction.getReactants(), reaction.getProducts());
+            }
+            return participants;
+        }, "Reactant and product species indices for each generated reaction, in network order")
+        .def_property_readonly("stoichiometric_matrix", [](const GeneratedNetwork& gn) {
+            const auto speciesCount = static_cast<py::ssize_t>(gn.species.size());
+            const auto reactionCount = static_cast<py::ssize_t>(gn.reactions.size());
+            py::array_t<std::int64_t> matrix({speciesCount, reactionCount});
+            auto entries = matrix.mutable_unchecked<2>();
+            for (py::ssize_t species = 0; species < speciesCount; ++species) {
+                for (py::ssize_t reaction = 0; reaction < reactionCount; ++reaction) {
+                    entries(species, reaction) = 0;
+                }
+            }
+
+            for (std::size_t reactionIndex = 0;
+                 reactionIndex < gn.reactions.size(); ++reactionIndex) {
+                const auto& reaction = gn.reactions.all()[reactionIndex];
+                for (const auto speciesIndex : reaction.getReactants()) {
+                    if (speciesIndex >= gn.species.size()) {
+                        throw std::logic_error(
+                            "generated reaction references an unknown reactant species");
+                    }
+                    --entries(static_cast<py::ssize_t>(speciesIndex),
+                              static_cast<py::ssize_t>(reactionIndex));
+                }
+                for (const auto speciesIndex : reaction.getProducts()) {
+                    if (speciesIndex >= gn.species.size()) {
+                        throw std::logic_error(
+                            "generated reaction references an unknown product species");
+                    }
+                    ++entries(static_cast<py::ssize_t>(speciesIndex),
+                              static_cast<py::ssize_t>(reactionIndex));
+                }
+            }
+            return matrix;
+        }, "Dense integer matrix N[species, reaction] = products - reactants")
         .def("__repr__", [](const GeneratedNetwork& gn) {
             return "<GeneratedNetwork species=" + std::to_string(gn.species.size()) +
                    " reactions=" + std::to_string(gn.reactions.size()) + ">";
