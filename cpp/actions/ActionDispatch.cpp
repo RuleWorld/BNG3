@@ -1676,6 +1676,28 @@ void runSimulation(
     const auto method = resolveSimulationMethod(action);
     const auto tEnd = stripQuotes(readArgument(action, "t_end", ""));
     const auto nSteps = stripQuotes(readArgument(action, "n_steps", stripQuotes(readArgument(action, "n_output_steps", ""))));
+    const auto compiledTimeValue = [&](const std::string& argumentName,
+                                      const std::string& effectiveValue)
+        -> std::optional<double> {
+        if (compiledOptions == nullptr) {
+            return std::nullopt;
+        }
+        const auto inlineValue = actionOrig.arguments.find(argumentName);
+        if (inlineValue == actionOrig.arguments.end() ||
+            stripQuotes(trim(inlineValue->second)) !=
+                stripQuotes(trim(effectiveValue))) {
+            return std::nullopt;
+        }
+
+        const bool isStart = argumentName == "t_start";
+        const auto& diagnostic = isStart
+            ? compiledOptions->tStartDiagnostic
+            : compiledOptions->tEndDiagnostic;
+        if (diagnostic.has_value()) {
+            throw std::runtime_error(diagnostic->message);
+        }
+        return isStart ? compiledOptions->tStart : compiledOptions->tEnd;
+    };
     const auto sampleTimesText = readArgument(action, "sample_times", "");
     const bool hasSampleTimes = !trim(stripQuotes(sampleTimesText)).empty();
     const bool hasStepCount = !nSteps.empty();
@@ -1690,7 +1712,10 @@ void runSimulation(
     // Parse simulation options
     engine::OdeOptions opts;
     if (!tEnd.empty()) {
-        opts.tEnd = parseScalarValue(tEnd, model);
+        const auto compiledValue = compiledTimeValue("t_end", tEnd);
+        opts.tEnd = compiledValue.has_value()
+            ? *compiledValue
+            : parseScalarValue(tEnd, model);
     }
     if (!nSteps.empty()) {
         const auto inlineSteps = actionOrig.arguments.find("n_steps");
@@ -1723,7 +1748,10 @@ void runSimulation(
     // Parse t_start (BNG2 parity)
     const auto tStartText = readArgument(action, "t_start", "");
     if (!tStartText.empty()) {
-        opts.tStart = parseScalarValue(tStartText, model);
+        const auto compiledValue = compiledTimeValue("t_start", tStartText);
+        opts.tStart = compiledValue.has_value()
+            ? *compiledValue
+            : parseScalarValue(tStartText, model);
     }
 
     if (hasSampleTimes && hasStepCount) {

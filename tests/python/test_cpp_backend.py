@@ -2403,6 +2403,116 @@ end model
         ]
         assert [float(row[0]) for row in rows] == [0.0, 0.25, 1.5, 2.0]
 
+    def test_action_compiled_times_preserve_live_parameter_updates_and_continue(
+        self, tmp_path
+    ):
+        bngl = tmp_path / "action_time_options.bngl"
+        bngl.write_text("""
+begin model
+begin parameters
+    tStart 0
+    tEnd 1
+    k 2
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 0
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    0 -> X() k
+end reaction rules
+begin actions
+    simulate_ode({prefix=>"trajectory",t_start=>2**1,t_end=>3,n_steps=>2})
+    setParameter("tStart",3)
+    setParameter("tEnd",4)
+    setParameter("k",3)
+    simulate_ode({prefix=>"trajectory",continue=>1,t_start=>tStart,t_end=>tEnd,n_steps=>2})
+end actions
+end model
+""")
+
+        model = bionetgen.load(str(bngl))
+        model.execute()
+        rows = [
+            [float(value) for value in line.split()]
+            for line in (tmp_path / "trajectory.gdat").read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
+
+        # Constant production gives X(t)=2(t-2) for the first phase. After
+        # parameter updates, the continued phase starts at t=3 with X=2 and
+        # adds 3 molecules per unit time.
+        assert [row[0] for row in rows] == [2.0, 2.5, 3.0, 3.5, 4.0]
+        assert [row[1] for row in rows] == pytest.approx(
+            [0.0, 1.0, 2.0, 3.5, 5.0], rel=1e-7, abs=1e-8
+        )
+
+    def test_action_time_options_from_argfile_use_the_effective_values(self, tmp_path):
+        bngl = tmp_path / "argfile_time_options.bngl"
+        (tmp_path / "times.args").write_text("t_start 2\nt_end 3\n")
+        bngl.write_text("""
+begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 0
+end seed species
+begin observables
+    Molecules Xtot X()
+end observables
+begin reaction rules
+    0 -> X() 1
+end reaction rules
+begin actions
+    simulate_ode({prefix=>"argfile",argfile=>"times.args",n_steps=>2})
+end actions
+end model
+""")
+
+        model = bionetgen.load(str(bngl))
+        model.execute()
+        rows = [
+            [float(value) for value in line.split()]
+            for line in (tmp_path / "argfile.gdat").read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
+
+        assert [row[0] for row in rows] == [2.0, 2.5, 3.0]
+        assert [row[1] for row in rows] == pytest.approx(
+            [0.0, 0.5, 1.0], rel=1e-7, abs=1e-8
+        )
+
+    def test_action_defers_invalid_static_time_diagnostic_until_execution(
+        self, tmp_path
+    ):
+        bngl = tmp_path / "invalid_action_time.bngl"
+        bngl.write_text("""
+begin model
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin reaction rules
+    X() -> 0 1
+end reaction rules
+begin actions
+    simulate_ode({t_end=>1/0,n_steps=>1})
+end actions
+end model
+""")
+
+        model = bionetgen.load(str(bngl))
+        with pytest.raises(RuntimeError, match="invalid t_end '1/0'"):
+            model.execute()
+
     def test_action_sample_times_precedence_and_continue_start(self, tmp_path):
         bngl = tmp_path / "action_sample_times_boundaries.bngl"
         bngl.write_text("""

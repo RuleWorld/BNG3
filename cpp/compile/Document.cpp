@@ -62,6 +62,18 @@ Diagnostic nStepsDiagnostic(const std::string& source, const std::string& reason
     return diagnostic;
 }
 
+Diagnostic simulationTimeDiagnostic(const std::string& field,
+                                    const std::string& source,
+                                    const std::string& reason) {
+    Diagnostic diagnostic;
+    diagnostic.code = DiagnosticCode::InvalidModel;
+    diagnostic.severity = Severity::Error;
+    diagnostic.category = ValidationCategory::Expressions;
+    diagnostic.entity = "simulation." + field;
+    diagnostic.message = "invalid " + field + " '" + source + "': " + reason;
+    return diagnostic;
+}
+
 Diagnostic setParameterValueDiagnostic(const std::string& source,
                                        const std::string& reason) {
     Diagnostic diagnostic;
@@ -588,9 +600,64 @@ GenerateNetworkOptions compileGenerateNetworkOptions(
     return options;
 }
 
+void compileSimulationTimeOption(
+    const std::map<std::string, std::string>& arguments,
+    const std::string& field,
+    std::optional<double>& value,
+    std::optional<Diagnostic>& diagnostic) {
+    const auto found = arguments.find(field);
+    if (found == arguments.end()) {
+        return;
+    }
+
+    const auto& source = found->second;
+    const auto expressionSource = unquoteActionValue(source);
+    if (expressionSource.find('^') != std::string::npos) {
+        diagnostic = simulationTimeDiagnostic(
+            field, source,
+            "Safe-Perl '^' is bitwise XOR; use '**' for exponentiation");
+        return;
+    }
+
+    // Parameter-backed expressions must be evaluated when the action runs,
+    // after preceding protocol setters and argfile resolution.
+    if (!containsOnlyNumericActionSyntax(expressionSource)) {
+        return;
+    }
+
+    ast::Expression expression;
+    try {
+        expression = parser::parseExpression(expressionSource);
+    } catch (const std::exception& error) {
+        diagnostic = simulationTimeDiagnostic(
+            field, source,
+            std::string("could not be parsed as a numeric expression: ") + error.what());
+        return;
+    }
+
+    double parsedValue = 0.0;
+    if (!evaluateFiniteStaticExpression(expression, parsedValue)) {
+        diagnostic = simulationTimeDiagnostic(
+            field, source, "must evaluate to a finite number");
+        return;
+    }
+
+    std::size_t powerOperators = 0;
+    if (!supportsStaticActionArithmetic(expression, powerOperators)) {
+        // Keep expressions outside this compiler's conservative arithmetic
+        // subset for the existing execution-time evaluator.
+        return;
+    }
+    value = parsedValue;
+}
+
 SimulationOptions compileSimulationOptions(
     const std::map<std::string, std::string>& arguments) {
     SimulationOptions options;
+    compileSimulationTimeOption(
+        arguments, "t_start", options.tStart, options.tStartDiagnostic);
+    compileSimulationTimeOption(
+        arguments, "t_end", options.tEnd, options.tEndDiagnostic);
     const auto found = arguments.find("n_steps");
     if (found == arguments.end()) {
         return options;

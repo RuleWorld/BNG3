@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -15,62 +14,31 @@ class BioNetGenError(BNGError):
 
 
 def _native_algebraic_rules(model) -> list[tuple[str, str]]:
-    """Select unambiguous free species for native index-1 DAE rows."""
+    """Select native DAE state coordinates for the coupled algebraic system."""
     algebraic = [rule for rule in model.rules if rule.type == "algebraic"]
     if not algebraic:
         return []
-    controlled = {
-        str(rule.variable).casefold()
-        for rule in model.rules
-        if rule.type in {"assignment", "rate"} and rule.variable
-    }
-    controlled.update(
-        str(event_assignment.variable).casefold()
-        for event in model.events
-        for event_assignment in event.assignments
-        if event_assignment.variable
+    from bionetgen.atomizer.modern.writer import (
+        algebraic_residual_name,
+        native_algebraic_targets,
+        standardize_name,
     )
-    reaction_species = {
-        str(reference.species).casefold()
-        for reaction in model.reactions.values()
-        for reference in [*reaction.reactants, *reaction.products]
-        if reference.species and reference.species != "EmptySet"
-    }
-    candidates = {
-        str(identifier).casefold(): str(identifier)
-        for identifier, species in model.species.items()
-        if not species.constant
-        and str(identifier).casefold() not in controlled
-        and str(identifier).casefold() not in reaction_species
-    }
-    from bionetgen.atomizer.modern.writer import algebraic_residual_name
 
-    result = []
-    assigned = set()
-    for index, rule in enumerate(algebraic):
-        symbols = {
-            name.casefold()
-            for name in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", rule.math)
-        }
-        matched = symbols.intersection(candidates)
-        if len(matched) != 1:
-            raise BioNetGenError(
-                "SBML algebraic rule requires an unambiguous free species "
-                "to form a native DAE state"
-            )
-        target = next(iter(matched))
-        if target in assigned:
-            raise BioNetGenError(
-                "SBML algebraic rules constrain the same species more than once"
-            )
-        assigned.add(target)
-        # The generated model carries the rule's math as a BNGL function with
-        # the SBML symbols translated, so the residual reads concentrations
-        # where the SBML math does.
-        result.append((candidates[target], f"{algebraic_residual_name(index)}()"))
-    if len(result) > len(model.species):
-        raise BioNetGenError("SBML model has more algebraic rules than species states")
-    return result
+    try:
+        targets = native_algebraic_targets(model)
+    except ValueError as exc:
+        raise BioNetGenError(str(exc)) from exc
+    return [
+        (
+            (
+                f"{standardize_name(target)}_amt"
+                if target not in model.species
+                else standardize_name(target)
+            ),
+            f"{algebraic_residual_name(index)}()",
+        )
+        for index, target in enumerate(targets)
+    ]
 
 
 def _require_libsbml() -> None:

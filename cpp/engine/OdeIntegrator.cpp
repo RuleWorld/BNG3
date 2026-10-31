@@ -2214,6 +2214,10 @@ double OdeIntegrator::evaluateExpressionWithHistory(
                 observable->second < groupValues.size()) {
                 return groupValues[observable->second];
             }
+            const auto historicalParameter = parameters.find(name);
+            if (historicalParameter != parameters.end()) {
+                return historicalParameter->second;
+            }
             static const std::unordered_map<std::string, double> noEventValues;
             const auto& eventValues = activeSimulationSession_
                 ? activeSimulationSession_->eventParameterValues
@@ -2223,10 +2227,6 @@ double OdeIntegrator::evaluateExpressionWithHistory(
                     eventDependentParameterNames_.end()) {
                 return evaluateParameterWithEventState(
                     name, currentTime, eventValues);
-            }
-            const auto historicalParameter = parameters.find(name);
-            if (historicalParameter != parameters.end()) {
-                return historicalParameter->second;
             }
             return evaluateParameterWithEventState(
                 name, currentTime,
@@ -5127,6 +5127,7 @@ OdeResult OdeIntegrator::integrateIda(const OdeOptions& opts) {
                 nativeEventGroups_[group].trigger, opts.tStart, initialState.data());
         }
     }
+    recordHistoryPoint(opts.tStart, initialState);
     std::vector<double> initialRhs(nSpecies_);
     derivs(opts.tStart, initialState.data(), initialRhs.data());
     const double timeScale = std::max(std::abs(opts.tEnd - opts.tStart), 1.0);
@@ -5359,6 +5360,7 @@ OdeResult OdeIntegrator::integrateIda(const OdeOptions& opts) {
                     for (std::size_t i = 0; i < nSpecies_; ++i) {
                         NV_Ith_S(session.y, i) = dueState[i] / cvodeStateScale_[i];
                     }
+                    recordHistoryJump(time, dueState);
                     if (IDAReInit(session.ida_mem, time, session.y,
                                   session.ydot) != IDA_SUCCESS ||
                         IDASetId(session.ida_mem, session.id) != IDA_SUCCESS) {
@@ -5382,6 +5384,7 @@ OdeResult OdeIntegrator::integrateIda(const OdeOptions& opts) {
             state[i] = NV_Ith_S(session.y, i) * cvodeStateScale_[i];
         }
         result.concentrations.push_back(state);
+        recordHistoryPoint(outputTime, state);
         if (stopIfExpr && stopConditionMet(*stopIfExpr, outputTime, state)) break;
         if (step > 0 && steadyStateReached(opts, outputTime, state)) break;
     }

@@ -1102,12 +1102,16 @@ jobs:
       - name: Build wheels
         run: cibuildwheel --output-dir wheelhouse
         env:
+          BNG3_PYTHON_TEST_MODE: installed
           CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
           CIBW_SKIP: "*-musllinux_* *-manylinux_i686 *-win32"
           CIBW_BUILD_VERBOSITY: 1
-          CIBW_TEST_REQUIRES: pytest numpy click
+          CIBW_TEST_REQUIRES: pytest numpy click pandas python-libsbml
           CIBW_TEST_COMMAND: >-
+            python {project}/scripts/ci/check_python_package_identity.py
+            --source-revision ${{ github.sha }} &&
             pytest {project}/tests/python/test_cpp_backend.py -v --tb=short &&
+            pytest {project}/tests/python/test_migration_workflows.py -v --tb=short &&
             bionetgen --version &&
             bionetgen --help
           CIBW_ENVIRONMENT: CMAKE_ARGS="-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
