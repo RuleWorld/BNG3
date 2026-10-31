@@ -3687,7 +3687,9 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
                     value = affine(node.operand)
                     if value is None:
                         return None
-                    sign = Fraction(-1) if isinstance(node.op, ast.USub) else Fraction(1)
+                    sign = (
+                        Fraction(-1) if isinstance(node.op, ast.USub) else Fraction(1)
+                    )
                     return sign * value[0], sign * value[1]
                 if not isinstance(node, ast.BinOp):
                     return None
