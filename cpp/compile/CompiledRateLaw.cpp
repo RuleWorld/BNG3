@@ -232,6 +232,7 @@ ResolvedExpression resolveExpression(const ast::Expression& expression,
                             ? ResolvedExpressionKind::BuiltinCall
                             : ResolvedExpressionKind::FunctionRef;
         resolved.operation = expression.name();
+        resolved.call = true;
         if (builtin != BuiltinFunction::Unknown) {
             resolved.builtin = builtin;
         } else {
@@ -258,6 +259,7 @@ ResolvedExpression resolveExpression(const ast::Expression& expression,
             return resolved;
         }
         resolved.operation = expression.name();
+        resolved.call = true;
         if (const auto observable = symbols.resolveObservable(expression.name())) {
             resolved.kind = ResolvedExpressionKind::ObservableRef;
             addReference(references, SymbolRef{SymbolKind::Observable, observable->value()});

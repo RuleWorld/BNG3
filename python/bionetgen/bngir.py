@@ -339,7 +339,15 @@ def _payload_v02(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
             "BNGIR v0.2 requires the structural compile snapshot support in this BNG3 build"
         ) from exc
     snapshot = dict(snapshot)
-    actions = list(snapshot.pop("actions", []))
+    raw_actions = list(snapshot.pop("actions", []))
+    actions = [
+        {
+            "scope": act.get("scope", "model"),
+            "name": act.get("name", ""),
+            "arguments": {str(k): str(v) for k, v in act.get("arguments", {}).items()},
+        }
+        for act in raw_actions
+    ]
     metadata = dict(snapshot.pop("metadata", {}))
     result = {
         "format": FORMAT,

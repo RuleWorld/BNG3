@@ -171,7 +171,7 @@ py::dict expressionSnapshot(const ResolvedExpression& expression) {
         result["reactant_index"] = expression.reactantIndex;
     if ((expression.kind == ResolvedExpressionKind::FunctionRef ||
          expression.kind == ResolvedExpressionKind::ObservableRef) &&
-        !expression.operation.empty()) {
+        expression.call) {
         result["call"] = true;
     }
     if (expression.unaryOp.has_value()) result["operator"] = unaryName(*expression.unaryOp);
