@@ -3593,7 +3593,7 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
                 value = int(node.value) if isinstance(node.value, bool) else node.value
                 return Fraction(0), Fraction(str(value))
             if isinstance(node, ast.Name):
-                if node.id.lower() == "time":
+                if node.id == "time":
                     return Fraction(1), Fraction(0)
                 constant = initial_expression(node.id, require_immutable_symbols=True)
                 return (
@@ -3659,6 +3659,73 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
                 return intercept != 0
             return True if high < 0 or low > 0 else None
         return None
+
+    def affine_time_bounds(expression: str) -> Optional[Tuple[Fraction, Fraction]]:
+        """Bound a simple affine-in-time expression on ``[0, t_end]``."""
+        try:
+            root = ast.parse(expression, mode="eval").body
+
+            def affine(node: ast.AST) -> Optional[Tuple[Fraction, Fraction]]:
+                if isinstance(node, ast.Constant) and isinstance(
+                    node.value, (int, float)
+                ):
+                    if not math.isfinite(float(node.value)):
+                        return None
+                    return Fraction(0), Fraction(str(node.value))
+                if isinstance(node, ast.Name):
+                    if node.id == "time":
+                        return Fraction(1), Fraction(0)
+                    constant = initial_expression(
+                        node.id, require_immutable_symbols=True
+                    )
+                    if constant is None or not math.isfinite(constant):
+                        return None
+                    return Fraction(0), Fraction(str(constant))
+                if isinstance(node, ast.UnaryOp) and isinstance(
+                    node.op, (ast.UAdd, ast.USub)
+                ):
+                    value = affine(node.operand)
+                    if value is None:
+                        return None
+                    sign = (
+                        Fraction(-1) if isinstance(node.op, ast.USub) else Fraction(1)
+                    )
+                    return sign * value[0], sign * value[1]
+                if not isinstance(node, ast.BinOp):
+                    return None
+                left = affine(node.left)
+                right = affine(node.right)
+                if left is None or right is None:
+                    return None
+                if isinstance(node.op, ast.Add):
+                    return left[0] + right[0], left[1] + right[1]
+                if isinstance(node.op, ast.Sub):
+                    return left[0] - right[0], left[1] - right[1]
+                if isinstance(node.op, ast.Mult):
+                    if left[0] != 0 and right[0] != 0:
+                        return None
+                    if left[0] != 0:
+                        return left[0] * right[1], left[1] * right[1]
+                    if right[0] != 0:
+                        return right[0] * left[1], right[1] * left[1]
+                    return Fraction(0), left[1] * right[1]
+                if isinstance(node.op, ast.Div):
+                    if right[0] != 0 or right[1] == 0:
+                        return None
+                    return left[0] / right[1], left[1] / right[1]
+                return None
+
+            value = affine(root)
+            if value is None:
+                return None
+            slope, intercept = value
+            endpoints = (intercept, slope * Fraction(str(t_end)) + intercept)
+            lower, upper = min(endpoints), max(endpoints)
+            if not math.isfinite(float(lower)) or not math.isfinite(float(upper)):
+                return None
+            return lower, upper
+        except (OverflowError, SyntaxError, TypeError, ValueError, ZeroDivisionError):
+            return None
 
     def affine_trajectory(target: str) -> Optional[Tuple[float, float]]:
         """Prove a target has an independent constant-rate trajectory."""
@@ -3924,6 +3991,36 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
                 return expression, 0
             delayed_expression = arguments[0].strip()
             state_match = re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", delayed_expression)
+            if duration is None:
+                # A dynamic lag can still be folded when its affine range is
+                # valid for the full run and its shifted read stays inside a
+                # horizon where the delayed expression is already proven
+                # constant. This keeps the duration's domain check and avoids
+                # making assumptions about pre-simulation history.
+                duration_bounds = affine_time_bounds(arguments[1])
+                try:
+                    delayed_value = initial_expression(
+                        delayed_expression, require_immutable_symbols=True
+                    )
+                except (TypeError, ValueError, ZeroDivisionError):
+                    delayed_value = None
+                if delayed_value is None and state_match:
+                    delayed_value = bounded_constant_expression(delayed_expression)
+                if duration_bounds is not None and delayed_value is not None:
+                    duration_low, _duration_high = duration_bounds
+                    lag = affine_time_bounds(f"time - ({arguments[1]})")
+                    if (
+                        duration_low >= 0
+                        and math.isfinite(delayed_value)
+                        and lag is not None
+                        and lag[0] >= 0
+                        and lag[1] <= Fraction(str(t_end))
+                    ):
+                        replacements.append(
+                            (match.start(), call_end, repr(delayed_value))
+                        )
+                        position = call_end
+                        continue
             if duration is None and state_match and lower_affine_state_history:
                 lag_schedule = single_fixed_event_lag(arguments[1])
                 if lag_schedule is not None:
@@ -4093,8 +4190,9 @@ def _lower_bounded_event_state_delays(model: SBMLModel, t_end: float) -> int:
         return 0
     _record_import_warning(
         model,
-        "SBML delay calls with zero duration, bounded initial history, or "
-        "provable affine-state history were lowered exactly for simulation "
+        "SBML delay calls with zero duration, bounded initial history, "
+        "provable affine-state history, or a constant value over a bounded "
+        "dynamic-delay interval were lowered exactly for simulation "
         f"horizon t <= {t_end:g}.",
         category="delay",
         severity="info",

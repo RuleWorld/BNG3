@@ -20,6 +20,7 @@ on:
       - 'python/bionetgen/model.py'
       - 'python/bionetgen/sbml.py'
       - 'tests/python/test_atomizer_dae_ida.py'
+      - 'tests/python/test_atomizer_delay_history.py'
       - 'tests/python/test_atomizer_fast_reaction.py'
       - 'scripts/ci/checkout_oracle.py'
       - 'scripts/ci/oracle_sources.py'
@@ -295,6 +296,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/issue-160-artifacts"
           .venv/bin/python -m pytest -q \
             tests/python/test_atomizer_dae_ida.py \
+            tests/python/test_atomizer_delay_history.py \
             tests/python/test_atomizer_fast_reaction.py \
             --junitxml="$RUNNER_TEMP/issue-160-artifacts/pytest.xml"
 
