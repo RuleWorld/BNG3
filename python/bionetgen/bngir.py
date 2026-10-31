@@ -1522,6 +1522,8 @@ def _native_pattern_v02(
     where: str,
     molecule_ids: set[int],
     molecule_types: Mapping[int, Mapping[str, Any]],
+    *,
+    require_complete: bool = False,
 ) -> None:
     pattern = _require_mapping(pattern, where)
     _native_required_optional_keys(
@@ -1598,83 +1600,94 @@ def _native_pattern_v02(
             )
         sites = molecule["sites"]
         components = molecule_type["components"]
-        if not isinstance(sites, list) or len(sites) != len(components):
+        if not isinstance(sites, list) or (
+            len(sites) != len(components)
+            if require_complete
+            else len(sites) > len(components)
+        ):
             raise ValueError(
                 f"native BNGIR {where} site count does not match its molecule type"
             )
-        if not components:
-            continue
-        site = _require_mapping(
-            sites[0], f"{where}.molecules[{molecule_index}].sites[0]"
-        )
-        _native_required_optional_keys(
-            site,
-            {"occurrence", "component", "component_index", "state", "bond"},
-            {"occurrence", "component", "component_index", "state", "bond", "label"},
-            f"{where}.molecules[{molecule_index}].sites[0]",
-        )
-        component = components[0]
-        if (
-            isinstance(site["occurrence"], bool)
-            or not isinstance(site["occurrence"], int)
-            or site["occurrence"] != 0
-            or isinstance(site["component_index"], bool)
-            or not isinstance(site["component_index"], int)
-            or site["component_index"] != 0
-            or site["component"] != component["name"]
-            or site.get("label", "") != ""
-        ):
-            raise ValueError(f"native BNGIR {where} has an out-of-slice site reference")
-        state = _require_mapping(
-            site["state"], f"{where}.molecules[{molecule_index}].sites[0].state"
-        )
-        allowed_states = component["states"]
-        if allowed_states:
-            _native_exact_keys(
-                state,
-                {"kind", "value", "index"},
-                f"{where}.molecules[{molecule_index}].sites[0].state",
+        seen_component_indices = set()
+        for site_index, raw_site in enumerate(sites):
+            site = _require_mapping(
+                raw_site, f"{where}.molecules[{molecule_index}].sites[{site_index}]"
             )
-            state_index = state["index"]
+            _native_required_optional_keys(
+                site,
+                {"occurrence", "component", "component_index", "state", "bond"},
+                {"occurrence", "component", "component_index", "state", "bond", "label"},
+                f"{where}.molecules[{molecule_index}].sites[{site_index}]",
+            )
+            comp_idx = site["component_index"]
             if (
-                state["kind"] != "exact"
-                or isinstance(state_index, bool)
-                or not isinstance(state_index, int)
-                or not 0 <= state_index < len(allowed_states)
-                or state["value"] != allowed_states[state_index]
+                isinstance(comp_idx, bool)
+                or not isinstance(comp_idx, int)
+                or not (0 <= comp_idx < len(components))
+                or comp_idx in seen_component_indices
             ):
-                raise ValueError(
-                    f"native BNGIR {where} has an unknown or inconsistent finite state"
-                )
-        elif state != {"kind": "any"}:
-            raise ValueError(
-                f"native BNGIR {where} binding-only site must have an any state constraint"
+                raise ValueError(f"native BNGIR {where} has an out-of-slice site reference")
+            seen_component_indices.add(comp_idx)
+            component = components[comp_idx]
+            occ = site["occurrence"]
+            if (
+                isinstance(occ, bool)
+                or not isinstance(occ, int)
+                or occ < 0
+                or site["component"] != component["name"]
+                or site.get("label", "") != ""
+            ):
+                raise ValueError(f"native BNGIR {where} has an out-of-slice site reference")
+            state = _require_mapping(
+                site["state"], f"{where}.molecules[{molecule_index}].sites[{site_index}].state"
             )
-        bond = _require_mapping(
-            site["bond"], f"{where}.molecules[{molecule_index}].sites[0].bond"
-        )
-        if bond == {"kind": "unbound"}:
-            continue
-        if bond.get("kind") == "exact":
-            _native_exact_keys(
-                bond,
-                {"kind", "group"},
-                f"{where}.molecules[{molecule_index}].sites[0].bond",
-            )
-            group = bond["group"]
-            if isinstance(group, bool) or not isinstance(group, int) or group < 0:
-                raise ValueError(
-                    f"native BNGIR {where} has an invalid exact bond group"
+            allowed_states = component["states"]
+            if allowed_states:
+                _native_exact_keys(
+                    state,
+                    {"kind", "value", "index"},
+                    f"{where}.molecules[{molecule_index}].sites[{site_index}].state",
                 )
-            exact_bond_groups.setdefault(group, []).append((molecule_index, 0))
-            continue
-        if bond in (
-            {"kind": "bound"},
-            {"kind": "any"},
-            {"kind": "unspecified"},
-        ):
-            continue
-        raise ValueError(f"native BNGIR {where} has an unsupported bond constraint")
+                state_index = state["index"]
+                if (
+                    state["kind"] != "exact"
+                    or isinstance(state_index, bool)
+                    or not isinstance(state_index, int)
+                    or not 0 <= state_index < len(allowed_states)
+                    or state["value"] != allowed_states[state_index]
+                ):
+                    raise ValueError(
+                        f"native BNGIR {where} has an unknown or inconsistent finite state"
+                    )
+            elif state != {"kind": "any"}:
+                raise ValueError(
+                    f"native BNGIR {where} binding-only site must have an any state constraint"
+                )
+            bond = _require_mapping(
+                site["bond"], f"{where}.molecules[{molecule_index}].sites[{site_index}].bond"
+            )
+            if bond == {"kind": "unbound"}:
+                continue
+            if bond.get("kind") == "exact":
+                _native_exact_keys(
+                    bond,
+                    {"kind", "group"},
+                    f"{where}.molecules[{molecule_index}].sites[{site_index}].bond",
+                )
+                group = bond["group"]
+                if isinstance(group, bool) or not isinstance(group, int) or group < 0:
+                    raise ValueError(
+                        f"native BNGIR {where} has an invalid exact bond group"
+                    )
+                exact_bond_groups.setdefault(group, []).append((molecule_index, comp_idx))
+                continue
+            if bond in (
+                {"kind": "bound"},
+                {"kind": "any"},
+                {"kind": "unspecified"},
+            ):
+                continue
+            raise ValueError(f"native BNGIR {where} has an unsupported bond constraint")
     if any(
         len(endpoints) != 2 or endpoints[0][0] == endpoints[1][0]
         for endpoints in exact_bond_groups.values()
@@ -1744,28 +1757,11 @@ def _native_state_transition_v02(
         raise ValueError(
             f"native BNGIR model.rules[{index}] state transition must preserve molecule type"
         )
-    if validate_mappings:
-        expected_molecule = {
-            "product": {"side": "product", "pattern": 0, "molecule": 0},
-            "reactant": {"side": "reactant", "pattern": 0, "molecule": 0},
-        }
-        if rule["molecule_mappings"] != [expected_molecule]:
-            raise ValueError(
-                f"native BNGIR model.rules[{index}] state transition requires its explicit molecule mapping"
-            )
-        expected_component = {
-            "product": {"side": "product", "pattern": 0, "molecule": 0, "site": 0},
-            "reactant": {"side": "reactant", "pattern": 0, "molecule": 0, "site": 0},
-        }
-        if rule["component_mappings"] != [expected_component]:
-            raise ValueError(
-                f"native BNGIR model.rules[{index}] state transition requires its explicit site mapping"
-            )
-    before = reactant["sites"][0]["state"]
-    after = product["sites"][0]["state"]
-    if before["value"] == after["value"]:
+    reactant_sites = reactant.get("sites", [])
+    product_sites = product.get("sites", [])
+    if len(reactant_sites) != len(product_sites) or not reactant_sites:
         raise ValueError(
-            f"native BNGIR model.rules[{index}] state transition must change the site state"
+            f"native BNGIR model.rules[{index}] state transition requires matching nonempty site counts"
         )
     mutations = direction["mutations"]
     if not isinstance(mutations, list) or len(mutations) != 1:
@@ -1783,9 +1779,28 @@ def _native_state_transition_v02(
     source = _require_mapping(
         mutation["source"], f"model.rules[{index}].forward.mutations[0].source"
     )
-    if source != {"side": "reactant", "pattern": 0, "molecule": 0, "site": 0}:
+    _native_exact_keys(
+        source,
+        {"side", "pattern", "molecule", "site"},
+        f"model.rules[{index}].forward.mutations[0].source",
+    )
+    target_site = source["site"]
+    if (
+        source["side"] != "reactant"
+        or source["pattern"] != 0
+        or source["molecule"] != 0
+        or isinstance(target_site, bool)
+        or not isinstance(target_site, int)
+        or not (0 <= target_site < len(reactant_sites))
+    ):
         raise ValueError(
             f"native BNGIR model.rules[{index}] has a contradictory state mutation reference"
+        )
+    before = reactant_sites[target_site]["state"]
+    after = product_sites[target_site]["state"]
+    if before["value"] == after["value"]:
+        raise ValueError(
+            f"native BNGIR model.rules[{index}] state transition must change the site state"
         )
     if (
         mutation["kind"] != "change_state"
@@ -1797,6 +1812,31 @@ def _native_state_transition_v02(
         raise ValueError(
             f"native BNGIR model.rules[{index}] state mutation does not match its product state"
         )
+    for s, (r, p) in enumerate(zip(reactant_sites, product_sites)):
+        if s != target_site and (r.get("state") != p.get("state") or r.get("bond") != p.get("bond")):
+            raise ValueError(
+                f"native BNGIR model.rules[{index}] state transition must preserve unmodified sites"
+            )
+    if validate_mappings:
+        expected_molecule = {
+            "product": {"side": "product", "pattern": 0, "molecule": 0},
+            "reactant": {"side": "reactant", "pattern": 0, "molecule": 0},
+        }
+        if rule["molecule_mappings"] != [expected_molecule]:
+            raise ValueError(
+                f"native BNGIR model.rules[{index}] state transition requires its explicit molecule mapping"
+            )
+        expected_components = [
+            {
+                "product": {"side": "product", "pattern": 0, "molecule": 0, "site": s},
+                "reactant": {"side": "reactant", "pattern": 0, "molecule": 0, "site": s},
+            }
+            for s in range(len(reactant_sites))
+        ]
+        if rule["component_mappings"] != expected_components:
+            raise ValueError(
+                f"native BNGIR model.rules[{index}] state transition requires its explicit site mapping"
+            )
 
 
 def _native_bond_change_v02(
@@ -1867,18 +1907,34 @@ def _native_bond_change_v02(
             f"native BNGIR {where} bond change must preserve molecule types"
         )
     for molecule in (*reactant_molecules, *product_molecules):
-        if len(molecule["sites"]) != 1:
+        if not isinstance(molecule.get("sites"), list) or not molecule["sites"]:
             raise ValueError(
-                f"native BNGIR {where} bond changes require one site per molecule"
+                f"native BNGIR {where} bond changes require nonempty sites"
             )
-        site = molecule["sites"][0]
-        if site["state"] != {"kind": "any"}:
-            raise ValueError(
-                f"native BNGIR {where} bond changes support binding-only sites"
-            )
+    r_sites0 = reactant_molecules[0]["sites"]
+    p_sites0 = product_molecules[0]["sites"]
+    r_sites1 = reactant_molecules[1]["sites"]
+    p_sites1 = product_molecules[1]["sites"]
+    if len(r_sites0) != len(p_sites0) or len(r_sites1) != len(p_sites1):
+        raise ValueError(f"native BNGIR {where} bond change site counts must match")
 
-    def exact_bond_group(molecule: Mapping[str, Any]) -> int:
-        bond = molecule["sites"][0]["bond"]
+    mutation = mutations[0]
+    source = _require_mapping(mutation.get("source"), f"{where}.mutation.source")
+    partner = _require_mapping(mutation.get("partner"), f"{where}.mutation.partner")
+    source_site = source.get("site", 0)
+    partner_site = partner.get("site", 0)
+    if (
+        isinstance(source_site, bool)
+        or not isinstance(source_site, int)
+        or not (0 <= source_site < len(r_sites0))
+        or isinstance(partner_site, bool)
+        or not isinstance(partner_site, int)
+        or not (0 <= partner_site < len(r_sites1))
+    ):
+        raise ValueError(f"native BNGIR {where} bond change site index out of range")
+
+    def exact_bond_group(site: Mapping[str, Any]) -> int:
+        bond = site.get("bond", {})
         if (
             bond.get("kind") != "exact"
             or isinstance(bond.get("group"), bool)
@@ -1889,25 +1945,36 @@ def _native_bond_change_v02(
         return bond["group"]
 
     if association:
-        if any(
-            molecule["sites"][0]["bond"] != {"kind": "unbound"}
-            for molecule in reactant_molecules
+        if (
+            r_sites0[source_site].get("bond") != {"kind": "unbound"}
+            or r_sites1[partner_site].get("bond") != {"kind": "unbound"}
         ):
             raise ValueError(
                 f"native BNGIR {where} bond formation requires unbound reactant sites"
             )
-        groups = [exact_bond_group(molecule) for molecule in product_molecules]
+        g0 = exact_bond_group(p_sites0[source_site])
+        g1 = exact_bond_group(p_sites1[partner_site])
+        if g0 != g1:
+            raise ValueError(f"native BNGIR {where} bond endpoints do not correspond")
     else:
-        groups = [exact_bond_group(molecule) for molecule in reactant_molecules]
-        if any(
-            molecule["sites"][0]["bond"] != {"kind": "unbound"}
-            for molecule in product_molecules
+        g0 = exact_bond_group(r_sites0[source_site])
+        g1 = exact_bond_group(r_sites1[partner_site])
+        if g0 != g1:
+            raise ValueError(f"native BNGIR {where} bond endpoints do not correspond")
+        if (
+            p_sites0[source_site].get("bond") != {"kind": "unbound"}
+            or p_sites1[partner_site].get("bond") != {"kind": "unbound"}
         ):
             raise ValueError(
                 f"native BNGIR {where} bond dissociation requires unbound product sites"
             )
-    if groups[0] != groups[1]:
-        raise ValueError(f"native BNGIR {where} bond endpoints do not correspond")
+
+    for s, (r, p) in enumerate(zip(r_sites0, p_sites0)):
+        if s != source_site and (r.get("state") != p.get("state") or r.get("bond") != p.get("bond")):
+            raise ValueError(f"native BNGIR {where} bond change must preserve unmodified sites")
+    for s, (r, p) in enumerate(zip(r_sites1, p_sites1)):
+        if s != partner_site and (r.get("state") != p.get("state") or r.get("bond") != p.get("bond")):
+            raise ValueError(f"native BNGIR {where} bond change must preserve unmodified sites")
 
     molecule_mappings = []
     component_mappings = []
@@ -1930,22 +1997,24 @@ def _native_bond_change_v02(
                 },
             }
         )
-        component_mappings.append(
-            {
-                "product": {
-                    "side": "product",
-                    "pattern": product_pattern,
-                    "molecule": product_molecule,
-                    "site": 0,
-                },
-                "reactant": {
-                    "side": "reactant",
-                    "pattern": reactant_pattern,
-                    "molecule": reactant_molecule,
-                    "site": 0,
-                },
-            }
-        )
+        cur_sites = reactant_molecules[molecule_index]["sites"]
+        for s in range(len(cur_sites)):
+            component_mappings.append(
+                {
+                    "product": {
+                        "side": "product",
+                        "pattern": product_pattern,
+                        "molecule": product_molecule,
+                        "site": s,
+                    },
+                    "reactant": {
+                        "side": "reactant",
+                        "pattern": reactant_pattern,
+                        "molecule": reactant_molecule,
+                        "site": s,
+                    },
+                }
+            )
     if validate_mappings:
         if rule["molecule_mappings"] != molecule_mappings:
             raise ValueError(
@@ -1956,12 +2025,12 @@ def _native_bond_change_v02(
                 f"native BNGIR {where} bond change has contradictory site mappings"
             )
 
-    first = {"side": "reactant", "pattern": 0, "molecule": 0, "site": 0}
+    first = {"side": "reactant", "pattern": 0, "molecule": 0, "site": source_site}
     second = {
         "side": "reactant",
         "pattern": 0 if not association else 1,
         "molecule": 1 if not association else 0,
-        "site": 0,
+        "site": partner_site,
     }
     expected_mutation = {
         "kind": mutation_kind,
@@ -2218,28 +2287,34 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                 f"native BNGIR molecule type {name!r} must be an ordinary molecule type"
             )
         components = molecule["components"]
-        if not isinstance(components, list) or len(components) not in {0, 1}:
+        if not isinstance(components, list):
             raise ValueError(
-                f"native BNGIR molecule type {name!r} supports at most one finite-state component"
+                f"native BNGIR molecule type {name!r} components must be a list"
             )
-        if components:
+        seen_component_names = set()
+        has_finite_state = False
+        has_binding_only = False
+        for comp_idx, raw_comp in enumerate(components):
             component = _require_mapping(
-                components[0], f"model.molecule_types[{index}].components[0]"
+                raw_comp, f"model.molecule_types[{index}].components[{comp_idx}]"
             )
             _native_exact_keys(
                 component,
                 {"index", "name", "states"},
-                f"model.molecule_types[{index}].components[0]",
+                f"model.molecule_types[{index}].components[{comp_idx}]",
             )
             component_name = component["name"]
             states = component["states"]
             if isinstance(states, list) and not states:
-                binding_only_type_ids.add(index)
+                has_binding_only = True
+            elif isinstance(states, list) and states:
+                has_finite_state = True
             if (
-                component["index"] != 0
+                component["index"] != comp_idx
                 or isinstance(component["index"], bool)
                 or not isinstance(component_name, str)
                 or re.fullmatch(r"[A-Za-z_][A-Za-z_0-9]*", component_name) is None
+                or component_name in seen_component_names
                 or not isinstance(states, list)
                 or (states and len(states) < 2)
                 or any(
@@ -2250,8 +2325,11 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
                 or len(set(states)) != len(states)
             ):
                 raise ValueError(
-                    f"native BNGIR molecule type {name!r} requires one named binding-only or finite-state component"
+                    f"native BNGIR molecule type {name!r} has invalid components or states"
                 )
+            seen_component_names.add(component_name)
+        if has_binding_only and not has_finite_state:
+            binding_only_type_ids.add(index)
         molecule_ids.add(index)
         molecule_names.add(name)
         molecule_types_by_id[index] = molecule
@@ -2287,6 +2365,7 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             f"model.seeds[{index}].pattern",
             molecule_ids,
             molecule_types_by_id,
+            require_complete=True,
         )
         _native_expression_v02(
             seed["amount"], parameter_ids, f"model.seeds[{index}].amount"
