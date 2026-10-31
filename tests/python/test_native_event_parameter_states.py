@@ -66,17 +66,29 @@ def _atomize(trigger: str):
     return atomizer, result
 
 
-def test_native_event_promotes_mutable_parameter_to_state():
+def test_native_event_lowers_constant_parameter_assignment_natively():
     atomizer, result = _atomize("<apply><lt/><ci>X</ci><cn>0.75</cn></apply>")
 
     assert "begin bng3_events version 1" in result.bngl
-    assert "assignment: reset_amt = 3" in result.bngl
-    assert "Species reset_amt" in result.bngl
-    assert "__rate_rule_state__reset" in result.bngl
+    assert "assignment: reset = 3" in result.bngl
+    assert "__rate_rule_state__reset" not in result.bngl
     assert any(
         warning["category"] == "event" and warning["severity"] == "info"
         for warning in atomizer.model.import_warnings
     )
+
+
+def test_native_event_promotes_dynamic_parameter_assignment_to_state():
+    model_xml = _model("<apply><lt/><ci>X</ci><cn>0.75</cn></apply>").replace(
+        "<cn>3</cn>", "<ci>X</ci>"
+    )
+    atomizer = Atomizer(atomize=False, quiet_mode=True)
+    result = atomizer.atomize(model_xml)
+    assert result.success, result.error
+    assert "begin bng3_events version 1" in result.bngl
+    assert "assignment: reset_amt = X_amt" in result.bngl
+    assert "Species reset_amt" in result.bngl
+    assert "__rate_rule_state__reset" in result.bngl
 
 
 def test_finite_schedule_keeps_parameter_as_parameter():
