@@ -460,7 +460,53 @@ def test_issue160_requires_full_execution_scope_not_dispositions():
     issue = next(item for item in catalog["issues"] if item["number"] == 160)
     matrix = json.loads((q.ROOT / "provenance/capability-matrix.yml").read_text())
     rows = [row for row in matrix["rows"] if row["issue"] == 160]
-    required = [check for o in issue["obligations"] for check in o["required_checks"]]
+    release_obligations = [
+        o for o in issue["obligations"] if o["id"].startswith("issue:160:release-")
+    ]
+    historical_ids = {
+        "issue:160:group-current-unsupported-cases-by-dynamic-rules-events-history",
+        "issue:160:for-each-class-implement-a-semantics-preserving-supported-subset",
+        "issue:160:closure-record",
+    }
+    assert historical_ids <= {o["id"] for o in issue["obligations"]}
+    historical_checks = {
+        check["id"]
+        for o in issue["obligations"]
+        if o["id"] in historical_ids
+        for check in o["required_checks"]
+    }
+    assert historical_checks == {
+        "sbml-support-boundary:species-assignment-rule:named-diagnostic",
+        "sbml-support-boundary:state-dependent-event:named-diagnostic",
+        "sbml-support-boundary:delayed-history:named-diagnostic",
+        "sbml-support-boundary:algebraic-rule:named-diagnostic",
+        "sbml-support-boundary:sbml-constraint:named-diagnostic",
+        "sbml-support-boundary:negative-stoichiometry:named-diagnostic",
+        "sbml-support-boundary:fast-reaction:named-diagnostic",
+        "sbml-support-boundary:fbc-package:named-diagnostic",
+        "sbml-support-boundary:spatial-package:named-diagnostic",
+        "sbml-support-boundary:corpus:every-refusal-classified",
+        "qualification:issue:160:for-each-class-implement-a-semantics-preserving-supported-subset",
+        "qualification:issue:160:closure-record",
+    }
+    historical_obligations = [
+        o for o in issue["obligations"] if o["id"] in historical_ids
+    ]
+    assert all(o.get("scope_status") == "STALE_SCOPE" for o in historical_obligations)
+    historical_report = dict(
+        source=dict(revision=REV, dirty=False),
+        results=[
+            dict(id=check_id, status="PASS", evidence_kind="disposition")
+            for check_id in historical_checks
+        ],
+    )
+    historical_result = q.assess_obligations(
+        historical_obligations, [historical_report], REV
+    )
+    assert {result["status"] for result in historical_result["obligations"]} == {
+        "DECISION_REQUIRED"
+    }
+    required = [check for o in release_obligations for check in o["required_checks"]]
     expected = {
         "release-sbml-core-comp",
         "release-sbml-source-fidelity",
@@ -494,7 +540,7 @@ def test_issue160_requires_full_execution_scope_not_dispositions():
             for c in required
         ],
     )
-    result = q.assess_obligations(issue["obligations"], [report], REV)
+    result = q.assess_obligations(release_obligations, [report], REV)
     assert {o["status"] for o in result["obligations"]} == {"EVIDENCE_GAP"}
 
     # Even reusing every required identity cannot promote a diagnostic pass or
@@ -516,9 +562,9 @@ def test_issue160_requires_full_execution_scope_not_dispositions():
                 for c in required
             ],
         )
-        result = q.assess_obligations(issue["obligations"], [report], REV)
+        result = q.assess_obligations(release_obligations, [report], REV)
         assert {o["status"] for o in result["obligations"]} == {expected_status}
-    result = q.assess_obligations(issue["obligations"], [], REV)
+    result = q.assess_obligations(release_obligations, [], REV)
     assert {o["status"] for o in result["obligations"]} == {"NOT_TESTED"}
 
 
