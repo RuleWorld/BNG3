@@ -494,13 +494,16 @@ def _network_only_text(
             if (
                 match
                 and match.group(1).lower() == "setparameter"
+                and not preserve_network_writer
                 and last_network_action is not None
                 and line_index > last_network_action
             ):
                 # A network-only replay removes the simulations that consume
                 # these post-generation updates.  Keep the emitted .net as the
                 # generation snapshot; live-rate updates are checked by the
-                # simulation parity tests.
+                # simulation parity tests. Continuation staging retains an
+                # authored writeNetwork action, whose snapshot includes any
+                # preceding setParameter updates under BNG2 semantics.
                 continue
             if (
                 preserve_network_writer

@@ -2342,6 +2342,23 @@ def test_cross_validation_keeps_the_generation_time_rate_snapshot():
     assert 'setParameter("vl",1)' not in staged
 
 
+def test_cross_validation_preserves_late_rate_setter_for_authored_network_writer():
+    """A continuation writer deliberately snapshots post-generation updates."""
+
+    staged = _network_only_text(
+        """begin actions
+generate_network({overwrite=>1})
+setParameter("k", 2)
+writeNetwork({suffix=>"cont",overwrite=>1})
+end actions
+""",
+        preserve_network_writer=True,
+    )
+
+    assert staged.index("generate_network") < staged.index('setParameter("k", 2)')
+    assert staged.index('setParameter("k", 2)') < staged.index("writeNetwork")
+
+
 def test_cross_validation_can_preserve_network_writer_for_continuations(tmp_path):
     source = tmp_path / "continuation.bngl"
     source.write_text(
