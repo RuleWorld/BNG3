@@ -7950,7 +7950,7 @@ def generate_bngl(
             # do not invent state coordinates for a non-square system.
             pass
     # Algebraic parameter coordinates use the same native state-species
-    # representation as rate-rule parameters. They do not receive source/sink
+    # representation as parameters governed by rate rules. They do not receive source/sink
     # rules: IDA determines them from the coupled algebraic residuals.
     for variable in synthetic_algebraic_variables:
         target = standardize_name(variable)
