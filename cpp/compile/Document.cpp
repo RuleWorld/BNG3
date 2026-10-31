@@ -18,6 +18,73 @@ namespace {
 using GenerateNetworkOptions = ProtocolAction::GenerateNetworkOptions;
 using SimulationOptions = ProtocolAction::SimulationOptions;
 using SetParameterOptions = ProtocolAction::SetParameterOptions;
+using SetConcentrationOptions = ProtocolAction::SetConcentrationOptions;
+using AddConcentrationOptions = ProtocolAction::AddConcentrationOptions;
+using SaveParametersOptions = ProtocolAction::SaveParametersOptions;
+using ResetParametersOptions = ProtocolAction::ResetParametersOptions;
+using SaveConcentrationsOptions = ProtocolAction::SaveConcentrationsOptions;
+using ResetConcentrationsOptions = ProtocolAction::ResetConcentrationsOptions;
+using SetVolumeOptions = ProtocolAction::SetVolumeOptions;
+using SetOptionOptions = ProtocolAction::SetOptionOptions;
+using ArgFileOptions = ProtocolAction::ArgFileOptions;
+using WriteModelOptions = ProtocolAction::WriteModelOptions;
+
+std::string trim(std::string value) {
+    auto first = std::find_if_not(value.begin(), value.end(), [](unsigned char c) {
+        return std::isspace(c) != 0;
+    });
+    auto last = std::find_if_not(value.rbegin(), value.rend(), [](unsigned char c) {
+        return std::isspace(c) != 0;
+    }).base();
+    if (first >= last) {
+        return {};
+    }
+    return std::string(first, last);
+}
+
+Diagnostic concentrationValueDiagnostic(const std::string& entity,
+                                        const std::string& source,
+                                        const std::string& reason) {
+    Diagnostic diagnostic;
+    diagnostic.code = DiagnosticCode::InvalidModel;
+    diagnostic.severity = Severity::Error;
+    diagnostic.category = ValidationCategory::Expressions;
+    diagnostic.entity = entity + ".value";
+    diagnostic.message = "invalid " + entity + " value '" + source + "': " + reason;
+    return diagnostic;
+}
+
+Diagnostic volumeDiagnostic(const std::string& source, const std::string& reason) {
+    Diagnostic diagnostic;
+    diagnostic.code = DiagnosticCode::InvalidModel;
+    diagnostic.severity = Severity::Error;
+    diagnostic.category = ValidationCategory::Expressions;
+    diagnostic.entity = "setVolume.value";
+    diagnostic.message = "invalid setVolume value '" + source + "': " + reason;
+    return diagnostic;
+}
+
+Diagnostic outputStepIntervalDiagnostic(const std::string& source,
+                                       const std::string& reason) {
+    Diagnostic diagnostic;
+    diagnostic.code = DiagnosticCode::InvalidModel;
+    diagnostic.severity = Severity::Error;
+    diagnostic.category = ValidationCategory::Expressions;
+    diagnostic.entity = "simulation.output_step_interval";
+    diagnostic.message = "invalid output_step_interval '" + source + "': " + reason;
+    return diagnostic;
+}
+
+Diagnostic sampleTimesDiagnostic(const std::string& source,
+                                 const std::string& reason) {
+    Diagnostic diagnostic;
+    diagnostic.code = DiagnosticCode::InvalidModel;
+    diagnostic.severity = Severity::Error;
+    diagnostic.category = ValidationCategory::Expressions;
+    diagnostic.entity = "simulation.sample_times";
+    diagnostic.message = "invalid sample_times '" + source + "': " + reason;
+    return diagnostic;
+}
 
 Diagnostic maxIterationsDiagnostic(const std::string& source,
                                    const std::string& reason) {
@@ -304,6 +371,10 @@ bool containsStaticallyNegativeCaretBase(const ast::Expression& expression) {
 SetParameterOptions compileSetParameterOptions(
     const std::map<std::string, std::string>& arguments) {
     SetParameterOptions options;
+    const auto targetFound = arguments.find("target");
+    if (targetFound != arguments.end()) {
+        options.target = unquoteActionValue(targetFound->second);
+    }
     const auto found = arguments.find("value");
     if (found == arguments.end()) {
         return options;
@@ -651,73 +722,352 @@ void compileSimulationTimeOption(
     value = parsedValue;
 }
 
-SimulationOptions compileSimulationOptions(
-    const std::map<std::string, std::string>& arguments) {
-    SimulationOptions options;
-    compileSimulationTimeOption(
-        arguments, "t_start", options.tStart, options.tStartDiagnostic);
-    compileSimulationTimeOption(
-        arguments, "t_end", options.tEnd, options.tEndDiagnostic);
-    const auto found = arguments.find("n_steps");
-    if (found == arguments.end()) {
-        return options;
-    }
-
-    const auto& source = found->second;
+bool tryParseStaticScalar(const std::string& source,
+                          double& value,
+                          std::optional<Diagnostic>& diagnostic,
+                          const std::function<Diagnostic(const std::string&)>& makeDiag) {
     const auto expressionSource = unquoteActionValue(source);
-    if (expressionSource.find('^') != std::string::npos) {
-        options.nStepsDiagnostic = nStepsDiagnostic(
-            source,
-            "Safe-Perl '^' is bitwise XOR; use '**' for exponentiation");
-        return options;
-    }
-
-    // Parameter-backed and otherwise dynamic values remain raw for execution:
-    // protocol actions may change parameters, and runSimulation resolves them
-    // only after argfile merging and earlier protocol actions have run.
     if (!containsOnlyNumericActionSyntax(expressionSource)) {
-        return options;
+        return false;
     }
-
     ast::Expression expression;
     try {
         expression = parser::parseExpression(expressionSource);
     } catch (const std::exception& error) {
-        options.nStepsDiagnostic = nStepsDiagnostic(
-            source,
-            std::string("could not be parsed as a numeric expression: ") + error.what());
-        return options;
+        diagnostic = makeDiag(std::string("could not be parsed as a numeric expression: ") + error.what());
+        return false;
+    }
+    std::size_t powerOps = 0;
+    if (!supportsStaticActionArithmetic(expression, powerOps)) {
+        return false;
+    }
+    double val = 0.0;
+    if (!evaluateFiniteStaticExpression(expression, val)) {
+        diagnostic = makeDiag("must evaluate to a finite number");
+        return false;
+    }
+    value = val;
+    return true;
+}
+
+SetConcentrationOptions compileSetConcentrationOptions(
+    const std::map<std::string, std::string>& arguments) {
+    SetConcentrationOptions options;
+    const auto targetFound = arguments.find("target");
+    if (targetFound != arguments.end()) {
+        options.target = unquoteActionValue(targetFound->second);
+    }
+    const auto valueFound = arguments.find("value");
+    if (valueFound != arguments.end()) {
+        double val = 0.0;
+        if (tryParseStaticScalar(valueFound->second, val, options.valueDiagnostic,
+                                 [&](const std::string& reason) {
+                                     return concentrationValueDiagnostic("setConcentration", valueFound->second, reason);
+                                 })) {
+            options.staticValue = val;
+        }
+    }
+    return options;
+}
+
+AddConcentrationOptions compileAddConcentrationOptions(
+    const std::map<std::string, std::string>& arguments) {
+    AddConcentrationOptions options;
+    const auto targetFound = arguments.find("target");
+    if (targetFound != arguments.end()) {
+        options.target = unquoteActionValue(targetFound->second);
+    }
+    const auto valueFound = arguments.find("value");
+    if (valueFound != arguments.end()) {
+        double val = 0.0;
+        if (tryParseStaticScalar(valueFound->second, val, options.valueDiagnostic,
+                                 [&](const std::string& reason) {
+                                     return concentrationValueDiagnostic("addConcentration", valueFound->second, reason);
+                                 })) {
+            options.staticValue = val;
+        }
+    }
+    return options;
+}
+
+SaveParametersOptions compileSaveParametersOptions(
+    const std::map<std::string, std::string>& arguments) {
+    SaveParametersOptions options;
+    const auto found = arguments.find("value");
+    if (found != arguments.end()) {
+        options.label = unquoteActionValue(found->second);
+    }
+    return options;
+}
+
+ResetParametersOptions compileResetParametersOptions(
+    const std::map<std::string, std::string>& arguments) {
+    ResetParametersOptions options;
+    const auto found = arguments.find("value");
+    if (found != arguments.end()) {
+        options.label = unquoteActionValue(found->second);
+    }
+    return options;
+}
+
+SaveConcentrationsOptions compileSaveConcentrationsOptions(
+    const std::map<std::string, std::string>& arguments) {
+    SaveConcentrationsOptions options;
+    const auto found = arguments.find("value");
+    if (found != arguments.end()) {
+        options.label = unquoteActionValue(found->second);
+    }
+    return options;
+}
+
+ResetConcentrationsOptions compileResetConcentrationsOptions(
+    const std::map<std::string, std::string>& arguments) {
+    ResetConcentrationsOptions options;
+    const auto found = arguments.find("value");
+    if (found != arguments.end()) {
+        options.label = unquoteActionValue(found->second);
+    }
+    return options;
+}
+
+SetVolumeOptions compileSetVolumeOptions(
+    const std::map<std::string, std::string>& arguments) {
+    SetVolumeOptions options;
+    const auto targetFound = arguments.find("target");
+    if (targetFound != arguments.end()) {
+        options.target = unquoteActionValue(targetFound->second);
+    }
+    const auto valueFound = arguments.find("value");
+    if (valueFound != arguments.end()) {
+        double val = 0.0;
+        if (tryParseStaticScalar(valueFound->second, val, options.volumeDiagnostic,
+                                 [&](const std::string& reason) {
+                                     return volumeDiagnostic(valueFound->second, reason);
+                                 })) {
+            options.staticVolume = val;
+        }
+    }
+    return options;
+}
+
+SetOptionOptions compileSetOptionOptions(
+    const std::map<std::string, std::string>& arguments) {
+    SetOptionOptions options;
+    auto found = arguments.find("target");
+    if (found == arguments.end()) {
+        found = arguments.find("option");
+    }
+    if (found != arguments.end()) {
+        options.option = unquoteActionValue(found->second);
+    }
+    const auto valFound = arguments.find("value");
+    if (valFound != arguments.end()) {
+        options.value = unquoteActionValue(valFound->second);
+    }
+    return options;
+}
+
+ArgFileOptions compileArgFileOptions(
+    const std::map<std::string, std::string>& arguments) {
+    ArgFileOptions options;
+    auto found = arguments.find("file");
+    if (found == arguments.end()) {
+        found = arguments.find("target");
+    }
+    if (found != arguments.end()) {
+        options.file = unquoteActionValue(found->second);
+    }
+    return options;
+}
+
+WriteModelOptions compileWriteModelOptions(
+    const std::string& actionName,
+    const std::map<std::string, std::string>& arguments) {
+    WriteModelOptions options;
+    options.format = actionName;
+    const auto prefixFound = arguments.find("prefix");
+    if (prefixFound != arguments.end()) {
+        options.prefix = unquoteActionValue(prefixFound->second);
+    } else {
+        const auto fileFound = arguments.find("file");
+        if (fileFound != arguments.end()) {
+            options.prefix = unquoteActionValue(fileFound->second);
+        }
+    }
+    return options;
+}
+
+SimulationOptions compileSimulationOptions(
+    const std::map<std::string, std::string>& arguments) {
+    SimulationOptions options;
+    const auto methodFound = arguments.find("method");
+    if (methodFound != arguments.end()) {
+        options.method = unquoteActionValue(methodFound->second);
+    }
+    compileSimulationTimeOption(
+        arguments, "t_start", options.tStart, options.tStartDiagnostic);
+    compileSimulationTimeOption(
+        arguments, "t_end", options.tEnd, options.tEndDiagnostic);
+
+    const auto found = arguments.find("n_steps");
+    if (found != arguments.end()) {
+        const auto& source = found->second;
+        const auto expressionSource = unquoteActionValue(source);
+        if (expressionSource.find('^') != std::string::npos) {
+            options.nStepsDiagnostic = nStepsDiagnostic(
+                source,
+                "Safe-Perl '^' is bitwise XOR; use '**' for exponentiation");
+        } else if (containsOnlyNumericActionSyntax(expressionSource)) {
+            ast::Expression expression;
+            try {
+                expression = parser::parseExpression(expressionSource);
+                std::size_t powerOperators = 0;
+                if (!supportsStaticActionArithmetic(expression, powerOperators)) {
+                    options.nStepsDiagnostic = nStepsDiagnostic(
+                        source,
+                        "cannot be translated without changing Safe-Perl arithmetic semantics");
+                } else {
+                    double value = 0.0;
+                    if (!evaluateFiniteStaticExpression(expression, value)) {
+                        options.nStepsDiagnostic = nStepsDiagnostic(
+                            source, "must evaluate to a finite number");
+                    } else if (value <= 0.0 || std::floor(value) != value) {
+                        options.nStepsDiagnostic = nStepsDiagnostic(
+                            source, "must evaluate to a positive integer");
+                    } else {
+                        const double firstUnsupportedValue =
+                            std::ldexp(1.0, std::numeric_limits<std::size_t>::digits);
+                        if (value >= firstUnsupportedValue) {
+                            options.nStepsDiagnostic = nStepsDiagnostic(
+                                source, "exceeds the supported integer step-count range");
+                        } else {
+                            options.nSteps = static_cast<std::size_t>(value);
+                        }
+                    }
+                }
+            } catch (const std::exception& error) {
+                options.nStepsDiagnostic = nStepsDiagnostic(
+                    source,
+                    std::string("could not be parsed as a numeric expression: ") + error.what());
+            }
+        }
     }
 
-    std::size_t powerOperators = 0;
-    if (!supportsStaticActionArithmetic(expression, powerOperators)) {
-        options.nStepsDiagnostic = nStepsDiagnostic(
-            source,
-            "cannot be translated without changing Safe-Perl arithmetic semantics");
-        return options;
+    const auto intervalFound = arguments.find("output_step_interval");
+    if (intervalFound != arguments.end()) {
+        const auto& source = intervalFound->second;
+        const auto expressionSource = unquoteActionValue(source);
+        if (containsOnlyNumericActionSyntax(expressionSource)) {
+            try {
+                const auto expr = parser::parseExpression(expressionSource);
+                double val = 0.0;
+                if (evaluateFiniteStaticExpression(expr, val) && val >= 0.0) {
+                    options.outputStepInterval = static_cast<std::size_t>(val);
+                }
+            } catch (...) {}
+        }
     }
 
-    double value = 0.0;
-    if (!evaluateFiniteStaticExpression(expression, value)) {
-        options.nStepsDiagnostic = nStepsDiagnostic(
-            source, "must evaluate to a finite number");
-        return options;
-    }
-    if (value <= 0.0 || std::floor(value) != value) {
-        options.nStepsDiagnostic = nStepsDiagnostic(
-            source, "must evaluate to a positive integer");
-        return options;
+    const auto continueFound = arguments.find("continue");
+    if (continueFound != arguments.end()) {
+        const auto val = unquoteActionValue(continueFound->second);
+        if (val == "1" || val == "true" || val == "yes") {
+            options.continueSimulation = true;
+        } else if (val == "0" || val == "false" || val == "no") {
+            options.continueSimulation = false;
+        }
     }
 
-    const double firstUnsupportedValue =
-        std::ldexp(1.0, std::numeric_limits<std::size_t>::digits);
-    if (value >= firstUnsupportedValue) {
-        options.nStepsDiagnostic = nStepsDiagnostic(
-            source, "exceeds the supported integer step-count range");
-        return options;
+    const auto printCdatFound = arguments.find("print_concentrations");
+    if (printCdatFound != arguments.end()) {
+        const auto val = unquoteActionValue(printCdatFound->second);
+        options.printConcentrations = (val == "1" || val == "true" || val == "yes");
     }
 
-    options.nSteps = static_cast<std::size_t>(value);
+    const auto printFuncsFound = arguments.find("print_functions");
+    if (printFuncsFound != arguments.end()) {
+        const auto val = unquoteActionValue(printFuncsFound->second);
+        options.printFunctions = (val == "1" || val == "true" || val == "yes");
+    }
+
+    const auto printNetFound = arguments.find("print_net");
+    if (printNetFound != arguments.end()) {
+        const auto val = unquoteActionValue(printNetFound->second);
+        options.printNet = (val == "1" || val == "true" || val == "yes");
+    }
+
+    const auto steadyFound = arguments.find("steady_state");
+    if (steadyFound != arguments.end()) {
+        const auto val = unquoteActionValue(steadyFound->second);
+        options.steadyState = (val == "1" || val == "true" || val == "yes");
+    }
+
+    const auto threshFound = arguments.find("threshold");
+    if (threshFound != arguments.end()) {
+        double val = 0.0;
+        if (tryParseStaticScalar(threshFound->second, val, options.steadyStateTolDiagnostic,
+                                 [&](const std::string& reason) {
+                                     Diagnostic d;
+                                     d.code = DiagnosticCode::InvalidModel;
+                                     d.severity = Severity::Error;
+                                     d.category = ValidationCategory::Expressions;
+                                     d.entity = "simulation.threshold";
+                                     d.message = "invalid threshold '" + threshFound->second + "': " + reason;
+                                     return d;
+                                 })) {
+            options.steadyStateTol = val;
+        }
+    }
+
+    const auto stopIfFound = arguments.find("stop_if");
+    if (stopIfFound != arguments.end()) {
+        options.stopIf = unquoteActionValue(stopIfFound->second);
+    }
+
+    const auto prefixFound = arguments.find("prefix");
+    if (prefixFound != arguments.end()) {
+        options.prefix = unquoteActionValue(prefixFound->second);
+    }
+
+    const auto seedFound = arguments.find("seed");
+    if (seedFound != arguments.end()) {
+        const auto val = unquoteActionValue(seedFound->second);
+        if (containsOnlyNumericActionSyntax(val)) {
+            try {
+                options.seed = static_cast<unsigned int>(std::stoul(val));
+            } catch (...) {}
+        }
+    }
+
+    const auto sampleTimesFound = arguments.find("sample_times");
+    if (sampleTimesFound != arguments.end()) {
+        const auto raw = unquoteActionValue(sampleTimesFound->second);
+        if (raw.size() >= 2 && raw.front() == '[' && raw.back() == ']') {
+            std::stringstream ss(raw.substr(1, raw.size() - 2));
+            std::string item;
+            bool ok = true;
+            std::vector<double> times;
+            while (std::getline(ss, item, ',')) {
+                item = trim(item);
+                if (item.empty()) continue;
+                try {
+                    times.push_back(std::stod(item));
+                } catch (...) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (ok) {
+                options.sampleTimes = std::move(times);
+            } else {
+                options.sampleTimesDiagnostic = sampleTimesDiagnostic(
+                    sampleTimesFound->second, "malformed sample_times list");
+            }
+        } else if (!raw.empty()) {
+            options.sampleTimesFile = raw;
+        }
+    }
+
     return options;
 }
 
@@ -748,7 +1098,14 @@ std::optional<SimulationOptions> compileSimulationOptions(
     if (!deterministic && !stochastic) {
         return std::nullopt;
     }
-    return compileSimulationOptions(action.arguments);
+
+    auto options = compileSimulationOptions(action.arguments);
+    if (!options.method.has_value()) {
+        if (name == "simulate_ode") options.method = "cvode";
+        else if (name == "simulate_ssa") options.method = "ssa";
+        else options.method = method.empty() ? "ode" : method;
+    }
+    return options;
 }
 
 ProtocolAction compileProtocolAction(ActionScope scope, const ast::Action& action) {
@@ -764,6 +1121,26 @@ ProtocolAction compileProtocolAction(ActionScope scope, const ast::Action& actio
                    [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     if (actionName == "setparameter") {
         compiled.setParameterOptions = compileSetParameterOptions(action.arguments);
+    } else if (actionName == "setconcentration") {
+        compiled.setConcentrationOptions = compileSetConcentrationOptions(action.arguments);
+    } else if (actionName == "addconcentration" || actionName == "add_concentration") {
+        compiled.addConcentrationOptions = compileAddConcentrationOptions(action.arguments);
+    } else if (actionName == "saveparameters" || actionName == "save_parameters") {
+        compiled.saveParametersOptions = compileSaveParametersOptions(action.arguments);
+    } else if (actionName == "resetparameters" || actionName == "reset_parameters") {
+        compiled.resetParametersOptions = compileResetParametersOptions(action.arguments);
+    } else if (actionName == "saveconcentrations" || actionName == "save_concentrations") {
+        compiled.saveConcentrationsOptions = compileSaveConcentrationsOptions(action.arguments);
+    } else if (actionName == "resetconcentrations" || actionName == "reset_concentrations") {
+        compiled.resetConcentrationsOptions = compileResetConcentrationsOptions(action.arguments);
+    } else if (actionName == "setvolume") {
+        compiled.setVolumeOptions = compileSetVolumeOptions(action.arguments);
+    } else if (actionName == "setoption") {
+        compiled.setOptionOptions = compileSetOptionOptions(action.arguments);
+    } else if (actionName == "readfile" || actionName == "runargfile") {
+        compiled.argFileOptions = compileArgFileOptions(action.arguments);
+    } else if (actionName.rfind("write", 0) == 0) {
+        compiled.writeModelOptions = compileWriteModelOptions(action.name, action.arguments);
     }
     compiled.simulationOptions = compileSimulationOptions(action);
     return compiled;

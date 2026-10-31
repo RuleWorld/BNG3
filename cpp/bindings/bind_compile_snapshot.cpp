@@ -634,6 +634,90 @@ py::dict compiledSnapshot(const bng::ast::Model& astModel) {
         item["scope"] = action.scope == ActionScope::Model ? "model" : "simulation_protocol";
         item["name"] = action.name;
         item["arguments"] = action.arguments;
+        if (action.generateNetworkOptions.has_value()) {
+            py::dict genOpts;
+            if (action.generateNetworkOptions->maxIterations.has_value())
+                genOpts["max_iterations"] = *action.generateNetworkOptions->maxIterations;
+            if (action.generateNetworkOptions->maxAggregate.has_value())
+                genOpts["max_aggregate"] = *action.generateNetworkOptions->maxAggregate;
+            item["generate_network_options"] = std::move(genOpts);
+        }
+        if (action.simulationOptions.has_value()) {
+            py::dict simOpts;
+            if (action.simulationOptions->method.has_value())
+                simOpts["method"] = *action.simulationOptions->method;
+            if (action.simulationOptions->tStart.has_value())
+                simOpts["t_start"] = *action.simulationOptions->tStart;
+            if (action.simulationOptions->tEnd.has_value())
+                simOpts["t_end"] = *action.simulationOptions->tEnd;
+            if (action.simulationOptions->nSteps.has_value())
+                simOpts["n_steps"] = *action.simulationOptions->nSteps;
+            if (action.simulationOptions->outputStepInterval.has_value())
+                simOpts["output_step_interval"] = *action.simulationOptions->outputStepInterval;
+            if (action.simulationOptions->continueSimulation.has_value())
+                simOpts["continue"] = *action.simulationOptions->continueSimulation;
+            if (action.simulationOptions->printConcentrations.has_value())
+                simOpts["print_concentrations"] = *action.simulationOptions->printConcentrations;
+            if (action.simulationOptions->steadyState.has_value())
+                simOpts["steady_state"] = *action.simulationOptions->steadyState;
+            if (action.simulationOptions->stopIf.has_value())
+                simOpts["stop_if"] = *action.simulationOptions->stopIf;
+            item["simulation_options"] = std::move(simOpts);
+        }
+        if (action.setParameterOptions.has_value()) {
+            py::dict paramOpts;
+            paramOpts["target"] = action.setParameterOptions->target;
+            if (action.setParameterOptions->staticValue.has_value())
+                paramOpts["value"] = *action.setParameterOptions->staticValue;
+            item["set_parameter_options"] = std::move(paramOpts);
+        }
+        if (action.setConcentrationOptions.has_value()) {
+            py::dict concOpts;
+            concOpts["target"] = action.setConcentrationOptions->target;
+            if (action.setConcentrationOptions->staticValue.has_value())
+                concOpts["value"] = *action.setConcentrationOptions->staticValue;
+            item["set_concentration_options"] = std::move(concOpts);
+        }
+        if (action.addConcentrationOptions.has_value()) {
+            py::dict concOpts;
+            concOpts["target"] = action.addConcentrationOptions->target;
+            if (action.addConcentrationOptions->staticValue.has_value())
+                concOpts["value"] = *action.addConcentrationOptions->staticValue;
+            item["add_concentration_options"] = std::move(concOpts);
+        }
+        if (action.saveParametersOptions.has_value()) {
+            py::dict snapOpts;
+            snapOpts["label"] = action.saveParametersOptions->label;
+            item["save_parameters_options"] = std::move(snapOpts);
+        }
+        if (action.resetParametersOptions.has_value()) {
+            py::dict snapOpts;
+            snapOpts["label"] = action.resetParametersOptions->label;
+            item["reset_parameters_options"] = std::move(snapOpts);
+        }
+        if (action.saveConcentrationsOptions.has_value()) {
+            py::dict snapOpts;
+            snapOpts["label"] = action.saveConcentrationsOptions->label;
+            item["save_concentrations_options"] = std::move(snapOpts);
+        }
+        if (action.resetConcentrationsOptions.has_value()) {
+            py::dict snapOpts;
+            snapOpts["label"] = action.resetConcentrationsOptions->label;
+            item["reset_concentrations_options"] = std::move(snapOpts);
+        }
+        if (action.setVolumeOptions.has_value()) {
+            py::dict volOpts;
+            volOpts["target"] = action.setVolumeOptions->target;
+            if (action.setVolumeOptions->staticVolume.has_value())
+                volOpts["volume"] = *action.setVolumeOptions->staticVolume;
+            item["set_volume_options"] = std::move(volOpts);
+        }
+        if (action.setOptionOptions.has_value()) {
+            py::dict optOpts;
+            optOpts["option"] = action.setOptionOptions->option;
+            optOpts["value"] = action.setOptionOptions->value;
+            item["set_option_options"] = std::move(optOpts);
+        }
         actions.append(std::move(item));
     }
     root["actions"] = std::move(actions);

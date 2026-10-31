@@ -36,6 +36,7 @@ struct ProtocolAction {
         std::optional<Diagnostic> maxStoichDiagnostic;
     };
     struct SimulationOptions {
+        std::optional<std::string> method;
         std::optional<double> tStart;
         std::optional<double> tEnd;
         std::optional<Diagnostic> tStartDiagnostic;
@@ -44,16 +45,83 @@ struct ProtocolAction {
         // Action diagnostics are deferred until execution, so unused actions
         // do not invalidate otherwise usable model metadata.
         std::optional<Diagnostic> nStepsDiagnostic;
+        std::optional<std::size_t> outputStepInterval;
+        std::optional<Diagnostic> outputStepIntervalDiagnostic;
+        std::optional<bool> continueSimulation;
+        std::optional<bool> printConcentrations;
+        std::optional<bool> printFunctions;
+        std::optional<bool> printNet;
+        std::optional<bool> steadyState;
+        std::optional<double> steadyStateTol;
+        std::optional<Diagnostic> steadyStateTolDiagnostic;
+        std::optional<std::string> stopIf;
+        std::vector<double> sampleTimes;
+        std::string sampleTimesFile;
+        std::optional<Diagnostic> sampleTimesDiagnostic;
+        std::optional<std::string> prefix;
+        std::optional<unsigned int> seed;
+        std::optional<double> rtol;
+        std::optional<double> atol;
+        std::optional<double> maxStep;
     };
     struct SetParameterOptions {
+        std::string target;
         std::optional<double> staticValue;
         // Static action values are validated during compilation, but errors
         // are deferred until the setter executes.
         std::optional<Diagnostic> valueDiagnostic;
     };
+    struct SetConcentrationOptions {
+        std::string target;
+        std::optional<double> staticValue;
+        std::optional<Diagnostic> valueDiagnostic;
+    };
+    struct AddConcentrationOptions {
+        std::string target;
+        std::optional<double> staticValue;
+        std::optional<Diagnostic> valueDiagnostic;
+    };
+    struct SaveParametersOptions {
+        std::string label = "default";
+    };
+    struct ResetParametersOptions {
+        std::string label = "default";
+    };
+    struct SaveConcentrationsOptions {
+        std::string label = "default";
+    };
+    struct ResetConcentrationsOptions {
+        std::string label = "default";
+    };
+    struct SetVolumeOptions {
+        std::string target;
+        std::optional<double> staticVolume;
+        std::optional<Diagnostic> volumeDiagnostic;
+    };
+    struct SetOptionOptions {
+        std::string option;
+        std::string value;
+    };
+    struct ArgFileOptions {
+        std::string file;
+    };
+    struct WriteModelOptions {
+        std::string format;
+        std::string prefix;
+    };
     std::optional<GenerateNetworkOptions> generateNetworkOptions;
     std::optional<SimulationOptions> simulationOptions;
     std::optional<SetParameterOptions> setParameterOptions;
+    std::optional<SetConcentrationOptions> setConcentrationOptions;
+    std::optional<AddConcentrationOptions> addConcentrationOptions;
+    std::optional<SaveParametersOptions> saveParametersOptions;
+    std::optional<ResetParametersOptions> resetParametersOptions;
+    std::optional<SaveConcentrationsOptions> saveConcentrationsOptions;
+    std::optional<ResetConcentrationsOptions> resetConcentrationsOptions;
+    std::optional<SetVolumeOptions> setVolumeOptions;
+    std::optional<SetOptionOptions> setOptionOptions;
+    std::optional<ArgFileOptions> argFileOptions;
+    std::optional<WriteModelOptions> writeModelOptions;
 };
 
 // Execution instructions are intentionally separate from reusable compiled
