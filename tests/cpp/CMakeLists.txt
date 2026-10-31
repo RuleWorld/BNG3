@@ -71,6 +71,14 @@ add_test(
 )
 
 add_test(
+    NAME bng_cpp_setparameter_net_overwrite
+    COMMAND ${CMAKE_COMMAND}
+        -DBNG_CPP_PATH=$<TARGET_FILE:bng_cpp>
+        -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/setparameter_net_overwrite
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/test_bng_cpp_setparameter_net_overwrite.cmake
+)
+
+add_test(
     NAME psa_issue_265_reaction_order_stress
     COMMAND ${CMAKE_COMMAND}
         -DBNG_CPP_PATH=$<TARGET_FILE:bng_cpp>

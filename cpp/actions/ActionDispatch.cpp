@@ -1484,15 +1484,17 @@ void restoreConcentrations(engine::GeneratedNetwork& network, const std::vector<
 // has already changed them, and the state before the last simulation is
 // stale: BNG2 keeps the model's Concentrations array, which those actions
 // update, so a model change must not undo them.
+// An empty path is passed to generate() because setParameter / setVolume /
+// resetParameters must update the in-memory network without overwriting
+// the .net file written during generate_network().
 void regeneratePreservingAmounts(engine::NetworkGenerator& generator,
-                                 const std::filesystem::path& sourcePath,
                                  std::optional<engine::GeneratedNetwork>& network) {
     if (!network.has_value()) {
         return;
     }
     const auto savedAmounts = snapshotConcentrations(*network);
     const auto savedSession = network->snapshotSimulationSession();
-    network = generator.generate(sourcePath);
+    network = generator.generate({});
     network->replaceSimulationSession(savedSession);
     restoreConcentrations(*network, savedAmounts);
 }
@@ -3043,7 +3045,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             // Parameter changes affect rate constants but must not reset the
             // species amounts the network currently holds.
-            regeneratePreservingAmounts(generator, sourcePath, network);
+            regeneratePreservingAmounts(generator, network);
             continue;
         }
 
@@ -3116,10 +3118,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             if (!found) {
                 throw std::runtime_error("setVolume: compartment not found: " + target);
             }
-            // Regenerate network if one exists, since volume affects rate constants
             // Regenerate network if one exists, since volume affects rate
             // constants.
-            regeneratePreservingAmounts(generator, sourcePath, network);
+            regeneratePreservingAmounts(generator, network);
             if (verbose) {
                 std::cerr << "[bng_cpp] Set volume of compartment '" << target << "' to " << value << "\n";
             }
@@ -3149,7 +3150,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 replaceParameter(ast::Parameter(name, ast::Expression::number(value)));
             }
             evaluateParametersAndRefresh();
-            regeneratePreservingAmounts(generator, sourcePath, network);
+            regeneratePreservingAmounts(generator, network);
             if (verbose) {
                 std::cerr << "[bng_cpp] Reset parameters from label '" << label << "'\n";
             }
