@@ -94,6 +94,7 @@ enum class BuiltinFunction {
     MRatio,
     Pi,
     Rint,
+    Sign,
     Sin,
     Sinh,
     Sqrt,

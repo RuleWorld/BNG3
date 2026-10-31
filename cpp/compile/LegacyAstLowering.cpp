@@ -66,6 +66,7 @@ std::string builtinName(BuiltinFunction function) {
     case BuiltinFunction::MRatio: return "mratio";
     case BuiltinFunction::Pi: return "_PI";
     case BuiltinFunction::Rint: return "rint";
+    case BuiltinFunction::Sign: return "sign";
     case BuiltinFunction::Sin: return "sin";
     case BuiltinFunction::Sinh: return "sinh";
     case BuiltinFunction::Sqrt: return "sqrt";

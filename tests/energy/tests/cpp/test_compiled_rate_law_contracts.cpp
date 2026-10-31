@@ -401,6 +401,37 @@ TEST_CASE("Shared evaluateRateString evaluates nested expressions, unary signs, 
     CHECK(bng::compile::evaluateRateString(" exp(0) ", resolver) == Catch::Approx(1.0));
     CHECK(bng::compile::evaluateRateString(" (k * c) / 8 ", resolver) == Catch::Approx(5.0));
     CHECK(bng::compile::evaluateRateString(" -k ", resolver) == Catch::Approx(-10.0));
+    CHECK(bng::compile::evaluateRateString(" c ^ 2 ", resolver) == Catch::Approx(16.0));
+    CHECK(bng::compile::evaluateRateString(" 2 ** 3 ", resolver) == Catch::Approx(8.0));
+    CHECK(bng::compile::evaluateRateString(" sqrt(16) ", resolver) == Catch::Approx(4.0));
+    CHECK(bng::compile::evaluateRateString(" abs(-7.5) ", resolver) == Catch::Approx(7.5));
+    CHECK(bng::compile::evaluateRateString(" ln(exp(3)) ", resolver) == Catch::Approx(3.0));
+    CHECK(bng::compile::evaluateRateString(" log10(100) ", resolver) == Catch::Approx(2.0));
+    CHECK(bng::compile::evaluateRateString(" log2(8) ", resolver) == Catch::Approx(3.0));
+    CHECK(bng::compile::evaluateRateString(" sign(42) ", resolver) == Catch::Approx(1.0));
+    CHECK(bng::compile::evaluateRateString(" sign(-0.5) ", resolver) == Catch::Approx(-1.0));
+    CHECK(bng::compile::evaluateRateString(" sign(0) ", resolver) == Catch::Approx(0.0));
+    CHECK(bng::compile::evaluateRateString(" floor(2.7) ", resolver) == Catch::Approx(2.0));
+    CHECK(bng::compile::evaluateRateString(" ceil(2.1) ", resolver) == Catch::Approx(3.0));
+    CHECK(bng::compile::evaluateRateString(" rint(2.5) ", resolver) == Catch::Approx(3.0));
+}
+
+TEST_CASE("CompiledRateLaw evaluates sign builtin across negative, zero, and positive") {
+    const auto expression = bng::parser::parseExpression("sign(x)");
+    bng::compile::SymbolTable symbols;
+    const auto rate = bng::compile::CompiledRateLaw::compile(expression, symbols, {"x"});
+    REQUIRE(rate.diagnostics().empty());
+    REQUIRE(rate.fullyResolved());
+
+    bng::compile::RateEvaluationContext ctx;
+    ctx.resolveLocal = [](const std::string&) { return -5.2; };
+    CHECK(rate.evaluate(ctx) == Catch::Approx(-1.0));
+
+    ctx.resolveLocal = [](const std::string&) { return 0.0; };
+    CHECK(rate.evaluate(ctx) == Catch::Approx(0.0));
+
+    ctx.resolveLocal = [](const std::string&) { return 18.9; };
+    CHECK(rate.evaluate(ctx) == Catch::Approx(1.0));
 }
 
 TEST_CASE("CompiledRateLaw recognizes delay dependencies") {

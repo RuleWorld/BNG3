@@ -161,7 +161,7 @@ const char* builtinText(bng::compile::BuiltinFunction op) {
     case Fn::Log10: return "log10"; case Fn::Log2: return "log2";
     case Fn::Max: return "max"; case Fn::Min: return "min";
     case Fn::MRatio: return "mratio"; case Fn::Pi: return "pi";
-    case Fn::Rint: return "rint"; case Fn::Sin: return "sin";
+    case Fn::Rint: return "rint"; case Fn::Sign: return "sign"; case Fn::Sin: return "sin";
     case Fn::Sinh: return "sinh"; case Fn::Sqrt: return "sqrt";
     case Fn::Sum: return "sum"; case Fn::Tan: return "tan";
     case Fn::Tanh: return "tanh"; case Fn::Time: return "time";
