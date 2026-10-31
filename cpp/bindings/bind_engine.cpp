@@ -388,6 +388,30 @@ void bind_engine(py::module_& m) {
             }
             return participants;
         }, "Reactant and product species indices for each generated reaction, in network order")
+        .def_property_readonly("reaction_rate_laws", [](const GeneratedNetwork& gn) {
+            std::vector<std::string> laws;
+            laws.reserve(gn.reactions.size());
+            for (const auto& rxn : gn.reactions.all()) {
+                laws.push_back(rxn.getRateLaw());
+            }
+            return laws;
+        }, "Rate law expression string for each generated reaction, in network order")
+        .def_property_readonly("reaction_factors", [](const GeneratedNetwork& gn) {
+            std::vector<double> factors;
+            factors.reserve(gn.reactions.size());
+            for (const auto& rxn : gn.reactions.all()) {
+                factors.push_back(rxn.getFactor());
+            }
+            return factors;
+        }, "Multiplicative statistical/symmetry factor for each generated reaction, in network order")
+        .def_property_readonly("reaction_rules", [](const GeneratedNetwork& gn) {
+            std::vector<std::string> rules;
+            rules.reserve(gn.reactions.size());
+            for (const auto& rxn : gn.reactions.all()) {
+                rules.push_back(rxn.getOriginRuleName());
+            }
+            return rules;
+        }, "Origin rule name for each generated reaction, in network order")
         .def_property_readonly("stoichiometric_matrix", [](const GeneratedNetwork& gn) {
             const auto speciesCount = static_cast<py::ssize_t>(gn.species.size());
             const auto reactionCount = static_cast<py::ssize_t>(gn.reactions.size());

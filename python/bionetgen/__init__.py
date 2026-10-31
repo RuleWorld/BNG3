@@ -15,6 +15,8 @@ if _USE_LEGACY:
 else:
     from bionetgen.model import (
         BioNetGenModel,
+        CRNComplex,
+        CRNRateLaw,
         CRNReaction,
         CRNSpecies,
         load,
@@ -233,4 +235,4 @@ __all__ = [
 ]
 
 if not _USE_LEGACY:
-    __all__.extend(["CRNSpecies", "CRNReaction"])
+    __all__.extend(["CRNSpecies", "CRNComplex", "CRNRateLaw", "CRNReaction"])

@@ -106,7 +106,8 @@ High-level wrapper around the parsed C++ model.
 | `molecule_types` | Molecule type definitions |
 | `seed_species` | Seed species definitions |
 | `species` | Tuple of `CRNSpecies` records for the generated network |
-| `reactions` | Tuple of `CRNReaction` records for the generated network |
+| `complexes` | Tuple of `CRNComplex` records for the generated network |
+| `reactions` | Tuple of `CRNReaction` records with rate laws and complex indices |
 | `stoichiometric_matrix` | Dense integer NumPy array with species rows and reaction columns |
 | `observables` | Observable definitions |
 | `reaction_rules` | Reaction rules |
@@ -143,9 +144,21 @@ columns follow `reactions` order, and
 multiplicity`. A model with no species and no reactions has shape `(0, 0)`; a
 seed-only network with S species has shape `(S, 0)`.
 
-This initial structure API covers species identities, reaction participants,
-and stoichiometry. Complex details and structured rate laws are outside this
-slice.
+`complexes` is a tuple of public `bionetgen.CRNComplex` records. Each complex
+represents a unique reactant or product multiset of species, storing its `index`
+and sorted tuple of `species` indices (preserving multiplicity).
+
+Each `bionetgen.CRNReaction` record provides `reactant_complex` and
+`product_complex` integer indices into `complexes`, and a `rate_law` of type
+`bionetgen.CRNRateLaw` containing its `type`, `expression`, `factor`,
+`rule_name`, and `parameters` dependencies.
+
+#### `to_crn() -> dict` / `write_crn(path)`
+
+Export the chemical reaction network (species, complexes, reactions, rate laws,
+and stoichiometric matrix) to a portable dictionary or standalone JSON file
+consumed by downstream formal verifiers (such as `crnt-lean`) without requiring
+BNG3 internals.
 
 ### Methods
 
