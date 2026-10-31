@@ -79,3 +79,107 @@ This local reproduction used exact BNG3 main `a0fa3899ef66403b351f149d39d854ad3b
 - **Hybrid refinement has a confirmed semantic mismatch.** The BNG2 `_hpp.bngl` has six association children, retaining one ligated `L/R` product transition each: `_R2_v1/v2`, `_R3_v1/v2`, `_R4_v1/v2`. Their effective multipliers relative to the source rate parameters are respectively `3, 6, 1, 2, 1, 2`. BNG3 main emits the unrefined `R2`, `R3`, `R4` rules plus only `R2_pop`, `R3_pop`, `R4_pop`; it does not emit the corresponding `R_pop()` children. The BNG2 XML writes `Rfree`/`Lfree` pattern automorphisms as `2`/`6`; the corresponding BNG3 `Pattern` elements omit the `automorphisms` attribute. An independent checks-only regression that validates these transition signatures, rates and automorphism attributes is in [PR #517](https://github.com/RuleWorld/BNG3/pull/517); it fails against the current native exporter as expected. The fixture has no explicit component-state declarations, so no state-preservation claim is made. Full-network acceptance, including its existing timeout/status, remains separate and was not weakened by this authored-output comparison.
 - **Multi structural differences need specification-level interpretation.** On `test_write_sbml_multi`, the current BNG3 XML has 5 species types, 11 species and 6 reactions; BNG2 has 3 species types, 13 species and 6 reactions. The merged element-path comparator reports 75 differences across species types, species, reaction rules and component mappings, including 17 mapping-field differences. BNG3 uses pooled product complex species types; its forward maps refer to the complex's product `SpeciesTypeInstance` IDs (for example `st_RR1_P1_M1` and `st_RR1_P1_M2`) and reverse maps refer back to the root species types. The IDs and type layout differ from BNG2's serialization, and the output alone does not establish that every mapping or enumerated species is semantically equivalent. Conversely, a component-mapping diff or BNG2's flatter type layout alone does not establish that BNG3's representation is invalid: SBML Multi permits mapping to product components represented by species-type instances. No libSBML validation or independent execution was performed for this reproduction. Keep the larger #161 product/reimport/state-bearing work separate and open; do not infer a product fix from this XML diff.
 - **Reproducible local artifacts.** The four generated XML files were retained for this investigation under `/tmp/hybrid-export-a0fa/{bng2,native}` and `/tmp/multi-current-main-a0fa/{bng2,native}`. Their SHA256 values are, respectively: hybrid BNG2 `a36b7c4b6b2044472db598f124f8b0a24aca480caa8e43fe4d1bf9beadd3faa0`, hybrid BNG3 `ebe9c858611f03a8184d1325530156f21a18d0e8d9775a69d4868f8e4e1e72f6`, Multi BNG2 `284a0abfcfa0362678a73e82d1b50d7791c0ce620123ea10724e48ea8850640`, and Multi BNG3 `814ff333efd15f839ef03853757a3c3efd838603c0b7d177f1dde407e828b03f`. These are local artifacts, not hosted CI receipts.
+
+
+## Combined baseline reconciliation (2026-10-31, commit `13cf998e9fea595a1c322ac0669a6bc6f598c88b`)
+
+This audit establishes the combined baseline following the integration of pull requests #541–#553. Individual branch checks do not establish combined behavior, especially across coupled ODE execution (#549, #551, #553) and shared SBML workflow wiring (#546, #547, #548).
+
+### 1. Integration and qualification results
+
+- **Combined revision:** `13cf998e9fea595a1c322ac0669a6bc6f598c88b` on `main`.
+- **Merged PRs:**
+  - [#541](https://github.com/RuleWorld/BNG3/pull/541): `fix(validation)` require execution evidence for issue 160 acceptance.
+  - [#542](https://github.com/RuleWorld/BNG3/pull/542): `fix(validation)` network-only staging of generation snapshots.
+  - [#543](https://github.com/RuleWorld/BNG3/pull/543): `feat(actions)` compile static simulation action time options.
+  - [#544](https://github.com/RuleWorld/BNG3/pull/544): `docs` clarify PyBioNetGen migration evidence.
+  - [#545](https://github.com/RuleWorld/BNG3/pull/545): `ci` qualify installed wheel examples and package identity.
+  - [#546](https://github.com/RuleWorld/BNG3/pull/546): `feat(engine)` support coupled algebraic parameter DAEs in native IDA path.
+  - [#547](https://github.com/RuleWorld/BNG3/pull/547): `fix(atomizer)` lower nonlinear SBML fast equilibrium pools.
+  - [#548](https://github.com/RuleWorld/BNG3/pull/548): `fix(atomizer)` bounded dynamic SBML delay evaluation.
+  - [#549](https://github.com/RuleWorld/BNG3/pull/549): `fix(engine)` preserve historical parameters in event algebraic evaluation.
+  - [#550](https://github.com/RuleWorld/BNG3/pull/550): `test(bngir)` qualify native reconstruction of compartments and live rates.
+  - [#551](https://github.com/RuleWorld/BNG3/pull/551): `feat(compile)` shared rate evaluation and invalidation across ODE and PLA (#143).
+  - [#552](https://github.com/RuleWorld/BNG3/pull/552): `test(atomizer)` qualify fast equilibrium coupling to Michaelis-Menten limit.
+  - [#553](https://github.com/RuleWorld/BNG3/pull/553): `fix(engine)` qualify delayed kinetics against method of steps and continuation.
+- **Combined test suite execution:** 282 passed test cases in 7.88s across focused unit, contract, and semantic test suites:
+  - CI contracts & workflow wiring (`tests/test_ci_contract.py`, `tests/test_issue_acceptance_ci.py`): 110 passed.
+  - SBML algebraic DAEs with IDA (`tests/python/test_atomizer_dae_ida.py`): 2 passed.
+  - Fast reactions with nonlinear pools & Michaelis-Menten limits (`tests/python/test_atomizer_fast_reaction.py`, `tests/python/test_fast_equilibrium_michaelis_menten.py`): 10 passed.
+  - Bounded delay history & method of steps (`tests/python/test_atomizer_delay_history.py`, `tests/python/test_delayed_method_of_steps.py`): 11 passed.
+  - Event algebraic parameter history (`tests/python/test_event_algebraic_parameter_history.py`): 6 passed.
+  - Native BNGIR compartment & live rate interaction (`tests/python/test_bngir_compartment_live_rates.py`): 8 passed.
+  - C++ backend simulation, action options, and controls (`tests/python/test_cpp_backend.py`): 105 passed.
+- **Defect identified and repaired during combined integration:**
+  - An unconditional network species amount mutation in `cpp/bindings/bind_engine.cpp` introduced by continuation updates in #553 caused repeated simulation runs on the same `GeneratedNetwork` instance to leak terminal states into subsequent independent simulations.
+  - Restricting state synchronization strictly to `if (continue_simulation && !result.concentrations.empty())` restored complete initial-state isolation while preserving valid continuation semantics.
+
+### 2. Capability inventory categorization
+
+The 994 capability inventory rows are classified into the three required categories:
+
+1. **Implemented and independently verified:**
+   - Coupled index-1 algebraic parameter DAEs via native IDA path (#546).
+   - Linear and nonlinear fast equilibrium pools with asymptotic Henri-Michaelis-Menten analytical convergence (#547, #552).
+   - Method-of-steps delay continuation across prehistory jumps, kinks, and multiple delay horizons (#548, #553).
+   - Event-assigned parameter historical preservation during zero-argument algebraic result function evaluation (#549).
+   - Native BNGIR compartment and live rate bidirectional reconstruction (#550).
+   - Shared compile-owned rate evaluation for `OdeIntegrator` and `PlaSimulator` (#551).
+   - Action time options compilation with live parameter updates and continuation (#543).
+   - Generation snapshot isolation from post-generation parameter mutations (#542).
+   - Wheel package identity verification and public migration workflow examples (#544, #545).
+   - Runtime model topology edits in public Model API (#536).
+   - Multi-molecule native BNGIR patterns (#535).
+
+2. **Implemented but missing adequate execution evidence:**
+   - Full canonical BNG2 weekly corpus and 71 cross-validation models on exact main (#138, #180, #181).
+   - Pinned native NFsim execution parity and direct XML translation verification (#146, #147, #150, #151).
+   - CRN structures, complex enumeration, reaction rate representation, and export (#170).
+   - Full public Python API and CLI parameter matrix coverage (#140, #171).
+   - JAX ODE and SSA execution adapters (#473).
+   - Batch SSA CPU reference and CUDA device compilation (#474).
+
+3. **Missing semantics or confirmed product defect:**
+   - Fast reactions with time-varying rates or dynamic compartment volume scaling (explicit refusal boundaries qualified in #552).
+   - General nonlinear high-index DAE systems beyond coupled index-1 constraints (#160).
+   - Delay history with dynamic state-dependent duration expressions `delay(x, f(x))` (#475).
+   - SBML Multi: state-bearing binding complexes, full component-agent maps, and independently expanded execution (#161).
+   - SBML comp: hierarchical model composition, port replacements, deletions, and flattening (#163).
+   - NFnext: unified general simulation loop replacing NFcore2 (#148, #149).
+   - Exact semantic equality certificate proofs and counterexamples (#156).
+   - Energy-based rules with detailed balance, barrier/reservoir laws, and cycle affinities (#152, #177).
+   - Cross-engine delayed reaction initiation/completion cancelation (#475).
+
+### 3. Mutation baseline and policy status
+
+- Curated product mutation check executed on commit `13cf998e9fea595a1c322ac0669a6bc6f598c88b`.
+- The non-equivalent mutant (`python.set-parameter-scale`, mutating parameter setter values by 1%) was killed by unchanged independent backend contract test `TestHighLevelAPI.test_parameter_value_is_read_only_and_refreshes_dependents`.
+- Mutation score: 1/1 (100% kill rate, 0 survived, 0 infrastructure errors).
+- Baseline recorded in `tests/validation/policy/mutation-baseline.json` with exact revision and artifact SHA-256 digest.
+- `release-scheduled-mutation-ratchet` status: **PASS**.
+
+### 4. Dependency-ordered roadmap to Alpha (3.0.0a1) and Full Release
+
+```mermaid
+flowchart TD
+    M1["Milestone 1: Combined Baseline (Done)"] --> A1["Alpha: Canonical BNG2 & Cross-Validation (#180, #181)"]
+    M1 --> A2["Alpha: Native NFsim Parity (#146, #150, #151)"]
+    M1 --> A3["Alpha: SBML Test Suite & BioModels Reconciliation (#159, #160, #162)"]
+    M1 --> A4["Alpha: PyBioNetGen API & Migration Workflows (#171, #186)"]
+    M1 --> A5["Alpha: Cross-Platform Wheel & Sdist Qualification (#184)"]
+
+    A1 --> ALPHA["3.0.0a1 Release Candidate"]
+    A2 --> ALPHA
+    A3 --> ALPHA
+    A4 --> ALPHA
+    A5 --> ALPHA
+
+    ALPHA --> S1["Step 3: Shared Rate, Graph & Protocol Semantics (#140, #142, #143)"]
+    S1 --> S2["Step 4: Compile-Owned Execution & Common Backend Contracts (#138, #139, #141, #144)"]
+    S2 --> S3["Step 5: Complete Scientific SBML by Semantic Family (#159, #160, #161, #162, #163)"]
+    S3 --> S4["Step 6: BNGIR, Exact Equality & Format Consumers (#154, #155, #156, #170)"]
+    S4 --> S5["Step 7: Native NFsim Parity, Hybrid & NFnext (#146, #147, #148, #150, #151)"]
+    S5 --> S6["Step 8: Optional Backends, Ensembles & Performance (#174, #176, #473, #474)"]
+    S6 --> S7["Step 9: Cross-Cutting Release Obligations (#152, #166-#168, #177, #475)"]
+    S7 --> REL["Step 10: Qualify & Publish Full Release (#184)"]
+```
