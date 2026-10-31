@@ -78,8 +78,7 @@ std::string multiMassActionVolume(const bng::ast::Model& model,
             const auto compartment = molecule.compartment.empty()
                 ? pattern.compartment() : molecule.compartment;
             if (compartment.empty()) {
-                throw std::invalid_argument(
-                    "SBML-Multi mass-action volume requires an explicit reaction compartment");
+                return {};
             }
             if (!common.empty() && compartment != common) {
                 throw std::invalid_argument(
