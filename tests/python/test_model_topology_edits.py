@@ -222,9 +222,7 @@ def test_observable_addition_and_removal_match_fresh_source(tmp_path):
 def test_compartment_and_molecule_type_removal(tmp_path):
     edited = _load(tmp_path, "comp.bngl", COMPARTMENTAL)
     edited.add_compartment("Extra", 3, 5)
-    source_with_extra = COMPARTMENTAL.replace(
-        "  C 3 1\n", "  C 3 1\n  Extra 3 5.0\n"
-    )
+    source_with_extra = COMPARTMENTAL.replace("  C 3 1\n", "  C 3 1\n  Extra 3 5.0\n")
     _assert_same(edited, _load(tmp_path, "fresh_extra.bngl", source_with_extra))
 
     # Remove compartment

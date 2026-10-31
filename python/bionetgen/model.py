@@ -422,7 +422,9 @@ class BioNetGenModel:
             stripped = line.split("#", 1)[0].strip()
             if not stripped:
                 continue
-            match = re.match(r"^(?:(\d+)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$", stripped)
+            match = re.match(
+                r"^(?:(\d+)\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*:\s*(.*)$", stripped
+            )
             if match:
                 lbl = match.group(2)
                 rule_body = match.group(3).strip()
@@ -595,9 +597,16 @@ class BioNetGenModel:
             if not matches:
                 raise ValueError(f"no compartment {target!r}")
             if len(matches) > 1:
-                raise ValueError(f"compartment {target!r} matches {len(matches)} entries")
+                raise ValueError(
+                    f"compartment {target!r} matches {len(matches)} entries"
+                )
             pattern = rf"@\s*{re.escape(target)}\b"
-            for block in ("seed species", "reaction rules", "observables", "compartments"):
+            for block in (
+                "seed species",
+                "reaction rules",
+                "observables",
+                "compartments",
+            ):
                 bspan = self._block_body(text, block)
                 if bspan is not None:
                     block_text = text[bspan[0] : bspan[1]]
@@ -645,7 +654,9 @@ class BioNetGenModel:
             if not matches:
                 raise ValueError(f"no molecule type {target!r}")
             if len(matches) > 1:
-                raise ValueError(f"molecule type {target!r} matches {len(matches)} entries")
+                raise ValueError(
+                    f"molecule type {target!r} matches {len(matches)} entries"
+                )
             mol_name = target.split("(", 1)[0].strip()
             pattern = rf"\b{re.escape(mol_name)}\s*\("
             for block in ("seed species", "reaction rules", "observables"):
@@ -763,7 +774,9 @@ class BioNetGenModel:
             if not matches:
                 raise ValueError(f"no observable {target!r}")
             if len(matches) > 1:
-                raise ValueError(f"observable {target!r} matches {len(matches)} entries")
+                raise ValueError(
+                    f"observable {target!r} matches {len(matches)} entries"
+                )
             lines = text[span[0] : span[1]].split("\n")
             del lines[matches[0]]
             return text[: span[0]] + "\n".join(lines) + text[span[1] :]
