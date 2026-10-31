@@ -179,9 +179,7 @@ class BioNetGenModel:
                 else ""
             )
             factor = (
-                factors[index]
-                if factors is not None and index < len(factors)
-                else 1.0
+                factors[index] if factors is not None and index < len(factors) else 1.0
             )
             rname = (
                 rule_names[index]
@@ -222,9 +220,7 @@ class BioNetGenModel:
         return {
             "version": "1.0",
             "name": self.name,
-            "species": [
-                {"index": s.index, "name": s.name} for s in self.species
-            ],
+            "species": [{"index": s.index, "name": s.name} for s in self.species],
             "complexes": [
                 {"index": c.index, "species": list(c.species)} for c in self.complexes
             ],
@@ -236,15 +232,17 @@ class BioNetGenModel:
                     "products": list(r.products),
                     "reactant_complex": r.reactant_complex,
                     "product_complex": r.product_complex,
-                    "rate_law": {
-                        "type": r.rate_law.type,
-                        "expression": r.rate_law.expression,
-                        "factor": r.rate_law.factor,
-                        "rule_name": r.rate_law.rule_name,
-                        "parameters": list(r.rate_law.parameters),
-                    }
-                    if r.rate_law is not None
-                    else None,
+                    "rate_law": (
+                        {
+                            "type": r.rate_law.type,
+                            "expression": r.rate_law.expression,
+                            "factor": r.rate_law.factor,
+                            "rule_name": r.rate_law.rule_name,
+                            "parameters": list(r.rate_law.parameters),
+                        }
+                        if r.rate_law is not None
+                        else None
+                    ),
                 }
                 for r in self.reactions
             ],

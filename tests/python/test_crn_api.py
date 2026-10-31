@@ -240,5 +240,6 @@ end model
     json_file = tmp_path / "crn.json"
     model.write_crn(json_file)
     import json
+
     loaded = json.loads(json_file.read_text(encoding="utf-8"))
     assert loaded == crn_dict
