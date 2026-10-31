@@ -52,7 +52,9 @@ def test_make_key_from_graph_empty(original_solver, optimized_solver):
         == []
     )
     # The key generation is deterministic
-    assert optimized_solver.make_key_from_graph(graph) == optimized_solver.make_key_from_graph(graph)
+    assert optimized_solver.make_key_from_graph(
+        graph
+    ) == optimized_solver.make_key_from_graph(graph)
     assert graph == graph_copy
 
 
