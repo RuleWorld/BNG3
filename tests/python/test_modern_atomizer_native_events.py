@@ -1014,3 +1014,43 @@ end model
         RuntimeError, match="SSA does not support time-dependent native event triggers"
     ):
         load(path).simulate(method="ssa", t_end=1, n_steps=2, seed=17)
+
+
+def test_compound_dynamic_trigger_fails_closed_as_unsupported():
+    """A non-linear trigger expression like 'x / 16 >= 1' fails closed without bare state."""
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1">
+  <model id="compound_trigger">
+    <listOfCompartments>
+      <compartment id="c" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="S1" compartment="c" initialAmount="10" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfEvents>
+      <event id="e1">
+        <trigger initialValue="false" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <geq/>
+              <apply>
+                <divide/>
+                <ci>S1</ci>
+                <cn>16</cn>
+              </apply>
+              <cn>1</cn>
+            </apply>
+          </math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="S1">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>0</cn></math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>"""
+    result = atomize(xml)
+    # The compound division trigger must not be lowered to an unsimulatable bng3_events block
+    assert "begin bng3_events version 1" not in result.bngl

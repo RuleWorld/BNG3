@@ -3387,6 +3387,16 @@ def _native_comparison_expression(
         and right_dynamic is not None
         and (left_dynamic[1] or left_dynamic[2] or right_dynamic[1] or right_dynamic[2])
     ):
+        # The native continuous root finder in OdeIntegrator requires that at
+        # least one side of the trigger comparison be a bare observable or
+        # time identifier against a threshold (or another bare state).
+        # Compound arithmetic on the continuous side (e.g. division by
+        # volume or non-unity stoichiometry) cannot be evaluated as an
+        # elementary event root and must fail closed as unsupported.
+        left_is_bare = bool(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", left_dynamic[0].strip()))
+        right_is_bare = bool(re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", right_dynamic[0].strip()))
+        if not (left_is_bare or right_is_bare):
+            return None
         return f"{left_dynamic[0]} {symbol} {right_dynamic[0]}"
     return None
 
