@@ -2,7 +2,7 @@
 
 The live branch and current qualification state are summarized in
 [`../docs/CURRENT_PROGRESS.md`](../docs/CURRENT_PROGRESS.md). Provenance
-records remain pending until their stated maintainer and oracle gates are met.
+records distinguish accepted pins from evidence and qualification not yet run.
 
 Historical migration reports and snapshot metadata are grouped under
 [`../docs/archive/reports/ir-migration-2026-09-14/`](../docs/archive/reports/ir-migration-2026-09-14/).
@@ -18,20 +18,22 @@ NFsim, and PyBioNetGen. Each observed range is reconciled commit by commit in
 [`reconciliation/`](reconciliation/) and summarized in
 [`../docs/UPSTREAM_RECONCILIATION_2026-09-23.md`](../docs/UPSTREAM_RECONCILIATION_2026-09-23.md).
 The starting revisions in those ledgers are the previously locked source
-revisions; the cutoffs are the newly observed source heads. This refresh does
-not approve those cutoffs. The baseline remains pending maintainer approval,
-and ledger owners remain explicitly unassigned. Empty `tests` arrays mean
-this reconciliation pass makes no test-execution claim.
+revisions; the cutoffs are the newly observed source heads. That 2026-09-23
+refresh recorded observations and made no approval or test-execution claim.
+The later H01 decision in [`../docs/DECISIONS.md`](../docs/DECISIONS.md)
+accepted the existing pins without changing them. Empty `tests` arrays still
+mean the reconciliation pass makes no test-execution claim.
 
 The current continuation uses the locked native oracle revisions and keeps
 missing engines, missing outputs, and unsupported population-map semantics
 fail-closed. Hosted source, artifact, and check details are valid only for the
 exact SHA reported by `gh` for that PR.
 
-The initial document deliberately has `pending-maintainer-approval` status.
-The integration plan records observed revisions, but maintainers have not yet
-chosen the import cutoffs, oracle recipes, immutable build images, or owners.
-Do not change the status to `approved` until those decisions are recorded.
+The initial document used `pending-maintainer-approval` status. On 2026-10-27,
+the maintainer accepted the existing source pins, oracle recipes and digests,
+compiler-image digest, and Python lock as recorded in `docs/DECISIONS.md`.
+The current lock carries those statuses; earlier receipts retain the states
+they recorded at the time.
 
 Validate structure during development:
 
@@ -54,14 +56,15 @@ The 2026-10-08 candidate refresh is recorded in
 It verifies all nine immutable commit objects, refreshes the destination
 reference to the audited BNG3 main revision, and preserves the other source
 cutoffs. `remote-commit` evidence means the commit is reachable upstream; it
-does not assert that an old branch name still exists or that the cutoff has
-been approved. Historical Rasi and Playground branch names no longer resolve.
+does not assert that an old branch name still exists or, by itself, that the
+cutoff has been approved. Acceptance is recorded separately in the current
+lock. Historical Rasi and Playground branch names no longer resolve.
 
 A locked Python dependency file must be repository-relative, readable, and
 match its recorded SHA-256 byte for byte. A syntactically valid digest cannot
-substitute for a missing or changed file. The candidate records remain pending
-until the actual source, recipe, compiler-image and dependency decisions are
-approved.
+substitute for a missing or changed file. The accepted lock records the exact
+path and digest, and strict validation checks the file bytes against that
+digest.
 
 The adjacent [oracle receipt](approvals/2026-10-08/oracle-verification.json)
 records fresh, clean pinned BNG2 and NFsim builds and the committed decay smoke
@@ -69,10 +72,11 @@ inputs/outputs. BNG2's analytic ODE check and NFsim's single seeded trajectory
 are distinct checks; they do not establish distributional parity. The
 [Linux dependency evidence](dependencies/python-3.12-linux-x86_64-manylinux_2_28-full-dev-jax.evidence.md)
 records resolution, wheel hashes, and an immutable compiler-image manifest.
-Linux execution and other platform qualification remain unperformed.
-`--require-approved` deliberately still reports the 14 pending decisions.
-Issue #179 requires release-gate wiring after those decisions; this candidate
-does not substitute observations for approval or claim that issue complete.
+Linux execution and other platform qualification remain unperformed. The
+release qualification workflow runs `--require-approved` and the provenance
+ratchet against the exact tagged main commit. This gate checks the accepted
+provenance record; it does not qualify unrun platforms or change historical
+receipts.
 
 ## SBML Atomizer coverage campaign
 
