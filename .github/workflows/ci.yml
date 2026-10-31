@@ -199,7 +199,7 @@ jobs:
             compiler: clang-15
             cc: clang-15
             cxx: clang++-15
-          - os: macos-14
+          - os: macos-15
             compiler: clang-arm64
             cc: clang
             cxx: clang++
@@ -583,8 +583,8 @@ jobs:
         include:
           - os: ubuntu-22.04
             artifact: bng_cpp-ubuntu-22.04-gcc-12
-          - os: macos-14
-            artifact: bng_cpp-macos-14-clang-arm64
+          - os: macos-15
+            artifact: bng_cpp-macos-15-clang-arm64
           - os: windows-2022
             artifact: bng_cpp-windows-2022-msvc
 
@@ -747,13 +747,13 @@ jobs:
     strategy:
       fail-fast: ${{ github.event_name == 'pull_request' }}
       matrix:
-        os: [ubuntu-22.04, macos-14, windows-2022]
+        os: [ubuntu-22.04, macos-15, windows-2022]
         python-version: ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
         include:
           - os: ubuntu-22.04
             cpp_artifact: bng_cpp-ubuntu-22.04-gcc-12
-          - os: macos-14
-            cpp_artifact: bng_cpp-macos-14-clang-arm64
+          - os: macos-15
+            cpp_artifact: bng_cpp-macos-15-clang-arm64
           - os: windows-2022
             cpp_artifact: bng_cpp-windows-2022-msvc
 
@@ -1076,7 +1076,7 @@ jobs:
           - os: macos-15-intel
             macos_arch: x86_64
             macos_deployment_target: "11.0"
-          - os: macos-14
+          - os: macos-15
             macos_arch: arm64
             macos_deployment_target: "11.0"
           - os: windows-2022
@@ -1112,7 +1112,7 @@ jobs:
             bionetgen --help
           CIBW_ENVIRONMENT: CMAKE_ARGS="-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
           # Build one native architecture per macOS runner; macos-15-intel
-          # supplies x86_64 and macos-14 supplies arm64 without duplication.
+          # supplies x86_64 and macos-15 supplies arm64 without duplication.
           CIBW_ARCHS_MACOS: ${{ matrix.macos_arch }}
           CIBW_ENVIRONMENT_MACOS: >-
             MACOSX_DEPLOYMENT_TARGET=${{ matrix.macos_deployment_target }}

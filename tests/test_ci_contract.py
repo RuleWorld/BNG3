@@ -1376,7 +1376,7 @@ def test_python_test_jobs_download_the_matching_native_cli_artifact():
     }
     assert artifacts == {
         "ubuntu-22.04": "bng_cpp-ubuntu-22.04-gcc-12",
-        "macos-14": "bng_cpp-macos-14-clang-arm64",
+        "macos-15": "bng_cpp-macos-15-clang-arm64",
         "windows-2022": "bng_cpp-windows-2022-msvc",
     }
     assert "${{ github.workspace }}/build/cpp/bng_cpp" in matrix_job["env"]["BNG_CPP"]
@@ -1648,12 +1648,14 @@ def test_structural_xml_comparator_normalizes_export_defaults_and_expression_tex
     reference.write_text(
         """<sbml><model><ListOfReactionRules>
 <ReactionRule id="RR1" name="_R1" symmetry_factor="1"><Expression> ( 1 + (k) ) </Expression></ReactionRule>
+<ReactionRule id="RR2" name="_R2_v1" symmetry_factor="1"><Expression>k</Expression></ReactionRule>
 </ListOfReactionRules></model></sbml>""",
         encoding="utf-8",
     )
     generated.write_text(
         """<sbml><model><ListOfReactionRules>
 <ReactionRule id="RR1" name="R1"><Expression>1+(k)</Expression></ReactionRule>
+<ReactionRule id="RR2" name="R2_v1"><Expression>k</Expression></ReactionRule>
 </ListOfReactionRules></model></sbml>""",
         encoding="utf-8",
     )
@@ -1666,6 +1668,64 @@ def test_structural_xml_comparator_normalizes_export_defaults_and_expression_tex
 
     assert equal is True
     assert differences == []
+
+
+def test_structural_xml_comparator_uses_reaction_maps_not_pattern_aliases(
+    tmp_path,
+):
+    reference = tmp_path / "reference-pattern-aliases.xml"
+    generated = tmp_path / "generated-pattern-aliases.xml"
+    reference.write_text(
+        """<sbml><model><ListOfReactionRules><ReactionRule id="r1">
+<ListOfReactantPatterns><ReactantPattern id="r1_rp"><ListOfMolecules>
+<Molecule id="r1_rp_m1" name="A" label="authored"/><Component id="r1_rp_m1_c1" name="x" label="authored_site"/>
+</ListOfMolecules></ReactantPattern></ListOfReactantPatterns>
+<ListOfProductPatterns><ProductPattern id="r1_pp"><ListOfMolecules>
+<Molecule id="r1_pp_m1" name="A" label="generated"/><Component id="r1_pp_m1_c1" name="x" label="generated_site"/>
+</ListOfMolecules></ProductPattern></ListOfProductPatterns>
+<Map><MapItem sourceID="r1_rp_m1" targetID="r1_pp_m1"/><MapItem sourceID="r1_rp_m1_c1" targetID="r1_pp_m1_c1"/></Map>
+</ReactionRule></ListOfReactionRules></model></sbml>""",
+        encoding="utf-8",
+    )
+    generated.write_text(
+        reference.read_text(encoding="utf-8")
+        .replace('label="authored"', 'label="t0"')
+        .replace('label="authored_site"', 'label="t1"')
+        .replace('label="generated"', 'label="t0"')
+        .replace('label="generated_site"', 'label="t1"'),
+        encoding="utf-8",
+    )
+
+    equal, differences = compare_structural_xml(
+        reference, generated, sections=("ListOfReactionRules",)
+    )
+
+    assert equal is True
+    assert differences == []
+
+    generated.write_text(
+        generated.read_text(encoding="utf-8").replace(
+            'targetID="r1_pp_m1_c1"', 'targetID="r1_pp_m1"'
+        ),
+        encoding="utf-8",
+    )
+    equal, differences = compare_structural_xml(
+        reference, generated, sections=("ListOfReactionRules",)
+    )
+    assert equal is False
+    assert differences == ["ListOfReactionRules"]
+
+    generated.write_text(
+        generated.read_text(encoding="utf-8").replace(
+            '<MapItem sourceID="r1_rp_m1" targetID="r1_pp_m1"/>', ""
+        ),
+        encoding="utf-8",
+    )
+    equal, differences = compare_structural_xml(
+        reference, generated, sections=("ListOfReactionRules",)
+    )
+    assert equal is False
+    assert differences == ["ListOfReactionRules"]
 
 
 def test_structural_xml_comparator_treats_omitted_empty_sections_as_empty(
@@ -1752,7 +1812,7 @@ def test_structural_xml_comparator_checks_multi_species_types_and_reactions(
     generated = tmp_path / "generated-multi.xml"
     reference.write_text(
         """<sbml xmlns:multi="urn:multi"><model>
-<multi:listOfSpeciesTypes><multi:speciesType id="st_R" name="R"><multi:listOfSpeciesFeatureTypes><multi:speciesFeatureType id="state"/></multi:listOfSpeciesFeatureTypes></multi:speciesType></multi:listOfSpeciesTypes>
+<multi:listOfSpeciesTypes><multi:speciesType multi:id="st_R" multi:name="R"><multi:listOfSpeciesFeatureTypes><multi:speciesFeatureType multi:id="state" multi:name="state"/></multi:listOfSpeciesFeatureTypes></multi:speciesType></multi:listOfSpeciesTypes>
 <listOfSpecies><species id="S1" multi:speciesType="st_R"/></listOfSpecies>
 <listOfReactions><reaction id="RR1"><listOfReactants><speciesReference species="RR1_R1"/></listOfReactants><listOfProducts><speciesReference species="RR1_P1"/></listOfProducts></reaction></listOfReactions>
 </model></sbml>""",
@@ -1760,7 +1820,7 @@ def test_structural_xml_comparator_checks_multi_species_types_and_reactions(
     )
     generated.write_text(
         """<sbml xmlns:multi="urn:multi"><model>
-<multi:listOfSpeciesTypes><multi:speciesType id="st_other" name="R"><multi:listOfSpeciesFeatureTypes><multi:speciesFeatureType id="state"/></multi:listOfSpeciesFeatureTypes></multi:speciesType></multi:listOfSpeciesTypes>
+<multi:listOfSpeciesTypes><multi:speciesType multi:id="st_other" multi:name="R"><multi:listOfSpeciesFeatureTypes><multi:speciesFeatureType multi:id="state_other" multi:name="state"/></multi:listOfSpeciesFeatureTypes></multi:speciesType></multi:listOfSpeciesTypes>
 <listOfSpecies><species id="S1" multi:speciesType="st_other"/></listOfSpecies>
 <listOfReactions><reaction id="RR1"><listOfReactants><speciesReference species="RR1_R1"/></listOfReactants><listOfProducts><speciesReference species="RR1_P1"/></listOfProducts></reaction></listOfReactions>
 </model></sbml>""",
@@ -1778,6 +1838,20 @@ def test_structural_xml_comparator_checks_multi_species_types_and_reactions(
 
     generated.write_text(
         generated.read_text(encoding="utf-8").replace('name="R"', 'name="L"'),
+        encoding="utf-8",
+    )
+    equal, differences = compare_structural_xml(
+        reference,
+        generated,
+        sections=("listOfSpeciesTypes", "listOfSpecies", "listOfReactions"),
+    )
+    assert equal is False
+    assert "listOfSpeciesTypes" in differences
+
+    generated.write_text(
+        generated.read_text(encoding="utf-8").replace(
+            'multi:name="state"', 'multi:name="other-state"'
+        ),
         encoding="utf-8",
     )
     equal, differences = compare_structural_xml(
@@ -1974,6 +2048,17 @@ def test_cross_validation_runs_authored_export_actions_without_network_generatio
         return subprocess.CompletedProcess(command, 0, "", ""), None
 
     monkeypatch.setattr("scripts.cross_validate._run_engine", run_engine)
+    if model_name == "test_write_sbml_multi":
+        # These tiny files exercise cross-validation orchestration only; the
+        # real Issue 161 acceptance uses libSBML on its hash-pinned fixtures.
+        monkeypatch.setattr(
+            "scripts.issue161_multi_contract.sbml_validity",
+            lambda _path: {
+                "status": "valid",
+                "severity_error_count": 0,
+                "diagnostics": [],
+            },
+        )
 
     results, details = run_cross_validation(
         cpp,
@@ -1985,6 +2070,49 @@ def test_cross_validation_runs_authored_export_actions_without_network_generatio
     assert results == {"pass": 1, "fail": 0, "error": 0}
     assert details == [f"PASS  {model_name} (authored export: {action_label})"]
     assert len(calls) == 2
+
+
+def test_multi_authored_export_fails_closed_when_libsbml_is_unavailable(
+    tmp_path, monkeypatch
+):
+    import builtins
+
+    models = tmp_path / "Validate"
+    models.mkdir()
+    model = models / "test_write_sbml_multi.bngl"
+    model.write_text("begin model\nend model\nwriteSBMLMulti();\n", encoding="utf-8")
+    cpp = tmp_path / "bng_cpp"
+    perl = tmp_path / "BNG2.pl"
+    cpp.touch()
+    perl.touch()
+    xml = "<sbml xmlns:multi='urn:multi'><model/></sbml>"
+
+    def run_engine(command, work_dir, timeout, environment=None):
+        del timeout, environment
+        output_name = (
+            "test_write_sbml_multi_sbml_multi.xml"
+            if command[0] == str(cpp)
+            else "test_write_sbml_multi_sbml_sbmlmulti.xml"
+        )
+        (work_dir / output_name).write_text(xml, encoding="utf-8")
+        return subprocess.CompletedProcess(command, 0, "", ""), None
+
+    original_import = builtins.__import__
+
+    def import_without_libsbml(name, *args, **kwargs):
+        if name == "libsbml":
+            raise ModuleNotFoundError("No module named 'libsbml'")
+        return original_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("scripts.cross_validate._run_engine", run_engine)
+    monkeypatch.setattr(builtins, "__import__", import_without_libsbml)
+
+    results, details = run_cross_validation(
+        cpp, perl, models, model_names=["test_write_sbml_multi"]
+    )
+
+    assert results == {"pass": 0, "fail": 0, "error": 1}
+    assert "libSBML validity checks unavailable" in details[0]
 
 
 def test_authored_export_reports_perl_when_cpp_times_out(tmp_path, monkeypatch):

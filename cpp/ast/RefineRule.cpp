@@ -249,7 +249,7 @@ int assignTempLabels(BNGcore::PatternGraph& graph,
             // Generate a unique label that doesn't collide with used labels
             std::string label;
             do {
-                label = "_t" + std::to_string(idx++);
+                label = "t" + std::to_string(idx++);
             } while (usedLabels.count(label));
             (*it)->set_label_tag(label);
             tempLabels[label] = true;
@@ -318,6 +318,57 @@ void safeDeleteNode(BNGcore::PatternGraph& graph, BNGcore::Node* node) {
 } // anonymous namespace
 
 
+namespace {
+
+// BNGL text of a refined pattern.  toString() drops compartments, which a
+// compartmental child rule needs: @EC:L(r) is not L(r).
+std::string authoredPattern(const SpeciesGraph& pattern) {
+    if (pattern.getCompartment().empty()) {
+        return pattern.getGraph().get_BNG2_string_with_compartments();
+    }
+    std::string text = pattern.toStringForDedup();  // "@C::..." form
+    const auto doubleColon = text.find("::");
+    if (!text.empty() && text[0] == '@' && doubleColon != std::string::npos) {
+        text.erase(doubleColon, 1);
+    }
+    return text;
+}
+
+// Parsed rules keep an internal R<n> identity and the authored rule name in
+// label_ (including its colon). Hybrid child names follow BNG2's authored
+// name when present; programmatically constructed rules use their identity.
+std::string hybridRuleBaseName(const ReactionRule& rule) {
+    const auto& label = rule.getLabel();
+    if (!label.empty() && label.back() == ':') {
+        return label.substr(0, label.size() - 1);
+    }
+    return rule.getRuleName();
+}
+
+// Symmetry scale of a rule's reactant side, BNG2's MultScale for the cases
+// BNG3's network generation represents: 1/n! for each group of n reactant
+// patterns that are the same graph (ReactionRule::buildReaction applies the
+// same convention).  Correspondence tags are ignored: two copies of A(a)
+// carrying different temporary tags are still the same pattern.
+double reactantSymmetryScale(const std::vector<SpeciesGraph>& patterns) {
+    std::unordered_map<std::string, int> groups;
+    for (const auto& pattern : patterns) {
+        BNGcore::PatternGraph untagged;
+        cloneGraphInto(pattern.getGraph(), untagged);
+        for (auto node = untagged.begin(); node != untagged.end(); ++node) {
+            (*node)->set_label_tag("");
+        }
+        ++groups[SpeciesGraph(std::move(untagged), pattern.getCompartment()).canonicalLabel()];
+    }
+    double scale = 1.0;
+    for (const auto& [label, count] : groups) {
+        for (int k = 2; k <= count; ++k) scale /= static_cast<double>(k);
+    }
+    return scale;
+}
+
+} // namespace
+
 // ---- factorial ----
 // Perl lines 756-761
 double factorial(int n) {
@@ -336,6 +387,38 @@ ExpandRuleResult expandRule(
     const RefineRuleParams& params)
 {
     ExpandRuleResult result;
+
+    // BNG2 refines the two directions of a reversible rule separately: the
+    // reverse rule's reactant is the forward product, whose population
+    // substitutions and embeddings differ from the forward reactants'.  A
+    // child left bidirectional would reverse once per forward child, so a
+    // complex matched by two forward children dissociated at twice the rate.
+    // Children of the reverse direction are named _reverse_<rule>_v<n>.
+    if (rule.isBidirectional() && rule.getRates().size() == 2 &&
+        !rule.hasDrivingWork()) {
+        ReactionRule forward(rule.getRuleName(), rule.getLabel(), rule.getReactants(),
+                             rule.getProducts(), {rule.getRates()[0]}, rule.getModifiers(),
+                             false, rule.getReactantPatterns(), rule.getProductPatterns());
+        ReactionRule reverse("_reverse_" + rule.getRuleName(), "_reverse_" + rule.getLabel(),
+                             rule.getProducts(), rule.getReactants(), {rule.getRates()[1]},
+                             rule.getModifiers(), false, rule.getProductPatterns(),
+                             rule.getReactantPatterns());
+        if (rule.getDelayExpression()) {
+            forward.setDelay(*rule.getDelayExpression(), rule.isNonConsuming());
+            reverse.setDelay(*rule.getDelayExpression(), rule.isNonConsuming());
+        }
+        for (auto* direction : {&forward, &reverse}) {
+            auto expanded = expandRule(*direction, sgList, model, hybridModel, params);
+            if (!expanded.error.empty()) {
+                result.error = expanded.error;
+                return result;
+            }
+            for (auto& child : expanded.childRules) {
+                result.childRules.push_back(std::move(child));
+            }
+        }
+        return result;
+    }
 
     const auto& reactantPatterns = rule.getReactantPatterns();
     const std::size_t nReactants = reactantPatterns.size();
@@ -367,6 +450,10 @@ ExpandRuleResult expandRule(
             // to any species in sgList (Perl lines 343-362)
             bool isIsomorph = false;
             for (const auto& sg : sgList) {
+                // A pattern without a compartment also matches particles in
+                // compartments the population does not lump, so it is not
+                // isomorphic to @EC:L(r) even when the graphs are.
+                if (sg.getCompartment() != patt.getCompartment()) continue;
                 if (hasSubgraphIso(sg.getGraph(), patt.getGraph())) {
                     isIsomorph = true;
                     break;
@@ -389,7 +476,14 @@ ExpandRuleResult expandRule(
         // Find all embeddings of pattern into each species graph in sgList
         // (Perl lines 367-368)
         for (std::size_t si = 0; si < sgList.size(); ++si) {
-            auto maps = findAllMaps(patt.getGraph(), sgList[si].getGraph());
+            // BNG2 keeps one embedding per distinct image of the pattern's
+            // reaction center in each target (find_embeddings ->
+            // filter_identical_by_rxn_center). Embeddings that differ only
+            // outside the reaction center are the same transition, so the
+            // match count, and with it the child multiplicity below, counts
+            // reaction-center images rather than graph automorphisms.
+            auto maps = rule.filterIdenticalByReactionCenter(
+                ipatt, findAllMaps(patt.getGraph(), sgList[si].getGraph()));
             for (auto& m : maps) {
                 ReactionRule::EmbeddingResult embed;
                 embed.speciesIndex = si;
@@ -424,7 +518,14 @@ ExpandRuleResult expandRule(
         }
     }
 
-    if (!hasEmpty && nReactants > 0) {
+    if (nReactants == 0) {
+        // A rule with no reactant patterns (0 -> A()) has exactly one rule
+        // instance, the empty one; BNG2's CartesianProduct yields it once.
+        auto childRule = restrictRule(rule, {}, model, hybridModel, params);
+        if (childRule) {
+            result.childRules.push_back(std::move(*childRule));
+        }
+    } else if (!hasEmpty) {
         bool done = false;
         while (!done) {
             // Build rule instance: one embedding per reactant
@@ -487,9 +588,27 @@ ExpandRuleResult expandRule(
         // This shouldn't happen, but guard against it
     }
 
+    // Assign names to distinct refined rules after deduplication. Automorphic
+    // embeddings that collapse to one child must not consume a child number.
+    for (std::size_t i = 0; i < result.childRules.size(); ++i) {
+        std::string name = hybridRuleBaseName(rule) + "_v" + std::to_string(i + 1);
+        std::size_t reversePos = 0;
+        while ((reversePos = name.find("(reverse)", reversePos)) != std::string::npos) {
+            name.replace(reversePos, 9, "_rev");
+            reversePos += 4;
+        }
+        result.childRules[i].setRuleName(name);
+        result.childRules[i].setLabel(name);
+    }
+
     // If we need stat factors, recount (only if there were duplicates)
     {
-        // Re-iterate Cartesian product to count multiplicities
+        // Re-iterate Cartesian product to count multiplicities. Each rule
+        // instance adds parent.MultScale / child.MultScale (RefineRule.pm
+        // 739-745): a child that no longer has the parent's symmetric
+        // reactant pair (A(a) + A_pop() from A(a) + A(a)) counts each
+        // instance once per ordering, which the parent's 1/2 compensates.
+        const double parentScale = reactantSymmetryScale(rule.getReactantPatterns());
         std::unordered_map<std::string, double> factorMap;
         std::fill(indices.begin(), indices.end(), 0);
         bool done2 = hasEmpty || nReactants == 0;
@@ -509,7 +628,7 @@ ExpandRuleResult expandRule(
                     crProducts.push_back(p);
                 std::string sid = buildStringID(
                     crReactants, crProducts, rule.getProductPatterns().size());
-                factorMap[sid] += 1.0;
+                factorMap[sid] += parentScale / reactantSymmetryScale(crReactants);
             }
 
             std::size_t carry = nReactants;
@@ -522,10 +641,20 @@ ExpandRuleResult expandRule(
             }
         }
 
-        // Adjust rates for stat factors > 1 (Perl lines 405-421)
-        for (auto& [sid, idx] : childRuleMap) {
+        // Adjust rates for stat factors > 1 (Perl lines 405-421), in child
+        // order so that the scaled rate parameters are numbered as BNG2
+        // numbers them.
+        std::vector<std::pair<std::size_t, std::string>> childOrder;
+        childOrder.reserve(childRuleMap.size());
+        for (const auto& [sid, idx] : childRuleMap) childOrder.emplace_back(idx, sid);
+        std::sort(childOrder.begin(), childOrder.end());
+        for (const auto& [idx, sid] : childOrder) {
             double factor = factorMap.count(sid) ? factorMap[sid] : 1.0;
             if (factor != 1.0 && idx < result.childRules.size()) {
+                // The count above is BNG2's Factor sum over rule instances
+                // that restrict to the same child (RefineRule.pm 388-398).
+                // Symmetry outside the reaction center was removed when the
+                // embeddings were filtered, so no further division applies.
                 // Multiply the first rate constant by the stat factor
                 auto& childRule = result.childRules[idx];
                 const auto& rates = childRule.getRates();
@@ -537,12 +666,15 @@ ExpandRuleResult expandRule(
                     Expression origExpr = rates[0];
                     Expression newExpr = Expression::binary("*", factorExpr, origExpr);
 
-                    // Generate a new parameter name: paramName + "_statfactor"
-                    std::string newParamName = paramName + "_" + std::to_string(static_cast<int>(factor));
-                    // Add the new parameter to the hybrid model
-                    if (!hybridModel.getParameters().contains(newParamName)) {
-                        hybridModel.addParameter(Parameter(newParamName, newExpr));
+                    // Name the scaled rate paramName_<n> with the first free n,
+                    // as BNG2's Expression::getName does. A name derived from
+                    // the factor would collide for non-integer factors.
+                    std::string newParamName;
+                    for (int suffix = 1;; ++suffix) {
+                        newParamName = paramName + "_" + std::to_string(suffix);
+                        if (!hybridModel.getParameters().contains(newParamName)) break;
                     }
+                    hybridModel.addParameter(Parameter(newParamName, newExpr));
 
                     // Reconstruct the child rule with the adjusted rate.
                     // Since ReactionRule doesn't expose a rate setter, we reconstruct.
@@ -643,11 +775,47 @@ std::unique_ptr<ReactionRule> restrictRule(
         // Transfer labels from pattern to target copy (Perl line 469)
         transferLabels(mapCopy);
 
+        // The species-level compartment of the copied target: the pattern's
+        // own for a self-embedding, the population species' otherwise.
+        std::string compartment;
+        if (embed.speciesIndex == static_cast<std::size_t>(-1)) {
+            compartment = reactantPatterns[i].getCompartment();
+        } else if (params.populationParticleGraphs != nullptr &&
+                   embed.speciesIndex < params.populationParticleGraphs->size()) {
+            compartment = (*params.populationParticleGraphs)[embed.speciesIndex].getCompartment();
+        }
+
         // The embedding maps into the cloned target graph. Preserve that node
         // identity and point the map at the graph object that now owns it.
-        reactants.emplace_back(std::move(targetCopy));
+        reactants.emplace_back(std::move(targetCopy), compartment);
         mapCopy.set_target_graph(&reactants.back().getGraph());
         matches.push_back(std::move(mapCopy));
+    }
+
+    // Reactant species must form an interacting set (RefineRule.pm 496-498,
+    // SpeciesGraph::interactingSet): one surface and one volume at most, and
+    // an adjacent pair if both.
+    // A reactant without a compartment is a pattern copy that matches
+    // particles in any compartment; network generation checks the species it
+    // meets.  Here only reactants that are fixed to a compartment (named in
+    // the rule, or a population) have to interact.  BNG2 also rejects the
+    // mixture, which would drop L(r) + @PM:R_pop() although L particles in an
+    // adjacent volume react with that population.
+    if (reactants.size() > 1) {
+        std::vector<std::string> compartments;
+        compartments.reserve(reactants.size());
+        for (const auto& reactant : reactants) {
+            if (!reactant.getCompartment().empty()) {
+                compartments.push_back(reactant.getCompartment());
+            }
+        }
+        if (!compartmentsFormInteractingSet(compartments)) {
+            if (params.verbose) {
+                std::cerr << "Rule " << rule.getRuleName()
+                          << ": reactant compartments do not interact\n";
+            }
+            return nullptr;
+        }
     }
 
     // ---- Step 2: Gather labels and assign temp labels (Perl lines 477-493) ----
@@ -673,6 +841,16 @@ std::unique_ptr<ReactionRule> restrictRule(
 
     for (const auto& reactant : reactants) {
         cloneMaps.push_back(cloneGraphInto(reactant.getGraph(), aggregateGraph));
+    }
+
+    // A reactant pattern without a product counterpart deletes the whole
+    // matched species, unless DeleteMolecules is given (BNG2's species
+    // deletion; the same rule ReactionRule::deletesWholeReactantPattern
+    // applies during network generation).  A pure degradation A() -> 0 has
+    // no explicit operation at all, so its species have to be removed here.
+    std::vector<bool> deletesSpecies(nReactants, false);
+    for (std::size_t i = 0; i < nReactants && i < reactantPatterns.size(); ++i) {
+        deletesSpecies[i] = rule.deletesWholeReactantPattern(i);
     }
 
     // Apply each transformation operation
@@ -745,7 +923,7 @@ std::unique_ptr<ReactionRule> restrictRule(
 
             BNGcore::Node* lhs = findAggNode(op.source);
             BNGcore::Node* rhs = findAggNode(op.partner);
-            if (!lhs || !rhs) break;
+            if (!lhs || !rhs) return nullptr;
 
             // Remove unbound bond nodes
             auto removeUnbound = [&](BNGcore::Node* comp) {
@@ -798,7 +976,7 @@ std::unique_ptr<ReactionRule> restrictRule(
 
             BNGcore::Node* lhsNode = findAggNode2(op.source);
             BNGcore::Node* rhsNode = findAggNode2(op.partner);
-            if (!lhsNode || !rhsNode) break;
+            if (!lhsNode || !rhsNode) return nullptr;
 
             // Find shared bond node and delete it
             BNGcore::Node* sharedBond = nullptr;
@@ -821,10 +999,12 @@ std::unique_ptr<ReactionRule> restrictRule(
                 aggregateGraph.add_node(ub2);
                 aggregateGraph.add_edge(rhsNode, ub2);
             }
+            else return nullptr;
             break;
         }
         case ReactionRule::TransformOp::Type::DeleteMolecule: {
             if (op.patternIndex >= nReactants) break;
+            if (deletesSpecies[op.patternIndex]) break;  // removed whole below
             const auto& patt = reactantPatterns[op.patternIndex];
             std::size_t mi = 0;
             for (auto nIt = patt.getGraph().begin(); nIt != patt.getGraph().end(); ++nIt) {
@@ -888,6 +1068,14 @@ std::unique_ptr<ReactionRule> restrictRule(
         } // switch
     }
 
+    for (std::size_t i = 0; i < nReactants; ++i) {
+        if (!deletesSpecies[i]) continue;
+        std::vector<BNGcore::Node*> speciesNodes;
+        speciesNodes.reserve(cloneMaps[i].size());
+        for (const auto& entry : cloneMaps[i]) speciesNodes.push_back(entry.second);
+        for (auto* node : speciesNodes) safeDeleteNode(aggregateGraph, node);
+    }
+
     // Split aggregate into product species graphs
     auto products = splitConnected(aggregateGraph);
 
@@ -943,24 +1131,81 @@ std::unique_ptr<ReactionRule> restrictRule(
         // filtering happens during rule application.
     }
 
-    // ---- Step 5: Replace with population equivalents (Perl lines 586-620) ----
-    const auto& popMaps = model.getPopulationMaps();
-    if (!popMaps.empty()) {
-        // Replace reactants that match a population species
-        for (std::size_t ir = 0; ir < reactants.size(); ++ir) {
-            for (const auto& pop : popMaps) {
-                // Parse population pattern to check isomorphism
-                // For simplicity, we check by molecule type name matching
-                // since population types are single-molecule
-                const auto& rg = reactants[ir].getGraph();
-                // A population reactant would be a single molecule matching the pop pattern
-                // This is a simplified check; full implementation would parse pop.patternText
-                // and do a proper isomorphism check
+    // Product species compartments.  A product pattern that names its
+    // compartment (@EC:A()) places the product there; otherwise a product
+    // stays where its reactants are when they share one compartment.  The
+    // aggregate split does not keep product-pattern order, so a product is
+    // matched to the product pattern with the same molecule types.
+    {
+        std::string sharedReactantCompartment;
+        bool shared = !reactants.empty();
+        for (std::size_t i = 0; i < reactants.size(); ++i) {
+            if (i == 0) sharedReactantCompartment = reactants[i].getCompartment();
+            else if (reactants[i].getCompartment() != sharedReactantCompartment) shared = false;
+        }
+        if (!shared) sharedReactantCompartment.clear();
+        auto moleculeTypes = [](const BNGcore::PatternGraph& graph) {
+            std::vector<std::string> names;
+            for (auto node = graph.begin(); node != graph.end(); ++node) {
+                if (isMoleculeNode(**node)) names.push_back((*node)->get_type().get_type_name());
+            }
+            std::sort(names.begin(), names.end());
+            return names;
+        };
+        std::vector<bool> usedPattern(nProducts, false);
+        for (std::size_t ip = 0; ip < products.size(); ++ip) {
+            std::string compartment;
+            const auto types = moleculeTypes(products[ip].getGraph());
+            std::size_t matched = nProducts;
+            for (std::size_t pp = 0; pp < nProducts; ++pp) {
+                if (!usedPattern[pp] && moleculeTypes(productPatterns[pp].getGraph()) == types) {
+                    matched = pp;
+                    break;
+                }
+            }
+            if (matched == nProducts && ip < nProducts && !usedPattern[ip]) matched = ip;
+            if (matched < nProducts) {
+                usedPattern[matched] = true;
+                compartment = productPatterns[matched].getCompartment();
+            }
+            if (compartment.empty()) compartment = sharedReactantCompartment;
+            if (compartment.empty()) {
+                // Reactants on a surface and in an adjacent volume make a
+                // complex that lives on the surface (BNG2's cBNGL rule).
+                std::vector<std::string> reactantCompartments;
+                for (const auto& reactant : reactants) {
+                    reactantCompartments.push_back(reactant.getCompartment());
+                }
+                compartment = surfaceOfInteractingSet(reactantCompartments);
+            }
+            if (!compartment.empty()) products[ip].setCompartment(compartment);
+        }
+    }
+
+    // ---- Step 5: Replace complete mapped complexes with populations ----
+    if (params.populationParticleGraphs && params.populationGraphs) {
+        const auto count = std::min(params.populationParticleGraphs->size(),
+                                    params.populationGraphs->size());
+        auto replaceWholeComplex = [&](SpeciesGraph& species) {
+            for (std::size_t i = 0; i < count; ++i) {
+                if (!(*params.populationParticleGraphs)[i].graphIsomorphicTo(
+                        species.getGraph())) {
+                    continue;
+                }
+                BNGcore::PatternGraph populationCopy;
+                cloneGraphInto((*params.populationGraphs)[i].getGraph(), populationCopy);
+                std::string compartment = (*params.populationGraphs)[i].getCompartment();
+                if (compartment.empty()) compartment = species.getCompartment();
+                species = SpeciesGraph(std::move(populationCopy), compartment);
+                return;
+            }
+        };
+        for (std::size_t i = 0; i < reactants.size() && i < ruleInstance.size(); ++i) {
+            if (ruleInstance[i].speciesIndex != static_cast<std::size_t>(-1)) {
+                replaceWholeComplex(reactants[i]);
             }
         }
-        // Replace products similarly
-        // (Population replacement is a best-effort operation here;
-        // the full logic requires PopulationList which stores parsed SpeciesGraphs)
+        for (auto& product : products) replaceWholeComplex(product);
     }
 
     // ---- Step 6: Remove redundant temp labels (Perl line 626) ----
@@ -975,10 +1220,11 @@ std::unique_ptr<ReactionRule> restrictRule(
         childName.replace(revPos, 9, "_rev");
     }
 
-    // Build string representations
+    // Build string representations, with the species-level compartment as
+    // an @C: prefix and molecule compartments that differ from it.
     std::vector<std::string> reactantStrs, productStrs;
-    for (const auto& r : reactants) reactantStrs.push_back(r.toString());
-    for (const auto& p : products) productStrs.push_back(p.toString());
+    for (const auto& r : reactants) reactantStrs.push_back(authoredPattern(r));
+    for (const auto& p : products) productStrs.push_back(authoredPattern(p));
 
     // Copy rates from parent rule
     std::vector<Expression> rates;
@@ -1011,9 +1257,48 @@ std::unique_ptr<ReactionRule> restrictRule(
     }
 
     // ---- Step 8: Check DeleteMolecules flag (Perl lines 722-735) ----
-    // If the child rule has molecule deletion transforms that reference
-    // specific molecules (contain '.'), set DeleteMolecules flag.
-    // This is handled by the modifier already if present on the parent rule.
+    // A child that deletes molecules out of a complex it otherwise keeps (a
+    // particle unbinding into a population: A(b!1).B(a!1) -> A(b) + B_pop())
+    // needs DeleteMolecules; without it the deletion means the whole species,
+    // as BNG2 and NFsim read it.  BNG2 sets the flag whenever a child has a
+    // molecule deletion; a pattern deleted as a whole species is not one.
+    bool hasDeleteMolecules = false;
+    for (const auto& mod : childRule->getModifiers()) {
+        std::string lower = mod;
+        std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+        if (lower == "deletemolecules") hasDeleteMolecules = true;
+    }
+    bool deletesMoleculesFromKeptComplex = false;
+    for (const auto& op : childRule->getOperations()) {
+        if (op.type == ReactionRule::TransformOp::Type::DeleteMolecule &&
+            !childRule->deletesWholeReactantPattern(op.patternIndex)) {
+            deletesMoleculesFromKeptComplex = true;
+        }
+    }
+    if (deletesMoleculesFromKeptComplex && !hasDeleteMolecules) {
+        if (params.verbose) {
+            std::cerr << "DeleteMolecules flag added to rule " << childName << ".\n";
+        }
+        auto flagged = childRule->getModifiers();
+        flagged.push_back("DeleteMolecules");
+        auto rebuilt = std::make_unique<ReactionRule>(
+            childRule->getRuleName(),
+            childRule->getLabel(),
+            childRule->getReactants(),
+            childRule->getProducts(),
+            childRule->getRates(),
+            std::move(flagged),
+            childRule->isBidirectional(),
+            childRule->getReactantPatterns(),
+            childRule->getProductPatterns());
+        if (childRule->getDelayExpression()) {
+            rebuilt->setDelay(*childRule->getDelayExpression(), childRule->isNonConsuming());
+        }
+        if (childRule->hasDrivingWork()) {
+            rebuilt->setDrivingWorkExpression(childRule->drivingWorkExpression());
+        }
+        childRule = std::move(rebuilt);
+    }
 
     return childRule;
 }

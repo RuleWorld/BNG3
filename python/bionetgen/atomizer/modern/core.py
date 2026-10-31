@@ -2297,6 +2297,19 @@ def get_seed_species(
     result: List[SeedSpeciesEntry] = []
     for species_id, entry in sct.entries.items():
         item = model.species[species_id]
+        # Multi exporters may declare zero-valued species patterns so reaction
+        # references and component maps have a species object. A BNGL wildcard
+        # pattern is not a concrete zero seed: adding it to the seed set lets
+        # network generation expand reactions from states that do not exist in
+        # the source model. Keep exact zero-valued species, and leave positive
+        # wildcard pools to the parser's existing unsupported-semantics guard.
+        if (
+            species_id in model.multi_abstract_species_ids
+            and item.initial_amount == 0
+            and item.initial_concentration == 0
+            and species_id not in initial_assignments
+        ):
+            continue
         compartment = standardize_name(item.compartment or "Compartment")
         volume = f"__compartment_{compartment}__"
         amount_set = (

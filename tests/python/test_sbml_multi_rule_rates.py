@@ -4,6 +4,7 @@ from pathlib import Path
 
 import libsbml
 import bionetgen
+from bionetgen.atomizer.modern import Atomizer, SBMLParser
 
 
 def test_reversible_multi_rule_emits_two_mass_action_fluxes(tmp_path):
@@ -96,3 +97,41 @@ end model
     np.testing.assert_allclose(
         actual.concentrations, expected.concentrations, rtol=1e-6, atol=1e-8
     )
+
+
+def test_multi_mapped_product_retains_distinct_repeated_site_states(tmp_path):
+    source = tmp_path / "repeated_sites.bngl"
+    source.write_text(
+        """begin model
+begin parameters
+  k 0.1
+end parameters
+begin molecule types
+  A(x~u~p,x~u~p,y)
+  B(z)
+end molecule types
+begin seed species
+  A(x~u,x~p,y) 8
+  B(z) 4
+end seed species
+begin reaction rules
+  bind: A(x~u,x~p,y) + B(z) -> A(x~u!1,x~p,y).B(z!1) k
+end reaction rules
+end model
+""",
+        encoding="utf-8",
+    )
+    multi = bionetgen.load(str(source)).sbml_multi()
+    parsed = SBMLParser().parse(multi)
+    assert parsed.multi_executable
+    assert parsed.multi_species_patterns["RR1_P1"] == (
+        "A(x~u!1,x~p,y)@default.B(z!1)@default"
+    )
+
+    imported = Atomizer(atomize=False, quiet_mode=True).atomize(multi)
+    assert imported.success, imported.error
+    reaction = next(
+        line for line in imported.bngl.splitlines() if line.startswith("  R1:")
+    )
+    assert "A(x!1~u,x~p,y)" in reaction
+    assert "B(z!1)" in reaction

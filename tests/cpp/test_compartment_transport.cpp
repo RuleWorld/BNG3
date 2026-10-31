@@ -5,6 +5,7 @@
 #include <condition_variable>
 #include <cmath>
 #include <functional>
+#include <iostream>
 #include <mutex>
 #include <stdexcept>
 #include <string>
@@ -19,6 +20,55 @@ using namespace bng;
 
 static std::unique_ptr<ast::Model> parseModel(const std::string& bngl) {
     return parser::parseModel(bngl);
+}
+
+TEST_CASE("Same-compartment prefix and suffix patterns preserve reaction embeddings",
+          "[Compartment][Symmetry]") {
+    const auto modelText = [](bool prefix) {
+        const auto pattern = [prefix](const std::string& text) {
+            return prefix ? "@default:" + text : text + "@default";
+        };
+        return std::string(R"(
+begin parameters
+    kon 0.001
+    koff 0.1
+end parameters
+begin compartments
+    default 3 1
+end compartments
+begin molecule types
+    R(l,l)
+    L(r,r,r)
+end molecule types
+begin seed species
+    @default:R(l,l) 300
+    @default:L(r,r,r) 1200
+end seed species
+begin reaction rules
+)") + "    " + pattern("R(l)") + " + " + pattern("L(r,r,r)") +
+            " -> " + pattern("R(l!1).L(r!1,r,r)") +
+            " kon\nend reaction rules\n";
+    };
+
+    const auto prefixModel = parseModel(modelText(true));
+    const auto suffixModel = parseModel(modelText(false));
+    REQUIRE(prefixModel);
+    REQUIRE(suffixModel);
+
+    engine::NetworkGenerator prefixGenerator(*prefixModel);
+    engine::NetworkGenerator suffixGenerator(*suffixModel);
+    const auto prefixNetwork = prefixGenerator.generateNative(20);
+    const auto suffixNetwork = suffixGenerator.generateNative(20);
+
+    REQUIRE(prefixNetwork.reactions.size() == suffixNetwork.reactions.size());
+    for (std::size_t index = 0; index < prefixNetwork.reactions.size(); ++index) {
+        const auto& prefixReaction = prefixNetwork.reactions.all()[index];
+        const auto& suffixReaction = suffixNetwork.reactions.all()[index];
+        CHECK(prefixReaction.getRateLaw() == suffixReaction.getRateLaw());
+        CHECK(prefixReaction.getFactor() == suffixReaction.getFactor());
+        CHECK(prefixReaction.getReactants() == suffixReaction.getReactants());
+        CHECK(prefixReaction.getProducts() == suffixReaction.getProducts());
+    }
 }
 
 TEST_CASE("Compartment transport: endocytosis PM -> EM", "[Compartment]") {

@@ -211,6 +211,7 @@ FlattenedReactionNetwork FlattenedReactionNetwork::fromModelAndNetwork(
 
 CpuBatchSsaSimulator::CpuBatchSsaSimulator(const ast::Model& model, const GeneratedNetwork& network)
     : model_(model), network_(network) {
+    compile::requireNoNativeEvents(model_, "batch SSA");
     requireNoExpressionDelaySemantics(model_, network_, "batch SSA");
 }
 

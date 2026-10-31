@@ -11,6 +11,106 @@ import pytest
 from bionetgen.atomizer.modern import parse_multi_package
 
 
+def test_zero_valued_multi_patterns_are_not_seeded_but_exact_zero_species_are():
+    from bionetgen.atomizer.modern import (
+        SBMLParser,
+        build_species_composition_table,
+        get_seed_species,
+    )
+
+    xml = """<?xml version="1.0"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      level="3" version="1" multi:required="true">
+  <model id="multi_zero_patterns">
+    <listOfSpecies>
+      <species id="free_zero" initialAmount="0" multi:speciesType="AType">
+        <multi:listOfOutwardBindingSites>
+          <multi:outwardBindingSite multi:component="site"
+            multi:bindingStatus="unbound"/>
+        </multi:listOfOutwardBindingSites>
+      </species>
+      <species id="free_positive" initialAmount="2" multi:speciesType="AType">
+        <multi:listOfOutwardBindingSites>
+          <multi:outwardBindingSite multi:component="site"
+            multi:bindingStatus="unbound"/>
+        </multi:listOfOutwardBindingSites>
+      </species>
+      <species id="bound_pattern" initialAmount="0" multi:speciesType="AType">
+        <multi:listOfOutwardBindingSites>
+          <multi:outwardBindingSite multi:component="site"
+            multi:bindingStatus="bound"/>
+        </multi:listOfOutwardBindingSites>
+      </species>
+      <species id="either_pattern" initialAmount="0" multi:speciesType="AType"/>
+      <species id="dimer_zero" initialAmount="0" multi:speciesType="AAType"/>
+      <species id="dimer_positive" initialAmount="1" multi:speciesType="AAType"/>
+    </listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType multi:id="binding" multi:name="site"/>
+      <multi:bindingSiteSpeciesType multi:id="binding_b" multi:name="site_b"/>
+      <multi:speciesType multi:id="AType" multi:name="A">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="site"
+            multi:speciesType="binding" multi:name="site"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+      <multi:speciesType multi:id="BType" multi:name="B">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="site_b"
+            multi:speciesType="binding_b" multi:name="site_b"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+      <multi:speciesType multi:id="AAType" multi:name="AA">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="dimer_a"
+            multi:speciesType="AType"/>
+          <multi:speciesTypeInstance multi:id="dimer_b"
+            multi:speciesType="BType"/>
+        </multi:listOfSpeciesTypeInstances>
+        <multi:listOfSpeciesTypeComponentIndexes>
+          <multi:speciesTypeComponentIndex multi:id="dimer_a_site"
+            multi:component="site" multi:identifyingParent="dimer_a"/>
+          <multi:speciesTypeComponentIndex multi:id="dimer_b_site"
+            multi:component="site_b" multi:identifyingParent="dimer_b"/>
+        </multi:listOfSpeciesTypeComponentIndexes>
+        <multi:listOfInSpeciesTypeBonds>
+          <multi:inSpeciesTypeBond multi:bindingSite1="dimer_a_site"
+            multi:bindingSite2="dimer_b_site"/>
+        </multi:listOfInSpeciesTypeBonds>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    model = SBMLParser().parse(xml)
+    assert model.multi_executable is True
+    assert model.multi_species_patterns["free_zero"] == "A(site)"
+    assert model.multi_species_patterns["bound_pattern"] == "A(site!+)"
+    assert model.multi_species_patterns["either_pattern"] == "A()"
+    composition = build_species_composition_table(model)
+    seeds = get_seed_species(composition, model)
+
+    assert {seed.sbml_id for seed in seeds} == {
+        "free_zero",
+        "free_positive",
+        "dimer_zero",
+        "dimer_positive",
+    }
+    assert model.multi_abstract_species_ids == {"bound_pattern", "either_pattern"}
+
+    positive_pattern = xml.replace(
+        'id="bound_pattern" initialAmount="0"',
+        'id="bound_pattern" initialAmount="1"',
+    )
+    unsupported = SBMLParser().parse(positive_pattern)
+    assert unsupported.multi_executable is False
+    assert any(
+        warning.severity == "dropped" and "positive initial pool" in warning.message
+        for warning in unsupported.import_warnings
+    )
+
+
 def test_parse_multi_package_empty_input_is_an_empty_result():
     result = parse_multi_package("")
 
@@ -82,19 +182,25 @@ def test_parse_multi_package_matches_reference_result_field_names_and_patterns()
       <model id="multi_complex" multi:speciesType="ABType">
         <multi:listOfSpeciesTypes>
           <multi:bindingSiteSpeciesType id="bindSite" name="bind"/>
+          <multi:bindingSiteSpeciesType id="bindSite2" name="bind"/>
           <multi:speciesType id="AType" name="A">
             <multi:listOfSpeciesTypeInstances>
               <multi:speciesTypeInstance id="bind1" speciesType="bindSite" name="bind"/>
             </multi:listOfSpeciesTypeInstances>
           </multi:speciesType>
+          <multi:speciesType id="AType2" name="A">
+            <multi:listOfSpeciesTypeInstances>
+              <multi:speciesTypeInstance id="bind2" speciesType="bindSite2" name="bind"/>
+            </multi:listOfSpeciesTypeInstances>
+          </multi:speciesType>
           <multi:speciesType id="ABType" name="ABComplex">
             <multi:listOfSpeciesTypeInstances>
               <multi:speciesTypeInstance id="A1" speciesType="AType"/>
-              <multi:speciesTypeInstance id="A2" speciesType="AType"/>
+              <multi:speciesTypeInstance id="A2" speciesType="AType2"/>
             </multi:listOfSpeciesTypeInstances>
             <multi:listOfSpeciesTypeComponentIndexes>
               <multi:speciesTypeComponentIndex id="bind1_1" component="bind1" identifyingParent="A1"/>
-              <multi:speciesTypeComponentIndex id="bind1_2" component="bind1" identifyingParent="A2"/>
+              <multi:speciesTypeComponentIndex id="bind1_2" component="bind2" identifyingParent="A2"/>
             </multi:listOfSpeciesTypeComponentIndexes>
             <multi:listOfInSpeciesTypeBonds>
               <multi:inSpeciesTypeBond bindingSite1="bind1_1" bindingSite2="bind1_2"/>
@@ -124,19 +230,25 @@ def _shallow_multi_xml(component: str = "bind") -> str:
     </listOfSpecies>
     <multi:listOfSpeciesTypes>
       <multi:bindingSiteSpeciesType id="bindSite" name="bind"/>
+      <multi:bindingSiteSpeciesType id="bindSite2" name="bind"/>
       <multi:speciesType id="AType" name="A">
         <multi:listOfSpeciesTypeInstances>
           <multi:speciesTypeInstance id="bind1" speciesType="bindSite" name="bind"/>
         </multi:listOfSpeciesTypeInstances>
       </multi:speciesType>
+      <multi:speciesType id="AType2" name="A">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance id="bind2" speciesType="bindSite2" name="bind"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
       <multi:speciesType id="ABType" name="ABComplex">
         <multi:listOfSpeciesTypeInstances>
           <multi:speciesTypeInstance id="A1" speciesType="AType"/>
-          <multi:speciesTypeInstance id="A2" speciesType="AType"/>
+          <multi:speciesTypeInstance id="A2" speciesType="AType2"/>
         </multi:listOfSpeciesTypeInstances>
         <multi:listOfSpeciesTypeComponentIndexes>
           <multi:speciesTypeComponentIndex id="bind1_1" component="{component}" identifyingParent="A1"/>
-          <multi:speciesTypeComponentIndex id="bind1_2" component="{component}" identifyingParent="A2"/>
+          <multi:speciesTypeComponentIndex id="bind1_2" component="bind2" identifyingParent="A2"/>
         </multi:listOfSpeciesTypeComponentIndexes>
         <multi:listOfInSpeciesTypeBonds>
           <multi:inSpeciesTypeBond bindingSite1="bind1_1" bindingSite2="bind1_2"/>
@@ -340,7 +452,10 @@ def test_playground_multi_reports_missing_species_type_list():
     assert "no listOfSpeciesTypes" in result.warnings[0].message
 
 
-def test_multi_product_component_map_carries_source_wildcard_binding_status():
+@pytest.mark.parametrize("product_unbound", [False, True])
+def test_multi_product_component_map_respects_explicit_product_binding(
+    product_unbound,
+):
     from bionetgen.atomizer.modern import (
         SBMLParser,
         build_species_composition_table,
@@ -351,29 +466,33 @@ def test_multi_product_component_map_carries_source_wildcard_binding_status():
 
     xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
       xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
-      multi:required="true">
+      level="3" version="1" multi:required="true">
   <model id="mapped_product">
     <listOfCompartments>
-      <compartment id="c" size="1" multi:isType="false"/>
+      <compartment id="c" size="1" spatialDimensions="3" constant="true"
+                   multi:isType="false"/>
     </listOfCompartments>
     <listOfSpecies>
           <species id="A0" compartment="c" initialAmount="0"
-                   multi:speciesType="AType" name="human-readable A">
+                   hasOnlySubstanceUnits="true" boundaryCondition="false"
+                   constant="false" multi:speciesType="AType"
+                   name="human-readable A">
             <multi:listOfOutwardBindingSites>
               <multi:outwardBindingSite multi:component="x"
                                         multi:bindingStatus="bound"/>
             </multi:listOfOutwardBindingSites>
           </species>
-      <species id="A1" compartment="c" multi:speciesType="AType"
-               name="A()"/>
+      <species id="A1" compartment="c" initialAmount="0"
+               hasOnlySubstanceUnits="true" boundaryCondition="false"
+               constant="false" multi:speciesType="AType" name="A()"/>
     </listOfSpecies>
     <listOfReactions>
-      <reaction id="r" reversible="false">
+      <reaction id="r" reversible="false" fast="false">
         <listOfReactants>
-          <speciesReference id="r1" species="A0"/>
+          <speciesReference id="r1" species="A0" stoichiometry="1" constant="true"/>
         </listOfReactants>
         <listOfProducts>
-          <speciesReference id="p1" species="A1">
+          <speciesReference id="p1" species="A1" stoichiometry="1" constant="true">
             <multi:listOfSpeciesTypeComponentMapsInProduct>
               <multi:speciesTypeComponentMapInProduct
                 multi:reactant="r1" multi:reactantComponent="AType"
@@ -398,16 +517,147 @@ def test_multi_product_component_map_carries_source_wildcard_binding_status():
   </model>
 </sbml>"""
 
+    if product_unbound:
+        # A component map preserves source context only where the product
+        # leaves the binding status unspecified.  An explicit unbound product
+        # must not inherit the reactant's bound wildcard.
+        assert xml.count('name="A()"/>') == 1
+        xml = xml.replace(
+            'name="A()"/>',
+            """name="A()">
+          <multi:listOfOutwardBindingSites>
+            <multi:outwardBindingSite multi:component="x"
+              multi:bindingStatus="unbound"/>
+          </multi:listOfOutwardBindingSites>
+        </species>""",
+        )
+
     model = SBMLParser().parse(xml)
     assert model.multi_executable is True
     assert model.reactions["r"].multi_intra_species is False
     assert model.reactions["r"].products[0].multi_component_maps
+    assert model.multi_species_patterns["A1"] == (
+        "A(x)@c" if product_unbound else "A()@c"
+    )
     sct = build_species_composition_table(model)
     molecule_types = get_molecule_types(sct, model.multi_type_patterns.values())
     bngl, _ = generate_bngl(model, sct, molecule_types, get_seed_species(sct, model))
 
     reaction = next(line for line in bngl.splitlines() if line.startswith("  r:"))
-    assert "@c:M_A(x!+) -> @c:M_A(x!+)" in reaction
+    expected_product = "@c:M_A(x)" if product_unbound else "@c:M_A(x!+)"
+    assert f"@c:M_A(x!+) -> {expected_product}" in reaction
+
+
+def _mapped_state_change_product_reaction(explicit_unbound):
+    from bionetgen.atomizer.modern import (
+        SBMLParser,
+        build_species_composition_table,
+        generate_bngl,
+        get_molecule_types,
+        get_seed_species,
+    )
+
+    product_binding = (
+        """<multi:listOfOutwardBindingSites>
+              <multi:outwardBindingSite multi:component="x"
+                                        multi:bindingStatus="unbound"/>
+            </multi:listOfOutwardBindingSites>"""
+        if explicit_unbound
+        else ""
+    )
+    xml = f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      level="3" version="1" multi:required="true">
+  <model id="mapped_state_product">
+    <listOfCompartments>
+      <compartment id="c" size="1" spatialDimensions="3" constant="true"
+                   multi:isType="false"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="A0" compartment="c" initialAmount="0"
+               hasOnlySubstanceUnits="true" boundaryCondition="false"
+               constant="false" multi:speciesType="AType">
+        <multi:listOfSpeciesFeatures>
+          <multi:speciesFeature multi:speciesFeatureType="state" multi:component="x" multi:occur="1">
+            <multi:listOfSpeciesFeatureValues>
+              <multi:speciesFeatureValue multi:value="u"/>
+            </multi:listOfSpeciesFeatureValues>
+          </multi:speciesFeature>
+        </multi:listOfSpeciesFeatures>
+        <multi:listOfOutwardBindingSites>
+          <multi:outwardBindingSite multi:component="x"
+                                    multi:bindingStatus="bound"/>
+        </multi:listOfOutwardBindingSites>
+      </species>
+      <species id="A1" compartment="c" initialAmount="0"
+               hasOnlySubstanceUnits="true" boundaryCondition="false"
+               constant="false" multi:speciesType="AType">
+        <multi:listOfSpeciesFeatures>
+          <multi:speciesFeature multi:speciesFeatureType="state" multi:component="x" multi:occur="1">
+            <multi:listOfSpeciesFeatureValues>
+              <multi:speciesFeatureValue multi:value="p"/>
+            </multi:listOfSpeciesFeatureValues>
+          </multi:speciesFeature>
+        </multi:listOfSpeciesFeatures>
+        {product_binding}
+      </species>
+    </listOfSpecies>
+    <listOfReactions>
+      <reaction id="r" reversible="false" fast="false">
+        <listOfReactants><speciesReference id="r1" species="A0"
+          stoichiometry="1" constant="true"/></listOfReactants>
+        <listOfProducts>
+          <speciesReference id="p1" species="A1" stoichiometry="1" constant="true">
+            <multi:listOfSpeciesTypeComponentMapsInProduct>
+              <multi:speciesTypeComponentMapInProduct
+                multi:reactant="r1" multi:reactantComponent="AType"
+                multi:productComponent="AType"/>
+            </multi:listOfSpeciesTypeComponentMapsInProduct>
+          </speciesReference>
+        </listOfProducts>
+        <kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></kineticLaw>
+      </reaction>
+    </listOfReactions>
+    <multi:listOfSpeciesTypes>
+      <multi:bindingSiteSpeciesType multi:id="xType" multi:name="x">
+        <multi:listOfSpeciesFeatureTypes>
+          <multi:speciesFeatureType multi:id="state" multi:name="x" multi:occur="1">
+            <multi:listOfPossibleSpeciesFeatureValues>
+              <multi:possibleSpeciesFeatureValue multi:id="u" multi:name="u"/>
+              <multi:possibleSpeciesFeatureValue multi:id="p" multi:name="p"/>
+            </multi:listOfPossibleSpeciesFeatureValues>
+          </multi:speciesFeatureType>
+        </multi:listOfSpeciesFeatureTypes>
+      </multi:bindingSiteSpeciesType>
+      <multi:speciesType multi:id="AType" multi:name="A">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="x" multi:name="x"
+                                     multi:speciesType="xType"/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+    model = SBMLParser().parse(xml)
+    assert model.multi_executable is True
+    assert model.reactions["r"].products[0].multi_component_maps
+    sct = build_species_composition_table(model)
+    molecule_types = get_molecule_types(sct, model.multi_type_patterns.values())
+    bngl, _ = generate_bngl(model, sct, molecule_types, get_seed_species(sct, model))
+    return next(line for line in bngl.splitlines() if line.startswith("  r:"))
+
+
+def test_mapped_state_change_inherits_omitted_outward_binding_status():
+    reaction = _mapped_state_change_product_reaction(explicit_unbound=False)
+
+    assert "@c:M_A(x!+~u) -> @c:M_A(x!+~p)" in reaction
+
+
+def test_mapped_state_change_honors_explicit_product_unbound_status():
+    reaction = _mapped_state_change_product_reaction(explicit_unbound=True)
+
+    assert "@c:M_A(x!+~u) -> @c:M_A(x~p)" in reaction
 
 
 def test_multi_intra_species_reaction_requires_association_or_dissociation_shape():
@@ -576,7 +826,7 @@ def test_multi_repeated_feature_occurrences_and_numeric_values_are_executable():
               <multi:speciesFeatureValue multi:value="u"/>
             </multi:listOfSpeciesFeatureValues>
           </multi:speciesFeature>
-          <multi:speciesFeature multi:speciesFeatureType="state" multi:occur="2">
+          <multi:speciesFeature multi:speciesFeatureType="state" multi:occur="1">
             <multi:listOfSpeciesFeatureValues>
               <multi:speciesFeatureValue multi:value="x"/>
             </multi:listOfSpeciesFeatureValues>
@@ -960,7 +1210,9 @@ def test_multi_initial_assignment_initializes_species_for_definition_checks():
 
     result = parse_multi_package(xml)
 
-    assert result.seed_patterns == [("a0", "aType(siteType)")]
+    # Under the SBML Multi specification (clause 3.15.2), an omitted OutwardBindingSite has bindingStatus
+    # "either"; the site is unconstrained rather than explicitly unbound.
+    assert result.seed_patterns == [("a0", "aType()")]
     assert result.executable is False
     assert any(
         "positive initial pool" in warning.message for warning in result.warnings
@@ -1629,7 +1881,7 @@ def test_multi_mathml_ci_extensions_are_validated_and_reconstructed():
     molecule_types = get_molecule_types(sct, model.multi_type_patterns.values())
     bngl, _ = generate_bngl(model, sct, molecule_types, get_seed_species(sct, model))
     assert "Molecules __multi_sum_A0" in bngl
-    assert "__multi_sum_A0 + p" in bngl
+    assert "(__multi_sum_A0 / __compartment_c__) + p" in bngl
 
 
 def test_multi_mathml_species_reference_compartment_amount_fails_closed():

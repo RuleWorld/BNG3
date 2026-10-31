@@ -21,6 +21,8 @@ on:
       - 'scripts/ci/checkout_oracle.py'
       - 'scripts/ci/oracle_sources.py'
       - 'scripts/cross_validate.py'
+      - 'scripts/issue161_multi_contract.py'
+      - 'scripts/issue161_multi_expected.py'
       - 'scripts/validate.py'
       - 'tests/validation/compare.py'
       - 'tests/validation/oracle_perl.py'
@@ -73,6 +75,7 @@ jobs:
           .venv/bin/python -m pip install --require-hashes -r provenance/ssts-ci-linux-py312.lock
 
       - name: Build fresh BNG3 native extension and CLI
+        id: build_native
         run: |
           set -euo pipefail
           .venv/bin/python -m pip install --no-deps --no-build-isolation \
@@ -81,6 +84,7 @@ jobs:
 
       - name: Run native event acceptance
         id: acceptance
+        if: always() && steps.build_native.outcome == 'success'
         env:
           PYTHONPATH: python:build/cpp
         run: |
@@ -145,6 +149,7 @@ jobs:
           test -f "$RUNNER_TEMP/oracle-bionetgen/bng2/BNG2.pl"
 
       - name: Build fresh BNG3 native extension and CLI
+        id: build_native
         run: |
           set -euo pipefail
           .venv/bin/python -m pip install --no-deps --no-build-isolation \
@@ -152,13 +157,57 @@ jobs:
           test -x build/cpp/bng_cpp
 
       - name: Check Issue 161 provenance controls
+        if: always() && steps.build_native.outcome == 'success'
         run: >-
           .venv/bin/python -m pytest -q -p no:cacheprovider -c /dev/null
           --confcutdir=tests/validation/release/cases/issue-161
           tests/validation/release/cases/issue-161/test_run_case.py
 
+      - name: Check Multi rule-rate and component-map regressions
+        if: always() && steps.build_native.outcome == 'success'
+        env:
+          PYTHONPATH: python:build/cpp
+          BNG_CPP: ${{ github.workspace }}/build/cpp/bng_cpp
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/issue-161-artifacts"
+          .venv/bin/python -m pytest -q -p no:cacheprovider -c /dev/null \
+            tests/python/test_sbml_multi_rule_rates.py \
+            tests/python/test_modern_atomizer_multi.py \
+            --junitxml="$RUNNER_TEMP/issue-161-artifacts/multi-regressions.xml"
+
+      - name: Compare stateful Multi execution with independently authored SBML Core
+        if: always() && steps.build_native.outcome == 'success'
+        env:
+          PYTHONPATH: python:build/cpp
+          BNG_CPP: ${{ github.workspace }}/build/cpp/bng_cpp
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/issue-161-artifacts"
+          .venv/bin/python -m pytest -q -p no:cacheprovider -c /dev/null \
+            --confcutdir=tests/validation/release/cases/issue-161 \
+            tests/validation/release/cases/issue-161/test_stateful_binding.py \
+            --junitxml="$RUNNER_TEMP/issue-161-artifacts/stateful-core-oracle.xml"
+
+      - name: Compare Multi numericValue and sum kinetics with independently authored SBML Core
+        if: always() && steps.build_native.outcome == 'success'
+        env:
+          PYTHONPATH: python:build/cpp
+          BNG_CPP: ${{ github.workspace }}/build/cpp/bng_cpp
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/issue-161-artifacts"
+          .venv/bin/python -m pytest -q -p no:cacheprovider -c /dev/null \
+            --confcutdir=tests/validation/release/cases/issue-161 \
+            tests/validation/release/cases/issue-161/test_multi_math_representation.py \
+            tests/validation/release/cases/issue-161/test_homodimer_same_type.py \
+            tests/validation/release/cases/issue-161/test_multi_concentration_sum.py \
+            tests/validation/release/cases/issue-161/test_multi_more_oracles.py \
+            --junitxml="$RUNNER_TEMP/issue-161-artifacts/multi-math-core-oracle.xml"
+
       - name: Run authored Multi export and reimport acceptance
         id: acceptance
+        if: always() && steps.build_native.outcome == 'success'
         env:
           BNGPATH: ${{ runner.temp }}/oracle-bionetgen/bng2
         run: |
