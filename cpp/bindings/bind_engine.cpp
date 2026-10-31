@@ -650,7 +650,7 @@ void bind_engine(py::module_& m) {
         auto t_ctor = std::chrono::steady_clock::now();
         const bool probe = probeOn();
         OdeResult result = integrator.integrate(opts);
-        if (!result.concentrations.empty()) {
+        if (continue_simulation && !result.concentrations.empty()) {
             const auto& finalState = result.concentrations.back();
             if (finalState.size() == network.species.size()) {
                 for (std::size_t i = 0; i < network.species.size(); ++i) {
@@ -734,7 +734,7 @@ void bind_engine(py::module_& m) {
 
         OdeIntegrator integrator(model, network);
         OdeResult result = integrator.integrate(opts);
-        if (!result.concentrations.empty()) {
+        if (continue_simulation && !result.concentrations.empty()) {
             const auto& finalState = result.concentrations.back();
             if (finalState.size() == network.species.size()) {
                 for (std::size_t i = 0; i < network.species.size(); ++i) {
