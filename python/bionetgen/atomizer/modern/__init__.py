@@ -408,7 +408,13 @@ class Atomizer:
     ) -> AtomizerResult:
         try:
             logger.info("ATM003", "Parsing SBML model...")
-            self.model = self.parser.parse(sbml_string, source_path=source_path)
+            self.model = self.parser.parse(
+                sbml_string,
+                source_path=source_path,
+                native_dae_runtime=bool(
+                    self.options.get("native_dae_runtime", False)
+                ),
+            )
             logger.info(
                 "ATM004",
                 f'Model "{self.model.name}": {len(self.model.species)} species, '

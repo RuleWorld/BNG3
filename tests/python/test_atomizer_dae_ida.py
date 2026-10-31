@@ -54,6 +54,26 @@ def _load(tmp_path: Path, **options):
     return bionetgen.from_sbml(str(source))
 
 
+def _coupled_parameter_dae_sbml():
+    """Three parameter states with a two-equation nonlinear DAE."""
+
+    return '''<?xml version="1.0"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+ <model id="coupled_parameter_dae">
+  <listOfParameters>
+   <parameter id="T" value="2.5" constant="false"/>
+   <parameter id="x" value="2" constant="false"/>
+   <parameter id="y" value="0.5" constant="false"/>
+  </listOfParameters>
+  <listOfRules>
+   <rateRule variable="T"><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math></rateRule>
+   <algebraicRule><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><minus/><apply><plus/><ci>x</ci><ci>y</ci></apply><ci>T</ci></apply></math></algebraicRule>
+   <algebraicRule><math xmlns="http://www.w3.org/1998/Math/MathML"><apply><minus/><apply><times/><ci>x</ci><ci>y</ci></apply><cn>1</cn></apply></math></algebraicRule>
+  </listOfRules>
+ </model>
+</sbml>'''
+
+
 def _by_time_and_species(model, result):
     network = model.generate_network()
     return {
@@ -61,6 +81,55 @@ def _by_time_and_species(model, result):
         for time, row in zip(result.time, result.concentrations)
         for name, value in zip(network.species_names, row)
     }
+
+
+def test_coupled_algebraic_rules_bind_all_free_parameter_states():
+    from bionetgen.atomizer.modern import Atomizer
+    from bionetgen.atomizer.modern.parser import SBMLParser
+    from bionetgen.sbml import _native_algebraic_rules
+
+    source = _coupled_parameter_dae_sbml()
+    parsed = SBMLParser().parse(source)
+    assert _native_algebraic_rules(parsed) == [
+        ("x_amt", "__algebraic_residual_0()"),
+        ("y_amt", "__algebraic_residual_1()"),
+    ]
+    atomizer = Atomizer(atomize=False, quiet_mode=True, native_dae_runtime=True)
+    converted = atomizer.atomize(source)
+    assert converted.success, converted.error
+    assert not any(
+        warning.get("category") == "algebraicRule"
+        for warning in atomizer.get_model().import_warnings
+    )
+    assert "algebraicRule" not in converted.bngl
+    assert "__algebraic_residual_0() = (x_amt + y_amt) - T_amt" in converted.bngl
+    assert "__algebraic_residual_1() = (x_amt * y_amt) - 1" in converted.bngl
+
+
+def test_algebraic_parameter_without_initial_value_is_not_seeded_as_zero():
+    from bionetgen.atomizer.modern import Atomizer
+
+    source = _coupled_parameter_dae_sbml().replace('value="2" ', "")
+    converted = Atomizer(
+        atomize=False, quiet_mode=True, native_dae_runtime=True
+    ).atomize(source)
+    assert not converted.success
+    assert "no defined time-zero value" in converted.error
+
+
+def test_coupled_algebraic_parameter_system_follows_the_analytic_branch(tmp_path):
+    source = tmp_path / "coupled-parameter-dae.xml"
+    source.write_text(_coupled_parameter_dae_sbml(), encoding="utf-8")
+    model = bionetgen.from_sbml(str(source))
+    result = model.simulate(method="ode", t_end=1.0, n_steps=2)
+
+    # x+y=T and xy=1, starting from x>y. The requested branch stays x>y.
+    for index, time in enumerate(result.time):
+        total = 2.5 + time
+        x = (total + (total * total - 4.0) ** 0.5) / 2.0
+        y = 1.0 / x
+        assert result.observables["x_amt"][index] == pytest.approx(x, abs=2e-7)
+        assert result.observables["y_amt"][index] == pytest.approx(y, abs=2e-7)
 
 
 def test_nonlinear_algebraic_rule_is_enforced_during_ode_simulation(tmp_path):
@@ -90,7 +159,10 @@ def test_inconsistent_singular_algebraic_constraint_fails_explicitly(tmp_path):
 def test_underdetermined_algebraic_target_fails_explicitly(tmp_path):
     source = tmp_path / "underdetermined-dae.xml"
     source.write_text(_dae_sbml(ambiguous=True), encoding="utf-8")
-    with pytest.raises(bionetgen.BioNetGenError, match="unambiguous free species"):
+    with pytest.raises(
+        bionetgen.BioNetGenError,
+        match="square set of free mutable state candidates",
+    ):
         bionetgen.from_sbml(str(source))
 
 
