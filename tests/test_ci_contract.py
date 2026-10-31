@@ -1428,6 +1428,10 @@ def test_wheel_and_sdist_python_tests_prove_installed_package_identity():
     assert "check_python_package_identity.py" in smoke_job
     assert "test_thermodynamic_parse_path.py" in smoke_job
 
+    wheel_job = _workflow_job("wheels")
+    assert "check_python_package_identity.py" in wheel_job
+    assert "test_migration_workflows.py" in wheel_job
+
     integration_job = _workflow_job("python-integration")
     assert "BNG3_PYTHON_TEST_MODE: installed" in integration_job
     assert 'pip install ".[full]"' in integration_job
@@ -2297,7 +2301,7 @@ def test_authored_export_preserves_both_xml_files_on_failure(tmp_path, monkeypat
     assert "preserved artifacts" in detail
 
 
-def test_cross_validation_stages_generation_without_simulation_actions():
+def test_cross_validation_retains_pre_generation_rate_setters():
     """Network parity must not accidentally execute a model's simulations."""
 
     staged = _network_only_text("""begin parameters
@@ -2316,6 +2320,47 @@ end actions
         'begin actions\n  setParameter("k", 2)\n'
         "  generate_network({overwrite=>1})\nend actions\n"
     )
+
+
+def test_cross_validation_retains_setters_used_by_later_generation():
+    staged = _network_only_text("""begin actions
+generate_network({overwrite=>1})
+setParameter("k",2)
+generate_network({overwrite=>1})
+simulate_ode({t_start=>0,t_end=>1,n_steps=>1})
+end actions
+""")
+
+    assert staged.count("generate_network(") == 2
+    assert staged.index('setParameter("k",2)') < staged.rindex("generate_network(")
+
+
+def test_cross_validation_keeps_the_generation_time_rate_snapshot():
+    """Post-generation protocol setters are exercised by simulation parity."""
+
+    source = VALIDATE_DIR / "heise.bngl"
+    staged = _network_only_text(source.read_text(encoding="utf-8"))
+
+    assert "generate_network({overwrite=>1})" in staged
+    assert 'setParameter("vu",0)' not in staged
+    assert 'setParameter("vl",1)' not in staged
+
+
+def test_cross_validation_preserves_late_rate_setter_for_authored_network_writer():
+    """A continuation writer deliberately snapshots post-generation updates."""
+
+    staged = _network_only_text(
+        """begin actions
+generate_network({overwrite=>1})
+setParameter("k", 2)
+writeNetwork({suffix=>"cont",overwrite=>1})
+end actions
+""",
+        preserve_network_writer=True,
+    )
+
+    assert staged.index("generate_network") < staged.index('setParameter("k", 2)')
+    assert staged.index('setParameter("k", 2)') < staged.index("writeNetwork")
 
 
 def test_cross_validation_can_preserve_network_writer_for_continuations(tmp_path):

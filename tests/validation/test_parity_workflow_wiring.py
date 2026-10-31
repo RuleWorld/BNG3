@@ -340,3 +340,24 @@ def test_historical_nfsim_failure_evidence_is_retained_without_masking_failure()
         "oracle-nfsim/validate/basicModels/v43_nf.gdat",
     ):
         assert path in paths
+
+
+def test_issue160_diagnostic_controls_run_without_claiming_release_acceptance():
+    steps = _parse_workflow()["jobs"]["oracle-lock"]["steps"]
+    step = next(
+        (
+            s
+            for s in steps
+            if s.get("name")
+            == "Run Issue 160 diagnostic controls (not capability acceptance)"
+        ),
+        None,
+    )
+    assert step is not None
+    assert not step.get("continue-on-error", False)
+    assert "--confcutdir=tests/validation/release/cases/issue-160" in step["run"]
+    assert (
+        "tests/validation/release/cases/issue-160/test_sbml_semantic_families.py"
+        in step["run"]
+    )
+    assert step["env"]["PYTHONPATH"] == "python:."

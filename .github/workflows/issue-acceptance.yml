@@ -18,6 +18,10 @@ on:
       - 'python/bionetgen/atomizer/modern/**'
       - 'python/bionetgen/__init__.py'
       - 'python/bionetgen/model.py'
+      - 'python/bionetgen/sbml.py'
+      - 'tests/python/test_atomizer_dae_ida.py'
+      - 'tests/python/test_atomizer_delay_history.py'
+      - 'tests/python/test_atomizer_fast_reaction.py'
       - 'scripts/ci/checkout_oracle.py'
       - 'scripts/ci/oracle_sources.py'
       - 'scripts/cross_validate.py'
@@ -30,6 +34,11 @@ on:
     inputs:
       run_issue_157:
         description: Run the native dynamic-event trigger acceptance
+        required: false
+        type: boolean
+        default: false
+      run_issue_160:
+        description: Run bounded native SBML Core execution regressions
         required: false
         type: boolean
         default: false
@@ -243,5 +252,72 @@ jobs:
         with:
           name: issue-161-multi-acceptance-${{ github.sha }}
           path: ${{ runner.temp }}/issue-161-artifacts/
+          if-no-files-found: warn
+          retention-days: 30
+
+  issue-160:
+    if: github.event_name == 'pull_request' || inputs.run_issue_160
+    name: Issue 160 bounded native Core execution
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    env:
+      CMAKE_ARGS: -DBUILD_PYTHON_BINDINGS=ON -DBUILD_CLI=OFF -DBUILD_NFSIM_CLI=OFF -DBUILD_TESTS=OFF
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tools and locked SBML runtime
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build
+          python -m venv .venv
+          .venv/bin/python -m pip install --require-hashes -r provenance/ssts-ci-linux-py312.lock
+
+      - name: Build fresh BNG3 native extension
+        id: build_native
+        run: |
+          set -euo pipefail
+          .venv/bin/python -m pip install --no-deps --no-build-isolation \
+            --config-settings=build-dir=build .
+
+      - name: Run bounded Core execution regressions
+        if: always() && steps.build_native.outcome == 'success'
+        env:
+          PYTHONPATH: python:build/cpp
+          BNG3_PYTHON_TEST_MODE: source
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/issue-160-artifacts"
+          .venv/bin/python -m pytest -q \
+            tests/python/test_atomizer_dae_ida.py \
+            tests/python/test_atomizer_delay_history.py \
+            tests/python/test_atomizer_fast_reaction.py \
+            --junitxml="$RUNNER_TEMP/issue-160-artifacts/pytest.xml"
+
+      - name: Record exact product identity
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/issue-160-artifacts"
+          git rev-parse HEAD > "$RUNNER_TEMP/issue-160-artifacts/product-revision.txt"
+          sha256sum provenance/upstreams.lock.yml provenance/ssts-ci-linux-py312.lock > "$RUNNER_TEMP/issue-160-artifacts/inputs.sha256"
+          if test -d build/cpp; then
+            find build/cpp -name '*bionetgen_cpp*.so' -exec sha256sum {} + > "$RUNNER_TEMP/issue-160-artifacts/native.sha256"
+          fi
+          if test -x .venv/bin/python; then
+            .venv/bin/python -m pip freeze > "$RUNNER_TEMP/issue-160-artifacts/runtime.txt"
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: issue-160-core-slices-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/issue-160-artifacts/
           if-no-files-found: warn
           retention-days: 30
