@@ -11,7 +11,7 @@ namespace bng::ast {
 // The native event runtime executes the events of a model: each event has a
 // continuous scalar trigger, an optional constant delay, a priority that
 // orders the events executed at the same instant, and assignments to species
-// observables.
+// observables and static parameters.
 inline void validateNativeEventSubset(const Model& model) {
     if (!model.getEventFormatVersion()) return;
     const auto fail = [](const std::string& reason) {
@@ -313,7 +313,15 @@ inline void validateNativeEventSubset(const Model& model) {
         for (const auto& observable : model.getObservables()) {
             found = found || observable.getName() == assignment.target;
         }
-        if (!found) fail("assignment target must be a species observable");
+        if (!found && model.getParameters().contains(assignment.target)) {
+            if (model.getParameters().isTimeDependent(assignment.target)) {
+                fail("assignment target parameter must be static");
+            }
+            found = true;
+        }
+        if (!found) {
+            fail("assignment target must be a species observable or static parameter");
+        }
         allowDistributionAssignment = true;
         const auto value = functionEvaluator.expandFunctions(assignment.value);
         if (!isStaticNonfinite(value)) continuous(value);
