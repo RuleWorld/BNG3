@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
 
 #include "compile/CompiledRateLaw.hpp"
 #include "compile/CompiledModel.hpp"
@@ -182,4 +183,214 @@ end functions
         bng::parser::parseExpression("k"));
     CHECK(untyped.dependencies().unresolved);
     CHECK(untyped.dependencies().requiresRuntimeEvaluation());
+}
+
+TEST_CASE("CompiledRateLaw evaluates constant and parametric rate expressions directly") {
+    auto model = bng::parser::parseModel(R"BNG(
+begin parameters
+  k 2.5
+  c 3.0
+end parameters
+begin molecule types
+  A()
+end molecule types
+)BNG");
+    REQUIRE(model != nullptr);
+    const auto symbols = bng::compile::SymbolTable::fromModel(*model);
+    const auto rate = bng::compile::CompiledRateLaw::compile(
+        bng::parser::parseExpression("k * 2.0 + c"), symbols);
+    REQUIRE(rate.diagnostics().empty());
+    REQUIRE(rate.fullyResolved());
+
+    bng::compile::RateEvaluationContext ctx;
+    ctx.resolveParameter = [&](std::size_t index, const std::string& name) -> double {
+        if (name == "k" || index == 0) return 2.5;
+        if (name == "c" || index == 1) return 3.0;
+        return 0.0;
+    };
+    CHECK(rate.evaluate(ctx) == Catch::Approx(8.0));
+
+    // Also test convenience overload with name resolver
+    CHECK(rate.evaluate([](const std::string& name) {
+        if (name == "k") return 2.5;
+        if (name == "c") return 3.0;
+        return 0.0;
+    }) == Catch::Approx(8.0));
+}
+
+TEST_CASE("CompiledRateLaw evaluates time, observable, and reactant count dependencies") {
+    auto model = bng::parser::parseModel(R"BNG(
+begin parameters
+  k 0.5
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin observables
+  Molecules count A()
+end observables
+)BNG");
+    REQUIRE(model != nullptr);
+    const auto symbols = bng::compile::SymbolTable::fromModel(*model);
+    const auto rate = bng::compile::CompiledRateLaw::compile(
+        bng::parser::parseExpression("k * count + time * reactant_1"), symbols);
+    REQUIRE(rate.diagnostics().empty());
+    REQUIRE(rate.fullyResolved());
+    CHECK(rate.dependsOnTime());
+    CHECK(rate.dependsOnObservables());
+    CHECK(rate.dependsOnReactantCounts());
+    CHECK(rate.dependsOnParameters());
+
+    bng::compile::RateEvaluationContext ctx;
+    ctx.time = 2.0;
+    ctx.resolveParameter = [](std::size_t, const std::string&) { return 0.5; };
+    ctx.resolveObservable = [](std::size_t, const std::string&) { return 5.0; };
+    ctx.resolveReactantCount = [](std::size_t idx) { return (idx == 0) ? 3.0 : 0.0; };
+
+    // 0.5 * 5.0 + 2.0 * 3.0 = 2.5 + 6.0 = 8.5
+    CHECK(rate.evaluate(ctx) == Catch::Approx(8.5));
+}
+
+TEST_CASE("CompiledRateLaw evaluates special rate law families") {
+    const bng::compile::SymbolTable emptySymbols;
+
+    // Saturation: Sat(k0, K, S) -> k0 * S / (K + S)
+    const auto satRate = bng::compile::CompiledRateLaw::compile(
+        bng::parser::parseExpression("Sat(0.4, 10.0, 20.0)"), emptySymbols);
+    REQUIRE(satRate.fullyResolved());
+    CHECK(satRate.evaluate(bng::compile::RateEvaluationContext{}) ==
+          Catch::Approx(0.4 * 20.0 / (10.0 + 20.0)));
+
+    // Hill: Hill(Vmax, Kh, n, S) -> Vmax * S^n / (Kh^n + S^n)
+    const auto hillRate = bng::compile::CompiledRateLaw::compile(
+        bng::parser::parseExpression("Hill(1.0, 5.0, 2.0, 5.0)"), emptySymbols);
+    REQUIRE(hillRate.fullyResolved());
+    CHECK(hillRate.evaluate(bng::compile::RateEvaluationContext{}) == Catch::Approx(0.5));
+
+    // FunctionProduct: FunctionProduct(v1, v2) -> v1 * v2
+    const auto fpRate = bng::compile::CompiledRateLaw::compile(
+        bng::parser::parseExpression("FunctionProduct(3.0, 4.0)"), emptySymbols);
+    REQUIRE(fpRate.fullyResolved());
+    CHECK(fpRate.evaluate(bng::compile::RateEvaluationContext{}) == Catch::Approx(12.0));
+
+    // Arrhenius: Arrhenius(A, Ea) with Ea=0 -> A
+    const auto arrRate = bng::compile::CompiledRateLaw::compile(
+        bng::parser::parseExpression("Arrhenius(100.0, 0.0)"), emptySymbols);
+    REQUIRE(arrRate.fullyResolved());
+    CHECK(arrRate.evaluate(bng::compile::RateEvaluationContext{}) == Catch::Approx(100.0));
+}
+
+TEST_CASE("CompiledRateLaw evaluates table functions with interpolation") {
+    const bng::compile::SymbolTable emptySymbols;
+    const auto tfunLinear = bng::compile::CompiledRateLaw::compile(
+        bng::parser::parseExpression("TFUN([0.0, 1.0, 2.0], [10.0, 20.0, 30.0], time)"),
+        emptySymbols);
+    REQUIRE(tfunLinear.fullyResolved());
+
+    bng::compile::RateEvaluationContext ctx;
+    ctx.time = 0.5;
+    CHECK(tfunLinear.evaluate(ctx) == Catch::Approx(15.0));
+    ctx.time = 1.5;
+    CHECK(tfunLinear.evaluate(ctx) == Catch::Approx(25.0));
+    ctx.time = 3.0; // clamp upper
+    CHECK(tfunLinear.evaluate(ctx) == Catch::Approx(30.0));
+}
+
+TEST_CASE("CompiledRateLaw dependency invalidation accurately tracks parameters, observables, and time") {
+    auto model = bng::parser::parseModel(R"BNG(
+begin parameters
+  k1 1.0
+  k2 2.0
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin observables
+  Molecules obs1 A()
+end observables
+)BNG");
+    REQUIRE(model != nullptr);
+    const auto symbols = bng::compile::SymbolTable::fromModel(*model);
+
+    const auto rate1 = bng::compile::CompiledRateLaw::compile(
+        bng::parser::parseExpression("k1 + obs1"), symbols);
+    const auto rate2 = bng::compile::CompiledRateLaw::compile(
+        bng::parser::parseExpression("k2 * time"), symbols);
+
+    // Queries by parameter
+    CHECK(rate1.dependsOnParameter(0)); // k1 is param index 0
+    CHECK_FALSE(rate1.dependsOnParameter(1)); // k2 is param index 1
+    CHECK(rate1.dependsOnParameter("k1"));
+    CHECK_FALSE(rate1.dependsOnParameter("k2"));
+
+    CHECK_FALSE(rate2.dependsOnParameter(0));
+    CHECK(rate2.dependsOnParameter(1)); // k2 is param index 1
+    CHECK(rate2.dependsOnParameter("k2"));
+
+    // Queries by observable
+    CHECK(rate1.dependsOnObservable(0)); // obs1 is obs index 0
+    CHECK(rate1.dependsOnObservable("obs1"));
+    CHECK_FALSE(rate2.dependsOnObservable(0));
+
+    // Queries by time
+    CHECK_FALSE(rate1.dependsOnTime());
+    CHECK(rate2.dependsOnTime());
+
+    // Invalidation behavior
+    // Parameter 0 modified: rate1 invalidated, rate2 retained
+    CHECK(rate1.isInvalidatedBy(false, {0}, {}));
+    CHECK_FALSE(rate2.isInvalidatedBy(false, {0}, {}));
+
+    // Parameter 1 modified: rate1 retained, rate2 invalidated
+    CHECK_FALSE(rate1.isInvalidatedBy(false, {1}, {}));
+    CHECK(rate2.isInvalidatedBy(false, {1}, {}));
+
+    // Observable 0 modified: rate1 invalidated, rate2 retained
+    CHECK(rate1.isInvalidatedBy(false, {}, {0}));
+    CHECK_FALSE(rate2.isInvalidatedBy(false, {}, {0}));
+
+    // Time advanced: rate1 retained, rate2 invalidated
+    CHECK_FALSE(rate1.isInvalidatedBy(true, {}, {}));
+    CHECK(rate2.isInvalidatedBy(true, {}, {}));
+}
+
+TEST_CASE("CompiledRateLaw evaluates after source ast::Model is destroyed (AST lifetime independence guard)") {
+    bng::compile::CompiledRateLaw compiledRate;
+    {
+        auto model = bng::parser::parseModel(R"BNG(
+begin parameters
+  k 42.0
+end parameters
+begin molecule types
+  A()
+end molecule types
+)BNG");
+        REQUIRE(model != nullptr);
+        const auto symbols = bng::compile::SymbolTable::fromModel(*model);
+        const auto expr = bng::parser::parseExpression("k * 2.0");
+        compiledRate = bng::compile::CompiledRateLaw::compile(expr, symbols);
+        // `model` and `expr` go out of scope and are deleted here
+    }
+
+    REQUIRE(compiledRate.fullyResolved());
+    bng::compile::RateEvaluationContext ctx;
+    ctx.resolveParameter = [](std::size_t, const std::string&) { return 42.0; };
+
+    // Evaluates completely independently of the destroyed AST
+    CHECK(compiledRate.evaluate(ctx) == Catch::Approx(84.0));
+}
+
+TEST_CASE("Shared evaluateRateString evaluates nested expressions, unary signs, exponentials, and whitespace") {
+    auto resolver = [](const std::string& name) -> double {
+        if (name == "k") return 10.0;
+        if (name == "c") return 4.0;
+        return 0.0;
+    };
+
+    CHECK(bng::compile::evaluateRateString(" 12.5 ", resolver) == Catch::Approx(12.5));
+    CHECK(bng::compile::evaluateRateString(" (k + c) * 2 ", resolver) == Catch::Approx(28.0));
+    CHECK(bng::compile::evaluateRateString(" k - (-c) ", resolver) == Catch::Approx(14.0));
+    CHECK(bng::compile::evaluateRateString(" exp(0) ", resolver) == Catch::Approx(1.0));
+    CHECK(bng::compile::evaluateRateString(" (k * c) / 8 ", resolver) == Catch::Approx(5.0));
+    CHECK(bng::compile::evaluateRateString(" -k ", resolver) == Catch::Approx(-10.0));
 }
