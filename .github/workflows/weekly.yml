@@ -156,6 +156,7 @@ jobs:
           sudo apt-get update && sudo apt-get install -y cmake ninja-build
           pip install scikit-build-core pybind11
           pip install -e .[full,dev]
+          pip install libroadrunner
         env:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
 
@@ -165,7 +166,7 @@ jobs:
             -DCMAKE_BUILD_TYPE=Release \
             -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
             -DBUILD_PYTHON_BINDINGS=ON \
-            -DBUILD_CLI=OFF \
+            -DBUILD_CLI=ON \
             -DBUILD_TESTS=OFF
 
       - name: Build native extension
@@ -254,7 +255,8 @@ jobs:
       - name: Install Perl and dependencies
         run: |
           sudo apt-get update && sudo apt-get install -y perl cmake ninja-build build-essential
-          python -m pip install numpy python-libsbml pyyaml
+          python -m pip install numpy python-libsbml pyyaml scikit-build-core pybind11
+          python -m pip install -e .[full]
 
       - name: Checkout locked BNG2 oracle
         run: |
@@ -276,7 +278,7 @@ jobs:
       - name: Provide sbmlTranslator
         run: |
           mkdir -p "$RUNNER_TEMP/oracle-bionetgen/bng2/bin"
-          printf '%s\n' '#!/bin/sh' 'PYTHONPATH="$GITHUB_WORKSPACE/python${PYTHONPATH:+:$PYTHONPATH}" exec python "$GITHUB_WORKSPACE/python/bionetgen/atomizer/sbmlTranslator.py" "$@"' > "$RUNNER_TEMP/oracle-bionetgen/bng2/bin/sbmlTranslator"
+          printf '%s\n' '#!/bin/sh' 'PYTHONPATH="$GITHUB_WORKSPACE/python${PYTHONPATH:+:$PYTHONPATH}" exec python3 "$GITHUB_WORKSPACE/python/bionetgen/atomizer/sbmlTranslator.py" "$@"' > "$RUNNER_TEMP/oracle-bionetgen/bng2/bin/sbmlTranslator"
           chmod +x "$RUNNER_TEMP/oracle-bionetgen/bng2/bin/sbmlTranslator"
 
       - name: Build bng_cpp

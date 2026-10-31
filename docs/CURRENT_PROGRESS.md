@@ -89,19 +89,19 @@ This audit establishes the combined baseline following the integration of pull r
 
 - **Combined revision:** `13cf998e9fea595a1c322ac0669a6bc6f598c88b` on `main`.
 - **Merged PRs:**
-  - [#541](https://github.com/RuleWorld/BNG3/pull/541): `fix(validation)` require execution evidence for issue 160 acceptance.
-  - [#542](https://github.com/RuleWorld/BNG3/pull/542): `fix(validation)` network-only staging of generation snapshots.
-  - [#543](https://github.com/RuleWorld/BNG3/pull/543): `feat(actions)` compile static simulation action time options.
-  - [#544](https://github.com/RuleWorld/BNG3/pull/544): `docs` clarify PyBioNetGen migration evidence.
-  - [#545](https://github.com/RuleWorld/BNG3/pull/545): `ci` qualify installed wheel examples and package identity.
-  - [#546](https://github.com/RuleWorld/BNG3/pull/546): `feat(engine)` support coupled algebraic parameter DAEs in native IDA path.
-  - [#547](https://github.com/RuleWorld/BNG3/pull/547): `fix(atomizer)` lower nonlinear SBML fast equilibrium pools.
-  - [#548](https://github.com/RuleWorld/BNG3/pull/548): `fix(atomizer)` bounded dynamic SBML delay evaluation.
-  - [#549](https://github.com/RuleWorld/BNG3/pull/549): `fix(engine)` preserve historical parameters in event algebraic evaluation.
-  - [#550](https://github.com/RuleWorld/BNG3/pull/550): `test(bngir)` qualify native reconstruction of compartments and live rates.
-  - [#551](https://github.com/RuleWorld/BNG3/pull/551): `feat(compile)` shared rate evaluation and invalidation across ODE and PLA (#143).
-  - [#552](https://github.com/RuleWorld/BNG3/pull/552): `test(atomizer)` qualify fast equilibrium coupling to Michaelis-Menten limit.
-  - [#553](https://github.com/RuleWorld/BNG3/pull/553): `fix(engine)` qualify delayed kinetics against method of steps and continuation.
+  - [PR #541](https://github.com/RuleWorld/BNG3/pull/541): `fix(validation)` require execution evidence for issue 160 acceptance.
+  - [PR #542](https://github.com/RuleWorld/BNG3/pull/542): `fix(validation)` network-only staging of generation snapshots.
+  - [PR #543](https://github.com/RuleWorld/BNG3/pull/543): `feat(actions)` compile static simulation action time options.
+  - [PR #544](https://github.com/RuleWorld/BNG3/pull/544): `docs` clarify PyBioNetGen migration evidence.
+  - [PR #545](https://github.com/RuleWorld/BNG3/pull/545): `ci` qualify installed wheel examples and package identity.
+  - [PR #546](https://github.com/RuleWorld/BNG3/pull/546): `feat(engine)` support coupled algebraic parameter DAEs in native IDA path.
+  - [PR #547](https://github.com/RuleWorld/BNG3/pull/547): `fix(atomizer)` lower nonlinear SBML fast equilibrium pools.
+  - [PR #548](https://github.com/RuleWorld/BNG3/pull/548): `fix(atomizer)` bounded dynamic SBML delay evaluation.
+  - [PR #549](https://github.com/RuleWorld/BNG3/pull/549): `fix(engine)` preserve historical parameters in event algebraic evaluation.
+  - [PR #550](https://github.com/RuleWorld/BNG3/pull/550): `test(bngir)` qualify native reconstruction of compartments and live rates.
+  - [PR #551](https://github.com/RuleWorld/BNG3/pull/551): `feat(compile)` shared rate evaluation and invalidation across ODE and PLA (#143).
+  - [PR #552](https://github.com/RuleWorld/BNG3/pull/552): `test(atomizer)` qualify fast equilibrium coupling to Michaelis-Menten limit.
+  - [PR #553](https://github.com/RuleWorld/BNG3/pull/553): `fix(engine)` qualify delayed kinetics against method of steps and continuation.
 - **Combined test suite execution:** 282 passed test cases in 7.88s across focused unit, contract, and semantic test suites:
   - CI contracts & workflow wiring (`tests/test_ci_contract.py`, `tests/test_issue_acceptance_ci.py`): 110 passed.
   - SBML algebraic DAEs with IDA (`tests/python/test_atomizer_dae_ida.py`): 2 passed.
@@ -156,7 +156,7 @@ The 994 capability inventory rows are classified into the three required categor
 - The non-equivalent mutant (`python.set-parameter-scale`, mutating parameter setter values by 1%) was killed by unchanged independent backend contract test `TestHighLevelAPI.test_parameter_value_is_read_only_and_refreshes_dependents`.
 - Mutation score: 1/1 (100% kill rate, 0 survived, 0 infrastructure errors).
 - Baseline recorded in `tests/validation/policy/mutation-baseline.json` with exact revision and artifact SHA-256 digest.
-- `release-scheduled-mutation-ratchet` status: **PASS**.
+- Scheduled mutation ratchet status: **PASS** (`release-scheduled-mutation-ratchet`).
 
 ### 4. Dependency-ordered roadmap to Alpha (3.0.0a1) and Full Release
 
