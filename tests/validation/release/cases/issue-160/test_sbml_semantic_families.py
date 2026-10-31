@@ -24,7 +24,6 @@ import pytest
 from bionetgen.atomizer.modern import Atomizer
 from bionetgen.atomizer.modern.parser import SBMLParser
 
-
 REPO = Path(__file__).resolve().parents[5]
 CAMPAIGN_JSON = REPO / "provenance" / "sbml-campaign" / "current-2026-10-22.json"
 
@@ -132,10 +131,12 @@ def test_fast_reaction_solvable_exact_lowering():
     result = atomizer.atomize(xml)
     assert result.success, result.error
     warnings = [
-        w for w in atomizer.model.import_warnings
-        if w.get("category") == "fastReaction"
+        w for w in atomizer.model.import_warnings if w.get("category") == "fastReaction"
     ]
-    assert any(w.get("severity") == "info" and "reduces" in w.get("message", "") for w in warnings)
+    assert any(
+        w.get("severity") == "info" and "reduces" in w.get("message", "")
+        for w in warnings
+    )
 
 
 def test_unsolvable_fast_reaction_emits_loss_diagnostic():
@@ -176,11 +177,15 @@ def test_unsolvable_fast_reaction_emits_loss_diagnostic():
     result = atomizer.atomize(xml)
     assert result.success
     loss_warnings = [
-        w for w in atomizer.model.import_warnings
+        w
+        for w in atomizer.model.import_warnings
         if w.get("category") == "fastReaction" and w.get("severity") in LOSS_SEVERITIES
     ]
     assert len(loss_warnings) >= 1
-    assert "fast-equilibrium" in loss_warnings[0]["message"] or "is marked fast" in loss_warnings[0]["message"]
+    assert (
+        "fast-equilibrium" in loss_warnings[0]["message"]
+        or "is marked fast" in loss_warnings[0]["message"]
+    )
 
 
 def test_linear_algebraic_rule_is_solved_to_assignment():
@@ -204,10 +209,14 @@ def test_linear_algebraic_rule_is_solved_to_assignment():
 </sbml>"""
     parser = SBMLParser()
     model = parser.parse(xml)
-    assignment_rules = [r for r in model.rules if r.type == "assignment" and r.variable == "k2"]
+    assignment_rules = [
+        r for r in model.rules if r.type == "assignment" and r.variable == "k2"
+    ]
     assert len(assignment_rules) == 1
     # Solved and constant-folded 2.0 * 10.0 = 20
-    assert assignment_rules[0].math in {"20", "20.0"} or ("k1" in assignment_rules[0].math and "k3" in assignment_rules[0].math)
+    assert assignment_rules[0].math in {"20", "20.0"} or (
+        "k1" in assignment_rules[0].math and "k3" in assignment_rules[0].math
+    )
 
 
 def test_nonlinear_algebraic_rule_emits_loss_diagnostic():
@@ -232,11 +241,15 @@ def test_nonlinear_algebraic_rule_emits_loss_diagnostic():
     result = atomizer.atomize(xml)
     assert result.success
     alg_warnings = [
-        w for w in atomizer.model.import_warnings
+        w
+        for w in atomizer.model.import_warnings
         if w.get("category") == "algebraicRule" and w.get("severity") in LOSS_SEVERITIES
     ]
     assert len(alg_warnings) >= 1
-    assert "implicit DAE" in alg_warnings[0]["message"] or "algebraic rule" in alg_warnings[0]["message"].lower()
+    assert (
+        "implicit DAE" in alg_warnings[0]["message"]
+        or "algebraic rule" in alg_warnings[0]["message"].lower()
+    )
 
 
 def test_delay_affine_history_folding():
@@ -303,8 +316,10 @@ def test_unrepresentable_delay_function_emits_diagnostic():
     result = atomizer.atomize(xml)
     assert result.success
     delay_warnings = [
-        w for w in atomizer.model.import_warnings
-        if "delay" in w.get("category", "").lower() or "delay" in w.get("message", "").lower()
+        w
+        for w in atomizer.model.import_warnings
+        if "delay" in w.get("category", "").lower()
+        or "delay" in w.get("message", "").lower()
     ]
     assert len(delay_warnings) >= 1
     assert "delay" in delay_warnings[0]["message"].lower()
