@@ -3,6 +3,7 @@
 #include <functional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "ast/Model.hpp"
@@ -296,6 +297,15 @@ private:
     // several surfaces can enter and leave a narrow conjunction between two
     // accepted solver states without changing sign.
     std::vector<std::pair<std::size_t, const ast::Expression*>> nativeEventRoots_;
+    // Conjuncts whose dynamic dependencies are all species that no reaction
+    // changes: they are piecewise constant, change only when an event
+    // assigns, and are evaluated exactly instead of as root functions.
+    std::unordered_set<const ast::Expression*> discreteEventConjuncts_;
+    // Species whose amount some reaction changes (nonzero net stoichiometry).
+    std::vector<bool> continuousSpecies_;
+    void markContinuousSpecies();
+    bool isDiscreteConjunct(const ast::Expression& conjunct) const;
+    void pruneDiscreteEventRoots();
     std::vector<PendingEvent> pendingEvents_;
     // The root function value of every group at the last instant the events
     // were processed.  A group whose value changed its sign since then

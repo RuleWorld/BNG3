@@ -3,6 +3,7 @@
 // Each case reproduces a validated difference between BNG3 XML output and
 // BNG2 (bionetgen 0.8.7) writeXML, with BNG2's RxnRule.pm / SpeciesGraph.pm
 // as oracle. Expected strings were diffed against BNG2-generated XML.
+#include <algorithm>
 #include <string>
 #include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -10,6 +11,7 @@
 
 #include "ast/Model.hpp"
 #include "compile/RuleUnitConversion.hpp"
+#include "io/BnglWriter.hpp"
 #include "io/XmlWriter.hpp"
 #include "parser/BNGAstVisitor.hpp"
 
@@ -24,6 +26,37 @@ std::string writeXml(const char* source) {
 }
 
 } // namespace
+
+TEST_CASE("XmlWriter preserves population molecule types and species syntax") {
+    const auto model = parser::parseModel(R"BNGL(
+begin model
+begin molecule types
+    A(a)
+    P() population
+end molecule types
+begin seed species
+    P() 10
+end seed species
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+
+    const auto bngl = io::BnglWriter::write(*model);
+    CHECK_THAT(bngl, Catch::Matchers::ContainsSubstring("P population"));
+    const auto roundTrip = parser::parseModel(bngl);
+    REQUIRE(roundTrip != nullptr);
+    const auto populationType = std::find_if(
+        roundTrip->getMoleculeTypes().begin(), roundTrip->getMoleculeTypes().end(),
+        [](const auto& type) { return type.getName() == "P"; });
+    REQUIRE(populationType != roundTrip->getMoleculeTypes().end());
+    CHECK(populationType->isPopulation());
+
+    const auto xml = io::XmlWriter::write(*roundTrip);
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<MoleculeType id=\"P\" population=\"1\"/>"));
+    CHECK(xml.find("<MoleculeType id=\"P\">\n        <ListOfComponentTypes>") == std::string::npos);
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring("name=\"P()\""));
+}
 
 TEST_CASE("XmlWriter degrades a single molecule per molecule with DeleteMolecules") {
     // BNG2 RxnRule.pm findMap: with the DeleteMolecules modifier every deleted
@@ -138,15 +171,33 @@ end reaction rules
 end model
 )");
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
-        "<Pattern id=\"O1_P1\" relation=\"==\" quantity=\"1\">"));
+        "<Pattern id=\"O1_P1\" automorphisms=\"1\" relation=\"==\" quantity=\"1\">"));
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
-        "<Pattern id=\"O2_P1\" relation=\"&gt;\" quantity=\"20\">"));
+        "<Pattern id=\"O2_P1\" automorphisms=\"1\" relation=\"&gt;\" quantity=\"20\">"));
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
-        "<Pattern id=\"O3_P1\" relation=\"&lt;=\" quantity=\"3\">"));
+        "<Pattern id=\"O3_P1\" automorphisms=\"1\" relation=\"&lt;=\" quantity=\"3\">"));
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
         "<Molecule id=\"O1_P1_M1\" name=\"R\">"));
     CHECK(xml.find("name=\"R==") == std::string::npos);
     CHECK(xml.find("name=\"R&gt;") == std::string::npos);
+}
+
+TEST_CASE("XmlWriter includes observable pattern automorphism counts") {
+    // BNG2 SpeciesGraph::readString counts self-embeddings for XML patterns.
+    // Two equivalent sites on R give the symmetric pattern R(x,x) two
+    // automorphisms, which consumers use for molecule-observable semantics.
+    const std::string xml = writeXml(R"(
+begin model
+begin molecule types
+    R(x,x)
+end molecule types
+begin observables
+    Molecules Rfree R(x,x)
+end observables
+end model
+)");
+    CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
+        "<Pattern id=\"O1_P1\" automorphisms=\"2\">"));
 }
 
 TEST_CASE("XmlWriter orders DeleteBond before AddBond in bond-swap rules") {
@@ -570,7 +621,7 @@ end reaction rules
 end model
 )");
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
-        "<Pattern id=\"O1_P1\" compartment=\"cell\">"));
+        "<Pattern id=\"O1_P1\" automorphisms=\"1\" compartment=\"cell\">"));
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(
         "<Molecule id=\"O1_P1_M1\" name=\"M_A\">"));
     CHECK_THAT(xml, Catch::Matchers::ContainsSubstring(

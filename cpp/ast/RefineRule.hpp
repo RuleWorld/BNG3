@@ -38,6 +38,11 @@ struct RefineRuleParams {
     double maxAgg = 1e99;
     std::unordered_map<std::string, double> maxStoich;
     std::string indent = "        ";  // 8 spaces
+    // Whole-complex particle patterns and their corresponding population
+    // species graphs. When supplied, exact matches are rewritten after the
+    // rule transformations have been applied.
+    const std::vector<SpeciesGraph>* populationParticleGraphs = nullptr;
+    const std::vector<SpeciesGraph>* populationGraphs = nullptr;
 };
 
 /// Result of expandRule: a list of child rules.

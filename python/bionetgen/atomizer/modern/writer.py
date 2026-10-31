@@ -1922,7 +1922,27 @@ def _prepared_kinetic_math(
     def replace_sum(match: re.Match[str]) -> str:
         species_id = match.group(1)
         if model.multi_executable and model.multi_species_patterns.get(species_id):
-            return f"__multi_sum_{standardize_name(species_id)}"
+            observable = f"__multi_sum_{standardize_name(species_id)}"
+            species = model.species.get(species_id)
+            if species is not None and not species.has_only_substance_units:
+                compartment_id = species.compartment
+                if compartment_id and compartment_id in model.compartments:
+                    # Multi's sum representation has the same quantity as
+                    # the referenced SBML species: concentration when
+                    # hasOnlySubstanceUnits is false.  The BNGL Molecules
+                    # observable is an amount, so use the current compartment
+                    # size to recover that concentration.
+                    volume = _current_compartment_size_expression(compartment_id, model)
+                    return f"({observable} / {volume})"
+                _record_import_warning(
+                    model,
+                    f"Multi sum representation for concentration species "
+                    f'"{species_id}" has no executable compartment size.',
+                    category="package:multi",
+                    severity="dropped",
+                )
+                return standardize_name(species_id)
+            return observable
         _record_import_warning(
             model,
             f'Multi sum representation for species "{species_id}" could not be '
@@ -2049,6 +2069,21 @@ def _prepared_kinetic_math(
         exclude_reaction_id=reaction_id or reaction.id,
     )
     return math_expression
+
+
+def _current_compartment_size_expression(compartment_id: str, model: SBMLModel) -> str:
+    """Return the BNGL expression for a compartment's current size."""
+
+    name = standardize_name(compartment_id)
+    if any(
+        rule.variable == compartment_id and rule.type == "rate" for rule in model.rules
+    ):
+        return f"{name}_amt"
+    if any(
+        rule.variable == compartment_id for rule in _assignment_rules_for_writer(model)
+    ):
+        return f"{name}()"
+    return f"__compartment_{name}__"
 
 
 def _dynamic_species_reference_expression(
@@ -2497,11 +2532,18 @@ def _rate_for_reaction(
         math = _extract_statistical_factor(
             convert_math_expression(math), reactant_structures
         )
-    compartment_stripped_math = _strip_compartment_rate_factors(
-        math,
-        model,
-        reactants,
-        reaction_compartment=reaction.compartment,
+    # Multi sums are source amount/concentration projections. Keep explicit
+    # volume factors rather than treating them as elementary reactant factors.
+    multi_sum_rate = "__multi_sum_" in math
+    compartment_stripped_math = (
+        math
+        if multi_sum_rate
+        else _strip_compartment_rate_factors(
+            math,
+            model,
+            reactants,
+            reaction_compartment=reaction.compartment,
+        )
     )
     preserved_compartment_flux = compartment_stripped_math != math
     reactant_names = {standardize_name(species_id) for species_id in reactants}
@@ -2547,7 +2589,8 @@ def _rate_for_reaction(
     # model it produces is not the model the source states.  The probe is
     # therefore not allowed to claim a law that names a non-reactant species.
     nonlinear = (
-        has_saturation
+        multi_sum_rate
+        or has_saturation
         or "/" in classification_math
         or functional
         or has_nonreactant_species
@@ -5283,7 +5326,18 @@ def write_observables(
         for match in _MULTI_SUM_TOKEN.finditer(get_kinetic_math(reaction.kinetic_law))
     }
     for species_id in sorted(sum_species_ids):
-        pattern = model.multi_species_patterns.get(species_id)
+        # The Multi parser retains the source type's name (e.g. A(x~u)),
+        # while the generated BNGL molecule type may be renamed to M_A and
+        # receive a compartment prefix.  Reuse the emitted seed/observable
+        # pattern or the sum observable silently counts zero molecules.  A
+        # wildcard Multi species does not necessarily have its own seed;
+        # construct its pattern exactly as for the ordinary observables.
+        pattern = species_to_pattern.get(species_id)
+        if not pattern:
+            entry = sct.entries.get(species_id)
+            species = model.species.get(species_id)
+            if entry is not None and species is not None:
+                pattern = _pattern(entry.structure, species.compartment)
         if not pattern:
             continue
         lines.append(f"Molecules __multi_sum_{standardize_name(species_id)} {pattern}")
@@ -6318,18 +6372,29 @@ def _clear_multi_component_state(component: object) -> None:
     component.active_state = ""
 
 
-def _copy_multi_component_state(source: object, target: object) -> None:
-    target.states = list(getattr(source, "states", []))
-    target.active_state = getattr(source, "active_state", "")
-    source_bonds = list(getattr(source, "bonds", []))
-    # Numeric bonds are meaningful only when both mapped endpoints are present;
-    # wildcard outward status remains valid on its own.
-    structural_bonds = [
-        bond for bond in getattr(target, "bonds", []) if bond not in ("+", "?")
-    ]
-    target.bonds = structural_bonds or [
-        bond for bond in source_bonds if bond in ("+", "?")
-    ]
+def _copy_multi_component_state(
+    source: object,
+    target: object,
+    *,
+    inherit_only: bool = False,
+    explicit_product_binding: bool = False,
+) -> None:
+    # Explicit product species features override type defaults.  During map
+    # inheritance, an explicitly constrained product site also keeps its own
+    # binding status (including the empty, unbound status).
+    if not inherit_only or not getattr(target, "active_state", ""):
+        target.states = list(getattr(source, "states", []))
+        target.active_state = getattr(source, "active_state", "")
+    if not (inherit_only and explicit_product_binding):
+        source_bonds = list(getattr(source, "bonds", []))
+        # Numeric bonds are meaningful only when both mapped endpoints are present;
+        # wildcard outward status remains valid on its own.
+        structural_bonds = [
+            bond for bond in getattr(target, "bonds", []) if bond not in ("+", "?")
+        ]
+        target.bonds = structural_bonds or [
+            bond for bond in source_bonds if bond in ("+", "?")
+        ]
 
 
 def _multi_product_structure(
@@ -6357,6 +6422,14 @@ def _multi_product_structure(
     # overlays only explicitly stated components; omitted features remain
     # don't-care, as required by Multi.
     used_explicit = set()
+    explicit_binding_positions = {
+        tuple(position)
+        for position in model.multi_species_explicit_binding_positions.get(
+            species_id, []
+        )
+    }
+    mapped_positions = set()
+    retained_positions = model.multi_species_component_positions.get(species_id)
     for target_index, target in enumerate(result.molecules):
         candidate = None
         if target_index < len(explicit.molecules):
@@ -6373,12 +6446,76 @@ def _multi_product_structure(
             for component in target.components:
                 _clear_multi_component_state(component)
             continue
-        used_explicit.add(explicit.molecules.index(candidate))
-        explicit_by_name = {
-            component.name: component for component in candidate.components
-        }
-        for component in target.components:
-            source_component = explicit_by_name.get(component.name)
+        candidate_index = explicit.molecules.index(candidate)
+        used_explicit.add(candidate_index)
+        explicit_by_index = {}
+        if retained_positions is not None:
+            component_ordinals = [
+                component_index
+                for molecule_index, component_index in retained_positions
+                if molecule_index == candidate_index
+            ]
+            if len(component_ordinals) != len(candidate.components):
+                _record_import_warning(
+                    model,
+                    f'Multi species "{species_id}" has inconsistent retained '
+                    "component positions; mapped products cannot be reconstructed.",
+                    category="package:multi",
+                    severity="dropped",
+                )
+                return None
+            for original_index, source_component in zip(
+                component_ordinals, candidate.components
+            ):
+                if (
+                    original_index >= len(target.components)
+                    or target.components[original_index].name != source_component.name
+                ):
+                    _record_import_warning(
+                        model,
+                        f'Multi species "{species_id}" retained component '
+                        "positions disagree with its species type.",
+                        category="package:multi",
+                        severity="dropped",
+                    )
+                    return None
+                explicit_by_index[original_index] = source_component
+        else:
+            # A name is a safe fallback only if occurrences are not ambiguous.
+            remaining = list(enumerate(target.components))
+            for source_component in candidate.components:
+                same_name = [
+                    index
+                    for index, component in remaining
+                    if component.name == source_component.name
+                ]
+                full_occurrence = sum(
+                    component.name == source_component.name
+                    for component in candidate.components
+                ) == sum(
+                    component.name == source_component.name
+                    for component in target.components
+                )
+                if len(same_name) > 1 and not full_occurrence:
+                    _record_import_warning(
+                        model,
+                        f'Multi species "{species_id}" has ambiguous repeated '
+                        "component names without occurrence metadata.",
+                        category="package:multi",
+                        severity="dropped",
+                    )
+                    return None
+                if not same_name:
+                    continue
+                original_index = same_name[0]
+                explicit_by_index[original_index] = source_component
+                remaining = [
+                    (index, component)
+                    for index, component in remaining
+                    if index != original_index
+                ]
+        for component_index, component in enumerate(target.components):
+            source_component = explicit_by_index.get(component_index)
             if source_component is None:
                 _clear_multi_component_state(component)
             else:
@@ -6435,22 +6572,62 @@ def _multi_product_structure(
             continue
         source_molecule = source_structure.molecules[source_molecule_index]
         target_molecule = result.molecules[target_molecule_index]
+        source_positions = model.multi_species_component_positions.get(
+            source_reference.species
+        )
+        if source_positions is None:
+            source_indices = list(range(len(source_molecule.components)))
+        else:
+            source_indices = [
+                component_index
+                for molecule_index, component_index in source_positions
+                if molecule_index == source_molecule_index
+            ]
+            if len(source_indices) != len(source_molecule.components):
+                _record_import_warning(
+                    model,
+                    f'Multi species "{source_reference.species}" has inconsistent '
+                    "retained component positions; mapped products cannot be reconstructed.",
+                    category="package:multi",
+                    severity="dropped",
+                )
+                continue
+        source_components = dict(zip(source_indices, source_molecule.components))
         if source_kind == "molecule" and target_kind == "molecule":
             for index, target_component in enumerate(target_molecule.components):
-                if index < len(source_molecule.components):
+                source_component = source_components.get(index)
+                if source_component is not None:
                     _copy_multi_component_state(
-                        source_molecule.components[index], target_component
+                        source_component,
+                        target_component,
+                        inherit_only=True,
+                        explicit_product_binding=(target_molecule_index, index)
+                        in explicit_binding_positions,
                     )
+                    mapped_positions.add((target_molecule_index, index))
         elif (
             source_kind == "component"
             and target_kind == "component"
-            and source_component_index < len(source_molecule.components)
+            and source_component_index in source_components
             and target_component_index < len(target_molecule.components)
         ):
             _copy_multi_component_state(
-                source_molecule.components[source_component_index],
+                source_components[source_component_index],
                 target_molecule.components[target_component_index],
+                inherit_only=True,
+                explicit_product_binding=(target_molecule_index, target_component_index)
+                in explicit_binding_positions,
             )
+            mapped_positions.add((target_molecule_index, target_component_index))
+    if retained_positions is not None:
+        retained = set(tuple(position) for position in retained_positions)
+        retained.update(mapped_positions)
+        for molecule_index, molecule in enumerate(result.molecules):
+            molecule.components = [
+                component
+                for component_index, component in enumerate(molecule.components)
+                if (molecule_index, component_index) in retained
+            ]
     result.renumber_bonds()
     return result
 

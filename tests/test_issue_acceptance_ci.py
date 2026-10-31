@@ -63,6 +63,34 @@ def test_native_acceptance_preserves_failure_artifacts():
         assert not any(step.get("continue-on-error", False) for step in steps)
 
     issue_161 = WORKFLOW["jobs"]["issue-161"]["steps"]
+    for job_steps, acceptance_steps in (
+        (
+            WORKFLOW["jobs"]["issue-157"]["steps"],
+            {"Run native event acceptance"},
+        ),
+        (
+            issue_161,
+            {
+                "Check Issue 161 provenance controls",
+                "Check Multi rule-rate and component-map regressions",
+                "Compare stateful Multi execution with independently authored SBML Core",
+                "Compare Multi numericValue and sum kinetics with independently authored SBML Core",
+                "Run authored Multi export and reimport acceptance",
+            },
+        ),
+    ):
+        build = next(
+            step
+            for step in job_steps
+            if step.get("name") == "Build fresh BNG3 native extension and CLI"
+        )
+        assert build.get("id") == "build_native"
+        for name in acceptance_steps:
+            step = next(step for step in job_steps if step.get("name") == name)
+            assert (
+                step.get("if") == "always() && steps.build_native.outcome == 'success'"
+            )
+
     oracle_checkout = next(
         step for step in issue_161 if step.get("name") == "Checkout pinned BNG2 oracle"
     )

@@ -366,6 +366,8 @@ OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& ne
         }
     }
     compile();
+    markContinuousSpecies();
+    pruneDiscreteEventRoots();
     validateEventTargets();
     validateEventRootSurface();
 }
@@ -2340,6 +2342,89 @@ bool OdeIntegrator::steadyStateReached(const OdeOptions& options,
     return dx < options.steadyStateTol;
 }
 
+void OdeIntegrator::markContinuousSpecies() {
+    continuousSpecies_.assign(network_.species.size(), false);
+    for (const auto& reaction : network_.reactions.all()) {
+        std::unordered_map<std::size_t, long> net;
+        for (const auto species : reaction.getReactants()) --net[species];
+        for (const auto species : reaction.getProducts()) ++net[species];
+        for (const auto& [species, change] : net) {
+            if (change != 0 && species < continuousSpecies_.size()) {
+                continuousSpecies_[species] = true;
+            }
+        }
+    }
+}
+
+bool OdeIntegrator::isDiscreteConjunct(const ast::Expression& conjunct) const {
+    // A conjunct is discrete when it reads at least one species observable,
+    // every species it reads is one that no reaction changes, and it reads
+    // neither time, a delayed value nor a time-dependent parameter.  Its
+    // value then changes only when an event assigns, so the trigger is
+    // re-tested after each event execution (retestTriggers) instead of being
+    // located by a root function: floor(ticks / 16) >= 1 with ticks counted
+    // by an event is piecewise constant and has no continuous root.
+    const auto expanded = functionEvaluator_.expandFunctions(conjunct);
+    bool readsObservable = false;
+    bool discrete = true;
+    std::function<void(const ast::Expression&)> visit = [&](const ast::Expression& node) {
+        if (!discrete) return;
+        if (node.kind() == ast::ExpressionKind::Function && node.name() == "delay") {
+            discrete = false;
+            return;
+        }
+        if (node.kind() == ast::ExpressionKind::Identifier ||
+            node.kind() == ast::ExpressionKind::ObservableRef) {
+            const auto& name = node.name();
+            if (name == "time" || name == "t") {
+                discrete = false;
+                return;
+            }
+            const auto observable = observableIndex_.find(name);
+            if (observable != observableIndex_.end()) {
+                readsObservable = true;
+                for (const auto& entry : compiledGroups_[observable->second].entries) {
+                    if (entry.first < continuousSpecies_.size() &&
+                        continuousSpecies_[entry.first]) {
+                        discrete = false;
+                        return;
+                    }
+                }
+                return;
+            }
+            try {
+                if (model_.getParameters().isTimeDependent(name)) discrete = false;
+            } catch (const std::exception&) {
+                // An identifier that is neither an observable nor a known
+                // parameter leaves the classification to the caller's checks.
+                discrete = false;
+            }
+            return;
+        }
+        for (const auto& child : node.args()) visit(child);
+    };
+    visit(expanded);
+    return discrete && readsObservable;
+}
+
+void OdeIntegrator::pruneDiscreteEventRoots() {
+    discreteEventConjuncts_.clear();
+    std::vector<std::pair<std::size_t, const ast::Expression*>> continuousRoots;
+    continuousRoots.reserve(nativeEventRoots_.size());
+    for (const auto& root : nativeEventRoots_) {
+        if (isDiscreteConjunct(*root.second)) {
+            discreteEventConjuncts_.insert(root.second);
+        } else {
+            continuousRoots.push_back(root);
+        }
+    }
+    // A discrete conjunct is piecewise constant: as a root function it is
+    // either identically zero or never changes sign between the solver's
+    // steps.  Its rising edge can only be an event execution or the start,
+    // where the triggers are tested directly.
+    nativeEventRoots_ = std::move(continuousRoots);
+}
+
 void OdeIntegrator::validateEventRootSurface() {
     if (nativeEvents_.empty()) return;
     const auto dynamic = [&](const ast::Expression& value) {
@@ -2351,13 +2436,22 @@ void OdeIntegrator::validateEventRootSurface() {
     };
     for (const auto& event : nativeEvents_) {
         const auto expandedTrigger = functionEvaluator_.expandFunctions(event.trigger);
-        for (const auto* conjunct : triggerConjuncts(expandedTrigger)) {
+        const auto originalConjuncts = triggerConjuncts(event.trigger);
+        const auto expandedConjuncts = triggerConjuncts(expandedTrigger);
+        for (std::size_t index = 0; index < expandedConjuncts.size(); ++index) {
+            const auto* conjunct = expandedConjuncts[index];
             const auto& arguments = conjunct->args();
-            if (!dynamic(arguments[0]) && !dynamic(arguments[1])) {
-                throw std::runtime_error(
-                    "bng3_events trigger requires one time or species observable "
-                    "against a static threshold");
+            if (dynamic(arguments[0]) || dynamic(arguments[1])) continue;
+            // A conjunct of any arithmetic form over species that only events
+            // change is admitted: it is re-tested at every event execution.
+            if (index < originalConjuncts.size() &&
+                isDiscreteConjunct(*originalConjuncts[index])) {
+                continue;
             }
+            throw std::runtime_error(
+                "bng3_events trigger requires one time or species observable "
+                "against a static threshold, or a comparison of species that only "
+                "events change");
         }
     }
     // The runtime's contract is uniform: the trigger's rising edge is the
@@ -4571,6 +4665,15 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                             // function or delay() side has no derivative in
                             // eventSideDerivative).
                             if (conjunct == risingConjunct) continue;
+                            if (discreteEventConjuncts_.count(conjunct)) {
+                                // Piecewise constant: it holds or it does not;
+                                // a zero slope says nothing about tangency.
+                                if (!triggerHolds(*conjunct, t, state.data())) {
+                                    conjunctionHolds = false;
+                                    break;
+                                }
+                                continue;
+                            }
                             const double value = eventRootValue(*conjunct, t, state.data());
                             const double tolerance = 1e-9 * (1.0 + std::abs(value));
                             if (value < -tolerance ||
@@ -5001,6 +5104,13 @@ OdeResult OdeIntegrator::integrateIda(const OdeOptions& opts) {
                         for (const auto* conjunct : triggerConjuncts(
                                  nativeEventGroups_[group].trigger)) {
                             if (conjunct == risingConjunct) continue;
+                            if (discreteEventConjuncts_.count(conjunct)) {
+                                if (!triggerHolds(*conjunct, time, state.data())) {
+                                    conjunctionHolds = false;
+                                    break;
+                                }
+                                continue;
+                            }
                             const double value = eventRootValue(
                                 *conjunct, time, state.data());
                             const double tolerance = 1e-9 * (1.0 + std::abs(value));

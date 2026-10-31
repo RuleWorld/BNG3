@@ -113,7 +113,7 @@ def test_integration_checks_precede_python_fanout_and_sdist():
     assert "python-integration" in ancestors(jobs, "package-smoke")
     assert "python-test" not in ancestors(jobs, "package-smoke")
     matrix = jobs["python-test"]["strategy"]["matrix"]
-    assert set(matrix["os"]) == {"ubuntu-22.04", "macos-14", "windows-2022"}
+    assert set(matrix["os"]) == {"ubuntu-22.04", "macos-15", "windows-2022"}
     assert matrix["python-version"] == ["3.9", "3.10", "3.11", "3.12", "3.13", "3.14"]
 
 
