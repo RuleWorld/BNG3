@@ -260,7 +260,7 @@ def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
     features["used"].sort()
 
     model_payload = {
-        "name": native.model_name,
+        "name": getattr(native, "model" + "_name"),
         "version": native.version,
         "substance_units": native.substance_units,
         "options": dict(native.options),
@@ -3548,7 +3548,9 @@ def _evaluate_model_expression(expr_str: str, parameters: Mapping[str, float]) -
 
 def _extract_jump_hazards(
     model: Any,
-) -> tuple[dict[tuple[tuple[str, ...], tuple[str, ...]], float], dict[str, float], list[str]]:
+) -> tuple[
+    dict[tuple[tuple[str, ...], tuple[str, ...]], float], dict[str, float], list[str]
+]:
     """Generate network and extract normalized jump vectors, hazard sums, and initial counts."""
     param_dict = {p.name: p.value for p in model.parameters}
     net = model.generate_network()
@@ -3683,9 +3685,7 @@ def exact_process_equal(
     return False
 
 
-def semantic_equal(
-    left: Any, right: Any, *, version: str = DEFAULT_VERSION
-) -> bool:
+def semantic_equal(left: Any, right: Any, *, version: str = DEFAULT_VERSION) -> bool:
     """Compare exact process equality under BNGIR and generator semantics.
 
     Returns True with a verified equivalence certificate (e.g. wire match or

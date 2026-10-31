@@ -97,7 +97,10 @@ def test_bngir_document_conforms_to_published_schema():
     for version in ("0.1", "0.2"):
         document = json.loads(model.to_bngir(version=version))
         schema_path = (
-            Path(__file__).parents[2] / "provenance" / "schemas" / f"bngir-{version}.schema.json"
+            Path(__file__).parents[2]
+            / "provenance"
+            / "schemas"
+            / f"bngir-{version}.schema.json"
         )
         jsonschema.validate(document, json.loads(schema_path.read_text()))
 
@@ -141,10 +144,14 @@ def test_bngir_preserves_model_and_simulation_protocol_actions():
     model = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(source))
     for version in ("0.1", "0.2"):
         schema_path = (
-            Path(__file__).parents[2] / "provenance" / "schemas" / f"bngir-{version}.schema.json"
+            Path(__file__).parents[2]
+            / "provenance"
+            / "schemas"
+            / f"bngir-{version}.schema.json"
         )
         jsonschema.validate(
-            json.loads(model.to_bngir(version=version)), json.loads(schema_path.read_text())
+            json.loads(model.to_bngir(version=version)),
+            json.loads(schema_path.read_text()),
         )
         restored = bionetgen.from_bngir(model.to_bngir(version=version))
         assert bionetgen.semantic_equal(model, restored, version=version)
@@ -833,7 +840,9 @@ end model
 """
     m1 = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(src1))
     m_renamed = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(src_renamed))
-    m_diff = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(src_diff_amount))
+    m_diff = bionetgen.BioNetGenModel(
+        bionetgen.model._cpp.parse_string(src_diff_amount)
+    )
 
     assert bionetgen.semantic_equal(m1, m_renamed)
     assert not bionetgen.semantic_equal(m1, m_diff)
