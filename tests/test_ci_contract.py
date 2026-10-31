@@ -1428,6 +1428,10 @@ def test_wheel_and_sdist_python_tests_prove_installed_package_identity():
     assert "check_python_package_identity.py" in smoke_job
     assert "test_thermodynamic_parse_path.py" in smoke_job
 
+    wheel_job = _workflow_job("wheels")
+    assert "check_python_package_identity.py" in wheel_job
+    assert "test_migration_workflows.py" in wheel_job
+
     integration_job = _workflow_job("python-integration")
     assert "BNG3_PYTHON_TEST_MODE: installed" in integration_job
     assert 'pip install ".[full]"' in integration_job
