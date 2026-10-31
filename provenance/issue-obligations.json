@@ -8179,178 +8179,1390 @@
     },
     {
       "number": 160,
-      "body_sha256": "2a09a233283fe1653a711d863806a2ae648b1bb93a61817c92851a9749e38df9",
+      "body_sha256": "70141b629d80219f8e6a0deef18d2bb0aabd0975217213435df926238542c8b1",
       "obligations": [
         {
-          "id": "issue:160:group-current-unsupported-cases-by-dynamic-rules-events-history",
-          "criterion": "Group current unsupported cases by dynamic rules/events, history, algebraic constraints, stoichiometry, fast reactions and packages.",
-          "scope": "Group current unsupported cases by dynamic rules/events, history, algebraic constraints, stoichiometry, fast reactions and packages.",
+          "id": "issue:160:release-sbml-core-comp",
+          "criterion": "`release-sbml-core-comp`: every assigned Core/comp row passes official expected values, independent flattening or analytic DAE/DDE checks.",
+          "scope": "All 117 Core/comp inventory rows assigned to #160, including the full required semantics; no subset-or-exclusion alternative.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "independently validated SBML source",
+            "Atomizer lowering",
+            "native execution or preserved metadata",
+            "independent row oracle"
+          ],
           "required_checks": [
             {
-              "id": "sbml-support-boundary:species-assignment-rule:named-diagnostic",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "id": "release-sbml-core-comp",
+              "evidence_kind": "supported-execution",
+              "expectation": "every assigned Core/comp row passes official expected values, independent flattening or analytic DAE/DDE checks.",
               "identity_requirements": [
-                "source.revision"
-              ]
-            },
-            {
-              "id": "sbml-support-boundary:state-dependent-event:named-diagnostic",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            },
-            {
-              "id": "sbml-support-boundary:delayed-history:named-diagnostic",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            },
-            {
-              "id": "sbml-support-boundary:algebraic-rule:named-diagnostic",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            },
-            {
-              "id": "sbml-support-boundary:sbml-constraint:named-diagnostic",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            },
-            {
-              "id": "sbml-support-boundary:negative-stoichiometry:named-diagnostic",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            },
-            {
-              "id": "sbml-support-boundary:fast-reaction:named-diagnostic",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            },
-            {
-              "id": "sbml-support-boundary:fbc-package:named-diagnostic",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            },
-            {
-              "id": "sbml-support-boundary:spatial-package:named-diagnostic",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
-              "identity_requirements": [
-                "source.revision"
-              ]
-            },
-            {
-              "id": "sbml-support-boundary:corpus:every-refusal-classified",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'sbml-support-boundary' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
-              "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
               ]
             }
           ],
           "test_references": [
-            "tests/cpp/test_sbml_reader.cpp",
-            "tests/cpp/test_sbml_units.cpp",
-            "tests/python/test_modern_atomizer_package_diagnostics.py",
-            "tests/python/test_modern_atomizer_units.py",
-            "tests/python/test_sbml_import.py",
-            "tests/validation/sbml_support_boundary.py"
+            "tests/validation/test_acceptance_queue.py",
+            "tests/validation/release/cases/issue-160/test_sbml_semantic_families.py"
           ],
-          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "completion_condition": "All named checks pass on exact clean main with independent row-oracle evidence. Missing cases, refusals, losses, timeouts and harness errors cannot pass. Diagnostic and historical tests are controls only.",
           "decisions": [],
-          "unmapped_scope": [
-            "The named checks cover a generated corpus of one unsupported construct per class; the full current unsupported-case set of the issue scope is not yet enumerated.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
-          "evidence_on_this_tree": {
-            "executable_named_checks": 0,
-            "disposition_named_checks": 10,
-            "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          },
-          "not_reapplied_from_recorded_revision": [
-            "tests/python/test_modern_atomizer_scope.py",
-            "tests/validation/test_sbml_support_boundary.py",
-            "tests/validation/sbml_support_boundary.py"
-          ]
+          "unmapped_scope": []
         },
         {
-          "id": "issue:160:for-each-class-implement-a-semantics-preserving-supported-subset",
-          "criterion": "For each class implement a semantics-preserving supported subset or record a specific maintained exclusion and diagnostic.",
-          "scope": "For each class implement a semantics-preserving supported subset or record a specific maintained exclusion and diagnostic.",
+          "id": "issue:160:release-sbml-source-fidelity",
+          "criterion": "`release-sbml-source-fidelity`: no valid required construct is omitted, frozen dynamically, approximated, or reported as successful execution after refusal.",
+          "scope": "All 117 Core/comp inventory rows assigned to #160, including the full required semantics; no subset-or-exclusion alternative.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "independently validated SBML source",
+            "Atomizer lowering",
+            "native execution or preserved metadata",
+            "independent row oracle"
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:160:for-each-class-implement-a-semantics-preserving-supported-subset",
-              "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "release-sbml-source-fidelity",
+              "evidence_kind": "supported-execution",
+              "expectation": "no valid required construct is omitted, frozen dynamically, approximated, or reported as successful execution after refusal.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
               ]
             }
           ],
-          "test_references": [],
-          "completion_condition": "Exact-revision result satisfies this obligation.",
-          "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:160:for-each-class-implement-a-semantics-preserving-supported-subset.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          "test_references": [
+            "tests/validation/test_acceptance_queue.py",
+            "tests/validation/release/cases/issue-160/test_sbml_semantic_families.py"
           ],
-          "evidence_on_this_tree": {
-            "executable_named_checks": 0,
-            "disposition_named_checks": 1,
-            "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          "completion_condition": "All named checks pass on exact clean main with independent row-oracle evidence. Missing cases, refusals, losses, timeouts and harness errors cannot pass. Diagnostic and historical tests are controls only.",
+          "decisions": [],
+          "unmapped_scope": []
         },
         {
-          "id": "issue:160:closure-record",
-          "criterion": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
-          "scope": "Record implementation or disposition, exact revision, validation commands and results, and remaining limits.",
+          "id": "issue:160:release-capability-coverage-160",
+          "criterion": "`release-capability-coverage-160`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
+          "scope": "All 117 Core/comp inventory rows assigned to #160, including the full required semantics; no subset-or-exclusion alternative.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "independently validated SBML source",
+            "Atomizer lowering",
+            "native execution or preserved metadata",
+            "independent row oracle"
+          ],
           "required_checks": [
             {
-              "id": "qualification:issue:160:closure-record",
-              "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "id": "release-capability-coverage-160",
+              "evidence_kind": "supported-execution",
+              "expectation": "all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
               "identity_requirements": [
-                "source.revision"
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.SBase.metaid]",
+              "evidence_kind": "supported-execution",
+              "expectation": "SBase.metaid: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.SBase.sboTerm]",
+              "evidence_kind": "supported-execution",
+              "expectation": "SBase.sboTerm: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.SBase.notes]",
+              "evidence_kind": "supported-execution",
+              "expectation": "SBase.notes: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.SBase.annotation]",
+              "evidence_kind": "supported-execution",
+              "expectation": "SBase.annotation: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Model.id]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Model.id: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Model.name]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Model.name: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Model.substanceUnits]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Model.substanceUnits: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Model.timeUnits]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Model.timeUnits: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Model.volumeUnits]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Model.volumeUnits: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Model.areaUnits]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Model.areaUnits: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Model.lengthUnits]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Model.lengthUnits: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Model.extentUnits]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Model.extentUnits: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Model.conversionFactor]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Model.conversionFactor: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.FunctionDefinition.id]",
+              "evidence_kind": "supported-execution",
+              "expectation": "FunctionDefinition.id: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.FunctionDefinition.lambda]",
+              "evidence_kind": "supported-execution",
+              "expectation": "FunctionDefinition.lambda: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.FunctionDefinition.bound-variables]",
+              "evidence_kind": "supported-execution",
+              "expectation": "FunctionDefinition.bound variables: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.FunctionDefinition.lexical-scope]",
+              "evidence_kind": "supported-execution",
+              "expectation": "FunctionDefinition.lexical scope: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.UnitDefinition.id]",
+              "evidence_kind": "supported-execution",
+              "expectation": "UnitDefinition.id: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.UnitDefinition.listOfUnits]",
+              "evidence_kind": "supported-execution",
+              "expectation": "UnitDefinition.listOfUnits: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Unit.kind]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Unit.kind: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Unit.exponent]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Unit.exponent: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Unit.scale]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Unit.scale: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Unit.multiplier]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Unit.multiplier: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Compartment.id]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Compartment.id: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Compartment.spatialDimensions]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Compartment.spatialDimensions: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Compartment.size]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Compartment.size: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Compartment.units]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Compartment.units: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Compartment.constant]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Compartment.constant: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Species.id]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Species.id: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Species.compartment]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Species.compartment: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Species.initialAmount]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Species.initialAmount: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Species.initialConcentration]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Species.initialConcentration: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Species.substanceUnits]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Species.substanceUnits: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Species.hasOnlySubstanceUnits]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Species.hasOnlySubstanceUnits: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Species.boundaryCondition]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Species.boundaryCondition: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Species.constant]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Species.constant: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Species.conversionFactor]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Species.conversionFactor: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Parameter.id]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Parameter.id: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Parameter.value]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Parameter.value: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Parameter.units]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Parameter.units: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Parameter.constant]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Parameter.constant: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.InitialAssignment.symbol]",
+              "evidence_kind": "supported-execution",
+              "expectation": "InitialAssignment.symbol: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.InitialAssignment.math]",
+              "evidence_kind": "supported-execution",
+              "expectation": "InitialAssignment.math: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.InitialAssignment.dependency-ordering]",
+              "evidence_kind": "supported-execution",
+              "expectation": "InitialAssignment.dependency ordering: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.AssignmentRule.variable]",
+              "evidence_kind": "supported-execution",
+              "expectation": "AssignmentRule.variable: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.AssignmentRule.math]",
+              "evidence_kind": "supported-execution",
+              "expectation": "AssignmentRule.math: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.AssignmentRule.dependency-ordering]",
+              "evidence_kind": "supported-execution",
+              "expectation": "AssignmentRule.dependency ordering: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.RateRule.variable]",
+              "evidence_kind": "supported-execution",
+              "expectation": "RateRule.variable: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.RateRule.math]",
+              "evidence_kind": "supported-execution",
+              "expectation": "RateRule.math: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.AlgebraicRule.math]",
+              "evidence_kind": "supported-execution",
+              "expectation": "AlgebraicRule.math: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.AlgebraicRule.coupled-differential-algebraic-equations]",
+              "evidence_kind": "supported-execution",
+              "expectation": "AlgebraicRule.coupled differential algebraic equations: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Constraint.math]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Constraint.math: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Constraint.message]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Constraint.message: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Reaction.id]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Reaction.id: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Reaction.reversible]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Reaction.reversible: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Reaction.fast-L3V1]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Reaction.fast (L3V1): execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Reaction.compartment]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Reaction.compartment: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Reaction.reactants]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Reaction.reactants: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Reaction.products]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Reaction.products: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.Reaction.modifiers]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Reaction.modifiers: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.SpeciesReference.species]",
+              "evidence_kind": "supported-execution",
+              "expectation": "SpeciesReference.species: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.SpeciesReference.stoichiometry]",
+              "evidence_kind": "supported-execution",
+              "expectation": "SpeciesReference.stoichiometry: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.SpeciesReference.constant]",
+              "evidence_kind": "supported-execution",
+              "expectation": "SpeciesReference.constant: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.SpeciesReference.id]",
+              "evidence_kind": "supported-execution",
+              "expectation": "SpeciesReference.id: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.ModifierSpeciesReference.species]",
+              "evidence_kind": "supported-execution",
+              "expectation": "ModifierSpeciesReference.species: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.KineticLaw.math]",
+              "evidence_kind": "supported-execution",
+              "expectation": "KineticLaw.math: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.KineticLaw.local-parameter-scope]",
+              "evidence_kind": "supported-execution",
+              "expectation": "KineticLaw.local parameter scope: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.LocalParameter.id]",
+              "evidence_kind": "supported-execution",
+              "expectation": "LocalParameter.id: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.LocalParameter.value]",
+              "evidence_kind": "supported-execution",
+              "expectation": "LocalParameter.value: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.LocalParameter.units]",
+              "evidence_kind": "supported-execution",
+              "expectation": "LocalParameter.units: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.cn-integer]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.cn integer: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.cn-real]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.cn real: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.cn-e-notation]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.cn e-notation: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.cn-rational]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.cn rational: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.ci]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.ci: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.csymbol-time]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.csymbol time: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.csymbol-delay]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.csymbol delay: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.csymbol-avogadro]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.csymbol avogadro: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.csymbol-rateOf]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.csymbol rateOf: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.piecewise]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.piecewise: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.lambda]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.lambda: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.arithmetic]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.arithmetic: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.relational]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.relational: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.logical]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.logical: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.trigonometric]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.trigonometric: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.hyperbolic]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.hyperbolic: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.exp-log-root]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.exp/log/root: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.factorial]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.factorial: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.quotient-rem]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.quotient/rem: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.min-max]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.min/max: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.infinity-NaN]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.infinity/NaN: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.core.MathML.boolean-constants]",
+              "evidence_kind": "supported-execution",
+              "expectation": "MathML.boolean constants: execute against official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.ModelDefinition.id]",
+              "evidence_kind": "supported-execution",
+              "expectation": "ModelDefinition.id: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.ModelDefinition.model-contents]",
+              "evidence_kind": "supported-execution",
+              "expectation": "ModelDefinition.model contents: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.ExternalModelDefinition.id]",
+              "evidence_kind": "supported-execution",
+              "expectation": "ExternalModelDefinition.id: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.ExternalModelDefinition.source]",
+              "evidence_kind": "supported-execution",
+              "expectation": "ExternalModelDefinition.source: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.ExternalModelDefinition.modelRef]",
+              "evidence_kind": "supported-execution",
+              "expectation": "ExternalModelDefinition.modelRef: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.ExternalModelDefinition.md5]",
+              "evidence_kind": "supported-execution",
+              "expectation": "ExternalModelDefinition.md5: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.Submodel.id]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Submodel.id: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.Submodel.modelRef]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Submodel.modelRef: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.Submodel.timeConversionFactor]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Submodel.timeConversionFactor: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.Submodel.extentConversionFactor]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Submodel.extentConversionFactor: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.Submodel.deletions]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Submodel.deletions: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.SBaseRef.portRef]",
+              "evidence_kind": "supported-execution",
+              "expectation": "SBaseRef.portRef: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.SBaseRef.idRef]",
+              "evidence_kind": "supported-execution",
+              "expectation": "SBaseRef.idRef: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.SBaseRef.unitRef]",
+              "evidence_kind": "supported-execution",
+              "expectation": "SBaseRef.unitRef: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.SBaseRef.metaIdRef]",
+              "evidence_kind": "supported-execution",
+              "expectation": "SBaseRef.metaIdRef: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.SBaseRef.nested-sBaseRef]",
+              "evidence_kind": "supported-execution",
+              "expectation": "SBaseRef.nested sBaseRef: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.Port.id]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Port.id: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.Port.reference]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Port.reference: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.Deletion.reference]",
+              "evidence_kind": "supported-execution",
+              "expectation": "Deletion.reference: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.ReplacedElement.submodelRef]",
+              "evidence_kind": "supported-execution",
+              "expectation": "ReplacedElement.submodelRef: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.ReplacedElement.deletion]",
+              "evidence_kind": "supported-execution",
+              "expectation": "ReplacedElement.deletion: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.ReplacedElement.conversionFactor]",
+              "evidence_kind": "supported-execution",
+              "expectation": "ReplacedElement.conversionFactor: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.ReplacedElement.reference]",
+              "evidence_kind": "supported-execution",
+              "expectation": "ReplacedElement.reference: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.ReplacedBy.submodelRef]",
+              "evidence_kind": "supported-execution",
+              "expectation": "ReplacedBy.submodelRef: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
+              ]
+            },
+            {
+              "id": "release-capability[sbml.comp.ReplacedBy.reference]",
+              "evidence_kind": "supported-execution",
+              "expectation": "ReplacedBy.reference: execute against libSBML/JSBML flattening plus independent source simulation and preserve source semantics; refusal or loss diagnostics cannot pass.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256",
+                "references.sbml.revision",
+                "references.sbml.sha256"
               ]
             }
           ],
-          "test_references": [],
-          "completion_condition": "Exact-revision result satisfies this obligation.",
-          "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:160:closure-record.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          "test_references": [
+            "tests/validation/test_acceptance_queue.py",
+            "tests/validation/release/cases/issue-160/test_sbml_semantic_families.py"
           ],
-          "evidence_on_this_tree": {
-            "executable_named_checks": 0,
-            "disposition_named_checks": 1,
-            "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          "completion_condition": "All named checks pass on exact clean main with independent row-oracle evidence. Missing cases, refusals, losses, timeouts and harness errors cannot pass. Diagnostic and historical tests are controls only.",
+          "decisions": [],
+          "unmapped_scope": []
         }
       ]
     },

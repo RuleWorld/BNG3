@@ -360,6 +360,23 @@ def assess_obligations(obligations, reports, revision):
                         and row.get("evidence_kind") != kind
                     ):
                         record["missing_evidence"].append("evidence_kind:" + kind)
+                    # A successful conversion/process may still report lost
+                    # required semantics. Receipt labels cannot override loss.
+                    if kind == "supported-execution" and any(
+                        str(diagnostic.get("severity", "")).lower()
+                        in {
+                            "dropped",
+                            "approximated",
+                            "unsupported",
+                            "untranslated",
+                            "error",
+                        }
+                        for diagnostic in row.get("diagnostics", [])
+                        if isinstance(diagnostic, dict)
+                    ):
+                        record["missing_evidence"].append(
+                            "loss diagnostics prevent supported execution"
+                        )
                 if row["status"] not in {"NOT_TESTED", "UNSUPPORTED", "INVALID_INPUT"}:
                     for path in required.get("identity_requirements", []):
                         if not _identity_value(report, path):

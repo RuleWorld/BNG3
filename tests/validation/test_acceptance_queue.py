@@ -450,3 +450,104 @@ def test_campaign_does_not_schedule_closed_only_obligations_or_findings():
     shared = dict(finding, related_issues=[141, 151])
     plans = q.select_campaign([], findings=[shared], active_issues={141})
     assert plans and plans[0]["issues"] == [141]
+
+
+def test_issue160_requires_full_execution_scope_not_dispositions():
+    """#160 retains all Core/comp rows and the three live acceptance checks."""
+    import json
+
+    catalog = json.loads((q.ROOT / "provenance/issue-obligations.json").read_text())
+    issue = next(item for item in catalog["issues"] if item["number"] == 160)
+    matrix = json.loads((q.ROOT / "provenance/capability-matrix.yml").read_text())
+    rows = [row for row in matrix["rows"] if row["issue"] == 160]
+    required = [check for o in issue["obligations"] for check in o["required_checks"]]
+    expected = {
+        "release-sbml-core-comp",
+        "release-sbml-source-fidelity",
+        "release-capability-coverage-160",
+        *(f"release-capability[{row['id']}]" for row in rows),
+    }
+    assert len(rows) == 117
+    assert {check["id"] for check in required} == expected
+    assert all(check["evidence_kind"] == "supported-execution" for check in required)
+    assert all(
+        set(c["identity_requirements"])
+        == {
+            "source.revision",
+            "subject.sha256",
+            "references.sbml.revision",
+            "references.sbml.sha256",
+        }
+        for c in required
+    )
+    # Matching, optimistically labelled receipts still need both independent
+    # oracle identity and the exact subject artifact, not just a git revision.
+    report = dict(
+        source=dict(revision=REV, dirty=False),
+        results=[
+            dict(
+                id=c["id"],
+                status="PASS",
+                supported_execution=True,
+                evidence_kind="supported-execution",
+            )
+            for c in required
+        ],
+    )
+    result = q.assess_obligations(issue["obligations"], [report], REV)
+    assert {o["status"] for o in result["obligations"]} == {"EVIDENCE_GAP"}
+
+    # Even reusing every required identity cannot promote a diagnostic pass or
+    # an unsupported required input into successful scientific execution.
+    for status, kind, expected_status in (
+        ("PASS", "diagnostic-only", "EVIDENCE_GAP"),
+        ("PASS", None, "EVIDENCE_GAP"),  # ordinary/historical pytest pass
+        ("UNSUPPORTED", "diagnostic-only", "UNSUPPORTED"),
+    ):
+        report = dict(
+            source=dict(revision=REV, dirty=False),
+            results=[
+                dict(
+                    id=c["id"],
+                    status=status,
+                    evidence_kind=kind,
+                    supported_execution=False,
+                )
+                for c in required
+            ],
+        )
+        result = q.assess_obligations(issue["obligations"], [report], REV)
+        assert {o["status"] for o in result["obligations"]} == {expected_status}
+    result = q.assess_obligations(issue["obligations"], [], REV)
+    assert {o["status"] for o in result["obligations"]} == {"NOT_TESTED"}
+
+
+def test_supported_execution_labels_cannot_override_recorded_loss():
+    for severity in (
+        "dropped",
+        "approximated",
+        "unsupported",
+        "untranslated",
+        "error",
+        "ERROR",
+    ):
+        row = dict(
+            id="consumer:values",
+            status="PASS",
+            supported_execution=True,
+            evidence_kind="supported-execution",
+            diagnostics=[
+                dict(
+                    category="mathml",
+                    severity=severity,
+                    message="required semantics lost",
+                )
+            ],
+        )
+        result = assess([row])["obligations"][0]
+        assert result["status"] == "EVIDENCE_GAP"
+        assert (
+            "loss diagnostics prevent supported execution" in result["missing_evidence"]
+        )
+    row["diagnostics"][0]["severity"] = "info"
+    assert assess([row])["obligations"][0]["status"] == "DEMONSTRATED"

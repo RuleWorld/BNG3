@@ -1,25 +1,19 @@
-"""Release acceptance tests for Issue 160: SBML Core semantic families.
+"""Diagnostic and lowering controls related to issue #160.
 
-This suite qualifies the three remaining SBML Core semantic families:
-1. Fast reactions (SBML Level 3 Version 1 Core Sec. 4.11 / L2 Sec. 4.13)
-2. Algebraic rules (SBML Level 3 Version 2 Core Sec. 4.9.2)
-3. State-dependent delays (SBML Level 3 Version 2 Core Sec. 3.4.6)
-
-Checks verify that solvable subsets reduce exactly to their analytic or
-assignment representations, while unrepresented subsets emit explicit
-structured loss diagnostics with loss severities ("dropped", "approximated",
-"unsupported"), satisfying release-sbml-source-fidelity and
-release-capability-coverage-160.
+Passing these tests does not qualify Core/comp execution or release capability
+coverage. Campaign assertions describe a historical snapshot. Loss diagnostics
+identify required semantics still to implement, even when Atomizer.success is
+true. The negative control uses the existing obligation assessor to enforce that
+separation; it does not simulate the unsupported fast subsystem.
 """
 
 from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+import libsbml
 
-import numpy as np
-import pytest
+from tests.validation import issue_queue
 
 from bionetgen.atomizer.modern import Atomizer
 from bionetgen.atomizer.modern.parser import SBMLParser
@@ -78,8 +72,8 @@ TARGET_CASES = {
 LOSS_SEVERITIES = frozenset({"dropped", "approximated", "unsupported", "untranslated"})
 
 
-def test_campaign_evidence_case_ranking_and_triage():
-    """Verify that all 9 official SBML cases match the campaign evidence."""
+def test_historical_campaign_case_ranking_and_triage():
+    """Check the dated snapshot, never current execution or capability."""
     assert CAMPAIGN_JSON.exists(), f"Missing campaign report at {CAMPAIGN_JSON}"
     with open(CAMPAIGN_JSON, encoding="utf-8") as f:
         data = json.load(f)
@@ -139,8 +133,8 @@ def test_fast_reaction_solvable_exact_lowering():
     )
 
 
-def test_unsolvable_fast_reaction_emits_loss_diagnostic():
-    """An unsolvable fast reaction emits an explicit loss diagnostic."""
+def _unsupported_fast_source():
+    """A valid L3V1 bimolecular fast subsystem requiring equilibrium solving."""
     xml = """<?xml version="1.0" encoding="UTF-8"?>
 <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1">
   <model id="fast_unsolvable">
@@ -148,9 +142,9 @@ def test_unsolvable_fast_reaction_emits_loss_diagnostic():
       <compartment id="c" size="1.0" constant="true"/>
     </listOfCompartments>
     <listOfSpecies>
-      <species id="A" compartment="c" initialAmount="2.0" hasOnlySubstanceUnits="true" constant="false"/>
-      <species id="B" compartment="c" initialAmount="3.0" hasOnlySubstanceUnits="true" constant="false"/>
-      <species id="C_spec" compartment="c" initialAmount="0.0" hasOnlySubstanceUnits="true" constant="false"/>
+      <species id="A" compartment="c" initialAmount="2.0" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+      <species id="B" compartment="c" initialAmount="3.0" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+      <species id="C_spec" compartment="c" initialAmount="0.0" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
     </listOfSpecies>
     <listOfParameters>
       <parameter id="k" value="1.0" constant="true"/>
@@ -173,6 +167,12 @@ def test_unsolvable_fast_reaction_emits_loss_diagnostic():
     </listOfReactions>
   </model>
 </sbml>"""
+    return xml
+
+
+def test_unsolvable_fast_reaction_emits_loss_diagnostic():
+    """A diagnostic pass is a control, not supported fast execution."""
+    xml = _unsupported_fast_source()
     atomizer = Atomizer({"quietMode": True, "logLevel": "INFO", "t_end": 10})
     result = atomizer.atomize(xml)
     assert result.success
@@ -325,12 +325,63 @@ def test_unrepresentable_delay_function_emits_diagnostic():
     assert "delay" in delay_warnings[0]["message"].lower()
 
 
-def test_source_fidelity_no_silent_approximation():
-    """Verify that unsupported features across semantic families never convert cleanly without diagnostics."""
-    for case_id, info in TARGET_CASES.items():
-        assert info["reason_signature"] in {
-            "fast-reaction:no-fast-equilibrium-solve",
-            "events:state-trigger-not-schedulable",
-            "events:untranslated",
-            "sbml-writer:unrepresentable-function",
-        }
+def test_required_unsupported_fast_input_cannot_pass_capability():
+    """Valid required input with a loss cannot pass the real acceptance assessor."""
+    xml = _unsupported_fast_source()
+    source = libsbml.readSBMLFromString(xml)
+    source.checkConsistency()
+    errors = [
+        source.getError(i).getMessage()
+        for i in range(source.getNumErrors())
+        if source.getError(i).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
+    ]
+    assert not errors, errors
+
+    atomizer = Atomizer({"quietMode": True, "logLevel": "INFO", "t_end": 10})
+    result = atomizer.atomize(xml)
+    losses = [
+        w
+        for w in atomizer.model.import_warnings
+        if w.get("category") == "fastReaction" and w.get("severity") in LOSS_SEVERITIES
+    ]
+    assert losses, result.error
+
+    catalog = json.loads((REPO / "provenance/issue-obligations.json").read_text())
+    issue = next(i for i in catalog["issues"] if i["number"] == 160)
+    coverage = next(
+        o
+        for o in issue["obligations"]
+        if o["id"] == "issue:160:release-capability-coverage-160"
+    )
+    check_id = "release-capability[sbml.core.Reaction.fast-L3V1]"
+    required = next(c for c in coverage["required_checks"] if c["id"] == check_id)
+    revision = "a" * 40  # Synthetic harness receipt, never a product qualification.
+    # A producer may mislabel a successful conversion with semantic loss.
+    # The observed loss must remain authoritative even with optimistic labels.
+    for kind, supported in (("diagnostic-only", False), ("supported-execution", True)):
+        report = dict(
+            source=dict(revision=revision, dirty=False),
+            subject=dict(sha256="b" * 64),
+            references=dict(sbml=dict(revision="c" * 40, sha256="d" * 64)),
+            results=[
+                dict(
+                    id=check_id,
+                    status="PASS",
+                    evidence_kind=kind,
+                    supported_execution=supported,
+                    diagnostics=[
+                        dict(
+                            severity=w.get("severity"),
+                            category=w.get("category"),
+                            message=w.get("message"),
+                        )
+                        for w in losses
+                    ],
+                )
+            ],
+        )
+        assessed = issue_queue.assess_obligations(
+            [dict(coverage, required_checks=[required])], [report], revision
+        )["obligations"][0]
+        assert assessed["checks"][0]["status"] == "EVIDENCE_GAP"
+        assert assessed["status"] != "DEMONSTRATED"
