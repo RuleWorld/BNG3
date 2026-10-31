@@ -146,3 +146,100 @@ end model
     ]
     assert seed_only.reactions == ()
     assert seed_only.stoichiometric_matrix.shape == (1, 0)
+
+
+def test_complexes_and_rate_laws_for_reversible_network(tmp_path):
+    model = _load_model(
+        tmp_path,
+        "binding.bngl",
+        """
+begin model
+begin parameters
+    kon 10.0
+    koff 2.0
+end parameters
+begin molecule types
+    A(b)
+    B(a)
+end molecule types
+begin seed species
+    A(b) 100
+    B(a) 50
+end seed species
+begin reaction rules
+    bind: A(b) + B(a) <-> A(b!1).B(a!1) kon, koff
+end reaction rules
+end model
+""",
+    )
+
+    # 3 species: A(b), B(a), A(b!1).B(a!1)
+    assert len(model.species) == 3
+    # 2 unique complexes: {A, B} (indices 0, 1) and {AB} (index 2)
+    assert len(model.complexes) == 2
+    c0 = model.complexes[0]
+    c1 = model.complexes[1]
+    assert c0.index == 0
+    assert c0.species == (0, 1)
+    assert c1.index == 1
+    assert c1.species == (2,)
+
+    # 2 reactions: forward (c0 -> c1) and reverse (c1 -> c0)
+    assert len(model.reactions) == 2
+    r_fwd = model.reactions[0]
+    r_rev = model.reactions[1]
+
+    assert r_fwd.reactant_complex == 0
+    assert r_fwd.product_complex == 1
+    assert r_fwd.rate_law.type == "mass_action"
+    assert r_fwd.rate_law.expression == "kon"
+    assert r_fwd.rate_law.factor == 1.0
+    assert r_fwd.rate_law.parameters == ("kon",)
+
+    assert r_rev.reactant_complex == 1
+    assert r_rev.product_complex == 0
+    assert r_rev.rate_law.type == "mass_action"
+    assert r_rev.rate_law.expression == "koff"
+    assert r_rev.rate_law.factor == 1.0
+    assert r_rev.rate_law.parameters == ("koff",)
+
+
+def test_crn_export_and_json_serialization(tmp_path):
+    model = _load_model(
+        tmp_path,
+        "model.bngl",
+        """
+begin model
+begin parameters
+    k 1.5
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin reaction rules
+    r1: A() -> B() k
+end reaction rules
+end model
+""",
+    )
+
+    crn_dict = model.to_crn()
+    assert crn_dict["version"] == "1.0"
+    assert len(crn_dict["species"]) == 2
+    assert len(crn_dict["complexes"]) == 2
+    assert len(crn_dict["reactions"]) == 1
+    assert crn_dict["reactions"][0]["reactant_complex"] == 0
+    assert crn_dict["reactions"][0]["product_complex"] == 1
+    assert crn_dict["reactions"][0]["rate_law"]["expression"] == "k"
+    assert crn_dict["reactions"][0]["rate_law"]["parameters"] == ["k"]
+
+    json_file = tmp_path / "crn.json"
+    model.write_crn(json_file)
+    import json
+
+    loaded = json.loads(json_file.read_text(encoding="utf-8"))
+    assert loaded == crn_dict
