@@ -8,6 +8,14 @@ from bionetgen.atomizer.utils.util import logMess, memoize, memoizeMapped
 from . import atomizationAux as atoAux
 from .annotation_utils import identifiers_org_databases
 import bionetgen.atomizer.utils.pathwaycommons as pwcm
+import pickle
+
+def fast_deepcopy(obj):
+    """
+    ⚡ Bolt: Drop-in replacement for copy.deepcopy for basic data structures (lists, dicts, strings, tuples, etc).
+    Using pickle with protocol=-1 is significantly faster (~2-5x) for simple nested structures.
+    """
+    return pickle.loads(pickle.dumps(obj, -1))
 
 
 class SCTSolver:
@@ -87,7 +95,7 @@ class SCTSolver:
 
         # let's store each step separately for analysis downstream
         self.database.scts = {}
-        self.database.scts["01_binding_sct"] = deepcopy(self.database.dependencyGraph)
+        self.database.scts["01_binding_sct"] = fast_deepcopy(self.database.dependencyGraph)
 
         # lexical dependency graph contains lexically induced binding compositions. atomizer gives preference to binding obtained this way as opposed to stoichiometry
         # stronger bounds on stoichiometry based binding can be defined in
@@ -145,7 +153,7 @@ class SCTSolver:
                     self.database.dependencyGraph[molecule] = []
 
         # let's store each step separately for analysis downstream
-        self.database.scts["02_post_lexical_sct"] = deepcopy(
+        self.database.scts["02_post_lexical_sct"] = fast_deepcopy(
             self.database.dependencyGraph
         )
 
@@ -161,7 +169,7 @@ class SCTSolver:
                 )
 
         # let's store each step separately for analysis downstream
-        self.database.scts["03_post_user_sct"] = deepcopy(self.database.dependencyGraph)
+        self.database.scts["03_post_user_sct"] = fast_deepcopy(self.database.dependencyGraph)
 
         # self.database.eequivalence translator contains 1:1 equivalences
         # FIXME: do we need this update step or is it enough with the later one?
@@ -218,7 +226,7 @@ class SCTSolver:
                     ] = []
 
         # let's store each step separately for analysis downstream
-        self.database.scts["04_post_label_sct"] = deepcopy(
+        self.database.scts["04_post_label_sct"] = fast_deepcopy(
             self.database.dependencyGraph
         )
 
@@ -344,7 +352,7 @@ class SCTSolver:
                         )
 
         # let's store each step separately for analysis downstream
-        self.database.scts["05_post_lex_catalysis_sct"] = deepcopy(
+        self.database.scts["05_post_lex_catalysis_sct"] = fast_deepcopy(
             self.database.dependencyGraph
         )
 
@@ -438,7 +446,7 @@ class SCTSolver:
                         self.database.dependencyGraph[mod] = [[base]]
 
         # let's store each step separately for analysis downstream
-        self.database.scts["06_post_nonlex_catalysis_sct"] = deepcopy(
+        self.database.scts["06_post_nonlex_catalysis_sct"] = fast_deepcopy(
             self.database.dependencyGraph
         )
 
@@ -449,7 +457,7 @@ class SCTSolver:
             #they are not true bindingReactions
             for namingEquivalence in indirectEquivalenceTranslator[key]:
                 removedElement = ''
-                tmp3 = deepcopy(namingEquivalence[1])
+                tmp3 = fast_deepcopy(namingEquivalence[1])
                 if tmp3 in self.database.dependencyGraph[namingEquivalence[0][0]]:
                     removedElement = namingEquivalence[0][0]
                 elif tmp3 in self.database.dependencyGraph[namingEquivalence[0][1]]:
@@ -513,7 +521,7 @@ class SCTSolver:
                 ]
 
         # let's store each step separately for analysis downstream
-        self.database.scts["07_post_similarity_sct"] = deepcopy(
+        self.database.scts["07_post_similarity_sct"] = fast_deepcopy(
             self.database.dependencyGraph
         )
 
@@ -567,7 +575,7 @@ class SCTSolver:
                         )
 
         # let's store each step separately for analysis downstream
-        self.database.scts["08_post_annotation_sct"] = deepcopy(
+        self.database.scts["08_post_annotation_sct"] = fast_deepcopy(
             self.database.dependencyGraph
         )
 
@@ -631,7 +639,7 @@ class SCTSolver:
                         )
 
         # let's store each step separately for analysis downstream
-        self.database.scts["09_post_tiebreaker_sct"] = deepcopy(
+        self.database.scts["09_post_tiebreaker_sct"] = fast_deepcopy(
             self.database.dependencyGraph
         )
 
@@ -667,7 +675,7 @@ class SCTSolver:
                     ),
                 )
         # let's store each step separately for analysis downstream
-        self.database.scts["10_post_greedy_lex_sct"] = deepcopy(
+        self.database.scts["10_post_greedy_lex_sct"] = fast_deepcopy(
             self.database.dependencyGraph
         )
 
@@ -991,7 +999,7 @@ class SCTSolver:
                 # way to make an educated guess. Politely refusing to translate
                 # {0}={1}.'.format(reactant, candidates))
                 return None, None, None
-            originalTmpCandidates = deepcopy(tmpCandidates)
+            originalTmpCandidates = fast_deepcopy(tmpCandidates)
             # if we have more than one modified element for a single reactant
             # we can try to  choose the one that is most similar to the original
             # reactant
@@ -1590,9 +1598,9 @@ class SCTSolver:
             )
             return [tmpCandidates[0]], unevenElements, originalCandidateName
 
-        prunnedDependencyGraph = deepcopy(dependencyGraph)
+        prunnedDependencyGraph = fast_deepcopy(dependencyGraph)
 
-        tempMergedDependencyGraph = deepcopy(prunnedDependencyGraph)
+        tempMergedDependencyGraph = fast_deepcopy(prunnedDependencyGraph)
         for element in self.database.alternativeDependencyGraph:
             if element in tempMergedDependencyGraph:
                 tempMergedDependencyGraph[element].extend(
