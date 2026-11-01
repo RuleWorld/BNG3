@@ -196,8 +196,7 @@ def test_jax_ssa_matches_analytic_first_order_survival_distribution():
     t_end = 2.0
     batch_size = 8192
     alpha = 0.001
-    model = cpp.parse_string(
-        f"""begin model
+    model = cpp.parse_string(f"""begin model
 begin parameters
 k {rate}
 end parameters
@@ -212,8 +211,7 @@ end seed species
 begin reaction rules
 A() -> B() k
 end reaction rules
-end model"""
-    )
+end model""")
     network = cpp.generate_network(model)
 
     result = jax_ssa.simulate(
