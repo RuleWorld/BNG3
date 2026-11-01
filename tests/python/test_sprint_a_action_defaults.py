@@ -185,3 +185,64 @@ def test_bngl_simulate_print_end_controls_final_network(tmp_path, print_end):
         assert amount_by_species["B()"] == pytest.approx(10.0 - expected_a, abs=1e-6)
     else:
         assert not end_net.exists()
+
+
+@pytest.mark.parametrize("print_active", [0, 1])
+def test_bngl_simulate_print_n_species_active_controls_ode_jdat(tmp_path, print_active):
+    source = tmp_path / f"print_active_{print_active}.bngl"
+    source.write_text(
+        SOURCE
+        + "\nbegin actions\n"
+        + f'  simulate({{method=>"ode",prefix=>"custom",t_end=>1,n_steps=>2,print_n_species_active=>{print_active}}})\n'
+        + "end actions\n",
+        encoding="utf-8",
+    )
+    bng_cpp = Path(__file__).resolve().parents[2] / "build/cpp/bng_cpp"
+    run_dir = tmp_path / f"run_{print_active}"
+
+    _, gdat, error = runner.run_cli_path(bng_cpp, source, run_dir)
+
+    assert gdat is not None, error
+    jdat = run_dir / "custom.jdat"
+    if not print_active:
+        assert not jdat.exists()
+        return
+
+    rows = [
+        [float(value) for value in line.split()]
+        for line in jdat.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    assert [row[0] for row in rows] == [0.0, 0.5, 1.0]
+    assert [int(row[1]) for row in rows] == [1, 2, 2]
+    assert [int(row[2]) for row in rows] == [0, 0, 0]
+    assert [int(row[3]) for row in rows] == [2, 2, 2]
+    observable_rows = [
+        [float(value) for value in line.split()]
+        for line in gdat.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    for time, a_count, b_count in observable_rows:
+        expected_a = 10.0 * math.exp(-0.4 * time)
+        assert a_count == pytest.approx(expected_a, abs=1e-6)
+        assert b_count == pytest.approx(10.0 - expected_a, abs=1e-6)
+
+
+@pytest.mark.parametrize("method", ["ssa", "pla", "psa", "nf"])
+def test_bngl_simulate_print_n_species_active_rejects_unqualified_methods(
+    tmp_path, method
+):
+    source = tmp_path / f"print_active_{method}.bngl"
+    source.write_text(
+        SOURCE
+        + "\nbegin actions\n"
+        + f'  simulate({{method=>"{method}",t_end=>1,n_steps=>2,print_n_species_active=>1,seed=>1}})\n'
+        + "end actions\n",
+        encoding="utf-8",
+    )
+    bng_cpp = Path(__file__).resolve().parents[2] / "build/cpp/bng_cpp"
+
+    _, gdat, error = runner.run_cli_path(bng_cpp, source, tmp_path / f"run_{method}")
+
+    assert gdat is None
+    assert "print_n_species_active is currently supported only for ODE methods" in error

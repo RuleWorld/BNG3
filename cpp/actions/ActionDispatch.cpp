@@ -1861,6 +1861,15 @@ void runSimulation(
         opts.method = "cvode";  // Default to CVODE (matches BNG2)
     }
 
+    const auto printActiveText = lowercase(
+        stripQuotes(readArgument(action, "print_n_species_active", "0")));
+    const bool printActiveSpecies = printActiveText != "" && printActiveText != "0";
+    if (printActiveSpecies && opts.method != "cvode" && opts.method != "euler" &&
+        opts.method != "rk4") {
+        throw std::runtime_error(
+            "print_n_species_active is currently supported only for ODE methods");
+    }
+
     // Parse seed for stochastic finite-network methods.
     if (opts.method == "ssa" || opts.method == "pla" || opts.method == "psa") {
         const auto seedText = readArgument(action, "seed", "");
@@ -2172,6 +2181,10 @@ void runSimulation(
         integrator.writeBinaryOutputFiles(outputPrefix.string(), result, opts.printCDAT);
     } else {
         integrator.writeOutputFiles(outputPrefix.string(), result, opts.printCDAT, opts.printFunctions, continueSimulation);
+    }
+    if (printActiveSpecies) {
+        integrator.writeSpeciesStatsFile(
+            outputPrefix.string(), result, continueSimulation);
     }
     // Write std-dev file (.bdat) when running in batch SSA mode
     if (result.batchSize > 0 && !opts.binaryOutput) {
@@ -2610,6 +2623,12 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
     };
 
     const auto runNfSimulation = [&](const ast::Action& action) {
+        const auto printActiveText = lowercase(
+            stripQuotes(readArgument(action, "print_n_species_active", "0")));
+        if (printActiveText != "" && printActiveText != "0") {
+            throw std::runtime_error(
+                "print_n_species_active is currently supported only for ODE methods");
+        }
         if (model.getEventFormatVersion().has_value()) {
             throw std::runtime_error(ast::kUnsupportedEventExecutionMessage);
         }

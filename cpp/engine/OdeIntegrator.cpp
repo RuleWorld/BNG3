@@ -4036,6 +4036,35 @@ void OdeIntegrator::writeOutputFiles(const std::string& prefix, const OdeResult&
     rows.flush();
 }
 
+void OdeIntegrator::writeSpeciesStatsFile(
+    const std::string& prefix, const OdeResult& result, bool append) const {
+    std::ofstream jdat(prefix + ".jdat", append ? std::ios::app : std::ios::trunc);
+    if (!jdat) {
+        throw std::runtime_error("Failed to open " + prefix + ".jdat for writing");
+    }
+
+    if (!append) {
+        jdat << "#" << std::setw(18) << "time"
+             << std::setw(19) << "curr_pop_species"
+             << std::setw(19) << "ever_pop_species"
+             << std::setw(19) << "tot_species_net" << "\n";
+    }
+
+    const std::size_t startStep = append ? 1 : 0;
+    for (std::size_t step = startStep; step < result.timePoints.size(); ++step) {
+        const auto& concentrations = result.concentrations[step];
+        const auto activeSpecies = static_cast<std::size_t>(std::count_if(
+            concentrations.begin(), concentrations.end(),
+            [](double amount) { return amount > 0.0; }));
+        jdat << std::scientific << std::setprecision(12)
+             << std::setw(19) << result.timePoints[step]
+             << std::defaultfloat
+             << std::setw(19) << activeSpecies
+             << std::setw(19) << 0
+             << std::setw(19) << network_.species.size() << "\n";
+    }
+}
+
 void OdeIntegrator::writeBinaryOutputFiles(const std::string& prefix, const OdeResult& result, bool printCDAT) const {
     if (printCDAT) {
         std::ofstream cdat(prefix + ".cdat", std::ios::binary | std::ios::trunc);

@@ -100,6 +100,7 @@ public:
     void setAlgebraicRules(
         const std::vector<std::pair<std::string, std::string>>& rules);
     void writeOutputFiles(const std::string& prefix, const OdeResult& result, bool printCDAT = true, bool printFunctions = false, bool append = false) const;
+    void writeSpeciesStatsFile(const std::string& prefix, const OdeResult& result, bool append = false) const;
     void writeBinaryOutputFiles(const std::string& prefix, const OdeResult& result, bool printCDAT = true) const;
     void writeBatchStdDevsFile(const std::string& prefix, const OdeResult& result) const;
     void derivs(double t, const double* y, double* dydt) const;
