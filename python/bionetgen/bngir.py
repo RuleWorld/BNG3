@@ -11,7 +11,9 @@ from __future__ import annotations
 import json
 import math
 import re
+import ast
 from collections.abc import Mapping
+from fractions import Fraction
 from typing import Any
 
 FORMAT = "BNGIR"
@@ -3527,38 +3529,64 @@ class EqualityUndecided(Exception):
         self.diagnostic = dict(diagnostic or {})
 
 
-def _evaluate_model_expression(expr_str: str, parameters: Mapping[str, float]) -> float:
-    """Safely evaluate an arithmetic parameter expression to a float."""
+def _evaluate_model_expression_exact(
+    expr_str: str, parameters: Mapping[str, Fraction]
+) -> Fraction:
+    """Evaluate the rational arithmetic subset without rounding.
+
+    This evaluator is intentionally smaller than BNGL's expression language.
+    Equality outside the subset must remain undecided rather than being
+    established by floating-point proximity.
+    """
     try:
-        return float(expr_str)
-    except (ValueError, TypeError):
-        pass
-    if expr_str in parameters:
-        return float(parameters[expr_str])
-    allowed = {
-        "__builtins__": {},
-        "abs": abs,
-        "exp": math.exp,
-        "log": math.log,
-        "sqrt": math.sqrt,
-        **parameters,
-    }
-    return float(eval(expr_str, allowed, {}))
+        root = ast.parse(expr_str, mode="eval").body
+    except SyntaxError as exc:
+        raise ValueError(f"not a rational arithmetic expression: {expr_str}") from exc
+
+    def visit(node: ast.AST) -> Fraction:
+        if isinstance(node, ast.Constant) and isinstance(node.value, (int, float)):
+            return Fraction(str(node.value))
+        if isinstance(node, ast.Name) and node.id in parameters:
+            return parameters[node.id]
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            value = visit(node.operand)
+            return value if isinstance(node.op, ast.UAdd) else -value
+        if isinstance(node, ast.BinOp):
+            left, right = visit(node.left), visit(node.right)
+            if isinstance(node.op, ast.Add):
+                return left + right
+            if isinstance(node.op, ast.Sub):
+                return left - right
+            if isinstance(node.op, ast.Mult):
+                return left * right
+            if isinstance(node.op, ast.Div):
+                if right == 0:
+                    raise ValueError("division by zero in rational expression")
+                return left / right
+            if isinstance(node.op, ast.Pow) and right.denominator == 1:
+                return left**right.numerator
+        raise ValueError(f"expression is outside exact rational arithmetic: {expr_str}")
+
+    return visit(root)
 
 
 def _extract_jump_hazards(
     model: Any,
 ) -> tuple[
-    dict[tuple[tuple[str, ...], tuple[str, ...]], float], dict[str, float], list[str]
+    dict[tuple[tuple[str, ...], tuple[str, ...]], Fraction],
+    dict[str, Fraction],
+    list[str],
 ]:
-    """Generate network and extract normalized jump vectors, hazard sums, and initial counts."""
-    param_dict = {p.name: p.value for p in model.parameters}
+    """Extract a finite network's rational jump hazards and initial counts."""
+    param_dict = {p.name: Fraction(str(p.value)) for p in model.parameters}
     net = model.generate_network()
     species_names = list(net.species_names)
 
-    init_counts: dict[str, float] = {sp: 0.0 for sp in species_names}
+    init_counts: dict[str, Fraction] = {sp: Fraction(0) for sp in species_names}
     for seed in model._model.seed_species:
-        amount_val = _evaluate_model_expression(seed.amount.to_string(), param_dict)
+        amount_val = _evaluate_model_expression_exact(
+            seed.amount.to_string(), param_dict
+        )
         pat = seed.pattern
         if seed.compartment and "@" not in pat:
             pat = f"@{seed.compartment}:{pat}"
@@ -3568,7 +3596,7 @@ def _extract_jump_hazards(
             if sp == pat or sp.split("@")[-1] == pat.split("@")[-1]:
                 init_counts[sp] = amount_val
 
-    jump_hazards: dict[tuple[tuple[str, ...], tuple[str, ...]], float] = {}
+    jump_hazards: dict[tuple[tuple[str, ...], tuple[str, ...]], Fraction] = {}
     rxn_participants = net.reaction_participants
     rate_laws = net.reaction_rate_laws
     factors = net.reaction_factors
@@ -3576,11 +3604,19 @@ def _extract_jump_hazards(
     for idx, (reactants_idx, products_idx) in enumerate(rxn_participants):
         reactants = tuple(sorted(species_names[i] for i in reactants_idx))
         products = tuple(sorted(species_names[i] for i in products_idx))
+        # A transition that leaves the molecular state unchanged contributes
+        # nothing to the ordinary state-process generator. Reaction-counting
+        # observables are guarded separately because they can make such firings
+        # visible.
+        if reactants == products:
+            continue
         rate_law_str = rate_laws[idx]
         factor = factors[idx]
-        rate_val = _evaluate_model_expression(rate_law_str, param_dict) * factor
+        rate_val = _evaluate_model_expression_exact(
+            rate_law_str, param_dict
+        ) * Fraction(str(factor))
         key = (reactants, products)
-        jump_hazards[key] = jump_hazards.get(key, 0.0) + rate_val
+        jump_hazards[key] = jump_hazards.get(key, Fraction(0)) + rate_val
 
     return jump_hazards, init_counts, species_names
 
@@ -3603,6 +3639,59 @@ def exact_process_equal(
         right if isinstance(right, BioNetGenModel) else from_bngir(right_doc or right)
     )
 
+    # Network generation does not carry every BNGL execution feature into its
+    # reaction table. Require those features to agree structurally before the
+    # finite-network certificate can establish equality. This deliberately
+    # declines alpha-equivalent but differently encoded cases until a proof
+    # method for those fields is available.
+    try:
+        left_structural = _parse_document(to_bngir(left_model, version="0.2"))["model"]
+        right_structural = _parse_document(to_bngir(right_model, version="0.2"))[
+            "model"
+        ]
+    except Exception as exc:
+        raise EqualityUndecided(
+            f"Could not inspect full execution contracts for exact equality: {exc}",
+            {"error": str(exc)},
+        ) from exc
+
+    def unlowered_contract(model_doc: Mapping[str, Any]) -> dict[str, Any]:
+        rules = model_doc.get("rules", [])
+        return {
+            key: model_doc.get(key)
+            for key in (
+                "barrier_patterns",
+                "compartments",
+                "energy_patterns",
+                "metadata",
+                "population_maps",
+                "population_types",
+            )
+        } | {
+            "parameters_for_delays": (
+                model_doc.get("parameters")
+                if any(rule.get("delay") is not None for rule in rules)
+                else []
+            ),
+            "rule_delays_and_modifiers": sorted(
+                json.dumps(
+                    {"delay": rule.get("delay"), "modifiers": rule.get("modifiers")},
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
+                for rule in rules
+                if rule.get("delay") is not None or rule.get("modifiers")
+            ),
+        }
+
+    left_unlowered = unlowered_contract(left_structural)
+    right_unlowered = unlowered_contract(right_structural)
+    if left_unlowered != right_unlowered:
+        raise EqualityUndecided(
+            "Execution features outside the finite jump table differ and need a dedicated certificate",
+            {"left_contract": left_unlowered, "right_contract": right_unlowered},
+        )
+
     left_actions = [
         (a.name, tuple(sorted(a.args.items())) if hasattr(a, "args") else ())
         for a in left_model._model.actions
@@ -3612,7 +3701,10 @@ def exact_process_equal(
         for a in right_model._model.actions
     ]
     if left_actions != right_actions:
-        return False
+        raise EqualityUndecided(
+            "Protocol difference requires an exact intervention-semantics witness",
+            {"left_actions": left_actions, "right_actions": right_actions},
+        )
 
     for m in (left_model, right_model):
         for f in m._model.functions:
@@ -3622,6 +3714,37 @@ def exact_process_equal(
                     f"Symbolic function {f.name} requires proof certificate not decidable algebraically",
                     {"function": f.name, "expression": body},
                 )
+
+    def function_signature(model: Any) -> tuple[tuple[str, tuple[str, ...], str], ...]:
+        return tuple(
+            sorted(
+                (
+                    f.name,
+                    tuple(f.args),
+                    f.expression.to_string(),
+                )
+                for f in model._model.functions
+            )
+        )
+
+    if function_signature(left_model) != function_signature(right_model):
+        raise EqualityUndecided(
+            "Function interpretations differ and have no verified equivalence certificate",
+            {
+                "left_functions": function_signature(left_model),
+                "right_functions": function_signature(right_model),
+            },
+        )
+
+    if any(
+        observable.type == "Counter"
+        for model in (left_model, right_model)
+        for observable in model._model.observables
+    ):
+        raise EqualityUndecided(
+            "Counter observables may expose reaction firings omitted by the state generator",
+            {},
+        )
 
     try:
         jumps_l, init_l, species_l = _extract_jump_hazards(left_model)
@@ -3634,38 +3757,77 @@ def exact_process_equal(
 
     if set(species_l) == set(species_r):
         for sp in species_l:
-            if abs(init_l.get(sp, 0.0) - init_r.get(sp, 0.0)) > 1e-12:
+            if init_l.get(sp, Fraction(0)) != init_r.get(sp, Fraction(0)):
                 return False
 
         if set(jumps_l.keys()) != set(jumps_r.keys()):
-            return False
+            from collections import Counter
+
+            def enabled(key: tuple[tuple[str, ...], tuple[str, ...]]) -> bool:
+                need = Counter(key[0])
+                return all(
+                    init_l.get(sp, Fraction(0)) >= count for sp, count in need.items()
+                )
+
+            for key in set(jumps_l) | set(jumps_r):
+                if enabled(key) and jumps_l.get(key, Fraction(0)) != jumps_r.get(
+                    key, Fraction(0)
+                ):
+                    return False
+            raise EqualityUndecided(
+                "Generated jump tables differ, but no initial-state counterexample was found",
+                {"left_jump_count": len(jumps_l), "right_jump_count": len(jumps_r)},
+            )
 
         for key in jumps_l:
             rate_l = jumps_l[key]
             rate_r = jumps_r[key]
-            denom = max(abs(rate_l), abs(rate_r), 1.0)
-            if abs(rate_l - rate_r) / denom > 1e-9:
-                return False
+            if rate_l != rate_r:
+                from collections import Counter
 
-        obs_l = {o.name: o.type for o in left_model._model.observables}
-        obs_r = {o.name: o.type for o in right_model._model.observables}
+                need = Counter(key[0])
+                if all(
+                    init_l.get(sp, Fraction(0)) >= count for sp, count in need.items()
+                ):
+                    return False
+                raise EqualityUndecided(
+                    "Generated rate coefficients differ, but the transition is not enabled initially",
+                    {"jump": key, "left_rate": str(rate_l), "right_rate": str(rate_r)},
+                )
+
+        obs_l = tuple(
+            sorted(
+                (o.name, o.type, tuple(o.patterns))
+                for o in left_model._model.observables
+            )
+        )
+        obs_r = tuple(
+            sorted(
+                (o.name, o.type, tuple(o.patterns))
+                for o in right_model._model.observables
+            )
+        )
         if obs_l != obs_r:
-            return False
+            raise EqualityUndecided(
+                "Observable patterns differ and have no verified equivalence certificate",
+                {"left_observables": obs_l, "right_observables": obs_r},
+            )
 
         return True
 
     if len(species_l) != len(species_r) or len(jumps_l) != len(jumps_r):
-        return False
+        raise EqualityUndecided(
+            "Generated networks differ without a verified reachable counterexample",
+            {"left_species": len(species_l), "right_species": len(species_r)},
+        )
 
     import itertools
 
-    amounts_l = [init_l.get(sp, 0.0) for sp in species_l]
     candidates = []
     for perm in itertools.permutations(species_r):
-        amounts_r = [init_r.get(sp, 0.0) for sp in perm]
-        if all(abs(al - ar) < 1e-12 for al, ar in zip(amounts_l, amounts_r)):
-            candidates.append(dict(zip(species_l, perm)))
+        candidates.append(dict(zip(species_l, perm)))
 
+    transition_mapping_with_initial_mismatch = False
     for mapping in candidates:
         mapped_jumps_l = {}
         for (reactants, products), rate in jumps_l.items():
@@ -3674,15 +3836,22 @@ def exact_process_equal(
             mapped_jumps_l[(mapped_reactants, mapped_products)] = rate
 
         if set(mapped_jumps_l.keys()) == set(jumps_r.keys()):
-            match = True
-            for key in jumps_r:
-                if abs(mapped_jumps_l[key] - jumps_r[key]) > 1e-9:
-                    match = False
-                    break
-            if match:
-                return True
+            if all(mapped_jumps_l[key] == jumps_r[key] for key in jumps_r):
+                initial_matches = all(
+                    init_l.get(source, Fraction(0)) == init_r.get(target, Fraction(0))
+                    for source, target in mapping.items()
+                )
+                if initial_matches:
+                    return True
+                transition_mapping_with_initial_mismatch = True
 
-    return False
+    if transition_mapping_with_initial_mismatch:
+        return False
+
+    raise EqualityUndecided(
+        "No generated-network renaming certificate was found; inequivalence is unproved",
+        {"left_species": species_l, "right_species": species_r},
+    )
 
 
 def semantic_equal(left: Any, right: Any, *, version: str = DEFAULT_VERSION) -> bool:

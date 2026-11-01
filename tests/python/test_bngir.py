@@ -740,6 +740,129 @@ end model
     assert not bionetgen.semantic_equal(m_base, m_diff)
 
 
+def test_semantic_equal_does_not_accept_nearby_but_distinct_rational_hazards():
+    def model(rate: str):
+        source = f"""
+begin model
+begin parameters
+    k {rate}
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin reaction rules
+    A() -> B() k
+end reaction rules
+end model
+"""
+        return bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(source))
+
+    # Independent analytic oracle: from the initial state, A -> B is enabled
+    # with hazards 1 and 1.0000000001. Distinct exponential holding laws are
+    # not equal even though the old relative tolerance accepted the pair.
+    assert not bionetgen.semantic_equal(model("1"), model("1.0000000001"))
+
+
+def test_semantic_equal_does_not_ignore_observable_patterns():
+    def model(pattern: str):
+        source = f"""
+begin model
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin observables
+    Molecules count {pattern}
+end observables
+begin reaction rules
+    A() -> B() k
+end reaction rules
+end model
+"""
+        return bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(source))
+
+    with pytest.raises(bionetgen.EqualityUndecided):
+        bionetgen.semantic_equal(model("A()"), model("B()"))
+
+
+def test_semantic_equal_does_not_ignore_function_bodies():
+    def model(expression: str):
+        source = f"""
+begin model
+begin molecule types
+    A()
+end molecule types
+begin functions
+    reported(x) = {expression}
+end functions
+end model
+"""
+        return bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(source))
+
+    with pytest.raises(bionetgen.EqualityUndecided):
+        bionetgen.semantic_equal(model("x"), model("2*x"))
+
+
+def test_semantic_equal_does_not_ignore_delayed_completion_time():
+    def model(delay: int):
+        source = f"""
+begin model
+begin parameters
+    k 1
+    tau {delay}
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin reaction rules
+    A() -> B() k delay=tau
+end reaction rules
+end model
+"""
+        return bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(source))
+
+    with pytest.raises(bionetgen.EqualityUndecided):
+        bionetgen.semantic_equal(model(2), model(3))
+
+
+def test_semantic_equal_ignores_unobserved_self_loop_rate():
+    def model(rate: int):
+        source = f"""
+begin model
+begin parameters
+    k {rate}
+end parameters
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin reaction rules
+    A() -> A() k
+end reaction rules
+end model
+"""
+        return bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(source))
+
+    # Neither state nor the declared observables expose self-loop firings.
+    assert bionetgen.semantic_equal(model(1), model(2))
+
+
 def test_semantic_equal_rule_order():
     src1 = r"""
 begin model
