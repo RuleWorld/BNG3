@@ -602,7 +602,7 @@ def _flatten_simple_external_comp(
     if deleted_core_rule_metaids:
         metaid_targets = {
             "listOfInitialAssignments": {"initialAssignment"},
-            "listOfRules": {"rateRule"},
+            "listOfRules": {"assignmentRule", "rateRule"},
         }
         for metaid in deleted_core_rule_metaids:
             matches = []
@@ -814,8 +814,8 @@ def _flatten_comp_package(
         return (
             sbml_string,
             "external comp submodel deletions outside the supported direct reaction "
-            "idRef and InitialAssignment/rateRule metaIdRef subsets cannot be "
-            "flattened safely",
+            "idRef and InitialAssignment/AssignmentRule/RateRule metaIdRef subsets "
+            "cannot be flattened safely",
         )
     external_failure = _preflight_comp_external_sources(sbml_string, source_path)
     if external_failure is not None:

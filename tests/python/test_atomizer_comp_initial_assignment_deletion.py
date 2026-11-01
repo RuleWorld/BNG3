@@ -29,7 +29,8 @@ def _write_model(tmp_path):
                constant="false"/>
     </listOfSpecies>
     <listOfParameters>
-      <parameter id="k" value="0.1" constant="true"/>
+      <parameter id="k" value="0.1" constant="false"/>
+      <parameter id="m" value="0.05" constant="false"/>
     </listOfParameters>
     <listOfInitialAssignments>
       <initialAssignment metaid="initial-rate" symbol="k">
@@ -37,6 +38,9 @@ def _write_model(tmp_path):
       </initialAssignment>
     </listOfInitialAssignments>
     <listOfRules>
+      <assignmentRule metaid="assigned-rate" variable="m">
+        <math xmlns="{mathml}"><cn>0</cn></math>
+      </assignmentRule>
       <rateRule metaid="dynamic-rate" variable="k">
         <math xmlns="{mathml}"><cn>0.05</cn></math>
       </rateRule>
@@ -51,7 +55,7 @@ def _write_model(tmp_path):
         </listOfProducts>
         <kineticLaw>
           <math xmlns="{mathml}">
-            <apply><times/><ci>k</ci><ci>A</ci></apply>
+            <apply><times/><apply><plus/><ci>k</ci><ci>m</ci></apply><ci>A</ci></apply>
           </math>
         </kineticLaw>
       </reaction>
@@ -67,6 +71,7 @@ def _write_model(tmp_path):
         <comp:listOfDeletions>
           <comp:deletion comp:metaIdRef="initial-rate"/>
           <comp:deletion comp:metaIdRef="dynamic-rate"/>
+          <comp:deletion comp:metaIdRef="assigned-rate"/>
         </comp:listOfDeletions>
       </comp:submodel>
     </comp:listOfSubmodels>
@@ -87,14 +92,15 @@ def test_external_comp_deletes_metaid_referenced_initial_assignment_and_rate_rul
     tmp_path,
 ):
     source, source_path = _write_model(tmp_path)
-    document = libsbml.readSBMLFromFile(str(source_path))
-    document.checkConsistency()
-    errors = [
-        document.getError(index).getMessage()
-        for index in range(document.getNumErrors())
-        if document.getError(index).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
-    ]
-    assert not errors, errors
+    for path in (source_path, tmp_path / "component.xml"):
+        document = libsbml.readSBMLFromFile(str(path))
+        document.checkConsistency()
+        errors = [
+            document.getError(index).getMessage()
+            for index in range(document.getNumErrors())
+            if document.getError(index).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
+        ]
+        assert not errors, errors
 
     atomized = Atomizer(atomize=False, quiet_mode=True, t_end=1, n_steps=10).atomize(
         source, source_path=source_path
@@ -107,12 +113,12 @@ def test_external_comp_deletes_metaid_referenced_initial_assignment_and_rate_rul
     amounts_a = result.observables["child__A_amt"]
     amounts_b = result.observables["child__B_amt"]
     assert len(amounts_a) == len(amounts_b) == 11
-    # The deletions remove both k's 0.2 initial assignment and its rate rule,
-    # leaving its declared value 0.1 constant. The independent exact solution
-    # is A=10*exp(-0.1*t), B=10-A.
+    # The deletions remove the initial assignment and rate rule for k plus
+    # m's assignment rule, leaving k=0.1 and m=0.05. The independent exact
+    # solution is A=10*exp(-0.15*t), B=10-A.
     for index, (amount_a, amount_b) in enumerate(zip(amounts_a, amounts_b)):
         time = index / 10
-        expected_a = 10 * math.exp(-0.1 * time)
+        expected_a = 10 * math.exp(-0.15 * time)
         assert math.isclose(float(amount_a), expected_a, rel_tol=2e-6, abs_tol=1e-8)
         assert math.isclose(
             float(amount_b), 10 - expected_a, rel_tol=2e-6, abs_tol=1e-8
