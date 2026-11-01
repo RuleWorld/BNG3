@@ -381,6 +381,19 @@ target_link_libraries(test_hnauty PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2 bng_engine bng_ast nfsim_core)
 catch_discover_tests(test_hnauty)
 
+# test_graph_identity_contract
+add_executable(test_graph_identity_contract test_graph_identity_contract.cpp)
+target_include_directories(test_graph_identity_contract PRIVATE
+    ${CMAKE_SOURCE_DIR}/cpp
+    ${CMAKE_SOURCE_DIR}/cpp/core
+    ${CMAKE_SOURCE_DIR}/cpp/parser
+    ${CMAKE_SOURCE_DIR}/cpp/parser/generated
+    ${antlr4_runtime_SOURCE_DIR}/runtime/Cpp/runtime/src
+)
+target_link_libraries(test_graph_identity_contract PRIVATE
+    Catch2::Catch2WithMain Catch2::Catch2 bng_engine bng_ast nfsim_core)
+catch_discover_tests(test_graph_identity_contract)
+
 # test_ullmann
 add_executable(test_ullmann test_ullmann.cpp)
 target_include_directories(test_ullmann PRIVATE

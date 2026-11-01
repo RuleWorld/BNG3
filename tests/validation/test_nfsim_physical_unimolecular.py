@@ -2,16 +2,21 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 import os
 from pathlib import Path
+import shutil
 import subprocess
+import xml.etree.ElementTree as ET
 
 import numpy as np
 import pytest
 from scipy.linalg import expm
 
-from tests.validation import compare, oracle_nfsim, runner
+from scripts.ci.oracle_sources import load_lock
+from tests.validation import compare, oracle_nfsim, oracle_perl, runner
 from tests.validation.strict import require_oracle
 
 RUNS = 200
@@ -21,6 +26,12 @@ RATE_PER_SECOND = 0.5
 END_TIME = 1.0
 BIMOLECULAR_INITIAL = 10
 BIMOLECULAR_COUNT_RATE = 0.05
+SYMMETRIC_MOLECULES = 10
+SYMMETRIC_BINDING_RATE = 0.1
+SYMMETRIC_RUNS = 200
+SYMMETRIC_BASE_SEED = 7300
+SYMMETRIC_END_TIME = 1.0
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def _physical_bng3_source() -> str:
@@ -156,6 +167,53 @@ end model
 generate_network({{overwrite=>1}})
 writeXML()
 """
+
+
+def _symmetric_dimer_source() -> str:
+    return f"""begin model
+begin parameters
+  kon {SYMMETRIC_BINDING_RATE}
+end parameters
+begin molecule types
+  A(b)
+end molecule types
+begin seed species
+  A(b) {SYMMETRIC_MOLECULES}
+end seed species
+begin observables
+  Species Dimer A(b!1).A(b!1)
+  Molecules Bound A(b!+)
+end observables
+begin reaction rules
+  bind: A(b) + A(b) -> A(b!1).A(b!1) kon
+end reaction rules
+end model
+"""
+
+
+def _assert_symmetric_dimer_marginal(counts: list[int]) -> None:
+    """Check the exact homodimer count CTMC, with one observation per run.
+
+    BNG2's independently generated NET must encode two identical reactants
+    with a 0.5*kon coefficient. Applying that coefficient to the number of
+    ordered distinct molecule pairs gives the analytic propensity
+    kon * choose(n_free, 2). This independent finite-state generator uses
+    that unordered-pair law directly.
+    """
+    states = SYMMETRIC_MOLECULES // 2 + 1
+    generator = np.zeros((states, states), dtype=float)
+    for dimers in range(states - 1):
+        free_molecules = SYMMETRIC_MOLECULES - 2 * dimers
+        propensity = SYMMETRIC_BINDING_RATE * free_molecules * (free_molecules - 1) / 2
+        generator[dimers, dimers] = -propensity
+        generator[dimers, dimers + 1] = propensity
+    initial = np.zeros(states, dtype=float)
+    initial[0] = 1.0
+    expected_cdf = np.cumsum(expm(generator.T * SYMMETRIC_END_TIME) @ initial)
+    observed_cdf = np.cumsum(np.bincount(counts, minlength=states) / SYMMETRIC_RUNS)
+    # One DKW bound at alpha=0.005 for the independent 200-run endpoint sample.
+    epsilon = math.sqrt(math.log(2.0 / 0.005) / (2.0 * SYMMETRIC_RUNS))
+    assert np.max(np.abs(observed_cdf - expected_cdf)) <= epsilon
 
 
 def _a_count(trajectory_data, columns):
@@ -322,6 +380,268 @@ def test_physical_bimolecular_rate_matches_independent_native_count_law(
 
     _assert_bimolecular_ctmc_marginal(direct_counts)
     _assert_bimolecular_ctmc_marginal(native_counts)
+
+
+@pytest.mark.nf
+@pytest.mark.slow
+def test_release_graph_observables_symmetric_homodimer_multiplicity(
+    api, tmp_path, record_property
+):
+    """Qualify homodimer reaction multiplicity and observable weights.
+
+    BNG2 produces the reference NET and XML. BNG3's generated NET is compared
+    structurally with that independent network. Native NFsim consumes BNG2's
+    XML, and its trajectory is checked for both exact observable weights and
+    the independently derived unordered-pair CTMC law.
+    """
+    bng2 = oracle_perl._bng2_path()
+    require_oracle(bng2 is not None, "pinned BNG2 unavailable (set BNG2_PERL)")
+    native = oracle_nfsim.nfsim_binary()
+    require_oracle(
+        native is not None, "pinned native NFsim unavailable (set NFSIM_BIN)"
+    )
+
+    lock = load_lock()
+    nfsim_source_root = native.parent.parent
+    native_revision = subprocess.run(
+        ["git", "-C", str(nfsim_source_root), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    ).stdout.strip()
+    expected_native_revision = lock["sources"]["nfsim"]["revision"]
+    assert native_revision == expected_native_revision
+    record_property("acceptance_check", "release-graph-observables")
+    source_status = subprocess.run(
+        ["git", "-C", str(ROOT), "status", "--porcelain"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    ).stdout.strip()
+    assert not source_status, f"candidate source tree must be clean: {source_status}"
+    record_property("bng3_dirty", "false")
+    bng2_revision = subprocess.run(
+        ["git", "-C", str(bng2.parent), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    ).stdout.strip()
+    bng2_script_sha256 = hashlib.sha256(bng2.read_bytes()).hexdigest()
+    record_property("bng2_revision", bng2_revision)
+    record_property("bng2_script_sha256", bng2_script_sha256)
+    record_property("nfsim_revision", native_revision)
+    nfsim_binary_sha256 = hashlib.sha256(native.read_bytes()).hexdigest()
+    record_property("nfsim_binary_sha256", nfsim_binary_sha256)
+    bng3_revision = subprocess.run(
+        ["git", "-C", str(ROOT), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    ).stdout.strip()
+    record_property("bng3_revision", bng3_revision)
+
+    model_source = _symmetric_dimer_source()
+    record_property(
+        "model_source_sha256", hashlib.sha256(model_source.encode()).hexdigest()
+    )
+    bng3_source = tmp_path / "bng3-symmetric-dimer.bngl"
+    bng3_source.write_text(model_source, encoding="utf-8")
+    bng3_model = api.load(str(bng3_source))
+    bng3_model.generate_network()
+    bng3_net_path = tmp_path / "bng3-symmetric-dimer.net"
+    bng3_model.write_net(str(bng3_net_path))
+    bng3_net = compare.parse_net(bng3_net_path)
+    assert bng3_net is not None
+
+    bng2_dir = tmp_path / "bng2"
+    bng2_dir.mkdir()
+    bng2_source = bng2_dir / "symmetric-dimer.bngl"
+    bng2_source.write_text(
+        model_source + "\ngenerate_network({overwrite=>1})\nwriteXML()\n",
+        encoding="utf-8",
+    )
+    env = os.environ.copy()
+    env["BNGPATH"] = str(bng2.parent)
+    env["PERL5LIB"] = str(bng2.parent / "Perl2")
+    translated = subprocess.run(
+        [
+            os.environ.get("PERL", "perl"),
+            str(bng2),
+            "--outdir",
+            str(bng2_dir),
+            str(bng2_source),
+        ],
+        cwd=bng2_dir,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert translated.returncode == 0, translated.stdout + translated.stderr
+    bng2_net_path = bng2_dir / "symmetric-dimer.net"
+    bng2_xml = bng2_dir / "symmetric-dimer.xml"
+    assert bng2_net_path.is_file() and bng2_xml.is_file()
+    bng2_net = compare.parse_net(bng2_net_path)
+    assert bng2_net is not None
+    bng2_net_sha256 = hashlib.sha256(bng2_net_path.read_bytes()).hexdigest()
+    bng2_xml_sha256 = hashlib.sha256(bng2_xml.read_bytes()).hexdigest()
+    bng3_net_sha256 = hashlib.sha256(bng3_net_path.read_bytes()).hexdigest()
+    record_property("bng2_net_sha256", bng2_net_sha256)
+    record_property("bng2_xml_sha256", bng2_xml_sha256)
+    record_property("bng3_net_sha256", bng3_net_sha256)
+
+    network_diff = compare.compare_net(bng2_net, bng3_net)
+    assert network_diff.ok, network_diff.summary()
+    assert len(bng2_net._raw) == 1
+    reactants, products, rate = bng2_net._raw[0]
+    assert len(reactants) == 2 and reactants[0] == reactants[1]
+    assert len(products) == 1
+    assert bng2_net.species_by_index[products[0]] == "A(b!1).A(b!1)"
+    assert rate == "0.5*kon"
+
+    monomer_indices = {
+        index
+        for index, species in bng2_net.species_by_index.items()
+        if species == "A(b)"
+    }
+    assert len(monomer_indices) == 1
+    monomer_index = next(iter(monomer_indices))
+    assert bng2_net.initial_amounts[monomer_index] == "10"
+    dimer_indices = {
+        index
+        for index, species in bng2_net.species_by_index.items()
+        if species == "A(b!1).A(b!1)"
+    }
+    assert len(dimer_indices) == 1
+    dimer_index = next(iter(dimer_indices))
+    groups = {name: weights for name, weights in bng2_net.groups.values()}
+    assert groups["Dimer"] == {dimer_index: 1.0}
+    assert groups["Bound"] == {dimer_index: 2.0}
+
+    def weighted_group_signature(net):
+        return {
+            name: {
+                net.species_by_index[index]: weight for index, weight in weights.items()
+            }
+            for name, weights in net.groups.values()
+        }
+
+    assert weighted_group_signature(bng2_net) == {
+        "Dimer": {"A(b!1).A(b!1)": 1.0},
+        "Bound": {"A(b!1).A(b!1)": 2.0},
+    }
+    assert weighted_group_signature(bng3_net) == weighted_group_signature(bng2_net)
+
+    xml_root = ET.parse(bng2_xml).getroot()
+    reaction_rules = [
+        element for element in xml_root.iter() if element.tag.endswith("ReactionRule")
+    ]
+    assert len(reaction_rules) == 1
+    assert reaction_rules[0].attrib["name"] == "bind"
+    assert float(reaction_rules[0].attrib["symmetry_factor"]) == pytest.approx(0.5)
+    dimer_observables = [
+        element
+        for element in xml_root.iter()
+        if element.tag.endswith("Observable") and element.attrib.get("name") == "Dimer"
+    ]
+    dimer_patterns = [
+        pattern
+        for observable in dimer_observables
+        for pattern in observable.iter()
+        if pattern.tag.endswith("Pattern")
+        and pattern.attrib.get("automorphisms") == "2"
+    ]
+    assert (
+        dimer_patterns
+    ), "BNG2 XML must preserve the symmetric dimer automorphism count"
+
+    endpoint_dimers: list[int] = []
+    native_trajectories: list[Path] = []
+    for offset in range(SYMMETRIC_RUNS):
+        gdat, error = oracle_nfsim.run_nfsim(
+            bng2_xml,
+            tmp_path / f"nfsim-{SYMMETRIC_BASE_SEED + offset}",
+            t_end=SYMMETRIC_END_TIME,
+            n_steps=10,
+            seed=SYMMETRIC_BASE_SEED + offset,
+        )
+        assert gdat is not None, error
+        data, columns = compare.parse_gdat(gdat)
+        assert data is not None and columns is not None
+        assert "Dimer" in columns and "Bound" in columns
+        dimers = data[:, columns.index("Dimer")]
+        bound = data[:, columns.index("Bound")]
+        assert np.array_equal(bound, 2 * dimers)
+        assert dimers[0] == 0
+        endpoint_dimers.append(int(dimers[-1]))
+        native_trajectories.append(gdat)
+
+    _assert_symmetric_dimer_marginal(endpoint_dimers)
+
+    evidence_root = os.environ.get("BNG3_GRAPH_OBSERVABLES_EVIDENCE_DIR")
+    if evidence_root:
+        evidence = Path(evidence_root)
+        trajectories = evidence / "trajectories"
+        trajectories.mkdir(parents=True, exist_ok=True)
+        artifacts = {}
+        sources = {
+            "model.bngl": bng3_source,
+            "bng2/symmetric-dimer.net": bng2_net_path,
+            "bng2/symmetric-dimer.xml": bng2_xml,
+            "bng3/symmetric-dimer.net": bng3_net_path,
+        }
+        for name, source_path in sources.items():
+            target = evidence / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy2(source_path, target)
+            artifacts[name] = hashlib.sha256(target.read_bytes()).hexdigest()
+        for offset, source_path in enumerate(native_trajectories):
+            name = f"trajectories/seed-{SYMMETRIC_BASE_SEED + offset}.gdat"
+            target = evidence / name
+            shutil.copy2(source_path, target)
+            artifacts[name] = hashlib.sha256(target.read_bytes()).hexdigest()
+        (evidence / "observables-report.json").write_text(
+            json.dumps(
+                {
+                    "acceptance_check": "release-graph-observables",
+                    "source_revision": bng3_revision,
+                    "source_dirty": False,
+                    "bng2_revision": bng2_revision,
+                    "bng2_script_sha256": bng2_script_sha256,
+                    "nfsim_revision": native_revision,
+                    "nfsim_binary_sha256": nfsim_binary_sha256,
+                    "model_source_sha256": hashlib.sha256(
+                        model_source.encode()
+                    ).hexdigest(),
+                    "bng2_net_sha256": bng2_net_sha256,
+                    "bng2_xml_sha256": bng2_xml_sha256,
+                    "bng3_net_sha256": bng3_net_sha256,
+                    "run_count": SYMMETRIC_RUNS,
+                    "seed_start": SYMMETRIC_BASE_SEED,
+                    "seed_end_exclusive": SYMMETRIC_BASE_SEED + SYMMETRIC_RUNS,
+                    "end_time": SYMMETRIC_END_TIME,
+                    "dkw_alpha": 0.005,
+                    "endpoint_dimers": endpoint_dimers,
+                    "assertions": {
+                        "bng2_reactants": "two copies of A(b)",
+                        "bng2_products": "one A(b!1).A(b!1)",
+                        "bng2_rate": "0.5*kon",
+                        "bng2_observables": {"Dimer": 1, "Bound": 2},
+                        "native_per_row": "Bound=2*Dimer",
+                        "endpoint_law": "kon*choose(n_free,2)",
+                    },
+                    "artifacts": artifacts,
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
 
 def _bimolecular_conversion_count(trajectory_data, columns) -> int:

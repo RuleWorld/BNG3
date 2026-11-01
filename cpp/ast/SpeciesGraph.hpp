@@ -26,6 +26,9 @@ public:
     // Native NFsim keeps a different encoding, differential-tested against
     // this relation; the two canonical-label strings are not interchangeable.
     bool graphIsomorphicTo(const BNGcore::PatternGraph& other) const;
+    // The layer of the shared identity contract (core/IdentityContract.hpp)
+    // that this canonical label decides: the structure layer.
+    static const char* identityLayer();
     std::string toString() const;
     std::string toStringForDedup() const;
     const std::string& getCompartment() const;

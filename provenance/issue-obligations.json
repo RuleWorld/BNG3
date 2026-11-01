@@ -1871,8 +1871,8 @@
           "required_checks": [
             {
               "id": "graph-identity-contract:symmetric-ring-3:network-canonical-label",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -1880,8 +1880,8 @@
             },
             {
               "id": "graph-identity-contract:symmetric-ring-3:nfsim-canonical-label",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -1889,8 +1889,8 @@
             },
             {
               "id": "graph-identity-contract:symmetric-ring-4:network-canonical-label",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -1898,8 +1898,8 @@
             },
             {
               "id": "graph-identity-contract:symmetric-ring-4:nfsim-canonical-label",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -1907,8 +1907,8 @@
             },
             {
               "id": "graph-identity-contract:symmetric-ring-5:network-canonical-label",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -1916,8 +1916,8 @@
             },
             {
               "id": "graph-identity-contract:symmetric-ring-5:nfsim-canonical-label",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -1925,8 +1925,8 @@
             },
             {
               "id": "graph-identity-contract:molecule-compartment-distinction:network-canonical-label",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -1934,8 +1934,8 @@
             },
             {
               "id": "graph-identity-contract:molecule-compartment-distinction:nfsim-canonical-label",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -1943,8 +1943,8 @@
             },
             {
               "id": "graph-identity-contract:species-compartment-distinction:network-canonical-label",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -1952,8 +1952,8 @@
             },
             {
               "id": "graph-identity-contract:species-compartment-distinction:nfsim-canonical-label",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -1961,8 +1961,8 @@
             },
             {
               "id": "graph-identity-contract:state-distinction:network-canonical-label",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -1970,8 +1970,8 @@
             },
             {
               "id": "graph-identity-contract:state-distinction:nfsim-canonical-label",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -1979,8 +1979,8 @@
             },
             {
               "id": "graph-identity-contract:topology-distinction:network-canonical-label",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -1988,41 +1988,82 @@
             },
             {
               "id": "graph-identity-contract:topology-distinction:nfsim-canonical-label",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "For the generated symmetric and compartmental species, the network canonical label and the NFsim complex canonical label induce the same partition as the independent isomorphism contract at the layer each surface declares, and a surface that decides another layer is visible.",
               "identity_requirements": [
                 "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:exhaustive-small-equivalent-sites:network-canonical-label",
+              "evidence_kind": "supported-execution",
+              "expectation": "For every state-colored partial matching with up to two molecules and two equivalent sites per molecule, the network canonical label and NFsim complex label induce the same partition as the independent isomorphism contract, including disconnected species and false-match pairs.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:exhaustive-small-equivalent-sites:nfsim-canonical-label",
+              "evidence_kind": "supported-execution",
+              "expectation": "For every state-colored partial matching with up to two molecules and two equivalent sites per molecule, the network canonical label and NFsim complex label induce the same partition as the independent isomorphism contract, including disconnected species and false-match pairs.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:exhaustive-small-equivalent-sites:network-species-identity",
+              "evidence_kind": "supported-execution",
+              "expectation": "For every state-colored partial matching with up to two molecules and two equivalent sites per molecule, network species identity matches the independent isomorphism partition, including disconnected species and false-match pairs.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:exhaustive-small-equivalent-sites:shared-identity-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The bounded exhaustive family agrees with the independent identity oracle at every declared layer, and the layer declarations remain nested.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "release-graph-identity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The bounded exhaustive small-graph isomorphism check compares both production identity paths with the independent isomorphism partition, including state labels, equivalent sites, disconnected species, compartments and false-match pairs.",
+              "identity_requirements": [
+                "source.revision",
+                "oracle.sha256",
                 "subject.sha256"
               ]
             }
           ],
           "test_references": [
+            "cpp/core/IdentityContract.hpp",
             "cpp/ast/SpeciesGraph.cpp",
             "cpp/nfsim/NFcore/complex.cpp",
             "tests/architecture_contracts",
+            "tests/cpp/test_graph_identity_contract.cpp",
             "tests/cpp/test_hnauty.cpp",
             "tests/cpp/test_node_label_parity.cpp",
             "tests/cpp/test_node_operator.cpp",
             "tests/cpp/test_ullmann.cpp",
             "tests/python/test_single_nauty_contract.py",
-            "tests/validation/graph_identity_contract.py"
+            "tests/validation/graph_identity_contract.py",
+            "tests/validation/test_graph_identity_contract.py",
+            ".github/workflows/parity.yml",
+            "tests/validation/test_graph_identity_contract.py::test_the_native_surfaces_match_the_independent_contract"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "The comparison is bounded to the generated symmetric, compartmental, state and topology families; it does not qualify every molecular graph either encoding can build.",
+            "The comparison exhausts state-colored partial matchings through two molecules with two equivalent sites each, plus generated symmetric, compartmental and topology families; larger graphs and richer site alphabets remain unqualified.",
             "The NFsim complex canonical label is compared as a label; the standalone NFsim binary is not executed by this check.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
-          "evidence_on_this_tree": {
-            "executable_named_checks": 0,
-            "disposition_named_checks": 14,
-            "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          },
-          "not_reapplied_from_recorded_revision": [
-            "cpp/core/IdentityContract.hpp",
-            "tests/cpp/test_graph_identity_contract.cpp",
-            "tests/validation/graph_identity_contract.py"
           ]
         },
         {
@@ -2034,8 +2075,8 @@
           "required_checks": [
             {
               "id": "graph-identity-contract:symmetric-ring-3:network-species-identity",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2043,8 +2084,8 @@
             },
             {
               "id": "graph-identity-contract:symmetric-ring-3:shared-identity-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2052,8 +2093,8 @@
             },
             {
               "id": "graph-identity-contract:symmetric-ring-4:network-species-identity",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2061,8 +2102,8 @@
             },
             {
               "id": "graph-identity-contract:symmetric-ring-4:shared-identity-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2070,8 +2111,8 @@
             },
             {
               "id": "graph-identity-contract:symmetric-ring-5:network-species-identity",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2079,8 +2120,8 @@
             },
             {
               "id": "graph-identity-contract:symmetric-ring-5:shared-identity-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2088,8 +2129,8 @@
             },
             {
               "id": "graph-identity-contract:molecule-compartment-distinction:network-species-identity",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2097,8 +2138,8 @@
             },
             {
               "id": "graph-identity-contract:molecule-compartment-distinction:shared-identity-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2106,8 +2147,8 @@
             },
             {
               "id": "graph-identity-contract:species-compartment-distinction:network-species-identity",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2115,8 +2156,8 @@
             },
             {
               "id": "graph-identity-contract:species-compartment-distinction:shared-identity-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2124,8 +2165,8 @@
             },
             {
               "id": "graph-identity-contract:state-distinction:network-species-identity",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2133,8 +2174,8 @@
             },
             {
               "id": "graph-identity-contract:state-distinction:shared-identity-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2142,8 +2183,8 @@
             },
             {
               "id": "graph-identity-contract:topology-distinction:network-species-identity",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2151,8 +2192,26 @@
             },
             {
               "id": "graph-identity-contract:topology-distinction:shared-identity-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'graph-identity-contract' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:exhaustive-small-equivalent-sites:network-species-identity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, NFsim label and network species identity agree with the independent identity contract over the bounded exhaustive equivalent-site family.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:exhaustive-small-equivalent-sites:shared-identity-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, NFsim label and network species identity agree with the independent identity contract over the bounded exhaustive equivalent-site family.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
@@ -2160,7 +2219,9 @@
             }
           ],
           "test_references": [
+            "cpp/core/IdentityContract.hpp",
             "cpp/ast/SpeciesList.cpp",
+            "tests/cpp/test_graph_identity_contract.cpp",
             "tests/validation/graph_identity_contract.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
@@ -2168,16 +2229,6 @@
           "unmapped_scope": [
             "The shared contract names the layer every surface decides; the NFsim encoding keeps its own nauty encoding and was not replaced by the network implementation.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
-          "evidence_on_this_tree": {
-            "executable_named_checks": 0,
-            "disposition_named_checks": 14,
-            "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          },
-          "not_reapplied_from_recorded_revision": [
-            "cpp/core/IdentityContract.hpp",
-            "tests/cpp/test_graph_identity_contract.cpp",
-            "tests/validation/graph_identity_contract.py"
           ]
         },
         {
@@ -2194,20 +2245,62 @@
               "identity_requirements": [
                 "source.revision"
               ]
+            },
+            {
+              "id": "release-obligation-142",
+              "evidence_kind": "disposition",
+              "expectation": "Consume the retained exact-revision results for release-graph-identity and release-graph-observables, reject missing, skipped, stale or conflicting evidence, and record both named results with source/oracle identities and the exact main commit.",
+              "identity_requirements": [
+                "source.revision",
+                "oracle.revision",
+                "oracle.sha256",
+                "subject.sha256"
+              ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "scripts/ci/record_issue142_release.py",
+            "tests/validation/test_issue_142_release_record.py",
+            ".github/workflows/parity.yml"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
             "Missing required qualification ID: qualification:issue:142:closure-record.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
+        },
+        {
+          "id": "issue:142:release-graph-observables",
+          "criterion": "release-graph-observables: BNG2/native NFsim reaction multiplicities and observable weights agree for symmetric complexes.",
+          "scope": "For a symmetric homodimer reaction, compare BNG2 and BNG3 generated network multiplicities and observable weights, consume pinned BNG2 XML with pinned native NFsim, verify the native observable trajectory weights, and check the endpoint count law against an independent finite-state CTMC.",
+          "dependencies": [],
+          "boundaries": [
+            "The stochastic claim is limited to the dimer-count endpoint distribution at t=1.0 with 200 fixed-seed native NFsim runs and one DKW bound at alpha=0.005.",
+            "The exact NET reaction multiplicity, generated observable group weights and per-row native Bound=2*Dimer relation are deterministic checks and are reported separately from the endpoint distribution claim."
           ],
-          "evidence_on_this_tree": {
-            "executable_named_checks": 0,
-            "disposition_named_checks": 1,
-            "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          "required_checks": [
+            {
+              "id": "release-graph-observables",
+              "evidence_kind": "supported-execution",
+              "expectation": "Pinned BNG2 and BNG3 networks agree on the symmetric homodimer reaction multiplicity and observable weights; pinned native NFsim consumes BNG2 XML and its per-row observables and bounded endpoint distribution satisfy the declared checks.",
+              "identity_requirements": [
+                "source.revision",
+                "oracle.revision",
+                "oracle.sha256",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/test_nfsim_physical_unimolecular.py::test_release_graph_observables_symmetric_homodimer_multiplicity",
+            ".github/workflows/parity.yml"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Other reaction classes, larger complexes, additional observable types and other stochastic distributions are not qualified by this bounded symmetric homodimer case."
+          ]
         }
       ]
     },

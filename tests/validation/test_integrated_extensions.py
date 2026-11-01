@@ -8,6 +8,7 @@ from pathlib import Path
 from tests.validation import (
     bngir_adversarial,
     graph_identity,
+    graph_identity_contract,
     integrated_extensions as extensions,
     integrated_cases,
     integrated_boundaries,
@@ -26,6 +27,7 @@ def test_final_registry_covers_each_stage_and_namespaced_check_once():
     assert len(ids) == len(set(ids))
     assert "campaign:boundaries" in ids
     assert "campaign:graph-identity" in ids
+    assert "campaign:graph-identity-contract" in ids
     assert "campaign:bngir-adversarial" in ids
     assert set(bngir_adversarial.check_ids()).issubset(ids)
     assert not set(
@@ -34,6 +36,19 @@ def test_final_registry_covers_each_stage_and_namespaced_check_once():
     assert set(extensions.check_ids("graph-identity")) == {
         f"graph-identity:{case['id']}" for case in graph_identity.CASES
     }
+    assert set(extensions.check_ids("graph-identity-contract")) == {
+        f"graph-identity-contract:{case['id']}:{check}"
+        for case in graph_identity_contract.CASES
+        for check in graph_identity_contract.CHECKS
+    }
+    assert not set(
+        extensions.expected_ids(cases, include_graph_identity_contract=False)
+    ).intersection(
+        {
+            "campaign:graph-identity-contract",
+            *extensions.check_ids("graph-identity-contract"),
+        }
+    )
     for case in cases:
         assert f"{case['id']}:protocol" in ids
         assert (f"{case['id']}:nf-marginals" in ids) == (
