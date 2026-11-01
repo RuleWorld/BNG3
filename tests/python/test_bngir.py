@@ -839,6 +839,92 @@ end model
         bionetgen.semantic_equal(model(2), model(3))
 
 
+def test_semantic_equal_does_not_invent_arbitrary_species_renamings():
+    dimer_model = r"""
+begin model
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A(b)
+    B()
+end molecule types
+begin seed species
+    A(b!1).A(b!1) 1
+end seed species
+begin reaction rules
+    A(b!1).A(b!1) -> B() k
+end reaction rules
+end model
+"""
+    monomer_model = r"""
+begin model
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    X()
+    Y()
+end molecule types
+begin seed species
+    X() 1
+end seed species
+begin reaction rules
+    X() -> Y() k
+end reaction rules
+end model
+"""
+    left = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(dimer_model))
+    right = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(monomer_model))
+
+    # Equal finite transition tables do not supply a molecule/site/state
+    # renaming: a two-molecule complex cannot map to a one-molecule species.
+    with pytest.raises(bionetgen.EqualityUndecided):
+        bionetgen.semantic_equal(left, right)
+
+
+def test_semantic_equal_requires_identity_type_signatures_for_identity_names():
+    left_source = r"""
+begin model
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A(b)
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin reaction rules
+    A() -> B() k
+end reaction rules
+end model
+"""
+    right_source = r"""
+begin model
+begin parameters
+    k 1
+end parameters
+begin molecule types
+    A()
+    B(b)
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin reaction rules
+    A() -> B() k
+end reaction rules
+end model
+"""
+    left = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(left_source))
+    right = bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(right_source))
+
+    with pytest.raises(bionetgen.EqualityUndecided):
+        bionetgen.semantic_equal(left, right)
+
+
 def test_semantic_equal_ignores_unobserved_self_loop_rate():
     def model(rate: int):
         source = f"""
