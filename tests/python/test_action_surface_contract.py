@@ -90,7 +90,7 @@ def test_hybrid_model_generation_executes_population_trajectory_with_nfsim(
 ):
     model = _model(
         tmp_path,
-        f'generate_hybrid_model({{overwrite=>1, execute=>1, '
+        f"generate_hybrid_model({{overwrite=>1, execute=>1, "
         f'actions=>["{simulation_action}"]}})',
     )
     model.execute()
@@ -110,9 +110,7 @@ def test_hybrid_model_generation_executes_population_trajectory_with_nfsim(
     assert all(row[a_total] + row[b_total] == pytest.approx(20) for row in rows)
     species = (tmp_path / "model_hpp.species").read_text()
     population_rows = [
-        line.split()
-        for line in species.splitlines()
-        if line.startswith("A_pop()")
+        line.split() for line in species.splitlines() if line.startswith("A_pop()")
     ]
     assert population_rows
     assert int(population_rows[0][1]) > 0
@@ -133,8 +131,7 @@ def test_hybrid_model_generation_still_refuses_finite_network_simulation(tmp_pat
 
 def test_hybrid_nfsim_particleizes_whole_complexes_and_preserves_multiplicity(tmp_path):
     source = tmp_path / "complex.bngl"
-    source.write_text(
-        """begin model
+    source.write_text("""begin model
 begin parameters
   k_off 10
   N 8
@@ -160,8 +157,7 @@ end model
 begin actions
 generate_hybrid_model({overwrite=>1, execute=>1, actions=>["simulate_nf({t_end=>0.2, n_steps=>4, seed=>7})"]})
 end actions
-"""
-    )
+""")
     bionetgen.load(source).execute()
 
     output = tmp_path / "complex_hpp.gdat"
@@ -178,10 +174,11 @@ end actions
     assert rows[-1][dimers] < rows[0][dimers]
 
 
-def test_hybrid_generation_accepts_bng2_population_types_and_conversion_cycles(tmp_path):
+def test_hybrid_generation_accepts_bng2_population_types_and_conversion_cycles(
+    tmp_path,
+):
     source = tmp_path / "population-cycle.bngl"
-    source.write_text(
-        """begin model
+    source.write_text("""begin model
 begin parameters
   k_forward 2
   k_reverse 1
@@ -214,8 +211,7 @@ end model
 begin actions
 generate_hybrid_model({overwrite=>1, execute=>1, actions=>["simulate_nf({t_end=>1, n_steps=>10, seed=>23})"]})
 end actions
-"""
-    )
+""")
 
     bionetgen.load(source).execute()
 
@@ -240,8 +236,7 @@ end actions
 
 def test_population_type_name_cannot_duplicate_a_molecule_type(tmp_path):
     source = tmp_path / "duplicate-population-type.bngl"
-    source.write_text(
-        """begin model
+    source.write_text("""begin model
 begin molecule types
   A_pop()
 end molecule types
@@ -249,16 +244,14 @@ begin population types
   A_pop()
 end population types
 end model
-"""
-    )
+""")
     with pytest.raises(RuntimeError, match="Molecule type A_pop previously defined"):
         bionetgen.load(source)
 
 
 def test_hybrid_nfsim_preserves_population_conversion_inside_compartment(tmp_path):
     source = tmp_path / "compartment.bngl"
-    source.write_text(
-        """begin model
+    source.write_text("""begin model
 begin parameters
   k_fast 100
   k_slow 0.1
@@ -300,8 +293,7 @@ end model
 begin actions
 generate_hybrid_model({overwrite=>1, execute=>1, actions=>["simulate_nf({t_end=>0.1, n_steps=>4, seed=>2})"]})
 end actions
-"""
-    )
+""")
     bionetgen.load(source).execute()
 
     output = tmp_path / "compartment_hpp.gdat"
@@ -346,8 +338,7 @@ def test_hybrid_model_generation_does_not_run_the_original_model(tmp_path):
 
 def test_hybrid_model_generation_preserves_protocol_execution(tmp_path):
     source = tmp_path / "protocol_hybrid.bngl"
-    source.write_text(
-        """begin model
+    source.write_text("""begin model
 begin parameters
   k_make 0.1
   k_map 10
@@ -379,27 +370,24 @@ end model
 begin actions
 generate_hybrid_model({overwrite=>1, execute=>1, actions=>[\"simulate_protocol()\"]})
 end actions
-"""
-    )
+""")
     bionetgen.load(source).execute()
 
     output = tmp_path / "protocol_hpp.gdat"
     assert output.is_file()
     raw = output.read_text().splitlines()
     columns = raw[0].lstrip("#").split()
-    rows = [
-        line.split()
-        for line in raw
-        if line and not line.startswith("#")
-    ]
+    rows = [line.split() for line in raw if line and not line.startswith("#")]
     assert float(rows[-1][0]) == pytest.approx(0.1)
     final = [float(value) for value in rows[-1]]
-    assert final[columns.index("A_total")] + final[columns.index("B_total")] == pytest.approx(20)
+    assert final[columns.index("A_total")] + final[
+        columns.index("B_total")
+    ] == pytest.approx(20)
     assert final[columns.index("B_total")] < 15
     hybrid = (tmp_path / "protocol_hybrid_hpp.bngl").read_text()
     assert "begin protocol" in hybrid
     assert 'setParameter("k_make", 10)' in hybrid
-    assert 'simulate_nf({' in hybrid
+    assert "simulate_nf({" in hybrid
     assert 'prefix=>"protocol_hpp"' in hybrid
 
     unsupported = tmp_path / "unsupported_protocol.bngl"
