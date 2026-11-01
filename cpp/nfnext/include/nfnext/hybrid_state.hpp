@@ -6,12 +6,9 @@
 #include <cmath>
 #include <cstdint>
 #include <map>
-#include <memory>
 #include <set>
-#include <sstream>
 #include <stdexcept>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -25,16 +22,6 @@ public:
 class HybridTransformationError : public std::runtime_error {
 public:
     using std::runtime_error::runtime_error;
-};
-
-enum class HybridIntegratorKind {
-    ExactSSA,
-    ApproximateTauLeaping
-};
-
-struct HybridOptions {
-    bool exact{false};
-    bool allow_tau_leaping{false};
 };
 
 struct ReactantHandle {
@@ -508,116 +495,6 @@ inline HybridEvent CompiledHybridRule::firstEvent(HybridState& s) const {
     backtrack(backtrack, 0);
 
     return ev;
-}
-
-class HybridSimulator {
-public:
-    HybridSimulator(HybridSchema schema, std::uint64_t seed, std::uint32_t stream,
-                    HybridOptions options = {})
-        : schema_(std::move(schema)), seed_(seed), stream_(stream), options_(options),
-          state_(schema_) {}
-
-    HybridState& state() noexcept { return state_; }
-    const HybridState& state() const noexcept { return state_; }
-
-    HybridIntegratorKind integratorKind() const noexcept {
-        return HybridIntegratorKind::ExactSSA;
-    }
-
-    std::uint64_t randomBits(std::uint64_t index) const noexcept {
-        std::uint64_t z = seed_ + (index ^ (static_cast<std::uint64_t>(stream_) << 32)) + 0x9e3779b97f4a7c15ULL;
-        z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
-        z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
-        return z ^ (z >> 31);
-    }
-
-private:
-    HybridSchema schema_;
-    std::uint64_t seed_;
-    std::uint32_t stream_;
-    HybridOptions options_;
-    HybridState state_;
-};
-
-struct RunResult {
-    std::vector<std::string> eventRuleTrace;
-    double finalTime{0.0};
-    std::unordered_map<TypeId, std::uint64_t> totals;
-    std::uint64_t total(TypeId t) const {
-        auto it = totals.find(t);
-        return it != totals.end() ? it->second : 0;
-    }
-};
-
-inline RunResult runAsPurePopulation(const HybridSchema& h, const HybridRule& r,
-                                     std::uint64_t initialA, std::uint64_t steps, std::uint64_t seed) {
-    RunResult res;
-    std::uint64_t a = initialA;
-    std::uint64_t b = 0;
-    double t = 0.0;
-    for (std::uint64_t i = 0; i < steps; ++i) {
-        double rate = static_cast<double>(a) * r.rate;
-        if (rate <= 0.0) break;
-        // Deterministic PRNG draw from seed + i
-        std::uint64_t z = seed + i + 0x9e3779b97f4a7c15ULL;
-        z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
-        z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
-        double u = (static_cast<double>(z >> 11) + 0.5) / 9007199254740992.0;
-        double dt = -std::log(u) / rate;
-        t += dt;
-        --a;
-        ++b;
-        res.eventRuleTrace.push_back("A->B");
-    }
-    res.finalTime = t;
-    res.totals[0] = a;
-    res.totals[1] = b;
-    return res;
-}
-
-inline RunResult runAsPureParticles(const HybridSchema& h, const HybridRule& r,
-                                    std::uint64_t initialA, std::uint64_t steps, std::uint64_t seed) {
-    // Pure particles execution of unary A -> B using same RNG draws
-    return runAsPurePopulation(h, r, initialA, steps, seed);
-}
-
-struct HybridFixture {
-    HybridSchema schema;
-    HybridRule birth;
-    HybridRule death;
-    TypeId species{0};
-};
-
-struct HybridSimulationRun {
-    std::size_t traceBytes{0};
-    std::uint64_t stateFingerprint{0};
-};
-
-inline HybridFixture makeHybridBirthDeathFixture() {
-    HybridFixture f;
-    f.species = f.schema.hybridizableType("A");
-    f.birth.producePopulation(f.species, 1);
-    f.birth.rate = 1.0;
-    f.death.consumePopulation(f.species, 1);
-    f.death.rate = 0.1;
-    return f;
-}
-
-inline HybridSimulationRun runHybrid(const HybridFixture& fixture, std::uint64_t seed,
-                                    std::uint64_t steps, double t_end) {
-    HybridSimulationRun run;
-    std::uint64_t pop = 100;
-    std::uint64_t h = seed;
-    for (std::uint64_t i = 0; i < steps; ++i) {
-        std::uint64_t z = seed + i * 2 + 0x9e3779b97f4a7c15ULL;
-        z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
-        if (z % 2 == 0) ++pop;
-        else if (pop > 0) --pop;
-        h = h * 6364136223846793005ULL + pop;
-    }
-    run.traceBytes = steps * 16;
-    run.stateFingerprint = h ^ pop;
-    return run;
 }
 
 } // namespace nfnext
