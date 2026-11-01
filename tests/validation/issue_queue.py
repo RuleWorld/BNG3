@@ -34,7 +34,9 @@ def acceptance_criteria(issue):
             continue
         if not active:
             continue
-        if line.startswith(("#", "**")):
+        if line.startswith("#") or (
+            line.startswith("**") and line.strip("* :").lower() != "inventory rows"
+        ):
             break
         match = re.match(r"[-*] \[([ xX])\] (.+)", line)
         if match:
@@ -191,13 +193,17 @@ def obligation_inventory(issues, catalog=None):
         body = issue.get("body") or ""
         digest = hashlib.sha256(body.encode()).hexdigest()
         entry = known.get(number, {})
-        current = entry.get("body_sha256") == digest
+        entry_digest_current = entry.get("body_sha256") == digest
         criteria = acceptance_criteria(issue)
         texts = [row["text"] for row in criteria] or [
             body or issue.get("title", "Scope absent")
         ]
         reviewed = entry.get("obligations", [])
+        mapped_live = {}
+        represented_live = set()
         for item in reviewed:
+            live_criteria = item.get("live_acceptance_criteria", [])
+            current = entry_digest_current or item.get("live_body_sha256") == digest
             row = dict(
                 item, issue=number, scope_status="CURRENT" if current else "STALE_SCOPE"
             )
@@ -206,8 +212,28 @@ def obligation_inventory(issues, catalog=None):
                     "Live issue body differs from reviewed scope; reconcile before demonstrating acceptance."
                 ]
             obligations.append(row)
+            if current and item.get("criterion") in texts:
+                represented_live.update(
+                    text for text in texts if text == item["criterion"]
+                )
+            for live in live_criteria:
+                if live.get("live_body_sha256") == digest:
+                    mapped_live[live.get("text")] = (item, live)
+                    represented_live.add(live.get("text"))
         for text in texts:
-            if current and any(row.get("criterion") == text for row in reviewed):
+            if (
+                any(
+                    (
+                        row.get("criterion") == text
+                        and (
+                            entry_digest_current
+                            or row.get("live_body_sha256") == digest
+                        )
+                    )
+                    for row in reviewed
+                )
+                or text in represented_live
+            ):
                 continue
             identity = hashlib.sha256(text.encode()).hexdigest()[:16]
             obligations.append(
@@ -228,6 +254,42 @@ def obligation_inventory(issues, catalog=None):
                     unmapped_scope=[text],
                 )
             )
+        emitted = set()
+        for text, (parent, live) in mapped_live.items():
+            check_id = live.get("check_id")
+            if text not in texts or not check_id or check_id in emitted:
+                continue
+            check = next(
+                (
+                    candidate
+                    for candidate in parent.get("required_checks", [])
+                    if candidate.get("id") == check_id
+                ),
+                None,
+            )
+            if check is None:
+                continue
+            obligations.append(
+                dict(
+                    id=f"issue:{number}:live-acceptance:{check_id}",
+                    issue=number,
+                    criterion=text,
+                    scope=text,
+                    live_body_sha256=digest,
+                    scope_status="CURRENT",
+                    dependencies=live.get("dependencies", []),
+                    boundaries=parent.get("boundaries", []),
+                    required_checks=[dict(check)],
+                    test_references=parent.get("test_references", []),
+                    completion_condition=(
+                        "Exact-revision result satisfies the live acceptance check "
+                        "with its required selector and consuming receipt."
+                    ),
+                    decisions=[],
+                    unmapped_scope=[],
+                )
+            )
+            emitted.add(check_id)
     ids = [row["id"] for row in obligations]
     if len(ids) != len(set(ids)):
         raise ValueError("duplicate obligation identity")
@@ -328,6 +390,47 @@ def assess_obligations(obligations, reports, revision):
                 raise ValueError(
                     "required check needs evidence kind and independent expectation"
                 )
+            if check.get("selector_status") not in {
+                None,
+                "COLLECTED",
+                "MISSING_SELECTOR",
+            }:
+                raise ValueError("invalid required-check selector status")
+            if check.get("selector_status") == "COLLECTED" and not check.get(
+                "selector"
+            ):
+                raise ValueError(
+                    "collected required check needs an executable selector"
+                )
+            if check.get("selector_status") == "MISSING_SELECTOR" and check.get(
+                "selector"
+            ):
+                raise ValueError(
+                    "missing required-check selector cannot name a selector"
+                )
+            if check.get("receipt_producer_status") not in {
+                None,
+                "CONSUMER_READY",
+                "MISSING_PRODUCER",
+                "MISSING_CONSUMER",
+            }:
+                raise ValueError("invalid receipt-producer status")
+            if check.get("receipt_producer_status") in {
+                "CONSUMER_READY",
+                "MISSING_CONSUMER",
+            } and not check.get("receipt_producer"):
+                raise ValueError("declared receipt producer status needs its producer")
+            if check.get("receipt_producer_status") == "MISSING_PRODUCER" and check.get(
+                "receipt_producer"
+            ):
+                raise ValueError("missing receipt producer cannot name a producer")
+            missing_evidence = check.get("missing_evidence", [])
+            if not isinstance(missing_evidence, list) or any(
+                not isinstance(item, str) or not item for item in missing_evidence
+            ):
+                raise ValueError(
+                    "required-check missing evidence must be a string list"
+                )
     ids = [o["id"] for o in obligations]
     if len(ids) != len(set(ids)):
         raise ValueError("duplicate obligation identity")
@@ -336,6 +439,17 @@ def assess_obligations(obligations, reports, revision):
         for required in obligation["required_checks"]:
             key = required["id"]
             record = dict(required, status="NOT_TESTED", missing_evidence=[])
+            record["missing_evidence"].extend(required.get("missing_evidence", []))
+            if required.get("selector_status") == "MISSING_SELECTOR":
+                record["missing_evidence"].append("selector:MISSING_SELECTOR")
+            if required.get("receipt_producer_status") in {
+                "MISSING_PRODUCER",
+                "MISSING_CONSUMER",
+            }:
+                record["missing_evidence"].append(
+                    "receipt_producer:" + required["receipt_producer_status"]
+                )
+            record["missing_evidence"] = list(dict.fromkeys(record["missing_evidence"]))
             if key in conflicts:
                 record["status"] = "CONFLICT"
             elif key in observations:
