@@ -90,9 +90,7 @@ def simulate(
     """
     _check_jax()
     if model is None:
-        raise NotImplementedError(
-            "JAX SSA simulation is unavailable in BNG3: model must not be None."
-        )
+        raise ValueError("model must not be None")
 
     t_wall_start = _time.perf_counter()
 

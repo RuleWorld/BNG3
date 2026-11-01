@@ -1,4 +1,4 @@
-"""Tests for the unavailable JAX SSA API and native network flattening."""
+"""Tests for the optional JAX SSA backend and native network flattening."""
 
 import math
 import subprocess
@@ -11,9 +11,10 @@ from bionetgen import _bionetgen_cpp as cpp
 from bionetgen import jax_ssa
 
 
-def test_jax_ssa_unavailable_before_model_processing():
-    """An unavailable backend must reject before requiring a valid network."""
-    with pytest.raises(NotImplementedError, match="JAX SSA simulation is unavailable"):
+def test_jax_ssa_rejects_none_model():
+    """When JAX is available, a missing model is invalid input."""
+    pytest.importorskip("jax")
+    with pytest.raises(ValueError, match="model must not be None"):
         jax_ssa.simulate(None, None, batch_size=1, t_end=1.0, base_seed=42)
 
 
