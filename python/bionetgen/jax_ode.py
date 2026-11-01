@@ -4,7 +4,18 @@ from __future__ import annotations
 
 import math
 import operator
-from typing import Any, Callable, Dict
+import os
+import sys
+from typing import Any, Callable, Dict, Optional
+
+# On Darwin (macOS), the experimental jax-metal plugin is incompatible with
+# recent StableHLO bytecode (error code 22). Default to CPU unless explicitly overridden.
+if (
+    sys.platform == "darwin"
+    and "JAX_PLATFORMS" not in os.environ
+    and "JAX_PLATFORM_NAME" not in os.environ
+):
+    os.environ["JAX_PLATFORMS"] = "cpu"
 
 import numpy as np
 
@@ -30,6 +41,10 @@ def _check_jax() -> None:
             "JAX ODE backend requires 'jax' and 'jaxlib' packages. "
             "Install with: pip install 'bionetgen[jax]'"
         )
+    try:
+        _ = jnp.zeros(1) + 1.0
+    except Exception:
+        jax.config.update("jax_platform_name", "cpu")
 
 
 def _extract_ode_data(model: Any) -> Dict[str, Any]:
@@ -58,7 +73,9 @@ def _as_jax_float(values: Any, name: str, dtype: Any) -> jax.Array:
     return jnp.asarray(values, dtype=dtype)
 
 
-def _compile_mass_action_rhs(data: Dict[str, Any]) -> Callable:
+def _compile_mass_action_rhs(
+    data: Dict[str, Any], custom_rate_constants: Optional[Any] = None
+) -> Callable:
     """Build a JIT-compiled RHS from native ODE compiler output."""
     initial_state_native = np.asarray(data["initial_state"], dtype=np.float64)
     initial_state = _as_jax_float(
@@ -111,9 +128,12 @@ def _compile_mass_action_rhs(data: Dict[str, Any]) -> Callable:
                 change_reactions.append(reaction_index)
                 change_stoichiometry.append(coefficient)
 
-    rate_constants_jax = _as_jax_float(
-        rate_constants, "mass-action rate constants", initial_state.dtype
-    )
+    if custom_rate_constants is not None:
+        rate_constants_jax = jnp.asarray(custom_rate_constants)
+    else:
+        rate_constants_jax = _as_jax_float(
+            rate_constants, "mass-action rate constants", initial_state.dtype
+        )
     reactants_jax = jnp.asarray(padded_reactants)
     reactant_mask_jax = jnp.asarray(reactant_mask)
     absolute_flux_jax = jnp.asarray(absolute_flux)
@@ -150,7 +170,9 @@ def _compile_mass_action_rhs(data: Dict[str, Any]) -> Callable:
     return rhs
 
 
-def _compile_rhs_from_data(data: Dict[str, Any]) -> Callable:
+def _compile_rhs_from_data(
+    data: Dict[str, Any], custom_rate_constants: Optional[Any] = None
+) -> Callable:
     functional = np.asarray(data["functional_rates"], dtype=bool)
     time_dependent = np.asarray(data["time_dependent_rates"], dtype=bool)
     if np.any(functional) or np.any(time_dependent):
@@ -159,10 +181,10 @@ def _compile_rhs_from_data(data: Dict[str, Any]) -> Callable:
         else:
             reason = "functional rate laws"
         raise NotImplementedError(f"JAX ODE does not support {reason}")
-    return _compile_mass_action_rhs(data)
+    return _compile_mass_action_rhs(data, custom_rate_constants=custom_rate_constants)
 
 
-def compile_rhs(model: Any) -> Callable:
+def compile_rhs(model: Any, rate_constants: Optional[Any] = None) -> Callable:
     """Compile a JAX RHS from BNG3's native mass-action ODE representation.
 
     The native engine provides evaluated coefficients, reaction participants,
@@ -172,11 +194,19 @@ def compile_rhs(model: Any) -> Callable:
     and initial amounts outside its normal finite range are rejected.
     """
     _check_jax()
-    return _compile_rhs_from_data(_extract_ode_data(model))
+    return _compile_rhs_from_data(
+        _extract_ode_data(model), custom_rate_constants=rate_constants
+    )
 
 
 def simulate_jax_ode(
-    model: Any, t_end: float, n_steps: int = 1000, method: str = "rk4"
+    model: Any,
+    t_end: float,
+    n_steps: int = 1000,
+    method: str = "rk4",
+    initial_state: Optional[Any] = None,
+    rate_constants: Optional[Any] = None,
+    return_jax: bool = False,
 ) -> Dict[str, Any]:
     """Integrate a static mass-action model with a fixed-step JAX RK4 solver.
 
@@ -204,11 +234,14 @@ def simulate_jax_ode(
         raise ValueError("n_steps must be a positive integer")
 
     data = _extract_ode_data(model)
-    rhs = _compile_rhs_from_data(data)
-    initial_state = jnp.asarray(data["initial_state"])
+    rhs = _compile_rhs_from_data(data, custom_rate_constants=rate_constants)
+    if initial_state is not None:
+        init_state = jnp.asarray(initial_state)
+    else:
+        init_state = jnp.asarray(data["initial_state"])
     time_points = np.linspace(0.0, final_time, n_steps + 1)
-    scan_times = _as_jax_float(time_points[:-1], "time points", initial_state.dtype)
-    step_size = _as_jax_float(final_time / n_steps, "time step", initial_state.dtype)
+    scan_times = _as_jax_float(time_points[:-1], "time points", init_state.dtype)
+    step_size = _as_jax_float(final_time / n_steps, "time step", init_state.dtype)
     half_step = step_size * 0.5
 
     def rk4_step(state, time):
@@ -221,11 +254,12 @@ def simulate_jax_ode(
 
     # JAX lowers a fixed-length scan as one loop instead of unrolling Python iterations.
     # Source: https://docs.jax.dev/en/latest/_autosummary/jax.lax.scan.html
-    _, later_states = lax.scan(rk4_step, initial_state, scan_times)
-    trajectory = jnp.concatenate((initial_state[None, :], later_states), axis=0)
+    _, later_states = lax.scan(rk4_step, init_state, scan_times)
+    trajectory = jnp.concatenate((init_state[None, :], later_states), axis=0)
+    concs = trajectory if return_jax else np.asarray(trajectory)
     return {
         "time": time_points,
-        "concentrations": np.asarray(trajectory),
+        "concentrations": concs,
     }
 
 

@@ -692,7 +692,7 @@ jobs:
 
   python-jax:
     needs: [lint, harness]
-    name: Optional JAX CPU (ODE and SSA availability)
+    name: Optional JAX CPU (ODE and vectorized SSA)
     runs-on: ubuntu-22.04
     timeout-minutes: 25
     env:
@@ -724,9 +724,7 @@ jobs:
         run: |
           python -c 'import jax, jaxlib; print(jax.__version__, jaxlib.__version__, jax.devices()); assert jax.default_backend() == "cpu"'
 
-      - name: Test JAX float32 ODE and explicit SSA unavailability
-        # SSA is unavailable, even with JAX installed. Flattening is a native
-        # data export and does not establish accelerator simulation support.
+      - name: Test JAX float32 ODE and vectorized SSA
         run: python -m pytest tests/python/test_jax_ode.py tests/python/test_jax_ssa.py -q
         env:
           JAX_ENABLE_X64: "false"

@@ -1,6 +1,17 @@
 """Numerical contracts for the optional JAX ODE backend."""
 
+import os
+import sys
 from pathlib import Path
+
+# On Darwin (macOS), the experimental jax-metal plugin is incompatible with
+# recent StableHLO bytecode (error code 22). Default to CPU unless explicitly overridden.
+if (
+    sys.platform == "darwin"
+    and "JAX_PLATFORMS" not in os.environ
+    and "JAX_PLATFORM_NAME" not in os.environ
+):
+    os.environ["JAX_PLATFORMS"] = "cpu"
 
 import numpy as np
 import pytest
@@ -179,3 +190,68 @@ def test_invalid_time_grid_rejected(t_end, n_steps):
 def test_noninteger_step_count_rejected():
     with pytest.raises(TypeError, match="n_steps"):
         jax_ode.simulate_jax_ode(_model("A() -> B() k"), t_end=1.0, n_steps=1.5)
+
+
+def test_jax_ode_differentiation_rate_constants():
+    """Verify automatic differentiation of trajectory w.r.t. rate constants."""
+    model = _model("A() -> B() k", seeds="A() 20\nB() 0", rate="0.5")
+
+    def loss(k_val):
+        res = jax_ode.simulate_jax_ode(
+            model,
+            t_end=1.0,
+            n_steps=100,
+            rate_constants=jax.numpy.atleast_1d(k_val),
+            return_jax=True,
+        )
+        # Final B concentration: B(t) = 20 * (1 - exp(-k * t))
+        return res["concentrations"][-1, 1]
+
+    grad_fn = jax.grad(loss)
+    k_test = 0.5
+    computed_grad = float(grad_fn(k_test))
+    # Analytical derivative: dB/dk = 20 * t * exp(-k * t) at t=1.0
+    expected_grad = 20.0 * 1.0 * np.exp(-k_test * 1.0)
+    np.testing.assert_allclose(computed_grad, expected_grad, rtol=1e-3, atol=1e-3)
+
+
+def test_jax_ode_differentiation_initial_state():
+    """Verify automatic differentiation of trajectory w.r.t. initial state."""
+    model = _model("A() -> B() k", seeds="A() 20\nB() 0", rate="0.3")
+
+    def loss(y0):
+        res = jax_ode.simulate_jax_ode(
+            model,
+            t_end=2.0,
+            n_steps=100,
+            initial_state=y0,
+            return_jax=True,
+        )
+        return res["concentrations"][-1, 1]
+
+    grad_fn = jax.grad(loss)
+    y0_init = jax.numpy.array([20.0, 5.0])
+    computed_grad = np.asarray(grad_fn(y0_init))
+
+    # Analytical: B(t) = A0 * (1 - exp(-k*t)) + B0
+    # dB/dA0 = 1 - exp(-k*t)
+    # dB/dB0 = 1.0
+    expected_grad = np.array([1.0 - np.exp(-0.3 * 2.0), 1.0])
+    np.testing.assert_allclose(computed_grad, expected_grad, rtol=1e-3, atol=1e-3)
+
+
+def test_jax_ode_custom_rate_constants_and_state():
+    """Verify simulation with custom overridden rate constants and initial state."""
+    model = _model("A() -> B() k", seeds="A() 20\nB() 0", rate="0.1")
+    res = jax_ode.simulate_jax_ode(
+        model,
+        t_end=5.0,
+        n_steps=50,
+        initial_state=np.array([10.0, 0.0]),
+        rate_constants=np.array([0.4]),
+    )
+    time = res["time"]
+    conc = res["concentrations"]
+    expected_b = 10.0 * (1.0 - np.exp(-0.4 * time))
+    np.testing.assert_allclose(conc[:, 1], expected_b, rtol=1e-4, atol=1e-4)
+    np.testing.assert_allclose(conc[:, 0] + conc[:, 1], 10.0, atol=1e-4)
