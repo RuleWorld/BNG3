@@ -2241,6 +2241,38 @@
             "Missing required qualification ID: qualification:issue:142:closure-record.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
+        },
+        {
+          "id": "issue:142:release-graph-observables",
+          "criterion": "release-graph-observables: BNG2/native NFsim reaction multiplicities and observable weights agree for symmetric complexes.",
+          "scope": "For a symmetric homodimer reaction, compare BNG2 and BNG3 generated network multiplicities and observable weights, consume pinned BNG2 XML with pinned native NFsim, verify the native observable trajectory weights, and check the endpoint count law against an independent finite-state CTMC.",
+          "dependencies": [],
+          "boundaries": [
+            "The stochastic claim is limited to the dimer-count endpoint distribution at t=1.0 with 200 fixed-seed native NFsim runs and one DKW bound at alpha=0.005.",
+            "The exact NET reaction multiplicity, generated observable group weights and per-row native Bound=2*Dimer relation are deterministic checks and are reported separately from the endpoint distribution claim."
+          ],
+          "required_checks": [
+            {
+              "id": "release-graph-observables",
+              "evidence_kind": "supported-execution",
+              "expectation": "Pinned BNG2 and BNG3 networks agree on the symmetric homodimer reaction multiplicity and observable weights; pinned native NFsim consumes BNG2 XML and its per-row observables and bounded endpoint distribution satisfy the declared checks.",
+              "identity_requirements": [
+                "source.revision",
+                "oracle.revision",
+                "oracle.sha256",
+                "subject.sha256"
+              ]
+            }
+          ],
+          "test_references": [
+            "tests/validation/test_nfsim_physical_unimolecular.py::test_release_graph_observables_symmetric_homodimer_multiplicity",
+            ".github/workflows/parity.yml"
+          ],
+          "completion_condition": "Exact-revision result satisfies this obligation.",
+          "decisions": [],
+          "unmapped_scope": [
+            "Other reaction classes, larger complexes, additional observable types and other stochastic distributions are not qualified by this bounded symmetric homodimer case."
+          ]
         }
       ]
     },

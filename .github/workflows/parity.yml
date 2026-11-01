@@ -807,7 +807,20 @@ jobs:
           set -euo pipefail
           pytest -c tests/validation/pytest.ini \
             tests/validation/test_nfsim_physical_unimolecular.py \
+            -k 'not test_release_graph_observables' \
             -q -ra --junitxml="$RUNNER_TEMP/nfsim-physical-rate-controls.xml"
+
+      - name: Release graph observables acceptance
+        shell: bash
+        env:
+          BNG2_PERL: ${{ runner.temp }}/oracle-bionetgen/bng2/BNG2.pl
+          BNGPATH: ${{ runner.temp }}/oracle-bionetgen/bng2
+          NFSIM_BIN: ${{ runner.temp }}/oracle-nfsim/build/NFsim
+        run: |
+          set -euo pipefail
+          pytest -c tests/validation/pytest.ini \
+            tests/validation/test_nfsim_physical_unimolecular.py::test_release_graph_observables_symmetric_homodimer_multiplicity \
+            -q -ra --junitxml="$RUNNER_TEMP/release-graph-observables.xml"
 
       - name: Run hybrid particle-population parity and conservation
         shell: bash

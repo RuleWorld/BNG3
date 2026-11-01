@@ -208,6 +208,28 @@ def test_physical_unimolecular_oracle_control_runs_with_both_locked_oracles():
     assert env.get("NFSIM_BIN", "").endswith("/oracle-nfsim/build/NFsim")
 
 
+def test_release_graph_observables_acceptance_is_an_explicit_locked_oracle_step():
+    steps = _parse_workflow()["jobs"]["nfsim-parity"]["steps"]
+    step = next(
+        (
+            item
+            for item in steps
+            if item.get("name") == "Release graph observables acceptance"
+        ),
+        None,
+    )
+    assert step is not None
+    assert "set -euo pipefail" in step["run"]
+    assert (
+        "test_release_graph_observables_symmetric_homodimer_multiplicity" in step["run"]
+    )
+    assert step.get("continue-on-error", False) is False
+    env = step.get("env", {})
+    assert env.get("BNG2_PERL", "").endswith("/oracle-bionetgen/bng2/BNG2.pl")
+    assert env.get("BNGPATH", "").endswith("/oracle-bionetgen/bng2")
+    assert env.get("NFSIM_BIN", "").endswith("/oracle-nfsim/build/NFsim")
+
+
 def test_parity_workflow_env_still_pins_the_strict_oracle_flag():
     """`BNG3_CI_STRICT_ORACLES` is what turns a missing oracle into a failure.
 
