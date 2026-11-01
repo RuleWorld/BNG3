@@ -2055,7 +2055,8 @@
             "tests/python/test_single_nauty_contract.py",
             "tests/validation/graph_identity_contract.py",
             "tests/validation/test_graph_identity_contract.py",
-            ".github/workflows/parity.yml"
+            ".github/workflows/parity.yml",
+            "tests/validation/test_graph_identity_contract.py::test_the_native_surfaces_match_the_independent_contract"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],

@@ -106,11 +106,17 @@ def test_manifest_requires_all_three_named_release_checks(tmp_path):
                                     {
                                         "id": "release-graph-identity",
                                         "identity_requirements": ["source.revision"],
-                                        "test_references": [
-                                            "tests/validation/test_graph_identity_contract.py"
-                                        ],
-                                    }
-                                ]
+                                    },
+                                    {
+                                        "id": "release-graph-observables",
+                                        "identity_requirements": ["source.revision"],
+                                    },
+                                ],
+                                "test_references": [
+                                    "tests/validation/test_graph_identity_contract.py::test_the_native_surfaces_match_the_independent_contract",
+                                    "tests/validation/test_nfsim_physical_unimolecular.py::test_release_graph_observables_symmetric_homodimer_multiplicity",
+                                    "scripts/ci/record_issue142_release.py",
+                                ],
                             }
                         ],
                     }

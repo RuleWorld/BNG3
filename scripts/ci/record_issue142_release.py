@@ -18,6 +18,7 @@ if str(ROOT) not in sys.path:
 
 import numpy as np
 from scipy.linalg import expm
+import yaml
 
 from scripts.ci.oracle_sources import load_lock
 from tests.validation import compare, graph_identity_contract
@@ -90,12 +91,12 @@ def verify_manifest(root: Path = ROOT) -> dict[str, dict]:
             check_id = check["id"]
             if check_id not in EXPECTED_CHECKS:
                 continue
-            if check_id in checks and checks[check_id]["definition"] != check:
-                _fail(f"conflicting manifest definition for {check_id}")
-            entry = checks.setdefault(
-                check_id, {"definition": check, "test_references": []}
-            )
-            entry["test_references"].extend(obligation.get("test_references", []))
+            if check_id in checks:
+                _fail(f"duplicate or conflicting manifest definition for {check_id}")
+            checks[check_id] = {
+                "definition": check,
+                "test_references": obligation.get("test_references", []),
+            }
     missing = set(EXPECTED_CHECKS) - set(checks)
     if missing:
         _fail(f"manifest is missing required checks: {sorted(missing)}")
@@ -105,13 +106,41 @@ def verify_manifest(root: Path = ROOT) -> dict[str, dict]:
     ):
         _fail("a required Issue 142 check has no source/oracle identity requirements")
     expected_test_refs = {
-        "release-graph-identity": "tests/validation/test_graph_identity_contract.py",
-        "release-graph-observables": "tests/validation/test_nfsim_physical_unimolecular.py",
+        "release-graph-identity": "tests/validation/test_graph_identity_contract.py::test_the_native_surfaces_match_the_independent_contract",
+        "release-graph-observables": "tests/validation/test_nfsim_physical_unimolecular.py::test_release_graph_observables_symmetric_homodimer_multiplicity",
         "release-obligation-142": "scripts/ci/record_issue142_release.py",
     }
     for check_id, reference in expected_test_refs.items():
-        if not any(reference in item for item in checks[check_id]["test_references"]):
+        if reference not in checks[check_id]["test_references"]:
             _fail(f"manifest does not map {check_id} to {reference}")
+    workflow = yaml.safe_load((root / ".github/workflows/parity.yml").read_text())
+    jobs = workflow["jobs"]
+    steps = {
+        "release-graph-identity": (
+            jobs["bng2-parity"]["steps"],
+            "Release graph identity acceptance",
+            "tests/validation/test_graph_identity_contract.py",
+        ),
+        "release-graph-observables": (
+            jobs["nfsim-parity"]["steps"],
+            "Release graph observables acceptance",
+            "test_release_graph_observables_symmetric_homodimer_multiplicity",
+        ),
+    }
+    for check_id, (job_steps, name, command_fragment) in steps.items():
+        step = next((item for item in job_steps if item.get("name") == name), None)
+        if step is None or command_fragment not in step.get("run", ""):
+            _fail(f"workflow does not execute the named {check_id} case")
+    record_job = jobs.get("release-obligation-142", {})
+    if record_job.get("name") != "release-obligation-142":
+        _fail("workflow has no named release-obligation-142 job")
+    if set(record_job.get("needs", [])) != {"bng2-parity", "nfsim-parity"}:
+        _fail("release-obligation-142 does not depend on both named check jobs")
+    if not any(
+        "record_issue142_release.py" in step.get("run", "")
+        for step in record_job.get("steps", [])
+    ):
+        _fail("release-obligation-142 job does not execute its evidence consumer")
     return checks
 
 
