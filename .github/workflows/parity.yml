@@ -346,6 +346,21 @@ jobs:
             -q -ra \
             --junitxml="$RUNNER_TEMP/issue182-required-parity.xml"
 
+      - name: Check compiled unary state changes against pinned BNG2
+        shell: bash
+        env:
+          BNG2_PERL: ${{ runner.temp }}/oracle-bionetgen/bng2/BNG2.pl
+          BNGPATH: ${{ runner.temp }}/oracle-bionetgen/bng2
+          BNG3_CI_STRICT_ORACLES: "1"
+        run: |
+          set -euo pipefail
+          .venv/bin/python -m pytest -c tests/validation/pytest.ini \
+            tests/validation/sprint_s3_unary.py \
+            -o 'python_files=sprint_s3_*.py' \
+            --bng-cpp build/cpp/bng_cpp \
+            -q -ra \
+            --junitxml="$RUNNER_TEMP/sprint-s3-unary.xml"
+
       - name: Run live pinned 200-member SSA ensemble parity (scheduled)
         id: ssa_ensemble_parity
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
