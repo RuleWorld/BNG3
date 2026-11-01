@@ -217,6 +217,241 @@ def _run_bng3_compartment_ensemble(tmp_path: Path):
     return runs
 
 
+def _run_hybrid_generation(
+    engine: str, source: Path, *, outdir: Path | None = None
+) -> subprocess.CompletedProcess[str] | None:
+    """Run one HPP generation action through BNG2 or the production BNG3 API."""
+    if engine == "bng2":
+        bng2 = oracle_perl._bng2_path()
+        require_oracle(bng2 is not None, "pinned BNG2 unavailable (set BNG2_PERL)")
+        assert bng2 is not None
+        env = os.environ.copy()
+        env["BNGPATH"] = str(bng2.parent)
+        env["PERL5LIB"] = str(bng2.parent / "Perl2")
+        command = [os.environ.get("PERL", "perl"), str(bng2)]
+        if outdir is not None:
+            command.extend(("--outdir", str(outdir)))
+        command.append(str(source))
+        return subprocess.run(
+            command,
+            cwd=source.parent,
+            env=env,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+    if engine == "bng3":
+        import bionetgen
+
+        bionetgen.load(source).execute()
+        return None
+    raise ValueError(engine)
+
+
+def _write_option_model(path: Path, action: str) -> Path:
+    path.write_text(MODEL + f"\nbegin actions\n{action}\nend actions\n")
+    return path
+
+
+def _option_case(engine: str, root: Path, options: str = ""):
+    """Isolate BNG2/BNG3 output-prefix defaults for an action option case."""
+    work = root / engine
+    work.mkdir(parents=True, exist_ok=True)
+    args = f"({{{options}}})" if options else "()"
+    source = _write_option_model(work / "model.bngl", f"generate_hybrid_model{args}")
+    result = _run_hybrid_generation(engine, source)
+    if engine == "bng2":
+        assert result is not None
+        return result
+    return None
+
+
+@pytest.mark.nf
+@pytest.mark.parity
+def test_issue_150_generate_hybrid_model_action_options(tmp_path, capfd):
+    """Exercise every assigned generate_hybrid_model option against BNG2.
+
+    The pinned BNG2 action is the independent argument/default/error oracle;
+    each generated action is also consumed by the production BNG3 route. The
+    written BNGL/XML artifacts are checked instead of treating parsing as a
+    successful action contract.
+    """
+    require_oracle(runner.api_available(), "compiled BNG3 API unavailable")
+    require_oracle(
+        oracle_perl._bng2_path() is not None,
+        "pinned BNG2 unavailable (set BNG2_PERL)",
+    )
+    runner._ensure_source_python_path()
+
+    coverage: dict[str, bool] = {}
+    for option in ("actions", "execute", "overwrite", "prefix", "suffix", "verbose"):
+        coverage[f"action.generate_hybrid_model.{option}"] = False
+    coverage["action.generate_hybrid_model"] = False
+
+    for engine in ("bng2", "bng3"):
+        # Defaults: BNG2/BNG3 both write a model with writeXML() as its default
+        # action, but do not run it unless execute=>1 is requested.
+        result = _option_case(engine, tmp_path / f"defaults-{engine}")
+        if engine == "bng2":
+            assert result is not None and result.returncode == 0, result
+        default_hpp = tmp_path / f"defaults-{engine}" / engine / "model_hpp.bngl"
+        assert default_hpp.is_file()
+        assert "writeXML()" in default_hpp.read_text()
+        assert not default_hpp.with_suffix(".xml").exists()
+        coverage["action.generate_hybrid_model"] = True
+
+        empty_result = _option_case(
+            engine,
+            tmp_path / f"empty-actions-{engine}",
+            "overwrite=>1, actions=>[]",
+        )
+        if engine == "bng2":
+            assert empty_result is not None and empty_result.returncode == 0, empty_result
+        empty_hpp = tmp_path / f"empty-actions-{engine}" / engine / "model_hpp.bngl"
+        assert empty_hpp.is_file()
+        assert "## model actions ##" not in empty_hpp.read_text()
+
+        # execute=>1 runs an explicitly supplied action list against the
+        # generated hybrid model.
+        result = _option_case(
+            engine,
+            tmp_path / f"execute-{engine}",
+            'overwrite=>1, execute=>1, actions=>["writeXML()"]',
+        )
+        if engine == "bng2":
+            assert result is not None and result.returncode == 0, result
+        executed_xml = tmp_path / f"execute-{engine}" / engine / "model_hpp.xml"
+        assert executed_xml.is_file() and executed_xml.stat().st_size > 0
+        coverage["action.generate_hybrid_model.actions"] = True
+        coverage["action.generate_hybrid_model.execute"] = True
+
+        # Custom prefix and suffix control the exact generated model and
+        # consumer output paths on both implementations.
+        custom_dir = tmp_path / f"custom-{engine}" / engine
+        custom_dir.mkdir(parents=True)
+        custom_prefix = custom_dir / "renamed"
+        options = (
+            f'overwrite=>1, prefix=>"{custom_prefix}", suffix=>"converted", '
+            'execute=>1, actions=>["writeXML()"]'
+        )
+        result = _option_case(engine, tmp_path / f"custom-{engine}", options)
+        if engine == "bng2":
+            assert result is not None and result.returncode == 0, result
+        custom_hpp = custom_dir / "renamed_converted.bngl"
+        assert custom_hpp.is_file()
+        assert (custom_dir / "renamed_converted.xml").is_file()
+        coverage["action.generate_hybrid_model.prefix"] = True
+        coverage["action.generate_hybrid_model.suffix"] = True
+
+        # verbose=>1 reaches the generator's matching diagnostics.
+        result = _option_case(
+            engine,
+            tmp_path / f"verbose-{engine}",
+            "overwrite=>1, verbose=>1",
+        )
+        if engine == "bng2":
+            assert result is not None and result.returncode == 0, result
+            verbose = result.stdout + result.stderr
+        else:
+            captured = capfd.readouterr()
+            verbose = captured.out + captured.err
+        assert "verbose => 1" in verbose
+        coverage["action.generate_hybrid_model.verbose"] = True
+
+        # overwrite=>0 refuses an existing target; overwrite=>1 replaces it.
+        overwrite_root = tmp_path / f"overwrite-{engine}"
+        first = _option_case(engine, overwrite_root, "overwrite=>1")
+        if engine == "bng2":
+            assert first is not None and first.returncode == 0, first
+        target = overwrite_root / engine / "model_hpp.bngl"
+        target.write_text("sentinel\n")
+        if engine == "bng2":
+            refused = _option_case(engine, overwrite_root, "overwrite=>0")
+            assert refused is not None
+            assert "already exists" in refused.stdout + refused.stderr
+        else:
+            with pytest.raises(RuntimeError, match="already exists"):
+                _option_case(engine, overwrite_root, "overwrite=>0")
+        assert target.read_text() == "sentinel\n"
+        replaced = _option_case(engine, overwrite_root, "overwrite=>1")
+        if engine == "bng2":
+            assert replaced is not None and replaced.returncode == 0, replaced
+        assert target.read_text() != "sentinel\n"
+        coverage["action.generate_hybrid_model.overwrite"] = True
+
+        # BNG2 rejects unknown option names. BNG3 must preserve that failure
+        # instead of silently generating an artifact with ignored arguments.
+        if engine == "bng2":
+            invalid = _option_case(
+                engine,
+                tmp_path / f"invalid-option-{engine}",
+                "overwrite=>1, unsupported_option=>1",
+            )
+            assert invalid is not None
+            assert invalid.returncode != 0, invalid
+            assert "Unrecognized option unsupported_option" in (
+                invalid.stdout + invalid.stderr
+            )
+        else:
+            with pytest.raises(RuntimeError, match="Unrecognized option unsupported_option"):
+                _option_case(
+                    engine,
+                    tmp_path / f"invalid-option-{engine}",
+                    "overwrite=>1, unsupported_option=>1",
+                )
+
+    assert all(coverage.values())
+
+    evidence_target = os.environ.get("BNG3_HYBRID_EVIDENCE_DIR")
+    if evidence_target:
+        evidence_dir = Path(evidence_target)
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        lock = load_lock()
+        bng2 = oracle_perl._bng2_path()
+        assert bng2 is not None
+        artifacts = {}
+        for engine in ("bng2", "bng3"):
+            source = tmp_path / f"execute-{engine}" / engine
+            for suffix in ("bngl", "xml"):
+                original = source / f"model_hpp.{suffix}"
+                target = evidence_dir / f"{engine}-hybrid.{suffix}"
+                shutil.copy2(original, target)
+                artifacts[f"{engine}.{suffix}"] = hashlib.sha256(
+                    target.read_bytes()
+                ).hexdigest()
+        report = {
+            "schema_version": 1,
+            "slice": "issue-150-generate-hybrid-model-action-options",
+            "acceptance_status": "partial; hybrid.execution inventory row remains uncovered",
+            "source": {"revision": _git_revision(ROOT)},
+            "oracles": {
+                "bng2": {
+                    "revision": _git_revision(bng2.parent),
+                    "script_sha256": hashlib.sha256(bng2.read_bytes()).hexdigest(),
+                    "locked_source_revision": lock["sources"]["bionetgen"]["revision"],
+                }
+            },
+            "cases": {
+                identity: {
+                    "passed": passed,
+                    "reference": "pinned BNG2 generate_hybrid_model option contract",
+                }
+                for identity, passed in coverage.items()
+            },
+            "uncovered_inventory_rows": ["hybrid.execution"],
+            "negative_control": {
+                "case": "unknown generate_hybrid_model option",
+                "bng2": "rejected",
+                "bng3": "rejected",
+            },
+            "artifacts": artifacts,
+        }
+        (evidence_dir / "capability-coverage-150.json").write_text(
+            json.dumps(report, indent=2) + "\n"
+        )
+
+
 def _git_revision(path: Path) -> str:
     return subprocess.run(
         ["git", "-C", str(path), "rev-parse", "HEAD"],

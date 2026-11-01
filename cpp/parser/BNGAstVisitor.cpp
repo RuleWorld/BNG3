@@ -361,6 +361,95 @@ std::string normalizeLegacyActionNames(const std::string& source) {
     return result;
 }
 
+// The action argument grammar does not generate an empty list alternative,
+// while BNG2 accepts actions=>[] as an explicit request to generate without
+// embedding or executing any actions. Rewrite only that source-level option
+// value to a quoted sentinel; ActionDispatch converts the sentinel back to an
+// empty vector. Quotes and comments are skipped so model text is preserved.
+std::string normalizeEmptyHybridActionList(const std::string& source) {
+    constexpr std::string_view key = "actions";
+    constexpr std::string_view replacement =
+        "actions=>[\"__BNG3_EMPTY_HYBRID_ACTION_LIST__\"]";
+    std::string result;
+    result.reserve(source.size());
+    char quote = '\0';
+    bool escaped = false;
+    bool comment = false;
+
+    for (std::size_t index = 0; index < source.size();) {
+        const char current = source[index];
+        if (comment) {
+            result.push_back(current);
+            ++index;
+            comment = current != '\n';
+            continue;
+        }
+        if (quote != '\0') {
+            result.push_back(current);
+            ++index;
+            if (escaped) {
+                escaped = false;
+            } else if (current == '\\') {
+                escaped = true;
+            } else if (current == quote) {
+                quote = '\0';
+            }
+            continue;
+        }
+        if (current == '#') {
+            comment = true;
+            result.push_back(current);
+            ++index;
+            continue;
+        }
+        if (current == '\'' || current == '"') {
+            quote = current;
+            result.push_back(current);
+            ++index;
+            continue;
+        }
+
+        const bool leftBoundary = index == 0 ||
+            !(std::isalnum(static_cast<unsigned char>(source[index - 1])) ||
+              source[index - 1] == '_');
+        if (leftBoundary && source.compare(index, key.size(), key) == 0) {
+            auto afterKey = index + key.size();
+            const bool rightBoundary = afterKey == source.size() ||
+                !(std::isalnum(static_cast<unsigned char>(source[afterKey])) ||
+                  source[afterKey] == '_');
+            if (rightBoundary) {
+                auto valueStart = afterKey;
+                while (valueStart < source.size() &&
+                       std::isspace(static_cast<unsigned char>(source[valueStart]))) {
+                    ++valueStart;
+                }
+                if (source.compare(valueStart, 2, "=>") == 0) {
+                    auto listStart = valueStart + 2;
+                    while (listStart < source.size() &&
+                           std::isspace(static_cast<unsigned char>(source[listStart]))) {
+                        ++listStart;
+                    }
+                    if (listStart < source.size() && source[listStart] == '[') {
+                        auto listEnd = listStart + 1;
+                        while (listEnd < source.size() &&
+                               std::isspace(static_cast<unsigned char>(source[listEnd]))) {
+                            ++listEnd;
+                        }
+                        if (listEnd < source.size() && source[listEnd] == ']') {
+                            result.append(replacement);
+                            index = listEnd + 1;
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+        result.push_back(current);
+        ++index;
+    }
+    return result;
+}
+
 bool isLooseActionLine(const std::string& line) {
     static constexpr std::array<std::string_view, 27> actionNames = {
         "generate_network", "generatenetwork", "simulate", "simulate_ode",
@@ -1558,6 +1647,7 @@ std::string normalizeBNGLSource(const std::string& sourceText) {
     normalized = normalizePopulationMapRates(normalized);
     normalized = normalizeEmptyReactantFunctionDeclarations(normalized);
     normalized = normalizeLegacyActionNames(normalized);
+    normalized = normalizeEmptyHybridActionList(normalized);
     normalized = normalizeIntegerStateTransitions(normalized);
     normalized = normalizeLooseActionsInsideModel(normalized);
     normalized = normalizeUnitSyntax(normalized);
