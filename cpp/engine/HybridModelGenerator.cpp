@@ -86,6 +86,12 @@ std::size_t HybridModelGenerator::countMatches(const std::string& obsPattern,
         auto* species2 = parser2.species_def();
         if (parser2.getNumberOfSyntaxErrors() != 0) return 0;
         const auto target = bng::parser::buildPatternGraph(species2, mutableModel, true);
+        const auto observableCompartment =
+            bng::parser::extractSpeciesCompartment(species1);
+        if (!observableCompartment.empty() &&
+            observableCompartment != bng::parser::extractSpeciesCompartment(species2)) {
+            return 0;
+        }
 
         BNGcore::UllmannSGIso matcher(pattern, target);
         BNGcore::List<BNGcore::Map> maps;
@@ -298,15 +304,23 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
         populations.push_back(pi);
     }
 
-    std::set<std::string> addedPopulations;  // Track which populations are in seed species
+    std::set<std::string> addedPopulations;  // Track population/compartment instances
+    const auto populationIdentity = [](const std::string& name,
+                                       const std::string& compartment) {
+        return name + "\x1f" + compartment;
+    };
 
     for (const auto& species : model_.getSeedSpecies()) {
         const std::string& pattern = species.getPattern();
+        const std::string fullPattern = species.getCompartment().empty() ||
+                                                pattern.find('@') != std::string::npos
+                                            ? pattern
+                                            : "@" + species.getCompartment() + ":" + pattern;
         bool isPop = false;
 
         // Check if this species is isomorphic to any population
         for (const auto& pop : populations) {
-            if (isIsomorphic(pattern, pop.speciesPattern)) {
+            if (isIsomorphic(fullPattern, pop.speciesPattern)) {
                 // Replace with population species
                 // In Perl: $slist_new->add($pop->Population->copy(), $species->Concentration)
                 hybridModel.addSeedSpecies(ast::SeedSpecies(
@@ -314,7 +328,8 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
                     species.getAmount(),
                     species.isConstant(),
                     species.getCompartment()));
-                addedPopulations.insert(pop.populationName);
+                addedPopulations.insert(
+                    populationIdentity(pop.populationName, species.getCompartment()));
                 isPop = true;
 
                 if (opts.verbose) {
@@ -341,13 +356,14 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
 
     std::size_t zeroPops = 0;
     for (const auto& pop : populations) {
-        if (addedPopulations.count(pop.populationName) == 0) {
+        const auto identity = populationIdentity(pop.populationName, pop.compartment);
+        if (addedPopulations.count(identity) == 0) {
             hybridModel.addSeedSpecies(ast::SeedSpecies(
                 pop.populationName + "()",
                 ast::Expression::number(0),
                 false,
                 pop.compartment));
-            addedPopulations.insert(pop.populationName);
+            addedPopulations.insert(identity);
             ++zeroPops;
         }
     }
@@ -413,28 +429,52 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
         // observable contributes once when its pattern (and any stoichiometry
         // predicate) matches the concrete graph represented by a population.
         const bool speciesObservable = obs.getType() == "Species";
-        for (const auto& pop : populations) {
-            for (const auto& obsPattern : obs.getPatterns()) {
-                const auto predicate = speciesObservable
-                    ? countPredicate(obsPattern) : std::nullopt;
+        for (const auto& obsPattern : obs.getPatterns()) {
+            const auto predicate = speciesObservable
+                ? countPredicate(obsPattern) : std::nullopt;
+            const std::string& sourcePattern = predicate ? predicate->pattern : obsPattern;
+            const std::string observableCompartment = speciesCompartmentOf(sourcePattern);
+            std::set<std::string> matchedMappings;
+            for (const auto& pop : populations) {
                 const std::size_t matches = predicate
                     ? countMatches(predicate->pattern, pop.speciesPattern)
                     : countMatches(obsPattern, pop.speciesPattern);
                 const bool speciesMatch = predicate
                     ? satisfiesPredicate(matches, *predicate)
                     : matches > 0;
-                if (speciesObservable ? speciesMatch : matches > 0) {
-                    const std::size_t copies = speciesObservable ? 1 : matches;
-                    for (std::size_t m = 0; m < copies; ++m) {
-                        patterns.push_back(pop.populationName + "()");
+                if (!(speciesObservable ? speciesMatch : matches > 0)) continue;
+
+                std::string populationPattern = pop.populationName + "()";
+                if (!observableCompartment.empty()) {
+                    populationPattern = "@" + observableCompartment + ":" + populationPattern;
+                }
+                // An unqualified NFsim population pattern already counts all
+                // compartments of one population type. Add it only once when
+                // the same type represents that particle pattern in multiple
+                // compartments; qualified observables keep compartment-local
+                // population patterns distinct.
+                std::string mappedParticlePattern = pop.speciesPattern;
+                if (!mappedParticlePattern.empty() && mappedParticlePattern.front() == '@') {
+                    const auto separator = mappedParticlePattern.find(':');
+                    if (separator != std::string::npos) {
+                        mappedParticlePattern.erase(0, separator + 1);
                     }
-                    if (opts.verbose) {
-                        std::cerr << indent << indent
-                                  << "observable '" << obs.getName() << "':  +"
-                                  << matches << " match"
-                                  << (matches > 1 ? "es" : "")
-                                  << " to " << pop.populationName << "().\n";
-                    }
+                }
+                const std::string mappingIdentity =
+                    pop.populationName + "\x1f" + mappedParticlePattern +
+                    (observableCompartment.empty() ? "" : "\x1f" + pop.compartment);
+                if (!matchedMappings.insert(mappingIdentity).second) continue;
+
+                const std::size_t copies = speciesObservable ? 1 : matches;
+                for (std::size_t m = 0; m < copies; ++m) {
+                    patterns.push_back(populationPattern);
+                }
+                if (opts.verbose) {
+                    std::cerr << indent << indent
+                              << "observable '" << obs.getName() << "':  +"
+                              << matches << " match"
+                              << (matches > 1 ? "es" : "")
+                              << " to " << populationPattern << ".\n";
                 }
             }
         }

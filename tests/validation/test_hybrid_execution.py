@@ -60,6 +60,46 @@ end population maps
 end model
 """
 
+COMPARTMENT_MODEL = f"""begin model
+begin parameters
+  k_fast 100
+  k_slow 0.1
+  N {INITIAL_B}
+end parameters
+begin compartments
+  c1 3 1
+  c2 3 1
+  c3 3 1
+end compartments
+begin molecule types
+  A()
+  B1()
+  B2()
+end molecule types
+begin seed species
+  @c1:A() N
+  @c2:A() N
+end seed species
+begin observables
+  Molecules A_total A()
+  Molecules c1_units @c1:A()
+  Molecules c2_units @c2:A()
+  Molecules B1_total B1()
+  Molecules B2_total B2()
+  Molecules all_units A(),B1(),B2()
+end observables
+begin reaction rules
+  @c1:A() -> @c1:B1() k_fast
+  @c2:A() -> @c2:B2() k_slow
+end reaction rules
+begin population maps
+  c1: @c1:A() -> P() k_fast
+  c2: @c2:A() -> P() k_slow
+  c3: @c3:A() -> P() k_fast
+end population maps
+end model
+"""
+
 
 def _write_source(path: Path, *, engine: str, seed: int | None = None) -> Path:
     if engine == "bng2":
@@ -77,6 +117,11 @@ def _write_source(path: Path, *, engine: str, seed: int | None = None) -> Path:
     else:
         raise ValueError(engine)
     path.write_text(MODEL + f"\nbegin actions\n{action}\nend actions\n")
+    return path
+
+
+def _write_compartment_source(path: Path, action: str) -> Path:
+    path.write_text(COMPARTMENT_MODEL + f"\nbegin actions\n{action}\nend actions\n")
     return path
 
 
@@ -146,6 +191,28 @@ def _run_bng3_ensemble(tmp_path: Path):
         assert output.is_file(), f"BNG3 seed {seed}: missing .gdat"
         data, columns = compare.parse_gdat(output)
         assert data is not None, f"BNG3 seed {seed}: malformed trajectory"
+        runs.append((data, columns))
+    return runs
+
+
+def _run_bng3_compartment_ensemble(tmp_path: Path):
+    import bionetgen
+
+    runs = []
+    for seed in range(BASE_SEED, BASE_SEED + RUNS):
+        work_dir = tmp_path / f"compartment-bng3-{seed}"
+        work_dir.mkdir()
+        action = (
+            "generate_hybrid_model({overwrite=>1, execute=>1, "
+            f'actions=>["simulate_nf({{t_end=>{T_END}, '
+            f'n_steps=>{N_STEPS}, seed=>{seed}}})"]}})'
+        )
+        source = _write_compartment_source(work_dir / "compartment.bngl", action)
+        bionetgen.load(source).execute()
+        output = work_dir / "compartment_hpp.gdat"
+        assert output.is_file(), f"BNG3 compartment seed {seed}: missing .gdat"
+        data, columns = compare.parse_gdat(output)
+        assert data is not None, f"BNG3 compartment seed {seed}: malformed trajectory"
         runs.append((data, columns))
     return runs
 
@@ -264,6 +331,67 @@ def _write_qualification_evidence(
     )
 
 
+def _write_compartment_evidence(temp: Path, bng3_runs) -> None:
+    target = os.environ.get("BNG3_HYBRID_EVIDENCE_DIR")
+    if not target:
+        return
+    evidence_dir = Path(target)
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    generated_hpp = temp / f"compartment-bng3-{BASE_SEED}" / "compartment_hpp.bngl"
+    shutil.copy2(generated_hpp, evidence_dir / "compartment-hybrid.bngl")
+    with (evidence_dir / "compartment-trajectories.csv").open("w", newline="") as output:
+        writer = csv.writer(output)
+        writer.writerow(("engine", "seed", "time", "B1_total", "B2_total", "all_units"))
+        for index, (data, columns) in enumerate(bng3_runs):
+            for row in data:
+                writer.writerow(
+                    (
+                        "bng3",
+                        BASE_SEED + index,
+                        row[columns.index("time")],
+                        row[columns.index("B1_total")],
+                        row[columns.index("B2_total")],
+                        row[columns.index("all_units")],
+                    )
+                )
+    report = {
+        "schema_version": 1,
+        "check": "analytic-hybrid-compartments",
+        "source": {
+            "revision": _git_revision(ROOT),
+            "dirty": bool(
+                subprocess.run(
+                    ["git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=no"],
+                    check=True,
+                    capture_output=True,
+                    text=True,
+                ).stdout.strip()
+            ),
+        },
+        "subject": {
+            "generated_hpp_sha256": hashlib.sha256(generated_hpp.read_bytes()).hexdigest(),
+        },
+        "budget": {
+            "runs_per_engine": RUNS,
+            "first_seed": BASE_SEED,
+            "last_seed": BASE_SEED + RUNS - 1,
+            "t_end": T_END,
+            "n_steps": N_STEPS,
+        },
+        "laws": {
+            "B1_total": f"Binomial({INITIAL_B}, 1 - exp(-100 * time))",
+            "B2_total": f"Binomial({INITIAL_B}, 1 - exp(-0.1 * time))",
+            "all_units": "A + B1 + B2 + P = 40 at every sample",
+            "mean_control": "6 analytic standard errors at every sampled time",
+        },
+        "oracle": "independent analytic binomial marginal laws",
+        "trajectory_artifact": "compartment-trajectories.csv",
+    }
+    (evidence_dir / "compartment-qualification.json").write_text(
+        json.dumps(report, indent=2) + "\n"
+    )
+
+
 @pytest.fixture(scope="module")
 def hybrid_ensembles(tmp_path_factory):
     """One immutable oracle pairing and fixed seed budget for all HPP checks."""
@@ -275,6 +403,17 @@ def hybrid_ensembles(tmp_path_factory):
     bng3_runs = _run_bng3_ensemble(temp)
     _write_qualification_evidence(temp, bng2_xml, native_runs, bng3_runs)
     return native_runs, bng3_runs
+
+
+@pytest.fixture(scope="module")
+def compartment_hybrid_ensembles(tmp_path_factory):
+    """Check compartment-preserving hybrid trajectories against analytic laws."""
+    require_oracle(runner.api_available(), "compiled BNG3 API unavailable")
+    runner._ensure_source_python_path()
+    temp = tmp_path_factory.mktemp("release-hybrid-compartments")
+    bng3_runs = _run_bng3_compartment_ensemble(temp)
+    _write_compartment_evidence(temp, bng3_runs)
+    return bng3_runs
 
 
 @pytest.mark.nf
@@ -323,4 +462,34 @@ def test_release_hybrid_conservation_and_analytic_conversion_law(hybrid_ensemble
             assert np.array_equal(a + b, np.full_like(a, INITIAL_B)), (
                 f"{label}: A/B molecule conservation violated"
             )
+
+
+@pytest.mark.nf
+@pytest.mark.parity
+@pytest.mark.stochastic
+@pytest.mark.slow
+def test_release_hybrid_compartment_rates_and_conservation(compartment_hybrid_ensembles):
+    """Check compartment rates and observables against independent laws."""
+    bng3_runs = compartment_hybrid_ensembles
+    fast_production = lambda times: 1.0 - np.exp(-100.0 * times)
+    slow_production = lambda times: 1.0 - np.exp(-0.1 * times)
+    compare.qualify_binomial_marginal(
+        bng3_runs,
+        "B1_total",
+        population=INITIAL_B,
+        probability=fast_production,
+        label="BNG3 compartment c1",
+    )
+    compare.qualify_binomial_marginal(
+        bng3_runs,
+        "B2_total",
+        population=INITIAL_B,
+        probability=slow_production,
+        label="BNG3 compartment c2",
+    )
+    for data, columns in bng3_runs:
+        assert np.array_equal(
+            data[:, columns.index("all_units")],
+            np.full(data.shape[0], 2 * INITIAL_B),
+        ), "BNG3 compartmental molecule conservation violated"
 

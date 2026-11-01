@@ -476,6 +476,13 @@ ExpandRuleResult expandRule(
         // Find all embeddings of pattern into each species graph in sgList
         // (Perl lines 367-368)
         for (std::size_t si = 0; si < sgList.size(); ++si) {
+            // Particle graph isomorphism ignores compartment annotations, but
+            // a compartment-qualified rule pattern can only be represented by
+            // the population that lumps particles in that same compartment.
+            if (!patt.getCompartment().empty() &&
+                patt.getCompartment() != sgList[si].getCompartment()) {
+                continue;
+            }
             // BNG2 keeps one embedding per distinct image of the pattern's
             // reaction center in each target (find_embeddings ->
             // filter_identical_by_rxn_center). Embeddings that differ only
@@ -1188,7 +1195,10 @@ std::unique_ptr<ReactionRule> restrictRule(
                                     params.populationGraphs->size());
         auto replaceWholeComplex = [&](SpeciesGraph& species) {
             for (std::size_t i = 0; i < count; ++i) {
-                if (!(*params.populationParticleGraphs)[i].graphIsomorphicTo(
+                const auto& particlePattern = (*params.populationParticleGraphs)[i];
+                if ((!species.getCompartment().empty() &&
+                     species.getCompartment() != particlePattern.getCompartment()) ||
+                    !particlePattern.graphIsomorphicTo(
                         species.getGraph())) {
                     continue;
                 }
