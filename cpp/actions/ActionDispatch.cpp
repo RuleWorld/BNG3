@@ -149,6 +149,24 @@ bool isHybridNfsimAction(const std::string& requested) {
     return false;
 }
 
+bool isHybridNfsimProtocol(const ast::Model& model) {
+    const auto& protocol = model.getSimulationProtocol();
+    if (protocol.empty()) return false;
+    for (const auto& action : protocol) {
+        if (!isHybridSimulationAction(lowercase(action.name))) continue;
+        std::string requested = action.name + "({";
+        bool first = true;
+        for (const auto& [key, value] : action.arguments) {
+            if (!first) requested += ",";
+            first = false;
+            requested += key + "=>" + value;
+        }
+        requested += "})";
+        if (!isHybridNfsimAction(requested)) return false;
+    }
+    return true;
+}
+
 
 ast::SpeciesGraph parseNetSpeciesGraph(const std::string& pattern,
                                        ast::Model& model) {
@@ -4235,7 +4253,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 for (const auto& requested : hppOpts.actions) {
                     const std::string name = hybridActionName(requested);
                     if (isHybridSimulationAction(name) &&
-                        !isHybridNfsimAction(requested)) {
+                        !isHybridNfsimAction(requested) &&
+                        !(name == "simulate_protocol" &&
+                          isHybridNfsimProtocol(model))) {
                         throw std::runtime_error(
                             "generate_hybrid_model: execute=>1 requested the action '" +
                             name + "' on the generated hybrid model, but hybrid "

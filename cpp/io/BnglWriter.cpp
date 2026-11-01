@@ -128,6 +128,9 @@ std::string BnglWriter::write(const ast::Model& model, const engine::GeneratedNe
     if (model.getEventFormatVersion().has_value()) {
         bngl << writeEvents(model);
     }
+    if (!model.getSimulationProtocol().empty()) {
+        bngl << writeProtocol(model);
+    }
 
     bngl << "end model\n";
 
@@ -453,6 +456,23 @@ std::string BnglWriter::writeEvents(const ast::Model& model) {
         bngl << "  end event\n";
     }
     bngl << "end bng3_events\n\n";
+    return bngl.str();
+}
+
+std::string BnglWriter::writeProtocol(const ast::Model& model) {
+    std::ostringstream bngl;
+    bngl << "begin protocol\n";
+    for (const auto& action : model.getSimulationProtocol()) {
+        bngl << "  " << action.name << "({";
+        bool first = true;
+        for (const auto& [key, value] : action.arguments) {
+            if (!first) bngl << ", ";
+            first = false;
+            bngl << key << "=>" << value;
+        }
+        bngl << "})\n";
+    }
+    bngl << "end protocol\n\n";
     return bngl.str();
 }
 

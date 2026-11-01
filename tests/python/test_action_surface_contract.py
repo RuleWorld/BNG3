@@ -265,3 +265,72 @@ def test_hybrid_model_generation_does_not_run_the_original_model(tmp_path):
     # for it.
     assert not (tmp_path / "model_hpp.cdat").exists()
     assert not (tmp_path / "model_hpp.gdat").exists()
+
+
+def test_hybrid_model_generation_preserves_protocol_execution(tmp_path):
+    source = tmp_path / "protocol_hybrid.bngl"
+    source.write_text(
+        """begin model
+begin parameters
+  k_make 10
+  k_map 10
+  N 20
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  B() N
+end seed species
+begin observables
+  Molecules A_total A()
+  Molecules B_total B()
+end observables
+begin reaction rules
+  B() -> A() k_make
+end reaction rules
+begin population maps
+  A() -> A_pop() k_map
+end population maps
+begin protocol
+  simulate_nf({prefix=>\"protocol_hpp\", t_end=>0.1, n_steps=>4, seed=>23})
+end protocol
+end model
+
+begin actions
+generate_hybrid_model({overwrite=>1, execute=>1, actions=>[\"simulate_protocol()\"]})
+end actions
+"""
+    )
+    bionetgen.load(source).execute()
+
+    output = tmp_path / "protocol_hpp.gdat"
+    assert output.is_file()
+    raw = output.read_text().splitlines()
+    columns = raw[0].lstrip("#").split()
+    rows = [
+        line.split()
+        for line in raw
+        if line and not line.startswith("#")
+    ]
+    assert float(rows[-1][0]) == pytest.approx(0.1)
+    final = [float(value) for value in rows[-1]]
+    assert final[columns.index("A_total")] + final[columns.index("B_total")] == pytest.approx(20)
+    hybrid = (tmp_path / "protocol_hybrid_hpp.bngl").read_text()
+    assert "begin protocol" in hybrid
+    assert 'simulate_nf({' in hybrid
+    assert 'prefix=>"protocol_hpp"' in hybrid
+
+    unsupported = tmp_path / "unsupported_protocol.bngl"
+    unsupported.write_text(
+        source.read_text().replace(
+            'simulate_nf({prefix=>"protocol_hpp", t_end=>0.1, n_steps=>4, seed=>23})',
+            'simulate({method=>"ode", t_end=>0.1, n_steps=>4})',
+        )
+    )
+    with pytest.raises(
+        RuntimeError,
+        match="hybrid population execution refinement is not supported",
+    ):
+        bionetgen.load(unsupported).execute()
