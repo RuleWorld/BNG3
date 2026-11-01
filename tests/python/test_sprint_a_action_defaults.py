@@ -118,3 +118,37 @@ def test_bngl_simulate_rejects_non_net_custom_netfile_suffix(tmp_path):
 
     assert gdat is None
     assert "File input.txt does not have .net suffix" in error
+
+
+def test_bngl_simulate_rejects_unknown_expand_mode(tmp_path):
+    source = tmp_path / "unknown_expand_mode.bngl"
+    source.write_text(
+        SOURCE
+        + "\nbegin actions\n"
+        + '  simulate({method=>"ode",t_end=>1,n_steps=>2,expand=>"invalid"})\n'
+        + "end actions\n",
+        encoding="utf-8",
+    )
+    bng_cpp = Path(__file__).resolve().parents[2] / "build/cpp/bng_cpp"
+
+    _, gdat, error = runner.run_cli_path(bng_cpp, source, tmp_path / "run")
+
+    assert gdat is None
+    assert "Unrecognized expand method invalid" in error
+
+
+@pytest.mark.parametrize("expand", ["lazy", "layered"])
+def test_bngl_simulate_accepts_supported_expand_modes(tmp_path, expand):
+    source = tmp_path / f"expand_{expand}.bngl"
+    source.write_text(
+        SOURCE
+        + "\nbegin actions\n"
+        + f'  simulate({{method=>"ode",t_end=>1,n_steps=>2,expand=>"{expand}"}})\n'
+        + "end actions\n",
+        encoding="utf-8",
+    )
+    bng_cpp = Path(__file__).resolve().parents[2] / "build/cpp/bng_cpp"
+
+    _, gdat, error = runner.run_cli_path(bng_cpp, source, tmp_path / expand)
+
+    assert gdat is not None, error

@@ -2014,6 +2014,11 @@ void runSimulation(
         }
     }
 
+    const auto expandMode = stripQuotes(readArgument(action, "expand", "lazy"));
+    if (expandMode != "lazy" && expandMode != "layered") {
+        throw std::runtime_error("Unrecognized expand method " + expandMode);
+    }
+
     // Parse output_step_interval (BNG2 parity: output every N internal steps, mainly for SSA/PLA)
     const auto outputStepIntervalText = readArgument(action, "output_step_interval", "");
     if (!outputStepIntervalText.empty()) {
