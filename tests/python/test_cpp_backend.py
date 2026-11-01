@@ -3035,3 +3035,166 @@ end model
         with open(xml_path) as f:
             content = f.read()
         assert "A" in content
+
+    def test_compiled_snapshot_typed_action_options(self, tmp_path):
+        bngl = tmp_path / "typed_actions.bngl"
+        bngl.write_text("""
+begin model
+begin parameters
+    k1 1.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10
+    B() 20
+end seed species
+begin observables
+    Molecules Atot A()
+    Molecules Btot B()
+end observables
+begin reaction rules
+    A() -> B() k1
+end reaction rules
+begin actions
+    generate_network({overwrite=>1,max_iter=>5,max_agg=>10})
+    setParameter("k1", 2.5)
+    setConcentration("A()", 15)
+    addConcentration("B()", 5)
+    saveParameters("snap1")
+    saveConcentrations("snap1")
+    simulate_ode({t_start=>0,t_end=>10,n_steps=>20,continue=>1,print_concentrations=>1,steady_state=>1,stop_if=>"Atot < 1"})
+    resetConcentrations("snap1")
+    resetParameters("snap1")
+end actions
+end model
+""")
+        model = bionetgen.load(str(bngl))
+        snap = _cpp._compiled_snapshot(model._model)
+        actions = snap["actions"]
+        assert len(actions) == 9
+
+        # generate_network
+        act0 = actions[0]
+        assert act0["name"] == "generate_network"
+        assert act0["generate_network_options"]["max_iterations"] == 5
+        assert act0["generate_network_options"]["max_aggregate"] == 10.0
+
+        # setParameter
+        act1 = actions[1]
+        assert act1["name"] == "setparameter"
+        assert act1["set_parameter_options"]["value"] == 2.5
+
+        # setConcentration
+        act2 = actions[2]
+        assert act2["name"] == "setconcentration"
+        assert act2["set_concentration_options"]["target"] == "A()"
+        assert act2["set_concentration_options"]["value"] == 15.0
+
+        # addConcentration
+        act3 = actions[3]
+        assert act3["name"] == "addconcentration"
+        assert act3["add_concentration_options"]["target"] == "B()"
+        assert act3["add_concentration_options"]["value"] == 5.0
+
+        # saveParameters
+        act4 = actions[4]
+        assert act4["name"] == "saveparameters"
+        assert act4["save_parameters_options"]["label"] == "snap1"
+
+        # saveConcentrations
+        act5 = actions[5]
+        assert act5["name"] == "saveconcentrations"
+        assert act5["save_concentrations_options"]["label"] == "snap1"
+
+        # simulate_ode
+        act6 = actions[6]
+        assert act6["name"] == "simulate_ode"
+        sim_opts = act6["simulation_options"]
+        assert sim_opts["method"] == "cvode"
+        assert sim_opts["t_start"] == 0.0
+        assert sim_opts["t_end"] == 10.0
+        assert sim_opts["n_steps"] == 20
+        assert sim_opts["continue"] is True
+        assert sim_opts["print_concentrations"] is True
+        assert sim_opts["steady_state"] is True
+        assert sim_opts["stop_if"] == "Atot < 1"
+
+        # resetConcentrations
+        act7 = actions[7]
+        assert act7["name"] == "resetconcentrations"
+        assert act7["reset_concentrations_options"]["label"] == "snap1"
+
+        # resetParameters
+        act8 = actions[8]
+        assert act8["name"] == "resetparameters"
+        assert act8["reset_parameters_options"]["label"] == "snap1"
+
+    def test_protocol_typed_setters_and_continuation_execution(self, tmp_path):
+        bngl = tmp_path / "protocol_exec.bngl"
+        bngl.write_text("""
+begin model
+begin parameters
+    k1 0.1
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 100
+    B() 0
+end seed species
+begin observables
+    Molecules Atot A()
+    Molecules Btot B()
+end observables
+begin reaction rules
+    A() -> B() k1
+end reaction rules
+begin actions
+    generate_network({overwrite=>1})
+    simulate_ode({prefix=>"phase1",t_start=>0,t_end=>1,n_steps=>2})
+    saveConcentrations("p1_end")
+    setConcentration("A()", 50)
+    simulate_ode({prefix=>"phase2",continue=>1,t_start=>1,t_end=>2,n_steps=>2})
+    resetConcentrations("p1_end")
+    simulate_ode({prefix=>"phase3",t_start=>1,t_end=>2,n_steps=>2})
+end actions
+end model
+""")
+        model = bionetgen.load(str(bngl))
+        model.execute()
+        gdat1 = [
+            line.split()
+            for line in (tmp_path / "phase1.gdat").read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
+        gdat2 = [
+            line.split()
+            for line in (tmp_path / "phase2.gdat").read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
+        gdat3 = [
+            line.split()
+            for line in (tmp_path / "phase3.gdat").read_text().splitlines()
+            if line and not line.startswith("#")
+        ]
+
+        # In phase 1, at t=1, A decreases from 100 to ~90.48
+        a_end_phase1 = float(gdat1[-1][1])
+        assert 90.0 < a_end_phase1 < 91.0
+
+        # In phase 2, continue=1 skips the initial duplicate point (t=1).
+        # The first recorded point is t=1.5, evolving from A=50 set by setConcentration:
+        # A(1.5) = 50 * exp(-0.1 * 0.5) = 47.56147...
+        import math
+
+        a_t1_5_phase2 = float(gdat2[0][1])
+        assert pytest.approx(a_t1_5_phase2, abs=1e-3) == 50.0 * math.exp(-0.05)
+
+        # In phase 3, resetConcentrations restored p1_end, so starts at ~90.48
+        a_start_phase3 = float(gdat3[0][1])
+        assert pytest.approx(a_start_phase3, abs=1e-3) == a_end_phase1

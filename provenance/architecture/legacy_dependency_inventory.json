@@ -163,7 +163,8 @@
           "cpp/engine/NetworkGenerator.cpp"
         ],
         "tests": [
-          "tests/cpp/test_reaction_rule_expansion.cpp"
+          "tests/cpp/test_reaction_rule_expansion.cpp",
+          "tests/energy/tests/cpp/test_compiled_model_contracts.cpp"
         ]
       },
       "headers": [

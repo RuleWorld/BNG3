@@ -94,6 +94,7 @@ enum class BuiltinFunction {
     MRatio,
     Pi,
     Rint,
+    Sign,
     Sin,
     Sinh,
     Sqrt,
@@ -131,6 +132,7 @@ struct ResolvedExpression {
     // use the typed fields below.
     std::string source;
     std::string operation;
+    bool call = false;
 
     double numberValue = 0.0;
     std::optional<SymbolRef> symbol;

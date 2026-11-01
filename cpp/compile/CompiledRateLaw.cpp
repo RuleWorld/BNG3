@@ -66,6 +66,7 @@ BuiltinFunction builtinFunction(const std::string& rawName) {
     if (name == "mratio") return BuiltinFunction::MRatio;
     if (name == "pi") return BuiltinFunction::Pi;
     if (name == "rint") return BuiltinFunction::Rint;
+    if (name == "sign") return BuiltinFunction::Sign;
     if (name == "sin") return BuiltinFunction::Sin;
     if (name == "sinh") return BuiltinFunction::Sinh;
     if (name == "sqrt") return BuiltinFunction::Sqrt;
@@ -231,6 +232,7 @@ ResolvedExpression resolveExpression(const ast::Expression& expression,
                             ? ResolvedExpressionKind::BuiltinCall
                             : ResolvedExpressionKind::FunctionRef;
         resolved.operation = expression.name();
+        resolved.call = true;
         if (builtin != BuiltinFunction::Unknown) {
             resolved.builtin = builtin;
         } else {
@@ -257,6 +259,7 @@ ResolvedExpression resolveExpression(const ast::Expression& expression,
             return resolved;
         }
         resolved.operation = expression.name();
+        resolved.call = true;
         if (const auto observable = symbols.resolveObservable(expression.name())) {
             resolved.kind = ResolvedExpressionKind::ObservableRef;
             addReference(references, SymbolRef{SymbolKind::Observable, observable->value()});
@@ -270,8 +273,14 @@ ResolvedExpression resolveExpression(const ast::Expression& expression,
             addReference(references, SymbolRef{SymbolKind::Function, function->value()});
             resolved.symbol = SymbolRef{SymbolKind::Function, function->value()};
         } else {
-            unresolved(diagnostics, expression.name());
-            resolved.kind = ResolvedExpressionKind::Unresolved;
+            const auto builtin = builtinFunction(expression.name());
+            if (builtin != BuiltinFunction::Unknown) {
+                resolved.kind = ResolvedExpressionKind::BuiltinCall;
+                resolved.builtin = builtin;
+            } else {
+                unresolved(diagnostics, expression.name());
+                resolved.kind = ResolvedExpressionKind::Unresolved;
+            }
         }
         for (const auto& argument : expression.args()) {
             resolved.arguments.push_back(
@@ -611,6 +620,10 @@ double ResolvedExpression::evaluate(const RateEvaluationContext& context) const 
             return 3.141592653589793238462643383279502884;
         case BuiltinFunction::Rint:
             return std::floor(evalArg(0) + 0.5);
+        case BuiltinFunction::Sign: {
+            const double val = evalArg(0);
+            return (val > 0.0) ? 1.0 : ((val < 0.0) ? -1.0 : 0.0);
+        }
         case BuiltinFunction::Sin:
             return std::sin(evalArg(0));
         case BuiltinFunction::Sinh:
@@ -887,15 +900,24 @@ double evaluateRateString(
     int depth = 0;
     int lastAddSub = -1;
     int lastMulDiv = -1;
+    int lastPower = -1;
     for (size_t i = 0; i < s.size(); ++i) {
         if (s[i] == '(') depth++;
         else if (s[i] == ')') depth--;
         else if (depth == 0) {
             if (s[i] == '+' || (s[i] == '-' && i > 0 && s[i - 1] != '*' &&
-                                s[i - 1] != '/' && s[i - 1] != '+' && s[i - 1] != '-')) {
+                                s[i - 1] != '/' && s[i - 1] != '+' && s[i - 1] != '-' &&
+                                s[i - 1] != '^')) {
                 lastAddSub = static_cast<int>(i);
             } else if (s[i] == '*' || s[i] == '/') {
-                lastMulDiv = static_cast<int>(i);
+                if (i + 1 < s.size() && s[i] == '*' && s[i + 1] == '*') {
+                    lastPower = static_cast<int>(i);
+                    ++i;
+                } else {
+                    lastMulDiv = static_cast<int>(i);
+                }
+            } else if (s[i] == '^') {
+                lastPower = static_cast<int>(i);
             }
         }
     }
@@ -909,9 +931,40 @@ double evaluateRateString(
         double r = evaluateRateString(s.substr(lastMulDiv + 1), resolver);
         return (s[lastMulDiv] == '*') ? (l * r) : ((r != 0.0) ? (l / r) : 0.0);
     }
+    if (lastPower >= 0) {
+        const size_t opLen = (s[lastPower] == '*' && lastPower + 1 < static_cast<int>(s.size()) && s[lastPower + 1] == '*') ? 2 : 1;
+        double l = evaluateRateString(s.substr(0, lastPower), resolver);
+        double r = evaluateRateString(s.substr(lastPower + opLen), resolver);
+        return std::pow(l, r);
+    }
     if (s.front() == '-') return -evaluateRateString(s.substr(1), resolver);
-    if (s.size() > 4 && s.substr(0, 4) == "exp(" && s.back() == ')') {
-        return std::exp(evaluateRateString(s.substr(4, s.size() - 5), resolver));
+
+    const auto openParen = s.find('(');
+    if (openParen != std::string::npos && s.back() == ')') {
+        const std::string func = lower(s.substr(0, openParen));
+        const std::string inside = s.substr(openParen + 1, s.size() - openParen - 2);
+        if (func == "exp") return std::exp(evaluateRateString(inside, resolver));
+        if (func == "sqrt") return std::sqrt(evaluateRateString(inside, resolver));
+        if (func == "abs") return std::abs(evaluateRateString(inside, resolver));
+        if (func == "ln") return std::log(evaluateRateString(inside, resolver));
+        if (func == "log10") return std::log10(evaluateRateString(inside, resolver));
+        if (func == "log2") return std::log2(evaluateRateString(inside, resolver));
+        if (func == "sin") return std::sin(evaluateRateString(inside, resolver));
+        if (func == "cos") return std::cos(evaluateRateString(inside, resolver));
+        if (func == "tan") return std::tan(evaluateRateString(inside, resolver));
+        if (func == "asin") return std::asin(evaluateRateString(inside, resolver));
+        if (func == "acos") return std::acos(evaluateRateString(inside, resolver));
+        if (func == "atan") return std::atan(evaluateRateString(inside, resolver));
+        if (func == "sinh") return std::sinh(evaluateRateString(inside, resolver));
+        if (func == "cosh") return std::cosh(evaluateRateString(inside, resolver));
+        if (func == "tanh") return std::tanh(evaluateRateString(inside, resolver));
+        if (func == "floor") return std::floor(evaluateRateString(inside, resolver));
+        if (func == "ceil") return std::ceil(evaluateRateString(inside, resolver));
+        if (func == "rint") return std::floor(evaluateRateString(inside, resolver) + 0.5);
+        if (func == "sign") {
+            const double val = evaluateRateString(inside, resolver);
+            return (val > 0.0) ? 1.0 : ((val < 0.0) ? -1.0 : 0.0);
+        }
     }
     return resolver ? resolver(s) : 0.0;
 }

@@ -1852,6 +1852,9 @@ void runSimulation(
     // Parse steady_state option (BNG2 parity)
     const auto steadyStateText = lowercase(stripQuotes(readArgument(action, "steady_state", "0")));
     opts.steadyState = (steadyStateText == "1" || steadyStateText == "true");
+    if (compiledOptions != nullptr && compiledOptions->steadyState.has_value()) {
+        opts.steadyState = *compiledOptions->steadyState;
+    }
     if (opts.steadyState) {
         opts.steadyStateTol = opts.atol;  // Use atol for steady-state check
     }
@@ -1862,18 +1865,29 @@ void runSimulation(
             throw std::runtime_error(
                 "steady_state_tol must be finite and positive");
         }
+    } else if (compiledOptions != nullptr && compiledOptions->steadyStateTol.has_value()) {
+        opts.steadyStateTol = *compiledOptions->steadyStateTol;
     }
 
     // Parse stop_if expression (BNG2 parity)
     opts.stopIf = stripQuotes(readArgument(action, "stop_if", ""));
+    if (compiledOptions != nullptr && compiledOptions->stopIf.has_value() && opts.stopIf.empty()) {
+        opts.stopIf = *compiledOptions->stopIf;
+    }
 
     // Parse print_CDAT flag (BNG2 parity)
     const auto printCDATText = lowercase(stripQuotes(readArgument(action, "print_CDAT", readArgument(action, "print_cdat", "1"))));
     opts.printCDAT = (printCDATText != "0" && printCDATText != "false");
+    if (compiledOptions != nullptr && compiledOptions->printConcentrations.has_value()) {
+        opts.printCDAT = *compiledOptions->printConcentrations;
+    }
 
     // Parse print_functions flag (BNG2 parity: include function values in .gdat)
     const auto printFunctionsText = lowercase(stripQuotes(readArgument(action, "print_functions", "0")));
     opts.printFunctions = (printFunctionsText == "1" || printFunctionsText == "true");
+    if (compiledOptions != nullptr && compiledOptions->printFunctions.has_value()) {
+        opts.printFunctions = *compiledOptions->printFunctions;
+    }
 
     // Parse binary_output flag (BNG2 parity: write .cdat/.gdat in binary format)
     const auto binaryOutputText = lowercase(stripQuotes(readArgument(action, "binary_output", "0")));
@@ -1881,7 +1895,10 @@ void runSimulation(
 
     // Parse continue flag (BNG2 parity)
     const auto continueText = lowercase(stripQuotes(readArgument(action, "continue", "0")));
-    const bool continueRequested = (continueText == "1" || continueText == "true");
+    bool continueRequested = (continueText == "1" || continueText == "true");
+    if (compiledOptions != nullptr && compiledOptions->continueSimulation.has_value()) {
+        continueRequested = *compiledOptions->continueSimulation;
+    }
     const bool continueSimulation = continueRequested && lastSimulationEndTime > 0.0;
     opts.continueSimulation = continueSimulation;
 
@@ -1902,6 +1919,9 @@ void runSimulation(
     // Parse print_net flag (BNG2 parity: write .net file after simulation with final concentrations)
     const auto printNetText = lowercase(stripQuotes(readArgument(action, "print_net", "0")));
     opts.printNet = (printNetText == "1" || printNetText == "true");
+    if (compiledOptions != nullptr && compiledOptions->printNet.has_value()) {
+        opts.printNet = *compiledOptions->printNet;
+    }
 
     // Parse print_end flag (BNG2 parity: output final state when simulation stops early)
     const auto printEndText = lowercase(stripQuotes(readArgument(action, "print_end", "0")));
@@ -1915,6 +1935,8 @@ void runSimulation(
     if (!outputStepIntervalText.empty()) {
         opts.outputStepInterval = parseNonNegativeCount(
             outputStepIntervalText, model, "output_step_interval");
+    } else if (compiledOptions != nullptr && compiledOptions->outputStepInterval.has_value()) {
+        opts.outputStepInterval = *compiledOptions->outputStepInterval;
     }
 
     const auto maxSimStepsText = readArgument(action, "max_sim_steps", "");
@@ -2222,6 +2244,86 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             return nullptr;
         }
         return &*actions[actionIndex].setParameterOptions;
+    };
+
+    const auto setConcentrationOptionsAt = [&](std::size_t actionIndex)
+        -> const compile::ProtocolAction::SetConcentrationOptions* {
+        const auto& actions = generator.document().protocol().actions;
+        if (actionIndex >= actions.size() ||
+            !actions[actionIndex].setConcentrationOptions.has_value()) {
+            return nullptr;
+        }
+        return &*actions[actionIndex].setConcentrationOptions;
+    };
+
+    const auto addConcentrationOptionsAt = [&](std::size_t actionIndex)
+        -> const compile::ProtocolAction::AddConcentrationOptions* {
+        const auto& actions = generator.document().protocol().actions;
+        if (actionIndex >= actions.size() ||
+            !actions[actionIndex].addConcentrationOptions.has_value()) {
+            return nullptr;
+        }
+        return &*actions[actionIndex].addConcentrationOptions;
+    };
+
+    const auto setVolumeOptionsAt = [&](std::size_t actionIndex)
+        -> const compile::ProtocolAction::SetVolumeOptions* {
+        const auto& actions = generator.document().protocol().actions;
+        if (actionIndex >= actions.size() ||
+            !actions[actionIndex].setVolumeOptions.has_value()) {
+            return nullptr;
+        }
+        return &*actions[actionIndex].setVolumeOptions;
+    };
+
+    const auto setOptionOptionsAt = [&](std::size_t actionIndex)
+        -> const compile::ProtocolAction::SetOptionOptions* {
+        const auto& actions = generator.document().protocol().actions;
+        if (actionIndex >= actions.size() ||
+            !actions[actionIndex].setOptionOptions.has_value()) {
+            return nullptr;
+        }
+        return &*actions[actionIndex].setOptionOptions;
+    };
+
+    const auto saveParametersOptionsAt = [&](std::size_t actionIndex)
+        -> const compile::ProtocolAction::SaveParametersOptions* {
+        const auto& actions = generator.document().protocol().actions;
+        if (actionIndex >= actions.size() ||
+            !actions[actionIndex].saveParametersOptions.has_value()) {
+            return nullptr;
+        }
+        return &*actions[actionIndex].saveParametersOptions;
+    };
+
+    const auto resetParametersOptionsAt = [&](std::size_t actionIndex)
+        -> const compile::ProtocolAction::ResetParametersOptions* {
+        const auto& actions = generator.document().protocol().actions;
+        if (actionIndex >= actions.size() ||
+            !actions[actionIndex].resetParametersOptions.has_value()) {
+            return nullptr;
+        }
+        return &*actions[actionIndex].resetParametersOptions;
+    };
+
+    const auto saveConcentrationsOptionsAt = [&](std::size_t actionIndex)
+        -> const compile::ProtocolAction::SaveConcentrationsOptions* {
+        const auto& actions = generator.document().protocol().actions;
+        if (actionIndex >= actions.size() ||
+            !actions[actionIndex].saveConcentrationsOptions.has_value()) {
+            return nullptr;
+        }
+        return &*actions[actionIndex].saveConcentrationsOptions;
+    };
+
+    const auto resetConcentrationsOptionsAt = [&](std::size_t actionIndex)
+        -> const compile::ProtocolAction::ResetConcentrationsOptions* {
+        const auto& actions = generator.document().protocol().actions;
+        if (actionIndex >= actions.size() ||
+            !actions[actionIndex].resetConcentrationsOptions.has_value()) {
+            return nullptr;
+        }
+        return &*actions[actionIndex].resetConcentrationsOptions;
     };
 
     const auto parseSetParameterValue = [&](std::size_t actionIndex,
@@ -2722,7 +2824,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             }
 
             if (protoName == "setparameter") {
-                const auto target = stripQuotes(readArgument(protoAction, "target", ""));
+                const auto* options = setParameterOptionsAt(actionIndex);
+                std::string target = (options != nullptr && !options->target.empty())
+                    ? options->target
+                    : stripQuotes(readArgument(protoAction, "target", ""));
                 const auto valueText = readArgument(protoAction, "value", "");
                 if (target.empty() || trim(valueText).empty()) {
                     throw std::runtime_error(
@@ -2747,7 +2852,16 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             if (protoName == "setconcentration" || protoName == "addconcentration" ||
                 protoName == "add_concentration") {
                 ensureNetwork();
-                const auto target = readArgument(protoAction, "target", "");
+                const auto* setOpt = setConcentrationOptionsAt(actionIndex);
+                const auto* addOpt = addConcentrationOptionsAt(actionIndex);
+                std::string target;
+                if (setOpt != nullptr && !setOpt->target.empty()) {
+                    target = setOpt->target;
+                } else if (addOpt != nullptr && !addOpt->target.empty()) {
+                    target = addOpt->target;
+                } else {
+                    target = readArgument(protoAction, "target", "");
+                }
                 const auto valueText = readArgument(protoAction, "value", "");
                 if (trim(target).empty() || trim(valueText).empty()) {
                     throw std::runtime_error(
@@ -2761,7 +2875,14 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                         "Protocol concentration target species not found: " +
                         stripQuotes(target));
                 }
-                const double value = parseScalarValue(valueText, model);
+                double value = 0.0;
+                if (setOpt != nullptr && setOpt->staticValue.has_value()) {
+                    value = *setOpt->staticValue;
+                } else if (addOpt != nullptr && addOpt->staticValue.has_value()) {
+                    value = *addOpt->staticValue;
+                } else {
+                    value = parseScalarValue(valueText, model);
+                }
                 if (protoName == "setconcentration") {
                     network->species.get(*found).setAmount(value);
                 } else {
@@ -2772,7 +2893,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             }
 
             if (protoName == "saveparameters" || protoName == "save_parameters") {
-                const auto label = stripQuotes(readArgument(protoAction, "value", "default"));
+                const auto* options = saveParametersOptionsAt(actionIndex);
+                const auto label = options != nullptr
+                    ? options->label
+                    : stripQuotes(readArgument(protoAction, "value", "default"));
                 std::unordered_map<std::string, double> snapshot;
                 for (const auto& param : model.getParameters().all()) {
                     snapshot[param.getName()] = param.getValue();
@@ -2782,7 +2906,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             }
 
             if (protoName == "resetparameters" || protoName == "reset_parameters") {
-                const auto label = stripQuotes(readArgument(protoAction, "value", "default"));
+                const auto* options = resetParametersOptionsAt(actionIndex);
+                const auto label = options != nullptr
+                    ? options->label
+                    : stripQuotes(readArgument(protoAction, "value", "default"));
                 const auto found = savedParameters.find(label);
                 if (found == savedParameters.end()) {
                     throw std::runtime_error("resetParameters label not found: " + label);
@@ -2802,7 +2929,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             if (protoName == "saveconcentrations" || protoName == "save_concentrations") {
                 ensureNetwork();
-                const auto label = stripQuotes(readArgument(protoAction, "value", "default"));
+                const auto* options = saveConcentrationsOptionsAt(actionIndex);
+                const auto label = options != nullptr
+                    ? options->label
+                    : stripQuotes(readArgument(protoAction, "value", "default"));
                 savedConcentrations[label] = snapshotConcentrations(*network);
                 continue;
             }
@@ -2812,7 +2942,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 network->resetSimulationSession();
                 lastSimulationState.clear();
                 lastSimulationEndTime = 0.0;
-                const auto label = stripQuotes(readArgument(protoAction, "value", "default"));
+                const auto* options = resetConcentrationsOptionsAt(actionIndex);
+                const auto label = options != nullptr
+                    ? options->label
+                    : stripQuotes(readArgument(protoAction, "value", "default"));
                 const auto found = savedConcentrations.find(label);
                 if (found != savedConcentrations.end()) {
                     restoreConcentrations(*network, found->second);
@@ -3253,10 +3386,22 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             }
 
             engine::OdeOptions opts;
-            opts.tEnd = parseScalarValue(tEnd, model);
-            opts.tStart = parseScalarValue(
-                stripQuotes(readArgument(action, "t_start", "0")), model);
-            opts.nSteps = parseNonNegativeCount(nSteps, model, "n_steps");
+            if (compiledSimulationOptions != nullptr && compiledSimulationOptions->tEnd.has_value()) {
+                opts.tEnd = *compiledSimulationOptions->tEnd;
+            } else {
+                opts.tEnd = parseScalarValue(tEnd, model);
+            }
+            if (compiledSimulationOptions != nullptr && compiledSimulationOptions->tStart.has_value()) {
+                opts.tStart = *compiledSimulationOptions->tStart;
+            } else {
+                opts.tStart = parseScalarValue(
+                    stripQuotes(readArgument(action, "t_start", "0")), model);
+            }
+            if (compiledSimulationOptions != nullptr && compiledSimulationOptions->nSteps.has_value()) {
+                opts.nSteps = *compiledSimulationOptions->nSteps;
+            } else {
+                opts.nSteps = parseNonNegativeCount(nSteps, model, "n_steps");
+            }
             if (opts.nSteps == 0) {
                 throw std::runtime_error("n_steps must be positive");
             }
@@ -3267,9 +3412,13 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             }
             opts.method = "pla";
 
-            const auto seedText = readArgument(action, "seed", "");
-            if (!seedText.empty()) {
-                opts.seed = static_cast<unsigned int>(parseScalarValue(seedText, model));
+            if (compiledSimulationOptions != nullptr && compiledSimulationOptions->seed.has_value()) {
+                opts.seed = *compiledSimulationOptions->seed;
+            } else {
+                const auto seedText = readArgument(action, "seed", "");
+                if (!seedText.empty()) {
+                    opts.seed = static_cast<unsigned int>(parseScalarValue(seedText, model));
+                }
             }
 
             // Parse PLA config
@@ -3306,10 +3455,22 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             }
 
             engine::OdeOptions opts;
-            opts.tEnd = parseScalarValue(tEnd, model);
-            opts.tStart = parseScalarValue(
-                stripQuotes(readArgument(action, "t_start", "0")), model);
-            opts.nSteps = parseNonNegativeCount(nSteps, model, "n_steps");
+            if (compiledSimulationOptions != nullptr && compiledSimulationOptions->tEnd.has_value()) {
+                opts.tEnd = *compiledSimulationOptions->tEnd;
+            } else {
+                opts.tEnd = parseScalarValue(tEnd, model);
+            }
+            if (compiledSimulationOptions != nullptr && compiledSimulationOptions->tStart.has_value()) {
+                opts.tStart = *compiledSimulationOptions->tStart;
+            } else {
+                opts.tStart = parseScalarValue(
+                    stripQuotes(readArgument(action, "t_start", "0")), model);
+            }
+            if (compiledSimulationOptions != nullptr && compiledSimulationOptions->nSteps.has_value()) {
+                opts.nSteps = *compiledSimulationOptions->nSteps;
+            } else {
+                opts.nSteps = parseNonNegativeCount(nSteps, model, "n_steps");
+            }
             if (opts.nSteps == 0) {
                 throw std::runtime_error("n_steps must be positive");
             }
@@ -3319,9 +3480,13 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     "simulate_psa requires finite times with t_end greater than or equal to t_start");
             }
 
-            const auto seedText = readArgument(action, "seed", "");
-            if (!seedText.empty()) {
-                opts.seed = static_cast<unsigned int>(parseScalarValue(seedText, model));
+            if (compiledSimulationOptions != nullptr && compiledSimulationOptions->seed.has_value()) {
+                opts.seed = *compiledSimulationOptions->seed;
+            } else {
+                const auto seedText = readArgument(action, "seed", "");
+                if (!seedText.empty()) {
+                    opts.seed = static_cast<unsigned int>(parseScalarValue(seedText, model));
+                }
             }
 
             // Parse poplevel: threshold for population (ODE) vs particle (SSA)

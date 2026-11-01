@@ -19,7 +19,8 @@ from __future__ import annotations
 import math
 import numpy as np
 import pytest
-import scipy.integrate as integrate
+
+integrate = pytest.importorskip("scipy.integrate")
 import libsbml
 
 from bionetgen import BioNetGenModel
