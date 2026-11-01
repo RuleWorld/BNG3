@@ -1722,6 +1722,13 @@ void runSimulation(
         compiledOptions->methodDiagnostic.has_value()) {
         throw std::runtime_error(compiledOptions->methodDiagnostic->message);
     }
+    if (actionName == "simulate" &&
+        action.arguments.find("n_steps") != action.arguments.end() &&
+        action.arguments.find("n_output_steps") != action.arguments.end()) {
+        throw std::runtime_error(
+            "'n_steps' and 'n_output_steps' are the same thing, cannot define both. "
+            "Please only define one ('n_output_steps' is preferred).");
+    }
 
     const auto method = resolveSimulationMethod(action);
     const auto tEnd = stripQuotes(readArgument(action, "t_end", ""));
