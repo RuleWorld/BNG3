@@ -9,6 +9,7 @@
 #include "parser/BNGAstVisitor.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <cmath>
@@ -156,6 +157,101 @@ void refusesClockDependentParameterRates() {
         catch (const std::runtime_error&) { refused = true; }
         assert(refused);
     }
+}
+
+void identicalReactantsHaveUnorderedEmbeddings() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin parameters
+  k 0.05
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin observables
+  Molecules A_count A()
+end observables
+begin reaction rules
+  dimerize: A() + A() -> 0 k
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(lowered.ok());
+    const auto& rule = lowered.model.expanded_rules.front();
+    assert(rule.pattern.nodes.size() == 2);
+    assert(rule.pattern.interchangeable.size() == 1);
+    assert((rule.pattern.interchangeable.front() == std::vector<std::size_t>{0, 1}));
+
+    const auto aType = moleculeTypeId(lowered.model, "A");
+    nfnext::GenericGraphState state(lowered.model);
+    for (int i = 0; i < 10; ++i) state.create(aType);
+    nfnext::GenericMatcher matcher(lowered.model);
+    assert(matcher.enumerate(rule.pattern, state).size() == 45);
+
+    const std::array<double, 6> expectedCdf{
+        0.105399224561865,
+        0.479157946449416,
+        0.8597259134242512,
+        0.9878457563640342,
+        0.9998601285932023,
+        1.0,
+    };
+    constexpr std::size_t runCount = 200;
+    std::array<std::size_t, 6> observedCounts{};
+    nfnext::BngExecutionRequest request;
+    request.sample_times = {0.0, 1.0};
+    for (std::size_t run = 0; run < runCount; ++run) {
+        request.seed = 20261101 + run;
+        const auto result = nfnext::executeFromBioNetGen(semantic, request);
+        assert((result.columns == std::vector<std::string>{"time", "A_count"}));
+        const auto remaining = static_cast<int>(result.rows.back()[1]);
+        assert(remaining >= 0 && remaining <= 10 && remaining % 2 == 0);
+        ++observedCounts[static_cast<std::size_t>((10 - remaining) / 2)];
+    }
+    const double epsilon = std::sqrt(std::log(2.0 / 0.01) /
+                                     (2.0 * runCount));
+    double observedCdf = 0.0;
+    double maxDistance = 0.0;
+    for (std::size_t stateIndex = 0; stateIndex < observedCounts.size(); ++stateIndex) {
+        observedCdf += static_cast<double>(observedCounts[stateIndex]) / runCount;
+        maxDistance = std::max(maxDistance,
+                               std::abs(observedCdf - expectedCdf[stateIndex]));
+    }
+    assert(maxDistance <= epsilon);
+
+    const auto distinctAst = bng::parser::parseModel(R"BNGL(
+begin molecule types
+  A(x~u~p)
+end molecule types
+begin seed species
+  A(x~u) 1
+  A(x~p) 1
+end seed species
+begin reaction rules
+  consume_distinct_states: A(x~u) + A(x~p) -> 0 0.05
+end reaction rules
+)BNGL");
+    assert(distinctAst);
+    const bng::compile::CompiledModel distinctSemantic(*distinctAst);
+    assert(distinctSemantic.valid());
+    const auto distinctLowered = nfnext::lowerFromBioNetGen(distinctSemantic);
+    assert(distinctLowered.ok());
+    const auto& distinctRule = distinctLowered.model.expanded_rules.front();
+    assert(distinctRule.pattern.interchangeable.empty());
+    const auto distinctA = moleculeTypeId(distinctLowered.model, "A");
+    const auto xSite = siteIndex(distinctLowered.model, distinctA, "x");
+    nfnext::GenericGraphState distinctState(distinctLowered.model);
+    const auto unphosphorylated = distinctState.create(distinctA);
+    const auto phosphorylated = distinctState.create(distinctA);
+    distinctState.setSiteState(unphosphorylated, static_cast<std::uint16_t>(xSite), 0);
+    distinctState.setSiteState(phosphorylated, static_cast<std::uint16_t>(xSite), 1);
+    nfnext::GenericMatcher distinctMatcher(distinctLowered.model);
+    assert(distinctMatcher.enumerate(distinctRule.pattern, distinctState).size() == 1);
 }
 
 void executesBimolecularBindingUnbinding() {
@@ -878,6 +974,7 @@ end reaction rules
     assert(nonzeroSiteRule.actions[0].value == 1); // A.y~on
 
     executesCanonicalUnaryModel();
+    identicalReactantsHaveUnorderedEmbeddings();
     executesBimolecularBindingUnbinding();
     executesSynthesisAndComplexDegradation();
     executesComplexSeedModel();
