@@ -3564,7 +3564,7 @@ def _evaluate_model_expression_exact(
                     raise ValueError("division by zero in rational expression")
                 return left / right
             if isinstance(node.op, ast.Pow) and right.denominator == 1:
-                return left ** right.numerator
+                return left**right.numerator
         raise ValueError(f"expression is outside exact rational arithmetic: {expr_str}")
 
     return visit(root)
@@ -3582,9 +3582,7 @@ def _extract_jump_hazards(
     net = model.generate_network()
     species_names = list(net.species_names)
 
-    init_counts: dict[str, Fraction] = {
-        sp: Fraction(0) for sp in species_names
-    }
+    init_counts: dict[str, Fraction] = {sp: Fraction(0) for sp in species_names}
     for seed in model._model.seed_species:
         amount_val = _evaluate_model_expression_exact(
             seed.amount.to_string(), param_dict
@@ -3598,9 +3596,7 @@ def _extract_jump_hazards(
             if sp == pat or sp.split("@")[-1] == pat.split("@")[-1]:
                 init_counts[sp] = amount_val
 
-    jump_hazards: dict[
-        tuple[tuple[str, ...], tuple[str, ...]], Fraction
-    ] = {}
+    jump_hazards: dict[tuple[tuple[str, ...], tuple[str, ...]], Fraction] = {}
     rxn_participants = net.reaction_participants
     rate_laws = net.reaction_rate_laws
     factors = net.reaction_factors
@@ -3649,9 +3645,7 @@ def exact_process_equal(
     # declines alpha-equivalent but differently encoded cases until a proof
     # method for those fields is available.
     try:
-        left_structural = _parse_document(to_bngir(left_model, version="0.2"))[
-            "model"
-        ]
+        left_structural = _parse_document(to_bngir(left_model, version="0.2"))["model"]
         right_structural = _parse_document(to_bngir(right_model, version="0.2"))[
             "model"
         ]
@@ -3771,7 +3765,9 @@ def exact_process_equal(
 
             def enabled(key: tuple[tuple[str, ...], tuple[str, ...]]) -> bool:
                 need = Counter(key[0])
-                return all(init_l.get(sp, Fraction(0)) >= count for sp, count in need.items())
+                return all(
+                    init_l.get(sp, Fraction(0)) >= count for sp, count in need.items()
+                )
 
             for key in set(jumps_l) | set(jumps_r):
                 if enabled(key) and jumps_l.get(key, Fraction(0)) != jumps_r.get(
@@ -3791,8 +3787,7 @@ def exact_process_equal(
 
                 need = Counter(key[0])
                 if all(
-                    init_l.get(sp, Fraction(0)) >= count
-                    for sp, count in need.items()
+                    init_l.get(sp, Fraction(0)) >= count for sp, count in need.items()
                 ):
                     return False
                 raise EqualityUndecided(
@@ -3843,8 +3838,7 @@ def exact_process_equal(
         if set(mapped_jumps_l.keys()) == set(jumps_r.keys()):
             if all(mapped_jumps_l[key] == jumps_r[key] for key in jumps_r):
                 initial_matches = all(
-                    init_l.get(source, Fraction(0))
-                    == init_r.get(target, Fraction(0))
+                    init_l.get(source, Fraction(0)) == init_r.get(target, Fraction(0))
                     for source, target in mapping.items()
                 )
                 if initial_matches:
