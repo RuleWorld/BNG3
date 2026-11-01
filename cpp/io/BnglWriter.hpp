@@ -52,6 +52,7 @@ private:
     static std::string writeBarrierPatterns(const ast::Model& model);
     static std::string writeReactionRules(const ast::Model& model);
     static std::string writeEvents(const ast::Model& model);
+    static std::string writeProtocol(const ast::Model& model);
     static std::string writeActions(const ast::Model& model);
 };
 

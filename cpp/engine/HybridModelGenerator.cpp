@@ -495,6 +495,10 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
     result.nFunctions = model_.getFunctions().size();
     std::cerr << "found " << result.nFunctions << " functions.\n";
 
+    for (const auto& action : model_.getSimulationProtocol()) {
+        hybridModel.addProtocolAction(action);
+    }
+
     // === Step 9: Expand rules w.r.t. populations ===
     std::cerr << indent << stepIndex
               << ":Expanding rules with respect to population objects..\n";
