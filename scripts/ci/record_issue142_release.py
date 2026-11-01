@@ -12,13 +12,16 @@ import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
 import numpy as np
 from scipy.linalg import expm
 
 from scripts.ci.oracle_sources import load_lock
 from tests.validation import compare, graph_identity_contract
 
-ROOT = Path(__file__).resolve().parents[2]
 EXPECTED_CHECKS = (
     "release-graph-identity",
     "release-graph-observables",
@@ -44,6 +47,16 @@ def _properties(testcase: ET.Element) -> dict[str, str]:
 
 
 def read_check_junit(path: Path, testcase_name: str, check_id: str) -> dict[str, str]:
+    cases = read_junit_cases(path)
+    if testcase_name not in cases:
+        _fail(f"expected exactly one JUnit case {testcase_name}, got 0")
+    properties = cases[testcase_name]
+    if properties.get("acceptance_check") != check_id:
+        _fail(f"JUnit case {testcase_name} does not identify {check_id}")
+    return properties
+
+
+def read_junit_cases(path: Path) -> dict[str, dict[str, str]]:
     if not path.is_file():
         _fail(f"missing JUnit result: {path}")
     root = ET.parse(path).getroot()
@@ -57,13 +70,13 @@ def read_check_junit(path: Path, testcase_name: str, check_id: str) -> dict[str,
             )
         if testcase.find("skipped") is not None:
             _fail(f"JUnit contains skipped case: {testcase.attrib.get('name')}")
-    matching = [case for case in testcases if case.attrib.get("name") == testcase_name]
-    if len(matching) != 1:
-        _fail(f"expected exactly one JUnit case {testcase_name}, got {len(matching)}")
-    properties = _properties(matching[0])
-    if properties.get("acceptance_check") != check_id:
-        _fail(f"JUnit case {testcase_name} does not identify {check_id}")
-    return properties
+    result = {}
+    for testcase in testcases:
+        name = testcase.attrib.get("name", "")
+        if not name or name in result:
+            _fail(f"missing or duplicate JUnit case name: {name!r}")
+        result[name] = _properties(testcase)
+    return result
 
 
 def verify_manifest(root: Path = ROOT) -> dict[str, dict]:
@@ -174,6 +187,14 @@ def verify_identity_evidence(directory: Path, expected_revision: str) -> dict:
         or junit.get("subject_sha256") != subject_sha
     ):
         _fail("identity JUnit properties conflict with the retained report")
+    cases_in_junit = read_junit_cases(directory / "release-graph-identity.xml")
+    negative_controls = {
+        "test_two_different_graphs_that_share_a_label_are_a_mismatch",
+        "test_a_surface_that_decides_another_layer_is_visible",
+        "test_a_canonicalizer_that_decides_another_relation_is_a_mismatch",
+    }
+    if not negative_controls <= set(cases_in_junit):
+        _fail("identity JUnit is missing false-match or layer-mismatch controls")
     return {
         "status": "PASS",
         "result_count": len(rows),
