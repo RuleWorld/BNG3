@@ -301,3 +301,33 @@ def test_official_case_00375_matches_the_published_trajectory(tmp_path):
         CASE_00375_REFERENCE,
         0.06,
     )
+
+
+def test_synthesize_event_actions_pads_short_and_degenerate_sampling_grids():
+    """Short event phases with < 3 points are padded to at least 3 points."""
+    from bionetgen.atomizer.modern.events import synthesize_event_actions, EventTranslationContext, SBMLEvent, SBMLEventAssignment
+    # Event fires at time=1.0, base_t_end=2.5, base_steps=2
+    # Phases: [0.0, 1.0] and [1.0, 2.5]
+    event = SBMLEvent(
+        id="e1",
+        name="e1",
+        trigger="gt(time, 1.0)",
+        assignments=[SBMLEventAssignment("p", "3")],
+        trigger_persistent=True,
+    )
+    ctx = EventTranslationContext(
+        resolve_species_pattern=lambda _s: None,
+        resolve_param=lambda _p: 0.0,
+        is_param=lambda _p: True,
+        method="ode",
+        base_t_end=2.5,
+        base_steps=2,
+    )
+    res = synthesize_event_actions([event], ctx)
+    assert res.actions is not None
+    import re
+    matches = re.findall(r"sample_times=>\[(.*?)\]", res.actions)
+    assert len(matches) >= 1
+    for m in matches:
+        pts = [float(x.strip()) for x in m.split(",")]
+        assert len(pts) >= 3

@@ -9384,6 +9384,22 @@ def synthesize_event_actions(
         if include_start:
             samples.insert(0, start)
         samples.append(end)
+        # A BNGL simulate action requires at least three sample points.  A
+        # short event phase can otherwise contain only one or two grid points.
+        if end > start:
+            if len(samples) == 1:
+                samples.insert(0, start)
+            while len(samples) < 3:
+                gaps = [
+                    (samples[index + 1] - samples[index], index)
+                    for index in range(len(samples) - 1)
+                ]
+                if not gaps:
+                    break
+                width, index = max(gaps)
+                if width <= 0.0:
+                    break
+                samples.insert(index + 1, samples[index] + width / 2.0)
         return "[" + ",".join(_format_number(value) for value in samples) + "]"
 
     def sampling_for(start: float, end: float, *, include_start: bool) -> str:

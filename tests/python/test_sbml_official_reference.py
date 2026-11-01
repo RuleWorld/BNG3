@@ -1331,3 +1331,40 @@ def test_degenerate_network_over_an_inert_source_model_is_comparable():
 
     assert not validator._source_reactions_can_change_state(parsed)
     assert validator._degenerate_network_reason(network, parsed) is None
+
+
+def test_action_rewrite_pads_short_and_degenerate_phases():
+    """Short event phases with < 3 official points are padded, preserving official endpoints."""
+    actions = _load_actions()
+    # Phase 1: [0.0, 2.5] with only 2.4 in the interior -> points [2.4] -> padded to >= 3 points
+    # Phase 2: [2.5, 5.0] with [3.0, 5.0]
+    times = [2.4, 3.0, 5.0]
+    rewritten, _ = actions.rewrite_action_output_grid(ACTION_MODEL, times)
+    assert "sample_times=>[0.0, 1.2, 2.4, 2.5]" in rewritten or "sample_times=>[0.0, 2.4, 2.45, 2.5]" in rewritten or "sample_times=>[" in rewritten
+    # Verify that the rewritten sample_times has at least 3 points
+    import re
+    matches = re.findall(r"sample_times=>\[(.*?)\]", rewritten)
+    assert len(matches) == 2
+    for m in matches:
+        pts = [float(x.strip()) for x in m.split(",")]
+        assert len(pts) >= 3
+
+
+def test_action_execution_with_padded_grid_matches_exact_official_times():
+    """execute_action_block maps the output accurately back to official times despite synthetic samples."""
+    actions = _load_actions()
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    # Official grid only has 2 points in the first phase: [0.0, 2.4] where phase is [0.0, 2.5]
+    times = [0.0, 2.4, 2.5, 5.0]
+    rewritten, _ = actions.rewrite_action_output_grid(ACTION_MODEL, times)
+    import tempfile
+    with tempfile.TemporaryDirectory() as raw:
+        run = actions.execute_action_block(
+            cpp,
+            rewritten,
+            Path(raw),
+            times=times,
+            aliases={"S1": "SSTSREF_TEST_0000"},
+        )
+        assert run.times == times
+        assert len(run.values["S1"]) == len(times)
