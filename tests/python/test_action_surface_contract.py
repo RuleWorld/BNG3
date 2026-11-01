@@ -178,6 +178,81 @@ end actions
     assert rows[-1][dimers] < rows[0][dimers]
 
 
+def test_hybrid_nfsim_preserves_population_conversion_inside_compartment(tmp_path):
+    source = tmp_path / "compartment.bngl"
+    source.write_text(
+        """begin model
+begin parameters
+  k_fast 100
+  k_slow 0.1
+  N 20
+end parameters
+begin compartments
+  c1 3 1
+  c2 3 1
+  c3 3 1
+end compartments
+begin molecule types
+  A()
+  B1()
+  B2()
+end molecule types
+begin seed species
+  @c1:A() N
+  @c2:A() N
+end seed species
+begin observables
+  Molecules A_total A()
+  Molecules c1_units @c1:A()
+  Molecules c2_units @c2:A()
+  Molecules B1_total B1()
+  Molecules B2_total B2()
+  Molecules all_units A(),B1(),B2()
+end observables
+begin reaction rules
+  @c1:A() -> @c1:B1() k_fast
+  @c2:A() -> @c2:B2() k_slow
+end reaction rules
+begin population maps
+  c1: @c1:A() -> P() k_fast
+  c2: @c2:A() -> P() k_slow
+  c3: @c3:A() -> P() k_fast
+end population maps
+end model
+
+begin actions
+generate_hybrid_model({overwrite=>1, execute=>1, actions=>["simulate_nf({t_end=>0.1, n_steps=>4, seed=>2})"]})
+end actions
+"""
+    )
+    bionetgen.load(source).execute()
+
+    output = tmp_path / "compartment_hpp.gdat"
+    lines = [
+        line
+        for line in output.read_text().splitlines()
+        if line and not line.startswith("#")
+    ]
+    columns = output.read_text().splitlines()[0].lstrip("#").split()
+    rows = [[float(value) for value in line.split()] for line in lines]
+    b1 = columns.index("B1_total")
+    b2 = columns.index("B2_total")
+    c1_units = columns.index("c1_units")
+    c2_units = columns.index("c2_units")
+    all_units = columns.index("all_units")
+    assert rows[-1][b1] > rows[-1][b2]
+    assert rows[-1][c1_units] < rows[-1][c2_units]
+    assert all(row[all_units] == pytest.approx(40) for row in rows)
+    hybrid = (tmp_path / "compartment_hpp.bngl").read_text()
+    assert "@c1:P() N" in hybrid
+    assert "@c2:P() N" in hybrid
+    assert "@c3:P() 0" in hybrid
+    assert "_MapRule0: @c1:A() -> @c1:P() k_fast" in hybrid
+    assert "_MapRule1: @c2:A() -> @c2:P() k_slow" in hybrid
+    assert "Molecules c1_units @c1:A(),@c1:P()" in hybrid
+    assert "Molecules c2_units @c2:A(),@c2:P()" in hybrid
+
+
 def test_hybrid_model_generation_does_not_run_the_original_model(tmp_path):
     model = _model(
         tmp_path,
