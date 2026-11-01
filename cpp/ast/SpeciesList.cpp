@@ -5,6 +5,13 @@
 
 namespace bng::ast {
 
+const char* SpeciesList::identityLayer() {
+    // The species identity compares the canonical label, the structural
+    // isomorphism and both compartment scopes, so it decides the species
+    // layer of the shared identity contract.
+    return bng::identity::layerName(bng::identity::Layer::Species);
+}
+
 void SpeciesList::setCheckIso(bool enabled) {
     checkIso_ = enabled;
 }

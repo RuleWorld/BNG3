@@ -91,6 +91,7 @@ def annotate_acceptance_evidence(rows):
             }
         )
     consumers.update(integrated_extensions.check_ids("quantity-laws", full=True))
+    consumers.update(integrated_extensions.check_ids("graph-identity-contract"))
     for case in generated_cases(full=True):
         consumers.update(integrated_extensions.check_ids("protocol", case))
     for row in rows:
@@ -108,6 +109,7 @@ def expected_contract_ids(
     *,
     include_boundaries=True,
     include_graph_identity=True,
+    include_graph_identity_contract=True,
     include_bngir_adversarial=True,
     include_quantity_laws=True,
     full=False,
@@ -154,6 +156,7 @@ def expected_contract_ids(
         cases,
         include_boundaries=include_boundaries,
         include_graph_identity=include_graph_identity,
+        include_graph_identity_contract=include_graph_identity_contract,
         include_bngir_adversarial=include_bngir_adversarial,
         include_quantity_laws=include_quantity_laws,
         full=full,
@@ -937,6 +940,7 @@ def main(argv=None):
     parser.add_argument("--full", action="store_true")
     parser.add_argument("--boundaries-only", action="store_true")
     parser.add_argument("--graph-identity-only", action="store_true")
+    parser.add_argument("--graph-identity-contract-only", action="store_true")
     parser.add_argument("--bngir-adversarial-only", action="store_true")
     parser.add_argument("--quantity-laws-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
@@ -946,6 +950,7 @@ def main(argv=None):
             (
                 args.boundaries_only,
                 args.graph_identity_only,
+                args.graph_identity_contract_only,
                 args.bngir_adversarial_only,
                 args.quantity_laws_only,
             )
@@ -971,6 +976,7 @@ def main(argv=None):
     if (
         args.boundaries_only
         or args.graph_identity_only
+        or args.graph_identity_contract_only
         or args.bngir_adversarial_only
         or args.quantity_laws_only
     ):
@@ -1002,20 +1008,34 @@ def main(argv=None):
     qualification_selection = dict(
         include_boundaries=not (
             args.graph_identity_only
+            or args.graph_identity_contract_only
             or args.bngir_adversarial_only
             or args.quantity_laws_only
         ),
         include_graph_identity=not (
             args.boundaries_only
+            or args.graph_identity_contract_only
+            or args.bngir_adversarial_only
+            or args.quantity_laws_only
+        ),
+        include_graph_identity_contract=not (
+            args.boundaries_only
+            or args.graph_identity_only
             or args.bngir_adversarial_only
             or args.quantity_laws_only
         ),
         include_bngir_adversarial=not (
-            args.boundaries_only or args.graph_identity_only or args.quantity_laws_only
+            args.boundaries_only
+            or args.graph_identity_only
+            or args.graph_identity_contract_only
+            or args.quantity_laws_only
         ),
     )
     qualification_selection["include_quantity_laws"] = not (
-        args.boundaries_only or args.graph_identity_only or args.bngir_adversarial_only
+        args.boundaries_only
+        or args.graph_identity_only
+        or args.graph_identity_contract_only
+        or args.bngir_adversarial_only
     )
     required_ids = expected_contract_ids(
         selected, full=args.full, **qualification_selection
@@ -1028,6 +1048,10 @@ def main(argv=None):
             integrated_extensions.invoke("boundaries", args, rows, env, run_stage)
         if qualification_selection["include_graph_identity"]:
             integrated_extensions.invoke("graph-identity", args, rows, env, run_stage)
+        if qualification_selection["include_graph_identity_contract"]:
+            integrated_extensions.invoke(
+                "graph-identity-contract", args, rows, env, run_stage
+            )
         if qualification_selection["include_bngir_adversarial"]:
             integrated_extensions.invoke(
                 "bngir-adversarial", args, rows, env, run_stage
@@ -1090,7 +1114,11 @@ def main(argv=None):
                     else (
                         ["--graph-identity-only"]
                         if row.get("qualification") == "graph-identity"
-                        else (["--case", case_id] if case_id else [])
+                        else (
+                            ["--graph-identity-contract-only"]
+                            if row.get("qualification") == "graph-identity-contract"
+                            else (["--case", case_id] if case_id else [])
+                        )
                     )
                 )
             )
@@ -1135,10 +1163,18 @@ def main(argv=None):
                     "quantity-laws": "tests/validation/integrated_marginals.py",
                     "bngir-adversarial": "tests/validation/bngir_adversarial.py",
                     "graph-identity": "tests/validation/graph_identity.py",
+                    "graph-identity-contract": [
+                        "tests/validation/graph_identity_contract.py",
+                        "cpp/core/IdentityContract.hpp",
+                    ],
                 }[row["stage"]]
             ]
             if row["stage"] == "graph-identity":
                 row["question"] = "native-network-graph-identity-vs-independent-oracle"
+            if row["stage"] == "graph-identity-contract":
+                row["question"] = (
+                    "both-native-graph-encodings-vs-one-independent-identity-contract"
+                )
         if row["stage"] == "rate-trace":
             row["source_locations"] = [
                 "tests/validation/integrated_traces.py",
@@ -1157,6 +1193,8 @@ def main(argv=None):
             elif stage in {"nf-marginals", "quantity-laws"}:
                 issues = [143, 146, 151, 167]
             elif stage == "graph-identity":
+                issues = [142]
+            elif stage == "graph-identity-contract":
                 issues = [142]
             elif stage in integrated_consumers.ISSUES:
                 issues = list(integrated_consumers.ISSUES[stage])
