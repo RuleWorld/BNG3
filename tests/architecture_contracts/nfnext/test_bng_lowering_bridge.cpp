@@ -271,7 +271,7 @@ begin observables
   Molecules B_count B()
 end observables
 begin reaction rules
-  consume_complex_pairs: A(b!1).B(a!1) + A(b!1).B(a!1) -> 0 k
+  consume_complex_pairs: A(b!1).B(a!1) + B(a!1).A(b!1) -> 0 k
 end reaction rules
 )BNGL");
     assert(ast);
@@ -298,9 +298,9 @@ end reaction rules
     assert(matcher.enumerate(rule.pattern, state).size() == 6);
     assert(rule.pattern.interchangeable.size() == 2);
     assert((rule.pattern.interchangeable[0] ==
-            std::vector<std::size_t>{0, 2}));
+            std::vector<std::size_t>{0, 3}));
     assert((rule.pattern.interchangeable[1] ==
-            std::vector<std::size_t>{1, 3}));
+            std::vector<std::size_t>{1, 2}));
 
     const auto distinctAst = bng::parser::parseModel(R"BNGL(
 begin molecule types
