@@ -2,6 +2,8 @@
 
 from pathlib import Path
 
+import pytest
+
 from bionetgen import BioNetGenModel
 from _extdep import require_extension
 from tests.validation import runner
@@ -54,3 +56,23 @@ def test_bngl_simulate_rejects_conflicting_step_count_aliases(tmp_path):
 
     assert gdat is None
     assert "'n_steps' and 'n_output_steps' are the same thing" in error
+
+
+@pytest.mark.parametrize(("print_net", "save_progress"), [(1, 1), (0, 0)])
+def test_bngl_simulate_rejects_conflicting_network_output_aliases(
+    tmp_path, print_net, save_progress
+):
+    source = tmp_path / "network_output_aliases.bngl"
+    source.write_text(
+        SOURCE
+        + "\nbegin actions\n"
+        + f'  simulate({{method=>"ode",t_end=>1,n_steps=>2,print_net=>{print_net},save_progress=>{save_progress}}})\n'
+        + "end actions\n",
+        encoding="utf-8",
+    )
+    bng_cpp = Path(__file__).resolve().parents[2] / "build/cpp/bng_cpp"
+
+    _, gdat, error = runner.run_cli_path(bng_cpp, source, tmp_path / "run")
+
+    assert gdat is None
+    assert "'print_net' and 'save_progress' are the same thing" in error

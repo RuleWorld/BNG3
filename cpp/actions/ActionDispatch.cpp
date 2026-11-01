@@ -1977,6 +1977,16 @@ void runSimulation(
     }
 
     // Parse save_progress flag (BNG2 parity: write .net checkpoint at each output step)
+    const bool explicitlySetsSaveProgress =
+        action.arguments.find("save_progress") != action.arguments.end();
+    const bool explicitlySetsPrintNet =
+        action.arguments.find("print_net") != action.arguments.end();
+    if (explicitlySetsSaveProgress && explicitlySetsPrintNet) {
+        throw std::runtime_error(
+            "'print_net' and 'save_progress' are the same thing, cannot define both. "
+            "Please only define one ('save_progress' is preferred).");
+    }
+
     const auto saveProgressText = lowercase(stripQuotes(readArgument(action, "save_progress", "0")));
     opts.saveProgress = (saveProgressText == "1" || saveProgressText == "true");
 
