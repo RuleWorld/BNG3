@@ -1966,11 +1966,7 @@ void runSimulation(
     // When continue=1 and no explicit t_start, use the previous simulation's end time
     if (continueSimulation && tStartText.empty() && lastSimulationEndTime > 0.0) {
         opts.tStart = lastSimulationEndTime;
-        // BNG2 treats t_end as the duration of a continued run when t_start
-        // is omitted. Explicit sample_times remain absolute timestamps.
-        if (!tEnd.empty() && !hasSampleTimes) {
-            opts.tEnd += lastSimulationEndTime;
-        }
+        // BNG2 keeps t_end as the absolute endpoint for a continued run.
     }
 
     // Parse save_progress flag (BNG2 parity: write .net checkpoint at each output step)
