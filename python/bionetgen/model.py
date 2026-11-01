@@ -985,9 +985,20 @@ class BioNetGenModel:
 
         self._edit_topology("remove_function", edit)
 
-    def generate_network(self, max_iter: int = 100) -> _cpp.GeneratedNetwork:
+    def generate_network(self, max_iter: Optional[int] = None) -> _cpp.GeneratedNetwork:
         carrying_session = self._continuation_network is not None
-        self._network = _cpp.generate_network(self._model, max_iter=max_iter)
+        if max_iter is None:
+            for action in getattr(self._model, "actions", []):
+                if action.name == "generate_network" and "max_iter" in action.arguments:
+                    try:
+                        max_iter = int(action.arguments["max_iter"])
+                        break
+                    except ValueError:
+                        pass
+        kwargs = {}
+        if max_iter is not None:
+            kwargs["max_iter"] = max_iter
+        self._network = _cpp.generate_network(self._model, **kwargs)
         if carrying_session:
             _cpp.continue_simulation_from(self._continuation_network, self._network)
             self._continuation_network = None

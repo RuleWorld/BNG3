@@ -89,19 +89,19 @@ This audit establishes the combined baseline following the integration of pull r
 
 - **Combined revision:** `13cf998e9fea595a1c322ac0669a6bc6f598c88b` on `main`.
 - **Merged PRs:**
-  - [#541](https://github.com/RuleWorld/BNG3/pull/541): `fix(validation)` require execution evidence for issue 160 acceptance.
-  - [#542](https://github.com/RuleWorld/BNG3/pull/542): `fix(validation)` network-only staging of generation snapshots.
-  - [#543](https://github.com/RuleWorld/BNG3/pull/543): `feat(actions)` compile static simulation action time options.
-  - [#544](https://github.com/RuleWorld/BNG3/pull/544): `docs` clarify PyBioNetGen migration evidence.
-  - [#545](https://github.com/RuleWorld/BNG3/pull/545): `ci` qualify installed wheel examples and package identity.
-  - [#546](https://github.com/RuleWorld/BNG3/pull/546): `feat(engine)` support coupled algebraic parameter DAEs in native IDA path.
-  - [#547](https://github.com/RuleWorld/BNG3/pull/547): `fix(atomizer)` lower nonlinear SBML fast equilibrium pools.
-  - [#548](https://github.com/RuleWorld/BNG3/pull/548): `fix(atomizer)` bounded dynamic SBML delay evaluation.
-  - [#549](https://github.com/RuleWorld/BNG3/pull/549): `fix(engine)` preserve historical parameters in event algebraic evaluation.
-  - [#550](https://github.com/RuleWorld/BNG3/pull/550): `test(bngir)` qualify native reconstruction of compartments and live rates.
-  - [#551](https://github.com/RuleWorld/BNG3/pull/551): `feat(compile)` shared rate evaluation and invalidation across ODE and PLA (#143).
-  - [#552](https://github.com/RuleWorld/BNG3/pull/552): `test(atomizer)` qualify fast equilibrium coupling to Michaelis-Menten limit.
-  - [#553](https://github.com/RuleWorld/BNG3/pull/553): `fix(engine)` qualify delayed kinetics against method of steps and continuation.
+  - [PR #541](https://github.com/RuleWorld/BNG3/pull/541): `fix(validation)` require execution evidence for issue 160 acceptance.
+  - [PR #542](https://github.com/RuleWorld/BNG3/pull/542): `fix(validation)` network-only staging of generation snapshots.
+  - [PR #543](https://github.com/RuleWorld/BNG3/pull/543): `feat(actions)` compile static simulation action time options.
+  - [PR #544](https://github.com/RuleWorld/BNG3/pull/544): `docs` clarify PyBioNetGen migration evidence.
+  - [PR #545](https://github.com/RuleWorld/BNG3/pull/545): `ci` qualify installed wheel examples and package identity.
+  - [PR #546](https://github.com/RuleWorld/BNG3/pull/546): `feat(engine)` support coupled algebraic parameter DAEs in native IDA path.
+  - [PR #547](https://github.com/RuleWorld/BNG3/pull/547): `fix(atomizer)` lower nonlinear SBML fast equilibrium pools.
+  - [PR #548](https://github.com/RuleWorld/BNG3/pull/548): `fix(atomizer)` bounded dynamic SBML delay evaluation.
+  - [PR #549](https://github.com/RuleWorld/BNG3/pull/549): `fix(engine)` preserve historical parameters in event algebraic evaluation.
+  - [PR #550](https://github.com/RuleWorld/BNG3/pull/550): `test(bngir)` qualify native reconstruction of compartments and live rates.
+  - [PR #551](https://github.com/RuleWorld/BNG3/pull/551): `feat(compile)` shared rate evaluation and invalidation across ODE and PLA (#143).
+  - [PR #552](https://github.com/RuleWorld/BNG3/pull/552): `test(atomizer)` qualify fast equilibrium coupling to Michaelis-Menten limit.
+  - [PR #553](https://github.com/RuleWorld/BNG3/pull/553): `fix(engine)` qualify delayed kinetics against method of steps and continuation.
 - **Combined test suite execution:** 282 passed test cases in 7.88s across focused unit, contract, and semantic test suites:
   - CI contracts & workflow wiring (`tests/test_ci_contract.py`, `tests/test_issue_acceptance_ci.py`): 110 passed.
   - SBML algebraic DAEs with IDA (`tests/python/test_atomizer_dae_ida.py`): 2 passed.
@@ -156,7 +156,7 @@ The 994 capability inventory rows are classified into the three required categor
 - The non-equivalent mutant (`python.set-parameter-scale`, mutating parameter setter values by 1%) was killed by unchanged independent backend contract test `TestHighLevelAPI.test_parameter_value_is_read_only_and_refreshes_dependents`.
 - Mutation score: 1/1 (100% kill rate, 0 survived, 0 infrastructure errors).
 - Baseline recorded in `tests/validation/policy/mutation-baseline.json` with exact revision and artifact SHA-256 digest.
-- `release-scheduled-mutation-ratchet` status: **PASS**.
+- Scheduled mutation ratchet status: **PASS** (`release-scheduled-mutation-ratchet`).
 
 ### 4. Dependency-ordered roadmap to Alpha (3.0.0a1) and Full Release
 
@@ -190,28 +190,28 @@ Following the combined baseline reconciliation, the remaining roadmap milestones
 
 ### 1. PR execution summary
 
-- **[#554](https://github.com/RuleWorld/BNG3/pull/554) (`codex/alpha-fixes`): Step 2 — Qualified Alpha Milestone**
+- **[PR #554](https://github.com/RuleWorld/BNG3/pull/554) (`codex/alpha-fixes`): Step 2 — Qualified Alpha Milestone**
   - Repaired weekly release workflow dependencies and artifact staging.
   - Added option forwarding to `BioNetGenModel.generate_network` for consistent action and export execution.
   - Fixed documentation links and issue #472 acceptance criteria; verified with Black and Ruff.
 
-- **[#555](https://github.com/RuleWorld/BNG3/pull/555) (`codex/step-3-shared-protocol-rates`): Step 3 & 4 — Shared Protocol and Rate Semantics**
+- **[PR #555](https://github.com/RuleWorld/BNG3/pull/555) (`codex/step-3-shared-protocol-rates`): Step 3 & 4 — Shared Protocol and Rate Semantics**
   - Implemented typed action options in `cpp/compile/ActionPlan.hpp` and `cpp/compile/ActionCompiler.cpp` (`setConcentration`, `setParameter`, `simulate_ode`, `simulate_ssa`, `simulate_pla`, `simulate_psa`).
   - Added multi-phase state continuation across simulation legs in `cpp/bindings/bind_engine.cpp` with exact observable history preservation and terminal-state synchronisation.
   - Consolidated shared rate evaluation across ODE, PLA, and PSA consumers.
 
-- **[#556](https://github.com/RuleWorld/BNG3/pull/556) (`codex/step-6-bngir-delayed-equality`): Step 6 — BNGIR v0.2 Default, Delayed Rules, and Exact Equality**
+- **[PR #556](https://github.com/RuleWorld/BNG3/pull/556) (`codex/step-6-bngir-delayed-equality`): Step 6 — BNGIR v0.2 Default, Delayed Rules, and Exact Equality**
   - Defaulted public BNGIR serialization and reconstruction to v0.2.
   - Preserved unit definitions, delayed rules, and counter observables across BNGIR JSON roundtrips.
   - Implemented `semantic_equal` with exact jump hazard equivalence certificates and canonical normal form comparisons.
   - Passed all anti-gaming (`release-no-product-fixture-names`) and formatting checks.
 
-- **[#557](https://github.com/RuleWorld/BNG3/pull/557) (`codex/step-7-nfsim-parity-nfnext`): Step 7 — Native NFsim Parity, Hybrid Execution, and NFnext**
+- **[PR #557](https://github.com/RuleWorld/BNG3/pull/557) (`codex/step-7-nfsim-parity-nfnext`): Step 7 — Native NFsim Parity, Hybrid Execution, and NFnext**
   - Implemented exact population and hybrid particle-population subsystem in `cpp/nfnext/include/nfnext/hybrid_state.hpp` and `cpp/nfnext/include/nfnext/population.hpp`.
   - Generalized `executeFromBioNetGen` in `cpp/nfnext/src/from_bng.cpp` with `TransformationIR` pre-compilation, multi-node matching, complex seed instantiation, and observable evaluations.
   - Passed all 14 NFnext architecture contracts and 794/794 C++ test cases (100%).
 
-- **[#558](https://github.com/RuleWorld/BNG3/pull/558) (`codex/step-8-jax-perf`): Step 8 — Optional Backends, JAX Execution, and Differentiation**
+- **[PR #558](https://github.com/RuleWorld/BNG3/pull/558) (`codex/step-8-jax-perf`): Step 8 — Optional Backends, JAX Execution, and Differentiation**
   - Implemented vectorized batched Gillespie SSA in `python/bionetgen/jax_ssa.py` using `jax.lax.while_loop` and `jax.vmap` matching the `BatchSsaMetrics` schema.
   - Implemented end-to-end reverse-mode automatic differentiation in `python/bionetgen/jax_ode.py` (`return_jax=True`, `rate_constants`, `initial_state`) verifying exact match with analytical sensitivity derivatives.
   - Added safe platform fallback for macOS Darwin to avoid experimental `jax-metal` bytecode incompatibilities.

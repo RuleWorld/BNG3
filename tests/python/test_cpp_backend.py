@@ -285,6 +285,35 @@ end model
 
         assert network.num_species == 16
 
+    def test_model_generate_network_uses_bngl_max_iter_unless_overridden(self):
+        source = """begin model
+begin molecule types
+    A()
+    B()
+    C()
+    D()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin reaction rules
+    r1: A() -> B() 1
+    r2: B() -> C() 1
+    r3: C() -> D() 1
+end reaction rules
+end model
+begin actions
+    generate_network({max_iter=>1})
+end actions
+"""
+        model = bionetgen.BioNetGenModel(_cpp.parse_string(source))
+        limited = model.generate_network()
+        assert (limited.num_species, limited.num_reactions) == (2, 1)
+
+        override = bionetgen.BioNetGenModel(_cpp.parse_string(source))
+        complete = override.generate_network(max_iter=100)
+        assert (complete.num_species, complete.num_reactions) == (4, 3)
+
     def test_python_max_iter_override_bypasses_invalid_bngl_protocol_option(
         self, tmp_path
     ):
