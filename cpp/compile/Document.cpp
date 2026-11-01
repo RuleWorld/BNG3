@@ -141,6 +141,16 @@ Diagnostic simulationTimeDiagnostic(const std::string& field,
     return diagnostic;
 }
 
+Diagnostic simulationMethodDiagnostic() {
+    Diagnostic diagnostic;
+    diagnostic.code = DiagnosticCode::InvalidModel;
+    diagnostic.severity = Severity::Error;
+    diagnostic.category = ValidationCategory::Expressions;
+    diagnostic.entity = "simulation.method";
+    diagnostic.message = "simulate() requires 'method' parameter (ode, ssa, pla, psa, nf).";
+    return diagnostic;
+}
+
 Diagnostic setParameterValueDiagnostic(const std::string& source,
                                        const std::string& reason) {
     Diagnostic diagnostic;
@@ -1100,10 +1110,30 @@ std::optional<SimulationOptions> compileSimulationOptions(
     }
 
     auto options = compileSimulationOptions(action.arguments);
+    if (name == "simulate" && methodArgument == action.arguments.end()) {
+        options.methodDiagnostic = simulationMethodDiagnostic();
+    }
     if (!options.method.has_value()) {
         if (name == "simulate_ode") options.method = "cvode";
         else if (name == "simulate_ssa") options.method = "ssa";
         else options.method = method.empty() ? "ode" : method;
+    }
+    // These defaults belong to the BNGL action contract. The public Python
+    // API keeps its independent method="ode" and n_steps=100 defaults.
+    if (name == "simulate" &&
+        action.arguments.find("n_steps") == action.arguments.end() &&
+        action.arguments.find("n_output_steps") == action.arguments.end() &&
+        action.arguments.find("sample_times") == action.arguments.end()) {
+        options.nSteps = 1;
+    }
+    if (name == "simulate" && !options.sampleTimesDiagnostic.has_value() &&
+        options.sampleTimesFile.empty() && options.sampleTimes.size() < 3 &&
+        action.arguments.find("sample_times") != action.arguments.end() &&
+        action.arguments.find("n_steps") == action.arguments.end() &&
+        action.arguments.find("n_output_steps") == action.arguments.end()) {
+        options.sampleTimesDiagnostic = sampleTimesDiagnostic(
+            action.arguments.at("sample_times"),
+            "array must contain 3 or more points");
     }
     return options;
 }

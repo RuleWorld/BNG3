@@ -1715,6 +1715,14 @@ void runSimulation(
         }
     }
 
+    const auto actionName = lowercase(action.name);
+    if (actionName == "simulate" &&
+        action.arguments.find("method") == action.arguments.end() &&
+        compiledOptions != nullptr &&
+        compiledOptions->methodDiagnostic.has_value()) {
+        throw std::runtime_error(compiledOptions->methodDiagnostic->message);
+    }
+
     const auto method = resolveSimulationMethod(action);
     const auto tEnd = stripQuotes(readArgument(action, "t_end", ""));
     const auto nSteps = stripQuotes(readArgument(action, "n_steps", stripQuotes(readArgument(action, "n_output_steps", ""))));
@@ -1785,6 +1793,8 @@ void runSimulation(
         if (opts.nSteps == 0) {
             throw std::runtime_error("n_steps must be positive");
         }
+    } else if (compiledOptions != nullptr && compiledOptions->nSteps.has_value()) {
+        opts.nSteps = *compiledOptions->nSteps;
     }
 
     // Parse t_start (BNG2 parity)
@@ -1800,7 +1810,16 @@ void runSimulation(
         std::cerr << "WARNING: n_steps and sample_times both defined. "
                      "n_steps takes precedence.\n";
     } else if (hasSampleTimes) {
+        if (compiledOptions != nullptr &&
+            compiledOptions->sampleTimesDiagnostic.has_value()) {
+            throw std::runtime_error(
+                compiledOptions->sampleTimesDiagnostic->message);
+        }
         opts.sampleTimes = parseSampleTimes(sampleTimesText, model);
+        if (actionName == "simulate" && opts.sampleTimes.size() < 3) {
+            throw std::runtime_error(
+                "'sample_times' array must contain 3 or more points");
+        }
         if (tEnd.empty()) {
             opts.tEnd = opts.sampleTimes.back();
         } else if (opts.sampleTimes.back() > opts.tEnd) {
