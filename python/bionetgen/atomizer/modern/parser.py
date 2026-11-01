@@ -345,6 +345,7 @@ def _flatten_simple_inline_comp(sbml_string: str) -> Optional[str]:
         or not submodel_id
         or submodel.get(comp_tag("modelRef")) != definitions[0].get("id")
         or set(submodel.attrib) != {comp_tag("id"), comp_tag("modelRef")}
+        or list(submodel)
     ):
         return None
     if any(
@@ -470,6 +471,8 @@ def _flatten_simple_external_comp(
         or submodel.get(comp_tag("modelRef")) != external_id
         or external.get(comp_tag("modelRef")) is None
         or set(submodel.attrib) != {comp_tag("id"), comp_tag("modelRef")}
+        or len(list(submodel)) > 1
+        or any(child.tag != comp_tag("listOfDeletions") for child in list(submodel))
         or any(
             child is not submodels_list
             and child.tag not in {core_tag("notes"), core_tag("annotation")}
@@ -477,6 +480,26 @@ def _flatten_simple_external_comp(
         )
     ):
         return None
+    deleted_reaction_ids: List[str] = []
+    deletions_lists = [
+        child for child in list(submodel) if child.tag == comp_tag("listOfDeletions")
+    ]
+    if deletions_lists:
+        deletion_elements = list(deletions_lists[0])
+        if not deletion_elements:
+            return None
+        for deletion in deletion_elements:
+            reaction_id = deletion.get(comp_tag("idRef"))
+            if (
+                deletion.tag != comp_tag("deletion")
+                or not reaction_id
+                or set(deletion.attrib) != {comp_tag("idRef")}
+                or list(deletion)
+            ):
+                return None
+            deleted_reaction_ids.append(reaction_id)
+        if len(set(deleted_reaction_ids)) != len(deleted_reaction_ids):
+            return None
     source = str(external.get(comp_tag("source"), "")).strip()
     parsed = urlsplit(source)
     if parsed.scheme not in {"", "file"} or parsed.netloc not in {"", "localhost"}:
@@ -534,6 +557,39 @@ def _flatten_simple_external_comp(
         for element in kinetic_law.iter()
     ):
         return None
+
+    if deleted_reaction_ids:
+        reactions_list = next(
+            (
+                child
+                for child in list(child_model)
+                if _local_name(child.tag) == "listOfReactions"
+            ),
+            None,
+        )
+        if reactions_list is None:
+            return None
+        reactions_to_remove = []
+        for reaction_id in deleted_reaction_ids:
+            matches = [
+                reaction
+                for reaction in list(reactions_list)
+                if _local_name(reaction.tag) == "reaction"
+                and reaction.get("id") == reaction_id
+            ]
+            if len(matches) != 1:
+                return None
+            reactions_to_remove.extend(matches)
+        for element in child_model.iter():
+            if any(element is reaction for reaction in reactions_to_remove):
+                continue
+            if (
+                _local_name(element.tag) == "ci"
+                and (element.text or "").strip() in deleted_reaction_ids
+            ):
+                return None
+        for reaction in reactions_to_remove:
+            reactions_list.remove(reaction)
 
     identifiers: Dict[str, str] = {}
     for element in child_model.iter():
@@ -687,6 +743,28 @@ def _preflight_comp_external_sources(
     return None
 
 
+def _has_unflattened_external_submodel_deletions(sbml_string: str) -> bool:
+    """Identify external submodel deletions not handled by the safe XML path."""
+    try:
+        root = ET.fromstring(sbml_string)
+    except ET.ParseError:
+        return False
+    comp_namespace = _declared_package_uris(sbml_string).get("comp")
+    if not comp_namespace:
+        return False
+    comp_tag = lambda name: f"{{{comp_namespace}}}{name}"
+    external_ids = {
+        element.get(comp_tag("id"))
+        for element in root.iter(comp_tag("externalModelDefinition"))
+        if element.get(comp_tag("id"))
+    }
+    return any(
+        element.get(comp_tag("modelRef")) in external_ids
+        and any(child.tag == comp_tag("listOfDeletions") for child in list(element))
+        for element in root.iter(comp_tag("submodel"))
+    )
+
+
 def _flatten_comp_package(
     sbml_string: str, source_path: Optional[Path] = None
 ) -> tuple[str, Optional[str]]:
@@ -702,6 +780,12 @@ def _flatten_comp_package(
     simple_external = _flatten_simple_external_comp(sbml_string, source_path)
     if simple_external is not None:
         return simple_external, None
+    if _has_unflattened_external_submodel_deletions(sbml_string):
+        return (
+            sbml_string,
+            "external comp submodel deletions outside the supported direct reaction "
+            "idRef subset cannot be flattened safely",
+        )
     external_failure = _preflight_comp_external_sources(sbml_string, source_path)
     if external_failure is not None:
         return sbml_string, external_failure
