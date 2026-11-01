@@ -1,5 +1,6 @@
 """Tests for the unavailable JAX SSA API and native network flattening."""
 
+import math
 import subprocess
 import sys
 
@@ -178,6 +179,71 @@ end model""")
     assert final_sp.shape == (80, 3)
     np.testing.assert_array_equal(final_sp[:, 0] + final_sp[:, 2], np.full(80, 15))
     np.testing.assert_array_equal(final_sp[:, 1] + final_sp[:, 2], np.full(80, 25))
+
+
+def test_jax_ssa_matches_analytic_first_order_survival_distribution():
+    """Check one exact SSA marginal against the pure-death binomial law.
+
+    For independent A -> B transitions at rate k, each initial A survives to
+    time t with probability exp(-k*t), so the remaining A count is
+    Binomial(N, exp(-k*t)). The fixed seed and batch budget make this
+    reproducible; the DKW bound limits the CDF discrepancy with alpha=0.001.
+    """
+    pytest.importorskip("jax")
+    initial_a = 20
+    rate = 0.5
+    t_end = 2.0
+    batch_size = 8192
+    alpha = 0.001
+    model = cpp.parse_string(
+        f"""begin model
+begin parameters
+k {rate}
+end parameters
+begin molecule types
+A()
+B()
+end molecule types
+begin seed species
+A() {initial_a}
+B() 0
+end seed species
+begin reaction rules
+A() -> B() k
+end reaction rules
+end model"""
+    )
+    network = cpp.generate_network(model)
+
+    result = jax_ssa.simulate(
+        model,
+        network,
+        batch_size=batch_size,
+        t_end=t_end,
+        base_seed=20261101,
+        n_steps=1,
+    )
+
+    a_index = network.species_names.index("A()")
+    samples = np.asarray(result["final_species"][:, a_index])
+    survival_probability = np.exp(-rate * t_end)
+    exact_cdf = np.array(
+        [
+            sum(
+                math.comb(initial_a, count)
+                * survival_probability**count
+                * (1.0 - survival_probability) ** (initial_a - count)
+                for count in range(value + 1)
+            )
+            for value in range(initial_a + 1)
+        ]
+    )
+    empirical_cdf = np.array(
+        [(samples <= value).mean() for value in range(initial_a + 1)]
+    )
+    dkw_bound = np.sqrt(np.log(2.0 / alpha) / (2.0 * batch_size))
+
+    assert np.max(np.abs(empirical_cdf - exact_cdf)) <= dkw_bound
 
 
 def test_jax_ssa_max_steps_guard():
