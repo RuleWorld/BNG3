@@ -32,6 +32,9 @@ N_STEPS = 4
 INITIAL_B = 20
 K_MAKE = 1.0
 K_MAP = 100.0
+INITIAL_DIMERS = 8
+K_DIMER_OFF = 1.5
+T_DIMER = 0.5
 ROOT = Path(__file__).resolve().parents[2]
 
 MODEL = f"""begin model
@@ -56,6 +59,30 @@ begin reaction rules
 end reaction rules
 begin population maps
   A() -> A_pop() k_map
+end population maps
+end model
+"""
+
+DIMER_CONVERSION_MODEL = f"""begin model
+begin parameters
+  k_off {K_DIMER_OFF}
+  N {INITIAL_DIMERS}
+end parameters
+begin molecule types
+  A(x)
+end molecule types
+begin seed species
+  A(x!1).A(x!1) N
+end seed species
+begin observables
+  Molecules A_units A()
+  Species Dimer_species A==2
+end observables
+begin reaction rules
+  A(x!1).A(x!1) -> A(x) + A(x) k_off
+end reaction rules
+begin population maps
+  A(x!1).A(x!1) -> Dimer_pop() k_off
 end population maps
 end model
 """
@@ -232,6 +259,92 @@ def _run_bng3_ensemble(tmp_path: Path):
         assert data is not None, f"BNG3 seed {seed}: malformed trajectory"
         runs.append((data, columns))
     return runs
+
+
+def _run_bng2_dimer_hybrid(tmp_path: Path) -> tuple[Path, Path]:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    bng2 = oracle_perl._bng2_path()
+    require_oracle(bng2 is not None, "pinned BNG2 unavailable (set BNG2_PERL)")
+    assert bng2 is not None
+    source = tmp_path / "dimer.bngl"
+    source.write_text(
+        DIMER_CONVERSION_MODEL
+        + '\nbegin actions\n'
+        + 'generate_hybrid_model({overwrite=>1, execute=>1, actions=>["writeXML()"]})\n'
+        + "end actions\n"
+    )
+    env = os.environ.copy()
+    env["BNGPATH"] = str(bng2.parent)
+    env["PERL5LIB"] = str(bng2.parent / "Perl2")
+    result = subprocess.run(
+        [os.environ.get("PERL", "perl"), str(bng2), str(source)],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
+    xml = tmp_path / "dimer_hpp.xml"
+    assert xml.is_file() and xml.stat().st_size, result.stderr
+    return xml, source
+
+
+def _run_native_dimer_ensemble(xml: Path, tmp_path: Path):
+    # Species observables need NFsim's complex bookkeeping enabled.
+    binary = _locked_native_nfsim()
+    runs = []
+    for seed in range(BASE_SEED, BASE_SEED + RUNS):
+        work_dir = tmp_path / f"native-dimer-{seed}"
+        work_dir.mkdir()
+        output = work_dir / "dimer.gdat"
+        result = subprocess.run(
+            [
+                str(binary), "-xml", str(xml), "-o", str(output),
+                "-sim", str(T_DIMER), "-oSteps", str(N_STEPS), "-seed", str(seed),
+                "-cb",
+            ],
+            cwd=work_dir,
+            capture_output=True,
+            text=True,
+            timeout=120,
+            check=False,
+        )
+        assert result.returncode == 0, result.stderr or result.stdout
+        data, columns = compare.parse_gdat(output)
+        assert data is not None, f"native NFsim seed {seed}: malformed trajectory"
+        runs.append((data, columns))
+    return runs
+
+
+def _run_bng3_dimer_ensemble(tmp_path: Path):
+    import bionetgen
+
+    runs = []
+    first_hpp = None
+    for seed in range(BASE_SEED, BASE_SEED + RUNS):
+        work_dir = tmp_path / f"bng3-dimer-{seed}"
+        work_dir.mkdir()
+        action = (
+            "generate_hybrid_model({overwrite=>1, execute=>1, "
+            f'actions=>["simulate_nf({{t_end=>{T_DIMER}, '
+            f'n_steps=>{N_STEPS}, seed=>{seed}}})"]}})'
+        )
+        source = work_dir / "dimer.bngl"
+        source.write_text(
+            DIMER_CONVERSION_MODEL + f"\nbegin actions\n{action}\nend actions\n"
+        )
+        bionetgen.load(source).execute()
+        output = work_dir / "dimer_hpp.gdat"
+        assert output.is_file(), f"BNG3 seed {seed}: missing dimer trajectory"
+        data, columns = compare.parse_gdat(output)
+        assert data is not None, f"BNG3 seed {seed}: malformed dimer trajectory"
+        runs.append((data, columns))
+        if first_hpp is None:
+            first_hpp = work_dir / "dimer_hpp.bngl"
+    assert first_hpp is not None and first_hpp.is_file()
+    return runs, first_hpp
 
 
 def _run_bng3_compartment_ensemble(tmp_path: Path):
@@ -786,6 +899,22 @@ def hybrid_ensembles(tmp_path_factory):
 
 
 @pytest.fixture(scope="module")
+def hybrid_dimer_ensembles(tmp_path_factory):
+    """Independent native and BNG3 trajectories for whole-dimer conversion."""
+    require_oracle(runner.api_available(), "compiled BNG3 API unavailable")
+    require_oracle(
+        oracle_perl._bng2_path() is not None,
+        "pinned BNG2 unavailable (set BNG2_PERL)",
+    )
+    runner._ensure_source_python_path()
+    temp = tmp_path_factory.mktemp("release-hybrid-dimer")
+    xml, bng2_source = _run_bng2_dimer_hybrid(temp / "bng2")
+    native_runs = _run_native_dimer_ensemble(xml, temp)
+    bng3_runs, hpp = _run_bng3_dimer_ensemble(temp)
+    return native_runs, bng3_runs, xml, hpp, bng2_source
+
+
+@pytest.fixture(scope="module")
 def compartment_hybrid_ensembles(tmp_path_factory):
     """Check compartment-preserving hybrid trajectories against analytic laws."""
     require_oracle(runner.api_available(), "compiled BNG3 API unavailable")
@@ -851,6 +980,116 @@ def test_release_hybrid_conservation_and_analytic_conversion_law(hybrid_ensemble
             assert np.array_equal(a + b, np.full_like(a, INITIAL_B)), (
                 f"{label}: A/B molecule conservation violated"
             )
+
+
+@pytest.mark.nf
+@pytest.mark.parity
+@pytest.mark.stochastic
+@pytest.mark.slow
+def test_release_hybrid_whole_dimer_conversion_and_multiplicity(
+    hybrid_dimer_ensembles,
+):
+    """Compare BNG2/native NFsim and BNG3 whole-complex population breakup."""
+    native_runs, bng3_runs, xml, hpp, source = hybrid_dimer_ensembles
+    comparison = compare.compare_stochastic(
+        native_runs,
+        bng3_runs,
+        n_sigma=4.0,
+        max_violation_frac=0.05,
+        min_ref_runs=RUNS,
+        min_test_runs=RUNS,
+        columns=compare.COLUMNS_EXACT,
+    )
+    assert comparison.ok, comparison.summary()
+
+    survival = lambda times: np.exp(-K_DIMER_OFF * times)
+    for label, runs in (("native NFsim", native_runs), ("BNG3", bng3_runs)):
+        compare.qualify_binomial_marginal(
+            runs,
+            "Dimer_species",
+            population=INITIAL_DIMERS,
+            probability=survival,
+            label=label,
+        )
+        for data, columns in runs:
+            dimers = data[:, columns.index("Dimer_species")]
+            units = data[:, columns.index("A_units")]
+            assert np.array_equal(
+                units, np.full_like(units, 2 * INITIAL_DIMERS)
+            ), f"{label}: whole-complex conversion lost molecule multiplicity"
+            assert np.all(dimers >= 0)
+
+    evidence_target = os.environ.get("BNG3_HYBRID_EVIDENCE_DIR")
+    if evidence_target:
+        evidence_dir = Path(evidence_target)
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(xml, evidence_dir / "bng2-dimer-hybrid.xml")
+        shutil.copy2(hpp, evidence_dir / "bng3-dimer-hybrid.bngl")
+        with (evidence_dir / "dimer-trajectories.csv").open(
+            "w", newline=""
+        ) as output:
+            writer = csv.writer(output)
+            writer.writerow(("engine", "seed", "time", "Dimer_species", "A_units"))
+            for label, runs in (("native-nfsim", native_runs), ("bng3", bng3_runs)):
+                for index, (data, columns) in enumerate(runs):
+                    for row in data:
+                        writer.writerow(
+                            (
+                                label,
+                                BASE_SEED + index,
+                                row[columns.index("time")],
+                                row[columns.index("Dimer_species")],
+                                row[columns.index("A_units")],
+                            )
+                        )
+        bng2 = oracle_perl._bng2_path()
+        nfsim = _locked_native_nfsim()
+        lock = load_lock()
+        report = {
+            "schema_version": 1,
+            "check_slice": "whole-complex-dimer-conversion",
+            "source": {
+                "revision": _git_revision(ROOT),
+                "input_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+            },
+            "references": {
+                "bng2": {
+                    "revision": _git_revision(bng2.parent),
+                    "script_sha256": hashlib.sha256(bng2.read_bytes()).hexdigest(),
+                    "xml_sha256": hashlib.sha256(xml.read_bytes()).hexdigest(),
+                    "locked_source_revision": lock["sources"]["bionetgen"]["revision"],
+                },
+                "native_nfsim": {
+                    "revision": lock["sources"]["nfsim"]["revision"],
+                    "binary_sha256": hashlib.sha256(nfsim.read_bytes()).hexdigest(),
+                    "options": ["-cb"],
+                },
+            },
+            "budget": {
+                "runs_per_engine": RUNS,
+                "first_seed": BASE_SEED,
+                "last_seed": BASE_SEED + RUNS - 1,
+                "t_end": T_DIMER,
+                "n_steps": N_STEPS,
+            },
+            "comparison": {
+                "passed": comparison.ok,
+                "n_sigma": 4.0,
+                "max_violation_fraction": 0.05,
+                "violations": comparison.n_violations,
+                "points_checked": comparison.n_points_checked,
+                "worst_z": comparison.worst_z,
+            },
+            "analytic_law": {
+                "Dimer_species": f"Binomial({INITIAL_DIMERS}, exp(-{K_DIMER_OFF} * time))",
+                "A_units": f"2 * {INITIAL_DIMERS} conserved at each sample",
+                "trajectory_artifact": "dimer-trajectories.csv",
+                "bng3_hpp_sha256": hashlib.sha256(hpp.read_bytes()).hexdigest(),
+            },
+        }
+        (evidence_dir / "dimer-qualification.json").write_text(
+            json.dumps(report, indent=2) + "\n"
+        )
 
 
 @pytest.mark.nf
