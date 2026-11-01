@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -92,6 +93,61 @@ end reaction rules
 
     REQUIRE(first == 1);
     REQUIRE(independent == 1);
+}
+
+TEST_CASE("NetworkRulePlan executes compiled zero-order creation after source AST destruction",
+          "[NetworkRulePlan][compiled]") {
+    auto source = parseModel(R"(
+begin parameters
+    k 3
+end parameters
+begin molecule types
+    A()
+end molecule types
+begin reaction rules
+    birth: 0 -> A() k
+end reaction rules
+generate_network({max_iter=>2})
+)");
+    REQUIRE(source != nullptr);
+    auto document = std::make_unique<compile::Document>(*source);
+    REQUIRE(document->valid());
+    source.reset();
+
+    engine::NetworkGenerator generator(*document);
+    const auto network = generator.generateNative(2);
+    REQUIRE(network.species.size() == 1);
+    REQUIRE(network.reactions.size() == 1);
+    const auto& reaction = network.reactions.all().front();
+    CHECK(reaction.getReactants().empty());
+    REQUIRE(reaction.getProducts().size() == 1);
+    CHECK(reaction.getProducts().front() == 0);
+    CHECK(reaction.getRateLaw() == "k");
+}
+
+TEST_CASE("compiled zero-order creation filters do not leave partial species",
+          "[NetworkRulePlan][compiled][filters]") {
+    for (const auto* modifier : {"exclude_products(1,A(x~u))",
+                                 "include_products(1,A(x~p))"}) {
+        INFO("modifier: " << modifier);
+        auto source = parseModel(std::string(R"(
+begin parameters
+    k 3
+end parameters
+begin molecule types
+    A(x~u~p)
+end molecule types
+begin reaction rules
+    birth: 0 -> A(x~u) k )") + modifier + R"(
+end reaction rules
+generate_network({max_iter=>2})
+)");
+        REQUIRE(source != nullptr);
+        engine::NetworkGenerator generator(*source);
+        const auto network = generator.generateNative(2);
+        CHECK(network.species.size() == 0);
+        CHECK(network.reactions.size() == 0);
+    }
 }
 
 TEST_CASE("generate_network max_iter is compiled as a qualified typed option") {

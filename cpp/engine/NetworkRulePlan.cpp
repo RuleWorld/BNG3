@@ -1,7 +1,11 @@
 #include "engine/NetworkRulePlan.hpp"
 
 #include "ast/RateCandidateContext.hpp"
+#include "ast/Rxn.hpp"
+#include "ast/RxnList.hpp"
+#include "ast/Species.hpp"
 #include "ast/SpeciesGraph.hpp"
+#include "ast/SpeciesList.hpp"
 
 
 #include <algorithm>
@@ -612,10 +616,16 @@ std::optional<double> evaluateStructuralExpression(
 } // namespace
 
 struct NetworkRulePlan::Impl {
+    std::string name;
     const compile::CompiledRuleDirection& direction;
     const compile::CompiledModel& model;
     bool pruneZeroRates = false;
     std::unique_ptr<LegacyNetworkRuleKernel> kernel;
+    bool directSynthesis = false;
+    bool synthesisApplied = false;
+    std::vector<ast::SpeciesGraph> synthesisProducts;
+    std::string synthesisRateLaw = "0";
+    std::optional<ast::Expression> synthesisRateExpression;
     std::vector<RuntimeFilter> filters;
     std::vector<RuntimeObservable> localObservables;
     LegacyNetworkRuleHooks hooks;
@@ -627,11 +637,16 @@ struct NetworkRulePlan::Impl {
          compile::BNGcoreLoweringContext& context,
          bool reverseDirection,
          bool pruneZeroRates)
-        : direction(direction),
+        : name(reverseDirection ? std::string("_reverse__") + compiledRule.name()
+                                : compiledRule.name()),
+          direction(direction),
           model(model),
           pruneZeroRates(pruneZeroRates),
-          kernel(std::make_unique<LegacyNetworkRuleKernel>(
-              compiledRule, direction, model, context, reverseDirection)),
+          directSynthesis(direction.reactantPatterns.empty() &&
+                          direction.localScopes.empty() &&
+                          !compiledRule.delayExpression().has_value() &&
+                          !compiledRule.resolvedDelayExpression().has_value() &&
+                          !compiledRule.hasDrivingWork()),
           filters(lowerFilters(direction, context)),
           localObservables(lowerLocalObservableDependencies(
             compiledRule, direction, model, context, reverseDirection)),
@@ -642,6 +657,23 @@ struct NetworkRulePlan::Impl {
           return expressionUsesFunctionProduct(
               direction.rateLaw->resolvedExpression(), model, activeFunctions);
         }()) {
+        if (directSynthesis) {
+            synthesisProducts.reserve(direction.productPatterns.size());
+            for (const auto& pattern : direction.productPatterns) {
+                synthesisProducts.push_back(
+                    compile::lowerPatternToSpeciesGraph(pattern, context));
+            }
+            if (direction.rateLaw.has_value()) {
+                auto resolved = model.expandFunctions(
+                    direction.rateLaw->resolvedExpression());
+                synthesisRateExpression =
+                    compile::lowerResolvedExpressionToAst(resolved, model);
+                synthesisRateLaw = synthesisRateExpression->toString();
+            }
+        } else {
+            kernel = std::make_unique<LegacyNetworkRuleKernel>(
+                compiledRule, direction, model, context, reverseDirection);
+        }
         if (!filters.empty()) {
             hooks.reactantFilter = [this](std::size_t patternIndex,
                                           const ast::SpeciesGraph& species) {
@@ -820,7 +852,7 @@ struct NetworkRulePlan::Impl {
                 return value.has_value() && *value == 0.0;
             };
         }
-        kernel->setHooks(hooks);
+        if (kernel) kernel->setHooks(hooks);
     }
 };
 
@@ -839,10 +871,12 @@ NetworkRulePlan::~NetworkRulePlan() = default;
 NetworkRulePlan::NetworkRulePlan(NetworkRulePlan&&) noexcept = default;
 NetworkRulePlan& NetworkRulePlan::operator=(NetworkRulePlan&&) noexcept = default;
 
-const std::string& NetworkRulePlan::name() const noexcept { return impl_->kernel->name(); }
+const std::string& NetworkRulePlan::name() const noexcept {
+    return impl_->kernel ? impl_->kernel->name() : impl_->name;
+}
 
 void NetworkRulePlan::clearPatternMatchCache() {
-    impl_->kernel->clearPatternMatchCache();
+    if (impl_->kernel) impl_->kernel->clearPatternMatchCache();
 }
 
 std::size_t NetworkRulePlan::expand(
@@ -851,6 +885,78 @@ std::size_t NetworkRulePlan::expand(
     std::size_t currentIteration,
     const std::function<bool(const ast::SpeciesGraph&)>& productFilter,
     std::size_t speciesBoundary) {
+    if (impl_->directSynthesis) {
+        if (impl_->synthesisApplied) return 0;
+        impl_->synthesisApplied = true;
+
+        std::vector<std::size_t> productIndices;
+        std::vector<std::string> productLabels;
+        std::vector<ast::SpeciesGraph> productGraphs;
+        productGraphs.reserve(impl_->synthesisProducts.size());
+        productIndices.reserve(impl_->synthesisProducts.size());
+        productLabels.reserve(impl_->synthesisProducts.size());
+        for (std::size_t productIndex = 0;
+             productIndex < impl_->synthesisProducts.size(); ++productIndex) {
+            const auto& source = impl_->synthesisProducts[productIndex];
+            BNGcore::PatternGraph graph;
+            std::map<const BNGcore::Node*, BNGcore::Node*> clones;
+            for (auto node = source.getGraph().begin();
+                 node != source.getGraph().end(); ++node) {
+                auto* clone = (*node)->clone();
+                graph.add_node(clone);
+                clones[*node] = clone;
+            }
+            for (auto node = source.getGraph().begin();
+                 node != source.getGraph().end(); ++node) {
+                for (auto edge = (*node)->edges_out_begin();
+                     edge != (*node)->edges_out_end(); ++edge) {
+                    graph.add_edge(clones.at(*node), clones.at(*edge));
+                }
+            }
+            ast::SpeciesGraph productGraph(std::move(graph), source.getCompartment());
+            bool accepted = !productFilter || productFilter(productGraph);
+            for (const auto& filter : impl_->filters) {
+                if (!filter.products || filter.patternIndex != productIndex) continue;
+                if (!passesFilterPatterns(filter, productGraph)) accepted = false;
+            }
+            if (!accepted) return 0;
+            productGraphs.push_back(std::move(productGraph));
+        }
+        if (impl_->hooks.rejectZeroRate) {
+            ast::RateCandidateContext candidate;
+            candidate.productSpeciesGraphs.reserve(productGraphs.size());
+            for (const auto& product : productGraphs) {
+                candidate.productSpeciesGraphs.push_back(&product.getGraph());
+            }
+            for (std::size_t index = 0; index < productGraphs.size(); ++index) {
+                candidate.productPatternIndices.push_back(index);
+            }
+            if (impl_->hooks.rejectZeroRate(candidate)) return 0;
+        }
+
+        for (std::size_t productIndex = 0; productIndex < productGraphs.size();
+             ++productIndex) {
+            const auto& source = impl_->synthesisProducts[productIndex];
+            ast::Species product(std::move(productGraphs[productIndex]), 0.0, false,
+                                 source.getCompartment());
+            std::string exact;
+            const auto existing = species.findExact(product, exact);
+            const auto index = existing.has_value()
+                ? *existing
+                : species.addWithExactKey(std::move(product), std::move(exact)).first;
+            productLabels.push_back(species.get(index).getSpeciesGraph().canonicalLabel());
+            productIndices.push_back(index);
+        }
+        std::sort(productLabels.begin(), productLabels.end());
+        std::sort(productIndices.begin(), productIndices.end());
+        std::string productLabel;
+        for (const auto& label : productLabels) productLabel += label + ";";
+        const std::string label = name() + "|synth->" + productLabel;
+        reactions.add(ast::Rxn(label, {}, std::move(productIndices),
+                               impl_->synthesisRateLaw, 1.0, name(),
+                               impl_->synthesisRateExpression));
+        return 1;
+    }
     return impl_->kernel->expand(
         species, reactions, currentIteration, productFilter, speciesBoundary);
 }
