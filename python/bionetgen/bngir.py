@@ -3746,6 +3746,26 @@ def exact_process_equal(
             {},
         )
 
+    def molecule_type_signatures(model: Any) -> dict[str, tuple[Any, ...]]:
+        return {
+            molecule_type.name: (
+                molecule_type.is_population,
+                tuple(
+                    sorted(
+                        (
+                            component.name,
+                            tuple(sorted(component.allowed_states)),
+                        )
+                        for component in molecule_type.components
+                    )
+                ),
+            )
+            for molecule_type in model._model.molecule_types
+        }
+
+    type_signatures_l = molecule_type_signatures(left_model)
+    type_signatures_r = molecule_type_signatures(right_model)
+
     try:
         jumps_l, init_l, species_l = _extract_jump_hazards(left_model)
         jumps_r, init_r, species_r = _extract_jump_hazards(right_model)
@@ -3756,6 +3776,14 @@ def exact_process_equal(
         ) from exc
 
     if set(species_l) == set(species_r):
+        if type_signatures_l != type_signatures_r:
+            raise EqualityUndecided(
+                "Identically named species require matching molecule type signatures",
+                {
+                    "left_type_signatures": type_signatures_l,
+                    "right_type_signatures": type_signatures_r,
+                },
+            )
         for sp in species_l:
             if init_l.get(sp, Fraction(0)) != init_r.get(sp, Fraction(0)):
                 return False
@@ -3823,9 +3851,53 @@ def exact_process_equal(
 
     import itertools
 
+    left_type_names = list(type_signatures_l)
+    right_type_names = list(type_signatures_r)
+    if len(left_type_names) != len(right_type_names):
+        raise EqualityUndecided(
+            "Molecule type inventories differ; no structural renaming certificate was found",
+            {"left_types": left_type_names, "right_types": right_type_names},
+        )
+
     candidates = []
-    for perm in itertools.permutations(species_r):
-        candidates.append(dict(zip(species_l, perm)))
+    for perm in itertools.permutations(right_type_names):
+        type_mapping = dict(zip(left_type_names, perm))
+        if any(
+            type_signatures_l[source] != type_signatures_r[target]
+            for source, target in type_mapping.items()
+        ):
+            continue
+
+        substitutions = sorted(type_mapping, key=len, reverse=True)
+        pattern = (
+            re.compile(
+                r"(?<![A-Za-z0-9_])(?:"
+                + "|".join(re.escape(name) for name in substitutions)
+                + r")(?=\s*\()"
+            )
+            if substitutions
+            else None
+        )
+
+        def rename_species(species: str) -> str:
+            if pattern is None:
+                return species
+            return pattern.sub(lambda match: type_mapping[match.group(0)], species)
+
+        species_mapping = {source: rename_species(source) for source in species_l}
+        if len(set(species_mapping.values())) == len(species_mapping) and set(
+            species_mapping.values()
+        ) == set(species_r):
+            candidates.append(species_mapping)
+
+    if not candidates:
+        raise EqualityUndecided(
+            "No molecule-type renaming induces the generated species correspondence",
+            {
+                "left_type_signatures": type_signatures_l,
+                "right_type_signatures": type_signatures_r,
+            },
+        )
 
     transition_mapping_with_initial_mismatch = False
     for mapping in candidates:
