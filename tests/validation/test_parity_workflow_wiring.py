@@ -230,6 +230,60 @@ def test_release_graph_observables_acceptance_is_an_explicit_locked_oracle_step(
     assert env.get("NFSIM_BIN", "").endswith("/oracle-nfsim/build/NFsim")
 
 
+def test_release_graph_identity_and_obligation_record_consume_named_evidence():
+    workflow = _parse_workflow()
+    parity_steps = workflow["jobs"]["bng2-parity"]["steps"]
+    identity = next(
+        item
+        for item in parity_steps
+        if item.get("name") == "Release graph identity acceptance"
+    )
+    assert "test_graph_identity_contract.py" in identity["run"]
+    assert "--junitxml" in identity["run"]
+    assert identity.get("env", {}).get("BNG3_GRAPH_IDENTITY_EVIDENCE_DIR")
+    assert "--junitxml" in identity["run"]
+
+    identity_artifact = next(
+        item
+        for item in parity_steps
+        if item.get("name") == "Retain release graph identity evidence"
+    )
+    assert "issue142-release-graph-identity-" in identity_artifact["with"]["name"]
+
+    nfsim_steps = workflow["jobs"]["nfsim-parity"]["steps"]
+    observables = next(
+        item
+        for item in nfsim_steps
+        if item.get("name") == "Release graph observables acceptance"
+    )
+    assert (
+        "test_release_graph_observables_symmetric_homodimer_multiplicity"
+        in observables["run"]
+    )
+    assert observables.get("env", {}).get("BNG3_GRAPH_OBSERVABLES_EVIDENCE_DIR")
+    observables_artifact = next(
+        item
+        for item in nfsim_steps
+        if item.get("name") == "Retain release graph observables evidence"
+    )
+    assert "issue142-release-graph-observables-" in observables_artifact["with"]["name"]
+
+    record_job = workflow["jobs"]["release-obligation-142"]
+    assert record_job["name"] == "release-obligation-142"
+    assert set(record_job["needs"]) == {"bng2-parity", "nfsim-parity"}
+    record_run = next(
+        item
+        for item in record_job["steps"]
+        if item.get("name") == "Consume and record Issue 142 release obligations"
+    )
+    assert "record_issue142_release.py" in record_run["run"]
+    assert "--identity-evidence" in record_run["run"]
+    assert "--observables-evidence" in record_run["run"]
+    assert "--source-revision" in record_run["run"]
+    downloads = [item.get("uses", "") for item in record_job["steps"]]
+    assert sum("actions/download-artifact@v4" == action for action in downloads) == 2
+
+
 def test_parity_workflow_env_still_pins_the_strict_oracle_flag():
     """`BNG3_CI_STRICT_ORACLES` is what turns a missing oracle into a failure.
 

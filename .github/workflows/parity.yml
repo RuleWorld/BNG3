@@ -75,6 +75,7 @@ jobs:
             tests/validation/test_integrated_marginals.py \
             tests/validation/test_integrated_extensions.py \
             tests/validation/test_graph_identity.py \
+            tests/validation/test_issue_142_release_record.py \
             tests/validation/test_nfsim_sweep_gate.py \
             tests/validation/test_harness_paths.py::test_required_oracle_fails_in_strict_ci \
             tests/validation/test_harness_paths.py::test_api_fixture_fails_in_strict_ci_and_skips_locally \
@@ -185,6 +186,31 @@ jobs:
         run: |
           .venv/bin/python -m pytest -c tests/validation/pytest.ini \
             tests/validation/test_worker_package_identity.py -q -ra
+
+      - name: Release graph identity acceptance
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/release-graph-identity"
+          .venv/bin/python -m pytest -c tests/validation/pytest.ini \
+            tests/validation/test_graph_identity_contract.py \
+            -q -ra -o junit_family=xunit1 \
+            --junitxml="$RUNNER_TEMP/release-graph-identity/release-graph-identity.xml"
+          {
+            echo "- release-graph-identity source revision: $BNG3_SOURCE_REVISION"
+            sha256sum tests/validation/compare.py tests/validation/graph_identity_contract.py
+          } >> "$GITHUB_STEP_SUMMARY"
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          BNG3_GRAPH_IDENTITY_EVIDENCE_DIR: ${{ runner.temp }}/release-graph-identity
+
+      - name: Retain release graph identity evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue142-release-graph-identity-${{ github.run_id }}
+          path: ${{ runner.temp }}/release-graph-identity
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Snapshot backlog metadata for issue evidence coverage
         env:
@@ -816,11 +842,24 @@ jobs:
           BNG2_PERL: ${{ runner.temp }}/oracle-bionetgen/bng2/BNG2.pl
           BNGPATH: ${{ runner.temp }}/oracle-bionetgen/bng2
           NFSIM_BIN: ${{ runner.temp }}/oracle-nfsim/build/NFsim
+          BNG3_GRAPH_OBSERVABLES_EVIDENCE_DIR: ${{ runner.temp }}/release-graph-observables
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/release-graph-observables"
           pytest -c tests/validation/pytest.ini \
             tests/validation/test_nfsim_physical_unimolecular.py::test_release_graph_observables_symmetric_homodimer_multiplicity \
-            -q -ra --junitxml="$RUNNER_TEMP/release-graph-observables.xml"
+            -q -ra -o junit_family=xunit1 \
+            --junitxml="$RUNNER_TEMP/release-graph-observables/release-graph-observables.xml"
+
+      - name: Retain release graph observables evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue142-release-graph-observables-${{ github.run_id }}
+          path: ${{ runner.temp }}/release-graph-observables
+          if-no-files-found: error
+          retention-days: 14
 
       - name: Run hybrid particle-population parity and conservation
         shell: bash
@@ -1008,3 +1047,50 @@ jobs:
           SYMPY_USE_GMPY: "0"
           BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
           BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+  release-obligation-142:
+    name: release-obligation-142
+    needs: [bng2-parity, nfsim-parity]
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install release evidence consumer dependencies
+        run: python -m pip install numpy scipy pyyaml
+
+      - name: Download named Issue 142 check evidence
+        uses: actions/download-artifact@v4
+        with:
+          name: issue142-release-graph-identity-${{ github.run_id }}
+          path: ${{ runner.temp }}/issue142/identity
+
+      - name: Download symmetric observable replay packet
+        uses: actions/download-artifact@v4
+        with:
+          name: issue142-release-graph-observables-${{ github.run_id }}
+          path: ${{ runner.temp }}/issue142/observables
+
+      - name: Consume and record Issue 142 release obligations
+        run: |
+          python scripts/ci/record_issue142_release.py \
+            --identity-evidence "$RUNNER_TEMP/issue142/identity" \
+            --observables-evidence "$RUNNER_TEMP/issue142/observables" \
+            --source-revision "$BNG3_SOURCE_REVISION" \
+            --output "$RUNNER_TEMP/issue142/release-obligation-142.json" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Retain consolidated Issue 142 release record
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue142-release-obligation-142-${{ github.run_id }}
+          path: ${{ runner.temp }}/issue142/release-obligation-142.json
+          if-no-files-found: error
+          retention-days: 14

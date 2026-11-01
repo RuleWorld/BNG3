@@ -2,10 +2,18 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+from pathlib import Path
+import subprocess
+
 import pytest
 
 from tests.validation import graph_identity_contract as contract
 from tests.validation.compare import species_isomorphic
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def _case(case_id: str) -> dict:
@@ -69,8 +77,63 @@ def test_contract_spelling_keeps_the_compartments_and_the_bonds():
     assert inherited == "A(x!1)@PM.B(y!1)@PM"
 
 
-def test_the_native_surfaces_match_the_independent_contract(tmp_path):
+def test_the_native_surfaces_match_the_independent_contract(tmp_path, record_property):
+    source_revision = subprocess.run(
+        ["git", "-C", str(ROOT), "rev-parse", "HEAD"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    ).stdout.strip()
+    source_status = subprocess.run(
+        ["git", "-C", str(ROOT), "status", "--porcelain"],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
+    ).stdout.strip()
+    assert not source_status, f"candidate source tree must be clean: {source_status}"
+    independent_oracle = (ROOT / "tests/validation/compare.py").read_bytes() + (
+        ROOT / "tests/validation/graph_identity_contract.py"
+    ).read_bytes()
+    oracle_sha = hashlib.sha256(independent_oracle).hexdigest()
+    subject_sha = hashlib.sha256(
+        json.dumps(contract.CASES, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    record_property("acceptance_check", "release-graph-identity")
+    record_property("bng3_revision", source_revision)
+    record_property("bng3_dirty", "false")
+    record_property("independent_isomorphism_oracle_sha256", oracle_sha)
+    record_property("subject_sha256", subject_sha)
     rows = contract.run_worker(tmp_path)
+    evidence_root = os.environ.get("BNG3_GRAPH_IDENTITY_EVIDENCE_DIR")
+    if evidence_root:
+        evidence = Path(evidence_root)
+        evidence.mkdir(parents=True, exist_ok=True)
+        exhaustive_count = len(
+            next(
+                case
+                for case in contract.CASES
+                if case["id"] == "exhaustive-small-equivalent-sites"
+            )["species"]
+        )
+        (evidence / "identity-report.json").write_text(
+            json.dumps(
+                {
+                    "acceptance_check": "release-graph-identity",
+                    "source_revision": source_revision,
+                    "source_dirty": False,
+                    "independent_isomorphism_oracle_sha256": oracle_sha,
+                    "subject_sha256": subject_sha,
+                    "case_count": len(contract.CASES),
+                    "exhaustive_case_count": exhaustive_count,
+                    "results": rows,
+                },
+                indent=2,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
 
     assert [row["id"] for row in rows] == [
         f"graph-identity-contract:{case['id']}:{check}"

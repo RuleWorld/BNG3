@@ -2030,6 +2030,16 @@
                 "source.revision",
                 "subject.sha256"
               ]
+            },
+            {
+              "id": "release-graph-identity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The bounded exhaustive small-graph isomorphism check compares both production identity paths with the independent isomorphism partition, including state labels, equivalent sites, disconnected species, compartments and false-match pairs.",
+              "identity_requirements": [
+                "source.revision",
+                "oracle.sha256",
+                "subject.sha256"
+              ]
             }
           ],
           "test_references": [
@@ -2043,7 +2053,9 @@
             "tests/cpp/test_node_operator.cpp",
             "tests/cpp/test_ullmann.cpp",
             "tests/python/test_single_nauty_contract.py",
-            "tests/validation/graph_identity_contract.py"
+            "tests/validation/graph_identity_contract.py",
+            "tests/validation/test_graph_identity_contract.py",
+            ".github/workflows/parity.yml"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
@@ -2232,13 +2244,27 @@
               "identity_requirements": [
                 "source.revision"
               ]
+            },
+            {
+              "id": "release-obligation-142",
+              "evidence_kind": "disposition",
+              "expectation": "Consume the retained exact-revision results for release-graph-identity and release-graph-observables, reject missing, skipped, stale or conflicting evidence, and record both named results with source/oracle identities and the exact main commit.",
+              "identity_requirements": [
+                "source.revision",
+                "oracle.revision",
+                "oracle.sha256",
+                "subject.sha256"
+              ]
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "scripts/ci/record_issue142_release.py",
+            "tests/validation/test_issue_142_release_record.py",
+            ".github/workflows/parity.yml"
+          ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:142:closure-record.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
