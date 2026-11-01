@@ -158,6 +158,31 @@ void refusesClockDependentParameterRates() {
     }
 }
 
+void lowersStaticallyResolvableUserFunctionRate() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin parameters
+  base_rate 2
+end parameters
+begin molecule types
+  A(site~u~p)
+end molecule types
+begin reaction rules
+  activate: A(site~u) -> A(site~p) scale(0.75)
+end reaction rules
+begin functions
+  scale(x) = base_rate * x
+end functions
+)BNGL");
+    assert(ast);
+
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(lowered.ok());
+    assert(lowered.model.expanded_rules.size() == 1);
+    assert(std::abs(lowered.model.expanded_rules.front().rate - 1.5) < 1e-12);
+}
+
 void executesBimolecularBindingUnbinding() {
     const auto ast = bng::parser::parseModel(R"BNGL(
 begin parameters
@@ -883,6 +908,7 @@ end reaction rules
     executesComplexSeedModel();
     refusesUnsupportedExecution();
     refusesClockDependentParameterRates();
+    lowersStaticallyResolvableUserFunctionRate();
     rejectsUnrepresentablePackedSiteIndex();
     rejectsMolecularityNodeIndexOverflow();
     lowersWholeSpeciesDeletionWithHiddenConnectedContext();

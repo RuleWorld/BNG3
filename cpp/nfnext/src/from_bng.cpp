@@ -779,7 +779,8 @@ void addDirection(const bng::compile::CompiledRule& rule,
     if (!addActions(rule, direction, *flattened, reverseDirection,
                     lowered.actions, result, entity)) return;
 
-    const auto constant = constantExpression(direction.rateLaw->resolvedExpression(), source);
+    const auto expandedRate = source.expandFunctions(direction.rateLaw->resolvedExpression());
+    const auto constant = constantExpression(expandedRate, source);
     if (!constant || !std::isfinite(*constant) || *constant < 0.0) {
         issue(result, BngLoweringSeverity::Error, entity,
               "dynamic BioNetGen rate expressions are not representable in NFIR v5; "
