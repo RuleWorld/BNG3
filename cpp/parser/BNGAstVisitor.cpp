@@ -139,6 +139,47 @@ std::string normalizePopulationMapRates(const std::string& source) {
     return result;
 }
 
+// BNG2 keeps population molecule types in a separate block. BNG3's unified
+// molecule-type model represents the same construct with the `population`
+// tag, so normalize the legacy block into the existing molecule-type syntax
+// before ANTLR parsing.
+std::string normalizePopulationTypesBlock(const std::string& source) {
+    constexpr std::string_view populationTag = "population";
+    std::string result;
+    bool inside = false;
+    std::size_t lineStart = 0;
+    while (lineStart <= source.size()) {
+        const auto lineEnd = source.find('\n', lineStart);
+        const auto length = lineEnd == std::string::npos ? source.size() - lineStart
+                                                         : lineEnd - lineStart;
+        std::string line = source.substr(lineStart, length);
+        const auto header = toLower(trimCopy(line));
+        if (header == "begin population types") {
+            inside = true;
+            line = "begin molecule types";
+        } else if (header == "end population types") {
+            inside = false;
+            line = "end molecule types";
+        } else if (inside) {
+            const auto comment = line.find('#');
+            const auto codeEnd = comment == std::string::npos ? line.size() : comment;
+            const auto definition = trimCopy(line.substr(0, codeEnd));
+            const auto lowerDefinition = toLower(definition);
+            if (!definition.empty() &&
+                (lowerDefinition.size() < populationTag.size() ||
+                 lowerDefinition.compare(lowerDefinition.size() - populationTag.size(),
+                                         populationTag.size(), populationTag) != 0)) {
+                line.insert(codeEnd, " population");
+            }
+        }
+        result += line;
+        if (lineEnd == std::string::npos) break;
+        result.push_back('\n');
+        lineStart = lineEnd + 1;
+    }
+    return result;
+}
+
 // Accept the legacy seed spelling with the fixed marker after a compartment
 // prefix (for example, @cell:$A()). Normalize it to the parser's canonical
 // form ($@cell:A()) before the grammar sees the source.
@@ -1644,6 +1685,7 @@ std::string normalizeBNGLSource(const std::string& sourceText) {
     normalized = normalizeTfunSyntax(normalized);
     normalized = normalizeLegacyBlockHeaders(normalized);
     normalized = normalizeFixedSeedCompartmentMarkers(normalized);
+    normalized = normalizePopulationTypesBlock(normalized);
     normalized = normalizePopulationMapRates(normalized);
     normalized = normalizeEmptyReactantFunctionDeclarations(normalized);
     normalized = normalizeLegacyActionNames(normalized);
@@ -1741,20 +1783,19 @@ std::any BNGAstVisitor::visitEvent_def(BNGParser::Event_defContext* ctx) {
 void BNGAstVisitor::predeclareMoleculeTypes(BNGParser::ProgContext* ctx) {
     std::vector<BNGParser::Molecule_type_defContext*> explicitDefinitions;
     collectParseContexts(ctx, explicitDefinitions);
+    std::unordered_set<std::string> explicitNames;
     for (auto* definition : explicitDefinitions) {
+        if (definition == nullptr || definition->molecule_def() == nullptr) continue;
+        const auto name = getMoleculeName(definition->molecule_def());
+        if (!explicitNames.insert(name).second) {
+            throw std::runtime_error("Molecule type " + name + " previously defined.");
+        }
         visitMolecule_type_def(definition);
         predeclaredMoleculeTypes_.insert(definition);
     }
 
     std::vector<BNGParser::Molecule_patternContext*> patterns;
     collectParseContexts(ctx, patterns);
-    std::unordered_set<std::string> explicitNames;
-    for (auto* definition : explicitDefinitions) {
-        if (definition->molecule_def() == nullptr) {
-            continue;
-        }
-        explicitNames.insert(getMoleculeName(definition->molecule_def()));
-    }
 
     for (auto* pattern : patterns) {
         auto fragment = inferMoleculeTypeFromPattern(pattern);

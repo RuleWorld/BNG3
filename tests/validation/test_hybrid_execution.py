@@ -35,6 +35,10 @@ K_MAP = 100.0
 INITIAL_DIMERS = 8
 K_DIMER_OFF = 1.5
 T_DIMER = 0.5
+K_CYCLE_FORWARD = 2.0
+K_CYCLE_REVERSE = 1.0
+T_CYCLE = 1.0
+N_CYCLE_STEPS = 10
 ROOT = Path(__file__).resolve().parents[2]
 
 MODEL = f"""begin model
@@ -83,6 +87,37 @@ begin reaction rules
 end reaction rules
 begin population maps
   A(x!1).A(x!1) -> Dimer_pop() k_off
+end population maps
+end model
+"""
+
+CYCLE_CONVERSION_MODEL = f"""begin model
+begin parameters
+  k_forward {K_CYCLE_FORWARD}
+  k_reverse {K_CYCLE_REVERSE}
+  k_map 0.1
+  N {INITIAL_B}
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin population types
+  A_pop()
+end population types
+begin seed species
+  A() N
+end seed species
+begin observables
+  Molecules A_total A()
+  Molecules B_total B()
+end observables
+begin reaction rules
+  A() -> B() k_forward
+  B() -> A() k_reverse
+end reaction rules
+begin population maps
+  A() -> A_pop() k_map
 end population maps
 end model
 """
@@ -401,6 +436,90 @@ def _run_compartment_native_pair(tmp_path: Path):
     assert xml is not None
     native_runs = _run_native_ensemble(xml, tmp_path)
     return native_runs, bng3_runs, xml
+
+
+def _write_cycle_source(path: Path, *, engine: str, seed: int | None = None) -> Path:
+    if engine == "bng2":
+        action = (
+            'generate_hybrid_model({overwrite=>1, execute=>1, '
+            'actions=>["writeXML()"]})'
+        )
+    elif engine == "bng3":
+        assert seed is not None
+        action = (
+            "generate_hybrid_model({overwrite=>1, execute=>1, "
+            f'actions=>["simulate_nf({{t_end=>{T_CYCLE}, '
+            f'n_steps=>{N_CYCLE_STEPS}, seed=>{seed}}})"]}})'
+        )
+    else:
+        raise ValueError(engine)
+    path.write_text(CYCLE_CONVERSION_MODEL + f"\nbegin actions\n{action}\nend actions\n")
+    return path
+
+
+def _run_bng2_cycle_hybrid(tmp_path: Path) -> tuple[Path, Path]:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    bng2 = oracle_perl._bng2_path()
+    require_oracle(bng2 is not None, "pinned BNG2 unavailable (set BNG2_PERL)")
+    assert bng2 is not None
+    source = _write_cycle_source(tmp_path / "cycle.bngl", engine="bng2")
+    env = os.environ.copy()
+    env["BNGPATH"] = str(bng2.parent)
+    env["PERL5LIB"] = str(bng2.parent / "Perl2")
+    result = subprocess.run(
+        [os.environ.get("PERL", "perl"), str(bng2), "--outdir", str(tmp_path), str(source)],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
+    xml = tmp_path / "cycle_hpp.xml"
+    assert xml.is_file() and xml.stat().st_size, result.stderr
+    return xml, source
+
+
+def _run_native_cycle_ensemble(xml: Path, tmp_path: Path):
+    _locked_native_nfsim()
+    runs = []
+    for seed in range(BASE_SEED, BASE_SEED + RUNS):
+        path, error = oracle_nfsim.run_nfsim(
+            xml,
+            tmp_path / f"native-cycle-{seed}",
+            t_end=T_CYCLE,
+            n_steps=N_CYCLE_STEPS,
+            seed=seed,
+        )
+        assert path is not None, f"native NFsim cycle seed {seed}: {error}"
+        data, columns = compare.parse_gdat(path)
+        assert data is not None, f"native NFsim cycle seed {seed}: malformed trajectory"
+        runs.append((data, columns))
+    return runs
+
+
+def _run_bng3_cycle_ensemble(tmp_path: Path):
+    import bionetgen
+
+    runs = []
+    first_hpp = None
+    for seed in range(BASE_SEED, BASE_SEED + RUNS):
+        work_dir = tmp_path / f"bng3-cycle-{seed}"
+        work_dir.mkdir()
+        source = _write_cycle_source(
+            work_dir / "cycle.bngl", engine="bng3", seed=seed
+        )
+        bionetgen.load(source).execute()
+        output = work_dir / "cycle_hpp.gdat"
+        assert output.is_file(), f"BNG3 cycle seed {seed}: missing trajectory"
+        data, columns = compare.parse_gdat(output)
+        assert data is not None, f"BNG3 cycle seed {seed}: malformed trajectory"
+        runs.append((data, columns))
+        if first_hpp is None:
+            first_hpp = work_dir / "cycle_hpp.bngl"
+    assert first_hpp is not None and first_hpp.is_file()
+    return runs, first_hpp
 
 
 def _run_hybrid_generation(
@@ -939,6 +1058,22 @@ def hybrid_dimer_ensembles(tmp_path_factory):
 
 
 @pytest.fixture(scope="module")
+def hybrid_conversion_cycle_ensembles(tmp_path_factory):
+    """Run a mapped A↔B cycle through BNG2/native NFsim and BNG3."""
+    require_oracle(runner.api_available(), "compiled BNG3 API unavailable")
+    require_oracle(
+        oracle_perl._bng2_path() is not None,
+        "pinned BNG2 unavailable (set BNG2_PERL)",
+    )
+    runner._ensure_source_python_path()
+    temp = tmp_path_factory.mktemp("release-hybrid-cycle")
+    xml, source = _run_bng2_cycle_hybrid(temp / "bng2")
+    native_runs = _run_native_cycle_ensemble(xml, temp)
+    bng3_runs, hpp = _run_bng3_cycle_ensemble(temp)
+    return native_runs, bng3_runs, xml, hpp, source
+
+
+@pytest.fixture(scope="module")
 def compartment_hybrid_ensembles(tmp_path_factory):
     """Check compartment-preserving hybrid trajectories against analytic laws."""
     require_oracle(runner.api_available(), "compiled BNG3 API unavailable")
@@ -1010,6 +1145,132 @@ def test_release_hybrid_conservation_and_analytic_conversion_law(hybrid_ensemble
 @pytest.mark.parity
 @pytest.mark.stochastic
 @pytest.mark.slow
+def test_release_hybrid_population_particle_conversion_cycle(
+    hybrid_conversion_cycle_ensembles,
+):
+    """Qualify reversible particle/population transitions against an exact CTMC law."""
+    native_runs, bng3_runs, xml, hpp, source = hybrid_conversion_cycle_ensembles
+    comparison = compare.compare_stochastic(
+        native_runs,
+        bng3_runs,
+        n_sigma=4.0,
+        max_violation_frac=0.05,
+        min_ref_runs=RUNS,
+        min_test_runs=RUNS,
+        columns=compare.COLUMNS_EXACT,
+    )
+    assert comparison.ok, comparison.summary()
+
+    forward = K_CYCLE_FORWARD
+    reverse = K_CYCLE_REVERSE
+    probability_b = lambda times: (forward / (forward + reverse)) * (
+        1.0 - np.exp(-(forward + reverse) * times)
+    )
+    probability_a = lambda times: 1.0 - probability_b(times)
+    for label, runs in (("native NFsim", native_runs), ("BNG3", bng3_runs)):
+        compare.qualify_binomial_marginal(
+            runs,
+            "B_total",
+            population=INITIAL_B,
+            probability=probability_b,
+            label=label,
+        )
+        compare.qualify_binomial_marginal(
+            runs,
+            "A_total",
+            population=INITIAL_B,
+            probability=probability_a,
+            label=label,
+        )
+        for data, columns in runs:
+            a = data[:, columns.index("A_total")]
+            b = data[:, columns.index("B_total")]
+            assert np.array_equal(a + b, np.full_like(a, INITIAL_B)), (
+                f"{label}: population/particle conservation violated"
+            )
+
+    evidence_target = os.environ.get("BNG3_HYBRID_EVIDENCE_DIR")
+    if evidence_target:
+        evidence_dir = Path(evidence_target)
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(xml, evidence_dir / "bng2-cycle-hybrid.xml")
+        shutil.copy2(hpp, evidence_dir / "bng3-cycle-hybrid.bngl")
+        with (evidence_dir / "cycle-trajectories.csv").open(
+            "w", newline=""
+        ) as output:
+            writer = csv.writer(output)
+            writer.writerow(("engine", "seed", "time", "A_total", "B_total"))
+            for label, runs in (("native-nfsim", native_runs), ("bng3", bng3_runs)):
+                for index, (data, columns) in enumerate(runs):
+                    for row in data:
+                        writer.writerow(
+                            (
+                                label,
+                                BASE_SEED + index,
+                                row[columns.index("time")],
+                                row[columns.index("A_total")],
+                                row[columns.index("B_total")],
+                            )
+                        )
+        bng2 = oracle_perl._bng2_path()
+        nfsim = _locked_native_nfsim()
+        assert bng2 is not None
+        lock = load_lock()
+        report = {
+            "schema_version": 1,
+            "checks": ["release-hybrid", "release-hybrid-conservation"],
+            "case": "reversible particle-to-population conversion cycle",
+            "source": {
+                "revision": _git_revision(ROOT),
+                "bng2_input_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
+                "bng3_hpp_sha256": hashlib.sha256(hpp.read_bytes()).hexdigest(),
+            },
+            "oracles": {
+                "bng2": {
+                    "revision": _git_revision(bng2.parent),
+                    "script_sha256": hashlib.sha256(bng2.read_bytes()).hexdigest(),
+                    "xml_sha256": hashlib.sha256(xml.read_bytes()).hexdigest(),
+                },
+                "native_nfsim": {
+                    "revision": lock["sources"]["nfsim"]["revision"],
+                    "binary_sha256": hashlib.sha256(nfsim.read_bytes()).hexdigest(),
+                },
+            },
+            "budget": {
+                "runs_per_engine": RUNS,
+                "first_seed": BASE_SEED,
+                "last_seed": BASE_SEED + RUNS - 1,
+                "t_end": T_CYCLE,
+                "n_steps": N_CYCLE_STEPS,
+            },
+            "distributional_comparison": {
+                "passed": comparison.ok,
+                "n_sigma": 4.0,
+                "max_violation_fraction": 0.05,
+                "violations": comparison.n_violations,
+                "points_checked": comparison.n_points_checked,
+                "worst_z": comparison.worst_z,
+            },
+            "analytic_law": {
+                "B_total": (
+                    f"Binomial({INITIAL_B}, {K_CYCLE_FORWARD}/"
+                    f"({K_CYCLE_FORWARD}+{K_CYCLE_REVERSE}) * "
+                    f"(1-exp(-({K_CYCLE_FORWARD}+{K_CYCLE_REVERSE})*time)))"
+                ),
+                "A_total": f"{INITIAL_B} - B_total",
+                "conservation": f"A_total + B_total = {INITIAL_B}",
+                "trajectory_artifact": "cycle-trajectories.csv",
+            },
+        }
+        (evidence_dir / "conversion-cycle-qualification.json").write_text(
+            json.dumps(report, indent=2) + "\n"
+        )
+
+
+@pytest.mark.nf
+@pytest.mark.parity
+@pytest.mark.stochastic
+@pytest.mark.slow
 def test_release_hybrid_whole_dimer_conversion_and_multiplicity(
     hybrid_dimer_ensembles,
 ):
@@ -1066,6 +1327,7 @@ def test_release_hybrid_whole_dimer_conversion_and_multiplicity(
                                 row[columns.index("A_units")],
                             )
                         )
+
         bng2 = oracle_perl._bng2_path()
         nfsim = _locked_native_nfsim()
         lock = load_lock()
@@ -1203,6 +1465,7 @@ def test_release_capability_coverage_150(
     capfd,
     hybrid_ensembles,
     hybrid_dimer_ensembles,
+    hybrid_conversion_cycle_ensembles,
 ):
     """Run every assigned #150 inventory row against its named oracle."""
     action_cases = _check_hybrid_model_action_options(
@@ -1264,6 +1527,41 @@ def test_release_capability_coverage_150(
             units = data[:, columns.index("A_units")]
             assert np.array_equal(units, np.full_like(units, 2 * INITIAL_DIMERS))
 
+    native_cycle, bng3_cycle, cycle_xml, cycle_hpp, cycle_source = (
+        hybrid_conversion_cycle_ensembles
+    )
+    cycle_comparison = compare.compare_stochastic(
+        native_cycle,
+        bng3_cycle,
+        n_sigma=4.0,
+        max_violation_frac=0.05,
+        min_ref_runs=RUNS,
+        min_test_runs=RUNS,
+        columns=compare.COLUMNS_EXACT,
+    )
+    assert cycle_comparison.ok, cycle_comparison.summary()
+    cycle_probability_b = lambda times: (K_CYCLE_FORWARD / (K_CYCLE_FORWARD + K_CYCLE_REVERSE)) * (
+        1.0 - np.exp(-(K_CYCLE_FORWARD + K_CYCLE_REVERSE) * times)
+    )
+    for label, runs in (("native NFsim", native_cycle), ("BNG3", bng3_cycle)):
+        compare.qualify_binomial_marginal(
+            runs,
+            "B_total",
+            population=INITIAL_B,
+            probability=cycle_probability_b,
+            label=label,
+        )
+        compare.qualify_binomial_marginal(
+            runs,
+            "A_total",
+            population=INITIAL_B,
+            probability=lambda times: 1.0 - cycle_probability_b(times),
+            label=label,
+        )
+        for data, columns in runs:
+            total = data[:, columns.index("A_total")] + data[:, columns.index("B_total")]
+            assert np.array_equal(total, np.full_like(total, INITIAL_B))
+
     inventory_cases = {
         **action_cases,
         "hybrid.execution": True,
@@ -1291,6 +1589,26 @@ def test_release_capability_coverage_150(
                                 row[columns.index("time")],
                                 row[columns.index("Dimer_species")],
                                 row[columns.index("A_units")],
+                            )
+                        )
+
+        shutil.copy2(cycle_xml, evidence_dir / "bng2-cycle-hybrid.xml")
+        shutil.copy2(cycle_hpp, evidence_dir / "bng3-cycle-hybrid.bngl")
+        with (evidence_dir / "cycle-trajectories.csv").open(
+            "w", newline=""
+        ) as output:
+            writer = csv.writer(output)
+            writer.writerow(("engine", "seed", "time", "A_total", "B_total"))
+            for label, runs in (("native-nfsim", native_cycle), ("bng3", bng3_cycle)):
+                for index, (data, columns) in enumerate(runs):
+                    for row in data:
+                        writer.writerow(
+                            (
+                                label,
+                                BASE_SEED + index,
+                                row[columns.index("time")],
+                                row[columns.index("A_total")],
+                                row[columns.index("B_total")],
                             )
                         )
 
@@ -1341,9 +1659,12 @@ def test_release_capability_coverage_150(
                 "runs_per_engine": RUNS,
                 "first_seed": BASE_SEED,
                 "last_seed": BASE_SEED + RUNS - 1,
-                "single_molecule_t_end": T_END,
-                "dimer_t_end": T_DIMER,
-                "samples_per_trajectory": N_STEPS + 1,
+                "single_molecule": {"t_end": T_END, "samples": N_STEPS + 1},
+                "dimer": {"t_end": T_DIMER, "samples": N_STEPS + 1},
+                "conversion_cycle": {
+                    "t_end": T_CYCLE,
+                    "samples": N_CYCLE_STEPS + 1,
+                },
             },
             "distributional_comparison": {
                 "columns": "exact",
@@ -1356,10 +1677,11 @@ def test_release_capability_coverage_150(
                     "generate_hybrid_model action defaults/options/errors",
                     "single-molecule B to A to A_pop conversion",
                     "whole A-A dimer population conversion and dissociation",
+                    "reversible A_pop to B particle cycle with analytic CTMC law",
                 ],
                 "limitations": [
                     "canonical BNG2 generate_hybrid_model does not transform compartment models",
-                    "dynamic threshold changes and repeated conversion cycles are not covered by this aggregate evidence",
+                    "dynamic threshold changes are not covered by this aggregate evidence",
                     "this evidence does not establish full #150 issue acceptance on main",
                 ],
             },
@@ -1379,6 +1701,12 @@ def test_release_capability_coverage_150(
                         f"Binomial({INITIAL_B}, 1 - exp(-{K_MAKE} * time)) A_total",
                         f"Binomial({INITIAL_DIMERS}, exp(-{K_DIMER_OFF} * time)) Dimer_species",
                         f"A_units = {2 * INITIAL_DIMERS} at every dimer sample",
+                        (
+                            f"Binomial({INITIAL_B}, {K_CYCLE_FORWARD}/"
+                            f"({K_CYCLE_FORWARD}+{K_CYCLE_REVERSE}) * "
+                            f"(1-exp(-({K_CYCLE_FORWARD}+{K_CYCLE_REVERSE})*time))) B_total"
+                        ),
+                        f"A_total + B_total = {INITIAL_B} at every cycle sample",
                     ],
                 },
                 "whole_dimer_native_comparison": {
@@ -1386,6 +1714,13 @@ def test_release_capability_coverage_150(
                     "points_checked": dimer_comparison.n_points_checked,
                     "violations": dimer_comparison.n_violations,
                     "worst_z": dimer_comparison.worst_z,
+                    "runs_per_engine": RUNS,
+                },
+                "conversion_cycle_native_comparison": {
+                    "passed": cycle_comparison.ok,
+                    "points_checked": cycle_comparison.n_points_checked,
+                    "violations": cycle_comparison.n_violations,
+                    "worst_z": cycle_comparison.worst_z,
                     "runs_per_engine": RUNS,
                 },
             },
@@ -1396,6 +1731,12 @@ def test_release_capability_coverage_150(
                 "dimer_hpp_sha256": hashlib.sha256(dimer_hpp.read_bytes()).hexdigest(),
                 "dimer_source_sha256": hashlib.sha256(dimer_source.read_bytes()).hexdigest(),
                 "dimer_trajectories": "dimer-trajectories.csv",
+                "cycle_xml": "bng2-cycle-hybrid.xml",
+                "cycle_xml_sha256": hashlib.sha256(cycle_xml.read_bytes()).hexdigest(),
+                "cycle_hpp": "bng3-cycle-hybrid.bngl",
+                "cycle_hpp_sha256": hashlib.sha256(cycle_hpp.read_bytes()).hexdigest(),
+                "cycle_source_sha256": hashlib.sha256(cycle_source.read_bytes()).hexdigest(),
+                "cycle_trajectories": "cycle-trajectories.csv",
             },
         }
         (evidence_dir / "capability-coverage-150.json").write_text(
