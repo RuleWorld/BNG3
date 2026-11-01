@@ -10,7 +10,11 @@ from typing import Any, Callable, Dict, Optional
 
 # On Darwin (macOS), the experimental jax-metal plugin is incompatible with
 # recent StableHLO bytecode (error code 22). Default to CPU unless explicitly overridden.
-if sys.platform == "darwin" and "JAX_PLATFORMS" not in os.environ and "JAX_PLATFORM_NAME" not in os.environ:
+if (
+    sys.platform == "darwin"
+    and "JAX_PLATFORMS" not in os.environ
+    and "JAX_PLATFORM_NAME" not in os.environ
+):
     os.environ["JAX_PLATFORMS"] = "cpu"
 
 import numpy as np

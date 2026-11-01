@@ -13,11 +13,15 @@ import operator
 import os
 import sys
 import time as _time
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 # On Darwin (macOS), the experimental jax-metal plugin is incompatible with
 # recent StableHLO bytecode (error code 22). Default to CPU unless explicitly overridden.
-if sys.platform == "darwin" and "JAX_PLATFORMS" not in os.environ and "JAX_PLATFORM_NAME" not in os.environ:
+if (
+    sys.platform == "darwin"
+    and "JAX_PLATFORMS" not in os.environ
+    and "JAX_PLATFORM_NAME" not in os.environ
+):
     os.environ["JAX_PLATFORMS"] = "cpu"
 
 try:
@@ -179,9 +183,7 @@ def simulate(
 
     def simulate_one(rng_key):
         init_obs = j_initial_species.astype(jnp.float32) @ j_obs_W
-        obs_history = (
-            jnp.zeros((n_steps + 1, G), dtype=jnp.float32).at[0].set(init_obs)
-        )
+        obs_history = jnp.zeros((n_steps + 1, G), dtype=jnp.float32).at[0].set(init_obs)
 
         init_val = (
             jnp.float32(0.0),
@@ -268,12 +270,8 @@ def simulate(
     final_observables = np_obs_batch[:, -1, :]
 
     obs_names = flat["observable_names"]
-    obs_means_dict = {
-        name: mean_obs[:, g] for g, name in enumerate(obs_names)
-    }
-    obs_stds_dict = {
-        name: std_obs[:, g] for g, name in enumerate(obs_names)
-    }
+    obs_means_dict = {name: mean_obs[:, g] for g, name in enumerate(obs_names)}
+    obs_stds_dict = {name: std_obs[:, g] for g, name in enumerate(obs_names)}
 
     return {
         "batch_size": batch_size,

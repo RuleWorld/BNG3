@@ -6,7 +6,11 @@ from pathlib import Path
 
 # On Darwin (macOS), the experimental jax-metal plugin is incompatible with
 # recent StableHLO bytecode (error code 22). Default to CPU unless explicitly overridden.
-if sys.platform == "darwin" and "JAX_PLATFORMS" not in os.environ and "JAX_PLATFORM_NAME" not in os.environ:
+if (
+    sys.platform == "darwin"
+    and "JAX_PLATFORMS" not in os.environ
+    and "JAX_PLATFORM_NAME" not in os.environ
+):
     os.environ["JAX_PLATFORMS"] = "cpu"
 
 import numpy as np
@@ -251,4 +255,3 @@ def test_jax_ode_custom_rate_constants_and_state():
     expected_b = 10.0 * (1.0 - np.exp(-0.4 * time))
     np.testing.assert_allclose(conc[:, 1], expected_b, rtol=1e-4, atol=1e-4)
     np.testing.assert_allclose(conc[:, 0] + conc[:, 1], 10.0, atol=1e-4)
-
