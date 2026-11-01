@@ -242,10 +242,29 @@ def _locked_native_nfsim() -> Path:
         binary is not None, "pinned native NFsim unavailable (set NFSIM_BIN)"
     )
     assert binary is not None
-    lock = load_lock()
-    expected = lock["oracles"]["nfsim"]["artifact_digest"].split(":", 1)[1]
-    actual = hashlib.sha256(binary.read_bytes()).hexdigest()
-    require_oracle(actual == expected, f"native NFsim digest mismatch: {actual}")
+    source_path = os.environ.get("NFSIM_SOURCE_ROOT")
+    require_oracle(
+        bool(source_path),
+        "NFsim source checkout unavailable (set NFSIM_SOURCE_ROOT)",
+    )
+    assert source_path is not None
+    source_root = Path(source_path).resolve()
+    expected_binary = (source_root / "build" / "NFsim").resolve()
+    require_oracle(
+        binary.resolve() == expected_binary,
+        "NFsim binary does not match the independent oracle build path",
+    )
+    result = subprocess.run(
+        ["git", "-C", str(source_root), "rev-parse", "HEAD"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+    expected_revision = load_lock()["sources"]["nfsim"]["revision"]
+    require_oracle(
+        result.stdout.strip() == expected_revision,
+        "native NFsim source revision mismatch",
+    )
     return binary
 
 
