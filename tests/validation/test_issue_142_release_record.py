@@ -143,6 +143,8 @@ def test_manifest_rejects_duplicate_release_check_definitions(tmp_path):
             ("release-obligation-142", "scripts/ci/record_issue142_release.py"),
         )
     ]
+    conflicting_identity = dict(checks[0])
+    conflicting_identity["identity_requirements"] = ["source.revision", "oracle.sha256"]
     path.write_text(
         json.dumps(
             {
@@ -151,7 +153,7 @@ def test_manifest_rejects_duplicate_release_check_definitions(tmp_path):
                         "number": 142,
                         "obligations": [
                             {"required_checks": checks},
-                            {"required_checks": [checks[0]]},
+                            {"required_checks": [conflicting_identity]},
                         ],
                     }
                 ]

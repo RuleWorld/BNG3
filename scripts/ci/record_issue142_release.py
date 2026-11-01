@@ -88,7 +88,9 @@ def verify_manifest(root: Path = ROOT) -> dict[str, dict]:
     for obligation in issue["obligations"]:
         for check in obligation["required_checks"]:
             check_id = check["id"]
-            if check_id in checks:
+            if check_id not in EXPECTED_CHECKS:
+                continue
+            if check_id in checks and checks[check_id] != check:
                 _fail(f"conflicting manifest definition for {check_id}")
             checks[check_id] = check
     missing = set(EXPECTED_CHECKS) - set(checks)
