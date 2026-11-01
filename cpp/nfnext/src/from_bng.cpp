@@ -772,32 +772,40 @@ void addDirection(const bng::compile::CompiledRule& rule,
     }
 
     auto loweredPattern = flattened->pattern;
-    // A one-node whole-species deletion has no identity-sensitive action. Mark
-    // exact duplicate reactant patterns interchangeable so the matcher counts
-    // an unordered combination instead of every ordering. Multi-node complexes
-    // need a whole-pattern automorphism representation before they can be grouped.
+    // Whole-species deletions have no identity-sensitive action. Mark exact
+    // duplicate reactant patterns interchangeable by corresponding molecule
+    // position so the matcher counts unordered combinations instead of every
+    // ordering. The whole pattern is compared first, so distinct state or bond
+    // constraints never share a symmetry group.
     if (!hasDeleteMoleculesModifier(rule) && direction.filters.empty() &&
         direction.localScopes.empty() &&
         direction.wholeSpeciesDeletions.size() == direction.reactantPatterns.size()) {
         std::vector<bool> grouped(direction.reactantPatterns.size(), false);
         for (std::size_t first = 0; first < direction.reactantPatterns.size(); ++first) {
-            if (grouped[first] ||
-                direction.reactantPatterns[first].molecules().size() != 1)
-                continue;
-            std::vector<std::size_t> interchangeable{
-                flattened->patternOffsets[first]};
+            if (grouped[first]) continue;
+            const auto moleculeCount =
+                direction.reactantPatterns[first].molecules().size();
+            if (moleculeCount == 0) continue;
+            std::vector<std::size_t> duplicates{first};
             grouped[first] = true;
             for (std::size_t other = first + 1;
                  other < direction.reactantPatterns.size(); ++other) {
                 if (grouped[other] ||
-                    direction.reactantPatterns[other].molecules().size() != 1 ||
+                    direction.reactantPatterns[other].molecules().size() != moleculeCount ||
                     direction.reactantPatterns[first] != direction.reactantPatterns[other])
                     continue;
-                interchangeable.push_back(flattened->patternOffsets[other]);
+                duplicates.push_back(other);
                 grouped[other] = true;
             }
-            if (interchangeable.size() > 1)
+            if (duplicates.size() < 2) continue;
+            for (std::size_t molecule = 0; molecule < moleculeCount; ++molecule) {
+                std::vector<std::size_t> interchangeable;
+                interchangeable.reserve(duplicates.size());
+                for (const auto reactant : duplicates)
+                    interchangeable.push_back(
+                        flattened->patternOffsets[reactant] + molecule);
                 loweredPattern.interchangeable.push_back(std::move(interchangeable));
+            }
         }
     }
 
