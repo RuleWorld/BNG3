@@ -4,6 +4,7 @@
 #include <iomanip>
 #include <cmath>
 #include <algorithm>
+#include <stdexcept>
 #include <vector>
 
 #include "compile/TotalRate.hpp"
@@ -463,7 +464,40 @@ std::string BnglWriter::writeProtocol(const ast::Model& model) {
     std::ostringstream bngl;
     bngl << "begin protocol\n";
     for (const auto& action : model.getSimulationProtocol()) {
-        bngl << "  " << action.name << "({";
+        const auto protocolActionName = [&] {
+            if (action.name == "setparameter") return std::string("setParameter");
+            if (action.name == "setconcentration") return std::string("setConcentration");
+            if (action.name == "addconcentration") return std::string("addConcentration");
+            if (action.name == "saveconcentrations") return std::string("saveConcentrations");
+            if (action.name == "resetconcentrations") return std::string("resetConcentrations");
+            if (action.name == "saveparameters") return std::string("saveParameters");
+            if (action.name == "resetparameters") return std::string("resetParameters");
+            if (action.name == "setvolume") return std::string("setVolume");
+            if (action.name == "writexml") return std::string("writeXML");
+            if (action.name == "writesbml") return std::string("writeSBML");
+            if (action.name == "writesbmlmulti") return std::string("writeSBMLMulti");
+            if (action.name == "writemodel") return std::string("writeModel");
+            if (action.name == "writenetwork") return std::string("writeNetwork");
+            if (action.name == "readfile") return std::string("readFile");
+            if (action.name == "linearparametersensitivity") {
+                return std::string("LinearParameterSensitivity");
+            }
+            return action.name;
+        }();
+        if (action.name == "setparameter" || action.name == "setconcentration" ||
+            action.name == "addconcentration") {
+            const auto target = action.arguments.find("target");
+            const auto value = action.arguments.find("value");
+            if (target == action.arguments.end() || value == action.arguments.end()) {
+                throw std::runtime_error(
+                    "Cannot serialize protocol action without target and value: " +
+                    action.name);
+            }
+            bngl << "  " << protocolActionName << "(\"" << target->second << "\", "
+                 << value->second << ")\n";
+            continue;
+        }
+        bngl << "  " << protocolActionName << "({";
         bool first = true;
         for (const auto& [key, value] : action.arguments) {
             if (!first) bngl << ", ";
