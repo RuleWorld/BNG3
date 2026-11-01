@@ -36,6 +36,11 @@ def _write_model(tmp_path):
         <math xmlns="{mathml}"><cn>0.2</cn></math>
       </initialAssignment>
     </listOfInitialAssignments>
+    <listOfRules>
+      <rateRule metaid="dynamic-rate" variable="k">
+        <math xmlns="{mathml}"><cn>0.05</cn></math>
+      </rateRule>
+    </listOfRules>
     <listOfReactions>
       <reaction id="decay" reversible="false">
         <listOfReactants>
@@ -61,6 +66,7 @@ def _write_model(tmp_path):
       <comp:submodel comp:id="child" comp:modelRef="componentRef">
         <comp:listOfDeletions>
           <comp:deletion comp:metaIdRef="initial-rate"/>
+          <comp:deletion comp:metaIdRef="dynamic-rate"/>
         </comp:listOfDeletions>
       </comp:submodel>
     </comp:listOfSubmodels>
@@ -77,9 +83,12 @@ def _write_model(tmp_path):
     return parent, parent_path
 
 
-def test_external_comp_deletes_metaid_referenced_initial_assignment(tmp_path):
+def test_external_comp_deletes_metaid_referenced_initial_assignment_and_rate_rule(
+    tmp_path,
+):
     source, source_path = _write_model(tmp_path)
     document = libsbml.readSBMLFromFile(str(source_path))
+    document.checkConsistency()
     errors = [
         document.getError(index).getMessage()
         for index in range(document.getNumErrors())
@@ -98,8 +107,9 @@ def test_external_comp_deletes_metaid_referenced_initial_assignment(tmp_path):
     amounts_a = result.observables["child__A_amt"]
     amounts_b = result.observables["child__B_amt"]
     assert len(amounts_a) == len(amounts_b) == 11
-    # The deletion removes k's 0.2 initial assignment, leaving its declared
-    # value 0.1. The independent exact solution is A=10*exp(-0.1*t), B=10-A.
+    # The deletions remove both k's 0.2 initial assignment and its rate rule,
+    # leaving its declared value 0.1 constant. The independent exact solution
+    # is A=10*exp(-0.1*t), B=10-A.
     for index, (amount_a, amount_b) in enumerate(zip(amounts_a, amounts_b)):
         time = index / 10
         expected_a = 10 * math.exp(-0.1 * time)

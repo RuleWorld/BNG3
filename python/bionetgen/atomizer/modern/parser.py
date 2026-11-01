@@ -481,7 +481,7 @@ def _flatten_simple_external_comp(
     ):
         return None
     deleted_reaction_ids: List[str] = []
-    deleted_initial_assignment_metaids: List[str] = []
+    deleted_core_rule_metaids: List[str] = []
     deletions_lists = [
         child for child in list(submodel) if child.tag == comp_tag("listOfDeletions")
     ]
@@ -499,14 +499,12 @@ def _flatten_simple_external_comp(
             elif initial_assignment_metaid and set(deletion.attrib) == {
                 comp_tag("metaIdRef")
             }:
-                deleted_initial_assignment_metaids.append(initial_assignment_metaid)
+                deleted_core_rule_metaids.append(initial_assignment_metaid)
             else:
                 return None
         if len(set(deleted_reaction_ids)) != len(deleted_reaction_ids):
             return None
-        if len(set(deleted_initial_assignment_metaids)) != len(
-            deleted_initial_assignment_metaids
-        ):
+        if len(set(deleted_core_rule_metaids)) != len(deleted_core_rule_metaids):
             return None
     source = str(external.get(comp_tag("source"), "")).strip()
     parsed = urlsplit(source)
@@ -545,6 +543,7 @@ def _flatten_simple_external_comp(
         "listOfSpecies",
         "listOfParameters",
         "listOfInitialAssignments",
+        "listOfRules",
         "listOfReactions",
     }
     if any(
@@ -600,30 +599,27 @@ def _flatten_simple_external_comp(
         for reaction in reactions_to_remove:
             reactions_list.remove(reaction)
 
-    if deleted_initial_assignment_metaids:
-        initial_assignments_list = next(
-            (
-                child
-                for child in list(child_model)
-                if _local_name(child.tag) == "listOfInitialAssignments"
-            ),
-            None,
-        )
-        if initial_assignments_list is None:
-            return None
-        assignments_to_remove = []
-        for metaid in deleted_initial_assignment_metaids:
-            matches = [
-                assignment
-                for assignment in list(initial_assignments_list)
-                if _local_name(assignment.tag) == "initialAssignment"
-                and assignment.get("metaid") == metaid
-            ]
+    if deleted_core_rule_metaids:
+        metaid_targets = {
+            "listOfInitialAssignments": {"initialAssignment"},
+            "listOfRules": {"rateRule"},
+        }
+        for metaid in deleted_core_rule_metaids:
+            matches = []
+            for elements in list(child_model):
+                element_names = metaid_targets.get(_local_name(elements.tag))
+                if element_names is None:
+                    continue
+                matches.extend(
+                    (elements, element)
+                    for element in list(elements)
+                    if _local_name(element.tag) in element_names
+                    and element.get("metaid") == metaid
+                )
             if len(matches) != 1:
                 return None
-            assignments_to_remove.extend(matches)
-        for assignment in assignments_to_remove:
-            initial_assignments_list.remove(assignment)
+            elements, element = matches[0]
+            elements.remove(element)
 
     identifiers: Dict[str, str] = {}
     for element in child_model.iter():
@@ -818,7 +814,8 @@ def _flatten_comp_package(
         return (
             sbml_string,
             "external comp submodel deletions outside the supported direct reaction "
-            "idRef and InitialAssignment metaIdRef subsets cannot be flattened safely",
+            "idRef and InitialAssignment/rateRule metaIdRef subsets cannot be "
+            "flattened safely",
         )
     external_failure = _preflight_comp_external_sources(sbml_string, source_path)
     if external_failure is not None:
