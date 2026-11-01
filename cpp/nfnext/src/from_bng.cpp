@@ -1023,9 +1023,13 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                     refuse("seeds must explicitly initialize every stateful site");
         }
 
+        const std::size_t available_particles =
+            request.max_particles - state.liveCount();
+        if (*amount > static_cast<double>(available_particles))
+            refuse("particle budget exceeded by seeds");
         const std::size_t copy_count = static_cast<std::size_t>(*amount);
-        const std::size_t seed_particles = copy_count * pat.nodes.size();
-        if (seed_particles > static_cast<std::size_t>(request.max_particles - state.liveCount()))
+        if (pat.nodes.empty() ||
+            copy_count > available_particles / pat.nodes.size())
             refuse("particle budget exceeded by seeds");
 
         for (std::size_t count = 0; count < copy_count; ++count) {

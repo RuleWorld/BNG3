@@ -297,6 +297,8 @@ void refusesUnsupportedExecution() {
         "begin seed species\n A(x~u!+) 2\nend seed species\n",
         // Fractional seed amount
         "begin seed species\n A(x~u) 1.5\nend seed species\n",
+        // Seed amount outside the native population-count range
+        "begin seed species\n A(x~u) 1e300\nend seed species\n",
         // Constant seed species
         "begin seed species\n $A(x~u) 2\nend seed species\n",
         // Uninitialized stateful site in seed
