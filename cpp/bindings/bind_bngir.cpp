@@ -1394,9 +1394,9 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
             throw std::runtime_error(
                 "native BNGIR observable names must be nonempty and unique");
         }
-        if (type != "Molecules" && type != "Species") {
+        if (type != "Molecules" && type != "Species" && type != "Counter") {
             throw std::runtime_error(
-                "native BNGIR observable type must be Molecules or Species");
+                "native BNGIR observable type must be Molecules, Species, or Counter");
         }
         if (!py::isinstance<py::list>(observable["patterns"])) {
             throw std::runtime_error(
@@ -1543,6 +1543,7 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
         static const std::vector<std::string> allowedRuleKeys = {
             "id", "name", "label", "bidirectional", "modifiers", "forward",
             "reverse", "molecule_mappings", "component_mappings",
+            "delay", "non_consuming",
         };
         requireObjectKeys(
             rule, requiredRuleKeys, allowedRuleKeys, "rule");
@@ -1752,12 +1753,30 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
             rates.push_back(expressionFromBngir(
                 py::cast<py::dict>(reverseRate["expression"]), modelScope));
         }
-        model->addReactionRule(ReactionRule::fromResolvedPatterns(
+        auto rxnRule = ReactionRule::fromResolvedPatterns(
             py::cast<std::string>(rule["name"]),
             py::cast<std::string>(rule["label"]),
             std::move(rates),
             std::move(reactantGraphs), std::move(productGraphs),
-            isBidirectional));
+            isBidirectional);
+        bool nonConsuming = false;
+        if (rule.contains(py::str("non_consuming"))) {
+            const py::handle ncHandle = rule["non_consuming"];
+            if (!PyBool_Check(ncHandle.ptr())) {
+                throw std::runtime_error(
+                    "native BNGIR rule non_consuming field must be boolean");
+            }
+            nonConsuming = py::cast<bool>(ncHandle);
+        }
+        if (rule.contains(py::str("delay"))) {
+            const auto delayDict = py::cast<py::dict>(rule["delay"]);
+            const auto delayExpr = expressionFromBngir(delayDict, modelScope);
+            rxnRule.setDelay(delayExpr, nonConsuming);
+        } else if (nonConsuming) {
+            throw std::runtime_error(
+                "native BNGIR NonConsuming requires delay expression");
+        }
+        model->addReactionRule(std::move(rxnRule));
     }
 
     if (bindingOnlyTypeIds != admittedBindingOnlyTypeIds) {

@@ -54,6 +54,7 @@ ObservableKind observableKind(const std::string& type) {
     const auto value = lower(type);
     if (value == "molecules" || value == "molecule") return ObservableKind::Molecules;
     if (value == "species") return ObservableKind::Species;
+    if (value == "counter") return ObservableKind::Counter;
     return ObservableKind::Unknown;
 }
 

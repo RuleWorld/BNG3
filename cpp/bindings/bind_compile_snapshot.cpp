@@ -392,12 +392,6 @@ py::dict compiledSnapshot(const bng::ast::Model& astModel) {
     bng::compile::requireNoNativeEvents(astModel, "BNGIR v0.2 structural snapshot");
     Document document(astModel);
     const auto& model = document.model();
-    for (const auto& rule : model.rules()) {
-        if (rule.delayExpression()) {
-            throw std::runtime_error(
-                "compiled snapshot cannot represent delayed reaction rules");
-        }
-    }
     if (!document.valid()) {
         throw std::runtime_error("cannot create structural semantic snapshot from invalid model");
     }
@@ -501,7 +495,8 @@ py::dict compiledSnapshot(const bng::ast::Model& astModel) {
         item["id"] = observable.id.value();
         item["name"] = observable.name;
         item["kind"] = observable.kind == ObservableKind::Molecules ? "molecules" :
-                       observable.kind == ObservableKind::Species ? "species" : "unknown";
+                       observable.kind == ObservableKind::Species ? "species" :
+                       observable.kind == ObservableKind::Counter ? "counter" : "unknown";
         py::list terms;
         for (const auto& term : observable.terms) {
             py::dict termItem;
@@ -597,6 +592,12 @@ py::dict compiledSnapshot(const bng::ast::Model& astModel) {
         item["bidirectional"] = rule.isBidirectional();
         item["forward"] = directionSnapshot(rule.forward(), model);
         if (rule.reverse().has_value()) item["reverse"] = directionSnapshot(*rule.reverse(), model);
+        if (rule.resolvedDelayExpression().has_value()) {
+            item["delay"] = expressionSnapshot(*rule.resolvedDelayExpression());
+            if (rule.isNonConsuming()) {
+                item["non_consuming"] = true;
+            }
+        }
         py::list modifiers;
         for (const auto& modifier : rule.modifiers()) {
             py::dict modifierItem;

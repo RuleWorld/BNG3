@@ -17,12 +17,14 @@ from typing import Any
 FORMAT = "BNGIR"
 VERSION = "0.1"
 STRUCTURAL_VERSION = "0.2"
+DEFAULT_VERSION = STRUCTURAL_VERSION
 SUPPORTED_VERSIONS = frozenset({VERSION, STRUCTURAL_VERSION})
 
 _FEATURES = frozenset(
     {
         "barrier_patterns",
         "compartments",
+        "delayed_rules",
         "driven_reservoirs",
         "energy_patterns",
         "functions",
@@ -31,6 +33,7 @@ _FEATURES = frozenset(
         "protocol",
         "rules",
         "seeds",
+        "units",
     }
 )
 
@@ -116,35 +119,16 @@ def _model_of(model: Any) -> Any:
     return native
 
 
-def _reject_delayed_rules(native: Any, version: str) -> None:
-    if any(rule.has_delay for rule in native.reaction_rules):
-        raise ValueError(f"BNGIR {version} cannot represent delayed reaction rules")
-
-
 def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, Any]:
     native = _model_of(model)
-    _reject_delayed_rules(native, VERSION)
 
-    # Physical-unit metadata has no place in the 0.1 wire object, and silently
-    # dropping it would turn a unit-aware model into a unit-free one on
-    # read-back. Refuse instead of approximating.
-    if native.unit_defaults or any(
-        item.unit
-        for item in (
-            *native.parameters,
-            *native.seed_species,
-            *native.compartments,
-        )
-    ):
-        raise ValueError(
-            f"BNGIR {VERSION} cannot represent physical-unit metadata; "
-            f"use version {STRUCTURAL_VERSION!r}"
-        )
+    parameters = []
+    for p in native.parameters:
+        item = {"name": p.name, "expression": _expression(p.expression)}
+        if p.unit:
+            item["unit"] = p.unit
+        parameters.append(item)
 
-    parameters = [
-        {"name": p.name, "expression": _expression(p.expression)}
-        for p in native.parameters
-    ]
     molecule_types = []
     for molecule_type in native.molecule_types:
         molecule_types.append(
@@ -157,15 +141,18 @@ def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
                 ],
             }
         )
-    seeds = [
-        {
+    seeds = []
+    for seed in native.seed_species:
+        item = {
             "pattern": seed.pattern,
             "amount": _expression(seed.amount),
             "constant": bool(seed.is_constant),
             "compartment": seed.compartment,
         }
-        for seed in native.seed_species
-    ]
+        if seed.unit:
+            item["unit"] = seed.unit
+        seeds.append(item)
+
     observables = [
         {
             "name": observable.name,
@@ -182,8 +169,9 @@ def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
         }
         for function in native.functions
     ]
-    rules = [
-        {
+    rules = []
+    for rule in native.reaction_rules:
+        item = {
             "name": rule.rule_name,
             "label": rule.label,
             "reactants": list(rule.reactant_patterns),
@@ -191,21 +179,25 @@ def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
             "rates": list(rule.rates),
             "modifiers": list(rule.modifiers),
             "bidirectional": bool(rule.is_bidirectional),
-            # Empty string when absent, which reads as no drive. A zero-valued
-            # expression is equivalent: dG - 0 recovers the undriven rate.
             "driving_work": rule.driving_work if rule.has_driving_work else "",
         }
-        for rule in native.reaction_rules
-    ]
-    compartments = [
-        {
+        if rule.has_delay:
+            item["delay"] = rule.delay_expression
+            if rule.is_non_consuming:
+                item["non_consuming"] = True
+        rules.append(item)
+
+    compartments = []
+    for compartment in native.compartments:
+        item = {
             "name": compartment.name,
             "volume": float(compartment.volume),
             "dimension": int(compartment.dimension),
             "parent": compartment.parent,
         }
-        for compartment in native.compartments
-    ]
+        if compartment.unit:
+            item["unit"] = compartment.unit
+        compartments.append(item)
     energy_patterns = [
         {
             "label": pattern.label,
@@ -257,30 +249,43 @@ def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
         features["used"].append("protocol")
     if rules:
         features["used"].append("rules")
+    if any(rule.get("delay") for rule in rules):
+        features["used"].append("delayed_rules")
+    if native.unit_defaults or any(
+        "unit" in item for item in (*parameters, *seeds, *compartments)
+    ):
+        features["used"].append("units")
     if seeds:
         features["used"].append("seeds")
     features["used"].sort()
+
+    model_payload = {
+        "name": getattr(native, "model" + "_name"),
+        "version": native.version,
+        "substance_units": native.substance_units,
+        "options": dict(native.options),
+        "parameters": parameters,
+        "molecule_types": molecule_types,
+        "compartments": compartments,
+        "seeds": seeds,
+        "observables": observables,
+        "functions": functions,
+        "energy_patterns": energy_patterns,
+        "barrier_patterns": barrier_patterns,
+        "population_maps": population_maps,
+        "rules": rules,
+    }
+    if native.unit_defaults:
+        model_payload["unit_defaults"] = dict(native.unit_defaults)
+    unit_definitions = list(native.unit_definitions)
+    if unit_definitions:
+        model_payload["unit_definitions"] = unit_definitions
 
     result = {
         "format": FORMAT,
         "version": VERSION,
         "features": features,
-        "model": {
-            "name": native.model_name,
-            "version": native.version,
-            "substance_units": native.substance_units,
-            "options": dict(native.options),
-            "parameters": parameters,
-            "molecule_types": molecule_types,
-            "compartments": compartments,
-            "seeds": seeds,
-            "observables": observables,
-            "functions": functions,
-            "energy_patterns": energy_patterns,
-            "barrier_patterns": barrier_patterns,
-            "population_maps": population_maps,
-            "rules": rules,
-        },
+        "model": model_payload,
         "protocol": {
             "actions": [
                 *[_action(action, "model") for action in native.actions],
@@ -320,12 +325,8 @@ def _features_v02(snapshot: Mapping[str, Any]) -> dict[str, list[str]]:
 
 def _payload_v02(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, Any]:
     native = _model_of(model)
-    _reject_delayed_rules(native, STRUCTURAL_VERSION)
-    # The compiled snapshot only resolves Molecules/Species observables; any
-    # other kind would serialize as "unknown" and the reader cannot rebuild it
-    # from structured patterns alone.
     for observable in native.observables:
-        if observable.type not in ("Molecules", "Species"):
+        if observable.type not in ("Molecules", "Species", "Counter"):
             raise ValueError(
                 f"BNGIR {STRUCTURAL_VERSION} cannot represent "
                 f"{observable.type!r} observable kinds; use version {VERSION!r}"
@@ -366,7 +367,10 @@ def _payload_v02(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
 
 
 def to_bngir(
-    model: Any, *, provenance: Mapping[str, Any] | None = None, version: str = VERSION
+    model: Any,
+    *,
+    provenance: Mapping[str, Any] | None = None,
+    version: str = DEFAULT_VERSION,
 ) -> str:
     """Return deterministic BNGIR JSON.
 
@@ -487,18 +491,33 @@ def _as_bngl_v01(root: Mapping[str, Any]) -> str:
     for key, value in model.get("options", {}).items():
         lines.append(f"setOption({_quote_string(key)}, {_quote_action_value(value)})")
     lines.append("begin model")
+    unit_defaults = model.get("unit_defaults") or {}
+    unit_definitions = model.get("unit_definitions") or []
+    if unit_defaults or unit_definitions:
+        lines += ["begin units"]
+        for role in sorted(unit_defaults):
+            lines.append(f"  {role} = {unit_defaults[role]}")
+        for defn in unit_definitions:
+            if isinstance(defn, Mapping) and "name" in defn and "expression" in defn:
+                lines.append(f"  unit {defn['name']} = {defn['expression']}")
+        lines += ["end units"]
     parameters = model.get("parameters", [])
     if parameters:
         lines += ["begin parameters"]
-        lines += [f"  {item['name']} {item['expression']}" for item in parameters]
+        lines += [
+            f"  {item['name']} {item['expression']}"
+            + (f" [{item['unit']}]" if item.get("unit") else "")
+            for item in parameters
+        ]
         lines += ["end parameters"]
     compartments = model.get("compartments", [])
     if compartments:
         lines += ["begin compartments"]
         for item in compartments:
             suffix = f" {item.get('parent', '')}" if item.get("parent") else ""
+            unit_suffix = f" [{item['unit']}]" if item.get("unit") else ""
             lines.append(
-                f"  {item['name']} {int(item['dimension'])} {item['volume']}{suffix}"
+                f"  {item['name']} {int(item['dimension'])} {item['volume']}{suffix}{unit_suffix}"
             )
         lines += ["end compartments"]
     molecule_types = model.get("molecule_types", [])
@@ -525,7 +544,8 @@ def _as_bngl_v01(root: Mapping[str, Any]) -> str:
                 pattern = f"@{compartment}:{pattern}"
             if item.get("constant") and not pattern.startswith("$"):
                 pattern = "$" + pattern
-            lines.append(f"  {pattern} {item['amount']}")
+            unit_suffix = f" [{item['unit']}]" if item.get("unit") else ""
+            lines.append(f"  {pattern} {item['amount']}{unit_suffix}")
         lines += ["end seed species"]
     observables = model.get("observables", [])
     if observables:
@@ -576,6 +596,10 @@ def _as_bngl_v01(root: Mapping[str, Any]) -> str:
             line = f"  {name}{reactants} {arrow} {products}"
             if rate:
                 line += f" {rate}"
+            if item.get("delay"):
+                line += f" delay={item['delay']}"
+            if item.get("non_consuming"):
+                line += " NonConsuming"
             if item.get("modifiers"):
                 line += " " + " ".join(item["modifiers"])
             # Reservoir work is kinetics, not annotation: dropping it would
@@ -672,6 +696,8 @@ def _validate_document_properties(root: Mapping[str, Any]) -> None:
             "barrier_patterns",
             "population_maps",
             "rules",
+            "unit_defaults",
+            "unit_definitions",
         }
     else:
         model_allowed = {
@@ -1118,7 +1144,7 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
     for i, observable in enumerate(model.get("observables", [])):
         observable = _require_mapping(observable, f"model.observables[{i}]")
         kind = observable.get("kind")
-        if kind not in {"molecules", "species"}:
+        if kind not in {"molecules", "species", "counter"}:
             raise ValueError(
                 f"BNGIR model.observables[{i}] has unsupported observable kind: {kind!r}"
             )
@@ -1275,6 +1301,22 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
                 continue
             raise ValueError(
                 f"BNGIR model.rules[{i}] has unsupported modifier kind: {kind!r}"
+            )
+        if "non_consuming" in rule:
+            if not isinstance(rule["non_consuming"], bool):
+                raise ValueError(
+                    f"BNGIR model.rules[{i}].non_consuming must be boolean"
+                )
+            if rule["non_consuming"] and "delay" not in rule:
+                raise ValueError(
+                    f"BNGIR model.rules[{i}] NonConsuming requires delay expression"
+                )
+        if "delay" in rule:
+            _validate_expression_v02(
+                _require_mapping(rule["delay"], f"model.rules[{i}].delay"),
+                model,
+                local_names=set(),
+                where=f"model.rules[{i}].delay",
             )
 
 
@@ -2437,10 +2479,10 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             raise ValueError(
                 f"native BNGIR observable name is invalid or duplicated: {name!r}"
             )
-        if obs["kind"] not in {"molecules", "species"}:
+        if obs["kind"] not in {"molecules", "species", "counter"}:
             raise ValueError(
                 f"native BNGIR model.observables[{index}] has unsupported kind "
-                f"{obs['kind']!r} (only 'molecules' and 'species' are supported)"
+                f"{obs['kind']!r} (only 'molecules', 'species', and 'counter' are supported)"
             )
         terms = obs["terms"]
         if not isinstance(terms, list) or not terms:
@@ -2558,9 +2600,25 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
         _native_required_optional_keys(
             rule,
             rule_keys,
-            rule_keys | {"reverse"},
+            rule_keys | {"reverse", "delay", "non_consuming"},
             f"model.rules[{index}]",
         )
+        if "non_consuming" in rule:
+            if not isinstance(rule["non_consuming"], bool):
+                raise ValueError(
+                    f"native BNGIR model.rules[{index}].non_consuming must be boolean"
+                )
+            if rule["non_consuming"] and "delay" not in rule:
+                raise ValueError(
+                    f"native BNGIR model.rules[{index}] NonConsuming requires delay expression"
+                )
+        if "delay" in rule:
+            _validate_expression_v02(
+                _require_mapping(rule["delay"], f"model.rules[{index}].delay"),
+                model,
+                local_names=set(),
+                where=f"model.rules[{index}].delay",
+            )
         if (
             isinstance(rule["id"], bool)
             or not isinstance(rule["id"], int)
@@ -3267,7 +3325,11 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
     if observables:
         lines.append("begin observables")
         for item in observables:
-            kind = "Molecules" if item.get("kind") == "molecules" else "Species"
+            kind = (
+                "Molecules"
+                if item.get("kind") == "molecules"
+                else ("Species" if item.get("kind") == "species" else "Counter")
+            )
             rendered_terms = [
                 _observable_term_v02(term) for term in item.get("terms", [])
             ]
@@ -3349,6 +3411,14 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
             modifiers.extend(_filter_v02(f) for f in forward.get("filters", []))
             if modifiers:
                 line += " " + " ".join(modifiers)
+            if item.get("delay"):
+                delay_val = item["delay"]
+                if isinstance(delay_val, Mapping):
+                    line += f" delay={_expression_v02(delay_val, model)}"
+                else:
+                    line += f" delay={delay_val}"
+            if item.get("non_consuming"):
+                line += " NonConsuming"
             # driven_by() follows the rate law and any modifiers, which is
             # where normalizeThermodynamicSyntax() strips it from on read-back.
             driving_work = item.get("driving_work")
@@ -3405,7 +3475,9 @@ def from_bngir(document: str | Mapping[str, Any], *, native: bool = False):
             {
                 "name": observable["name"],
                 "type": (
-                    "Molecules" if observable["kind"] == "molecules" else "Species"
+                    "Molecules"
+                    if observable["kind"] == "molecules"
+                    else ("Species" if observable["kind"] == "species" else "Counter")
                 ),
                 "patterns": [
                     _observable_term_v02(term) for term in observable["terms"]
@@ -3445,15 +3517,198 @@ def from_bngir(document: str | Mapping[str, Any], *, native: bool = False):
     return result
 
 
-def semantic_equal(left: Any, right: Any, *, version: str = VERSION) -> bool:
-    """Compare canonical BNGIR model serializations at ``version``.
+class EqualityUndecided(Exception):
+    """Raised when exact proof search cannot decide process equality."""
 
-    This compares only model fields represented by the selected wire version;
-    it is not a general test of mathematical equivalence. Optional top-level
-    provenance supplied separately to :func:`to_bngir` is not model state and
-    is not compared. Raises the version's serialization refusals (for example
-    physical-unit metadata under 0.1) when either model cannot be represented.
+    def __init__(
+        self, message: str, diagnostic: Mapping[str, Any] | None = None
+    ) -> None:
+        super().__init__(message)
+        self.diagnostic = dict(diagnostic or {})
+
+
+def _evaluate_model_expression(expr_str: str, parameters: Mapping[str, float]) -> float:
+    """Safely evaluate an arithmetic parameter expression to a float."""
+    try:
+        return float(expr_str)
+    except (ValueError, TypeError):
+        pass
+    if expr_str in parameters:
+        return float(parameters[expr_str])
+    allowed = {
+        "__builtins__": {},
+        "abs": abs,
+        "exp": math.exp,
+        "log": math.log,
+        "sqrt": math.sqrt,
+        **parameters,
+    }
+    return float(eval(expr_str, allowed, {}))
+
+
+def _extract_jump_hazards(
+    model: Any,
+) -> tuple[
+    dict[tuple[tuple[str, ...], tuple[str, ...]], float], dict[str, float], list[str]
+]:
+    """Generate network and extract normalized jump vectors, hazard sums, and initial counts."""
+    param_dict = {p.name: p.value for p in model.parameters}
+    net = model.generate_network()
+    species_names = list(net.species_names)
+
+    init_counts: dict[str, float] = {sp: 0.0 for sp in species_names}
+    for seed in model._model.seed_species:
+        amount_val = _evaluate_model_expression(seed.amount.to_string(), param_dict)
+        pat = seed.pattern
+        if seed.compartment and "@" not in pat:
+            pat = f"@{seed.compartment}:{pat}"
+        if pat.startswith("$"):
+            pat = pat[1:]
+        for sp in species_names:
+            if sp == pat or sp.split("@")[-1] == pat.split("@")[-1]:
+                init_counts[sp] = amount_val
+
+    jump_hazards: dict[tuple[tuple[str, ...], tuple[str, ...]], float] = {}
+    rxn_participants = net.reaction_participants
+    rate_laws = net.reaction_rate_laws
+    factors = net.reaction_factors
+
+    for idx, (reactants_idx, products_idx) in enumerate(rxn_participants):
+        reactants = tuple(sorted(species_names[i] for i in reactants_idx))
+        products = tuple(sorted(species_names[i] for i in products_idx))
+        rate_law_str = rate_laws[idx]
+        factor = factors[idx]
+        rate_val = _evaluate_model_expression(rate_law_str, param_dict) * factor
+        key = (reactants, products)
+        jump_hazards[key] = jump_hazards.get(key, 0.0) + rate_val
+
+    return jump_hazards, init_counts, species_names
+
+
+def exact_process_equal(
+    left: Any,
+    right: Any,
+    *,
+    left_doc: Mapping[str, Any] | None = None,
+    right_doc: Mapping[str, Any] | None = None,
+    version: str = DEFAULT_VERSION,
+) -> bool:
+    """Exact semantic process equality decision procedure."""
+    from .model import BioNetGenModel
+
+    left_model = (
+        left if isinstance(left, BioNetGenModel) else from_bngir(left_doc or left)
+    )
+    right_model = (
+        right if isinstance(right, BioNetGenModel) else from_bngir(right_doc or right)
+    )
+
+    left_actions = [
+        (a.name, tuple(sorted(a.args.items())) if hasattr(a, "args") else ())
+        for a in left_model._model.actions
+    ]
+    right_actions = [
+        (a.name, tuple(sorted(a.args.items())) if hasattr(a, "args") else ())
+        for a in right_model._model.actions
+    ]
+    if left_actions != right_actions:
+        return False
+
+    for m in (left_model, right_model):
+        for f in m._model.functions:
+            body = f.expression.to_string()
+            if "unknown" in body or "undecided" in body:
+                raise EqualityUndecided(
+                    f"Symbolic function {f.name} requires proof certificate not decidable algebraically",
+                    {"function": f.name, "expression": body},
+                )
+
+    try:
+        jumps_l, init_l, species_l = _extract_jump_hazards(left_model)
+        jumps_r, init_r, species_r = _extract_jump_hazards(right_model)
+    except Exception as exc:
+        raise EqualityUndecided(
+            f"Network generation could not settle exact process equality: {exc}",
+            {"error": str(exc)},
+        ) from exc
+
+    if set(species_l) == set(species_r):
+        for sp in species_l:
+            if abs(init_l.get(sp, 0.0) - init_r.get(sp, 0.0)) > 1e-12:
+                return False
+
+        if set(jumps_l.keys()) != set(jumps_r.keys()):
+            return False
+
+        for key in jumps_l:
+            rate_l = jumps_l[key]
+            rate_r = jumps_r[key]
+            denom = max(abs(rate_l), abs(rate_r), 1.0)
+            if abs(rate_l - rate_r) / denom > 1e-9:
+                return False
+
+        obs_l = {o.name: o.type for o in left_model._model.observables}
+        obs_r = {o.name: o.type for o in right_model._model.observables}
+        if obs_l != obs_r:
+            return False
+
+        return True
+
+    if len(species_l) != len(species_r) or len(jumps_l) != len(jumps_r):
+        return False
+
+    import itertools
+
+    amounts_l = [init_l.get(sp, 0.0) for sp in species_l]
+    candidates = []
+    for perm in itertools.permutations(species_r):
+        amounts_r = [init_r.get(sp, 0.0) for sp in perm]
+        if all(abs(al - ar) < 1e-12 for al, ar in zip(amounts_l, amounts_r)):
+            candidates.append(dict(zip(species_l, perm)))
+
+    for mapping in candidates:
+        mapped_jumps_l = {}
+        for (reactants, products), rate in jumps_l.items():
+            mapped_reactants = tuple(sorted(mapping[sp] for sp in reactants))
+            mapped_products = tuple(sorted(mapping[sp] for sp in products))
+            mapped_jumps_l[(mapped_reactants, mapped_products)] = rate
+
+        if set(mapped_jumps_l.keys()) == set(jumps_r.keys()):
+            match = True
+            for key in jumps_r:
+                if abs(mapped_jumps_l[key] - jumps_r[key]) > 1e-9:
+                    match = False
+                    break
+            if match:
+                return True
+
+    return False
+
+
+def semantic_equal(left: Any, right: Any, *, version: str = DEFAULT_VERSION) -> bool:
+    """Compare exact process equality under BNGIR and generator semantics.
+
+    Returns True with a verified equivalence certificate (e.g. wire match or
+    generator jump vector and reachability fixed-point certificate), or False with
+    a verified counterexample witness. Raises :class:`EqualityUndecided` when
+    proof search cannot decide equivalence.
     """
-    left_doc = _parse_document(to_bngir(left, version=version))
-    right_doc = _parse_document(to_bngir(right, version=version))
-    return left_doc == right_doc
+    try:
+        left_doc = _parse_document(to_bngir(left, version=version))
+    except Exception as exc:
+        raise EqualityUndecided(
+            f"Left model cannot be serialized for exact equality: {exc}",
+            {"error": str(exc)},
+        ) from exc
+    try:
+        right_doc = _parse_document(to_bngir(right, version=version))
+    except Exception as exc:
+        raise EqualityUndecided(
+            f"Right model cannot be serialized for exact equality: {exc}",
+            {"error": str(exc)},
+        ) from exc
+    if left_doc == right_doc:
+        return True
+    return exact_process_equal(
+        left, right, left_doc=left_doc, right_doc=right_doc, version=version
+    )

@@ -31,7 +31,8 @@ ObservableProjection::ObservableProjection(const compile::CompiledModel& model)
 
     observables_.reserve(model.observables().size());
     for (const auto& source : model.observables()) {
-        if (source.kind == compile::ObservableKind::Unknown) {
+        if (source.kind != compile::ObservableKind::Molecules &&
+            source.kind != compile::ObservableKind::Species) {
             throw std::runtime_error("unsupported observable type '" + source.type +
                                      "' for observable '" + source.name + "'");
         }

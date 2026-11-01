@@ -168,6 +168,7 @@ public:
     bool requiresConservativeInvalidation() const { return conservativeInvalidation_; }
     bool isBidirectional() const { return bidirectional_; }
     const std::optional<ast::Expression>& delayExpression() const { return delayExpression_; }
+    const std::optional<ResolvedExpression>& resolvedDelayExpression() const { return resolvedDelayExpression_; }
     bool isNonConsuming() const { return nonConsuming_; }
 
     // Signed reservoir work from a `driven_by(W)` annotation.
@@ -211,6 +212,7 @@ private:
     bool conservativeInvalidation_ = false;
     bool bidirectional_ = false;
     std::optional<ast::Expression> delayExpression_;
+    std::optional<ResolvedExpression> resolvedDelayExpression_;
     bool nonConsuming_ = false;
     bool hasDrivingWork_ = false;
     std::string drivingWorkExpression_;
