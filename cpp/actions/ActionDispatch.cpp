@@ -2227,6 +2227,22 @@ void runSimulation(
             std::cerr << "[bng_cpp] print_net: wrote " << netPath.string() << "\n";
         }
     }
+
+    // print_end: write the final state to a separate *_end.net file.
+    if (opts.printEnd && !result.concentrations.empty()) {
+        for (std::size_t i = 0;
+             i < network.species.size() &&
+             i < result.concentrations.back().size();
+             ++i) {
+            network.species.get(i).setAmount(result.concentrations.back()[i]);
+        }
+        const auto endNetPath = sourcePath.parent_path() / (prefix + "_end.net");
+        io::NetWriter::write(endNetPath, model, network);
+        if (verbose) {
+            std::cerr << "[bng_cpp] print_end: wrote " << endNetPath.string()
+                      << "\n";
+        }
+    }
 }
 
 } // namespace

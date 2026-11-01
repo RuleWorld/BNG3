@@ -1,12 +1,13 @@
 """The BNGL action defaults must not change Python simulation defaults."""
 
+import math
 from pathlib import Path
 
 import pytest
 
 from bionetgen import BioNetGenModel
 from _extdep import require_extension
-from tests.validation import runner
+from tests.validation import compare, runner
 
 cpp = require_extension()
 
@@ -152,3 +153,35 @@ def test_bngl_simulate_accepts_supported_expand_modes(tmp_path, expand):
     _, gdat, error = runner.run_cli_path(bng_cpp, source, tmp_path / expand)
 
     assert gdat is not None, error
+
+
+@pytest.mark.parametrize("print_end", [0, 1])
+def test_bngl_simulate_print_end_controls_final_network(tmp_path, print_end):
+    source = tmp_path / f"print_end_{print_end}.bngl"
+    source.write_text(
+        SOURCE
+        + "\nbegin actions\n"
+        + f'  simulate({{method=>"ode",prefix=>"custom",t_end=>1,n_steps=>2,print_end=>{print_end}}})\n'
+        + "end actions\n",
+        encoding="utf-8",
+    )
+    bng_cpp = Path(__file__).resolve().parents[2] / "build/cpp/bng_cpp"
+    run_dir = tmp_path / f"run_{print_end}"
+
+    _, gdat, error = runner.run_cli_path(bng_cpp, source, run_dir)
+
+    assert gdat is not None, error
+    end_net = run_dir / "custom_end.net"
+    if print_end:
+        assert end_net.is_file()
+        parsed = compare.parse_net(end_net)
+        assert parsed is not None
+        amount_by_species = {
+            parsed.species_by_index[index]: float(amount)
+            for index, amount in parsed.initial_amounts.items()
+        }
+        expected_a = 10.0 * math.exp(-0.4)
+        assert amount_by_species["A()"] == pytest.approx(expected_a, abs=1e-6)
+        assert amount_by_species["B()"] == pytest.approx(10.0 - expected_a, abs=1e-6)
+    else:
+        assert not end_net.exists()
