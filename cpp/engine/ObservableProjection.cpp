@@ -31,7 +31,8 @@ ObservableProjection::ObservableProjection(const compile::CompiledModel& model)
 
     observables_.reserve(model.observables().size());
     for (const auto& source : model.observables()) {
-        if (source.kind == compile::ObservableKind::Unknown) {
+        if (source.kind != compile::ObservableKind::Molecules &&
+            source.kind != compile::ObservableKind::Species) {
             throw std::runtime_error("unsupported observable type '" + source.type +
                                      "' for observable '" + source.name + "'");
         }
@@ -110,8 +111,7 @@ int ObservableProjection::weight(std::size_t observableIndex,
                 (!term.relation.empty() || matches)) {
                 break;
             }
-        } else if (observable.kind == compile::ObservableKind::Molecules ||
-                   observable.kind == compile::ObservableKind::Counter) {
+        } else if (observable.kind == compile::ObservableKind::Molecules) {
             if (moleculesMode_ == CountMode::CountUnique) {
                 // Symmetry correction: divide out the pattern's automorphisms.
                 //
