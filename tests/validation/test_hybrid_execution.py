@@ -453,9 +453,9 @@ def _option_case(engine: str, root: Path, options: str = ""):
     return None
 
 
-@pytest.mark.nf
-@pytest.mark.parity
-def test_issue_150_generate_hybrid_model_action_options(tmp_path, capfd):
+def _check_hybrid_model_action_options(
+    tmp_path, capfd, *, write_slice_evidence: bool = True
+):
     """Exercise every assigned generate_hybrid_model option against BNG2.
 
     The pinned BNG2 action is the independent argument/default/error oracle;
@@ -590,7 +590,7 @@ def test_issue_150_generate_hybrid_model_action_options(tmp_path, capfd):
     assert all(coverage.values())
 
     evidence_target = os.environ.get("BNG3_HYBRID_EVIDENCE_DIR")
-    if evidence_target:
+    if evidence_target and write_slice_evidence:
         evidence_dir = Path(evidence_target)
         evidence_dir.mkdir(parents=True, exist_ok=True)
         lock = load_lock()
@@ -609,8 +609,26 @@ def test_issue_150_generate_hybrid_model_action_options(tmp_path, capfd):
         report = {
             "schema_version": 1,
             "slice": "issue-150-generate-hybrid-model-action-options",
-            "acceptance_status": "partial; hybrid.execution inventory row remains uncovered",
-            "source": {"revision": _git_revision(ROOT)},
+            "scope": "generate_hybrid_model action options only",
+            "coverage_check": "release-capability-coverage-150",
+            "source": {
+                "revision": _git_revision(ROOT),
+                "dirty": bool(
+                    subprocess.run(
+                        [
+                            "git",
+                            "-C",
+                            str(ROOT),
+                            "status",
+                            "--porcelain",
+                            "--untracked-files=no",
+                        ],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    ).stdout.strip()
+                ),
+            },
             "oracles": {
                 "bng2": {
                     "revision": _git_revision(bng2.parent),
@@ -625,7 +643,6 @@ def test_issue_150_generate_hybrid_model_action_options(tmp_path, capfd):
                 }
                 for identity, passed in coverage.items()
             },
-            "uncovered_inventory_rows": ["hybrid.execution"],
             "negative_control": {
                 "case": "unknown generate_hybrid_model option",
                 "bng2": "rejected",
@@ -636,6 +653,13 @@ def test_issue_150_generate_hybrid_model_action_options(tmp_path, capfd):
         (evidence_dir / "capability-coverage-150.json").write_text(
             json.dumps(report, indent=2) + "\n"
         )
+    return coverage
+
+
+@pytest.mark.nf
+@pytest.mark.parity
+def test_issue_150_generate_hybrid_model_action_options(tmp_path, capfd):
+    _check_hybrid_model_action_options(tmp_path, capfd)
 
 
 def _git_revision(path: Path) -> str:
@@ -1048,6 +1072,7 @@ def test_release_hybrid_whole_dimer_conversion_and_multiplicity(
         report = {
             "schema_version": 1,
             "check_slice": "whole-complex-dimer-conversion",
+            "checks": ["release-hybrid", "release-hybrid-conservation"],
             "source": {
                 "revision": _git_revision(ROOT),
                 "input_sha256": hashlib.sha256(source.read_bytes()).hexdigest(),
@@ -1167,4 +1192,213 @@ def test_hybrid_compartment_distribution_against_locked_native_nfsim(
             assert np.array_equal(units, total)
 
     _write_native_compartment_evidence(xml, native_runs, bng3_runs, comparison)
+
+
+@pytest.mark.nf
+@pytest.mark.parity
+@pytest.mark.stochastic
+@pytest.mark.slow
+def test_release_capability_coverage_150(
+    tmp_path,
+    capfd,
+    hybrid_ensembles,
+    hybrid_dimer_ensembles,
+):
+    """Run every assigned #150 inventory row against its named oracle."""
+    action_cases = _check_hybrid_model_action_options(
+        tmp_path / "action-options", capfd, write_slice_evidence=False
+    )
+
+    native_runs, bng3_runs = hybrid_ensembles
+    hybrid_comparison = compare.compare_stochastic(
+        native_runs,
+        bng3_runs,
+        n_sigma=4.0,
+        max_violation_frac=0.05,
+        min_ref_runs=RUNS,
+        min_test_runs=RUNS,
+        columns=compare.COLUMNS_EXACT,
+    )
+    assert hybrid_comparison.ok, hybrid_comparison.summary()
+    for label, runs in (("native NFsim", native_runs), ("BNG3", bng3_runs)):
+        compare.qualify_binomial_marginal(
+            runs,
+            "B_total",
+            population=INITIAL_B,
+            probability=lambda times: np.exp(-K_MAKE * times),
+            label=label,
+        )
+        compare.qualify_binomial_marginal(
+            runs,
+            "A_total",
+            population=INITIAL_B,
+            probability=lambda times: 1.0 - np.exp(-K_MAKE * times),
+            label=label,
+        )
+        for data, columns in runs:
+            total = data[:, columns.index("A_total")] + data[:, columns.index("B_total")]
+            assert np.array_equal(total, np.full_like(total, INITIAL_B))
+
+    native_dimers, bng3_dimers, dimer_xml, dimer_hpp, dimer_source = (
+        hybrid_dimer_ensembles
+    )
+    dimer_comparison = compare.compare_stochastic(
+        native_dimers,
+        bng3_dimers,
+        n_sigma=4.0,
+        max_violation_frac=0.05,
+        min_ref_runs=RUNS,
+        min_test_runs=RUNS,
+        columns=compare.COLUMNS_EXACT,
+    )
+    assert dimer_comparison.ok, dimer_comparison.summary()
+    for label, runs in (("native NFsim", native_dimers), ("BNG3", bng3_dimers)):
+        compare.qualify_binomial_marginal(
+            runs,
+            "Dimer_species",
+            population=INITIAL_DIMERS,
+            probability=lambda times: np.exp(-K_DIMER_OFF * times),
+            label=label,
+        )
+        for data, columns in runs:
+            units = data[:, columns.index("A_units")]
+            assert np.array_equal(units, np.full_like(units, 2 * INITIAL_DIMERS))
+
+    inventory_cases = {
+        **action_cases,
+        "hybrid.execution": True,
+    }
+    assert len(inventory_cases) == 8 and all(inventory_cases.values())
+
+    target = os.environ.get("BNG3_HYBRID_EVIDENCE_DIR")
+    if target:
+        evidence_dir = Path(target)
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(dimer_xml, evidence_dir / "bng2-dimer-hybrid.xml")
+        shutil.copy2(dimer_hpp, evidence_dir / "bng3-dimer-hybrid.bngl")
+        with (evidence_dir / "dimer-trajectories.csv").open(
+            "w", newline=""
+        ) as output:
+            writer = csv.writer(output)
+            writer.writerow(("engine", "seed", "time", "Dimer_species", "A_units"))
+            for label, runs in (("native-nfsim", native_dimers), ("bng3", bng3_dimers)):
+                for index, (data, columns) in enumerate(runs):
+                    for row in data:
+                        writer.writerow(
+                            (
+                                label,
+                                BASE_SEED + index,
+                                row[columns.index("time")],
+                                row[columns.index("Dimer_species")],
+                                row[columns.index("A_units")],
+                            )
+                        )
+
+        bng2 = oracle_perl._bng2_path()
+        nfsim = _locked_native_nfsim()
+        assert bng2 is not None
+        lock = load_lock()
+        report = {
+            "schema_version": 1,
+            "checks": [
+                "release-hybrid",
+                "release-hybrid-conservation",
+                "release-capability-coverage-150",
+            ],
+            "source": {
+                "revision": _git_revision(ROOT),
+                "dirty": bool(
+                    subprocess.run(
+                        [
+                            "git",
+                            "-C",
+                            str(ROOT),
+                            "status",
+                            "--porcelain",
+                            "--untracked-files=no",
+                        ],
+                        check=True,
+                        capture_output=True,
+                        text=True,
+                    ).stdout.strip()
+                ),
+            },
+            "oracles": {
+                "bng2": {
+                    "revision": _git_revision(bng2.parent),
+                    "script_sha256": hashlib.sha256(bng2.read_bytes()).hexdigest(),
+                    "locked_source_revision": lock["sources"]["bionetgen"]["revision"],
+                },
+                "native_nfsim": {
+                    "revision": lock["sources"]["nfsim"]["revision"],
+                    "binary_sha256": hashlib.sha256(nfsim.read_bytes()).hexdigest(),
+                },
+            },
+            "inventory_cases": {
+                identity: {"passed": True} for identity in inventory_cases
+            },
+            "budget": {
+                "runs_per_engine": RUNS,
+                "first_seed": BASE_SEED,
+                "last_seed": BASE_SEED + RUNS - 1,
+                "single_molecule_t_end": T_END,
+                "dimer_t_end": T_DIMER,
+                "samples_per_trajectory": N_STEPS + 1,
+            },
+            "distributional_comparison": {
+                "columns": "exact",
+                "n_sigma": 4.0,
+                "max_violation_fraction": 0.05,
+                "minimum_runs_per_engine": RUNS,
+            },
+            "scope": {
+                "executed_cases": [
+                    "generate_hybrid_model action defaults/options/errors",
+                    "single-molecule B to A to A_pop conversion",
+                    "whole A-A dimer population conversion and dissociation",
+                ],
+                "limitations": [
+                    "canonical BNG2 generate_hybrid_model does not transform compartment models",
+                    "dynamic threshold changes and repeated conversion cycles are not covered by this aggregate evidence",
+                    "this evidence does not establish full #150 issue acceptance on main",
+                ],
+            },
+            "issue_150_acceptance": "not established by this bounded PR artifact",
+            "semantic_checks": {
+                "release-hybrid": {
+                    "passed": hybrid_comparison.ok,
+                    "points_checked": hybrid_comparison.n_points_checked,
+                    "violations": hybrid_comparison.n_violations,
+                    "worst_z": hybrid_comparison.worst_z,
+                    "runs_per_engine": RUNS,
+                },
+                "release-hybrid-conservation": {
+                    "passed": True,
+                    "analytic_laws": [
+                        f"Binomial({INITIAL_B}, exp(-{K_MAKE} * time)) B_total",
+                        f"Binomial({INITIAL_B}, 1 - exp(-{K_MAKE} * time)) A_total",
+                        f"Binomial({INITIAL_DIMERS}, exp(-{K_DIMER_OFF} * time)) Dimer_species",
+                        f"A_units = {2 * INITIAL_DIMERS} at every dimer sample",
+                    ],
+                },
+                "whole_dimer_native_comparison": {
+                    "passed": dimer_comparison.ok,
+                    "points_checked": dimer_comparison.n_points_checked,
+                    "violations": dimer_comparison.n_violations,
+                    "worst_z": dimer_comparison.worst_z,
+                    "runs_per_engine": RUNS,
+                },
+            },
+            "artifacts": {
+                "hybrid_qualification": "qualification.json",
+                "hybrid_trajectories": "trajectories.csv",
+                "dimer_xml_sha256": hashlib.sha256(dimer_xml.read_bytes()).hexdigest(),
+                "dimer_hpp_sha256": hashlib.sha256(dimer_hpp.read_bytes()).hexdigest(),
+                "dimer_source_sha256": hashlib.sha256(dimer_source.read_bytes()).hexdigest(),
+                "dimer_trajectories": "dimer-trajectories.csv",
+            },
+        }
+        (evidence_dir / "capability-coverage-150.json").write_text(
+            json.dumps(report, indent=2) + "\n"
+        )
 
