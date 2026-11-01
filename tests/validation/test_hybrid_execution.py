@@ -24,7 +24,6 @@ from scripts.ci.oracle_sources import load_lock
 from tests.validation import compare, oracle_nfsim, oracle_perl, runner
 from tests.validation.strict import require_oracle
 
-
 RUNS = 200
 BASE_SEED = 4100
 T_END = 0.1
@@ -216,7 +215,7 @@ end model
 def _write_source(path: Path, *, engine: str, seed: int | None = None) -> Path:
     if engine == "bng2":
         action = (
-            'generate_hybrid_model({overwrite=>1, execute=>1, '
+            "generate_hybrid_model({overwrite=>1, execute=>1, "
             'actions=>["writeXML()"]})'
         )
     elif engine == "bng3":
@@ -239,7 +238,9 @@ def _write_compartment_source(path: Path, action: str) -> Path:
 
 def _locked_native_nfsim() -> Path:
     binary = oracle_nfsim.nfsim_binary()
-    require_oracle(binary is not None, "pinned native NFsim unavailable (set NFSIM_BIN)")
+    require_oracle(
+        binary is not None, "pinned native NFsim unavailable (set NFSIM_BIN)"
+    )
     assert binary is not None
     lock = load_lock()
     expected = lock["oracles"]["nfsim"]["artifact_digest"].split(":", 1)[1]
@@ -258,7 +259,13 @@ def _run_bng2_hybrid(tmp_path: Path) -> Path:
     env["BNGPATH"] = str(bng2.parent)
     env["PERL5LIB"] = str(bng2.parent / "Perl2")
     process = subprocess.run(
-        [os.environ.get("PERL", "perl"), str(bng2), "--outdir", str(tmp_path), str(source)],
+        [
+            os.environ.get("PERL", "perl"),
+            str(bng2),
+            "--outdir",
+            str(tmp_path),
+            str(source),
+        ],
         cwd=tmp_path,
         env=env,
         capture_output=True,
@@ -315,7 +322,7 @@ def _run_bng2_dimer_hybrid(tmp_path: Path) -> tuple[Path, Path]:
     source = tmp_path / "dimer.bngl"
     source.write_text(
         DIMER_CONVERSION_MODEL
-        + '\nbegin actions\n'
+        + "\nbegin actions\n"
         + 'generate_hybrid_model({overwrite=>1, execute=>1, actions=>["writeXML()"]})\n'
         + "end actions\n"
     )
@@ -347,8 +354,17 @@ def _run_native_dimer_ensemble(xml: Path, tmp_path: Path):
         output = work_dir / "dimer.gdat"
         result = subprocess.run(
             [
-                str(binary), "-xml", str(xml), "-o", str(output),
-                "-sim", str(T_DIMER), "-oSteps", str(N_STEPS), "-seed", str(seed),
+                str(binary),
+                "-xml",
+                str(xml),
+                "-o",
+                str(output),
+                "-sim",
+                str(T_DIMER),
+                "-oSteps",
+                str(N_STEPS),
+                "-seed",
+                str(seed),
                 "-cb",
             ],
             cwd=work_dir,
@@ -431,8 +447,7 @@ def _run_compartment_native_pair(tmp_path: Path):
         )
         source = work_dir / "compartment.bngl"
         source.write_text(
-            COMPARTMENT_NATIVE_MODEL
-            + f"\nbegin actions\n{action}\nend actions\n"
+            COMPARTMENT_NATIVE_MODEL + f"\nbegin actions\n{action}\nend actions\n"
         )
         bionetgen.load(source).execute()
         output = work_dir / "compartment_hpp.gdat"
@@ -452,7 +467,7 @@ def _run_compartment_native_pair(tmp_path: Path):
 def _write_cycle_source(path: Path, *, engine: str, seed: int | None = None) -> Path:
     if engine == "bng2":
         action = (
-            'generate_hybrid_model({overwrite=>1, execute=>1, '
+            "generate_hybrid_model({overwrite=>1, execute=>1, "
             'actions=>["writeXML()"]})'
         )
     elif engine == "bng3":
@@ -464,7 +479,9 @@ def _write_cycle_source(path: Path, *, engine: str, seed: int | None = None) -> 
         )
     else:
         raise ValueError(engine)
-    path.write_text(CYCLE_CONVERSION_MODEL + f"\nbegin actions\n{action}\nend actions\n")
+    path.write_text(
+        CYCLE_CONVERSION_MODEL + f"\nbegin actions\n{action}\nend actions\n"
+    )
     return path
 
 
@@ -478,7 +495,13 @@ def _run_bng2_cycle_hybrid(tmp_path: Path) -> tuple[Path, Path]:
     env["BNGPATH"] = str(bng2.parent)
     env["PERL5LIB"] = str(bng2.parent / "Perl2")
     result = subprocess.run(
-        [os.environ.get("PERL", "perl"), str(bng2), "--outdir", str(tmp_path), str(source)],
+        [
+            os.environ.get("PERL", "perl"),
+            str(bng2),
+            "--outdir",
+            str(tmp_path),
+            str(source),
+        ],
         cwd=tmp_path,
         env=env,
         capture_output=True,
@@ -518,9 +541,7 @@ def _run_bng3_cycle_ensemble(tmp_path: Path):
     for seed in range(BASE_SEED, BASE_SEED + RUNS):
         work_dir = tmp_path / f"bng3-cycle-{seed}"
         work_dir.mkdir()
-        source = _write_cycle_source(
-            work_dir / "cycle.bngl", engine="bng3", seed=seed
-        )
+        source = _write_cycle_source(work_dir / "cycle.bngl", engine="bng3", seed=seed)
         bionetgen.load(source).execute()
         output = work_dir / "cycle_hpp.gdat"
         assert output.is_file(), f"BNG3 cycle seed {seed}: missing trajectory"
@@ -533,15 +554,13 @@ def _run_bng3_cycle_ensemble(tmp_path: Path):
     return runs, first_hpp
 
 
-def _write_protocol_source(
-    path: Path, *, engine: str, seed: int | None = None
-) -> Path:
+def _write_protocol_source(path: Path, *, engine: str, seed: int | None = None) -> Path:
     if engine == "bng2":
         model = PROTOCOL_CONVERSION_MODEL.replace(
             f"k_make {K_PROTOCOL_INITIAL}", f"k_make {K_PROTOCOL_RATE}"
         )
         action = (
-            'generate_hybrid_model({overwrite=>1, execute=>1, '
+            "generate_hybrid_model({overwrite=>1, execute=>1, "
             'actions=>["writeXML()"]})'
         )
     elif engine == "bng3":
@@ -556,7 +575,7 @@ def _write_protocol_source(
             + "})\nend protocol\n"
         )
         action = (
-            'generate_hybrid_model({overwrite=>1, execute=>1, '
+            "generate_hybrid_model({overwrite=>1, execute=>1, "
             'actions=>["simulate_protocol()"]})'
         )
     else:
@@ -580,7 +599,13 @@ def _run_bng2_protocol_hybrid(tmp_path: Path) -> Path:
     env["BNGPATH"] = str(bng2.parent)
     env["PERL5LIB"] = str(bng2.parent / "Perl2")
     result = subprocess.run(
-        [os.environ.get("PERL", "perl"), str(bng2), "--outdir", str(tmp_path), str(source)],
+        [
+            os.environ.get("PERL", "perl"),
+            str(bng2),
+            "--outdir",
+            str(tmp_path),
+            str(source),
+        ],
         cwd=tmp_path,
         env=env,
         capture_output=True,
@@ -607,7 +632,9 @@ def _run_native_protocol_ensemble(xml: Path, tmp_path: Path):
         )
         assert path is not None, f"native NFsim protocol seed {seed}: {error}"
         data, columns = compare.parse_gdat(path)
-        assert data is not None, f"native NFsim protocol seed {seed}: malformed trajectory"
+        assert (
+            data is not None
+        ), f"native NFsim protocol seed {seed}: malformed trajectory"
         runs.append((data, columns))
     return runs
 
@@ -725,7 +752,9 @@ def _check_hybrid_model_action_options(
             "overwrite=>1, actions=>[]",
         )
         if engine == "bng2":
-            assert empty_result is not None and empty_result.returncode == 0, empty_result
+            assert (
+                empty_result is not None and empty_result.returncode == 0
+            ), empty_result
         empty_hpp = tmp_path / f"empty-actions-{engine}" / engine / "model_hpp.bngl"
         assert empty_hpp.is_file()
         assert "## model actions ##" not in empty_hpp.read_text()
@@ -812,7 +841,9 @@ def _check_hybrid_model_action_options(
                 invalid.stdout + invalid.stderr
             )
         else:
-            with pytest.raises(RuntimeError, match="Unrecognized option unsupported_option"):
+            with pytest.raises(
+                RuntimeError, match="Unrecognized option unsupported_option"
+            ):
                 _option_case(
                     engine,
                     tmp_path / f"invalid-option-{engine}",
@@ -1016,7 +1047,9 @@ def _write_compartment_evidence(temp: Path, bng3_runs) -> None:
     evidence_dir.mkdir(parents=True, exist_ok=True)
     generated_hpp = temp / f"compartment-bng3-{BASE_SEED}" / "compartment_hpp.bngl"
     shutil.copy2(generated_hpp, evidence_dir / "compartment-hybrid.bngl")
-    with (evidence_dir / "compartment-trajectories.csv").open("w", newline="") as output:
+    with (evidence_dir / "compartment-trajectories.csv").open(
+        "w", newline=""
+    ) as output:
         writer = csv.writer(output)
         writer.writerow(("engine", "seed", "time", "B1_total", "B2_total", "all_units"))
         for index, (data, columns) in enumerate(bng3_runs):
@@ -1038,7 +1071,14 @@ def _write_compartment_evidence(temp: Path, bng3_runs) -> None:
             "revision": _git_revision(ROOT),
             "dirty": bool(
                 subprocess.run(
-                    ["git", "-C", str(ROOT), "status", "--porcelain", "--untracked-files=no"],
+                    [
+                        "git",
+                        "-C",
+                        str(ROOT),
+                        "status",
+                        "--porcelain",
+                        "--untracked-files=no",
+                    ],
                     check=True,
                     capture_output=True,
                     text=True,
@@ -1046,7 +1086,9 @@ def _write_compartment_evidence(temp: Path, bng3_runs) -> None:
             ),
         },
         "subject": {
-            "generated_hpp_sha256": hashlib.sha256(generated_hpp.read_bytes()).hexdigest(),
+            "generated_hpp_sha256": hashlib.sha256(
+                generated_hpp.read_bytes()
+            ).hexdigest(),
         },
         "budget": {
             "runs_per_engine": RUNS,
@@ -1107,7 +1149,9 @@ def _write_native_compartment_evidence(
         "slice": "independent-native-nfsim-compartment-hpp",
         "acceptance_status": "partial; canonical BNG2 hybrid transformation does not support compartments",
         "source": {"revision": _git_revision(ROOT)},
-        "subject": {"xml_sha256": hashlib.sha256(evidence_xml.read_bytes()).hexdigest()},
+        "subject": {
+            "xml_sha256": hashlib.sha256(evidence_xml.read_bytes()).hexdigest()
+        },
         "oracle": {
             "engine": "native NFsim",
             "revision": lock["sources"]["nfsim"]["revision"],
@@ -1265,9 +1309,9 @@ def test_release_hybrid_conservation_and_analytic_conversion_law(hybrid_ensemble
         for data, columns in runs:
             a = data[:, columns.index("A_total")]
             b = data[:, columns.index("B_total")]
-            assert np.array_equal(a + b, np.full_like(a, INITIAL_B)), (
-                f"{label}: A/B molecule conservation violated"
-            )
+            assert np.array_equal(
+                a + b, np.full_like(a, INITIAL_B)
+            ), f"{label}: A/B molecule conservation violated"
 
 
 @pytest.mark.nf
@@ -1314,9 +1358,9 @@ def test_release_hybrid_population_particle_conversion_cycle(
         for data, columns in runs:
             a = data[:, columns.index("A_total")]
             b = data[:, columns.index("B_total")]
-            assert np.array_equal(a + b, np.full_like(a, INITIAL_B)), (
-                f"{label}: population/particle conservation violated"
-            )
+            assert np.array_equal(
+                a + b, np.full_like(a, INITIAL_B)
+            ), f"{label}: population/particle conservation violated"
 
     evidence_target = os.environ.get("BNG3_HYBRID_EVIDENCE_DIR")
     if evidence_target:
@@ -1324,9 +1368,7 @@ def test_release_hybrid_population_particle_conversion_cycle(
         evidence_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(xml, evidence_dir / "bng2-cycle-hybrid.xml")
         shutil.copy2(hpp, evidence_dir / "bng3-cycle-hybrid.bngl")
-        with (evidence_dir / "cycle-trajectories.csv").open(
-            "w", newline=""
-        ) as output:
+        with (evidence_dir / "cycle-trajectories.csv").open("w", newline="") as output:
             writer = csv.writer(output)
             writer.writerow(("engine", "seed", "time", "A_total", "B_total"))
             for label, runs in (("native-nfsim", native_runs), ("bng3", bng3_runs)):
@@ -1449,7 +1491,10 @@ def test_release_hybrid_protocol_parameter_rate_and_conservation(
         ) as output:
             writer = csv.writer(output)
             writer.writerow(("engine", "seed", "time", "A_total", "B_total"))
-            for label, runs in (("native-nfsim", native_runs), ("bng3-protocol", bng3_runs)):
+            for label, runs in (
+                ("native-nfsim", native_runs),
+                ("bng3-protocol", bng3_runs),
+            ):
                 for index, (data, columns) in enumerate(runs):
                     for row in data:
                         writer.writerow(
@@ -1471,7 +1516,9 @@ def test_release_hybrid_protocol_parameter_rate_and_conservation(
             "case": "pre-run protocol parameter assignment",
             "source": {
                 "revision": _git_revision(ROOT),
-                "native_reference_xml_sha256": hashlib.sha256(xml.read_bytes()).hexdigest(),
+                "native_reference_xml_sha256": hashlib.sha256(
+                    xml.read_bytes()
+                ).hexdigest(),
                 "bng3_hpp_sha256": hashlib.sha256(hpp.read_bytes()).hexdigest(),
             },
             "oracles": {
@@ -1559,9 +1606,7 @@ def test_release_hybrid_whole_dimer_conversion_and_multiplicity(
         evidence_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(xml, evidence_dir / "bng2-dimer-hybrid.xml")
         shutil.copy2(hpp, evidence_dir / "bng3-dimer-hybrid.bngl")
-        with (evidence_dir / "dimer-trajectories.csv").open(
-            "w", newline=""
-        ) as output:
+        with (evidence_dir / "dimer-trajectories.csv").open("w", newline="") as output:
             writer = csv.writer(output)
             writer.writerow(("engine", "seed", "time", "Dimer_species", "A_units"))
             for label, runs in (("native-nfsim", native_runs), ("bng3", bng3_runs)):
@@ -1632,7 +1677,9 @@ def test_release_hybrid_whole_dimer_conversion_and_multiplicity(
 @pytest.mark.parity
 @pytest.mark.stochastic
 @pytest.mark.slow
-def test_release_hybrid_compartment_rates_and_conservation(compartment_hybrid_ensembles):
+def test_release_hybrid_compartment_rates_and_conservation(
+    compartment_hybrid_ensembles,
+):
     """Check compartment rates and observables against independent laws."""
     bng3_runs = compartment_hybrid_ensembles
     fast_production = lambda times: 1.0 - np.exp(-100.0 * times)
@@ -1749,7 +1796,9 @@ def test_release_capability_coverage_150(
             label=label,
         )
         for data, columns in runs:
-            total = data[:, columns.index("A_total")] + data[:, columns.index("B_total")]
+            total = (
+                data[:, columns.index("A_total")] + data[:, columns.index("B_total")]
+            )
             assert np.array_equal(total, np.full_like(total, INITIAL_B))
 
     native_dimers, bng3_dimers, dimer_xml, dimer_hpp, dimer_source = (
@@ -1790,9 +1839,9 @@ def test_release_capability_coverage_150(
         columns=compare.COLUMNS_EXACT,
     )
     assert cycle_comparison.ok, cycle_comparison.summary()
-    cycle_probability_b = lambda times: (K_CYCLE_FORWARD / (K_CYCLE_FORWARD + K_CYCLE_REVERSE)) * (
-        1.0 - np.exp(-(K_CYCLE_FORWARD + K_CYCLE_REVERSE) * times)
-    )
+    cycle_probability_b = lambda times: (
+        K_CYCLE_FORWARD / (K_CYCLE_FORWARD + K_CYCLE_REVERSE)
+    ) * (1.0 - np.exp(-(K_CYCLE_FORWARD + K_CYCLE_REVERSE) * times))
     for label, runs in (("native NFsim", native_cycle), ("BNG3", bng3_cycle)):
         compare.qualify_binomial_marginal(
             runs,
@@ -1809,7 +1858,9 @@ def test_release_capability_coverage_150(
             label=label,
         )
         for data, columns in runs:
-            total = data[:, columns.index("A_total")] + data[:, columns.index("B_total")]
+            total = (
+                data[:, columns.index("A_total")] + data[:, columns.index("B_total")]
+            )
             assert np.array_equal(total, np.full_like(total, INITIAL_B))
 
     native_protocol, bng3_protocol, protocol_xml, protocol_hpp = (
@@ -1842,7 +1893,9 @@ def test_release_capability_coverage_150(
             label=label,
         )
         for data, columns in runs:
-            total = data[:, columns.index("A_total")] + data[:, columns.index("B_total")]
+            total = (
+                data[:, columns.index("A_total")] + data[:, columns.index("B_total")]
+            )
             assert np.array_equal(total, np.full_like(total, INITIAL_B))
 
     inventory_cases = {
@@ -1857,9 +1910,7 @@ def test_release_capability_coverage_150(
         evidence_dir.mkdir(parents=True, exist_ok=True)
         shutil.copy2(dimer_xml, evidence_dir / "bng2-dimer-hybrid.xml")
         shutil.copy2(dimer_hpp, evidence_dir / "bng3-dimer-hybrid.bngl")
-        with (evidence_dir / "dimer-trajectories.csv").open(
-            "w", newline=""
-        ) as output:
+        with (evidence_dir / "dimer-trajectories.csv").open("w", newline="") as output:
             writer = csv.writer(output)
             writer.writerow(("engine", "seed", "time", "Dimer_species", "A_units"))
             for label, runs in (("native-nfsim", native_dimers), ("bng3", bng3_dimers)):
@@ -1877,9 +1928,7 @@ def test_release_capability_coverage_150(
 
         shutil.copy2(cycle_xml, evidence_dir / "bng2-cycle-hybrid.xml")
         shutil.copy2(cycle_hpp, evidence_dir / "bng3-cycle-hybrid.bngl")
-        with (evidence_dir / "cycle-trajectories.csv").open(
-            "w", newline=""
-        ) as output:
+        with (evidence_dir / "cycle-trajectories.csv").open("w", newline="") as output:
             writer = csv.writer(output)
             writer.writerow(("engine", "seed", "time", "A_total", "B_total"))
             for label, runs in (("native-nfsim", native_cycle), ("bng3", bng3_cycle)):
@@ -1902,7 +1951,10 @@ def test_release_capability_coverage_150(
         ) as output:
             writer = csv.writer(output)
             writer.writerow(("engine", "seed", "time", "A_total", "B_total"))
-            for label, runs in (("native-nfsim", native_protocol), ("bng3", bng3_protocol)):
+            for label, runs in (
+                ("native-nfsim", native_protocol),
+                ("bng3", bng3_protocol),
+            ):
                 for index, (data, columns) in enumerate(runs):
                     for row in data:
                         writer.writerow(
@@ -2047,22 +2099,29 @@ def test_release_capability_coverage_150(
                 "hybrid_trajectories": "trajectories.csv",
                 "dimer_xml_sha256": hashlib.sha256(dimer_xml.read_bytes()).hexdigest(),
                 "dimer_hpp_sha256": hashlib.sha256(dimer_hpp.read_bytes()).hexdigest(),
-                "dimer_source_sha256": hashlib.sha256(dimer_source.read_bytes()).hexdigest(),
+                "dimer_source_sha256": hashlib.sha256(
+                    dimer_source.read_bytes()
+                ).hexdigest(),
                 "dimer_trajectories": "dimer-trajectories.csv",
                 "cycle_xml": "bng2-cycle-hybrid.xml",
                 "cycle_xml_sha256": hashlib.sha256(cycle_xml.read_bytes()).hexdigest(),
                 "cycle_hpp": "bng3-cycle-hybrid.bngl",
                 "cycle_hpp_sha256": hashlib.sha256(cycle_hpp.read_bytes()).hexdigest(),
-                "cycle_source_sha256": hashlib.sha256(cycle_source.read_bytes()).hexdigest(),
+                "cycle_source_sha256": hashlib.sha256(
+                    cycle_source.read_bytes()
+                ).hexdigest(),
                 "cycle_trajectories": "cycle-trajectories.csv",
                 "protocol_xml": "bng2-protocol-hybrid.xml",
-                "protocol_xml_sha256": hashlib.sha256(protocol_xml.read_bytes()).hexdigest(),
+                "protocol_xml_sha256": hashlib.sha256(
+                    protocol_xml.read_bytes()
+                ).hexdigest(),
                 "protocol_hpp": "bng3-protocol-hybrid.bngl",
-                "protocol_hpp_sha256": hashlib.sha256(protocol_hpp.read_bytes()).hexdigest(),
+                "protocol_hpp_sha256": hashlib.sha256(
+                    protocol_hpp.read_bytes()
+                ).hexdigest(),
                 "protocol_trajectories": "protocol-trajectories.csv",
             },
         }
         (evidence_dir / "capability-coverage-150.json").write_text(
             json.dumps(report, indent=2) + "\n"
         )
-
