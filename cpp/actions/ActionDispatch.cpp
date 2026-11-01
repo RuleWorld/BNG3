@@ -111,18 +111,42 @@ std::string hybridActionName(const std::string& action) {
     return lowercase(action.substr(0, length));
 }
 
-/// Whether a `generate_hybrid_model` action would simulate the hybrid model.
-///
-/// The generated hybrid model states its populations as molecule types with
-/// population mapping rules.  BNG3 has no population execution semantics, so
-/// simulating the hybrid model would execute the population species as
-/// ordinary molecules and silently change the model's meaning.
+/// Whether an action uses a backend that cannot execute a hybrid model.
+/// NFsim has a population store and population-aware event execution;
+/// finite-network solvers do not.
 bool isHybridSimulationAction(const std::string& name) {
     static const std::set<std::string> simulationActions = {
         "simulate",     "simulate_ode", "simulate_ssa",         "simulate_pla",
         "simulate_nf",  "simulate_rm",  "simulate_psa",         "simulate_protocol",
         "parameter_scan", "bifurcate",  "linearparametersensitivity"};
     return simulationActions.find(name) != simulationActions.end();
+}
+
+/// `simulate({method=>"nf"})` is the long-form alias of `simulate_nf()`.
+/// It reaches the same population-aware event loop and is supported on HPP
+/// models for the same reason.
+bool isHybridNfsimAction(const std::string& requested) {
+    if (hybridActionName(requested) == "simulate_nf") return true;
+    if (hybridActionName(requested) != "simulate") return false;
+
+    std::string compact;
+    compact.reserve(requested.size());
+    for (const unsigned char character : requested) {
+        if (!std::isspace(character))
+            compact.push_back(static_cast<char>(std::tolower(character)));
+    }
+    for (const std::string option : {"method=>nf", "method=>\"nf\"", "method=>'nf'"}) {
+        std::size_t position = compact.find(option);
+        while (position != std::string::npos && position != 0 &&
+               compact[position - 1] != '{' && compact[position - 1] != ',') {
+            position = compact.find(option, position + 1);
+        }
+        if (position == std::string::npos) continue;
+        const auto end = position + option.size();
+        if (end == compact.size() || compact[end] == ',' || compact[end] == '}' ||
+            compact[end] == ')') return true;
+    }
+    return false;
 }
 
 
@@ -2634,12 +2658,18 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             }
         }
 
-        // Direct construction is the default.  XML remains an explicit
-        // compatibility bridge while the direct adapter is being qualified.
+        // Direct construction is the default. Population reaction transforms
+        // are not yet directly constructible, so population models use the
+        // NFcore XML reader that preserves its established count semantics.
         std::string directUnavailableReason;
         bool directSemanticsUnsupported = false;
         const bool modelUsesUnits = bng::compile::featuresUsed(model).contains(
             bng::compile::Feature::Units);
+        const bool modelUsesPopulationTypes = std::any_of(
+            model.getMoleculeTypes().begin(), model.getMoleculeTypes().end(),
+            [](const ast::MoleculeType& moleculeType) {
+                return moleculeType.isPopulation();
+            });
         NFcore::System *nfSystem = NFinput::buildSystemFromAstWithSeedOverrides(
             model,
             useComplex,
@@ -2667,10 +2697,11 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     "NFsim direct AST initialization required but unavailable" +
                     because);
             }
-            if (std::getenv("BNG_NFSIM_ALLOW_XML_FALLBACK") == nullptr) {
+            if (std::getenv("BNG_NFSIM_ALLOW_XML_FALLBACK") == nullptr &&
+                !modelUsesPopulationTypes) {
                 throw std::runtime_error(
                     "NFsim direct AST initialization unavailable" + because +
-                    "; XML fallback disabled "
+                    "; XML fallback disabled for this model "
                     "(set BNG_NFSIM_ALLOW_XML_FALLBACK=1 to opt in)");
             }
             if (modelUsesUnits) {
@@ -4196,16 +4227,15 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             // as BNG2 does (bng2/Perl2/BNGAction.pm executes the `actions`
             // list against the generated hybrid model).  It must not run the
             // original model: the hybrid model is a population/particle
-            // artifact whose population execution refinement BNG3 does not
-            // implement, so simulating the original model here would run a
-            // different model than the one that was generated and would
-            // silently change the model's meaning.  A requested simulation
-            // action on the hybrid model is refused instead, and every other
-            // requested action is dispatched against the hybrid model.
+            // artifact whose population semantics are executed by NFsim. It
+            // must not run the original model, which would silently change
+            // the model's meaning. NFsim is permitted for HPP execution;
+            // finite-network solvers remain unsupported.
             if (hppOpts.execute) {
                 for (const auto& requested : hppOpts.actions) {
                     const std::string name = hybridActionName(requested);
-                    if (isHybridSimulationAction(name)) {
+                    if (isHybridSimulationAction(name) &&
+                        !isHybridNfsimAction(requested)) {
                         throw std::runtime_error(
                             "generate_hybrid_model: execute=>1 requested the action '" +
                             name + "' on the generated hybrid model, but hybrid "
