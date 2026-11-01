@@ -2,6 +2,7 @@ import logging
 
 try:
     import colorlog
+
     _HAS_COLORLOG = True
 except ImportError:
     colorlog = None
@@ -123,7 +124,9 @@ class BNGLogger:
                 else logging.getLogger(module_name)
             )
         if not logger.hasHandlers():
-            handler = colorlog.StreamHandler() if _HAS_COLORLOG else logging.StreamHandler()
+            handler = (
+                colorlog.StreamHandler() if _HAS_COLORLOG else logging.StreamHandler()
+            )
             handler.setFormatter(fmter)
             logger.addHandler(handler)
         logger.setLevel(self.level)
