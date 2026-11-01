@@ -42,6 +42,7 @@ contract rather than pass silently.
 
 from __future__ import annotations
 
+from itertools import product
 from pathlib import Path
 
 from .compare import (
@@ -109,6 +110,55 @@ def _path(size: int) -> str:
     return ".".join(molecules)
 
 
+def _partial_matchings(site_count: int) -> tuple[tuple[tuple[int, int], ...], ...]:
+    """Enumerate partial matchings of sites on different molecules."""
+    def visit(remaining: tuple[int, ...]):
+        if not remaining:
+            yield ()
+            return
+        first, *tail = remaining
+        yield from visit(tuple(tail))
+        first_molecule = first // 2
+        for offset, partner in enumerate(tail):
+            if partner // 2 == first_molecule:
+                continue
+            rest = tuple(tail[:offset] + tail[offset + 1 :])
+            for matching in visit(rest):
+                yield ((first, partner),) + matching
+
+    return tuple(visit(tuple(range(site_count))))
+
+
+def _small_equivalent_site_graphs() -> tuple[str, ...]:
+    """All state-colored graphs through two molecules with two equivalent sites.
+
+    Each molecule has two equivalent ``l`` sites.  The generator enumerates
+    every site-state assignment and every valid partial matching between
+    molecules, including disconnected, one-bond and parallel-bond graphs.
+    """
+    species = []
+    for molecule_count in (1, 2):
+        site_count = 2 * molecule_count
+        for matching in _partial_matchings(site_count):
+            for states in product(("u", "p"), repeat=site_count):
+                bond_ids = {
+                    site: index + 1
+                    for index, pair in enumerate(matching)
+                    for site in pair
+                }
+                molecules = []
+                for molecule in range(molecule_count):
+                    sites = []
+                    for site in range(2 * molecule, 2 * molecule + 2):
+                        component = f"l~{states[site]}"
+                        if site in bond_ids:
+                            component += f"!{bond_ids[site]}"
+                        sites.append(component)
+                    molecules.append("R(" + ",".join(sites) + ")")
+                species.append(".".join(molecules))
+    return tuple(species)
+
+
 def generated_cases() -> tuple[dict, ...]:
     """Return the generated identity cases and their negative controls."""
     cases = [
@@ -169,6 +219,30 @@ def generated_cases() -> tuple[dict, ...]:
                     "A(x!1,y!2).B(x!1).C(x!2)",
                     "A(x!1,y!2).B(x!2).C(x!1)",
                 ),
+            },
+            {
+                "id": "equivalent-site-permutation",
+                "purpose": (
+                    "equivalent sites keep their identity under site permutations, "
+                    "while bond multiplicity stays distinct"
+                ),
+                "molecule_types": "R(l,l)",
+                "compartments": "",
+                "species": (
+                    "R(l!1,l!2).R(l!1,l!2)",
+                    "R(l!8,l!7).R(l!8,l!7)",
+                    "R(l!3,l).R(l!3,l)",
+                ),
+            },
+            {
+                "id": "exhaustive-small-equivalent-sites",
+                "purpose": (
+                    "exhaust all state-colored partial bond matchings through "
+                    "two molecules with two equivalent sites each"
+                ),
+                "molecule_types": "R(l~u~p,l~u~p)",
+                "compartments": "",
+                "species": _small_equivalent_site_graphs(),
             },
         )
     )

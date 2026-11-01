@@ -43,6 +43,15 @@ def test_generated_compartment_controls_separate_the_identity_layers():
         assert len(contract.contract_partition(texts, contract.LAYER_SPECIES)) == 2
 
 
+def test_bounded_exhaustive_family_covers_two_molecule_equivalent_site_graphs():
+    case = _case("exhaustive-small-equivalent-sites")
+    assert len(case["species"]) == 116
+    assert any("." not in species for species in case["species"])
+    assert any("." in species and "!" not in species for species in case["species"])
+    assert any(species.count("!") == 2 for species in case["species"])
+    assert any(species.count("!") == 4 for species in case["species"])
+
+
 def test_contract_spelling_keeps_the_compartments_and_the_bonds():
     assert contract.contract_spelling("@PM:A(x!1)@CP.B(y!1)@PM") == (
         "@PM::A(x!1)@CP.B(y!1)@PM"
@@ -68,7 +77,9 @@ def test_the_native_surfaces_match_the_independent_contract(tmp_path):
         for case in contract.CASES
         for check in contract.CHECKS
     ]
-    assert {row["status"] for row in rows} == {"PASS"}
+    assert {row["status"] for row in rows} == {"PASS"}, [
+        row for row in rows if row["status"] != "PASS"
+    ]
     for row in rows:
         assert row["related_issues"] == [142]
         assert row["identity_relations"] == contract.SURFACE_LAYERS

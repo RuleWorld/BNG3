@@ -459,11 +459,16 @@ void Complex::generateCanonicalLabel ( )
 
         if ( curr_node->isMolecule() )
         {   // this is a molecule
-    	    for ( icomp_nbh=0; icomp_nbh < moltype->getNumOfComponents(); ++icomp_nbh )
-		    {
+            vector<int> component_indices;
+            component_indices.reserve(moltype->getNumOfComponents());
+            for ( icomp_nbh=0; icomp_nbh < moltype->getNumOfComponents(); ++icomp_nbh )
+            {
                 node_index_iter = node_index.find( node_t(mol, icomp_nbh) );
-                labelstream << "!" << node_index_iter->second->getIndex();
+                component_indices.push_back(node_index_iter->second->getIndex());
             }
+            std::sort(component_indices.begin(), component_indices.end());
+            for (const int component_index : component_indices)
+                labelstream << "!" << component_index;
         }
         else
         {   // this is a component

@@ -14,6 +14,7 @@
 #include <pybind11/stl.h>
 
 #include <algorithm>
+#include <climits>
 #include <map>
 #include <memory>
 #include <stdexcept>
@@ -44,7 +45,11 @@ bng::identity::MoleculeKey nfsimMoleculeKey(const NFcore::Molecule* molecule) {
     const int components = type->getNumOfComponents();
     for (int component = 0; component < components; ++component) {
         const int bonds = molecule->isBindingSiteBonded(component) ? 1 : 0;
-        key.components.emplace_back(type->getComponentName(component), bonds);
+        const std::string name =
+            type->isEquivalentComponent(component)
+                ? type->getEquivalenceClassComponentNameFromComponentIndex(component)
+                : type->getComponentName(component);
+        key.components.emplace_back(name, bonds);
     }
     std::sort(key.components.begin(), key.components.end());
     return key;
@@ -99,11 +104,32 @@ void bind_graph_identity(py::module_& m) {
         [](const Model& model) {
             int suggestedTraversalLimit = 0;
             std::string unavailableReason;
+            std::map<std::string, int> moleculesByType;
+            for (const auto& seed : model.getSeedSpecies()) {
+                if (seed.getAmount().kind() != ExpressionKind::Number ||
+                    seed.getAmount().numberValue() != 1.0) {
+                    throw std::runtime_error(
+                        "identity qualification labels require unit numeric seed amounts");
+                }
+                for (const auto& key : bng::identity::moleculeKeys(seed.getGraph())) {
+                    auto& count = moleculesByType[key.type];
+                    if (count == INT_MAX) {
+                        throw std::runtime_error(
+                            "identity qualification model exceeds the NFsim molecule limit");
+                    }
+                    ++count;
+                }
+            }
+            int moleculeLimit = 100;
+            for (const auto& [type, count] : moleculesByType) {
+                (void)type;
+                moleculeLimit = std::max(moleculeLimit, count);
+            }
             std::unique_ptr<NFcore::System> system(NFinput::buildSystemFromAst(
                 model,
                 true,   // useComplex
                 false,  // blockSameComplexBinding
-                100,    // globalMoleculeLimit
+                moleculeLimit,
                 false,  // verbose
                 suggestedTraversalLimit, {}, &unavailableReason));
             if (!system) {
@@ -175,13 +201,20 @@ void bind_graph_identity(py::module_& m) {
                         describeKeys(observed));
                 }
 
-                NFcore::Complex* complex = assigned.front()->getComplex();
-                for (const auto* molecule : assigned) {
-                    if (molecule->getComplex() != complex) {
-                        throw std::runtime_error(
-                            "seed species '" + seed.getPattern() +
-                            "' spans more than one NFsim complex");
-                    }
+                std::map<NFcore::Complex*, std::vector<NFcore::Molecule*>> components;
+                for (auto* molecule : assigned) {
+                    components[molecule->getComplex()].push_back(molecule);
+                }
+                std::vector<std::string> componentLabels;
+                componentLabels.reserve(components.size());
+                for (const auto& [complex, members] : components) {
+                    (void)members;
+                    componentLabels.push_back(complex->getCanonicalLabel());
+                }
+                std::sort(componentLabels.begin(), componentLabels.end());
+                std::string nfsimLabel;
+                for (const auto& label : componentLabels) {
+                    nfsimLabel += std::to_string(label.size()) + ":" + label;
                 }
 
                 py::dict entry;
@@ -190,7 +223,10 @@ void bind_graph_identity(py::module_& m) {
                 entry["molecule_compartments"] =
                     bng::identity::moleculeCompartments(seed.getGraph());
                 entry["network_label"] = seed.getCanonicalLabel();
-                entry["nfsim_label"] = complex->getCanonicalLabel();
+                // A disconnected BNGL seed species creates multiple NFsim
+                // complexes.  Its canonical label is the sorted, framed
+                // concatenation of those independently canonical components.
+                entry["nfsim_label"] = nfsimLabel;
                 species.append(entry);
             }
             for (const auto& [type, activated] : molecules) {

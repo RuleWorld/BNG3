@@ -1994,6 +1994,42 @@
                 "source.revision",
                 "subject.sha256"
               ]
+            },
+            {
+              "id": "graph-identity-contract:exhaustive-small-equivalent-sites:network-canonical-label",
+              "evidence_kind": "supported-execution",
+              "expectation": "For every state-colored partial matching with up to two molecules and two equivalent sites per molecule, the network canonical label and NFsim complex label induce the same partition as the independent isomorphism contract, including disconnected species and false-match pairs.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:exhaustive-small-equivalent-sites:nfsim-canonical-label",
+              "evidence_kind": "supported-execution",
+              "expectation": "For every state-colored partial matching with up to two molecules and two equivalent sites per molecule, the network canonical label and NFsim complex label induce the same partition as the independent isomorphism contract, including disconnected species and false-match pairs.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:exhaustive-small-equivalent-sites:network-species-identity",
+              "evidence_kind": "supported-execution",
+              "expectation": "For every state-colored partial matching with up to two molecules and two equivalent sites per molecule, network species identity matches the independent isomorphism partition, including disconnected species and false-match pairs.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:exhaustive-small-equivalent-sites:shared-identity-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The bounded exhaustive family agrees with the independent identity oracle at every declared layer, and the layer declarations remain nested.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
             }
           ],
           "test_references": [
@@ -2012,7 +2048,7 @@
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "The comparison is bounded to the generated symmetric, compartmental, state and topology families; it does not qualify every molecular graph either encoding can build.",
+            "The comparison exhausts state-colored partial matchings through two molecules with two equivalent sites each, plus generated symmetric, compartmental and topology families; larger graphs and richer site alphabets remain unqualified.",
             "The NFsim complex canonical label is compared as a label; the standalone NFsim binary is not executed by this check.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
@@ -2145,6 +2181,24 @@
               "id": "graph-identity-contract:topology-distinction:shared-identity-contract",
               "evidence_kind": "supported-execution",
               "expectation": "The network label, the NFsim label and the network species identity decide the structure, structure+compartment and species layers of the one shared identity contract, and the differential coverage is retained.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:exhaustive-small-equivalent-sites:network-species-identity",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, NFsim label and network species identity agree with the independent identity contract over the bounded exhaustive equivalent-site family.",
+              "identity_requirements": [
+                "source.revision",
+                "subject.sha256"
+              ]
+            },
+            {
+              "id": "graph-identity-contract:exhaustive-small-equivalent-sites:shared-identity-contract",
+              "evidence_kind": "supported-execution",
+              "expectation": "The network label, NFsim label and network species identity agree with the independent identity contract over the bounded exhaustive equivalent-site family.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"

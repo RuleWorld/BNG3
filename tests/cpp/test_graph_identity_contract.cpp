@@ -202,3 +202,15 @@ end seed species
     // structure and compartment layers.
     CHECK(plainLabel != otherLabel);
 }
+
+TEST_CASE("Issue 142 NFsim labels canonicalize states on equivalent sites",
+          "[issue-142][identity-contract][NFsim]") {
+    const std::string moleculeTypes =
+        "begin molecule types\nR(l~u~p,l~u~p)\nend molecule types\n";
+    const std::string first = moleculeTypes +
+        "begin seed species\nR(l~u,l~p) 1\nend seed species\n";
+    const std::string permuted = moleculeTypes +
+        "begin seed species\nR(l~p,l~u) 1\nend seed species\n";
+
+    CHECK(complexLabelOf(first) == complexLabelOf(permuted));
+}
