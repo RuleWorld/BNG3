@@ -4191,8 +4191,27 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         if (actionName == "generate_hybrid_model") {
             engine::HybridModelGenerator::Options hppOpts;
 
+            static const std::set<std::string> hppOptionNames = {
+                "actions", "execute", "exact", "overwrite", "prefix",
+                "safe", "suffix", "verbose"};
+            for (const auto& [key, value] : action.arguments) {
+                (void)value;
+                if (hppOptionNames.find(key) == hppOptionNames.end()) {
+                    throw std::runtime_error(
+                        "Unrecognized option " + key +
+                        " in call to generate_hybrid_model");
+                }
+            }
+
             const auto safeText = lowercase(stripQuotes(readArgument(action, "safe", "0")));
             hppOpts.safe = (safeText == "1" || safeText == "true");
+            if (action.arguments.find("exact") != action.arguments.end()) {
+                std::cerr << "WARNING: The 'exact' option has been renamed 'safe'; "
+                             "please use 'safe' in the future.\n";
+                const auto exactText =
+                    lowercase(stripQuotes(readArgument(action, "exact", "0")));
+                hppOpts.safe = hppOpts.safe || exactText == "1" || exactText == "true";
+            }
 
             const auto executeText = lowercase(stripQuotes(readArgument(action, "execute", "0")));
             hppOpts.execute = (executeText == "1" || executeText == "true");
@@ -4225,6 +4244,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             const auto actionsText = readArgument(action, "actions", "");
             if (!actionsText.empty()) {
                 hppOpts.actions = parseQuotedStringList(actionsText, "actions");
+                if (hppOpts.actions.size() == 1 &&
+                    hppOpts.actions.front() == "__BNG3_EMPTY_HYBRID_ACTION_LIST__") {
+                    hppOpts.actions.clear();
+                }
             }
 
             engine::HybridModelGenerator gen(model);
