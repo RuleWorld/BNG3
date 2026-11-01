@@ -1163,15 +1163,13 @@ def main(argv=None):
                     "quantity-laws": "tests/validation/integrated_marginals.py",
                     "bngir-adversarial": "tests/validation/bngir_adversarial.py",
                     "graph-identity": "tests/validation/graph_identity.py",
-                    "graph-identity-contract": [
-                        "tests/validation/graph_identity_contract.py",
-                        "cpp/core/IdentityContract.hpp",
-                    ],
+                    "graph-identity-contract": "tests/validation/graph_identity_contract.py",
                 }[row["stage"]]
             ]
             if row["stage"] == "graph-identity":
                 row["question"] = "native-network-graph-identity-vs-independent-oracle"
             if row["stage"] == "graph-identity-contract":
+                row["source_locations"].append("cpp/core/IdentityContract.hpp")
                 row["question"] = (
                     "both-native-graph-encodings-vs-one-independent-identity-contract"
                 )
