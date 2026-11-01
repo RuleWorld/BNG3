@@ -101,7 +101,7 @@ def test_fresh_continuation_reset_setter_and_exception_recovery():
         model.simulate(
             **_ode_options(2.0, 3.0),
             continue_simulation=True,
-            stop_if="__s4_missing_stop_name__ > 0",
+            stop_if="if(time > 2.0, __s4_missing_stop_name__, 0)",
         )
     assert model._network is not None
     assert model._network_from_continuation
