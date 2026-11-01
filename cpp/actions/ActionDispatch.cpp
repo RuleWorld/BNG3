@@ -1715,6 +1715,21 @@ void runSimulation(
         }
     }
 
+    const auto actionName = lowercase(action.name);
+    if (actionName == "simulate" &&
+        action.arguments.find("method") == action.arguments.end() &&
+        compiledOptions != nullptr &&
+        compiledOptions->methodDiagnostic.has_value()) {
+        throw std::runtime_error(compiledOptions->methodDiagnostic->message);
+    }
+    if (actionName == "simulate" &&
+        action.arguments.find("n_steps") != action.arguments.end() &&
+        action.arguments.find("n_output_steps") != action.arguments.end()) {
+        throw std::runtime_error(
+            "'n_steps' and 'n_output_steps' are the same thing, cannot define both. "
+            "Please only define one ('n_output_steps' is preferred).");
+    }
+
     const auto method = resolveSimulationMethod(action);
     const auto tEnd = stripQuotes(readArgument(action, "t_end", ""));
     const auto nSteps = stripQuotes(readArgument(action, "n_steps", stripQuotes(readArgument(action, "n_output_steps", ""))));
@@ -1785,6 +1800,8 @@ void runSimulation(
         if (opts.nSteps == 0) {
             throw std::runtime_error("n_steps must be positive");
         }
+    } else if (compiledOptions != nullptr && compiledOptions->nSteps.has_value()) {
+        opts.nSteps = *compiledOptions->nSteps;
     }
 
     // Parse t_start (BNG2 parity)
@@ -1800,7 +1817,16 @@ void runSimulation(
         std::cerr << "WARNING: n_steps and sample_times both defined. "
                      "n_steps takes precedence.\n";
     } else if (hasSampleTimes) {
+        if (compiledOptions != nullptr &&
+            compiledOptions->sampleTimesDiagnostic.has_value()) {
+            throw std::runtime_error(
+                compiledOptions->sampleTimesDiagnostic->message);
+        }
         opts.sampleTimes = parseSampleTimes(sampleTimesText, model);
+        if (actionName == "simulate" && opts.sampleTimes.size() < 3) {
+            throw std::runtime_error(
+                "'sample_times' array must contain 3 or more points");
+        }
         if (tEnd.empty()) {
             opts.tEnd = opts.sampleTimes.back();
         } else if (opts.sampleTimes.back() > opts.tEnd) {
@@ -1829,12 +1855,23 @@ void runSimulation(
         opts.method = "rk4";
     } else if (method == "pla") {
         opts.method = "pla";
+    } else if (method == "psa") {
+        opts.method = "psa";
     } else {
         opts.method = "cvode";  // Default to CVODE (matches BNG2)
     }
 
-    // Parse seed for SSA/PLA
-    if (opts.method == "ssa" || opts.method == "pla") {
+    const auto printActiveText = lowercase(
+        stripQuotes(readArgument(action, "print_n_species_active", "0")));
+    const bool printActiveSpecies = printActiveText != "" && printActiveText != "0";
+    if (printActiveSpecies && opts.method != "cvode" && opts.method != "euler" &&
+        opts.method != "rk4" && opts.method != "ssa") {
+        throw std::runtime_error(
+            "print_n_species_active is currently supported only for ODE and single-trajectory SSA methods");
+    }
+
+    // Parse seed for stochastic finite-network methods.
+    if (opts.method == "ssa" || opts.method == "pla" || opts.method == "psa") {
         const auto seedText = readArgument(action, "seed", "");
         if (!seedText.empty()) {
             opts.seed = static_cast<unsigned int>(parseScalarValue(seedText, model));
@@ -1859,6 +1896,10 @@ void runSimulation(
         // "auto" (default) picks the best compiled-in backend that has a device;
         // "cuda"/"metal" force one, "none" forces the CPU pool.
         opts.batchGpuBackend = stripQuotes(readArgument(action, "batch_gpu_backend", "auto"));
+    }
+    if (printActiveSpecies && opts.method == "ssa" && opts.batchSize > 0) {
+        throw std::runtime_error(
+            "print_n_species_active does not support batch SSA");
     }
 
     // BNG2's Perl action path defaults both CVODE tolerances to 1e-8. Keep
@@ -1947,14 +1988,20 @@ void runSimulation(
     // When continue=1 and no explicit t_start, use the previous simulation's end time
     if (continueSimulation && tStartText.empty() && lastSimulationEndTime > 0.0) {
         opts.tStart = lastSimulationEndTime;
-        // BNG2 treats t_end as the duration of a continued run when t_start
-        // is omitted. Explicit sample_times remain absolute timestamps.
-        if (!tEnd.empty() && !hasSampleTimes) {
-            opts.tEnd += lastSimulationEndTime;
-        }
+        // BNG2 keeps t_end as the absolute endpoint for a continued run.
     }
 
     // Parse save_progress flag (BNG2 parity: write .net checkpoint at each output step)
+    const bool explicitlySetsSaveProgress =
+        action.arguments.find("save_progress") != action.arguments.end();
+    const bool explicitlySetsPrintNet =
+        action.arguments.find("print_net") != action.arguments.end();
+    if (explicitlySetsSaveProgress && explicitlySetsPrintNet) {
+        throw std::runtime_error(
+            "'print_net' and 'save_progress' are the same thing, cannot define both. "
+            "Please only define one ('save_progress' is preferred).");
+    }
+
     const auto saveProgressText = lowercase(stripQuotes(readArgument(action, "save_progress", "0")));
     opts.saveProgress = (saveProgressText == "1" || saveProgressText == "true");
 
@@ -1971,6 +2018,19 @@ void runSimulation(
 
     // Parse netfile option (BNG2 parity: use custom .net file instead of auto-generating)
     opts.netfile = stripQuotes(readArgument(action, "netfile", ""));
+    if (!opts.netfile.empty()) {
+        const auto extension = lowercase(
+            std::filesystem::path(opts.netfile).extension().string());
+        if (extension.find("net") == std::string::npos) {
+            throw std::runtime_error(
+                "File " + opts.netfile + " does not have .net suffix");
+        }
+    }
+
+    const auto expandMode = stripQuotes(readArgument(action, "expand", "lazy"));
+    if (expandMode != "lazy" && expandMode != "layered") {
+        throw std::runtime_error("Unrecognized expand method " + expandMode);
+    }
 
     // Parse output_step_interval (BNG2 parity: output every N internal steps, mainly for SSA/PLA)
     const auto outputStepIntervalText = readArgument(action, "output_step_interval", "");
@@ -1985,6 +2045,7 @@ void runSimulation(
     if (!maxSimStepsText.empty()) {
         opts.maxSimSteps = parseNonNegativeCount(
             maxSimStepsText, model, "max_sim_steps");
+        opts.maxSimStepsSpecified = true;
     }
 
     // Parse sparse option (request sparse Jacobian for large networks)
@@ -2022,7 +2083,8 @@ void runSimulation(
         throw std::runtime_error(
             "output_step_interval requires an SSA simulation method");
     }
-    if (opts.method != "ssa" && opts.method != "psa" && opts.maxSimSteps > 0) {
+    if (opts.method != "ssa" && opts.method != "psa" &&
+        (opts.maxSimSteps > 0 || opts.maxSimStepsSpecified)) {
         throw std::runtime_error(
             "max_sim_steps requires an SSA or PSA simulation method");
     }
@@ -2124,6 +2186,10 @@ void runSimulation(
     } else {
         integrator.writeOutputFiles(outputPrefix.string(), result, opts.printCDAT, opts.printFunctions, continueSimulation);
     }
+    if (printActiveSpecies) {
+        integrator.writeSpeciesStatsFile(
+            outputPrefix.string(), result, continueSimulation);
+    }
     // Write std-dev file (.bdat) when running in batch SSA mode
     if (result.batchSize > 0 && !opts.binaryOutput) {
         integrator.writeBatchStdDevsFile(outputPrefix.string(), result);
@@ -2176,6 +2242,22 @@ void runSimulation(
         io::NetWriter::write(netPath, model, network);
         if (verbose) {
             std::cerr << "[bng_cpp] print_net: wrote " << netPath.string() << "\n";
+        }
+    }
+
+    // print_end: write the final state to a separate *_end.net file.
+    if (opts.printEnd && !result.concentrations.empty()) {
+        for (std::size_t i = 0;
+             i < network.species.size() &&
+             i < result.concentrations.back().size();
+             ++i) {
+            network.species.get(i).setAmount(result.concentrations.back()[i]);
+        }
+        const auto endNetPath = sourcePath.parent_path() / (prefix + "_end.net");
+        io::NetWriter::write(endNetPath, model, network);
+        if (verbose) {
+            std::cerr << "[bng_cpp] print_end: wrote " << endNetPath.string()
+                      << "\n";
         }
     }
 }
@@ -2545,6 +2627,12 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
     };
 
     const auto runNfSimulation = [&](const ast::Action& action) {
+        const auto printActiveText = lowercase(
+            stripQuotes(readArgument(action, "print_n_species_active", "0")));
+        if (printActiveText != "" && printActiveText != "0") {
+            throw std::runtime_error(
+                "print_n_species_active is currently supported only for ODE and single-trajectory SSA methods");
+        }
         if (model.getEventFormatVersion().has_value()) {
             throw std::runtime_error(ast::kUnsupportedEventExecutionMessage);
         }
