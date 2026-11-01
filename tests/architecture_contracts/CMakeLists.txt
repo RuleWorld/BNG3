@@ -120,6 +120,14 @@ add_test(NAME architecture_nfnext_compartment_rate
 set_tests_properties(architecture_nfnext_compartment_rate PROPERTIES
     LABELS "architecture-future;nfnext" TIMEOUT 180)
 
+add_executable(bng3_nfnext_population_hybrid_contract
+    nfnext/future_contract/test_population_hybrid_contract.cpp)
+target_link_libraries(bng3_nfnext_population_hybrid_contract PRIVATE bng_nfnext)
+add_test(NAME architecture_nfnext_population_hybrid
+    COMMAND bng3_nfnext_population_hybrid_contract)
+set_tests_properties(architecture_nfnext_population_hybrid PROPERTIES
+    LABELS "architecture-future;nfnext" TIMEOUT 180)
+
 add_executable(bng3_nfnext_rng_replay_contract
     nfnext/future_contract/test_rng_replay_concurrency_contract.cpp)
 target_link_libraries(bng3_nfnext_rng_replay_contract PRIVATE bng_nfnext)

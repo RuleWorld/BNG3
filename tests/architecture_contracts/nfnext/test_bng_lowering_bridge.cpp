@@ -158,27 +158,157 @@ void refusesClockDependentParameterRates() {
     }
 }
 
-void refusesUnsupportedUnaryExecution() {
+void executesBimolecularBindingUnbinding() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin parameters
+  kon 0.05
+  koff 0.1
+end parameters
+begin molecule types
+  A(b)
+  B(a)
+end molecule types
+begin seed species
+  A(b) 40
+  B(a) 40
+end seed species
+begin observables
+  Molecules TotalA A()
+  Molecules TotalB B()
+  Molecules BoundAB A(b!1).B(a!1)
+  Species Dimers A(b!1).B(a!1)
+end observables
+begin reaction rules
+  bind: A(b) + B(a) <-> A(b!1).B(a!1) kon, koff
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    nfnext::BngExecutionRequest request;
+    request.sample_times = {0.0, 1.0, 5.0};
+    request.seed = 42;
+    const auto result = nfnext::executeFromBioNetGen(semantic, request);
+    assert((result.columns == std::vector<std::string>{"time", "TotalA", "TotalB", "BoundAB", "Dimers"}));
+    assert(result.rows.size() == 3);
+    assert(result.rows[0] == std::vector<double>({0.0, 40.0, 40.0, 0.0, 0.0}));
+    for (const auto& row : result.rows) {
+        assert(row[1] == 40.0);
+        assert(row[2] == 40.0);
+        assert(row[3] == row[4]);
+    }
+    assert(result.rows[2][3] > 0.0);
+    assert(nfnext::executeFromBioNetGen(semantic, request).rows == result.rows);
+}
+
+void executesSynthesisAndComplexDegradation() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin parameters
+  ks 10.0
+  kd 0.5
+end parameters
+begin molecule types
+  A(x~u~p)
+end molecule types
+begin seed species
+  A(x~u) 0
+end seed species
+begin observables
+  Molecules TotalA A()
+  Molecules PhosA A(x~p)
+end observables
+begin reaction rules
+  synth: 0 -> A(x~u) ks
+  phos: A(x~u) -> A(x~p) 2.0
+  deg: A(x~p) -> 0 kd
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    nfnext::BngExecutionRequest request;
+    request.sample_times = {0.0, 0.5, 1.0};
+    request.seed = 99;
+    const auto result = nfnext::executeFromBioNetGen(semantic, request);
+    assert((result.columns == std::vector<std::string>{"time", "TotalA", "PhosA"}));
+    assert(result.rows.size() == 3);
+    assert(result.rows[0] == std::vector<double>({0.0, 0.0, 0.0}));
+    assert(result.rows[1][1] > 0.0);
+    assert(result.rows[2][1] > 0.0);
+    assert(result.event_count > 0);
+    assert(nfnext::executeFromBioNetGen(semantic, request).rows == result.rows);
+}
+
+void executesComplexSeedModel() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin parameters
+  koff 0.8
+end parameters
+begin molecule types
+  A(b)
+  B(a)
+end molecule types
+begin seed species
+  A(b!1).B(a!1) 30
+end seed species
+begin observables
+  Molecules Bound A(b!1).B(a!1)
+  Molecules TotalA A()
+  Molecules TotalB B()
+  Species TotalSpecies A()
+end observables
+begin reaction rules
+  unbind: A(b!1).B(a!1) -> A(b) + B(a) koff
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    nfnext::BngExecutionRequest request;
+    request.sample_times = {0.0, 1.0, 2.0};
+    request.seed = 123;
+    const auto result = nfnext::executeFromBioNetGen(semantic, request);
+    assert((result.columns == std::vector<std::string>{"time", "Bound", "TotalA", "TotalB", "TotalSpecies"}));
+    assert(result.rows.size() == 3);
+    assert(result.rows[0] == std::vector<double>({0.0, 30.0, 30.0, 30.0, 30.0}));
+    for (const auto& row : result.rows) {
+        assert(row[2] == 30.0);
+        assert(row[3] == 30.0);
+        assert(row[4] == 30.0);
+    }
+    assert(result.rows[1][1] < 30.0);
+    assert(nfnext::executeFromBioNetGen(semantic, request).rows == result.rows);
+}
+
+void refusesUnsupportedExecution() {
     const std::vector<std::string> models = {
-        // Fractional/constant seeds, omitted initial state, graph mutation,
-        // multi-node matching and unsupported observable counting all refuse.
+        // Native events
         "begin parameters\n k 1\nend parameters\n"
         "begin bng3_events version 1\n event \"later\"\n"
         " trigger: time >= 1\n initial_value: false\n persistent: true\n"
         " use_values_from_trigger_time: true\n assignment: k = 0\n"
         " end event\nend bng3_events\n",
-        "begin seed species\n A(x~u) 2\nend seed species\n"
-        "begin reaction rules\n A(x~u) + A(x~p) -> A(x~p) + A(x~p) 1\nend reaction rules\n",
+        // Time-dependent rate
         "begin seed species\n A(x~u) 2\nend seed species\n"
         "begin reaction rules\n A(x~u) -> A(x~p) time()\nend reaction rules\n",
+        // Seed bond wildcard !?
         "begin seed species\n A(x~u!?) 2\nend seed species\n",
+        // Seed bond wildcard !+
+        "begin seed species\n A(x~u!+) 2\nend seed species\n",
+        // Fractional seed amount
         "begin seed species\n A(x~u) 1.5\nend seed species\n",
+        // Seed amount outside the native population-count range
+        "begin seed species\n A(x~u) 1e300\nend seed species\n",
+        // Constant seed species
         "begin seed species\n $A(x~u) 2\nend seed species\n",
+        // Uninitialized stateful site in seed
         "begin seed species\n A(x) 2\nend seed species\n",
+        // Compartments
+        "begin compartments\n c 3 1\nend compartments\n"
+        "begin seed species\n @c:A(x~u) 2\nend seed species\n",
+        // Observable relation constraint
         "begin seed species\n A(x~u) 2\nend seed species\n"
-        "begin reaction rules\n A(x~u) -> 0 1\nend reaction rules\n",
-        "begin seed species\n A(x~u) 2\nend seed species\n"
-        "begin observables\n Species U A(x~u)\nend observables\n",
+        "begin observables\n Molecules U A(x~u)>1\nend observables\n",
     };
     for (const auto& body : models) {
         const auto ast = bng::parser::parseModel(
@@ -748,7 +878,10 @@ end reaction rules
     assert(nonzeroSiteRule.actions[0].value == 1); // A.y~on
 
     executesCanonicalUnaryModel();
-    refusesUnsupportedUnaryExecution();
+    executesBimolecularBindingUnbinding();
+    executesSynthesisAndComplexDegradation();
+    executesComplexSeedModel();
+    refusesUnsupportedExecution();
     refusesClockDependentParameterRates();
     rejectsUnrepresentablePackedSiteIndex();
     rejectsMolecularityNodeIndexOverflow();

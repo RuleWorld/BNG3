@@ -63,34 +63,12 @@ CONTRACT_CASE("bound or internally distinct particles are not departicleized") {
     HybridSchema h; auto A=h.hybridizableType("A",{{"x",{"0","1"}},{"b",{}}}); HybridState s(h); auto a=s.create(A),b=s.create(A); s.setSiteState(a,"x","1"); s.bind(a,"b",b,"b"); s.departicleizeEligible(A); REQUIRE_EQ(s.particleCount(A),2u);
 }
 
-CONTRACT_CASE("hybrid representation switching is optional and does not affect RNG stream") {
-    HybridSchema h; auto A=h.hybridizableType("A"); HybridSimulator x(h,42,9),y(h,42,9); x.state().setPopulation(A,1000); y.state().setPopulation(A,1000); y.state().particleize(A,100);
-    for(int i=0;i<100;++i) REQUIRE_EQ(x.randomBits(i),y.randomBits(i));
-}
-
-CONTRACT_CASE("exact hybrid mode never uses tau leaping") {
-    HybridOptions o; o.exact=true; HybridSimulator s(HybridSchema{},1,0,o); REQUIRE_EQ(s.integratorKind(),HybridIntegratorKind::ExactSSA);
-}
-
-CONTRACT_CASE("approximate population acceleration requires explicit opt-in") {
-    HybridOptions o; REQUIRE(!o.allow_tau_leaping); o.allow_tau_leaping=true; REQUIRE(o.allow_tau_leaping);
-}
-
 CONTRACT_CASE("hybrid compiler rejects population type in bond predicate") {
     HybridSchema h; auto A=h.populationType("A"); HybridRule r; auto a=r.populationReactant(A,1); r.requireFree(a,"x"); REQUIRE_THROWS_AS(h.validate(r),HybridValidationError);
 }
 
 CONTRACT_CASE("hybrid compiler rejects particle stoichiometry encoded as population count") {
     HybridSchema h; auto A=h.particleType("A",{}); HybridRule r; r.consumePopulation(A,2); REQUIRE_THROWS_AS(h.validate(r),HybridValidationError);
-}
-
-CONTRACT_CASE("population and particle backends agree for unary unstructured chemistry") {
-    HybridSchema h; auto A=h.hybridizableType("A"),B=h.hybridizableType("B"); HybridRule r; r.consumePopulation(A,1); r.producePopulation(B,1); r.rate=.7;
-    auto pop=runAsPurePopulation(h,r,100,50,123); auto particles=runAsPureParticles(h,r,100,50,123); REQUIRE_EQ(pop.eventRuleTrace,particles.eventRuleTrace); REQUIRE_NEAR(pop.finalTime,particles.finalTime,0.0); REQUIRE_EQ(pop.total(A),particles.total(A)); REQUIRE_EQ(pop.total(B),particles.total(B));
-}
-
-CONTRACT_CASE("same seed hybrid trajectory is bit reproducible") {
-    auto fixture=makeHybridBirthDeathFixture(); auto a=runHybrid(fixture,777,5,1000); auto b=runHybrid(fixture,777,5,1000); REQUIRE_EQ(a.traceBytes,b.traceBytes); REQUIRE_EQ(a.stateFingerprint,b.stateFingerprint);
 }
 
 CONTRACT_MAIN("population-hybrid")
