@@ -272,7 +272,7 @@ def test_hybrid_model_generation_preserves_protocol_execution(tmp_path):
     source.write_text(
         """begin model
 begin parameters
-  k_make 10
+  k_make 0.1
   k_map 10
   N 20
 end parameters
@@ -294,6 +294,7 @@ begin population maps
   A() -> A_pop() k_map
 end population maps
 begin protocol
+  setParameter("k_make", 10)
   simulate_nf({prefix=>\"protocol_hpp\", t_end=>0.1, n_steps=>4, seed=>23})
 end protocol
 end model
@@ -317,8 +318,10 @@ end actions
     assert float(rows[-1][0]) == pytest.approx(0.1)
     final = [float(value) for value in rows[-1]]
     assert final[columns.index("A_total")] + final[columns.index("B_total")] == pytest.approx(20)
+    assert final[columns.index("B_total")] < 15
     hybrid = (tmp_path / "protocol_hybrid_hpp.bngl").read_text()
     assert "begin protocol" in hybrid
+    assert 'setParameter("k_make", 10)' in hybrid
     assert 'simulate_nf({' in hybrid
     assert 'prefix=>"protocol_hpp"' in hybrid
 
