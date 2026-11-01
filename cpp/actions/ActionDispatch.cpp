@@ -2005,6 +2005,14 @@ void runSimulation(
 
     // Parse netfile option (BNG2 parity: use custom .net file instead of auto-generating)
     opts.netfile = stripQuotes(readArgument(action, "netfile", ""));
+    if (!opts.netfile.empty()) {
+        const auto extension = lowercase(
+            std::filesystem::path(opts.netfile).extension().string());
+        if (extension.find("net") == std::string::npos) {
+            throw std::runtime_error(
+                "File " + opts.netfile + " does not have .net suffix");
+        }
+    }
 
     // Parse output_step_interval (BNG2 parity: output every N internal steps, mainly for SSA/PLA)
     const auto outputStepIntervalText = readArgument(action, "output_step_interval", "");

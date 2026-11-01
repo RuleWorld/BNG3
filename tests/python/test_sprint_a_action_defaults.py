@@ -101,3 +101,20 @@ def test_bngl_zero_max_sim_steps_stops_at_initial_state(tmp_path, method):
     assert rows
     assert all(row[0] == 0.0 for row in rows)
     assert all(row[1:] == [10.0, 0.0] for row in rows)
+
+
+def test_bngl_simulate_rejects_non_net_custom_netfile_suffix(tmp_path):
+    source = tmp_path / "invalid_netfile_suffix.bngl"
+    source.write_text(
+        SOURCE
+        + "\nbegin actions\n"
+        + '  simulate({method=>"ode",t_end=>1,n_steps=>2,netfile=>"input.txt"})\n'
+        + "end actions\n",
+        encoding="utf-8",
+    )
+    bng_cpp = Path(__file__).resolve().parents[2] / "build/cpp/bng_cpp"
+
+    _, gdat, error = runner.run_cli_path(bng_cpp, source, tmp_path / "run")
+
+    assert gdat is None
+    assert "File input.txt does not have .net suffix" in error
