@@ -112,6 +112,7 @@ def _path(size: int) -> str:
 
 def _partial_matchings(site_count: int) -> tuple[tuple[tuple[int, int], ...], ...]:
     """Enumerate partial matchings of sites on different molecules."""
+
     def visit(remaining: tuple[int, ...]):
         if not remaining:
             yield ()
