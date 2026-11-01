@@ -90,14 +90,18 @@ def verify_manifest(root: Path = ROOT) -> dict[str, dict]:
             check_id = check["id"]
             if check_id not in EXPECTED_CHECKS:
                 continue
-            if check_id in checks and checks[check_id] != check:
+            if check_id in checks and checks[check_id]["definition"] != check:
                 _fail(f"conflicting manifest definition for {check_id}")
-            checks[check_id] = check
+            entry = checks.setdefault(
+                check_id, {"definition": check, "test_references": []}
+            )
+            entry["test_references"].extend(obligation.get("test_references", []))
     missing = set(EXPECTED_CHECKS) - set(checks)
     if missing:
         _fail(f"manifest is missing required checks: {sorted(missing)}")
     if not all(
-        checks[check_id].get("identity_requirements") for check_id in EXPECTED_CHECKS
+        checks[check_id]["definition"].get("identity_requirements")
+        for check_id in EXPECTED_CHECKS
     ):
         _fail("a required Issue 142 check has no source/oracle identity requirements")
     expected_test_refs = {
@@ -106,9 +110,7 @@ def verify_manifest(root: Path = ROOT) -> dict[str, dict]:
         "release-obligation-142": "scripts/ci/record_issue142_release.py",
     }
     for check_id, reference in expected_test_refs.items():
-        if not any(
-            reference in item for item in checks[check_id].get("test_references", [])
-        ):
+        if not any(reference in item for item in checks[check_id]["test_references"]):
             _fail(f"manifest does not map {check_id} to {reference}")
     return checks
 
