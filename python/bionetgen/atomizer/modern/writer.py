@@ -7698,16 +7698,17 @@ def generate_bngl(
     native_dae_runtime: bool = False,
 ) -> BNGLGenerationResult:
     import_warnings_before_generation = copy.deepcopy(model.import_warnings)
-    unsupported_constraint = next(
+    unsupported_import = next(
         (
             warning
             for warning in map(coerce_import_warning, model.import_warnings)
-            if warning.category == "constraint" and warning.severity == "dropped"
+            if warning.category in {"constraint", "compFlattening"}
+            and warning.severity == "dropped"
         ),
         None,
     )
-    if unsupported_constraint is not None:
-        raise ValueError(unsupported_constraint.message)
+    if unsupported_import is not None:
+        raise ValueError(unsupported_import.message)
     native_algebraic_supported = False
     if native_dae_runtime and any(rule.type == "algebraic" for rule in model.rules):
         try:
