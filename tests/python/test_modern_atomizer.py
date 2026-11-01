@@ -788,8 +788,12 @@ def test_playground_parser_emits_import_warning_codes_and_counts():
           level="3" version="1">
       <model id="warning_fixture">
         <listOfConstraints>
-          <constraint><math formula="1"/></constraint>
-          <constraint><math formula="2"/></constraint>
+          <constraint><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><gt/><ci>A</ci><cn>0</cn></apply>
+          </math></constraint>
+          <constraint><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><gt/><ci>A</ci><cn>1</cn></apply>
+          </math></constraint>
         </listOfConstraints>
       </model>
     </sbml>
@@ -814,13 +818,13 @@ def test_playground_parser_emits_import_warning_codes_and_counts():
     constraint_messages = [
         message
         for message in warnings
-        if message.code == "SBM022" and "constraint" in message.message
+        if message.code == "SBM020" and "constraint" in message.message
     ]
     assert [(message.code, message.message) for message in constraint_messages] == [
         (
-            "SBM022",
-            "[constraint] 2 SBML constraint element(s) present; "
-            "constraints are not enforced during simulation. (x2)",
+            "SBM020",
+            "[constraint] 2 SBML constraint element(s) cannot be preserved: "
+            "state-dependent constraint cannot be checked during execution (x2)",
         )
     ]
 
@@ -903,7 +907,9 @@ def test_playground_parser_reports_unsupported_packages_events_and_constraints()
           level="3" version="1">
       <model id="unsupported">
         <listOfConstraints>
-          <constraint><math formula="1"/></constraint>
+          <constraint><math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><gt/><ci>A</ci><cn>0</cn></apply>
+          </math></constraint>
         </listOfConstraints>
         <listOfRules>
           <algebraicRule><math formula="x - 1"/></algebraicRule>
@@ -936,7 +942,7 @@ def test_playground_parser_reports_unsupported_packages_events_and_constraints()
         for w in warnings
     )
     assert any(
-        w["category"] == "constraint" and w["severity"] == "info" for w in warnings
+        w["category"] == "constraint" and w["severity"] == "dropped" for w in warnings
     )
 
 

@@ -14,6 +14,7 @@ import ast
 import copy
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
+from fractions import Fraction
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional, Sequence, Set
 from urllib.parse import unquote, urlsplit
@@ -3260,6 +3261,121 @@ class SBMLParser:
         return str(_attribute(math_element, "formula", "") or "").strip()
 
     @staticmethod
+    def _constant_constraint_value(constraint: Any) -> Optional[bool]:
+        """Evaluate only literal Boolean constraints without model symbols.
+
+        SBML constraints apply for the whole simulation.  A literal result is
+        therefore safe to fold; expressions that reference model state must
+        remain unsupported until the simulation runtime checks them.
+        """
+        math_element = _first_child(constraint, "math")
+        if math_element is None:
+            return None
+
+        def evaluate(node: Any) -> Optional[Any]:
+            name = _local_name(getattr(node, "tag", "")).lower()
+            if name == "true":
+                return True
+            if name == "false":
+                return False
+            if name == "cn":
+                number_type = str(_attribute(node, "type", "real") or "real").lower()
+                try:
+                    if number_type == "rational":
+                        separator = next(
+                            (
+                                child
+                                for child in list(node)
+                                if _local_name(child.tag) == "sep"
+                            ),
+                            None,
+                        )
+                        if separator is None or len(list(node)) != 1:
+                            return None
+                        return Fraction(
+                            int((node.text or "").strip()),
+                            int((separator.tail or "").strip()),
+                        )
+                    if number_type == "e-notation":
+                        separator = next(
+                            (
+                                child
+                                for child in list(node)
+                                if _local_name(child.tag) == "sep"
+                            ),
+                            None,
+                        )
+                        if separator is None or len(list(node)) != 1:
+                            return None
+                        exponent = int((separator.tail or "").strip())
+                        if abs(exponent) > 308:
+                            return None
+                        scale = (
+                            Fraction(10**exponent)
+                            if exponent >= 0
+                            else Fraction(1, 10**-exponent)
+                        )
+                        return Fraction((node.text or "").strip()) * scale
+                    if number_type not in {"integer", "real"} or list(node):
+                        return None
+                    return Fraction((node.text or "").strip())
+                except (ValueError, ZeroDivisionError):
+                    return None
+            if name != "apply":
+                return None
+            children = list(node)
+            if len(children) < 2:
+                return None
+            operator = _local_name(getattr(children[0], "tag", "")).lower()
+            values = [evaluate(child) for child in children[1:]]
+            if any(value is None for value in values):
+                return None
+            try:
+                if (
+                    operator == "not"
+                    and len(values) == 1
+                    and isinstance(values[0], bool)
+                ):
+                    return not bool(values[0])
+                if operator in {"and", "or", "xor"} and all(
+                    isinstance(value, bool) for value in values
+                ):
+                    if operator == "and":
+                        return all(values)
+                    if operator == "or":
+                        return any(values)
+                    return sum(values) % 2 == 1
+                if len(values) == 2:
+                    left, right = values
+                    if operator in {"lt", "leq", "gt", "geq"} and (
+                        isinstance(left, bool) or isinstance(right, bool)
+                    ):
+                        return None
+                    if operator in {"eq", "neq"} and type(left) is not type(right):
+                        return None
+                    if operator == "lt":
+                        return left < right
+                    if operator == "leq":
+                        return left <= right
+                    if operator == "gt":
+                        return left > right
+                    if operator == "geq":
+                        return left >= right
+                    if operator == "eq":
+                        return left == right
+                    if operator == "neq":
+                        return left != right
+            except (TypeError, ValueError, OverflowError, ZeroDivisionError):
+                return None
+            return None
+
+        children = list(math_element)
+        if len(children) != 1:
+            return None
+        value = evaluate(children[0])
+        return value if isinstance(value, bool) else None
+
+    @staticmethod
     def _mathml_import_warnings(root: Any) -> List[Dict[str, Any]]:
         """Collect the source parser's diagnostics for lossy MathML constructs."""
 
@@ -3975,16 +4091,27 @@ class SBMLParser:
         result.multi_compartment_references = dict(multi.compartment_references)
         result.multi_numeric_values = dict(multi.numeric_values)
         result.multi_executable = multi.executable
-        if result.constraint_count:
+        constraints = SBMLParser._xml_items(model, "listOfConstraints", "constraint")
+        unresolved_constraints = []
+        for constraint in constraints:
+            value = SBMLParser._constant_constraint_value(constraint)
+            if value is False:
+                unresolved_constraints.append("constraint is false at t=0")
+            elif value is None:
+                unresolved_constraints.append(
+                    "state-dependent constraint cannot be checked during execution"
+                )
+        if unresolved_constraints:
             result.import_warnings.append(
                 {
                     "category": "constraint",
                     "message": (
-                        f"{result.constraint_count} SBML constraint element(s) present; "
-                        "constraints are not enforced during simulation."
+                        f"{len(unresolved_constraints)} SBML constraint element(s) "
+                        "cannot be preserved: "
+                        + "; ".join(dict.fromkeys(unresolved_constraints))
                     ),
-                    "count": result.constraint_count,
-                    "severity": "info",
+                    "count": len(unresolved_constraints),
+                    "severity": "dropped",
                 }
             )
         if native_dae_runtime:
