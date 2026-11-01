@@ -13,15 +13,17 @@ import hashlib
 import csv
 import json
 import os
+import platform
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 import numpy as np
 import pytest
 
 from scripts.ci.oracle_sources import load_lock
-from tests.validation import compare, oracle_nfsim, oracle_perl, runner
+from tests.validation import campaign, compare, oracle_nfsim, oracle_perl, runner
 from tests.validation.strict import require_oracle
 
 RUNS = 200
@@ -243,10 +245,83 @@ def _locked_native_nfsim() -> Path:
     )
     assert binary is not None
     lock = load_lock()
-    expected = lock["oracles"]["nfsim"]["artifact_digest"].split(":", 1)[1]
+    oracle = lock["oracles"]["nfsim"]
+    source = lock["sources"][oracle["source"]]
+    campaign.verify_source(_nfsim_source_root(binary), source)
     actual = hashlib.sha256(binary.read_bytes()).hexdigest()
-    require_oracle(actual == expected, f"native NFsim digest mismatch: {actual}")
+    recipe = oracle["build_recipe"].lower()
+    locked_platform = "darwin" if "macos" in recipe else None
+    locked_arch = "arm64" if "arm64" in recipe else None
+    same_build_platform = locked_platform is None or (
+        platform.system().lower() == locked_platform
+        and (
+            locked_arch is None
+            or platform.machine().lower() in {locked_arch, "aarch64"}
+        )
+    )
+    if same_build_platform:
+        expected = oracle["artifact_digest"].split(":", 1)[1]
+        require_oracle(actual == expected, f"native NFsim digest mismatch: {actual}")
     return binary
+
+
+def _nfsim_source_root(binary: Path) -> Path:
+    return Path(
+        subprocess.check_output(
+            ["git", "-C", str(binary.parent), "rev-parse", "--show-toplevel"],
+            text=True,
+            stderr=subprocess.PIPE,
+        ).strip()
+    )
+
+
+def test_locked_native_nfsim_allows_linux_build_of_locked_source(tmp_path, monkeypatch):
+    lock = load_lock()
+    binary = tmp_path / "NFsim"
+    binary.write_bytes(b"linux build of locked NFsim source")
+    source = lock["sources"]["nfsim"]
+    verified_sources = []
+
+    monkeypatch.setattr(oracle_nfsim, "nfsim_binary", lambda: binary)
+    monkeypatch.setattr(platform, "system", lambda: "Linux")
+    monkeypatch.setattr(platform, "machine", lambda: "x86_64")
+    monkeypatch.setattr(
+        campaign,
+        "verify_source",
+        lambda root, locked_source: verified_sources.append((root, locked_source)),
+    )
+    monkeypatch.setattr(
+        sys.modules[__name__], "_nfsim_source_root", lambda _: tmp_path, raising=False
+    )
+
+    def require(condition, message):
+        assert condition, message
+
+    monkeypatch.setattr(sys.modules[__name__], "require_oracle", require)
+    assert _locked_native_nfsim() == binary
+    assert verified_sources == [(tmp_path, source)]
+
+
+def test_locked_native_nfsim_checks_digest_on_locked_build_platform(
+    tmp_path, monkeypatch
+):
+    binary = tmp_path / "NFsim"
+    binary.write_bytes(b"different macOS artifact")
+    monkeypatch.setattr(oracle_nfsim, "nfsim_binary", lambda: binary)
+    monkeypatch.setattr(platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(platform, "machine", lambda: "arm64")
+    monkeypatch.setattr(campaign, "verify_source", lambda *_: None)
+    monkeypatch.setattr(
+        sys.modules[__name__], "_nfsim_source_root", lambda _: tmp_path, raising=False
+    )
+
+    def require(condition, message):
+        if not condition:
+            raise AssertionError(message)
+
+    monkeypatch.setattr(sys.modules[__name__], "require_oracle", require)
+    with pytest.raises(AssertionError, match="native NFsim digest mismatch"):
+        _locked_native_nfsim()
 
 
 def _run_bng2_hybrid(tmp_path: Path) -> Path:
