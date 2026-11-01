@@ -3423,7 +3423,8 @@ OdeResult OdeIntegrator::integrateCore(const OdeOptions& options) {
             "bng3_events require CVODE or SSA event detection");
     }
     if (options.method != "ssa" &&
-        (options.maxSimSteps > 0 || options.outputStepInterval > 0)) {
+        (options.maxSimSteps > 0 || options.maxSimStepsSpecified ||
+         options.outputStepInterval > 0)) {
         throw std::runtime_error(
             "max_sim_steps and output_step_interval are supported only for SSA");
     }
@@ -5765,7 +5766,8 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     // Initial-state checks use the rounded molecule-count state and run before
     // any RNG draws. The initial row was scheduled above when explicit times
     // omitted t_start.
-    stoppedEarly = stopAtInitial;
+    stoppedEarly = stopAtInitial ||
+        (opts.maxSimStepsSpecified && opts.maxSimSteps == 0);
 
     // Main SSA loop
     while (t < opts.tEnd && !stoppedEarly) {

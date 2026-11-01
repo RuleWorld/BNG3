@@ -623,7 +623,7 @@ OdeResult PsaSimulator::simulate(const OdeOptions& opts, double poplevel,
     double t = tStart;
 
     // Determine max simulation steps
-    const double maxStep = (opts.maxSimSteps > 0)
+    const double maxStep = (opts.maxSimStepsSpecified || opts.maxSimSteps > 0)
         ? static_cast<double>(opts.maxSimSteps)
         : std::numeric_limits<double>::max();
 
@@ -689,7 +689,8 @@ OdeResult PsaSimulator::simulate(const OdeOptions& opts, double poplevel,
         }
 
         // Record state at this output time
-        result.timePoints.push_back(outputTime);
+        result.timePoints.push_back(
+            hitMaxSteps || hitStopCondition ? t : outputTime);
         result.concentrations.push_back(c);
 
         if (hitMaxSteps || hitStopCondition) {

@@ -76,3 +76,28 @@ def test_bngl_simulate_rejects_conflicting_network_output_aliases(
 
     assert gdat is None
     assert "'print_net' and 'save_progress' are the same thing" in error
+
+
+@pytest.mark.parametrize("method", ["ssa", "psa"])
+def test_bngl_zero_max_sim_steps_stops_at_initial_state(tmp_path, method):
+    source = tmp_path / "zero_max_sim_steps.bngl"
+    source.write_text(
+        SOURCE
+        + "\nbegin actions\n"
+        + f'  simulate({{method=>"{method}",t_end=>1,n_steps=>4,max_sim_steps=>0,seed=>123}})\n'
+        + "end actions\n",
+        encoding="utf-8",
+    )
+    bng_cpp = Path(__file__).resolve().parents[2] / "build/cpp/bng_cpp"
+
+    _, gdat, error = runner.run_cli_path(bng_cpp, source, tmp_path / "run")
+
+    assert gdat is not None, error
+    rows = [
+        [float(value) for value in line.split()]
+        for line in gdat.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    assert rows
+    assert all(row[0] == 0.0 for row in rows)
+    assert all(row[1:] == [10.0, 0.0] for row in rows)

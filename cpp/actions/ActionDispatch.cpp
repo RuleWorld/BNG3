@@ -1855,12 +1855,14 @@ void runSimulation(
         opts.method = "rk4";
     } else if (method == "pla") {
         opts.method = "pla";
+    } else if (method == "psa") {
+        opts.method = "psa";
     } else {
         opts.method = "cvode";  // Default to CVODE (matches BNG2)
     }
 
-    // Parse seed for SSA/PLA
-    if (opts.method == "ssa" || opts.method == "pla") {
+    // Parse seed for stochastic finite-network methods.
+    if (opts.method == "ssa" || opts.method == "pla" || opts.method == "psa") {
         const auto seedText = readArgument(action, "seed", "");
         if (!seedText.empty()) {
             opts.seed = static_cast<unsigned int>(parseScalarValue(seedText, model));
@@ -2017,6 +2019,7 @@ void runSimulation(
     if (!maxSimStepsText.empty()) {
         opts.maxSimSteps = parseNonNegativeCount(
             maxSimStepsText, model, "max_sim_steps");
+        opts.maxSimStepsSpecified = true;
     }
 
     // Parse sparse option (request sparse Jacobian for large networks)
@@ -2054,7 +2057,8 @@ void runSimulation(
         throw std::runtime_error(
             "output_step_interval requires an SSA simulation method");
     }
-    if (opts.method != "ssa" && opts.method != "psa" && opts.maxSimSteps > 0) {
+    if (opts.method != "ssa" && opts.method != "psa" &&
+        (opts.maxSimSteps > 0 || opts.maxSimStepsSpecified)) {
         throw std::runtime_error(
             "max_sim_steps requires an SSA or PSA simulation method");
     }
