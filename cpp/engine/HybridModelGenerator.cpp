@@ -241,9 +241,9 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
     std::cerr << indent << stepIndex << ":Adding population types..   ";
     ++stepIndex;
 
-    std::set<std::string> existingMtNames;
+    std::unordered_map<std::string, bool> existingMtPopulationTypes;
     for (const auto& mt : model_.getMoleculeTypes()) {
-        existingMtNames.insert(mt.getName());
+        existingMtPopulationTypes.emplace(mt.getName(), mt.isPopulation());
     }
 
     // Extract population type names from population maps
@@ -260,9 +260,14 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
 
     std::size_t nPopTypes = 0;
     for (const auto& name : popTypeNames) {
-        if (existingMtNames.count(name) > 0) {
-            throw std::runtime_error(
-                "PopulationType " + name + " clashes with MoleculeType of the same name");
+        const auto existing = existingMtPopulationTypes.find(name);
+        if (existing != existingMtPopulationTypes.end()) {
+            if (!existing->second) {
+                throw std::runtime_error(
+                    "PopulationType " + name + " clashes with MoleculeType of the same name");
+            }
+            ++nPopTypes;
+            continue;
         }
         // Add a simple population molecule type (no components)
         ast::MoleculeType popMt(name, {}, true);

@@ -178,6 +178,83 @@ end actions
     assert rows[-1][dimers] < rows[0][dimers]
 
 
+def test_hybrid_generation_accepts_bng2_population_types_and_conversion_cycles(tmp_path):
+    source = tmp_path / "population-cycle.bngl"
+    source.write_text(
+        """begin model
+begin parameters
+  k_forward 2
+  k_reverse 1
+  k_map 0.1
+  N 20
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin population types
+  A_pop()
+end population types
+begin seed species
+  A() N
+end seed species
+begin observables
+  Molecules A_total A()
+  Molecules B_total B()
+end observables
+begin reaction rules
+  A() -> B() k_forward
+  B() -> A() k_reverse
+end reaction rules
+begin population maps
+  A() -> A_pop() k_map
+end population maps
+end model
+
+begin actions
+generate_hybrid_model({overwrite=>1, execute=>1, actions=>["simulate_nf({t_end=>1, n_steps=>10, seed=>23})"]})
+end actions
+"""
+    )
+
+    bionetgen.load(source).execute()
+
+    generated = (tmp_path / "population-cycle_hpp.bngl").read_text()
+    assert "A_pop population" in generated
+    assert "A_pop() -> B() k_forward" in generated
+    assert "B() -> A_pop() k_reverse" in generated
+    output = tmp_path / "population-cycle_hpp.gdat"
+    assert output.is_file()
+    columns = output.read_text().splitlines()[0].lstrip("#").split()
+    rows = [
+        [float(value) for value in line.split()]
+        for line in output.read_text().splitlines()
+        if line and not line.startswith("#")
+    ]
+    assert len(rows) == 11
+    a_total = columns.index("A_total")
+    b_total = columns.index("B_total")
+    assert all(row[a_total] + row[b_total] == pytest.approx(20) for row in rows)
+    assert 0 < rows[-1][b_total] < 20
+
+
+def test_population_type_name_cannot_duplicate_a_molecule_type(tmp_path):
+    source = tmp_path / "duplicate-population-type.bngl"
+    source.write_text(
+        """begin model
+begin molecule types
+  A_pop()
+end molecule types
+begin population types
+  A_pop()
+end population types
+end model
+"""
+    )
+    with pytest.raises(RuntimeError, match="Molecule type A_pop previously defined"):
+        bionetgen.load(source)
+
+
 def test_hybrid_nfsim_preserves_population_conversion_inside_compartment(tmp_path):
     source = tmp_path / "compartment.bngl"
     source.write_text(
