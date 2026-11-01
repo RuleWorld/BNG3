@@ -228,7 +228,7 @@ def test_bngl_simulate_print_n_species_active_controls_ode_jdat(tmp_path, print_
         assert b_count == pytest.approx(10.0 - expected_a, abs=1e-6)
 
 
-@pytest.mark.parametrize("method", ["ssa", "pla", "psa", "nf"])
+@pytest.mark.parametrize("method", ["pla", "psa", "nf"])
 def test_bngl_simulate_print_n_species_active_rejects_unqualified_methods(
     tmp_path, method
 ):
@@ -245,4 +245,62 @@ def test_bngl_simulate_print_n_species_active_rejects_unqualified_methods(
     _, gdat, error = runner.run_cli_path(bng_cpp, source, tmp_path / f"run_{method}")
 
     assert gdat is None
-    assert "print_n_species_active is currently supported only for ODE methods" in error
+    assert (
+        "print_n_species_active is currently supported only for ODE and single-trajectory SSA methods"
+        in error
+    )
+
+
+def test_bngl_simulate_print_n_species_active_tracks_ssa_reaction_products(tmp_path):
+    source = tmp_path / "print_active_ssa.bngl"
+    model = SOURCE.replace("A() 10", "A() 1").replace(
+        "A() -> B() 0.4", "A() -> B() 100\n  B() -> A() 100"
+    )
+    source.write_text(
+        model
+        + "\nbegin actions\n"
+        + '  simulate({method=>"ssa",prefix=>"custom",t_end=>1,n_steps=>2,print_n_species_active=>1,seed=>1})\n'
+        + "end actions\n",
+        encoding="utf-8",
+    )
+    bng_cpp = Path(__file__).resolve().parents[2] / "build/cpp/bng_cpp"
+    run_dir = tmp_path / "run_ssa"
+
+    _, gdat, error = runner.run_cli_path(bng_cpp, source, run_dir)
+
+    assert gdat is not None, error
+    jdat = run_dir / "custom.jdat"
+    stats = [
+        [float(value) for value in line.split()]
+        for line in jdat.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+    concentrations = [
+        [float(value) for value in line.split()]
+        for line in (run_dir / "custom.cdat").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.lstrip().startswith("#")
+    ]
+
+    assert [row[0] for row in stats] == [row[0] for row in concentrations]
+    assert [int(row[1]) for row in stats] == [
+        sum(value > 0 for value in row[1:]) for row in concentrations
+    ]
+    assert [int(row[2]) for row in stats] == [1, 2, 2]
+    assert [int(row[3]) for row in stats] == [2, 2, 2]
+
+
+def test_bngl_simulate_print_n_species_active_rejects_batch_ssa(tmp_path):
+    source = tmp_path / "print_active_batch_ssa.bngl"
+    source.write_text(
+        SOURCE
+        + "\nbegin actions\n"
+        + '  simulate({method=>"ssa",t_end=>1,n_steps=>2,print_n_species_active=>1,batch_size=>2,seed=>1})\n'
+        + "end actions\n",
+        encoding="utf-8",
+    )
+    bng_cpp = Path(__file__).resolve().parents[2] / "build/cpp/bng_cpp"
+
+    _, gdat, error = runner.run_cli_path(bng_cpp, source, tmp_path / "run_batch")
+
+    assert gdat is None
+    assert "print_n_species_active does not support batch SSA" in error

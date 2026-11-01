@@ -1865,9 +1865,9 @@ void runSimulation(
         stripQuotes(readArgument(action, "print_n_species_active", "0")));
     const bool printActiveSpecies = printActiveText != "" && printActiveText != "0";
     if (printActiveSpecies && opts.method != "cvode" && opts.method != "euler" &&
-        opts.method != "rk4") {
+        opts.method != "rk4" && opts.method != "ssa") {
         throw std::runtime_error(
-            "print_n_species_active is currently supported only for ODE methods");
+            "print_n_species_active is currently supported only for ODE and single-trajectory SSA methods");
     }
 
     // Parse seed for stochastic finite-network methods.
@@ -1896,6 +1896,10 @@ void runSimulation(
         // "auto" (default) picks the best compiled-in backend that has a device;
         // "cuda"/"metal" force one, "none" forces the CPU pool.
         opts.batchGpuBackend = stripQuotes(readArgument(action, "batch_gpu_backend", "auto"));
+    }
+    if (printActiveSpecies && opts.method == "ssa" && opts.batchSize > 0) {
+        throw std::runtime_error(
+            "print_n_species_active does not support batch SSA");
     }
 
     // BNG2's Perl action path defaults both CVODE tolerances to 1e-8. Keep
@@ -2627,7 +2631,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             stripQuotes(readArgument(action, "print_n_species_active", "0")));
         if (printActiveText != "" && printActiveText != "0") {
             throw std::runtime_error(
-                "print_n_species_active is currently supported only for ODE methods");
+                "print_n_species_active is currently supported only for ODE and single-trajectory SSA methods");
         }
         if (model.getEventFormatVersion().has_value()) {
             throw std::runtime_error(ast::kUnsupportedEventExecutionMessage);

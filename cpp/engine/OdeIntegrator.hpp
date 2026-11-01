@@ -84,6 +84,7 @@ struct OdeResult {
     std::vector<std::vector<double>> concentrations;   // [timeIndex][speciesIndex]
     std::vector<std::vector<double>> observables;      // [timeIndex][groupIndex]
     std::vector<std::vector<double>> functions;        // [timeIndex][zero-arg function]
+    std::vector<std::size_t> everPopulatedSpeciesCounts; // SSA event history, when available
     std::size_t eventCount = 0;                              // Internal SSA event count
     std::size_t batchSize = 0;                               // 0 = single trajectory
     std::vector<std::vector<double>> batchStdDevs;           // [timeIndex][speciesIndex] std dev (batch mode only)
