@@ -575,6 +575,47 @@ print(json.dumps(settings, sort_keys=True))
     assert actual == expected
 
 
+def test_bng_logger_and_result_operate_without_optional_colorlog(tmp_path):
+    code = """
+import importlib.abc
+import sys
+
+class BlockColorlog(importlib.abc.MetaPathFinder):
+    def find_spec(self, fullname, path=None, target=None):
+        if fullname == 'colorlog' or fullname.startswith('colorlog.'):
+            raise ModuleNotFoundError("No module named 'colorlog'", name='colorlog')
+
+sys.meta_path.insert(0, BlockColorlog())
+
+from bionetgen.core.utils.logging import BNGLogger
+from bionetgen.core.tools.result import BNGResult
+
+logger = BNGLogger()
+log = logger.get_logger("test_module")
+logger.info("logging message without colorlog")
+assert not any(name == 'colorlog' or name.startswith('colorlog.') for name in sys.modules)
+"""
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            subprocess_import_setup(
+                bionetgen.__file__, bionetgen._bionetgen_cpp.__file__
+            )
+            + code,
+        ],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_defaults_import_failure_is_not_cached_as_none(tmp_path):
     code = """
 import sys

@@ -1,4 +1,11 @@
-import colorlog
+import logging
+
+try:
+    import colorlog
+    _HAS_COLORLOG = True
+except ImportError:
+    colorlog = None
+    _HAS_COLORLOG = False
 
 # global log level, can be set using
 # from bionetgen.core.utils import logging
@@ -6,17 +13,20 @@ import colorlog
 # options are "INFO","DEBUG","WARNING","ERROR","CRITICAL"
 log_level = None
 
-# set colorlog handler
-fmter = colorlog.ColoredFormatter(
-    "%(log_color)s%(levelname)s:%(name)s:%(message)s",
-    log_colors={
-        "DEBUG": "cyan",
-        "INFO": "green",
-        "WARNING": "yellow",
-        "ERROR": "red",
-        "CRITICAL": "red",
-    },
-)
+# set formatter
+if _HAS_COLORLOG:
+    fmter = colorlog.ColoredFormatter(
+        "%(log_color)s%(levelname)s:%(name)s:%(message)s",
+        log_colors={
+            "DEBUG": "cyan",
+            "INFO": "green",
+            "WARNING": "yellow",
+            "ERROR": "red",
+            "CRITICAL": "red",
+        },
+    )
+else:
+    fmter = logging.Formatter("%(levelname)s:%(name)s:%(message)s")
 
 
 class BNGLogger:
@@ -95,17 +105,25 @@ class BNGLogger:
         """
         if loc is None:
             if self.loc is None:
-                logger = colorlog.getLogger()
+                logger = colorlog.getLogger() if _HAS_COLORLOG else logging.getLogger()
             else:
                 loc_full = self.loc.split(":")[-1]
                 module_name = loc_full.split(".")[0].strip()
-                logger = colorlog.getLogger(module_name)
+                logger = (
+                    colorlog.getLogger(module_name)
+                    if _HAS_COLORLOG
+                    else logging.getLogger(module_name)
+                )
         else:
             loc_full = loc.split(":")[-1]
             module_name = loc_full.split(".")[0].strip()
-            logger = colorlog.getLogger(module_name)
+            logger = (
+                colorlog.getLogger(module_name)
+                if _HAS_COLORLOG
+                else logging.getLogger(module_name)
+            )
         if not logger.hasHandlers():
-            handler = colorlog.StreamHandler()
+            handler = colorlog.StreamHandler() if _HAS_COLORLOG else logging.StreamHandler()
             handler.setFormatter(fmter)
             logger.addHandler(handler)
         logger.setLevel(self.level)
