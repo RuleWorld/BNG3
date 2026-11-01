@@ -100,6 +100,45 @@ end population maps
 end model
 """
 
+COMPARTMENT_NATIVE_MODEL = f"""begin model
+begin parameters
+  k_fast 100
+  k_slow 0.1
+  k_map 100
+  N {INITIAL_B}
+end parameters
+begin compartments
+  c1 3 1
+  c2 3 1
+end compartments
+begin molecule types
+  A()
+  B1()
+  B2()
+end molecule types
+begin seed species
+  @c1:A() N
+  @c2:A() N
+end seed species
+begin observables
+  Molecules A_total A()
+  Molecules c1_A @c1:A()
+  Molecules c2_A @c2:A()
+  Molecules B1_total B1()
+  Molecules B2_total B2()
+  Molecules all_units A(),B1(),B2()
+end observables
+begin reaction rules
+  @c1:A() -> @c1:B1() k_fast
+  @c2:A() -> @c2:B2() k_slow
+end reaction rules
+begin population maps
+  c1: @c1:A() -> P1() k_map
+  c2: @c2:A() -> P2() k_map
+end population maps
+end model
+"""
+
 
 def _write_source(path: Path, *, engine: str, seed: int | None = None) -> Path:
     if engine == "bng2":
@@ -215,6 +254,40 @@ def _run_bng3_compartment_ensemble(tmp_path: Path):
         assert data is not None, f"BNG3 compartment seed {seed}: malformed trajectory"
         runs.append((data, columns))
     return runs
+
+
+def _run_compartment_native_pair(tmp_path: Path):
+    """Run a two-compartment HPP through BNG3 and native NFsim independently."""
+    import bionetgen
+
+    bng3_runs = []
+    xml = None
+    for seed in range(BASE_SEED, BASE_SEED + RUNS):
+        work_dir = tmp_path / f"compartment-native-bng3-{seed}"
+        work_dir.mkdir()
+        action = (
+            "generate_hybrid_model({overwrite=>1, execute=>1, "
+            'actions=>["writeXML()", '
+            f'"simulate_nf({{t_end=>{T_END}, n_steps=>{N_STEPS}, seed=>{seed}}})"]}})'
+        )
+        source = work_dir / "compartment.bngl"
+        source.write_text(
+            COMPARTMENT_NATIVE_MODEL
+            + f"\nbegin actions\n{action}\nend actions\n"
+        )
+        bionetgen.load(source).execute()
+        output = work_dir / "compartment_hpp.gdat"
+        assert output.is_file(), f"BNG3 compartment seed {seed}: missing .gdat"
+        data, columns = compare.parse_gdat(output)
+        assert data is not None, f"BNG3 compartment seed {seed}: malformed trajectory"
+        bng3_runs.append((data, columns))
+        if xml is None:
+            xml = work_dir / "compartment_hpp.xml"
+            assert xml.is_file(), "BNG3 did not emit the compartment HPP XML"
+
+    assert xml is not None
+    native_runs = _run_native_ensemble(xml, tmp_path)
+    return native_runs, bng3_runs, xml
 
 
 def _run_hybrid_generation(
@@ -627,6 +700,78 @@ def _write_compartment_evidence(temp: Path, bng3_runs) -> None:
     )
 
 
+def _write_native_compartment_evidence(
+    xml: Path, native_runs, bng3_runs, comparison
+) -> None:
+    target = os.environ.get("BNG3_HYBRID_EVIDENCE_DIR")
+    if not target:
+        return
+    evidence_dir = Path(target)
+    evidence_dir.mkdir(parents=True, exist_ok=True)
+    evidence_xml = evidence_dir / "bng3-compartment-hybrid.xml"
+    shutil.copy2(xml, evidence_xml)
+    with (evidence_dir / "native-compartment-trajectories.csv").open(
+        "w", newline=""
+    ) as output:
+        writer = csv.writer(output)
+        writer.writerow(
+            ("engine", "seed", "time", "A_total", "B1_total", "B2_total", "all_units")
+        )
+        for label, runs in (("native-nfsim", native_runs), ("bng3", bng3_runs)):
+            for index, (data, columns) in enumerate(runs):
+                for row in data:
+                    writer.writerow(
+                        (
+                            label,
+                            BASE_SEED + index,
+                            row[columns.index("time")],
+                            row[columns.index("A_total")],
+                            row[columns.index("B1_total")],
+                            row[columns.index("B2_total")],
+                            row[columns.index("all_units")],
+                        )
+                    )
+    lock = load_lock()
+    nfsim = _locked_native_nfsim()
+    report = {
+        "schema_version": 1,
+        "slice": "independent-native-nfsim-compartment-hpp",
+        "acceptance_status": "partial; canonical BNG2 hybrid transformation does not support compartments",
+        "source": {"revision": _git_revision(ROOT)},
+        "subject": {"xml_sha256": hashlib.sha256(evidence_xml.read_bytes()).hexdigest()},
+        "oracle": {
+            "engine": "native NFsim",
+            "revision": lock["sources"]["nfsim"]["revision"],
+            "binary_sha256": hashlib.sha256(nfsim.read_bytes()).hexdigest(),
+        },
+        "budget": {
+            "runs_per_engine": RUNS,
+            "first_seed": BASE_SEED,
+            "last_seed": BASE_SEED + RUNS - 1,
+            "t_end": T_END,
+            "n_steps": N_STEPS,
+        },
+        "distributional_comparison": {
+            "passed": comparison.ok,
+            "n_sigma": 4.0,
+            "max_violation_fraction": 0.05,
+            "violations": comparison.n_violations,
+            "points_checked": comparison.n_points_checked,
+            "worst_z": comparison.worst_z,
+        },
+        "analytic_laws": {
+            "B1_total": f"Binomial({INITIAL_B}, 1 - exp(-100 * time))",
+            "B2_total": f"Binomial({INITIAL_B}, 1 - exp(-0.1 * time))",
+            "A_total + B1_total + B2_total": "40 at every output sample",
+            "all_units": "40 at every output sample",
+        },
+        "trajectory_artifact": "native-compartment-trajectories.csv",
+    }
+    (evidence_dir / "native-compartment-qualification.json").write_text(
+        json.dumps(report, indent=2) + "\n"
+    )
+
+
 @pytest.fixture(scope="module")
 def hybrid_ensembles(tmp_path_factory):
     """One immutable oracle pairing and fixed seed budget for all HPP checks."""
@@ -649,6 +794,15 @@ def compartment_hybrid_ensembles(tmp_path_factory):
     bng3_runs = _run_bng3_compartment_ensemble(temp)
     _write_compartment_evidence(temp, bng3_runs)
     return bng3_runs
+
+
+@pytest.fixture(scope="module")
+def native_compartment_hybrid_ensembles(tmp_path_factory):
+    """Use pinned native NFsim to run a BNG3-generated compartment HPP XML."""
+    require_oracle(runner.api_available(), "compiled BNG3 API unavailable")
+    runner._ensure_source_python_path()
+    temp = tmp_path_factory.mktemp("release-hybrid-compartment-native")
+    return _run_compartment_native_pair(temp)
 
 
 @pytest.mark.nf
@@ -727,4 +881,51 @@ def test_release_hybrid_compartment_rates_and_conservation(compartment_hybrid_en
             data[:, columns.index("all_units")],
             np.full(data.shape[0], 2 * INITIAL_B),
         ), "BNG3 compartmental molecule conservation violated"
+
+
+@pytest.mark.nf
+@pytest.mark.parity
+@pytest.mark.stochastic
+@pytest.mark.slow
+def test_hybrid_compartment_distribution_against_locked_native_nfsim(
+    native_compartment_hybrid_ensembles,
+):
+    """Compare a BNG3 compartment HPP with native NFsim and analytic laws."""
+    native_runs, bng3_runs, xml = native_compartment_hybrid_ensembles
+    comparison = compare.compare_stochastic(
+        native_runs,
+        bng3_runs,
+        n_sigma=4.0,
+        max_violation_frac=0.05,
+        min_ref_runs=RUNS,
+        min_test_runs=RUNS,
+        columns=compare.COLUMNS_EXACT,
+    )
+    assert comparison.ok, comparison.summary()
+
+    for label, runs in (("native NFsim", native_runs), ("BNG3", bng3_runs)):
+        compare.qualify_binomial_marginal(
+            runs,
+            "B1_total",
+            population=INITIAL_B,
+            probability=lambda times: 1.0 - np.exp(-100.0 * times),
+            label=label,
+        )
+        compare.qualify_binomial_marginal(
+            runs,
+            "B2_total",
+            population=INITIAL_B,
+            probability=lambda times: 1.0 - np.exp(-0.1 * times),
+            label=label,
+        )
+        for data, columns in runs:
+            a = data[:, columns.index("A_total")]
+            b1 = data[:, columns.index("B1_total")]
+            b2 = data[:, columns.index("B2_total")]
+            units = data[:, columns.index("all_units")]
+            total = np.full_like(a, 2 * INITIAL_B)
+            assert np.array_equal(a + b1 + b2, total)
+            assert np.array_equal(units, total)
+
+    _write_native_compartment_evidence(xml, native_runs, bng3_runs, comparison)
 
