@@ -960,7 +960,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         previous = time;
     }
     if (!source.compartments().empty() || !source.barrierFactors().empty() ||
-        !source.populationTypes().empty() || !source.functions().empty() ||
+        !source.populationTypes().empty() ||
         !source.metadata().unitDefaults.empty() ||
         !source.metadata().unitDefinitions.empty() ||
         !source.metadata().substanceUnits.empty() ||
