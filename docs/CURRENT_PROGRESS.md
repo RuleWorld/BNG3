@@ -190,28 +190,28 @@ Following the combined baseline reconciliation, the remaining roadmap milestones
 
 ### 1. PR execution summary
 
-- **[#554](https://github.com/RuleWorld/BNG3/pull/554) (`codex/alpha-fixes`): Step 2 — Qualified Alpha Milestone**
+- **[PR #554](https://github.com/RuleWorld/BNG3/pull/554) (`codex/alpha-fixes`): Step 2 — Qualified Alpha Milestone**
   - Repaired weekly release workflow dependencies and artifact staging.
   - Added option forwarding to `BioNetGenModel.generate_network` for consistent action and export execution.
   - Fixed documentation links and issue #472 acceptance criteria; verified with Black and Ruff.
 
-- **[#555](https://github.com/RuleWorld/BNG3/pull/555) (`codex/step-3-shared-protocol-rates`): Step 3 & 4 — Shared Protocol and Rate Semantics**
+- **[PR #555](https://github.com/RuleWorld/BNG3/pull/555) (`codex/step-3-shared-protocol-rates`): Step 3 & 4 — Shared Protocol and Rate Semantics**
   - Implemented typed action options in `cpp/compile/ActionPlan.hpp` and `cpp/compile/ActionCompiler.cpp` (`setConcentration`, `setParameter`, `simulate_ode`, `simulate_ssa`, `simulate_pla`, `simulate_psa`).
   - Added multi-phase state continuation across simulation legs in `cpp/bindings/bind_engine.cpp` with exact observable history preservation and terminal-state synchronisation.
   - Consolidated shared rate evaluation across ODE, PLA, and PSA consumers.
 
-- **[#556](https://github.com/RuleWorld/BNG3/pull/556) (`codex/step-6-bngir-delayed-equality`): Step 6 — BNGIR v0.2 Default, Delayed Rules, and Exact Equality**
+- **[PR #556](https://github.com/RuleWorld/BNG3/pull/556) (`codex/step-6-bngir-delayed-equality`): Step 6 — BNGIR v0.2 Default, Delayed Rules, and Exact Equality**
   - Defaulted public BNGIR serialization and reconstruction to v0.2.
   - Preserved unit definitions, delayed rules, and counter observables across BNGIR JSON roundtrips.
   - Implemented `semantic_equal` with exact jump hazard equivalence certificates and canonical normal form comparisons.
   - Passed all anti-gaming (`release-no-product-fixture-names`) and formatting checks.
 
-- **[#557](https://github.com/RuleWorld/BNG3/pull/557) (`codex/step-7-nfsim-parity-nfnext`): Step 7 — Native NFsim Parity, Hybrid Execution, and NFnext**
+- **[PR #557](https://github.com/RuleWorld/BNG3/pull/557) (`codex/step-7-nfsim-parity-nfnext`): Step 7 — Native NFsim Parity, Hybrid Execution, and NFnext**
   - Implemented exact population and hybrid particle-population subsystem in `cpp/nfnext/include/nfnext/hybrid_state.hpp` and `cpp/nfnext/include/nfnext/population.hpp`.
   - Generalized `executeFromBioNetGen` in `cpp/nfnext/src/from_bng.cpp` with `TransformationIR` pre-compilation, multi-node matching, complex seed instantiation, and observable evaluations.
   - Passed all 14 NFnext architecture contracts and 794/794 C++ test cases (100%).
 
-- **[#558](https://github.com/RuleWorld/BNG3/pull/558) (`codex/step-8-jax-perf`): Step 8 — Optional Backends, JAX Execution, and Differentiation**
+- **[PR #558](https://github.com/RuleWorld/BNG3/pull/558) (`codex/step-8-jax-perf`): Step 8 — Optional Backends, JAX Execution, and Differentiation**
   - Implemented vectorized batched Gillespie SSA in `python/bionetgen/jax_ssa.py` using `jax.lax.while_loop` and `jax.vmap` matching the `BatchSsaMetrics` schema.
   - Implemented end-to-end reverse-mode automatic differentiation in `python/bionetgen/jax_ode.py` (`return_jax=True`, `rate_constants`, `initial_state`) verifying exact match with analytical sensitivity derivatives.
   - Added safe platform fallback for macOS Darwin to avoid experimental `jax-metal` bytecode incompatibilities.
