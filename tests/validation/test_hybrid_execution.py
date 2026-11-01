@@ -39,6 +39,10 @@ K_CYCLE_FORWARD = 2.0
 K_CYCLE_REVERSE = 1.0
 T_CYCLE = 1.0
 N_CYCLE_STEPS = 10
+K_PROTOCOL_RATE = 10.0
+K_PROTOCOL_INITIAL = 0.1
+T_PROTOCOL = 0.1
+N_PROTOCOL_STEPS = 4
 ROOT = Path(__file__).resolve().parents[2]
 
 MODEL = f"""begin model
@@ -121,6 +125,13 @@ begin population maps
 end population maps
 end model
 """
+
+PROTOCOL_CONVERSION_MODEL = MODEL.replace(
+    f"k_make {K_MAKE}", f"k_make {K_PROTOCOL_INITIAL}"
+).replace(
+    "begin seed species",
+    "begin population types\n  A_pop()\nend population types\nbegin seed species",
+)
 
 COMPARTMENT_MODEL = f"""begin model
 begin parameters
@@ -518,6 +529,108 @@ def _run_bng3_cycle_ensemble(tmp_path: Path):
         runs.append((data, columns))
         if first_hpp is None:
             first_hpp = work_dir / "cycle_hpp.bngl"
+    assert first_hpp is not None and first_hpp.is_file()
+    return runs, first_hpp
+
+
+def _write_protocol_source(
+    path: Path, *, engine: str, seed: int | None = None
+) -> Path:
+    if engine == "bng2":
+        model = PROTOCOL_CONVERSION_MODEL.replace(
+            f"k_make {K_PROTOCOL_INITIAL}", f"k_make {K_PROTOCOL_RATE}"
+        )
+        action = (
+            'generate_hybrid_model({overwrite=>1, execute=>1, '
+            'actions=>["writeXML()"]})'
+        )
+    elif engine == "bng3":
+        assert seed is not None
+        model = PROTOCOL_CONVERSION_MODEL.replace("end model\n", "")
+        protocol = (
+            f"\nbegin protocol\n"
+            + f'  setParameter("k_make", {K_PROTOCOL_RATE})\n'
+            + "  simulate_nf({"
+            + f'prefix=>"protocol_hpp", t_end=>{T_PROTOCOL}, '
+            + f"n_steps=>{N_PROTOCOL_STEPS}, seed=>{seed}"
+            + "})\nend protocol\n"
+        )
+        action = (
+            'generate_hybrid_model({overwrite=>1, execute=>1, '
+            'actions=>["simulate_protocol()"]})'
+        )
+    else:
+        raise ValueError(engine)
+    path.write_text(
+        model
+        + (protocol if engine == "bng3" else "")
+        + ("end model\n" if engine == "bng3" else "")
+        + f"\nbegin actions\n{action}\nend actions\n"
+    )
+    return path
+
+
+def _run_bng2_protocol_hybrid(tmp_path: Path) -> Path:
+    tmp_path.mkdir(parents=True, exist_ok=True)
+    bng2 = oracle_perl._bng2_path()
+    require_oracle(bng2 is not None, "pinned BNG2 unavailable (set BNG2_PERL)")
+    assert bng2 is not None
+    source = _write_protocol_source(tmp_path / "protocol.bngl", engine="bng2")
+    env = os.environ.copy()
+    env["BNGPATH"] = str(bng2.parent)
+    env["PERL5LIB"] = str(bng2.parent / "Perl2")
+    result = subprocess.run(
+        [os.environ.get("PERL", "perl"), str(bng2), "--outdir", str(tmp_path), str(source)],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=120,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr or result.stdout
+    xml = tmp_path / "protocol_hpp.xml"
+    assert xml.is_file() and xml.stat().st_size, result.stderr
+    return xml
+
+
+def _run_native_protocol_ensemble(xml: Path, tmp_path: Path):
+    _locked_native_nfsim()
+    runs = []
+    for seed in range(BASE_SEED, BASE_SEED + RUNS):
+        path, error = oracle_nfsim.run_nfsim(
+            xml,
+            tmp_path / f"native-protocol-{seed}",
+            t_end=T_PROTOCOL,
+            n_steps=N_PROTOCOL_STEPS,
+            seed=seed,
+        )
+        assert path is not None, f"native NFsim protocol seed {seed}: {error}"
+        data, columns = compare.parse_gdat(path)
+        assert data is not None, f"native NFsim protocol seed {seed}: malformed trajectory"
+        runs.append((data, columns))
+    return runs
+
+
+def _run_bng3_protocol_ensemble(tmp_path: Path):
+    import bionetgen
+
+    runs = []
+    first_hpp = None
+    for seed in range(BASE_SEED, BASE_SEED + RUNS):
+        work_dir = tmp_path / f"bng3-protocol-{seed}"
+        work_dir.mkdir()
+        source = _write_protocol_source(
+            work_dir / "protocol.bngl", engine="bng3", seed=seed
+        )
+        bionetgen.load(source).execute()
+        output = work_dir / "protocol_hpp.gdat"
+        assert output.is_file(), f"BNG3 protocol seed {seed}: missing trajectory"
+        data, columns = compare.parse_gdat(output)
+        assert data is not None, f"BNG3 protocol seed {seed}: malformed trajectory"
+        runs.append((data, columns))
+        if first_hpp is None:
+            first_hpp = work_dir / "protocol_hpp.bngl"
     assert first_hpp is not None and first_hpp.is_file()
     return runs, first_hpp
 
@@ -1074,6 +1187,22 @@ def hybrid_conversion_cycle_ensembles(tmp_path_factory):
 
 
 @pytest.fixture(scope="module")
+def hybrid_protocol_ensembles(tmp_path_factory):
+    """Compare BNG3's pre-run parameter assignment with the equivalent static HPP."""
+    require_oracle(runner.api_available(), "compiled BNG3 API unavailable")
+    require_oracle(
+        oracle_perl._bng2_path() is not None,
+        "pinned BNG2 unavailable (set BNG2_PERL)",
+    )
+    runner._ensure_source_python_path()
+    temp = tmp_path_factory.mktemp("release-hybrid-protocol")
+    xml = _run_bng2_protocol_hybrid(temp / "bng2")
+    native_runs = _run_native_protocol_ensemble(xml, temp)
+    bng3_runs, hpp = _run_bng3_protocol_ensemble(temp)
+    return native_runs, bng3_runs, xml, hpp
+
+
+@pytest.fixture(scope="module")
 def compartment_hybrid_ensembles(tmp_path_factory):
     """Check compartment-preserving hybrid trajectories against analytic laws."""
     require_oracle(runner.api_available(), "compiled BNG3 API unavailable")
@@ -1263,6 +1392,126 @@ def test_release_hybrid_population_particle_conversion_cycle(
             },
         }
         (evidence_dir / "conversion-cycle-qualification.json").write_text(
+            json.dumps(report, indent=2) + "\n"
+        )
+
+
+@pytest.mark.nf
+@pytest.mark.parity
+@pytest.mark.stochastic
+@pytest.mark.slow
+def test_release_hybrid_protocol_parameter_rate_and_conservation(
+    hybrid_protocol_ensembles,
+):
+    """Qualify a protocol rate assignment before the hybrid trajectory starts."""
+    native_runs, bng3_runs, xml, hpp = hybrid_protocol_ensembles
+    comparison = compare.compare_stochastic(
+        native_runs,
+        bng3_runs,
+        n_sigma=4.0,
+        max_violation_frac=0.05,
+        min_ref_runs=RUNS,
+        min_test_runs=RUNS,
+        columns=compare.COLUMNS_EXACT,
+    )
+    assert comparison.ok, comparison.summary()
+
+    survival = lambda times: np.exp(-K_PROTOCOL_RATE * times)
+    production = lambda times: 1.0 - survival(times)
+    for label, runs in (("native NFsim", native_runs), ("BNG3 protocol", bng3_runs)):
+        compare.qualify_binomial_marginal(
+            runs,
+            "B_total",
+            population=INITIAL_B,
+            probability=survival,
+            label=label,
+        )
+        compare.qualify_binomial_marginal(
+            runs,
+            "A_total",
+            population=INITIAL_B,
+            probability=production,
+            label=label,
+        )
+        for data, columns in runs:
+            a = data[:, columns.index("A_total")]
+            b = data[:, columns.index("B_total")]
+            assert np.array_equal(a + b, np.full_like(a, INITIAL_B))
+
+    evidence_target = os.environ.get("BNG3_HYBRID_EVIDENCE_DIR")
+    if evidence_target:
+        evidence_dir = Path(evidence_target)
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(xml, evidence_dir / "bng2-protocol-hybrid.xml")
+        shutil.copy2(hpp, evidence_dir / "bng3-protocol-hybrid.bngl")
+        with (evidence_dir / "protocol-trajectories.csv").open(
+            "w", newline=""
+        ) as output:
+            writer = csv.writer(output)
+            writer.writerow(("engine", "seed", "time", "A_total", "B_total"))
+            for label, runs in (("native-nfsim", native_runs), ("bng3-protocol", bng3_runs)):
+                for index, (data, columns) in enumerate(runs):
+                    for row in data:
+                        writer.writerow(
+                            (
+                                label,
+                                BASE_SEED + index,
+                                row[columns.index("time")],
+                                row[columns.index("A_total")],
+                                row[columns.index("B_total")],
+                            )
+                        )
+        bng2 = oracle_perl._bng2_path()
+        nfsim = _locked_native_nfsim()
+        assert bng2 is not None
+        lock = load_lock()
+        report = {
+            "schema_version": 1,
+            "checks": ["release-hybrid", "release-hybrid-conservation"],
+            "case": "pre-run protocol parameter assignment",
+            "source": {
+                "revision": _git_revision(ROOT),
+                "native_reference_xml_sha256": hashlib.sha256(xml.read_bytes()).hexdigest(),
+                "bng3_hpp_sha256": hashlib.sha256(hpp.read_bytes()).hexdigest(),
+            },
+            "oracles": {
+                "bng2": {
+                    "revision": _git_revision(bng2.parent),
+                    "script_sha256": hashlib.sha256(bng2.read_bytes()).hexdigest(),
+                },
+                "native_nfsim": {
+                    "revision": lock["sources"]["nfsim"]["revision"],
+                    "binary_sha256": hashlib.sha256(nfsim.read_bytes()).hexdigest(),
+                },
+            },
+            "protocol": {
+                "initial_parameter": K_PROTOCOL_INITIAL,
+                "assigned_parameter": K_PROTOCOL_RATE,
+                "assignment_occurs_before_simulation": True,
+            },
+            "budget": {
+                "runs_per_engine": RUNS,
+                "first_seed": BASE_SEED,
+                "last_seed": BASE_SEED + RUNS - 1,
+                "t_end": T_PROTOCOL,
+                "n_steps": N_PROTOCOL_STEPS,
+            },
+            "distributional_comparison": {
+                "passed": comparison.ok,
+                "n_sigma": 4.0,
+                "max_violation_fraction": 0.05,
+                "violations": comparison.n_violations,
+                "points_checked": comparison.n_points_checked,
+                "worst_z": comparison.worst_z,
+            },
+            "analytic_law": {
+                "B_total": f"Binomial({INITIAL_B}, exp(-{K_PROTOCOL_RATE} * time))",
+                "A_total": f"Binomial({INITIAL_B}, 1 - exp(-{K_PROTOCOL_RATE} * time))",
+                "conservation": f"A_total + B_total = {INITIAL_B}",
+                "trajectory_artifact": "protocol-trajectories.csv",
+            },
+        }
+        (evidence_dir / "protocol-rate-qualification.json").write_text(
             json.dumps(report, indent=2) + "\n"
         )
 
@@ -1466,6 +1715,7 @@ def test_release_capability_coverage_150(
     hybrid_ensembles,
     hybrid_dimer_ensembles,
     hybrid_conversion_cycle_ensembles,
+    hybrid_protocol_ensembles,
 ):
     """Run every assigned #150 inventory row against its named oracle."""
     action_cases = _check_hybrid_model_action_options(
@@ -1562,6 +1812,39 @@ def test_release_capability_coverage_150(
             total = data[:, columns.index("A_total")] + data[:, columns.index("B_total")]
             assert np.array_equal(total, np.full_like(total, INITIAL_B))
 
+    native_protocol, bng3_protocol, protocol_xml, protocol_hpp = (
+        hybrid_protocol_ensembles
+    )
+    protocol_comparison = compare.compare_stochastic(
+        native_protocol,
+        bng3_protocol,
+        n_sigma=4.0,
+        max_violation_frac=0.05,
+        min_ref_runs=RUNS,
+        min_test_runs=RUNS,
+        columns=compare.COLUMNS_EXACT,
+    )
+    assert protocol_comparison.ok, protocol_comparison.summary()
+    protocol_survival = lambda times: np.exp(-K_PROTOCOL_RATE * times)
+    for label, runs in (("native NFsim", native_protocol), ("BNG3", bng3_protocol)):
+        compare.qualify_binomial_marginal(
+            runs,
+            "B_total",
+            population=INITIAL_B,
+            probability=protocol_survival,
+            label=label,
+        )
+        compare.qualify_binomial_marginal(
+            runs,
+            "A_total",
+            population=INITIAL_B,
+            probability=lambda times: 1.0 - protocol_survival(times),
+            label=label,
+        )
+        for data, columns in runs:
+            total = data[:, columns.index("A_total")] + data[:, columns.index("B_total")]
+            assert np.array_equal(total, np.full_like(total, INITIAL_B))
+
     inventory_cases = {
         **action_cases,
         "hybrid.execution": True,
@@ -1600,6 +1883,26 @@ def test_release_capability_coverage_150(
             writer = csv.writer(output)
             writer.writerow(("engine", "seed", "time", "A_total", "B_total"))
             for label, runs in (("native-nfsim", native_cycle), ("bng3", bng3_cycle)):
+                for index, (data, columns) in enumerate(runs):
+                    for row in data:
+                        writer.writerow(
+                            (
+                                label,
+                                BASE_SEED + index,
+                                row[columns.index("time")],
+                                row[columns.index("A_total")],
+                                row[columns.index("B_total")],
+                            )
+                        )
+
+        shutil.copy2(protocol_xml, evidence_dir / "bng2-protocol-hybrid.xml")
+        shutil.copy2(protocol_hpp, evidence_dir / "bng3-protocol-hybrid.bngl")
+        with (evidence_dir / "protocol-trajectories.csv").open(
+            "w", newline=""
+        ) as output:
+            writer = csv.writer(output)
+            writer.writerow(("engine", "seed", "time", "A_total", "B_total"))
+            for label, runs in (("native-nfsim", native_protocol), ("bng3", bng3_protocol)):
                 for index, (data, columns) in enumerate(runs):
                     for row in data:
                         writer.writerow(
@@ -1665,6 +1968,11 @@ def test_release_capability_coverage_150(
                     "t_end": T_CYCLE,
                     "samples": N_CYCLE_STEPS + 1,
                 },
+                "protocol_rate_assignment": {
+                    "effective_rate": K_PROTOCOL_RATE,
+                    "t_end": T_PROTOCOL,
+                    "samples": N_PROTOCOL_STEPS + 1,
+                },
             },
             "distributional_comparison": {
                 "columns": "exact",
@@ -1678,6 +1986,7 @@ def test_release_capability_coverage_150(
                     "single-molecule B to A to A_pop conversion",
                     "whole A-A dimer population conversion and dissociation",
                     "reversible A_pop to B particle cycle with analytic CTMC law",
+                    "protocol parameter assignment before hybrid simulation",
                 ],
                 "limitations": [
                     "canonical BNG2 generate_hybrid_model does not transform compartment models",
@@ -1707,6 +2016,8 @@ def test_release_capability_coverage_150(
                             f"(1-exp(-({K_CYCLE_FORWARD}+{K_CYCLE_REVERSE})*time))) B_total"
                         ),
                         f"A_total + B_total = {INITIAL_B} at every cycle sample",
+                        f"Binomial({INITIAL_B}, exp(-{K_PROTOCOL_RATE} * time)) B_total after pre-run protocol assignment",
+                        f"A_total + B_total = {INITIAL_B} at every protocol sample",
                     ],
                 },
                 "whole_dimer_native_comparison": {
@@ -1723,6 +2034,13 @@ def test_release_capability_coverage_150(
                     "worst_z": cycle_comparison.worst_z,
                     "runs_per_engine": RUNS,
                 },
+                "protocol_parameter_native_comparison": {
+                    "passed": protocol_comparison.ok,
+                    "points_checked": protocol_comparison.n_points_checked,
+                    "violations": protocol_comparison.n_violations,
+                    "worst_z": protocol_comparison.worst_z,
+                    "runs_per_engine": RUNS,
+                },
             },
             "artifacts": {
                 "hybrid_qualification": "qualification.json",
@@ -1737,6 +2055,11 @@ def test_release_capability_coverage_150(
                 "cycle_hpp_sha256": hashlib.sha256(cycle_hpp.read_bytes()).hexdigest(),
                 "cycle_source_sha256": hashlib.sha256(cycle_source.read_bytes()).hexdigest(),
                 "cycle_trajectories": "cycle-trajectories.csv",
+                "protocol_xml": "bng2-protocol-hybrid.xml",
+                "protocol_xml_sha256": hashlib.sha256(protocol_xml.read_bytes()).hexdigest(),
+                "protocol_hpp": "bng3-protocol-hybrid.bngl",
+                "protocol_hpp_sha256": hashlib.sha256(protocol_hpp.read_bytes()).hexdigest(),
+                "protocol_trajectories": "protocol-trajectories.csv",
             },
         }
         (evidence_dir / "capability-coverage-150.json").write_text(
