@@ -57,6 +57,13 @@ def test_finite_one_molecule_conversion_certificate_covers_split_and_renaming():
         )
     )
     renamed = _model(_conversion_source(a="X", b="Y", rules=["X() -> Y() k"]))
+    renamed_split = _model(
+        _conversion_source(
+            a="X",
+            b="Y",
+            rules=["r1: X() -> Y() k1", "r2: X() -> Y() k2"],
+        )
+    )
     changed_rate = _model(_conversion_source(rules=["A() -> B() 0.11"]))
     changed_initial = _model(_conversion_source(seed=2))
 
@@ -64,6 +71,7 @@ def test_finite_one_molecule_conversion_certificate_covers_split_and_renaming():
     # observable's kind and unit weight are retained in this same-name pair.
     assert bionetgen.semantic_equal(observed_whole, observed_split)
     assert bionetgen.semantic_equal(whole, renamed)
+    assert bionetgen.semantic_equal(whole, renamed_split)
     assert bionetgen.semantic_equal(whole, changed_rate) is False
     assert bionetgen.semantic_equal(whole, changed_initial) is False
 
