@@ -159,6 +159,62 @@ void refusesClockDependentParameterRates() {
     }
 }
 
+void lowersStaticallyResolvableUserFunctionRate() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin parameters
+  base_rate 2
+end parameters
+begin molecule types
+  A(site~u~p)
+end molecule types
+begin seed species
+  A(site~u) 10
+end seed species
+begin observables
+  Molecules P A(site~p)
+end observables
+begin reaction rules
+  activate: A(site~u) -> A(site~p) scale(0.75)
+end reaction rules
+begin functions
+  scale(x) = base_rate * x
+end functions
+)BNGL");
+    assert(ast);
+
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(lowered.ok());
+    assert(lowered.model.expanded_rules.size() == 1);
+    assert(std::abs(lowered.model.expanded_rules.front().rate - 1.5) < 1e-12);
+
+    const auto referenceAst = bng::parser::parseModel(R"BNGL(
+begin molecule types
+  A(site~u~p)
+end molecule types
+begin seed species
+  A(site~u) 10
+end seed species
+begin observables
+  Molecules P A(site~p)
+end observables
+begin reaction rules
+  activate: A(site~u) -> A(site~p) 1.5
+end reaction rules
+)BNGL");
+    assert(referenceAst);
+    const bng::compile::CompiledModel reference(*referenceAst);
+    nfnext::BngExecutionRequest request;
+    request.sample_times = {0.0, 1.0, 2.0};
+    request.seed = 0x147;
+    const auto functionRun = nfnext::executeFromBioNetGen(semantic, request);
+    const auto literalRun = nfnext::executeFromBioNetGen(reference, request);
+    assert(functionRun.columns == literalRun.columns);
+    assert(functionRun.rows == literalRun.rows);
+    assert(functionRun.event_count == literalRun.event_count);
+}
+
 void identicalReactantsHaveUnorderedEmbeddings() {
     const auto ast = bng::parser::parseModel(R"BNGL(
 begin parameters
@@ -1077,13 +1133,14 @@ end reaction rules
     assert(nonzeroSiteRule.actions[0].value == 1); // A.y~on
 
     executesCanonicalUnaryModel();
-    identicalReactantsHaveUnorderedEmbeddings();
-    identicalComplexReactantsHaveUnorderedEmbeddings();
     executesBimolecularBindingUnbinding();
     executesSynthesisAndComplexDegradation();
     executesComplexSeedModel();
     refusesUnsupportedExecution();
     refusesClockDependentParameterRates();
+    lowersStaticallyResolvableUserFunctionRate();
+    identicalReactantsHaveUnorderedEmbeddings();
+    identicalComplexReactantsHaveUnorderedEmbeddings();
     rejectsUnrepresentablePackedSiteIndex();
     rejectsMolecularityNodeIndexOverflow();
     lowersWholeSpeciesDeletionWithHiddenConnectedContext();
