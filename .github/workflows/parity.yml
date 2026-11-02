@@ -65,6 +65,7 @@ jobs:
             tests/validation/test_integrated_consumers.py \
             tests/validation/test_issue_queue.py \
             tests/validation/test_acceptance_queue.py \
+            tests/validation/test_sprint_s1_contract_projection.py \
             tests/validation/test_reporting.py \
             tests/validation/test_triage.py \
             tests/validation/test_replay.py \
