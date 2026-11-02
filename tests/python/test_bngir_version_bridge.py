@@ -1,9 +1,12 @@
 """Version-bridge contract for frozen BNGIR v0.1 and v0.2 fixtures."""
 
 import json
+import math
+from fractions import Fraction
 from pathlib import Path
 
 import jsonschema
+import pytest
 
 import bionetgen
 
@@ -89,3 +92,40 @@ def test_frozen_v01_migrates_to_pinned_schema_valid_v02_and_round_trips():
     assert bionetgen.semantic_equal(legacy_model, restored_model, version="0.2")
     restored_export = bionetgen.to_bngir(restored_model, version="0.2").encode("utf-8")
     assert restored_export == expected_wire
+    reverse_export = json.loads(bionetgen.to_bngir(restored_model, version="0.1"))
+    jsonschema.validate(reverse_export, _schema("0.1"))
+    reverse_model = bionetgen.from_bngir(reverse_export)
+    assert bionetgen.semantic_equal(restored_model, reverse_model, version="0.1")
+
+    # Independently enumerate the complete reachable CTMC for the frozen
+    # state-transition fixture. State i has i phosphorylated and 10-i
+    # unphosphorylated molecules; its only outgoing hazard is (10-i)/10.
+    reachable_states = tuple(
+        (10 - phosphorylated, phosphorylated) for phosphorylated in range(11)
+    )
+    exact_edges = {
+        (reachable_states[i], reachable_states[i + 1]): Fraction(10 - i, 10)
+        for i in range(10)
+    }
+    assert len(reachable_states) == 11
+    assert exact_edges[(reachable_states[0], reachable_states[1])] == Fraction(10, 10)
+
+    native_model = bionetgen.from_bngir(structural_document, native=True)
+    assert json.loads(native_model.to_bngir(version="0.2")) == structural_document
+    assert bionetgen.semantic_equal(legacy_model, native_model, version="0.2")
+    network = native_model.generate_network()
+    assert network.generation_converged
+
+    ode = native_model.simulate(method="ode", t_end=2.0, n_steps=10)
+    for time, row in zip(ode.time, ode.concentrations):
+        values = dict(zip(network.species_names, row))
+        expected_p = 10.0 * (1.0 - math.exp(-0.1 * time))
+        assert values["A(x~u)"] == pytest.approx(10.0 - expected_p, abs=1e-7)
+        assert values["A(x~p)"] == pytest.approx(expected_p, abs=1e-7)
+
+    # Exercise the native SSA consumer and check only the exact conserved-state
+    # invariants here; a single trajectory is not a distributional qualification.
+    ssa = native_model.simulate(method="ssa", t_end=1.0, n_steps=5, seed=20261102)
+    for row in ssa.concentrations:
+        assert all(0.0 <= amount <= 10.0 and amount.is_integer() for amount in row)
+        assert sum(row) == 10.0
