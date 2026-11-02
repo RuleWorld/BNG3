@@ -2518,7 +2518,11 @@ def test_periodic_reset_event_is_expanded_to_repeated_parameter_updates():
     assert 'setParameter("Q", "1")' in result.actions_block
     assert 'setParameter("reset", "1")' in result.actions_block
     assert 'setParameter("reset", "2")' in result.actions_block
-    assert "t_start=>2, t_end=>2.5" in result.actions_block
+    # The requested output grid includes 2.25, so the short final phase must
+    # retain that sample instead of replacing it with an unrequested midpoint.
+    assert "t_start=>2, t_end=>2.25" in result.actions_block
+    assert "t_start=>2.25, t_end=>2.5" in result.actions_block
+    assert "t_start=>2, t_end=>2.5" not in result.actions_block
 
 
 def test_periodic_event_at_requested_end_does_not_extend_past_scheduled_horizon():
