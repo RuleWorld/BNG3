@@ -21,7 +21,9 @@ inline void validateNativeEventSubset(const Model& model) {
     const ModelFunctionEvaluator functionEvaluator(model);
     for (const auto& event : model.getEvents()) {
     const auto trigger = functionEvaluator.expandFunctions(event.trigger);
-    // A trigger is a continuous inequality or a conjunction of comparisons.
+    // A trigger is an inequality or a conjunction of comparisons. It may be
+    // piecewise constant when it reads only event-updated observables; the
+    // integrator classifies those triggers after network generation.
     // Equality is supported only as a discrete gate within a conjunction.
     const bool hasConjunction = trigger.kind() == ExpressionKind::Binary &&
                                 trigger.name() == "&&";
@@ -76,8 +78,12 @@ inline void validateNativeEventSubset(const Model& model) {
         }
         return false;
     };
-    // Every conjunct of the trigger has to compare a time or species
-    // observable against a static threshold or another observable.
+    // Require each comparison to depend on time or an observable. Arithmetic
+    // expressions over observables are also valid here: OdeIntegrator checks
+    // whether those observables are changed only by events, then re-tests
+    // their trigger after each event assignment instead of asking CVODE to
+    // locate a continuous root. A comparison over reaction-driven species is
+    // still refused by that runtime root-surface check.
     std::function<void(const Expression&)> checkSides = [&](const Expression& expression) {
         if (expression.kind() == ExpressionKind::Binary && expression.name() == "&&") {
             for (const auto& child : expression.args()) checkSides(child);
@@ -88,11 +94,9 @@ inline void validateNativeEventSubset(const Model& model) {
         if (!leftDynamic && !rightDynamic) {
             fail("trigger requires one time or species observable against a static threshold");
         }
-        // A side that is not itself a bare time or species observable has to be
-        // a static threshold: a mixed expression such as ``time - 1`` would make
-        // the crossing surface time-dependent in a way the runtime cannot
-        // classify.  Two bare observables are allowed: a difference of two
-        // species is a continuous state surface like any other.
+        // A side without a dynamic identifier is a static threshold. The
+        // runtime separately rejects non-discrete arithmetic surfaces unless
+        // they are a supported direct time/species comparison.
         for (std::size_t side = 0; side < 2; ++side) {
             if (side == 0 ? leftDynamic : rightDynamic) continue;
             for (const auto& name : expression.args()[side].getDependencies()) {

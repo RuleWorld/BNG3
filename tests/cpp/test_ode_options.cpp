@@ -1880,6 +1880,62 @@ TEST_CASE("CVODE re-tests a trigger over species that only events change",
     CHECK_THAT(last[2], Catch::Matchers::WithinAbs(1.0, 1e-9));
 }
 
+TEST_CASE("CVODE re-tests arithmetic triggers over species that only events change",
+          "[OdeOptions][Events]") {
+    auto model = parser::parseModel(R"(
+begin model
+begin molecule types
+    Reset()
+    Tick()
+    Complete()
+end molecule types
+begin seed species
+    Reset() 0
+    Tick() 0
+    Complete() 0
+end seed species
+begin observables
+    Molecules reset Reset()
+    Molecules ticks Tick()
+    Molecules complete Complete()
+end observables
+begin bng3_events version 1
+    event "tick"
+        trigger: time >= reset + 0.01
+        initial_value: false
+        persistent: false
+        use_values_from_trigger_time: true
+        priority: 10
+        assignment: reset = time
+        assignment: ticks = ticks + 1
+    end event
+    event "complete_after_sixteen_ticks"
+        trigger: ticks / 16 >= 1
+        initial_value: false
+        persistent: true
+        use_values_from_trigger_time: true
+        priority: 5
+        assignment: complete = 1
+    end event
+end bng3_events
+end model
+)");
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeIntegrator integrator(*model, network);
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 0.165;
+    options.nSteps = 33;
+
+    const auto result = integrator.integrate(options);
+    REQUIRE_FALSE(result.observables.empty());
+    const auto& last = result.observables.back();
+    CHECK_THAT(last[1], Catch::Matchers::WithinAbs(16.0, 1e-9));
+    CHECK_THAT(last[2], Catch::Matchers::WithinAbs(1.0, 1e-9));
+}
+
 TEST_CASE("a composite trigger over continuously changing species stays refused",
           "[OdeOptions][Events]") {
     // floor(b * 2) jumps while B is produced by a reaction; it has neither a
