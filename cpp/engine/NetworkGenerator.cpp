@@ -419,8 +419,13 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
                 [&](const ast::SpeciesGraph& graph) {
                     const auto ngF0 = clock::now();
                     bool ok = true;
-                    if (!withinStoichLimits(graph, maxStoich)) ok = false;
-                    else if (maxAgg.has_value() && !withinAggLimit(graph, *maxAgg)) ok = false;
+                    if (!withinStoichLimits(graph, maxStoich)) {
+                        network.generationPrunedSpecies = true;
+                        ok = false;
+                    } else if (maxAgg.has_value() && !withinAggLimit(graph, *maxAgg)) {
+                        network.generationPrunedSpecies = true;
+                        ok = false;
+                    }
                     if (ngTiming) { tFilter += us(ngF0, clock::now()); ++filterCalls; }
                     return ok;
                 },
@@ -462,6 +467,7 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
 
         if (network.species.size() == previousSpecies &&
             network.reactions.size() == previousReactions) {
+            network.generationConverged = true;
             if (logProgress)
                 std::cerr << "[generate_network] converged at iter=" << (iter + 1) << '\n';
             break;

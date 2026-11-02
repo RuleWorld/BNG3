@@ -362,6 +362,12 @@ void bind_engine(py::module_& m) {
         .def_property_readonly("num_reactions", [](const GeneratedNetwork& gn) {
             return gn.reactions.size();
         })
+        .def_property_readonly("generation_converged", [](const GeneratedNetwork& gn) {
+            return gn.generationConverged;
+        }, "Whether network expansion reached a fixed point before its iteration limit")
+        .def_property_readonly("generation_pruned_species", [](const GeneratedNetwork& gn) {
+            return gn.generationPrunedSpecies;
+        }, "Whether max_agg or max_stoich rejected a candidate species")
         .def_property_readonly("species_names", [](const GeneratedNetwork& gn) {
             std::vector<std::string> names;
             for (const auto& sp : gn.species.all()) {
