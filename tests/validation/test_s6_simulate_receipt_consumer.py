@@ -165,6 +165,13 @@ def test_s6_consumer_requires_and_maps_all_eight_exact_rows(tmp_path):
         "sha256": BNG2_SHA256,
     }
     assert report["artifact"]["workflow_run_id"] == "4145"
+    assert [
+        report["references"]["s6_receipts"][row.replace(".", "_")]["sha256"]
+        for row in ROWS
+    ] == [
+        hashlib.sha256((receipt_dir / f"{row}.json").read_bytes()).hexdigest()
+        for row in ROWS
+    ]
     assert [row["id"] for row in report["results"]] == list(ROWS)
     assert all(row["status"] == "PASS" for row in report["results"])
     assert [row["check"] for row in report["results"]] == [
@@ -299,6 +306,7 @@ def test_s6_nonincreasing_time_control_accepts_only_refusal_or_initial_row(tmp_p
         receipt["scenarios"][2][engine].update(
             execution_status="PRODUCED",
             rejected=False,
+            return_code=0,
             output=f"{engine}.gdat",
             output_sha256="d" * 64,
             trajectory={
@@ -428,3 +436,25 @@ def test_s6_rejection_accepts_hashed_diagnostic_residue_after_nonzero_exit(tmp_p
     )
 
     assert len(report["results"]) == len(ROWS)
+
+
+def test_s6_rejects_produced_outcome_with_nonzero_exit(tmp_path):
+    receipt_dir, contract = _receipts(tmp_path)
+    path = receipt_dir / "action.simulate.atol.json"
+    receipt = json.loads(path.read_text())
+    receipt["scenarios"][1]["bng2"]["return_code"] = 1
+    path.write_text(json.dumps(receipt))
+
+    with pytest.raises(ValueError, match="successful exit"):
+        issue_queue.s6_simulate_receipt_report(receipt_dir, SOURCE_REVISION, contract)
+
+
+def test_s6_rejects_rejected_outcome_with_zero_exit(tmp_path):
+    receipt_dir, contract = _receipts(tmp_path)
+    path = receipt_dir / "action.simulate.atol.json"
+    receipt = json.loads(path.read_text())
+    receipt["scenarios"][2]["bng2"]["return_code"] = 0
+    path.write_text(json.dumps(receipt))
+
+    with pytest.raises(ValueError, match="nonzero exit"):
+        issue_queue.s6_simulate_receipt_report(receipt_dir, SOURCE_REVISION, contract)

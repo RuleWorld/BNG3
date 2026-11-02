@@ -344,6 +344,9 @@ def _s6_validate_outcome(outcome, row, scenario, expected_rejection, engine):
         r"[0-9a-f]{64}", transcript_hash
     ):
         raise ValueError(f"S6 {engine} scenario lacks transcript identity")
+    return_code = outcome.get("return_code")
+    if not isinstance(return_code, int) or isinstance(return_code, bool):
+        raise ValueError(f"S6 {engine} scenario lacks a valid process exit code")
     nonincreasing_time = scenario == "invalid" and row in {
         "action.simulate.t_start",
         "action.simulate.t_end",
@@ -352,23 +355,32 @@ def _s6_validate_outcome(outcome, row, scenario, expected_rejection, engine):
         if (
             outcome.get("execution_status") != "REJECTED"
             or outcome.get("rejected") is not True
-            or not isinstance(outcome.get("return_code"), int)
-            or isinstance(outcome.get("return_code"), bool)
-            or outcome["return_code"] == 0
+            or return_code == 0
         ):
-            raise ValueError(f"S6 {engine} expected-rejection control was not refused")
-        if outcome.get("output") is not None and (
-            not isinstance(outcome.get("output"), str)
-            or not outcome["output"]
-            or not isinstance(outcome.get("output_sha256"), str)
-            or not re.fullmatch(r"[0-9a-f]{64}", outcome["output_sha256"])
+            raise ValueError(
+                f"S6 {engine} expected-rejection control requires a nonzero exit"
+            )
+        if (
+            outcome.get("output") is None and outcome.get("output_sha256") is not None
+        ) or (
+            outcome.get("output") is not None
+            and (
+                not isinstance(outcome.get("output"), str)
+                or not outcome["output"]
+                or not isinstance(outcome.get("output_sha256"), str)
+                or not re.fullmatch(r"[0-9a-f]{64}", outcome["output_sha256"])
+            )
         ):
             raise ValueError(
                 f"S6 {engine} rejected case has invalid diagnostic output identity"
             )
         return
     if nonincreasing_time and outcome.get("execution_status") == "REJECTED":
-        if outcome.get("rejected") is not True or outcome.get("trajectory") is not None:
+        if (
+            outcome.get("rejected") is not True
+            or return_code == 0
+            or outcome.get("trajectory") is not None
+        ):
             raise ValueError(
                 f"S6 {engine} invalid time interval has conflicting outcome"
             )
@@ -376,11 +388,14 @@ def _s6_validate_outcome(outcome, row, scenario, expected_rejection, engine):
     if (
         outcome.get("execution_status") != "PRODUCED"
         or outcome.get("rejected") is not False
+        or return_code != 0
         or not outcome.get("output")
         or not isinstance(outcome.get("output_sha256"), str)
         or not re.fullmatch(r"[0-9a-f]{64}", outcome["output_sha256"])
     ):
-        raise ValueError(f"S6 {engine} valid case lacks produced output identity")
+        raise ValueError(
+            f"S6 {engine} produced outcome needs a successful exit and output identity"
+        )
     trajectory = outcome.get("trajectory")
     if not isinstance(trajectory, dict) or trajectory.get("columns") != [
         "time",
@@ -564,7 +579,7 @@ def s6_simulate_receipt_report(
             row.replace(".", "_"): {
                 "sha256": hashlib.sha256(path.read_bytes()).hexdigest()
             }
-            for row, _, _ in receipts
+            for row, path, _ in receipts
         },
     }
     if artifact_run_id is not None:
