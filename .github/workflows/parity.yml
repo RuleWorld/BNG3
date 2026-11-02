@@ -77,6 +77,7 @@ jobs:
             tests/validation/test_integrated_extensions.py \
             tests/validation/test_graph_identity.py \
             tests/validation/test_issue_142_release_record.py \
+            tests/validation/test_s6_simulate_receipt_consumer.py \
             tests/validation/test_nfsim_sweep_gate.py \
             tests/validation/test_harness_paths.py::test_required_oracle_fails_in_strict_ci \
             tests/validation/test_harness_paths.py::test_api_fixture_fails_in_strict_ci_and_skips_locally \
@@ -665,6 +666,7 @@ jobs:
         run: |
           head_args=()
           issue142_args=()
+          s6_args=()
           if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             head_args=(--collect-upstream-heads)
           fi
@@ -675,11 +677,15 @@ jobs:
               --issue142-observables-report "$RUNNER_TEMP/issue142/queue/observables/observables-report.json"
             )
           fi
+          if [[ -d "$RUNNER_TEMP/bng3-s6-receipts" ]]; then
+            s6_args+=(--s6-simulate-receipt-dir "$RUNNER_TEMP/bng3-s6-receipts")
+          fi
           python -m tests.validation.issue_queue \
             --issues-json "$RUNNER_TEMP/bng3-issues.json" \
             --report "$RUNNER_TEMP/bng3-integrated-validation/report.json" \
             --report "$RUNNER_TEMP/bng3-integrated-validation/matrix-report.json" \
             "${issue142_args[@]}" \
+            "${s6_args[@]}" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --output-dir "$RUNNER_TEMP/bng3-issue-queue" "${head_args[@]}"
           cat "$RUNNER_TEMP/bng3-issue-queue/issue-queue.md" >> "$GITHUB_STEP_SUMMARY"

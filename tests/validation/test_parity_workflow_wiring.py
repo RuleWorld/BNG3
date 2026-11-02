@@ -437,3 +437,27 @@ def test_issue160_diagnostic_controls_run_without_claiming_release_acceptance():
         in step["run"]
     )
     assert step["env"]["PYTHONPATH"] == "python:."
+
+
+def test_s6_receipts_are_consumed_from_the_producer_run_and_contract_tested():
+    workflow = _parse_workflow()
+    integrated = workflow["jobs"]["integrated-semantic-validation"]
+    queue_step = next(
+        step
+        for step in integrated["steps"]
+        if step.get("name")
+        == "Build exact-revision issue and provenance evidence queue"
+    )
+    assert '[[ -d "$RUNNER_TEMP/bng3-s6-receipts" ]]' in queue_step["run"]
+    assert "--s6-simulate-receipt-dir" in queue_step["run"]
+    assert '"${s6_args[@]}"' in queue_step["run"]
+
+    contract_job = workflow["jobs"]["oracle-lock"]
+    ci_contracts = next(
+        step
+        for step in contract_job["steps"]
+        if step.get("name") == "Run CI contract tests"
+    )
+    assert (
+        "tests/validation/test_s6_simulate_receipt_consumer.py" in ci_contracts["run"]
+    )
