@@ -437,3 +437,37 @@ def test_issue160_diagnostic_controls_run_without_claiming_release_acceptance():
         in step["run"]
     )
     assert step["env"]["PYTHONPATH"] == "python:."
+
+
+def test_s6_simulate_option_acceptance_runs_with_locked_bng2_and_retains_receipts():
+    job = _parse_workflow()["jobs"]["integrated-semantic-validation"]
+    step = next(
+        (
+            item
+            for item in job["steps"]
+            if item.get("name") == "Run S6 simulate-option acceptance"
+        ),
+        None,
+    )
+    assert step is not None
+    assert (
+        "tests/validation/release/cases/sprint-s6-simulate-options/test_simulate_options.py"
+        in step["run"]
+    )
+    assert "--bng-cpp build/cpp/bng_cpp" in step["run"]
+    assert step["env"]["BNG3_CI_STRICT_ORACLES"] == "1"
+    assert step["env"]["BNG2_PERL"].endswith("/oracle-bionetgen/bng2/BNG2.pl")
+    assert step["env"]["BNGPATH"].endswith("/oracle-bionetgen/bng2")
+
+    upload = next(
+        (
+            item
+            for item in job["steps"]
+            if item.get("name") == "Upload S6 simulate-option receipts"
+        ),
+        None,
+    )
+    assert upload is not None
+    assert upload["if"] == "always()"
+    assert upload["uses"].startswith("actions/upload-artifact@")
+    assert "bng3-s6-receipts/*.json" in upload["with"]["path"]
