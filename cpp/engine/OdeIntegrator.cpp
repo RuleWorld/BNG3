@@ -154,6 +154,12 @@ OdeIntegrator::OdeIntegrator(const ast::Model& model, const GeneratedNetwork& ne
                 isStaticDuration = [&](const ast::Expression& term) {
                     if (term.kind() == ast::ExpressionKind::Identifier) {
                         if (term.name() == "time" || term.name() == "t") return false;
+                        if (!model_.getParameters().contains(term.name())) {
+                            // An identifier absent from the parameter list
+                            // may be an observable or invalid. Neither case
+                            // proves that the duration is static.
+                            return false;
+                        }
                         try {
                             return !model_.getParameters().isTimeDependent(term.name());
                         } catch (...) {
@@ -3963,9 +3969,11 @@ void OdeIntegrator::writeOutputFiles(const std::string& prefix, const OdeResult&
     std::vector<std::string> funcNames;
     std::vector<ast::Expression> funcExprs;
     if (printFunctions) {
-        for (const auto& fn : model_.getFunctions()) {
-            funcNames.push_back(fn.getName());
-            funcExprs.push_back(fn.getExpression());
+        funcNames.reserve(model_.getFunctions().size());
+        funcExprs.reserve(model_.getFunctions().size());
+        for (const auto& function : model_.getFunctions()) {
+            funcNames.push_back(function.getName());
+            funcExprs.push_back(function.getExpression());
         }
     }
 
@@ -3988,45 +3996,28 @@ void OdeIntegrator::writeOutputFiles(const std::string& prefix, const OdeResult&
                    textFileBytes((result.observables.empty()
                                       ? 0
                                       : result.observables.front().size()) +
-                                     funcExprs.size(),
+                                     funcNames.size(),
                                  result.timePoints.size() - startStep));
     for (std::size_t step = startStep; step < result.timePoints.size(); ++step) {
         const std::vector<double>& obs = result.observables[step];
-        char* const row = rows.reserve(kMaxFieldBytes * (obs.size() + funcExprs.size() + 2));
+        char* const row = rows.reserve(kMaxFieldBytes * (obs.size() + funcNames.size() + 2));
         char* cursor = appendScientificField(row, result.timePoints[step],
                                             /*leadingSpace=*/false);
         for (const auto& o : obs) {
             cursor = appendScientificField(cursor, o, /*leadingSpace=*/true);
         }
         // Evaluate and print function values
-        if (printFunctions && !funcExprs.empty()) {
-            // Build observable value map for this time step
-            std::unordered_map<std::string, double> obsMap;
-            for (std::size_t gi = 0; gi < compiledGroups_.size() && gi < result.observables[step].size(); ++gi) {
-                obsMap[compiledGroups_[gi].name] = result.observables[step][gi];
-            }
-            // Also resolve model-defined functions recursively.  A function
-            // output may reference another zero-argument function (for
-            // example f_diff() = f_correct() - f_builtin()), so treating
-            // every identifier as a parameter loses the model-function
-            // namespace and raises "Unknown parameter".
-            std::function<double(const std::string&)> resolver;
-            resolver = [&](const std::string& name) -> double {
-                auto obsIt = obsMap.find(name);
-                if (obsIt != obsMap.end()) return obsIt->second;
-                for (const auto& function : model_.getFunctions()) {
-                    if (function.getName() == name && function.getArgs().empty()) {
-                        return function.getExpression().evaluate(
-                            resolver, result.timePoints[step]);
-                    }
-                }
-                // As in derivs(): the parameter may depend on time.
-                return model_.getParameters().evaluate(
-                    name, result.timePoints[step]);
-            };
-            for (auto& fexpr : funcExprs) {
-                double val = fexpr.evaluate(resolver, result.timePoints[step]);
-                cursor = appendScientificField(cursor, val, /*leadingSpace=*/true);
+        if (printFunctions && !funcNames.empty()) {
+            // Use the integrator's history-aware evaluator for printed
+            // functions so delay() has the same semantics in numerical results
+            // and .gdat output.
+            const double time = result.timePoints[step];
+            const auto state = historyStateAt(time);
+            for (const auto& expression : funcExprs) {
+                const double value = evaluateExpressionWithHistory(
+                    expression, time, state.data());
+                cursor = appendScientificField(cursor, value,
+                                               /*leadingSpace=*/true);
             }
         }
         *cursor++ = '\n';

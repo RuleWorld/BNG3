@@ -588,6 +588,15 @@ jobs:
         if: always() && steps.candidate_identity.outcome == 'success'
         run: python -m pytest -c tests/validation/pytest.ini tests/validation/test_worker_package_identity.py -q
 
+      - name: Run SBML nonconstant delay history acceptance
+        if: always() && steps.candidate_identity.outcome == 'success'
+        env:
+          BNG3_PYTHON_TEST_MODE: installed
+        run: >-
+          python -m pytest -q
+          --confcutdir=tests/validation/release/cases/sprint-s5-delay-history
+          tests/validation/release/cases/sprint-s5-delay-history/test_delay_history.py
+
       - name: Run integrated cross-component cases
         id: integrated_cases
         run: |

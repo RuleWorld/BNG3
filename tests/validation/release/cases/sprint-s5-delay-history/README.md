@@ -10,7 +10,8 @@ The `ordinary` case keeps `k=1`, giving `x(t)=1+t` and `y(t)=1+t/2`. The
 `boundary` case changes `k` from 1 to 3 at `t=0.5`; `y` reads the history at
 `t=0` with zero lag and crosses the event history at `t=1`. The interaction
 case uses the same event and continues one trajectory over `[0,0.4]`,
-`[0.4,0.8]`, `[0.8,1.2]`, and `[1.2,2]`. Its exact laws are recorded in
+`[0.4,0.5]`, `[0.5,0.8]`, `[0.8,1.2]`, and `[1.2,2]`. Its exact laws are
+recorded in
 `case_contract.py`; in particular, after the event, `x(t)=1.5+3(t-0.5)` and
 `y(t)=1.5t` for `t>1`.
 
@@ -18,8 +19,10 @@ case uses the same event and continues one trajectory over `[0,0.4]`,
 history jump. The SBML event changes `k` instantaneously at `t=0.5`; at the
 event time the model output is the value after all simultaneous event
 assignments, so `q(1)=3`, while `q(t)=1` for `t<1`. `y` stays continuous at
-`t=1` but changes slope there. The zero-duration sample at `t=0` is defined
-without querying negative-time history.
+`t=1` but changes slope there. The public replay splits exactly at the event,
+applies its emitted parameter assignment, and then continues the same native
+session. The zero-duration sample at `t=0` is defined without querying
+negative-time history.
 
 ## Source basis
 

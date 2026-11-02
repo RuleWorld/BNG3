@@ -243,56 +243,100 @@ def _public_bng3(
             _stage("public-bng3-continuation", "NOT_TESTED", detail),
             _stage("public-bng3-output-comparison", "NOT_TESTED", detail),
         )
-    failed_segment = None
     try:
-        native_model = _bionetgen_cpp.parse_string(bngl)
-        model = BioNetGenModel(native_model)
-        observations = []
-        segments = continuation_segments(case_id)
-        for index, (start, end) in enumerate(segments):
-            failed_segment = index
+        import re
+
+        import bionetgen
+        from bionetgen import BioNetGenModel, _bionetgen_cpp
+
+        if case_id == "ordinary":
+            # This source has no event actions; exercise the public in-memory
+            # ODE API and compare its history-aware function outputs directly.
+            model = BioNetGenModel(_bionetgen_cpp.parse_string(bngl))
             result = model.simulate(
                 method="ode",
-                t_start=start,
-                t_end=end,
+                t_start=0.0,
+                t_end=2.0,
                 n_steps=0,
-                sample_times=(
-                    [start, end]
-                    if case_id == "interaction"
-                    else list(sample_times(case_id))
-                ),
-                continue_simulation=index > 0,
+                sample_times=list(sample_times(case_id)),
                 rtol=RTOL,
                 atol=ATOL,
             )
             functions = getattr(result, "functions", {})
             observables = getattr(result, "observables", {})
             times = np.asarray(result.time, dtype=float)
-            for row, time in enumerate(times):
-                if observations and np.isclose(
-                    time, observations[-1]["time"], atol=1e-13, rtol=0
-                ):
-                    continue
-                observations.append(
-                    {
-                        "time": float(time),
-                        **{
-                            name: float(np.asarray(values[name])[row])
-                            for name, values in (
-                                ("x_amt", observables),
-                                ("z_amt", observables),
-                                ("y", functions),
-                                ("q", functions),
-                            )
-                            if name in values
-                        },
-                    }
+            observations = [
+                {
+                    "time": float(time),
+                    **{
+                        name: float(np.asarray(values[name])[row])
+                        for name, values in (
+                            ("x_amt", observables),
+                            ("z_amt", observables),
+                            ("y", functions),
+                            ("q", functions),
+                        )
+                        if name in values
+                    },
+                }
+                for row, time in enumerate(times)
+            ]
+            action_receipt = {
+                "consumer": "public BioNetGenModel ODE API",
+                "segments": [
+                    list(segment) for segment in continuation_segments(case_id)
+                ],
+            }
+        else:
+            # Consume the Atomizer-produced actions through the public file
+            # runner. print_functions only exposes already-computed result
+            # functions in .gdat; it does not alter the event schedule/grid.
+            instrumented_bngl = re.sub(
+                r"(?im)\bsimulate\s*\(\s*\{",
+                "simulate({print_functions=>1, ",
+                bngl,
+            )
+            action_input = outdir / f"{case_id}-public-actions.bngl"
+            action_input.write_text(instrumented_bngl, encoding="utf-8")
+            action_output = outdir / f"{case_id}-public-output"
+            run_result = bionetgen.run(action_input, out=action_output, suppress=True)
+            if not run_result.gdats:
+                raise RuntimeError("public action runner produced no .gdat result")
+            if len(run_result.gdats) != 1:
+                raise RuntimeError(
+                    f"expected one .gdat result, found {len(run_result.gdats)}"
                 )
+            table = next(iter(run_result.gdats.values()))
+            columns = set(table.dtype.names or ())
+            required_columns = {"time", "x_amt", "z_amt", "y", "q"}
+            if not required_columns.issubset(columns):
+                raise RuntimeError(
+                    "public action output omitted columns: "
+                    + ", ".join(sorted(required_columns - columns))
+                )
+            observations = [
+                {
+                    name: float(row[name])
+                    for name in ("time", "x_amt", "z_amt", "y", "q")
+                }
+                for row in table
+            ]
+            action_receipt = {
+                "consumer": "public bionetgen.run action runner",
+                "segments": [
+                    list(segment) for segment in continuation_segments(case_id)
+                ],
+                "action_input": str(action_input.resolve()),
+                "action_input_sha256": hashlib.sha256(
+                    action_input.read_bytes()
+                ).hexdigest(),
+            }
         runtime_identity = {
             "module": str(Path(_bionetgen_cpp.__file__).resolve()),
             "module_sha256": hashlib.sha256(
                 Path(_bionetgen_cpp.__file__).read_bytes()
             ).hexdigest(),
+            **action_receipt,
         }
     except Exception as exc:
         msg = f"public BNG3 execution raised: {type(exc).__name__}: {exc}"
@@ -306,25 +350,13 @@ def _public_bng3(
             _stage("public-bng3-execution", status, msg),
             _stage(
                 "public-bng3-continuation",
-                (
-                    "FAIL"
-                    if case_id == "interaction"
-                    and failed_segment
-                    and failed_segment > 0
-                    else "NOT_TESTED"
-                ),
-                (
-                    "continued phase raised before completion"
-                    if case_id == "interaction"
-                    and failed_segment
-                    and failed_segment > 0
-                    else "continuation was not reached"
-                ),
+                "NOT_TESTED",
+                "the generated action block did not complete",
             ),
             _stage(
                 "public-bng3-output-comparison",
                 "NOT_TESTED",
-                "execution failed before outputs were available",
+                "action execution failed before outputs were available",
             ),
         )
     output = outdir / f"{case_id}-public-bng3.json"
@@ -358,12 +390,12 @@ def _public_bng3(
                 break
         if mismatch:
             break
-    continuation_status = "PASS" if case_id == "interaction" else "NOT_REQUIRED"
+    continuation_status = "PASS" if case_id != "ordinary" else "NOT_REQUIRED"
     return (
         _stage(
             "public-bng3-execution",
             "PASS" if not mismatch else "FAIL",
-            "public BioNetGenModel ODE API executed the emitted representation",
+            runtime_identity["consumer"] + " executed the Atomizer output",
             native_identity=runtime_identity,
             segments=[list(segment) for segment in continuation_segments(case_id)],
         ),
@@ -371,8 +403,8 @@ def _public_bng3(
             "public-bng3-continuation",
             continuation_status,
             (
-                "one native session preserved delayed state across all four public continuation intervals"
-                if case_id == "interaction"
+                "the generated actions continued one native session across the event and requested segments"
+                if case_id != "ordinary"
                 else "only one uninterrupted public simulation was required"
             ),
             segments=[list(segment) for segment in continuation_segments(case_id)],

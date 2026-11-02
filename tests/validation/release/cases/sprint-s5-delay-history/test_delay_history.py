@@ -143,10 +143,40 @@ def test_replay_classifies_each_scientific_stage_separately(case_id, tmp_path):
     if case_id == "interaction":
         assert report["continuation_segments"] == [
             [0.0, 0.4],
-            [0.4, 0.8],
+            [0.4, 0.5],
+            [0.5, 0.8],
             [0.8, 1.2],
             [1.2, 2.0],
         ]
         assert np.allclose(
             np.asarray(sample_times(case_id)), [0.0, 0.4, 0.5, 0.8, 1.0, 1.2, 2.0]
+        )
+
+
+def test_unknown_delay_duration_identifier_is_rejected_during_compilation():
+    """Unknown names are not accepted as static duration parameters."""
+    from bionetgen import BioNetGenModel, _bionetgen_cpp
+
+    model = BioNetGenModel(_bionetgen_cpp.parse_string("""begin model
+begin molecule types
+A()
+end molecule types
+begin seed species
+A() 1
+end seed species
+begin observables
+Species A_amt A()
+end observables
+begin functions
+y() = delay(A_amt, missing_clock/2)
+end functions
+end model"""))
+    with pytest.raises(
+        RuntimeError, match="missing_clock: unresolved expression symbol"
+    ):
+        model.simulate(
+            method="ode",
+            t_start=0.0,
+            t_end=1.0,
+            n_steps=2,
         )

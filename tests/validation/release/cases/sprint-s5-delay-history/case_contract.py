@@ -27,9 +27,13 @@ def sample_times(case_id: str) -> tuple[float, ...]:
 
 
 def continuation_segments(case_id: str) -> tuple[tuple[float, float], ...]:
-    if case_id != "interaction":
+    if case_id == "ordinary":
         return ((0.0, 2.0),)
-    return ((0.0, 0.4), (0.4, 0.8), (0.8, 1.2), (1.2, 2.0))
+    if case_id == "boundary":
+        return ((0.0, 0.5), (0.5, 2.0))
+    if case_id == "interaction":
+        return ((0.0, 0.4), (0.4, 0.5), (0.5, 0.8), (0.8, 1.2), (1.2, 2.0))
+    raise KeyError(case_id)
 
 
 def expected(case_id: str, t: float) -> dict[str, float]:
