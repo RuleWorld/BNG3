@@ -836,6 +836,36 @@ end model
         bionetgen.semantic_equal(left, right)
 
 
+def test_semantic_equal_does_not_certify_nonunique_species_labels():
+    def model(seed_lines: str):
+        source = f"""
+begin model
+begin molecule types
+    A()
+end molecule types
+begin seed species
+{seed_lines}
+end seed species
+begin actions
+    generate_network({{check_iso=>0}})
+end actions
+end model
+"""
+        return bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(source))
+
+    split_seed = model("    A() 1\n    A() 2")
+    single_seed = model("    A() 2")
+    network = split_seed.generate_network()
+    assert network.generation_converged
+    assert network.species_names == ["A()", "A()"]
+
+    # The extractor keys state by species label, so duplicate labels collapse
+    # distinct network coordinates. BNG2 rejects duplicate isomorphic seed
+    # species at parse time; BNG3 must not issue an equality proof for them.
+    with pytest.raises(bionetgen.EqualityUndecided, match="non-unique species"):
+        bionetgen.semantic_equal(split_seed, single_seed)
+
+
 def test_semantic_equal_does_not_ignore_observable_patterns():
     def model(pattern: str):
         source = f"""
