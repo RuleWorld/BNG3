@@ -37,6 +37,7 @@ struct ProtocolAction {
     };
     struct SimulationOptions {
         std::optional<std::string> method;
+        std::optional<Diagnostic> methodDiagnostic;
         std::optional<double> tStart;
         std::optional<double> tEnd;
         std::optional<Diagnostic> tStartDiagnostic;

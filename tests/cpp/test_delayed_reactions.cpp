@@ -566,7 +566,7 @@ end model
         {"method", "ssa"}, {"t_end", "1"}, {"n_steps", "2"},
         {"seed", "17"}, {"prefix", "bng3_delayed_action"}}});
     model->addAction(ast::Action{"simulate", {
-        {"method", "ssa"}, {"t_end", "2"}, {"n_steps", "4"},
+        {"method", "ssa"}, {"t_end", "3"}, {"n_steps", "4"},
         {"seed", "17"}, {"prefix", "bng3_delayed_action"},
         {"continue", "1"}}});
     const auto source = std::filesystem::temp_directory_path() /

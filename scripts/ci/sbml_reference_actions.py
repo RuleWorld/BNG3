@@ -224,6 +224,17 @@ def rewrite_action_output_grid(
     for phase in block.phases:
         arguments = phase.arguments
         points = _grid_points(times, phase.t_start, phase.t_end)
+        # A BNGL simulate action requires at least three sample points.  A
+        # short event phase can contain only one or two official grid points.
+        if points and len(points) < 3 and phase.t_end > phase.t_start:
+            points = sorted({float(phase.t_start), *points, float(phase.t_end)})
+            while len(points) < 3:
+                gaps = [
+                    (points[index + 1] - points[index], index)
+                    for index in range(len(points) - 1)
+                ]
+                width, index = max(gaps)
+                points.insert(index + 1, points[index] + width / 2.0)
         # ``n_steps`` takes precedence over ``sample_times`` in the native
         # dispatcher, so it has to be removed when a sample grid is supplied.
         arguments = re.sub(r"(?<![A-Za-z_])n_steps\s*=>\s*[^,}]+", "", arguments)
@@ -235,7 +246,12 @@ def rewrite_action_output_grid(
         if arguments.startswith("{") and arguments.endswith("}"):
             arguments = arguments[1:-1]
         parts = [part.strip() for part in arguments.split(",") if part.strip()]
-        if points:
+        if phase.t_end <= phase.t_start:
+            # BNG2 accepts a zero-duration simulation with n_steps, but rejects
+            # sample_times arrays shorter than three points. Preserve the
+            # degenerate phase without inventing out-of-interval sample times.
+            parts.append("n_steps=>1")
+        elif points:
             parts.append(
                 "sample_times=>["
                 + ", ".join(repr(float(value)) for value in points)

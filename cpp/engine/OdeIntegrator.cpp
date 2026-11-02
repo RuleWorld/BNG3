@@ -3423,7 +3423,8 @@ OdeResult OdeIntegrator::integrateCore(const OdeOptions& options) {
             "bng3_events require CVODE or SSA event detection");
     }
     if (options.method != "ssa" &&
-        (options.maxSimSteps > 0 || options.outputStepInterval > 0)) {
+        (options.maxSimSteps > 0 || options.maxSimStepsSpecified ||
+         options.outputStepInterval > 0)) {
         throw std::runtime_error(
             "max_sim_steps and output_step_interval are supported only for SSA");
     }
@@ -4033,6 +4034,38 @@ void OdeIntegrator::writeOutputFiles(const std::string& prefix, const OdeResult&
         rows.commit(cursor);
     }
     rows.flush();
+}
+
+void OdeIntegrator::writeSpeciesStatsFile(
+    const std::string& prefix, const OdeResult& result, bool append) const {
+    std::ofstream jdat(prefix + ".jdat", append ? std::ios::app : std::ios::trunc);
+    if (!jdat) {
+        throw std::runtime_error("Failed to open " + prefix + ".jdat for writing");
+    }
+
+    if (!append) {
+        jdat << "#" << std::setw(18) << "time"
+             << std::setw(19) << "curr_pop_species"
+             << std::setw(19) << "ever_pop_species"
+             << std::setw(19) << "tot_species_net" << "\n";
+    }
+
+    const std::size_t startStep = append ? 1 : 0;
+    for (std::size_t step = startStep; step < result.timePoints.size(); ++step) {
+        const auto& concentrations = result.concentrations[step];
+        const auto activeSpecies = static_cast<std::size_t>(std::count_if(
+            concentrations.begin(), concentrations.end(),
+            [](double amount) { return amount > 0.0; }));
+        jdat << std::scientific << std::setprecision(12)
+             << std::setw(19) << result.timePoints[step]
+             << std::defaultfloat
+             << std::setw(19) << activeSpecies
+             << std::setw(19)
+             << (step < result.everPopulatedSpeciesCounts.size()
+                     ? result.everPopulatedSpeciesCounts[step]
+                     : 0)
+             << std::setw(19) << network_.species.size() << "\n";
+    }
 }
 
 void OdeIntegrator::writeBinaryOutputFiles(const std::string& prefix, const OdeResult& result, bool printCDAT) const {
@@ -5542,6 +5575,19 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             ? session->state[i] : network_.species.get(i).getAmount();
         y[i] = std::round(state);
     }
+    std::vector<bool> everPopulated(nSpecies_, false);
+    for (std::size_t i = 0; i < nSpecies_; ++i) {
+        everPopulated[i] = y[i] > 0.0;
+    }
+    const auto everPopulatedCount = [&]() {
+        return static_cast<std::size_t>(std::count(
+            everPopulated.begin(), everPopulated.end(), true));
+    };
+    const auto markCurrentPopulations = [&]() {
+        for (std::size_t i = 0; i < nSpecies_; ++i) {
+            if (y[i] > 0.0) everPopulated[i] = true;
+        }
+    };
     if (!opts.continueSimulation) {
         for (std::size_t index = 0; index < nativeEvents_.size(); ++index) {
             const auto& event = nativeEvents_[index];
@@ -5557,7 +5603,9 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                 pendingEvents_.push_back(std::move(pending));
             }
         }
-        applyDueEvents(opts.tStart, y);
+        if (applyDueEvents(opts.tStart, y)) {
+            markCurrentPopulations();
+        }
     }
     const bool stopAtInitial =
         stopIfExpr.has_value() && stopConditionMet(*stopIfExpr, opts.tStart, y);
@@ -5579,6 +5627,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                times[nextOutputTime] < until - 1e-12) {
             result.timePoints.push_back(times[nextOutputTime]);
             result.concentrations.push_back(y);
+            result.everPopulatedSpeciesCounts.push_back(everPopulatedCount());
             ++nextOutputTime;
         }
     };
@@ -5588,6 +5637,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                times[nextOutputTime] <= until + 1e-12) {
             result.timePoints.push_back(times[nextOutputTime]);
             result.concentrations.push_back(y);
+            result.everPopulatedSpeciesCounts.push_back(everPopulatedCount());
             ++nextOutputTime;
         }
     };
@@ -5597,10 +5647,12 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             std::abs(result.timePoints.back() - t) > 1e-12) {
             result.timePoints.push_back(t);
             result.concentrations.push_back(y);
+            result.everPopulatedSpeciesCounts.push_back(everPopulatedCount());
         } else {
             // An event may land exactly on an explicit output time.  The
             // sample at that instant represents the post-event state.
             result.concentrations.back() = y;
+            result.everPopulatedSpeciesCounts.back() = everPopulatedCount();
         }
     };
 
@@ -5760,12 +5812,14 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
     } else {
         result.timePoints.push_back(t);
         result.concentrations.push_back(y);
+        result.everPopulatedSpeciesCounts.push_back(everPopulatedCount());
     }
 
     // Initial-state checks use the rounded molecule-count state and run before
     // any RNG draws. The initial row was scheduled above when explicit times
     // omitted t_start.
-    stoppedEarly = stopAtInitial;
+    stoppedEarly = stopAtInitial ||
+        (opts.maxSimStepsSpecified && opts.maxSimSteps == 0);
 
     // Main SSA loop
     while (t < opts.tEnd && !stoppedEarly) {
@@ -5847,7 +5901,10 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                     }
                 }
                 for (const auto idx : reaction.productIndices) {
-                    if (!fixedSpecies_[idx]) y[idx] += 1.0;
+                    if (!fixedSpecies_[idx]) {
+                        y[idx] += 1.0;
+                        everPopulated[idx] = true;
+                    }
                 }
                 session->pendingCompletions.erase(
                     session->pendingCompletions.begin() +
@@ -5857,6 +5914,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
                 retestTriggers(t, y, heldBefore);
             }
             const bool eventApplied = applyDueEvents(t, y);
+            if (eventApplied) markCurrentPopulations();
             if (reactionCompletionApplied || eventApplied) {
                 recomputeAll();
             }
@@ -5865,6 +5923,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             } else if ((ssaStepCount % opts.outputStepInterval) == 0) {
                 result.timePoints.push_back(t);
                 result.concentrations.push_back(y);
+                result.everPopulatedSpeciesCounts.push_back(everPopulatedCount());
             }
             if (stopIfExpr.has_value() && stopConditionMet(*stopIfExpr, t, y)) {
                 stoppedEarly = true;
@@ -5966,6 +6025,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             for (const auto idx : rxn.productIndices) {
                 if (fixedSpecies_[idx]) continue;
                 y[idx] += 1.0;
+                everPopulated[idx] = true;
             }
         }
 
@@ -5973,6 +6033,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             retestTriggers(t, y, heldBefore);
         }
         const bool eventApplied = applyDueEvents(t, y);
+        if (eventApplied) markCurrentPopulations();
 
         // Recompute propensities.  On a network with a dependency graph only
         // reactions that read a species whose amount this event changed can
@@ -6001,6 +6062,7 @@ OdeResult OdeIntegrator::integrateSSA(const OdeOptions& opts) {
             (ssaStepCount % opts.outputStepInterval) == 0) {
             result.timePoints.push_back(t);
             result.concentrations.push_back(y);
+            result.everPopulatedSpeciesCounts.push_back(everPopulatedCount());
         }
 
         if (stopIfExpr.has_value() &&
