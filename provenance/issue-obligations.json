@@ -2776,7 +2776,7 @@
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [
-            "Historical stable qualification ID retained for reconciliation: qualification:issue:142:closure-record.",
+            "Historical stable qualification ID: qualification:issue:142:closure-record.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ],
           "live_acceptance_criteria": [
