@@ -156,7 +156,9 @@ def _numeric_rates_equal(ref, test, ref_identity, test_identity, rtol):
     return True
 
 
-def network_contracts(reference, subject, *, numeric_rate_rtol=0):
+def network_contracts(
+    reference, subject, *, numeric_rate_rtol=0, reference_tfun_xml=None
+):
     if not np.isfinite(numeric_rate_rtol) or not 0 <= numeric_rate_rtol <= 1e-6:
         raise ValueError("numeric rate serialization tolerance must be in [0, 1e-6]")
     try:
@@ -176,7 +178,12 @@ def network_contracts(reference, subject, *, numeric_rate_rtol=0):
     right, rp = compare._reaction_view(test, ti, compare_rates=False)
     topology = set(left) == set(right)
     multiplicity = left == right
-    diff = compare.compare_net(ref, test, compare_initial_amounts=True)
+    diff = compare.compare_net(
+        ref,
+        test,
+        compare_initial_amounts=True,
+        reference_tfun_xml=reference_tfun_xml,
+    )
     names_ref = {
         name: entries for name, entries in compare._group_view(ref, ri).values()
     }

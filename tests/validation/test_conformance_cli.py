@@ -3,6 +3,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -20,6 +21,121 @@ def test_native_suite_rejects_another_source_tree(tmp_path):
     rows = _suite({"id": "native", "kind": "ctest"}, args, tmp_path / "report", {}, {})
     assert rows[0]["status"] == "HARNESS_ERROR"
     assert "source" in rows[0]["detail"]
+
+
+def test_tfun_network_comparison_consumes_bng2_xml_sidecar(tmp_path, monkeypatch):
+    from tests.validation import campaign, conformance
+
+    source = tmp_path / "test_tfun.bngl"
+    source.write_text(
+        """begin functions
+  mctr = dummy/1e4
+  k1 = TFUN(mctr, 'DAT_validate/test.dat') / 10
+end functions
+begin actions
+  generate_network({overwrite=>1})
+end actions
+""",
+        encoding="utf-8",
+    )
+    support = tmp_path / "DAT_validate"
+    support.mkdir()
+    (support / "test.dat").write_text("0 1\n1 2\n", encoding="utf-8")
+    wrong_subject_rate = False
+
+    reference_net = """begin parameters
+1 _rateLaw1 1e4
+end parameters
+begin functions
+1 mctr() dum/1e4
+2 k2() TFUN(mctr,'DAT_validate/test.dat')
+end functions
+begin species
+1 A() 1000
+2 dummy() 0
+end species
+begin reactions
+1 0 2 _rateLaw1
+2 1 0 k2
+end reactions
+begin groups
+1 A 1
+2 dum 2
+end groups
+"""
+    xml = """<model>
+  <Function id="k2" type="TFUN" file="DAT_validate/test.dat" ctrName="mctr">
+    <Expression>__TFUN_VAL__/1e1</Expression>
+  </Function>
+</model>
+"""
+
+    def subject_net():
+        divisor = 11 if wrong_subject_rate else 10
+        return f"""begin functions
+mctr()=dum/10000
+k2()=tfun('DAT_validate/test.dat', mctr)/{divisor}
+end functions
+begin species
+1 A() 1000
+2 dummy() 0
+end species
+begin reactions
+1 0 2 10000
+2 1 0 k2
+end reactions
+begin groups
+1 A 1
+2 dum 2
+end groups
+"""
+
+    def run_command(command, cwd, timeout, *, required=(), env=None):
+        if "--check" not in command:
+            model = Path(command[-1])
+            text = model.read_text(encoding="utf-8")
+            if command[0] == "perl":
+                assert "writeXML({overwrite=>1})" in text
+                assert "test_tfun.xml" in required
+                (cwd / "test_tfun.xml").write_text(xml, encoding="utf-8")
+                (cwd / "test_tfun.net").write_text(reference_net, encoding="utf-8")
+            else:
+                (cwd / "test_tfun.net").write_text(subject_net(), encoding="utf-8")
+        return {"status": "PASS", "detail": ""}
+
+    monkeypatch.setattr(campaign, "run_command", run_command)
+
+    args = SimpleNamespace(
+        bng_cpp=Path("bng_cpp"),
+        network_iterations=10,
+        max_aggregate=100,
+        case_timeout=10,
+    )
+
+    def run_report(name):
+        return conformance._model(
+            "test_tfun",
+            source,
+            args,
+            tmp_path / name,
+            {"script": "BNG2.pl"},
+            {},
+        )
+
+    rows = run_report("report")
+    assert all(row["status"] == "PASS" for row in rows), [
+        (row["id"], row["status"], row.get("detail"))
+        for row in rows
+        if row["status"] != "PASS"
+    ]
+    assert (tmp_path / "report/models/test_tfun/reference/test_tfun.xml").is_file()
+
+    wrong_subject_rate = True
+    negative_rows = run_report("negative-report")
+    reaction_rate = next(
+        row for row in negative_rows if row["id"] == "test_tfun:network:reaction-rates"
+    )
+    assert reaction_rate["status"] == "FAIL"
 
 
 def test_python_suite_does_not_receive_validation_only_option(tmp_path):

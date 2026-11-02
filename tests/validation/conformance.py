@@ -8,6 +8,7 @@ import importlib.metadata
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -302,7 +303,7 @@ def _models(args, selection):
 
 
 def _model(name, source, args, directory, reference, env):
-    from scripts.cross_validate import _stage_model
+    from scripts.cross_validate import _network_only_text, _stage_model
     from .compare import compare_net, parse_net
     from .contracts import network_contracts
 
@@ -320,6 +321,8 @@ def _model(name, source, args, directory, reference, env):
         work / "input",
         support_roots=support_roots,
     )
+    source_text = source.read_text(encoding="utf-8")
+    has_legacy_tfun = re.search(r"\bTFUN\s*\(", source_text) is not None
     text = staged.read_text().replace(
         "generate_network({overwrite=>1})",
         f"generate_network({{overwrite=>1,max_iter=>{args.network_iterations},max_agg=>{args.max_aggregate}}})",
@@ -380,6 +383,18 @@ def _model(name, source, args, directory, reference, env):
                 shutil.copy2(item, target / item.name)
         model = target / staged.name
         if label == "reference":
+            if has_legacy_tfun:
+                # BNG2's .net serializer writes only a bare TFUN call and
+                # omits arithmetic around it. Its XML export retains the full
+                # expression; ask only the reference replay to emit that
+                # sidecar so rate comparison can use the existing loss-aware
+                # comparator without weakening it.
+                model.write_text(
+                    _network_only_text(
+                        model.read_text(encoding="utf-8"), write_tfun_xml=True
+                    ),
+                    encoding="utf-8",
+                )
             command = [
                 env.get("PERL", "perl"),
                 reference["script"],
@@ -390,7 +405,18 @@ def _model(name, source, args, directory, reference, env):
         else:
             command = [str(args.bng_cpp), str(model.resolve())]
         receipt = campaign.run_command(
-            command, target, args.case_timeout, required=[source.stem + ".net"], env=env
+            command,
+            target,
+            args.case_timeout,
+            required=[
+                source.stem + ".net",
+                *(
+                    [source.stem + ".xml"]
+                    if label == "reference" and has_legacy_tfun
+                    else []
+                ),
+            ],
+            env=env,
         )
         if receipt["status"] != "PASS":
             rows.append(
@@ -421,7 +447,15 @@ def _model(name, source, args, directory, reference, env):
             )
         )
     else:
-        diff = compare_net(ref, test, compare_initial_amounts=True)
+        tfun_xml = (
+            work / "reference" / f"{source.stem}.xml" if has_legacy_tfun else None
+        )
+        diff = compare_net(
+            ref,
+            test,
+            compare_initial_amounts=True,
+            reference_tfun_xml=tfun_xml,
+        )
         if diff.initial_amounts_changed:
             common["capabilities"] += ["interface.cli-actions", "export.net"]
             common["first_observed_divergence"] = "network.initial_amounts"
@@ -463,6 +497,7 @@ def _model(name, source, args, directory, reference, env):
         contracts = network_contracts(
             work / "reference" / (source.stem + ".net"),
             work / "subject" / (source.stem + ".net"),
+            reference_tfun_xml=tfun_xml,
         )
         for contract in contracts:
             rows.append(
