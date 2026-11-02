@@ -77,8 +77,7 @@ def test_finite_one_molecule_conversion_certificate_covers_split_and_renaming():
 
 
 def test_equal_initial_ode_drift_does_not_certify_equal_jump_processes():
-    first_order = _model(
-        """begin model
+    first_order = _model("""begin model
 begin parameters
     k 1
 end parameters
@@ -93,10 +92,8 @@ begin reaction rules
     A() -> B() k
 end reaction rules
 end model
-"""
-    )
-    paired_jump = _model(
-        """begin model
+""")
+    paired_jump = _model("""begin model
 begin parameters
     k 0.5
 end parameters
@@ -111,8 +108,7 @@ begin reaction rules
     A() + A() -> B() + B() k
 end reaction rules
 end model
-"""
-    )
+""")
 
     network_a = first_order.generate_network()
     network_b = paired_jump.generate_network()

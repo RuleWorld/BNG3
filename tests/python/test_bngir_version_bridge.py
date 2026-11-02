@@ -139,9 +139,7 @@ def test_frozen_v01_migrates_to_pinned_schema_valid_v02_and_round_trips():
     conversion_probability = 1.0 - math.exp(-0.1 * end_time)
     sampled_counts = []
     for seed in range(1, replicate_count + 1):
-        path = native_model.simulate(
-            method="ssa", t_end=end_time, n_steps=1, seed=seed
-        )
+        path = native_model.simulate(method="ssa", t_end=end_time, n_steps=1, seed=seed)
         row = path.concentrations[-1]
         values = dict(zip(network.species_names, row))
         assert all(0.0 <= amount <= 10.0 and amount.is_integer() for amount in row)
@@ -162,7 +160,10 @@ def test_frozen_v01_migrates_to_pinned_schema_valid_v02_and_round_trips():
         for count in range(10)
     ]
     dkw_bound = math.sqrt(math.log(2.0 / alpha) / (2 * replicate_count))
-    assert max(
-        abs(observed - expected)
-        for observed, expected in zip(empirical_cdf, exact_cdf)
-    ) <= dkw_bound
+    assert (
+        max(
+            abs(observed - expected)
+            for observed, expected in zip(empirical_cdf, exact_cdf)
+        )
+        <= dkw_bound
+    )

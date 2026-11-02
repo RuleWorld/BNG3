@@ -3805,10 +3805,9 @@ def exact_process_equal(
             },
         )
 
-    duplicate_species_labels = (
-        len(set(species_l)) != len(species_l)
-        or len(set(species_r)) != len(species_r)
-    )
+    duplicate_species_labels = len(set(species_l)) != len(species_l) or len(
+        set(species_r)
+    ) != len(species_r)
     if duplicate_species_labels:
         raise EqualityUndecided(
             "Generated network has non-unique species labels; state coordinates cannot be certified",
