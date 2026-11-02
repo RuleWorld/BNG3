@@ -9,6 +9,7 @@
 #include "parser/BNGAstVisitor.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cassert>
 #include <cstdint>
 #include <cmath>
