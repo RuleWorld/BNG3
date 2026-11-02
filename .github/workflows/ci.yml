@@ -903,7 +903,8 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y cmake ninja-build
           # The BNGIR version-bridge test imports jsonschema during pytest collection.
-          pip install scikit-build-core pybind11 numpy pytest jsonschema libroadrunner
+          # Workflow selector collection also imports the SciPy-backed source-law test.
+          pip install scikit-build-core pybind11 numpy scipy pytest jsonschema libroadrunner
           pip install ".[full]"
         env:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
@@ -1104,7 +1105,7 @@ jobs:
           CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
           CIBW_SKIP: "*-musllinux_* *-manylinux_i686 *-win32"
           CIBW_BUILD_VERBOSITY: 1
-          CIBW_TEST_REQUIRES: pytest numpy click pandas python-libsbml
+          CIBW_TEST_REQUIRES: pytest numpy click pandas python-libsbml xmltodict
           CIBW_TEST_COMMAND: >-
             python {project}/scripts/ci/check_python_package_identity.py
             --source-revision ${{ github.sha }} &&

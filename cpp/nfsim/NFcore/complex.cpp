@@ -2,6 +2,11 @@
 #include "NFcore.hh"
 #include <string>
 
+// The shared identity contract (see cpp/core/IdentityContract.hpp).  NFcore's
+// Complex encoding carries the compartment on every molecule, so its
+// canonical label decides the structure and compartment layers.
+#include "core/IdentityContract.hpp"
+
 // for labeling
 #include <sstream>
 #include <algorithm>
@@ -227,6 +232,13 @@ string Complex::getCanonicalLabel ( )
 }
 
 
+// the layer of the shared identity contract that this canonical label decides
+const char* Complex::identityLayer ( )
+{
+	return bng::identity::layerName ( bng::identity::Layer::Compartment );
+}
+
+
 // generate a canonical label
 /*  1) construct a Nauty sparse graph representation of the complex.
     2) call Nauty to get canonical node order.
@@ -447,11 +459,16 @@ void Complex::generateCanonicalLabel ( )
 
         if ( curr_node->isMolecule() )
         {   // this is a molecule
-    	    for ( icomp_nbh=0; icomp_nbh < moltype->getNumOfComponents(); ++icomp_nbh )
-		    {
+            vector<int> component_indices;
+            component_indices.reserve(moltype->getNumOfComponents());
+            for ( icomp_nbh=0; icomp_nbh < moltype->getNumOfComponents(); ++icomp_nbh )
+            {
                 node_index_iter = node_index.find( node_t(mol, icomp_nbh) );
-                labelstream << "!" << node_index_iter->second->getIndex();
+                component_indices.push_back(node_index_iter->second->getIndex());
             }
+            std::sort(component_indices.begin(), component_indices.end());
+            for (const int component_index : component_indices)
+                labelstream << "!" << component_index;
         }
         else
         {   // this is a component
