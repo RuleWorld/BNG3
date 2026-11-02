@@ -1988,7 +1988,12 @@ void runSimulation(
     // When continue=1 and no explicit t_start, use the previous simulation's end time
     if (continueSimulation && tStartText.empty() && lastSimulationEndTime > 0.0) {
         opts.tStart = lastSimulationEndTime;
-        // BNG2 keeps t_end as the absolute endpoint for a continued run.
+        // The BNGL `simulate` action follows BNG2 and treats t_end as an
+        // absolute endpoint. The lower-level simulate_ode/simulate_ssa actions
+        // retain their existing duration-based continuation behavior.
+        if (actionName != "simulate" && !tEnd.empty() && !hasSampleTimes) {
+            opts.tEnd += lastSimulationEndTime;
+        }
     }
 
     // Parse save_progress flag (BNG2 parity: write .net checkpoint at each output step)
