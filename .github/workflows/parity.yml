@@ -1010,6 +1010,33 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          # The upstream validator consumes vN.xml after bionetgen.run().
+          # Direct AST execution does not need to emit XML, so prepare its
+          # native inputs explicitly without editing or executing source actions.
+          python - "$RUNNER_TEMP/oracle-nfsim/validate/basicModels" <<'PY'
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+          from bionetgen import _bionetgen_cpp as cpp
+
+          directory = Path(sys.argv[1])
+          exports = []
+          for config in sorted(directory.glob('r*.txt')):
+              source = directory / ('v' + config.stem[1:] + '.bngl')
+              target = source.with_suffix('.xml')
+              model = cpp.parse_file(str(source))
+              target.write_text(cpp.io.write_xml_string(model), encoding='utf-8')
+              exports.append({
+                  'source': source.name,
+                  'source_sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
+                  'xml': target.name,
+                  'xml_sha256': hashlib.sha256(target.read_bytes()).hexdigest(),
+              })
+          if not exports:
+              raise RuntimeError('No historical NFsim inputs were prepared')
+          (directory / 'prepared-xml.json').write_text(json.dumps(exports, indent=2))
+          PY
           python "$RUNNER_TEMP/oracle-nfsim/validate/validate.py" \
             "$RUNNER_TEMP/oracle-nfsim/validate" \
             2>&1 | tee "$RUNNER_TEMP/nfsim-historical-validation.log"
@@ -1021,6 +1048,7 @@ jobs:
           name: nfsim-historical-validation-${{ github.sha }}-${{ github.run_id }}
           path: |
             ${{ runner.temp }}/nfsim-historical-validation.log
+            ${{ runner.temp }}/oracle-nfsim/validate/basicModels/prepared-xml.json
             ${{ runner.temp }}/oracle-nfsim/validate/basicModels/v42.bngl
             ${{ runner.temp }}/oracle-nfsim/validate/basicModels/v42.xml
             ${{ runner.temp }}/oracle-nfsim/validate/basicModels/v42_nf.gdat
