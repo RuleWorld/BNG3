@@ -395,12 +395,19 @@ def test_two_species_first_order_transfer_schedules_reentrant_threshold_events()
     assert result.untranslated == []
     assert result.actions_block is not None
     phase_ends = _positive_simulation_phase_ends(result.actions_block)
-    assert len(phase_ends) == 4
-    for actual, expected in zip(
-        phase_ends[:3],
-        (math.log(2), math.log(5), math.log(5) + math.log(1.25)),
-    ):
+    expected_phase_ends = (
+        math.log(2),
+        math.log(5),
+        math.log(5) + math.log(1.25),
+        1.9,
+        2.0,
+    )
+    assert len(phase_ends) == len(expected_phase_ends)
+    for actual, expected in zip(phase_ends, expected_phase_ends):
         assert math.isclose(actual, expected, rel_tol=0, abs_tol=1e-10)
+    assert not any(
+        math.isclose(end, 1.95, rel_tol=0, abs_tol=1e-10) for end in phase_ends
+    )
     assert result.actions_block.count('setConcentration("S2()", "0")') == 2
     assert result.actions_block.count('setConcentration("S1()", "1")') == 1
 
