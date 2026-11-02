@@ -1,9 +1,8 @@
 import marshal
-import functools
 from . import analyzeSBML
 from collections import Counter, defaultdict
 import itertools
-from copy import deepcopy, copy
+import pickle
 from bionetgen.atomizer.utils.util import logMess, memoize, memoizeMapped
 from . import atomizationAux as atoAux
 from .annotation_utils import identifiers_org_databases
@@ -87,7 +86,10 @@ class SCTSolver:
 
         # let's store each step separately for analysis downstream
         self.database.scts = {}
-        self.database.scts["01_binding_sct"] = deepcopy(self.database.dependencyGraph)
+        # ⚡ Bolt: Use pickle for fast deep copying of nested primitives
+        self.database.scts["01_binding_sct"] = pickle.loads(
+            pickle.dumps(self.database.dependencyGraph, -1)
+        )
 
         # lexical dependency graph contains lexically induced binding compositions. atomizer gives preference to binding obtained this way as opposed to stoichiometry
         # stronger bounds on stoichiometry based binding can be defined in
@@ -145,8 +147,8 @@ class SCTSolver:
                     self.database.dependencyGraph[molecule] = []
 
         # let's store each step separately for analysis downstream
-        self.database.scts["02_post_lexical_sct"] = deepcopy(
-            self.database.dependencyGraph
+        self.database.scts["02_post_lexical_sct"] = pickle.loads(
+            pickle.dumps(self.database.dependencyGraph, -1)
         )
 
         # user defined transformations
@@ -161,7 +163,9 @@ class SCTSolver:
                 )
 
         # let's store each step separately for analysis downstream
-        self.database.scts["03_post_user_sct"] = deepcopy(self.database.dependencyGraph)
+        self.database.scts["03_post_user_sct"] = pickle.loads(
+            pickle.dumps(self.database.dependencyGraph, -1)
+        )
 
         # self.database.eequivalence translator contains 1:1 equivalences
         # FIXME: do we need this update step or is it enough with the later one?
@@ -218,8 +222,8 @@ class SCTSolver:
                     ] = []
 
         # let's store each step separately for analysis downstream
-        self.database.scts["04_post_label_sct"] = deepcopy(
-            self.database.dependencyGraph
+        self.database.scts["04_post_label_sct"] = pickle.loads(
+            pickle.dumps(self.database.dependencyGraph, -1)
         )
 
         # add species elements defined by the user into the naming convention
@@ -344,8 +348,8 @@ class SCTSolver:
                         )
 
         # let's store each step separately for analysis downstream
-        self.database.scts["05_post_lex_catalysis_sct"] = deepcopy(
-            self.database.dependencyGraph
+        self.database.scts["05_post_lex_catalysis_sct"] = pickle.loads(
+            pickle.dumps(self.database.dependencyGraph, -1)
         )
 
         # non lexical-analysis catalysis reactions
@@ -438,8 +442,8 @@ class SCTSolver:
                         self.database.dependencyGraph[mod] = [[base]]
 
         # let's store each step separately for analysis downstream
-        self.database.scts["06_post_nonlex_catalysis_sct"] = deepcopy(
-            self.database.dependencyGraph
+        self.database.scts["06_post_nonlex_catalysis_sct"] = pickle.loads(
+            pickle.dumps(self.database.dependencyGraph, -1)
         )
 
         """
@@ -449,7 +453,7 @@ class SCTSolver:
             #they are not true bindingReactions
             for namingEquivalence in indirectEquivalenceTranslator[key]:
                 removedElement = ''
-                tmp3 = deepcopy(namingEquivalence[1])
+                tmp3 = pickle.loads(pickle.dumps(namingEquivalence[1], -1))
                 if tmp3 in self.database.dependencyGraph[namingEquivalence[0][0]]:
                     removedElement = namingEquivalence[0][0]
                 elif tmp3 in self.database.dependencyGraph[namingEquivalence[0][1]]:
@@ -513,8 +517,8 @@ class SCTSolver:
                 ]
 
         # let's store each step separately for analysis downstream
-        self.database.scts["07_post_similarity_sct"] = deepcopy(
-            self.database.dependencyGraph
+        self.database.scts["07_post_similarity_sct"] = pickle.loads(
+            pickle.dumps(self.database.dependencyGraph, -1)
         )
 
         # Now let's go for annotation analysis and last resort stuff on the remaining orphaned molecules
@@ -567,8 +571,8 @@ class SCTSolver:
                         )
 
         # let's store each step separately for analysis downstream
-        self.database.scts["08_post_annotation_sct"] = deepcopy(
-            self.database.dependencyGraph
+        self.database.scts["08_post_annotation_sct"] = pickle.loads(
+            pickle.dumps(self.database.dependencyGraph, -1)
         )
 
         # can we now add information to the non orphaned species? maybe annotation tells me stuff that contradicts the reaction-network
@@ -631,8 +635,8 @@ class SCTSolver:
                         )
 
         # let's store each step separately for analysis downstream
-        self.database.scts["09_post_tiebreaker_sct"] = deepcopy(
-            self.database.dependencyGraph
+        self.database.scts["09_post_tiebreaker_sct"] = pickle.loads(
+            pickle.dumps(self.database.dependencyGraph, -1)
         )
 
         orphanedSpecies = [
@@ -667,8 +671,8 @@ class SCTSolver:
                     ),
                 )
         # let's store each step separately for analysis downstream
-        self.database.scts["10_post_greedy_lex_sct"] = deepcopy(
-            self.database.dependencyGraph
+        self.database.scts["10_post_greedy_lex_sct"] = pickle.loads(
+            pickle.dumps(self.database.dependencyGraph, -1)
         )
 
         # for key in self.database.scts:
@@ -991,7 +995,7 @@ class SCTSolver:
                 # way to make an educated guess. Politely refusing to translate
                 # {0}={1}.'.format(reactant, candidates))
                 return None, None, None
-            originalTmpCandidates = deepcopy(tmpCandidates)
+            originalTmpCandidates = pickle.loads(pickle.dumps(tmpCandidates, -1))
             # if we have more than one modified element for a single reactant
             # we can try to  choose the one that is most similar to the original
             # reactant
@@ -1590,9 +1594,11 @@ class SCTSolver:
             )
             return [tmpCandidates[0]], unevenElements, originalCandidateName
 
-        prunnedDependencyGraph = deepcopy(dependencyGraph)
+        prunnedDependencyGraph = pickle.loads(pickle.dumps(dependencyGraph, -1))
 
-        tempMergedDependencyGraph = deepcopy(prunnedDependencyGraph)
+        tempMergedDependencyGraph = pickle.loads(
+            pickle.dumps(prunnedDependencyGraph, -1)
+        )
         for element in self.database.alternativeDependencyGraph:
             if element in tempMergedDependencyGraph:
                 tempMergedDependencyGraph[element].extend(
