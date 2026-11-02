@@ -123,9 +123,46 @@ def test_frozen_v01_migrates_to_pinned_schema_valid_v02_and_round_trips():
         assert values["A(x~u)"] == pytest.approx(10.0 - expected_p, abs=1e-7)
         assert values["A(x~p)"] == pytest.approx(expected_p, abs=1e-7)
 
-    # Exercise the native SSA consumer and check only the exact conserved-state
-    # invariants here; a single trajectory is not a distributional qualification.
+    # Exercise exact conserved-state invariants on a single native SSA path.
     ssa = native_model.simulate(method="ssa", t_end=1.0, n_steps=5, seed=20261102)
     for row in ssa.concentrations:
         assert all(0.0 <= amount <= 10.0 and amount.is_integer() for amount in row)
         assert sum(row) == 10.0
+
+    # The independent source law is ten independent A->P conversion clocks at
+    # rate 1/10. At t=2, the phosphorylated count is Binomial(10, 1-exp(-0.2)).
+    # Use a fixed bank of 512 fresh SSA seeds and a 1% DKW CDF envelope, whose
+    # simultaneous bound is sqrt(log(2/alpha)/(2N)).
+    replicate_count = 512
+    alpha = 0.01
+    end_time = 2.0
+    conversion_probability = 1.0 - math.exp(-0.1 * end_time)
+    sampled_counts = []
+    for seed in range(1, replicate_count + 1):
+        path = native_model.simulate(
+            method="ssa", t_end=end_time, n_steps=1, seed=seed
+        )
+        row = path.concentrations[-1]
+        values = dict(zip(network.species_names, row))
+        assert all(0.0 <= amount <= 10.0 and amount.is_integer() for amount in row)
+        assert sum(row) == 10.0
+        sampled_counts.append(int(values["A(x~p)"]))
+
+    empirical_cdf = [
+        sum(value <= count for value in sampled_counts) / replicate_count
+        for count in range(10)
+    ]
+    exact_cdf = [
+        sum(
+            math.comb(10, value)
+            * conversion_probability**value
+            * (1.0 - conversion_probability) ** (10 - value)
+            for value in range(count + 1)
+        )
+        for count in range(10)
+    ]
+    dkw_bound = math.sqrt(math.log(2.0 / alpha) / (2 * replicate_count))
+    assert max(
+        abs(observed - expected)
+        for observed, expected in zip(empirical_cdf, exact_cdf)
+    ) <= dkw_bound
