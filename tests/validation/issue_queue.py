@@ -352,10 +352,20 @@ def _s6_validate_outcome(outcome, row, scenario, expected_rejection, engine):
         if (
             outcome.get("execution_status") != "REJECTED"
             or outcome.get("rejected") is not True
-            or outcome.get("output") is not None
-            or outcome.get("trajectory") is not None
+            or not isinstance(outcome.get("return_code"), int)
+            or isinstance(outcome.get("return_code"), bool)
+            or outcome["return_code"] == 0
         ):
             raise ValueError(f"S6 {engine} expected-rejection control was not refused")
+        if outcome.get("output") is not None and (
+            not isinstance(outcome.get("output"), str)
+            or not outcome["output"]
+            or not isinstance(outcome.get("output_sha256"), str)
+            or not re.fullmatch(r"[0-9a-f]{64}", outcome["output_sha256"])
+        ):
+            raise ValueError(
+                f"S6 {engine} rejected case has invalid diagnostic output identity"
+            )
         return
     if nonincreasing_time and outcome.get("execution_status") == "REJECTED":
         if outcome.get("rejected") is not True or outcome.get("trajectory") is not None:

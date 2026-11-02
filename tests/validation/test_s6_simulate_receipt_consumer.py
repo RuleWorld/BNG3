@@ -82,6 +82,7 @@ def _outcome(row: str, scenario: str, engine: str) -> dict:
     return {
         "execution_status": "REJECTED" if rejected else "PRODUCED",
         "rejected": rejected,
+        "return_code": 1 if rejected else 0,
         "output": None if rejected else f"{engine}.gdat",
         "output_sha256": None if rejected else "d" * 64,
         "trajectory": trajectory,
@@ -403,3 +404,27 @@ def test_s6_queue_entrypoint_refuses_a_dirty_candidate_tree(tmp_path, monkeypatc
     error = json.loads((output_dir / "error.json").read_text())
     assert error["status"] == "HARNESS_ERROR"
     assert "clean candidate tree" in error["detail"]
+
+
+def test_s6_rejection_accepts_hashed_diagnostic_residue_after_nonzero_exit(tmp_path):
+    receipt_dir, contract = _receipts(tmp_path)
+    path = receipt_dir / "action.simulate.atol.json"
+    receipt = json.loads(path.read_text())
+    outcome = receipt["scenarios"][2]["bng2"]
+    outcome.update(
+        return_code=1,
+        output="diagnostic.gdat",
+        output_sha256="f" * 64,
+        trajectory={
+            "shape": [1, 3],
+            "columns": ["time", "A_count", "B_count"],
+            "values": [[0.0, 10.0, 0.0]],
+        },
+    )
+    path.write_text(json.dumps(receipt))
+
+    report = issue_queue.s6_simulate_receipt_report(
+        receipt_dir, SOURCE_REVISION, contract
+    )
+
+    assert len(report["results"]) == len(ROWS)
