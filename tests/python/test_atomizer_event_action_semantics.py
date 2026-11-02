@@ -121,6 +121,22 @@ def test_concentration_event_assignment_lowers_to_the_species_amount():
     assert _assignment_lines(bngl) == ['setConcentration("@C:M_S2()", "0.1")']
 
 
+def test_atomizer_zero_duration_phase_uses_one_step_output_grid():
+    actions = _load_actions()
+    bngl = _atomize(CONCENTRATION_MODEL)
+
+    rewritten, block = actions.rewrite_action_output_grid(bngl, [0.0, 0.5, 1.0])
+    zero_duration_phases = [
+        phase for phase in block.phases if phase.t_start == phase.t_end
+    ]
+
+    assert zero_duration_phases
+    for phase in zero_duration_phases:
+        action = rewritten.splitlines()[phase.line_index]
+        assert "n_steps=>1" in action
+        assert "sample_times=>" not in action
+
+
 def test_concentration_event_assignment_reaches_the_native_dispatcher(tmp_path):
     """The native dispatcher has to apply the lowered amount."""
 
@@ -301,3 +317,48 @@ def test_official_case_00375_matches_the_published_trajectory(tmp_path):
         CASE_00375_REFERENCE,
         0.06,
     )
+
+
+def test_synthesize_event_actions_preserves_short_sampling_grids():
+    """Short BNGL phases use one-step intervals without adding output times."""
+    from bionetgen.atomizer.modern.events import (
+        synthesize_event_actions,
+        EventTranslationContext,
+        SBMLEvent,
+    )
+    from bionetgen.atomizer.modern.types import SBMLEventAssignment
+
+    # Event fires at time=1.0, base_t_end=2.5, base_steps=2
+    # Phases: [0.0, 1.0] and [1.0, 2.5]
+    event = SBMLEvent(
+        id="e1",
+        name="e1",
+        trigger="gt(time, 1.0)",
+        assignments=[SBMLEventAssignment("p", "3")],
+        trigger_persistent=True,
+    )
+    ctx = EventTranslationContext(
+        resolve_species_pattern=lambda _s: None,
+        resolve_param=lambda _p: 0.0,
+        is_param=lambda _p: True,
+        method="ode",
+        base_t_end=2.5,
+        base_steps=2,
+    )
+    res = synthesize_event_actions([event], ctx)
+    assert res.actions_block is not None
+    import re
+
+    simulate_actions = [
+        line.strip()
+        for line in res.actions_block.splitlines()
+        if line.strip().startswith("simulate(")
+    ]
+    assert all("sample_times=>" not in action for action in simulate_actions)
+    assert all("n_steps=>1" in action for action in simulate_actions)
+    intervals = [
+        tuple(float(value) for value in match.groups())
+        for action in simulate_actions
+        if (match := re.search(r"t_start=>([^,]+), t_end=>([^,]+)", action))
+    ]
+    assert intervals == [(0.0, 1.0), (1.0, 1.0), (1.0, 1.25), (1.25, 2.5)]

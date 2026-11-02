@@ -74,6 +74,9 @@ class CRNRateLaw:
     factor: float = 1.0
     rule_name: str = ""
     parameters: tuple[str, ...] = ()
+    functions: tuple[str, ...] = ()
+    observables: tuple[str, ...] = ()
+    parameter_units: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -165,7 +168,44 @@ class BioNetGenModel:
         factors = getattr(network, "reaction_factors", None)
         rule_names = getattr(network, "reaction_rules", None)
 
-        model_params = {p.name for p in self.parameters}
+        model_params = {p.name: p for p in self.parameters}
+        model_functions = {f.name: f for f in self.functions}
+        model_observables = {o.name for o in self.observables}
+        rule_labels = {
+            f"R{index}": (rule.label.rstrip(":") or f"R{index}")
+            for index, rule in enumerate(self.reaction_rules, start=1)
+        }
+
+        def dependencies(expression: str):
+            """Resolve parameter, function, and observable references in a rate law."""
+            parameter_names: set[str] = set()
+            function_names: set[str] = set()
+            observable_names: set[str] = set()
+            visited_functions: set[str] = set()
+
+            def visit(text: str, bound: Optional[set[str]] = None) -> None:
+                identifiers = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", text))
+                if bound:
+                    identifiers.difference_update(bound)
+                parameter_names.update(identifiers & model_params.keys())
+                observable_names.update(identifiers & model_observables)
+                for name in sorted(identifiers & model_functions.keys()):
+                    function_names.add(name)
+                    if name in visited_functions:
+                        continue
+                    visited_functions.add(name)
+                    function = model_functions[name]
+                    visit(
+                        function.expression.to_string(),
+                        set(function.args),
+                    )
+
+            visit(expression)
+            return (
+                tuple(sorted(parameter_names)),
+                tuple(sorted(function_names)),
+                tuple(sorted(observable_names)),
+            )
 
         result = []
         for index, (label, (reactants, products)) in enumerate(
@@ -186,9 +226,11 @@ class BioNetGenModel:
                 if rule_names is not None and index < len(rule_names)
                 else ""
             )
+            rname = rule_labels.get(rname, rname)
 
-            words = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expr))
-            referenced_params = tuple(sorted(words & model_params))
+            referenced_params, referenced_functions, referenced_observables = (
+                dependencies(expr)
+            )
             rl_type = "mass_action"
             rate_law = CRNRateLaw(
                 type=rl_type,
@@ -196,6 +238,13 @@ class BioNetGenModel:
                 factor=factor,
                 rule_name=rname,
                 parameters=referenced_params,
+                functions=referenced_functions,
+                observables=referenced_observables,
+                parameter_units=tuple(
+                    (name, model_params[name].unit)
+                    for name in referenced_params
+                    if model_params[name].unit
+                ),
             )
             result.append(
                 CRNReaction(
@@ -220,6 +269,20 @@ class BioNetGenModel:
         return {
             "version": "1.0",
             "name": self.name,
+            "units": {
+                "substance": self._model.substance_units,
+                "defaults": dict(self._model.unit_defaults),
+                "definitions": list(self._model.unit_definitions),
+            },
+            "parameters": [
+                {
+                    "name": p.name,
+                    "expression": p.expression.to_string(),
+                    "value": p.value,
+                    "unit": p.unit,
+                }
+                for p in self.parameters
+            ],
             "species": [{"index": s.index, "name": s.name} for s in self.species],
             "complexes": [
                 {"index": c.index, "species": list(c.species)} for c in self.complexes
@@ -239,6 +302,9 @@ class BioNetGenModel:
                             "factor": r.rate_law.factor,
                             "rule_name": r.rate_law.rule_name,
                             "parameters": list(r.rate_law.parameters),
+                            "functions": list(r.rate_law.functions),
+                            "observables": list(r.rate_law.observables),
+                            "parameter_units": dict(r.rate_law.parameter_units),
                         }
                         if r.rate_law is not None
                         else None

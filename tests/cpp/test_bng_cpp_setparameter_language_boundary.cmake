@@ -191,7 +191,7 @@ function(run_existing_network_continue_case action_scope)
             "simulate({method=>\"ode\",t_start=>0,t_end=>0.5,n_steps=>4})\n"
             "setParameter(\"k\",\"2^N\")\n"
             "setParameter(\"N\",4)\n"
-            "simulate({method=>\"ode\",t_end=>0.5,n_steps=>4})\n"
+            "simulate({method=>\"ode\",t_end=>1.0,n_steps=>4})\n"
             "end protocol\n")
         string(CONCAT action_source
             "simulate_protocol()\n"

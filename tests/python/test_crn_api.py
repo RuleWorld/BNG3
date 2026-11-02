@@ -243,3 +243,56 @@ end model
 
     loaded = json.loads(json_file.read_text(encoding="utf-8"))
     assert loaded == crn_dict
+
+
+def test_functional_rate_dependencies_and_parameter_units_are_exported(tmp_path):
+    model = _load_model(
+        tmp_path,
+        "functional_units.bngl",
+        """
+begin model
+begin units
+    timeunits second
+    substanceUnits item
+    unit per_minute = minute^-1
+end units
+begin parameters
+    k = 2 [per_minute]
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10 [item]
+end seed species
+begin functions
+    doubled() = 2*k
+end functions
+begin reaction rules
+    convert: A() -> B() doubled()
+end reaction rules
+end model
+""",
+    )
+
+    reaction = model.reactions[0]
+    assert reaction.rate_law.expression == "doubled()"
+    assert reaction.rate_law.rule_name == "convert"
+    assert reaction.rate_law.functions == ("doubled",)
+    assert reaction.rate_law.parameters == ("k",)
+    assert dict(reaction.rate_law.parameter_units) == {"k": "per_minute"}
+
+    artifact = model.to_crn()
+    assert artifact["parameters"] == [
+        {"name": "k", "expression": "2", "value": 2.0, "unit": "per_minute"}
+    ]
+    assert artifact["units"] == {
+        "substance": "item",
+        "defaults": {"timeUnits": "second", "substanceUnits": "item"},
+        "definitions": [{"name": "per_minute", "expression": "minute^-1"}],
+    }
+    assert artifact["reactions"][0]["rate_law"]["functions"] == ["doubled"]
+    assert artifact["reactions"][0]["rate_law"]["parameter_units"] == {
+        "k": "per_minute"
+    }

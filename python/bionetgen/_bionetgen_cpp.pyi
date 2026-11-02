@@ -163,6 +163,8 @@ class Model:
     @property
     def unit_defaults(self) -> Dict[str, str]: ...
     @property
+    def unit_definitions(self) -> List[Dict[str, str]]: ...
+    @property
     def options(self) -> Dict[str, str]: ...
     def define_unit(self, name: str, expression: str) -> None: ...
     def set_unit_default(self, role: str, unit: str) -> None: ...
@@ -175,6 +177,14 @@ class Model:
 
 class GeneratedNetwork:
     """A generated reaction network (species + reactions)."""
+
+    @property
+    def generation_converged(self) -> bool:
+        """Whether network expansion reached a fixed point before its iteration limit."""
+
+    @property
+    def generation_pruned_species(self) -> bool:
+        """Whether max_agg or max_stoich rejected a candidate species."""
 
     @property
     def num_species(self) -> int: ...

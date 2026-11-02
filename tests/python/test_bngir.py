@@ -767,6 +767,105 @@ end model
     assert not bionetgen.semantic_equal(model("1"), model("1.0000000001"))
 
 
+def test_semantic_equal_does_not_certify_a_truncated_generated_network():
+    def model(rate: int):
+        source = f"""
+begin model
+begin parameters
+    k {rate}
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin reaction rules
+    A() -> B() k
+end reaction rules
+begin actions
+    generate_network({{max_iter=>0}})
+end actions
+end model
+"""
+        return bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(source))
+
+    # The finite-network path is only a valid certificate when network
+    # generation reached its fixed point. A user-specified cutoff can hide
+    # every reaction while leaving the same seed in both generated networks.
+    with pytest.raises(bionetgen.EqualityUndecided, match="truncated"):
+        bionetgen.semantic_equal(model(1), model(2))
+
+
+@pytest.mark.parametrize("network_limit", ["max_agg=>1", "max_stoich=>{A=>1}"])
+def test_semantic_equal_does_not_certify_networks_pruned_by_generation_limits(
+    network_limit,
+):
+    def model(rate: int):
+        source = f"""
+begin model
+begin parameters
+    k {rate}
+end parameters
+begin molecule types
+    A(b)
+end molecule types
+begin seed species
+    A(b) 2
+end seed species
+begin reaction rules
+    A(b) + A(b) -> A(b!1).A(b!1) k
+end reaction rules
+begin actions
+    generate_network({{{network_limit}}})
+end actions
+end model
+"""
+        return bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(source))
+
+    left, right = model(1), model(2)
+    for candidate in (left, right):
+        network = candidate.generate_network()
+        assert network.generation_converged
+        assert network.generation_pruned_species
+
+    # Both networks reach a fixed point after the dimer product is filtered
+    # out, so convergence alone cannot establish a complete process contract.
+    with pytest.raises(bionetgen.EqualityUndecided, match="generation limit"):
+        bionetgen.semantic_equal(left, right)
+
+
+def test_semantic_equal_does_not_certify_nonunique_species_labels():
+    def model(seed_lines: str):
+        source = f"""
+begin model
+begin molecule types
+    A()
+end molecule types
+begin seed species
+{seed_lines}
+end seed species
+begin actions
+    generate_network({{check_iso=>0}})
+end actions
+end model
+"""
+        return bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(source))
+
+    split_seed = model("    A() 1\n    A() 2")
+    single_seed = model("    A() 2")
+    network = split_seed.generate_network()
+    assert network.generation_converged
+    assert network.species_names == ["A()", "A()"]
+
+    # The extractor keys state by species label, so duplicate labels collapse
+    # distinct network coordinates. BNG2 rejects duplicate isomorphic seed
+    # species at parse time; BNG3 must not issue an equality proof for them.
+    with pytest.raises(bionetgen.EqualityUndecided, match="non-unique species"):
+        bionetgen.semantic_equal(split_seed, single_seed)
+
+
 def test_semantic_equal_does_not_ignore_observable_patterns():
     def model(pattern: str):
         source = f"""

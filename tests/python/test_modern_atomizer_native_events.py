@@ -949,7 +949,7 @@ end reaction rules
 end model
 begin actions
   generate_network({overwrite=>1})
-  simulate({method=>"ode", t_start=>0, t_end=>0.01, sample_times=>[0,0.01]})
+  simulate({method=>"ode", t_start=>0, t_end=>0.01, n_steps=>1})
   setConcentration("A()", "5")
   simulate({continue=>1, method=>"ode", t_start=>0.01, t_end=>0.01, n_steps=>1})
   simulate({continue=>1, method=>"ode", t_start=>0.01, t_end=>1, sample_times=>[0.1,0.2,0.3,0.4,0.5,0.6,0.7,0.8,0.9,1]})

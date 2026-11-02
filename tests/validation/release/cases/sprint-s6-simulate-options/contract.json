@@ -1,0 +1,78 @@
+{
+  "schema_version": 1,
+  "source": {
+    "repository": "RuleWorld/bionetgen",
+    "revision": "9601746f8884ed19ab2acea49fe87fc4660ace46",
+    "path": "bng2/Perl2/BNGAction.pm",
+    "sha256": "8221eb57929f3c3ed58ae34ef896a34b5e48035d2a0cccd905e9c4601efbeeb4",
+    "source_contract": "simulate defaults, validation, dispatch, and returned artifacts at the accepted BNG2 revision"
+  },
+  "product": {
+    "repository": "RuleWorld/BNG3",
+    "revision": "recorded from exact tested source tree",
+    "consumer": "bng_cpp action dispatch and .gdat trajectory consumer"
+  },
+  "oracle": {
+    "identity": "pinned BNG2 executable at source revision above; separately derived mass-action law",
+    "law": "For A -> B at k=0.4 from A(0)=10, B(0)=0, A(t)=10*exp(-0.4*t), B(t)=10-A(t). ODE observable error bound: 1e-6 absolute; schedule assertions are exact apart from 1e-12 time representation.",
+    "stochastic_scope": "The admitted SSA case checks dispatch, requested schedule, integer populations, and A+B conservation only. It does not claim distributional or pathwise parity."
+  },
+  "rows": {
+    "action.simulate.t_start": {
+      "default": "Omit t_start; source defaults to current model time (0 here).",
+      "explicit": "t_start=0.5 with t_end=1.5; schedule begins at 0.5 and analytic concentrations use absolute time.",
+      "invalid": "For t_end <= t_start, pinned BNG2 warns that it will not simulate; BNG3 may refuse earlier, but neither consumer may integrate the reversed/empty interval.",
+      "interaction": "Nonzero t_start with t_end and n_steps controls the interval grid."
+    },
+    "action.simulate.t_end": {
+      "default": "Omit t_end while sample_times supplies the final time.",
+      "explicit": "Set t_end=1.5 with n_steps=3.",
+      "invalid": "For t_end < t_start, pinned BNG2 warns that it will not simulate; BNG3 may refuse earlier, but neither consumer may integrate the reversed interval.",
+      "interaction": "When sample_times is supplied and ends before t_end, the requested endpoint is appended."
+    },
+    "action.simulate.n_steps": {
+      "default": "Omit n_steps and sample_times; BNG2 uses its one-interval default.",
+      "explicit": "Set n_steps=4; output has five rows including endpoints.",
+      "invalid": "n_steps=0 is rejected as requesting no valid output intervals.",
+      "interaction": "When both n_steps and sample_times are present, n_steps takes precedence per the source warning and grid."
+    },
+    "action.simulate.sample_times": {
+      "default": "Omit sample_times and use n_steps=4.",
+      "explicit": "Use sample_times=[0,0.25,0.75] and verify source time schedule/final-time behavior.",
+      "invalid": "A list with fewer than three points is rejected by the pinned source contract.",
+      "interaction": "The source numerically sorts supplied points and appends t_end when supplied later than the last sample."
+    },
+    "action.simulate.continue": {
+      "default": "Omit continue on the first interval; source default is false.",
+      "explicit": "Continue a second ODE action from current time 0.5 to 1.0 while retaining state.",
+      "invalid": "continue=1 with a mismatched explicit t_start is rejected.",
+      "interaction": "Two sequential actions must consume the first action's terminal state and preserve the source output schedule."
+    },
+    "action.simulate.method": {
+      "default": "Omit method; pinned BNG2 requires it and must report the missing required argument.",
+      "explicit": "Exercise admitted native ODE and SSA methods; other methods are outside this row's coverage.",
+      "invalid": "An unknown method is rejected.",
+      "interaction": "ODE with atol/rtol and SSA with a seeded trajectory exercise method-specific option dispatch."
+    },
+    "action.simulate.atol": {
+      "default": "Omit atol; pinned BNG2 defaults it to 1e-8 for CVODE.",
+      "explicit": "Set atol=1e-12 and compare the ODE trajectory with the independent law.",
+      "invalid": "A negative tolerance is rejected, never accepted as a scientific result.",
+      "interaction": "Only the ODE method consumes atol; test it alongside rtol."
+    },
+    "action.simulate.rtol": {
+      "default": "Omit rtol; pinned BNG2 defaults it to 1e-8 for CVODE.",
+      "explicit": "Set rtol=1e-10 and compare the ODE trajectory with the independent law.",
+      "invalid": "A negative tolerance is rejected, never accepted as a scientific result.",
+      "interaction": "Only the ODE method consumes rtol; test it alongside atol."
+    }
+  },
+  "untested_domains": [
+    "PLA, PSA, NFsim, Euler/RK4 aliases, and other methods or method-specific option combinations",
+    "large or stiff systems and solver internal step-selection equivalence",
+    "nonconstant rates, delays, protocol parameter mutation, non-unit compartments, and expression-valued times",
+    "statistical SSA distributional equivalence, beyond the narrow invariants stated above",
+    "CLI versus Python API equivalence and installed-package entrypoint behavior"
+  ],
+  "status_semantics": "A branch PASS is evidence for this case scope only. Matrix status stays missing until the declared row contract independently passes on main."
+}
