@@ -414,7 +414,9 @@ class Molecule:
 
     def extend(self, molecule):
         # ⚡ Bolt: Build a dictionary lookup once instead of an O(N) list comprehension inside the loop to turn this into an O(N) operation instead of O(N^2)
-        comp_dict = {x.name: x for x in self.components}
+        comp_dict = {}
+        for component in self.components:
+            comp_dict.setdefault(component.name, component)
         for element in molecule.components:
             comp = comp_dict.get(element.name)
             if comp is None:
