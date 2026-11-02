@@ -1386,6 +1386,10 @@ def _source_action_bngl(
             # Continued actions drop their initial row. Keep two equal output
             # times so the retained row records the post-assignment state.
             updates["n_steps"] = "1"
+        elif len(sample_times) == 2:
+            # The action language requires at least three explicit sample
+            # times. A single interval is represented exactly by n_steps=1.
+            updates["n_steps"] = "1"
         else:
             updates["sample_times"] = (
                 "[" + ",".join(format(value, ".17g") for value in sample_times) + "]"

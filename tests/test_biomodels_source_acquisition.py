@@ -912,9 +912,8 @@ def test_original_source_comparison_executes_actions_on_bng_time_grid(
     assert result["passed"] is True
     assert observed_times == [0.0, 0.01, 0.1]
     assert "t_start=>0, t_end=>0.01" in parsed_actions[0]
-    assert "sample_times=>[0,0.01]" in parsed_actions[0]
-    assert "sample_times=>[0.01,0.10000000000000001]" in parsed_actions[0]
-    assert all("n_steps=>" not in source for source in parsed_actions)
+    assert "n_steps=>1" in parsed_actions[0]
+    assert "sample_times=>" not in parsed_actions[0]
     assert all("rtol=>9.9999999999999995e-08" in x for x in parsed_actions)
     assert all("atol=>9.9999999999999998e-13" in x for x in parsed_actions)
     assert all("max_step=>0" in x for x in parsed_actions)
