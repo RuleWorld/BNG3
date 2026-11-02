@@ -1634,7 +1634,11 @@ std::string XmlWriter::writeSpecies(const ast::Model& model, const engine::Gener
 
             xml << "      <Species id=\"" << spId
                 << "\" concentration=\"" << species.getAmount()
-                << "\" name=\"" << escapeXml(patternStr) << "\">\n";
+                << "\" name=\"" << escapeXml(patternStr) << "\"";
+            if (species.isConstant()) {
+                xml << " Fixed=\"1\"";
+            }
+            xml << ">\n";
 
             // Serialize species pattern
             xml << patternToXml(parsed, spId, "        ");
@@ -1667,6 +1671,9 @@ std::string XmlWriter::writeSpecies(const ast::Model& model, const engine::Gener
             xml << "      <Species id=\"" << spId
                 << "\" concentration=\"" << amountValue
                 << "\" name=\"" << escapeXml(patternStr) << "\"";
+            if (seed.isConstant()) {
+                xml << " Fixed=\"1\"";
+            }
             // NFsim seeds molecules into this compartment unless a Molecule
             // carries its own; BNG2 emits the species-level compartment here.
             if (!parsed.compartment.empty()) {
