@@ -70,6 +70,51 @@ end model
         assert len(model.observables) == 2
         assert len(model.reaction_rules) == 2
 
+    def test_ssa_print_functions_use_each_output_state(self, tmp_path):
+        bngl = tmp_path / "ssa_function_snapshots.bngl"
+        bngl.write_text(
+            """begin model
+begin parameters
+    birth 0.1
+    death 0.11
+end parameters
+begin molecule types
+    X()
+end molecule types
+begin seed species
+    X() 100
+end seed species
+begin observables
+    Molecules X_count X()
+end observables
+begin functions
+    X_copy() = X_count
+end functions
+begin reaction rules
+    birth: X() -> X() + X() birth
+    death: X() -> 0 death
+end reaction rules
+begin actions
+    simulate({method=>"ssa", t_end=>5, sample_times=>[0,1,2,3,4,5], seed=>1000000, print_functions=>1, print_CDAT=>0})
+end actions
+end model
+""",
+            encoding="utf-8",
+        )
+
+        bionetgen.load(str(bngl)).execute()
+
+        rows = [
+            line.split()
+            for line in (tmp_path / "ssa_function_snapshots.gdat")
+            .read_text(encoding="utf-8")
+            .splitlines()
+            if line and not line.startswith("#")
+        ]
+        assert len(rows) == 6
+        assert [float(row[1]) for row in rows] == [float(row[2]) for row in rows]
+        assert len({float(row[2]) for row in rows}) > 1
+
     def test_parse_string(self):
         text = """
 begin model

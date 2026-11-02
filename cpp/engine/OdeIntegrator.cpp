@@ -4012,7 +4012,12 @@ void OdeIntegrator::writeOutputFiles(const std::string& prefix, const OdeResult&
             // functions so delay() has the same semantics in numerical results
             // and .gdat output.
             const double time = result.timePoints[step];
-            const auto state = historyStateAt(time);
+            // Use the state snapshot belonging to this output row.  Some
+            // simulators (notably SSA) retain no continuous history, so
+            // historyStateAt(time) can resolve every row against the final
+            // state instead.  Delayed subexpressions still consult the
+            // history-aware evaluator below.
+            const auto& state = result.concentrations[step];
             for (const auto& expression : funcExprs) {
                 const double value = evaluateExpressionWithHistory(
                     expression, time, state.data());
