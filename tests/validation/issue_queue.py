@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import re
 import sys
 from collections import Counter
@@ -18,6 +19,264 @@ from . import campaign, inventory
 
 ROOT = Path(__file__).resolve().parents[2]
 FAILURES = {"FAIL", "HARNESS_ERROR", "TIMEOUT", "INVALID_INPUT"}
+ISSUE_142_CHECKS = (
+    "release-graph-identity",
+    "release-graph-observables",
+    "release-obligation-142",
+)
+
+
+def issue142_receipt_reports(
+    receipt, identity_path, observables_path, revision, *, artifact_run_id=None
+):
+    """Adapt the dedicated Issue 142 receipt and both child reports to queue leaves."""
+    if not isinstance(receipt, dict) or receipt.get("schema_version") != 1:
+        raise ValueError("invalid Issue 142 receipt schema")
+    if receipt.get("acceptance_check") != "release-obligation-142":
+        raise ValueError("conflicting Issue 142 receipt identity")
+    source_revision = receipt.get("source_revision")
+    if source_revision != revision:
+        raise ValueError("stale Issue 142 receipt revision")
+    if receipt.get("source_dirty") is not False:
+        raise ValueError("Issue 142 receipt source was not recorded clean")
+    checks = receipt.get("checks")
+    if not isinstance(checks, dict) or set(checks) != set(ISSUE_142_CHECKS):
+        raise ValueError("Issue 142 receipt is missing or has conflicting child checks")
+    for check_id, result in checks.items():
+        if not isinstance(result, dict) or result.get("status") != "PASS":
+            raise ValueError(f"Issue 142 check {check_id} did not pass")
+
+    identity = checks["release-graph-identity"]
+    observables = checks["release-graph-observables"]
+    hash_fields = {
+        "release-graph-identity": (
+            "independent_isomorphism_oracle_sha256",
+            "subject_sha256",
+            "report_sha256",
+        ),
+        "release-graph-observables": (
+            "bng2_script_sha256",
+            "nfsim_binary_sha256",
+            "subject_sha256",
+            "report_sha256",
+        ),
+    }
+    for check_id, fields in hash_fields.items():
+        for field in fields:
+            value = checks[check_id].get(field)
+            if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+                raise ValueError(
+                    f"Issue 142 check {check_id} lacks valid {field} identity"
+                )
+    for check_id in ("release-graph-observables",):
+        for field in ("bng2_revision", "nfsim_revision"):
+            if not isinstance(checks[check_id].get(field), str) or not re.fullmatch(
+                r"[0-9a-f]{40}", checks[check_id][field]
+            ):
+                raise ValueError(f"Issue 142 check {check_id} lacks valid {field}")
+    if identity.get("case_count") != 9 or identity.get("exhaustive_case_count") != 116:
+        raise ValueError(
+            "Issue 142 graph identity receipt has stale bounded case counts"
+        )
+    if observables.get("run_count") != 200 or observables.get("dkw_alpha") != 0.005:
+        raise ValueError(
+            "Issue 142 observable receipt has stale run budget or error control"
+        )
+    if artifact_run_id is not None and not re.fullmatch(r"[0-9]+", artifact_run_id):
+        raise ValueError("invalid Issue 142 artifact workflow run ID")
+    for label, path, expected_hash in (
+        ("identity", identity_path, identity["report_sha256"]),
+        ("observables", observables_path, observables["report_sha256"]),
+    ):
+        if (
+            not path.is_file()
+            or hashlib.sha256(path.read_bytes()).hexdigest() != expected_hash
+        ):
+            raise ValueError(
+                f"Issue 142 {label} report hash differs from the consumed receipt"
+            )
+    identity_report = json.loads(identity_path.read_text())
+    observables_report = json.loads(observables_path.read_text())
+
+    def verify_source(report, label):
+        if report.get("source_revision") != revision:
+            raise ValueError(f"stale Issue 142 {label} report source revision")
+        if report.get("source_dirty") is not False:
+            raise ValueError(f"Issue 142 {label} report source was not recorded clean")
+
+    verify_source(identity_report, "identity")
+    verify_source(observables_report, "observables")
+    if identity_report.get("acceptance_check") != "release-graph-identity":
+        raise ValueError("conflicting Issue 142 identity report check ID")
+    if observables_report.get("acceptance_check") != "release-graph-observables":
+        raise ValueError("conflicting Issue 142 observables report check ID")
+    if (
+        identity_report.get("independent_isomorphism_oracle_sha256")
+        != identity["independent_isomorphism_oracle_sha256"]
+        or identity_report.get("subject_sha256") != identity["subject_sha256"]
+        or identity_report.get("case_count") != 9
+        or identity_report.get("exhaustive_case_count") != 116
+    ):
+        raise ValueError(
+            "Issue 142 identity report conflicts with the consumed receipt"
+        )
+    if (
+        observables_report.get("bng2_revision") != observables["bng2_revision"]
+        or observables_report.get("bng2_script_sha256")
+        != observables["bng2_script_sha256"]
+        or observables_report.get("nfsim_revision") != observables["nfsim_revision"]
+        or observables_report.get("nfsim_binary_sha256")
+        != observables["nfsim_binary_sha256"]
+        or observables_report.get("model_source_sha256")
+        != observables["subject_sha256"]
+        or observables_report.get("run_count") != 200
+        or observables_report.get("dkw_alpha") != 0.005
+    ):
+        raise ValueError(
+            "Issue 142 observables report conflicts with the consumed receipt"
+        )
+    from .graph_identity_contract import CASES, CHECKS
+
+    expected_identity_ids = {
+        f"graph-identity-contract:{case['id']}:{check}"
+        for case in CASES
+        for check in CHECKS
+    }
+    catalog_identity_ids = {
+        check["id"]
+        for issue in json.loads(
+            (ROOT / "provenance/issue-obligations.json").read_text()
+        )["issues"]
+        if issue["number"] == 142
+        for obligation in issue["obligations"]
+        for check in obligation["required_checks"]
+        if check["id"].startswith("graph-identity-contract:")
+    }
+    if not catalog_identity_ids <= expected_identity_ids:
+        raise ValueError("Issue 142 catalog names unknown identity component checks")
+    identity_rows = identity_report.get("results")
+    if not isinstance(identity_rows, list):
+        raise ValueError("Issue 142 identity report has no component rows")
+    by_id = {row.get("id"): row for row in identity_rows if isinstance(row, dict)}
+    if len(by_id) != len(identity_rows) or set(by_id) != expected_identity_ids:
+        raise ValueError(
+            "Issue 142 identity report has missing or conflicting component checks"
+        )
+    if any(row.get("status") != "PASS" for row in identity_rows):
+        raise ValueError("an Issue 142 identity component check did not pass")
+
+    source = {"revision": source_revision, "dirty": False}
+    replay_references = {}
+    if artifact_run_id is not None:
+        replay_references = {
+            "workflow_run_id": artifact_run_id,
+            "identity": {
+                "artifact_name": f"issue142-release-graph-identity-{artifact_run_id}",
+                "file": identity_path.name,
+                "sha256": identity["report_sha256"],
+            },
+            "observables": {
+                "artifact_name": f"issue142-release-graph-observables-{artifact_run_id}",
+                "file": observables_path.name,
+                "sha256": observables["report_sha256"],
+            },
+        }
+    identity_report_for_queue = {
+        "source": source,
+        "references": {
+            "independent_isomorphism": {
+                "sha256": identity["independent_isomorphism_oracle_sha256"]
+            }
+        },
+        "subject": {"sha256": identity["subject_sha256"]},
+        "checks": checks,
+        "results": [
+            dict(
+                row,
+                stage="graph-identity-contract",
+                related_issues=[142],
+                supported_execution=True,
+                evidence_kind="supported-execution",
+                receipt=identity,
+            )
+            for row in identity_rows
+        ],
+    }
+    observables_report_for_queue = {
+        "source": source,
+        "references": {
+            "bionetgen": {
+                "revision": observables["bng2_revision"],
+                "sha256": observables["bng2_script_sha256"],
+            },
+            "nfsim": {
+                "revision": observables["nfsim_revision"],
+                "sha256": observables["nfsim_binary_sha256"],
+            },
+        },
+        "subject": {"sha256": observables["subject_sha256"]},
+        "checks": checks,
+        "results": [],
+    }
+    receipt_report = {
+        "source": source,
+        "references": {
+            "independent_isomorphism": {
+                "sha256": identity["independent_isomorphism_oracle_sha256"]
+            },
+            "bionetgen": {
+                "revision": observables["bng2_revision"],
+                "sha256": observables["bng2_script_sha256"],
+            },
+            "nfsim": {
+                "revision": observables["nfsim_revision"],
+                "sha256": observables["nfsim_binary_sha256"],
+            },
+        },
+        "checks": checks,
+        "results": [],
+    }
+    for check_id, report in (
+        ("release-graph-identity", identity_report_for_queue),
+        ("release-graph-observables", observables_report_for_queue),
+        ("release-obligation-142", receipt_report),
+    ):
+        evidence_kind = (
+            "disposition"
+            if check_id == "release-obligation-142"
+            else "supported-execution"
+        )
+        row = {
+            "id": check_id,
+            "status": "PASS",
+            "stage": "issue142-release-receipt",
+            "check": check_id,
+            "related_issues": [142],
+            "evidence_kind": evidence_kind,
+            "receipt": checks[check_id],
+        }
+        if evidence_kind == "supported-execution":
+            row["supported_execution"] = True
+        report["results"].append(row)
+    receipt_report["results"].append(
+        {
+            "id": "qualification:issue:142:closure-record",
+            "status": "PASS",
+            "stage": "issue142-release-receipt",
+            "check": "release-obligation-142",
+            "related_issues": [142],
+            "evidence_kind": "disposition",
+            "receipt": checks["release-obligation-142"],
+        }
+    )
+    if replay_references:
+        for report in (
+            identity_report_for_queue,
+            observables_report_for_queue,
+            receipt_report,
+        ):
+            report["replay_references"] = replay_references
+    return [identity_report_for_queue, observables_report_for_queue, receipt_report]
 
 
 def acceptance_criteria(issue):
@@ -275,6 +534,7 @@ def obligation_inventory(issues, catalog=None):
                     issue=number,
                     criterion=text,
                     scope=text,
+                    live_acceptance_criteria=[dict(live)],
                     live_body_sha256=digest,
                     scope_status="CURRENT",
                     dependencies=live.get("dependencies", []),
@@ -702,6 +962,17 @@ def acceptance_dashboard(queue, assessment, campaigns):
         obligations = [
             o for o in assessment["obligations"] if o.get("issue") == row["number"]
         ]
+        live_status = {
+            o["criterion"]: o["status"]
+            for o in obligations
+            if o.get("live_acceptance_criteria") and o.get("scope_status") == "CURRENT"
+        }
+        for criterion in row["acceptance_criteria"]:
+            status = live_status.get(criterion["text"])
+            if status:
+                criterion["evidence_status"] = (
+                    "PASS" if status == "DEMONSTRATED" else status
+                )
         row["obligations"] = obligations
         row["obligation_outcomes"] = dict(Counter(o["status"] for o in obligations))
         row["demonstrated_obligations"] = [
@@ -732,7 +1003,17 @@ def acceptance_dashboard(queue, assessment, campaigns):
                 unmapped_scope=o["unmapped_scope"],
             )
             for o in obligations
-            if o["decisions"] or o["unmapped_scope"]
+            if o["decisions"]
+        ]
+        row["scope_reconciliation_required"] = [
+            dict(
+                obligation=o["id"],
+                scope_status=o.get("scope_status"),
+                unmapped_scope=o["unmapped_scope"],
+            )
+            for o in obligations
+            if o.get("scope_status") in {"STALE_SCOPE", "UNMAPPED"}
+            or o["unmapped_scope"]
         ]
         row["ranking_basis"] = dict(
             confirmed_failures=sum(o["status"] == "FAIL" for o in obligations),
@@ -899,6 +1180,9 @@ def main(argv=None):
     )
     parser.add_argument("--max-families", type=int, default=3)
     parser.add_argument("--report", action="append", type=Path, default=[])
+    parser.add_argument("--issue142-release-record", type=Path)
+    parser.add_argument("--issue142-identity-report", type=Path)
+    parser.add_argument("--issue142-observables-report", type=Path)
     parser.add_argument("--revision", required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--upstream-heads", type=Path)
@@ -913,6 +1197,42 @@ def main(argv=None):
         issues_bytes = args.issues_json.read_bytes()
         issues = json.loads(issues_bytes)
         reports = [json.loads(path.read_text()) for path in args.report]
+        receipt_reports = []
+        if args.issue142_release_record:
+            if (
+                not args.issue142_identity_report
+                or not args.issue142_observables_report
+            ):
+                raise ValueError(
+                    "Issue 142 receipt requires both raw child reports for exact evidence"
+                )
+            receipt_reports = issue142_receipt_reports(
+                json.loads(args.issue142_release_record.read_text()),
+                args.issue142_identity_report,
+                args.issue142_observables_report,
+                args.revision,
+                artifact_run_id=os.environ.get("GITHUB_RUN_ID"),
+            )
+            reports.extend(receipt_reports)
+            queue_receipt = receipt_reports[-1]
+            receipt_reports = [
+                dict(
+                    kind="issue142-release-record",
+                    path=str(args.issue142_release_record),
+                    sha256=inventory.sha256(args.issue142_release_record),
+                    replay_references=queue_receipt.get("replay_references", {}),
+                    component_reports=[
+                        {
+                            "path": str(path),
+                            "sha256": inventory.sha256(path),
+                        }
+                        for path in (
+                            args.issue142_identity_report,
+                            args.issue142_observables_report,
+                        )
+                    ],
+                ),
+            ]
         heads = (
             json.loads(args.upstream_heads.read_text()) if args.upstream_heads else None
         )
@@ -957,7 +1277,8 @@ def main(argv=None):
             issue_snapshot_scope="provided snapshot; collection completeness not inferred",
             evidence_reports=[
                 dict(path=str(p), sha256=inventory.sha256(p)) for p in args.report
-            ],
+            ]
+            + receipt_reports,
             queue=queue,
             acceptance=assessment,
             campaign_selection=campaigns,

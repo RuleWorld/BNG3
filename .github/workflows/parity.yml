@@ -478,7 +478,7 @@ jobs:
 
   integrated-semantic-validation:
     name: Integrated semantic validation (Atomizer, BNG3, BNG2, PyBioNetGen, NFsim)
-    needs: oracle-lock
+    needs: [oracle-lock, release-obligation-142]
     runs-on: ubuntu-22.04
     timeout-minutes: 90
     env:
@@ -621,6 +621,27 @@ jobs:
         if: always() && steps.candidate_identity.outcome == 'success'
         run: python -m pytest tests/validation/test_bngir_adversarial_native.py -q
 
+      - name: Download Issue 142 receipt for issue queue
+        if: always() && needs.release-obligation-142.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: issue142-release-obligation-142-${{ github.run_id }}
+          path: ${{ runner.temp }}/issue142/queue
+
+      - name: Download Issue 142 identity components for issue queue
+        if: always() && needs.release-obligation-142.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: issue142-release-graph-identity-${{ github.run_id }}
+          path: ${{ runner.temp }}/issue142/queue/identity
+
+      - name: Download Issue 142 observable replay for issue queue
+        if: always() && needs.release-obligation-142.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: issue142-release-graph-observables-${{ github.run_id }}
+          path: ${{ runner.temp }}/issue142/queue/observables
+
       - name: Audit generated consumer matrix receipts
         if: always()
         run: |
@@ -643,13 +664,22 @@ jobs:
         if: always()
         run: |
           head_args=()
+          issue142_args=()
           if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             head_args=(--collect-upstream-heads)
+          fi
+          if [[ -s "$RUNNER_TEMP/issue142/queue/release-obligation-142.json" ]]; then
+            issue142_args+=(
+              --issue142-release-record "$RUNNER_TEMP/issue142/queue/release-obligation-142.json"
+              --issue142-identity-report "$RUNNER_TEMP/issue142/queue/identity/identity-report.json"
+              --issue142-observables-report "$RUNNER_TEMP/issue142/queue/observables/observables-report.json"
+            )
           fi
           python -m tests.validation.issue_queue \
             --issues-json "$RUNNER_TEMP/bng3-issues.json" \
             --report "$RUNNER_TEMP/bng3-integrated-validation/report.json" \
             --report "$RUNNER_TEMP/bng3-integrated-validation/matrix-report.json" \
+            "${issue142_args[@]}" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --output-dir "$RUNNER_TEMP/bng3-issue-queue" "${head_args[@]}"
           cat "$RUNNER_TEMP/bng3-issue-queue/issue-queue.md" >> "$GITHUB_STEP_SUMMARY"
