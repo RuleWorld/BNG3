@@ -420,6 +420,7 @@ def test_historical_nfsim_failure_evidence_is_retained_without_masking_failure()
 
 def test_historical_nfsim_prepares_xml_before_native_consumer(tmp_path):
     """Direct NF execution need not write the XML the upstream validator reads."""
+    import json
     import os
     import subprocess
     import sys
@@ -458,16 +459,41 @@ simulate_nf({t_end=>1,n_steps=>1})
         for s in job["steps"]
         if s.get("name") == "Run the source NFsim validation framework"
     )
+    # This contract job validates workflow wiring without building the native
+    # extension, so stand in for the writer the preparation step imports.
+    stub = tmp_path / "stub"
+    package = stub / "bionetgen"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("from . import _bionetgen_cpp\n")
+    (package / "_bionetgen_cpp.py").write_text(
+        "from pathlib import Path\n"
+        "\n"
+        "class _IO:\n"
+        "    @staticmethod\n"
+        "    def write_xml_string(model):\n"
+        "        return '<model><species name=\"A\"/></model>'\n"
+        "\n"
+        "io = _IO()\n"
+        "\n"
+        "def parse_file(path):\n"
+        "    if not Path(path).is_file():\n"
+        "        raise FileNotFoundError(path)\n"
+        "    return path\n"
+    )
+    root = Path(__file__).resolve().parents[2]
     env = dict(os.environ, RUNNER_TEMP=str(tmp_path))
     env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env["PATH"]
-    root = Path(__file__).resolve().parents[2]
-    env["PYTHONPATH"] = os.pathsep.join((str(root / "python"), str(root / "build/cpp")))
+    env["PYTHONPATH"] = os.pathsep.join(
+        (str(stub), str(root / "python"), str(root / "build/cpp"))
+    )
     result = subprocess.run(
         ["bash", "-c", command], env=env, text=True, capture_output=True
     )
     assert result.returncode == 0, result.stdout + result.stderr
     assert (models / "v1.bngl").read_text() == source
     assert not (models / "v1.gdat").exists(), "preparation must not execute actions"
+    prepared = json.loads((models / "prepared-xml.json").read_text())
+    assert [entry["xml"] for entry in prepared] == ["v1.xml"]
 
 
 def test_issue160_diagnostic_controls_run_without_claiming_release_acceptance():
