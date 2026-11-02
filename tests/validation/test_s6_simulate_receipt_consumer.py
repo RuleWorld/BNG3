@@ -166,6 +166,9 @@ def test_s6_consumer_requires_and_maps_all_eight_exact_rows(tmp_path):
     assert report["artifact"]["workflow_run_id"] == "4145"
     assert [row["id"] for row in report["results"]] == list(ROWS)
     assert all(row["status"] == "PASS" for row in report["results"])
+    assert [row["check"] for row in report["results"]] == [
+        f"release-capability[{row}] (new parameterized case)" for row in ROWS
+    ]
     assert all(row["related_issues"] == [140] for row in report["results"])
     assert all(row["supported_execution"] for row in report["results"])
     issue = {

@@ -574,7 +574,7 @@ def s6_simulate_receipt_report(
                 "id": row,
                 "status": "PASS",
                 "stage": "s6-simulate-options",
-                "check": f"release-capability[{row}]",
+                "check": f"release-capability[{row}] (new parameterized case)",
                 "related_issues": [140],
                 "capabilities": [row],
                 "test_file": S6_SIMULATE_SELECTOR.format(row=row).split("::", 1)[0],
