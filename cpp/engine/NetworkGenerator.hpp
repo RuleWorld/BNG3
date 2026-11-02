@@ -23,6 +23,8 @@ struct GeneratedNetwork {
     // Consumers that use a generated network as a completeness certificate
     // must not infer closure from the returned species and reactions alone.
     bool generationConverged = false;
+    // True when max_agg or max_stoich rejected any candidate product species.
+    bool generationPrunedSpecies = false;
 
     // A network carries one continuation trajectory shared by its integrators.
     // Keep the lock shared when a GeneratedNetwork is copied so session

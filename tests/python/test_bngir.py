@@ -798,6 +798,44 @@ end model
         bionetgen.semantic_equal(model(1), model(2))
 
 
+@pytest.mark.parametrize("network_limit", ["max_agg=>1", "max_stoich=>{A=>1}"])
+def test_semantic_equal_does_not_certify_networks_pruned_by_generation_limits(
+    network_limit,
+):
+    def model(rate: int):
+        source = f"""
+begin model
+begin parameters
+    k {rate}
+end parameters
+begin molecule types
+    A(b)
+end molecule types
+begin seed species
+    A(b) 2
+end seed species
+begin reaction rules
+    A(b) + A(b) -> A(b!1).A(b!1) k
+end reaction rules
+begin actions
+    generate_network({{{network_limit}}})
+end actions
+end model
+"""
+        return bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(source))
+
+    left, right = model(1), model(2)
+    for candidate in (left, right):
+        network = candidate.generate_network()
+        assert network.generation_converged
+        assert network.generation_pruned_species
+
+    # Both networks reach a fixed point after the dimer product is filtered
+    # out, so convergence alone cannot establish a complete process contract.
+    with pytest.raises(bionetgen.EqualityUndecided, match="generation limit"):
+        bionetgen.semantic_equal(left, right)
+
+
 def test_semantic_equal_does_not_ignore_observable_patterns():
     def model(pattern: str):
         source = f"""

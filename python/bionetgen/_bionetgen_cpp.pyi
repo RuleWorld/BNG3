@@ -181,6 +181,10 @@ class GeneratedNetwork:
         """Whether network expansion reached a fixed point before its iteration limit."""
 
     @property
+    def generation_pruned_species(self) -> bool:
+        """Whether max_agg or max_stoich rejected a candidate species."""
+
+    @property
     def num_species(self) -> int: ...
     @property
     def num_reactions(self) -> int: ...

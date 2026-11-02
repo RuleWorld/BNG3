@@ -3577,8 +3577,9 @@ def _extract_jump_hazards(
     dict[str, Fraction],
     list[str],
     bool,
+    bool,
 ]:
-    """Extract rational jump hazards and the network's fixed-point status."""
+    """Extract rational hazards and network completeness signals."""
     param_dict = {p.name: Fraction(str(p.value)) for p in model.parameters}
     net = model.generate_network()
     species_names = list(net.species_names)
@@ -3619,7 +3620,13 @@ def _extract_jump_hazards(
         key = (reactants, products)
         jump_hazards[key] = jump_hazards.get(key, Fraction(0)) + rate_val
 
-    return jump_hazards, init_counts, species_names, net.generation_converged
+    return (
+        jump_hazards,
+        init_counts,
+        species_names,
+        net.generation_converged,
+        net.generation_pruned_species,
+    )
 
 
 def exact_process_equal(
@@ -3768,8 +3775,12 @@ def exact_process_equal(
     type_signatures_r = molecule_type_signatures(right_model)
 
     try:
-        jumps_l, init_l, species_l, complete_l = _extract_jump_hazards(left_model)
-        jumps_r, init_r, species_r, complete_r = _extract_jump_hazards(right_model)
+        jumps_l, init_l, species_l, complete_l, pruned_l = _extract_jump_hazards(
+            left_model
+        )
+        jumps_r, init_r, species_r, complete_r, pruned_r = _extract_jump_hazards(
+            right_model
+        )
     except Exception as exc:
         raise EqualityUndecided(
             f"Network generation could not settle exact process equality: {exc}",
@@ -3782,6 +3793,15 @@ def exact_process_equal(
             {
                 "left_generation_converged": complete_l,
                 "right_generation_converged": complete_r,
+            },
+        )
+
+    if pruned_l or pruned_r:
+        raise EqualityUndecided(
+            "Generated network omitted species due to a generation limit",
+            {
+                "left_generation_pruned_species": pruned_l,
+                "right_generation_pruned_species": pruned_r,
             },
         )
 
