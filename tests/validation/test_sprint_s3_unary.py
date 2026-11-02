@@ -130,9 +130,9 @@ def test_compiled_unary_network_matches_pinned_bng2_and_analytic_law(
         compare_rates=True,
         compare_initial_amounts=True,
     )
-    assert network_diff.ok, (
-        f"compiled unary network differs from pinned BNG2:\n{network_diff.summary()}"
-    )
+    assert (
+        network_diff.ok
+    ), f"compiled unary network differs from pinned BNG2:\n{network_diff.summary()}"
     assert expected_net.n_species == 3
     assert expected_net.n_reactions == 1
     assert {name: entries for name, entries in expected_net.groups.values()} == {
@@ -229,9 +229,9 @@ def test_compiled_reversible_unary_matches_bng2_and_independent_ode_law(
 
     net_path, gdat_path, error = run_bng3(reference_source, "reversible_bng3")
     assert net_path is not None, f"BNG3 reversible network generation failed: {error}"
-    assert gdat_path is not None, (
-        f"BNG3 reversible ODE consumer produced no trajectory: {error}"
-    )
+    assert (
+        gdat_path is not None
+    ), f"BNG3 reversible ODE consumer produced no trajectory: {error}"
     expected_net = compare.parse_net(oracle_output / "reversible_unary_bng2.net")
     actual_net = compare.parse_net(net_path)
     assert expected_net is not None and actual_net is not None
@@ -241,9 +241,9 @@ def test_compiled_reversible_unary_matches_bng2_and_independent_ode_law(
         compare_rates=True,
         compare_initial_amounts=True,
     )
-    assert network_diff.ok, (
-        f"compiled reversible network differs from pinned BNG2:\n{network_diff.summary()}"
-    )
+    assert (
+        network_diff.ok
+    ), f"compiled reversible network differs from pinned BNG2:\n{network_diff.summary()}"
     assert expected_net.n_species == 3
     assert expected_net.n_reactions == 2
     assert {name: entries for name, entries in expected_net.groups.values()} == {
@@ -259,9 +259,9 @@ def test_compiled_reversible_unary_matches_bng2_and_independent_ode_law(
         text = reference_source if (kf, kr) == (0.4, 0.2) else source(kf, kr)
         if (kf, kr) != (0.4, 0.2):
             net, trajectory, error = run_bng3(text, f"reversible_{kf}_{kr}")
-            assert net is not None and trajectory is not None, (
-                f"BNG3 failed zero-rate boundary {kf=}, {kr=}: {error}"
-            )
+            assert (
+                net is not None and trajectory is not None
+            ), f"BNG3 failed zero-rate boundary {kf=}, {kr=}: {error}"
             values, names = compare.parse_gdat(trajectory)
             assert values is not None and names is not None
             sample_times = np.asarray([row[names.index("time")] for row in values])
@@ -291,9 +291,9 @@ def test_compiled_reversible_unary_matches_bng2_and_independent_ode_law(
             atol=1e-10,
             columns=compare.COLUMNS_EXACT,
         )
-        assert diff.ok, (
-            f"reversible independent ODE law failed for {kf=}, {kr=}: {diff.summary()}"
-        )
+        assert (
+            diff.ok
+        ), f"reversible independent ODE law failed for {kf=}, {kr=}: {diff.summary()}"
 
     # Deliberately incorrect reverse kinetics and state edits must be rejected
     # by the same structural network scorer used for the production comparison.
@@ -308,9 +308,9 @@ def test_compiled_reversible_unary_matches_bng2_and_independent_ode_law(
         ),
     ):
         mutant_net, _, error = run_bng3(mutant, label)
-        assert mutant_net is not None, (
-            f"negative control did not generate a network: {error}"
-        )
+        assert (
+            mutant_net is not None
+        ), f"negative control did not generate a network: {error}"
         mutant_parsed = compare.parse_net(mutant_net)
         assert mutant_parsed is not None
         control_diff = compare.compare_net(
@@ -319,6 +319,6 @@ def test_compiled_reversible_unary_matches_bng2_and_independent_ode_law(
             compare_rates=True,
             compare_initial_amounts=True,
         )
-        assert not control_diff.ok, (
-            f"negative control escaped the network comparison: {label}"
-        )
+        assert (
+            not control_diff.ok
+        ), f"negative control escaped the network comparison: {label}"
