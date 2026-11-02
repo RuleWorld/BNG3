@@ -104,12 +104,13 @@ def test_bngl_zero_max_sim_steps_stops_at_initial_state(tmp_path, method):
     assert all(row[1:] == [10.0, 0.0] for row in rows)
 
 
-def test_bngl_simulate_rejects_non_net_custom_netfile_suffix(tmp_path):
+@pytest.mark.parametrize("netfile", ["input.txt", "input.network", "input.mynet"])
+def test_bngl_simulate_rejects_non_net_custom_netfile_suffix(tmp_path, netfile):
     source = tmp_path / "invalid_netfile_suffix.bngl"
     source.write_text(
         SOURCE
         + "\nbegin actions\n"
-        + '  simulate({method=>"ode",t_end=>1,n_steps=>2,netfile=>"input.txt"})\n'
+        + f'  simulate({{method=>"ode",t_end=>1,n_steps=>2,netfile=>"{netfile}"}})\n'
         + "end actions\n",
         encoding="utf-8",
     )
@@ -118,7 +119,7 @@ def test_bngl_simulate_rejects_non_net_custom_netfile_suffix(tmp_path):
     _, gdat, error = runner.run_cli_path(bng_cpp, source, tmp_path / "run")
 
     assert gdat is None
-    assert "File input.txt does not have .net suffix" in error
+    assert f"File {netfile} does not have .net suffix" in error
 
 
 def test_bngl_simulate_rejects_unknown_expand_mode(tmp_path):

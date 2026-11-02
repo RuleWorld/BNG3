@@ -2021,7 +2021,7 @@ void runSimulation(
     if (!opts.netfile.empty()) {
         const auto extension = lowercase(
             std::filesystem::path(opts.netfile).extension().string());
-        if (extension.find("net") == std::string::npos) {
+        if (extension != ".net") {
             throw std::runtime_error(
                 "File " + opts.netfile + " does not have .net suffix");
         }
