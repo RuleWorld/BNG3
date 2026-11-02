@@ -710,7 +710,7 @@ bool qualifiesDirectUnaryStateChange(
     const compile::CompiledRule& rule,
     const compile::CompiledRuleDirection& direction,
     const compile::CompiledModel& model) {
-    if (rule.isBidirectional() || rule.delayExpression().has_value() ||
+    if (rule.delayExpression().has_value() ||
         rule.resolvedDelayExpression().has_value() || rule.hasDrivingWork() ||
         !rule.modifiers().empty() || !direction.transformationsComplete ||
         direction.reactantPatterns.size() != 1 ||

@@ -203,6 +203,69 @@ generate_network({max_iter=>2})
     CHECK(filteredReactions.size() == 0);
 }
 
+TEST_CASE("NetworkRulePlan executes both reversible unary directions from compiled data",
+          "[NetworkRulePlan][compiled][unary][reversible]") {
+    auto source = parseModel(R"(
+begin parameters
+    kf 0.4
+    kr 0.2
+end parameters
+begin molecule types
+    A(s~U~P,c~x~y)
+end molecule types
+begin seed species
+    A(s~U,c~x) 3
+    A(s~P,c~x) 1
+    A(s~U,c~y) 2
+end seed species
+begin reaction rules
+    switch: A(s~U,c~x) <-> A(s~P,c~x) kf, kr
+end reaction rules
+generate_network({max_iter=>3})
+)");
+    REQUIRE(source != nullptr);
+    auto document = std::make_unique<compile::Document>(*source);
+    REQUIRE(document->valid());
+    source.reset();
+
+    const auto& compiled = document->model();
+    REQUIRE(compiled.rules().size() == 1);
+    compile::BNGcoreLoweringContext context(compiled);
+    auto plans = engine::lowerNetworkRules(compiled, context);
+    REQUIRE(plans.size() == 2);
+    CHECK_FALSE(plans[0].usesLegacyKernel());
+    CHECK_FALSE(plans[1].usesLegacyKernel());
+
+    engine::NetworkGenerator generator(*document);
+    const auto network = generator.generateNative(3);
+    REQUIRE(network.species.size() == 3);
+    REQUIRE(network.reactions.size() == 2);
+    CHECK(network.species.get(0).getSpeciesGraph().toString() == "A(c~x,s~U)");
+    CHECK(network.species.get(1).getSpeciesGraph().toString() == "A(c~x,s~P)");
+    CHECK(network.species.get(2).getSpeciesGraph().toString() == "A(c~y,s~U)");
+
+    bool sawForward = false;
+    bool sawReverse = false;
+    for (const auto& reaction : network.reactions.all()) {
+        REQUIRE(reaction.getReactants().size() == 1);
+        REQUIRE(reaction.getProducts().size() == 1);
+        const auto reactant = reaction.getReactants().front();
+        const auto product = reaction.getProducts().front();
+        if (reactant == 0 && product == 1) {
+            CHECK(reaction.getRateLaw() == "kf");
+            sawForward = true;
+        } else if (reactant == 1 && product == 0) {
+            CHECK(reaction.getRateLaw() == "kr");
+            sawReverse = true;
+        } else {
+            FAIL("unexpected directed reaction " << reactant << " -> " << product);
+        }
+    }
+    CHECK(sawForward);
+    CHECK(sawReverse);
+    CHECK(network.species.get(2).getAmount() == 2.0);
+}
+
 TEST_CASE("compiled unary state-change pruning keeps zero-rate networks atomic",
           "[NetworkRulePlan][compiled][unary][zero-rate]") {
     auto source = parseModel(R"(
