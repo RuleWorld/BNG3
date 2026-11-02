@@ -727,6 +727,7 @@ QUALIFICATION_OPERATIONS = (
     "protocol",
     "nf-marginals",
     "graph-identity",
+    "graph-identity-contract",
     "bngir-adversarial",
     "quantity-laws",
 )
