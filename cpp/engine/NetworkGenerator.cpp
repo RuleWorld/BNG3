@@ -462,6 +462,7 @@ GeneratedNetwork NetworkGenerator::generateNative(std::size_t maxIter) {
 
         if (network.species.size() == previousSpecies &&
             network.reactions.size() == previousReactions) {
+            network.generationConverged = true;
             if (logProgress)
                 std::cerr << "[generate_network] converged at iter=" << (iter + 1) << '\n';
             break;

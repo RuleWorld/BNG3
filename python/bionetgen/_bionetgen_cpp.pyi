@@ -177,6 +177,10 @@ class GeneratedNetwork:
     """A generated reaction network (species + reactions)."""
 
     @property
+    def generation_converged(self) -> bool:
+        """Whether network expansion reached a fixed point before its iteration limit."""
+
+    @property
     def num_species(self) -> int: ...
     @property
     def num_reactions(self) -> int: ...

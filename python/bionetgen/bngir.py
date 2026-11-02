@@ -3576,8 +3576,9 @@ def _extract_jump_hazards(
     dict[tuple[tuple[str, ...], tuple[str, ...]], Fraction],
     dict[str, Fraction],
     list[str],
+    bool,
 ]:
-    """Extract a finite network's rational jump hazards and initial counts."""
+    """Extract rational jump hazards and the network's fixed-point status."""
     param_dict = {p.name: Fraction(str(p.value)) for p in model.parameters}
     net = model.generate_network()
     species_names = list(net.species_names)
@@ -3618,7 +3619,7 @@ def _extract_jump_hazards(
         key = (reactants, products)
         jump_hazards[key] = jump_hazards.get(key, Fraction(0)) + rate_val
 
-    return jump_hazards, init_counts, species_names
+    return jump_hazards, init_counts, species_names, net.generation_converged
 
 
 def exact_process_equal(
@@ -3767,13 +3768,22 @@ def exact_process_equal(
     type_signatures_r = molecule_type_signatures(right_model)
 
     try:
-        jumps_l, init_l, species_l = _extract_jump_hazards(left_model)
-        jumps_r, init_r, species_r = _extract_jump_hazards(right_model)
+        jumps_l, init_l, species_l, complete_l = _extract_jump_hazards(left_model)
+        jumps_r, init_r, species_r, complete_r = _extract_jump_hazards(right_model)
     except Exception as exc:
         raise EqualityUndecided(
             f"Network generation could not settle exact process equality: {exc}",
             {"error": str(exc)},
         ) from exc
+
+    if not complete_l or not complete_r:
+        raise EqualityUndecided(
+            "Generated network was truncated before reaching a fixed point",
+            {
+                "left_generation_converged": complete_l,
+                "right_generation_converged": complete_r,
+            },
+        )
 
     if set(species_l) == set(species_r):
         if type_signatures_l != type_signatures_r:

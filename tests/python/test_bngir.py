@@ -767,6 +767,37 @@ end model
     assert not bionetgen.semantic_equal(model("1"), model("1.0000000001"))
 
 
+def test_semantic_equal_does_not_certify_a_truncated_generated_network():
+    def model(rate: int):
+        source = f"""
+begin model
+begin parameters
+    k {rate}
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin reaction rules
+    A() -> B() k
+end reaction rules
+begin actions
+    generate_network({{max_iter=>0}})
+end actions
+end model
+"""
+        return bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(source))
+
+    # The finite-network path is only a valid certificate when network
+    # generation reached its fixed point. A user-specified cutoff can hide
+    # every reaction while leaving the same seed in both generated networks.
+    with pytest.raises(bionetgen.EqualityUndecided, match="truncated"):
+        bionetgen.semantic_equal(model(1), model(2))
+
+
 def test_semantic_equal_does_not_ignore_observable_patterns():
     def model(pattern: str):
         source = f"""
