@@ -9379,33 +9379,69 @@ def synthesize_event_actions(
         if t_final > requested_duration:
             output_grid.append(t_final)
 
-    def sample_times_for(start: float, end: float, *, include_start: bool) -> str:
+    def sample_grid_for(
+        start: float, end: float, *, include_start: bool
+    ) -> List[float]:
         samples = [value for value in output_grid if value > start and value < end]
         if include_start:
             samples.insert(0, start)
         samples.append(end)
-        # A BNGL simulate action requires at least three sample points.  A
-        # short event phase can otherwise contain only one or two grid points.
-        if end > start:
-            if len(samples) == 1:
-                samples.insert(0, start)
-            while len(samples) < 3:
-                gaps = [
-                    (samples[index + 1] - samples[index], index)
-                    for index in range(len(samples) - 1)
-                ]
-                if not gaps:
-                    break
-                width, index = max(gaps)
-                if width <= 0.0:
-                    break
-                samples.insert(index + 1, samples[index] + width / 2.0)
+        return samples
+
+    def sample_times_for(start: float, end: float, *, include_start: bool) -> str:
+        samples = sample_grid_for(start, end, include_start=include_start)
         return "[" + ",".join(_format_number(value) for value in samples) + "]"
 
-    def sampling_for(start: float, end: float, *, include_start: bool) -> str:
+    def render_simulation(
+        start: float,
+        end: float,
+        *,
+        continue_action: bool,
+        sample_argument: str,
+    ) -> str:
+        continuation = "continue=>1, " if continue_action else ""
+        return (
+            f'simulate({{{continuation}method=>"{method}", '
+            f"t_start=>{_format_number(start)}, t_end=>{_format_number(end)}, "
+            f"{sample_argument}{seed_argument}}})"
+        )
+
+    def phase_simulations(
+        start: float,
+        end: float,
+        *,
+        include_start: bool,
+        continue_action: bool,
+    ) -> List[str]:
         if deterministic_method:
-            return f"sample_times=>{sample_times_for(start, end, include_start=include_start)}"
-        return f"n_steps=>{steps_for(start, end)}"
+            samples = sample_grid_for(start, end, include_start=include_start)
+            if len(samples) < 3:
+                # `sample_times` requires at least three values. Preserve the
+                # requested output grid by lowering each adjacent pair to a
+                # one-step simulation; continued actions suppress repeated
+                # boundary rows, so no synthetic sample times are introduced.
+                points = samples if include_start else [start, *samples]
+                return [
+                    render_simulation(
+                        left,
+                        right,
+                        continue_action=continue_action or index > 0,
+                        sample_argument="n_steps=>1",
+                    )
+                    for index, (left, right) in enumerate(zip(points, points[1:]))
+                ]
+            sample_argument = f"sample_times=>{sample_times_for(start, end, include_start=include_start)}"
+        else:
+            sample_argument = f"n_steps=>{steps_for(start, end)}"
+
+        return [
+            render_simulation(
+                start,
+                end,
+                continue_action=continue_action,
+                sample_argument=sample_argument,
+            )
+        ]
 
     lines = [
         f"# {len(merged)} time-triggered SBML event(s) translated to scheduled actions.",
@@ -9425,22 +9461,15 @@ def synthesize_event_actions(
         else ""
     )
     for end in boundaries[1:]:
-        if first:
-            lines.append(
-                f'simulate({{method=>"{method}", t_start=>0, '
-                f"t_end=>{_format_number(end)}, "
-                f"{sampling_for(phase_start, end, include_start=True)}"
-                f"{seed_argument}}})"
+        lines.extend(
+            phase_simulations(
+                phase_start,
+                end,
+                include_start=first,
+                continue_action=not first,
             )
-            first = False
-        else:
-            lines.append(
-                f'simulate({{continue=>1, method=>"{method}", '
-                f"t_start=>{_format_number(phase_start)}, "
-                f"t_end=>{_format_number(end)}, "
-                f"{sampling_for(phase_start, end, include_start=False)}"
-                f"{seed_argument}}})"
-            )
+        )
+        first = False
         for time, sets in merged:
             if time > 0 and abs(time - end) < 1e-12:
                 lines.extend(_render_sets(sets))
@@ -9457,12 +9486,13 @@ def synthesize_event_actions(
         phase_start = end
 
     if abs(phase_start - t_final) > 1e-12:
-        lines.append(
-            f'simulate({{continue=>1, method=>"{method}", '
-            f"t_start=>{_format_number(phase_start)}, "
-            f"t_end=>{_format_number(t_final)}, "
-            f"{sampling_for(phase_start, t_final, include_start=False)}"
-            f"{seed_argument}}})"
+        lines.extend(
+            phase_simulations(
+                phase_start,
+                t_final,
+                include_start=False,
+                continue_action=True,
+            )
         )
 
     return EventTranslationResult(

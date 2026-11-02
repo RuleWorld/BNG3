@@ -319,8 +319,8 @@ def test_official_case_00375_matches_the_published_trajectory(tmp_path):
     )
 
 
-def test_synthesize_event_actions_pads_short_and_degenerate_sampling_grids():
-    """Short event phases with < 3 points are padded to at least 3 points."""
+def test_synthesize_event_actions_preserves_short_sampling_grids():
+    """Short BNGL phases use one-step intervals without adding output times."""
     from bionetgen.atomizer.modern.events import (
         synthesize_event_actions,
         EventTranslationContext,
@@ -349,8 +349,16 @@ def test_synthesize_event_actions_pads_short_and_degenerate_sampling_grids():
     assert res.actions_block is not None
     import re
 
-    matches = re.findall(r"sample_times=>\[(.*?)\]", res.actions_block)
-    assert len(matches) >= 1
-    for m in matches:
-        pts = [float(x.strip()) for x in m.split(",")]
-        assert len(pts) >= 3
+    simulate_actions = [
+        line.strip()
+        for line in res.actions_block.splitlines()
+        if line.strip().startswith("simulate(")
+    ]
+    assert all("sample_times=>" not in action for action in simulate_actions)
+    assert all("n_steps=>1" in action for action in simulate_actions)
+    intervals = [
+        tuple(float(value) for value in match.groups())
+        for action in simulate_actions
+        if (match := re.search(r"t_start=>([^,]+), t_end=>([^,]+)", action))
+    ]
+    assert intervals == [(0.0, 1.0), (1.0, 1.0), (1.0, 1.25), (1.25, 2.5)]
