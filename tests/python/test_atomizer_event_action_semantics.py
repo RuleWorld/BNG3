@@ -325,8 +325,8 @@ def test_synthesize_event_actions_pads_short_and_degenerate_sampling_grids():
         synthesize_event_actions,
         EventTranslationContext,
         SBMLEvent,
-        SBMLEventAssignment,
     )
+    from bionetgen.atomizer.modern.types import SBMLEventAssignment
 
     # Event fires at time=1.0, base_t_end=2.5, base_steps=2
     # Phases: [0.0, 1.0] and [1.0, 2.5]
@@ -346,10 +346,10 @@ def test_synthesize_event_actions_pads_short_and_degenerate_sampling_grids():
         base_steps=2,
     )
     res = synthesize_event_actions([event], ctx)
-    assert res.actions is not None
+    assert res.actions_block is not None
     import re
 
-    matches = re.findall(r"sample_times=>\[(.*?)\]", res.actions)
+    matches = re.findall(r"sample_times=>\[(.*?)\]", res.actions_block)
     assert len(matches) >= 1
     for m in matches:
         pts = [float(x.strip()) for x in m.split(",")]
