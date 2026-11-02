@@ -254,6 +254,109 @@ end reaction rules
     assert(distinctMatcher.enumerate(distinctRule.pattern, distinctState).size() == 1);
 }
 
+void identicalComplexReactantsHaveUnorderedEmbeddings() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin parameters
+  k 0.05
+end parameters
+begin molecule types
+  A(b)
+  B(a)
+end molecule types
+begin seed species
+  A(b!1).B(a!1) 4
+end seed species
+begin observables
+  Molecules A_count A()
+  Molecules B_count B()
+end observables
+begin reaction rules
+  consume_complex_pairs: A(b!1).B(a!1) + B(a!1).A(b!1) -> 0 k
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(lowered.ok());
+    const auto& rule = lowered.model.expanded_rules.front();
+    assert(rule.pattern.nodes.size() == 4);
+
+    nfnext::GenericGraphState state(lowered.model);
+    const auto aType = moleculeTypeId(lowered.model, "A");
+    const auto bType = moleculeTypeId(lowered.model, "B");
+    const auto aBondSite = siteIndex(lowered.model, aType, "b");
+    const auto bBondSite = siteIndex(lowered.model, bType, "a");
+    for (int i = 0; i < 4; ++i) {
+        const auto a = state.create(aType);
+        const auto b = state.create(bType);
+        state.bind(a, static_cast<std::uint16_t>(aBondSite),
+                   b, static_cast<std::uint16_t>(bBondSite));
+    }
+    nfnext::GenericMatcher matcher(lowered.model);
+    // Four complexes yield choose(4, 2) distinct unordered pair embeddings.
+    assert(matcher.enumerate(rule.pattern, state).size() == 6);
+    assert(rule.pattern.interchangeable.size() == 2);
+    assert((rule.pattern.interchangeable[0] ==
+            std::vector<std::size_t>{0, 3}));
+    assert((rule.pattern.interchangeable[1] ==
+            std::vector<std::size_t>{1, 2}));
+
+    const auto distinctAst = bng::parser::parseModel(R"BNGL(
+begin molecule types
+  A(x~u~p,b)
+  B(a)
+end molecule types
+begin seed species
+  A(x~u,b!1).B(a!1) 1
+  A(x~p,b!1).B(a!1) 1
+end seed species
+begin reaction rules
+  consume_distinct_complexes: A(x~u,b!1).B(a!1) + A(x~p,b!1).B(a!1) -> 0 0.05
+end reaction rules
+)BNGL");
+    assert(distinctAst);
+    const bng::compile::CompiledModel distinctSemantic(*distinctAst);
+    assert(distinctSemantic.valid());
+    const auto distinctLowered = nfnext::lowerFromBioNetGen(distinctSemantic);
+    assert(distinctLowered.ok());
+    const auto& distinctRule = distinctLowered.model.expanded_rules.front();
+    assert(distinctRule.pattern.interchangeable.empty());
+
+    // The source law is a pure-death CTMC: from four complexes the first
+    // event hazard is 0.05*choose(4,2)=0.3, then 0.05 with two complexes.
+    const std::array<double, 3> expectedCdf{
+        std::exp(-0.3),
+        1.2 * std::exp(-0.05) - 0.2 * std::exp(-0.3),
+        1.0,
+    };
+    constexpr std::size_t runCount = 200;
+    std::array<std::size_t, 3> observedCounts{};
+    nfnext::BngExecutionRequest request;
+    request.sample_times = {0.0, 1.0};
+    for (std::size_t run = 0; run < runCount; ++run) {
+        request.seed = 20261102 + run;
+        const auto result = nfnext::executeFromBioNetGen(semantic, request);
+        assert((result.columns ==
+                std::vector<std::string>{"time", "A_count", "B_count"}));
+        const auto& final = result.rows.back();
+        assert(final[1] == final[2]);
+        const auto completed = static_cast<int>((4.0 - final[1]) / 2.0);
+        assert(completed >= 0 && completed <= 2);
+        ++observedCounts[static_cast<std::size_t>(completed)];
+    }
+    const double epsilon = std::sqrt(std::log(2.0 / 0.01) /
+                                     (2.0 * runCount));
+    double observedCdf = 0.0;
+    double maxDistance = 0.0;
+    for (std::size_t stateIndex = 0; stateIndex < observedCounts.size(); ++stateIndex) {
+        observedCdf += static_cast<double>(observedCounts[stateIndex]) / runCount;
+        maxDistance = std::max(maxDistance,
+                               std::abs(observedCdf - expectedCdf[stateIndex]));
+    }
+    assert(maxDistance <= epsilon);
+}
+
 void executesBimolecularBindingUnbinding() {
     const auto ast = bng::parser::parseModel(R"BNGL(
 begin parameters
@@ -975,6 +1078,7 @@ end reaction rules
 
     executesCanonicalUnaryModel();
     identicalReactantsHaveUnorderedEmbeddings();
+    identicalComplexReactantsHaveUnorderedEmbeddings();
     executesBimolecularBindingUnbinding();
     executesSynthesisAndComplexDegradation();
     executesComplexSeedModel();

@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <map>
 #include <optional>
@@ -22,6 +23,146 @@ namespace {
 using BngPattern = bng::compile::Pattern;
 using BngPatternSide = bng::compile::PatternSide;
 using BngMutationKind = bng::compile::MutationKind;
+
+using BondEndpoint = std::tuple<std::size_t, std::size_t, std::size_t>;
+
+std::vector<bng::compile::PatternBondDescriptor> patternBonds(
+    const bng::compile::PatternSiteDescriptor& site) {
+    if (!site.bondConstraints.empty()) return site.bondConstraints;
+    return {{site.bondConstraint, site.bondKind, site.bondGroup}};
+}
+
+bng::compile::BondConstraintKind normalizedBondKind(
+    bng::compile::BondConstraintKind kind) {
+    return kind == bng::compile::BondConstraintKind::Unspecified
+               ? bng::compile::BondConstraintKind::Unbound
+               : kind;
+}
+
+bool moleculePatternShapeMatches(const BngPattern& left, std::size_t leftIndex,
+                                 const BngPattern& right, std::size_t rightIndex) {
+    const auto& leftMolecule = left.molecules()[leftIndex];
+    const auto& rightMolecule = right.molecules()[rightIndex];
+    const auto leftCompartment = leftMolecule.compartment.empty()
+                                     ? left.compartment()
+                                     : leftMolecule.compartment;
+    const auto rightCompartment = rightMolecule.compartment.empty()
+                                      ? right.compartment()
+                                      : rightMolecule.compartment;
+    if (leftMolecule.moleculeType != rightMolecule.moleculeType ||
+        leftCompartment != rightCompartment ||
+        leftMolecule.sites.size() != rightMolecule.sites.size())
+        return false;
+    for (std::size_t siteIndex = 0; siteIndex < leftMolecule.sites.size(); ++siteIndex) {
+        const auto& leftSite = leftMolecule.sites[siteIndex];
+        const auto& rightSite = rightMolecule.sites[siteIndex];
+        if (leftSite.componentName != rightSite.componentName ||
+            leftSite.stateConstraint != rightSite.stateConstraint ||
+            leftSite.label != rightSite.label)
+            return false;
+        const auto leftBonds = patternBonds(leftSite);
+        const auto rightBonds = patternBonds(rightSite);
+        if (leftBonds.size() != rightBonds.size()) return false;
+        for (std::size_t bondIndex = 0; bondIndex < leftBonds.size(); ++bondIndex) {
+            if (normalizedBondKind(leftBonds[bondIndex].kind) !=
+                normalizedBondKind(rightBonds[bondIndex].kind))
+                return false;
+        }
+    }
+    return true;
+}
+
+bool exactBondRelationMatches(const BngPattern& left, const BngPattern& right,
+                              const std::vector<std::size_t>& mapping,
+                              const std::vector<bool>& assigned) {
+    for (std::size_t leftMolecule = 0; leftMolecule < mapping.size(); ++leftMolecule) {
+        if (!assigned[leftMolecule]) continue;
+        for (std::size_t rightMolecule = 0; rightMolecule <= leftMolecule;
+             ++rightMolecule) {
+            if (!assigned[rightMolecule]) continue;
+            const auto& leftSites = left.molecules()[leftMolecule].sites;
+            const auto& rightSites = right.molecules()[mapping[leftMolecule]].sites;
+            const auto& leftOtherSites = left.molecules()[rightMolecule].sites;
+            const auto& rightOtherSites = right.molecules()[mapping[rightMolecule]].sites;
+            for (std::size_t site = 0; site < leftSites.size(); ++site) {
+                const auto leftBonds = patternBonds(leftSites[site]);
+                const auto rightBonds = patternBonds(rightSites[site]);
+                for (std::size_t otherSite = 0; otherSite < leftOtherSites.size();
+                     ++otherSite) {
+                    const auto leftOtherBonds = patternBonds(leftOtherSites[otherSite]);
+                    const auto rightOtherBonds = patternBonds(rightOtherSites[otherSite]);
+                    for (std::size_t bond = 0; bond < leftBonds.size(); ++bond) {
+                        if (leftBonds[bond].kind != bng::compile::BondConstraintKind::Exact)
+                            continue;
+                        for (std::size_t otherBond = 0;
+                             otherBond < leftOtherBonds.size(); ++otherBond) {
+                            if (leftOtherBonds[otherBond].kind !=
+                                bng::compile::BondConstraintKind::Exact)
+                                continue;
+                            const bool sameLeft =
+                                leftBonds[bond].group.value ==
+                                leftOtherBonds[otherBond].group.value;
+                            const bool sameRight =
+                                rightBonds[bond].group.value ==
+                                rightOtherBonds[otherBond].group.value;
+                            if (sameLeft != sameRight) return false;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    return true;
+}
+
+std::optional<std::vector<std::size_t>> patternMoleculeMapping(
+    const BngPattern& left, const BngPattern& right) {
+    if (left.molecules().size() != right.molecules().size() ||
+        left.compartmentIsPrefix() != right.compartmentIsPrefix())
+        return std::nullopt;
+    const std::size_t count = left.molecules().size();
+    if (left == right) {
+        std::vector<std::size_t> identity(count);
+        for (std::size_t index = 0; index < count; ++index) identity[index] = index;
+        return identity;
+    }
+
+    std::vector<std::vector<std::size_t>> candidates(count);
+    std::vector<std::size_t> order(count);
+    for (std::size_t leftIndex = 0; leftIndex < count; ++leftIndex) {
+        order[leftIndex] = leftIndex;
+        for (std::size_t rightIndex = 0; rightIndex < count; ++rightIndex) {
+            if (moleculePatternShapeMatches(left, leftIndex, right, rightIndex))
+                candidates[leftIndex].push_back(rightIndex);
+        }
+        if (candidates[leftIndex].empty()) return std::nullopt;
+    }
+    std::stable_sort(order.begin(), order.end(), [&](auto first, auto second) {
+        return candidates[first].size() < candidates[second].size();
+    });
+
+    std::vector<std::size_t> mapping(count, 0);
+    std::vector<bool> assigned(count, false);
+    std::vector<bool> used(count, false);
+    std::function<bool(std::size_t)> visit = [&](std::size_t depth) {
+        if (depth == count) return true;
+        const auto leftIndex = order[depth];
+        for (const auto rightIndex : candidates[leftIndex]) {
+            if (used[rightIndex]) continue;
+            mapping[leftIndex] = rightIndex;
+            assigned[leftIndex] = true;
+            used[rightIndex] = true;
+            if (exactBondRelationMatches(left, right, mapping, assigned) &&
+                visit(depth + 1))
+                return true;
+            assigned[leftIndex] = false;
+            used[rightIndex] = false;
+        }
+        return false;
+    };
+    if (!visit(0)) return std::nullopt;
+    return mapping;
+}
 
 void issue(BngLoweringResult& result, BngLoweringSeverity severity,
            std::string entity, std::string message) {
@@ -772,32 +913,50 @@ void addDirection(const bng::compile::CompiledRule& rule,
     }
 
     auto loweredPattern = flattened->pattern;
-    // A one-node whole-species deletion has no identity-sensitive action. Mark
-    // exact duplicate reactant patterns interchangeable so the matcher counts
-    // an unordered combination instead of every ordering. Multi-node complexes
-    // need a whole-pattern automorphism representation before they can be grouped.
+    // Whole-species deletions have no identity-sensitive action. Mark exact
+    // duplicate reactant patterns interchangeable by corresponding molecule
+    // position so the matcher counts unordered combinations instead of every
+    // ordering. The whole pattern is compared first, so distinct state or bond
+    // constraints never share a symmetry group.
     if (!hasDeleteMoleculesModifier(rule) && direction.filters.empty() &&
         direction.localScopes.empty() &&
         direction.wholeSpeciesDeletions.size() == direction.reactantPatterns.size()) {
         std::vector<bool> grouped(direction.reactantPatterns.size(), false);
         for (std::size_t first = 0; first < direction.reactantPatterns.size(); ++first) {
-            if (grouped[first] ||
-                direction.reactantPatterns[first].molecules().size() != 1)
-                continue;
-            std::vector<std::size_t> interchangeable{
-                flattened->patternOffsets[first]};
+            if (grouped[first]) continue;
+            const auto moleculeCount =
+                direction.reactantPatterns[first].molecules().size();
+            if (moleculeCount == 0) continue;
+            std::vector<std::size_t> duplicates{first};
+            std::vector<std::vector<std::size_t>> duplicateMappings;
+            std::vector<std::size_t> selfMapping(moleculeCount);
+            for (std::size_t m = 0; m < moleculeCount; ++m) selfMapping[m] = m;
+            duplicateMappings.push_back(std::move(selfMapping));
             grouped[first] = true;
             for (std::size_t other = first + 1;
                  other < direction.reactantPatterns.size(); ++other) {
                 if (grouped[other] ||
-                    direction.reactantPatterns[other].molecules().size() != 1 ||
-                    direction.reactantPatterns[first] != direction.reactantPatterns[other])
+                    direction.reactantPatterns[other].molecules().size() != moleculeCount)
                     continue;
-                interchangeable.push_back(flattened->patternOffsets[other]);
+                const auto mapping = patternMoleculeMapping(
+                    direction.reactantPatterns[first], direction.reactantPatterns[other]);
+                if (!mapping) continue;
+                duplicates.push_back(other);
+                duplicateMappings.push_back(*mapping);
                 grouped[other] = true;
             }
-            if (interchangeable.size() > 1)
+            if (duplicates.size() < 2) continue;
+            for (std::size_t molecule = 0; molecule < moleculeCount; ++molecule) {
+                std::vector<std::size_t> interchangeable;
+                interchangeable.reserve(duplicates.size());
+                for (std::size_t dupIdx = 0; dupIdx < duplicates.size(); ++dupIdx) {
+                    const auto reactant = duplicates[dupIdx];
+                    const auto targetMolecule = duplicateMappings[dupIdx][molecule];
+                    interchangeable.push_back(
+                        flattened->patternOffsets[reactant] + targetMolecule);
+                }
                 loweredPattern.interchangeable.push_back(std::move(interchangeable));
+            }
         }
     }
 
