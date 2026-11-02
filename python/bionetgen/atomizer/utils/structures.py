@@ -353,10 +353,10 @@ class Molecule:
         return componentName in [x.name for x in self.components]
 
     def evaluateMolecule(self):
-        try:
-            return min([self.evaluateBonds(x.bonds) for x in self.components])
-        except ValueError:
+        # ⚡ Bolt: Use a generator expression with inline condition to avoid building a list and catching an exception on empty sequences
+        if not self.components:
             return 999999
+        return min((c.bonds[0] if c.bonds else 9999999) for c in self.components)
 
     def evaluateBonds(self, bonds):
         if len(bonds) == 0:
@@ -364,7 +364,8 @@ class Molecule:
         return bonds[0]
 
     def sort(self):
-        self.components.sort(key=lambda x: (x.name, self.evaluateBonds(x.bonds)))
+        # ⚡ Bolt: Inline evaluateBonds in sort key to remove function call overhead per component during sorting
+        self.components.sort(key=lambda x: (x.name, x.bonds[0] if x.bonds else 9999999))
 
     def __str__(self):
         self.sort()
@@ -412,15 +413,19 @@ class Molecule:
         return tmp + "(" + ",".join([x.str2() for x in self.components]) + ")"
 
     def extend(self, molecule):
+        # ⚡ Bolt: Build a dictionary lookup once instead of an O(N) list comprehension inside the loop to turn this into an O(N) operation instead of O(N^2)
+        comp_dict = {x.name: x for x in self.components}
         for element in molecule.components:
-            comp = [x for x in self.components if x.name == element.name]
-            if len(comp) == 0:
-                self.components.append(element.copy())
+            comp = comp_dict.get(element.name)
+            if comp is None:
+                new_c = element.copy()
+                self.components.append(new_c)
+                comp_dict[element.name] = new_c
             else:
                 for bond in element.bonds:
-                    comp[0].addBond(bond)
+                    comp.addBond(bond)
                 for state in element.states:
-                    comp[0].addState(state)
+                    comp.addState(state)
 
     def reset(self):
         for element in self.components:
