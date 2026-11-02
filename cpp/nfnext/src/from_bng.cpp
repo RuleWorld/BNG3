@@ -319,6 +319,103 @@ std::optional<double> constantExpression(
     }
 }
 
+std::optional<bng::compile::ResolvedExpression> expandZeroArgumentRateFunctions(
+    const bng::compile::ResolvedExpression& expression,
+    const bng::compile::CompiledModel& model,
+    std::set<std::size_t>& activeFunctions) {
+    using Kind = bng::compile::ResolvedExpressionKind;
+    if (expression.kind == Kind::FunctionRef) {
+        if (!expression.symbol ||
+            expression.symbol->kind != bng::compile::SymbolKind::Function ||
+            !expression.arguments.empty())
+            return std::nullopt;
+        const auto index = expression.symbol->index;
+        const auto* function = model.function(
+            bng::compile::FunctionId::fromDenseIndex(index));
+        if (!function || function->id.value() != index ||
+            !function->arguments.empty() || !activeFunctions.insert(index).second)
+            return std::nullopt;
+        auto expanded = expandZeroArgumentRateFunctions(
+            function->expression, model, activeFunctions);
+        activeFunctions.erase(index);
+        return expanded;
+    }
+    auto expanded = expression;
+    expanded.arguments.clear();
+    expanded.arguments.reserve(expression.arguments.size());
+    for (const auto& argument : expression.arguments) {
+        auto child = expandZeroArgumentRateFunctions(
+            argument, model, activeFunctions);
+        if (!child) return std::nullopt;
+        expanded.arguments.push_back(std::move(*child));
+    }
+    return expanded;
+}
+
+std::optional<std::string> observableRateExpression(
+    const bng::compile::ResolvedExpression& expression,
+    const bng::compile::CompiledModel& model,
+    std::set<std::size_t>& observableIds) {
+    using Kind = bng::compile::ResolvedExpressionKind;
+    using Unary = bng::compile::UnaryOp;
+    using Binary = bng::compile::BinaryOp;
+
+    if (const auto constant = constantExpression(expression, model)) {
+        if (!std::isfinite(*constant)) return std::nullopt;
+        std::ostringstream out;
+        out.precision(17);
+        out << *constant;
+        return out.str();
+    }
+    switch (expression.kind) {
+    case Kind::ObservableRef: {
+        if (!expression.symbol ||
+            expression.symbol->kind != bng::compile::SymbolKind::Observable)
+            return std::nullopt;
+        const auto index = expression.symbol->index;
+        const auto* observable = model.observable(
+            bng::compile::ObservableId::fromDenseIndex(index));
+        if (!observable || observable->id.value() != index ||
+            observable->kind != bng::compile::ObservableKind::Molecules)
+            return std::nullopt;
+        observableIds.insert(index);
+        return "observable_" + std::to_string(index);
+    }
+    case Kind::Unary: {
+        if (!expression.unaryOp || expression.arguments.size() != 1 ||
+            (*expression.unaryOp != Unary::Plus &&
+             *expression.unaryOp != Unary::Negate))
+            return std::nullopt;
+        const auto child = observableRateExpression(
+            expression.arguments.front(), model, observableIds);
+        if (!child) return std::nullopt;
+        return *expression.unaryOp == Unary::Negate
+            ? "(-" + *child + ")" : "(" + *child + ")";
+    }
+    case Kind::Binary: {
+        if (!expression.binaryOp || expression.arguments.size() != 2)
+            return std::nullopt;
+        const char* operation = nullptr;
+        switch (*expression.binaryOp) {
+        case Binary::Add: operation = "+"; break;
+        case Binary::Subtract: operation = "-"; break;
+        case Binary::Multiply: operation = "*"; break;
+        case Binary::Divide: operation = "/"; break;
+        case Binary::Power: operation = "^"; break;
+        default: return std::nullopt;
+        }
+        const auto left = observableRateExpression(
+            expression.arguments[0], model, observableIds);
+        const auto right = observableRateExpression(
+            expression.arguments[1], model, observableIds);
+        if (!left || !right) return std::nullopt;
+        return "(" + *left + operation + *right + ")";
+    }
+    default:
+        return std::nullopt;
+    }
+}
+
 struct FlattenedPattern {
     PatternIR pattern;
     std::vector<std::size_t> patternOffsets;
@@ -968,22 +1065,50 @@ void addDirection(const bng::compile::CompiledRule& rule,
     if (!addActions(rule, direction, *flattened, reverseDirection,
                     lowered.actions, result, entity)) return;
 
-    const auto expandedRate = source.expandFunctions(direction.rateLaw->resolvedExpression());
-    const auto constant = constantExpression(expandedRate, source);
-    if (!constant || !std::isfinite(*constant) || *constant < 0.0) {
+    const auto partiallyExpandedRate = source.expandFunctions(
+        direction.rateLaw->resolvedExpression());
+    std::set<std::size_t> activeRateFunctions;
+    const auto expandedRate = expandZeroArgumentRateFunctions(
+        partiallyExpandedRate, source, activeRateFunctions);
+    if (!expandedRate) {
         issue(result, BngLoweringSeverity::Error, entity,
-              "dynamic BioNetGen rate expressions are not representable in NFIR v5; "
-              "NFIR does not yet carry the parameter/function/observable expression graph");
+              "rate references an invalid or recursive global function");
         return;
     }
-    lowered.rate = *constant;
-    lowered.rate_law.kind = RateLawKind::Elementary;
-    // This spelling is diagnostic only for elementary rates. Runtime execution
-    // uses the resolved numeric rate above, so NFnext never reparses BNGL here.
-    std::ostringstream rateText;
-    rateText.precision(17);
-    rateText << *constant;
-    lowered.rate_law.expression = rateText.str();
+    const auto constant = constantExpression(*expandedRate, source);
+    if (constant) {
+        if (!std::isfinite(*constant) || *constant < 0.0) {
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "elementary BioNetGen rate must be finite and non-negative");
+            return;
+        }
+        lowered.rate = *constant;
+        lowered.rate_law.kind = RateLawKind::Elementary;
+        // Runtime execution uses this resolved numeric rate; NFnext never
+        // reparses BNGL for an elementary rate.
+        std::ostringstream rateText;
+        rateText.precision(17);
+        rateText << *constant;
+        lowered.rate_law.expression = rateText.str();
+    } else {
+        if (!direction.rateLaw->dependencies().function) {
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "dynamic NFIR rates require a resolved zero-argument global function");
+            return;
+        }
+        std::set<std::size_t> observableIds;
+        const auto expression = observableRateExpression(
+            *expandedRate, source, observableIds);
+        if (!expression || observableIds.size() != 1) {
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "only a resolved arithmetic rate expression depending on exactly "
+                  "one global observable is representable as a dynamic NFIR rate");
+            return;
+        }
+        lowered.rate = 0.0; // Dynamic rates are carried only by rate_law.
+        lowered.rate_law.kind = RateLawKind::Function;
+        lowered.rate_law.expression = *expression;
+    }
     lowered.annotations.emplace("bng.rule_label", rule.label());
     result.model.expanded_rules.push_back(std::move(lowered));
 }

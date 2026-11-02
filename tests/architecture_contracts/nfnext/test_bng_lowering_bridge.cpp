@@ -4,6 +4,7 @@
 
 #include "compile/CompiledModel.hpp"
 #include "nfnext/from_bng.hpp"
+#include "nfnext/function_vm.hpp"
 #include "nfnext/generic_matcher.hpp"
 #include "nfnext/transformation.hpp"
 #include "parser/BNGAstVisitor.hpp"
@@ -213,6 +214,124 @@ end reaction rules
     assert(functionRun.columns == literalRun.columns);
     assert(functionRun.rows == literalRun.rows);
     assert(functionRun.event_count == literalRun.event_count);
+}
+
+void representsNestedObservableDependentFunctionRate() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin parameters
+  k 0.2
+end parameters
+begin molecule types
+  A(x~u~p)
+end molecule types
+begin seed species
+  A(x~u) 6
+end seed species
+begin observables
+  Molecules A_count A(x~u)
+  Molecules P_count A(x~p)
+end observables
+begin functions
+  current_a() = A_count
+  per_embedding_rate() = k * current_a()
+end functions
+begin reaction rules
+  convert: A(x~u) -> A(x~p) per_embedding_rate()
+end reaction rules
+)BNGL");
+    assert(ast);
+
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    assert(semantic.observables().size() == 2);
+    assert(semantic.functions().size() == 2);
+    const auto& sourceRate = semantic.rules().front().forward().rateLaw;
+    assert(sourceRate.has_value());
+    assert(sourceRate->dependencies().function);
+    assert(semantic.functions()[1].expression.kind ==
+           bng::compile::ResolvedExpressionKind::Binary);
+    assert(semantic.functions()[1].expression.arguments[1].kind ==
+           bng::compile::ResolvedExpressionKind::FunctionRef);
+    assert(semantic.functions()[1].expression.arguments[1].symbol->index ==
+           semantic.functions()[0].id.value());
+    assert(semantic.functions()[0].expression.kind ==
+           bng::compile::ResolvedExpressionKind::ObservableRef);
+    assert(semantic.functions()[0].expression.symbol->index ==
+           semantic.observables()[0].id.value());
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    if (!lowered.ok()) {
+        for (const auto& issue : lowered.issues)
+            std::cerr << issue.entity << ": " << issue.message << '\n';
+    }
+    assert(lowered.ok());
+    assert(lowered.model.expanded_rules.size() == 1);
+    const auto& rate = lowered.model.expanded_rules.front().rate_law;
+    assert(rate.kind == nfnext::RateLawKind::Function);
+    assert(rate.expression.find("observable_0") != std::string::npos);
+
+    nfnext::FunctionEnvironment environment;
+    const auto observableId = static_cast<nfnext::ObservableId>(
+        semantic.observables()[0].id.value());
+    environment.addObservable("observable_0", 6.0, observableId);
+    const auto compiled = nfnext::FunctionCompiler().compile(rate.expression, environment);
+    assert((compiled.observableDependencies() ==
+            std::vector<nfnext::ObservableId>{observableId}));
+    assert(std::abs(compiled.evaluate(environment) - 1.2) < 1e-12);
+}
+
+void refusesDirectObservableRateWithoutGlobalFunction() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin parameters
+  k 0.2
+end parameters
+begin molecule types
+  A(x~u~p)
+end molecule types
+begin seed species
+  A(x~u) 6
+end seed species
+begin observables
+  Molecules A_count A(x~u)
+end observables
+begin reaction rules
+  convert: A(x~u) -> A(x~p) k*A_count
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(!lowered.ok());
+}
+
+void refusesTimeDependentNestedGlobalFunctionRate() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin parameters
+  clock_rate time()+1
+end parameters
+begin molecule types
+  A(x~u~p)
+end molecule types
+begin seed species
+  A(x~u) 6
+end seed species
+begin functions
+  inner_rate() = clock_rate
+  outer_rate() = inner_rate()
+end functions
+begin reaction rules
+  convert: A(x~u) -> A(x~p) outer_rate()
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    assert(semantic.parameters().front().timeDependent);
+    const auto& sourceRate = semantic.rules().front().forward().rateLaw;
+    assert(sourceRate.has_value());
+    assert(sourceRate->dependencies().function);
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(!lowered.ok());
 }
 
 void identicalReactantsHaveUnorderedEmbeddings() {
@@ -1139,6 +1258,9 @@ end reaction rules
     refusesUnsupportedExecution();
     refusesClockDependentParameterRates();
     lowersStaticallyResolvableUserFunctionRate();
+    representsNestedObservableDependentFunctionRate();
+    refusesDirectObservableRateWithoutGlobalFunction();
+    refusesTimeDependentNestedGlobalFunctionRate();
     identicalReactantsHaveUnorderedEmbeddings();
     identicalComplexReactantsHaveUnorderedEmbeddings();
     rejectsUnrepresentablePackedSiteIndex();
