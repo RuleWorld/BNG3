@@ -10,6 +10,7 @@ void bind_engine(py::module_& m);
 void bind_nfsim(py::module_& m);
 void bind_io(py::module_& m);
 void bind_jax_ssa(py::module_& m);
+void bind_graph_identity(py::module_& m);
 
  void bind_viz(py::module_& m);
 
@@ -25,4 +26,5 @@ PYBIND11_MODULE(_bionetgen_cpp, m) {
     bind_io(m);
     bind_jax_ssa(m);  // opt-in JAX backend (jax_ssa_flatten)
     bind_viz(m);
+    bind_graph_identity(m);
 }

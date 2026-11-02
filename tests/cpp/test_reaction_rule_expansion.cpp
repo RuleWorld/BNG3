@@ -6,10 +6,12 @@
 
 #include "compile/CompiledModel.hpp"
 #include "compile/Document.hpp"
+#include "compile/LegacyAstLowering.hpp"
 #include "compile/PatternLowering.hpp"
 #include "engine/NetworkRulePlan.hpp"
 #include "parser/BNGAstVisitor.hpp"
 #include "engine/NetworkGenerator.hpp"
+#include "core/PatternMatching.hpp"
 
 using namespace bng;
 
@@ -123,6 +125,116 @@ generate_network({max_iter=>2})
     REQUIRE(reaction.getProducts().size() == 1);
     CHECK(reaction.getProducts().front() == 0);
     CHECK(reaction.getRateLaw() == "k");
+}
+
+TEST_CASE("NetworkRulePlan executes a unary state change from compiled data after AST destruction",
+          "[NetworkRulePlan][compiled][unary]") {
+    auto source = parseModel(R"(
+begin parameters
+    k 0.4
+end parameters
+begin molecule types
+    A(s~U~P,c~x~y)
+end molecule types
+begin seed species
+    A(s~U,c~x) 3
+    A(s~U,c~y) 2
+end seed species
+begin observables
+    Molecules U A(s~U)
+    Molecules P A(s~P)
+end observables
+begin reaction rules
+    activate: A(s~U,c~x) -> A(s~P,c~x) k
+end reaction rules
+generate_network({max_iter=>2})
+)");
+    REQUIRE(source != nullptr);
+    auto document = std::make_unique<compile::Document>(*source);
+    REQUIRE(document->valid());
+    source.reset();
+
+    const auto& compiled = document->model();
+    REQUIRE(compiled.rules().size() == 1);
+    compile::BNGcoreLoweringContext context(compiled);
+    engine::NetworkRulePlan plan(compiled.rules().front(),
+                                 compiled.rules().front().forward(),
+                                 compiled, context);
+    CHECK_FALSE(plan.usesLegacyKernel());
+    const auto seedPattern = compile::lowerPatternToSpeciesGraph(
+        compiled.seeds().front().pattern, context);
+    const auto reactantPattern = compile::lowerPatternToSpeciesGraph(
+        compiled.rules().front().forward().reactantPatterns.front(), context);
+    CHECK(core::patternMatchesSpecies(reactantPattern, seedPattern));
+
+    engine::NetworkGenerator generator(*document);
+    const auto network = generator.generateNative(2);
+    REQUIRE(network.species.size() == 3);
+    REQUIRE(network.reactions.size() == 1);
+    const auto& reaction = network.reactions.all().front();
+    CHECK(reaction.getReactants().size() == 1);
+    CHECK(reaction.getProducts().size() == 1);
+    CHECK(reaction.getRateLaw() == "k");
+    CHECK(reaction.getFactor() == 1.0);
+    CHECK(network.species.get(reaction.getReactants().front()).getAmount() == 3.0);
+    CHECK(network.species.get(reaction.getProducts().front()).getAmount() == 0.0);
+    CHECK(network.species.get(reaction.getReactants().front())
+              .getSpeciesGraph().toString() == "A(c~x,s~U)");
+    CHECK(network.species.get(reaction.getProducts().front())
+              .getSpeciesGraph().toString() == "A(c~x,s~P)");
+    CHECK(network.species.get(1).getSpeciesGraph().toString() == "A(c~y,s~U)");
+    CHECK(network.species.get(1).getAmount() == 2.0);
+
+    compile::BNGcoreLoweringContext filterContext(compiled);
+    engine::NetworkRulePlan filteredPlan(
+        compiled.rules().front(), compiled.rules().front().forward(),
+        compiled, filterContext);
+    ast::SpeciesList filteredSpecies;
+    for (const auto& seed : compiled.seeds()) {
+        filteredSpecies.add(ast::Species(
+            compile::lowerPatternToSpeciesGraph(seed.pattern, filterContext),
+            *seed.evaluatedAmount, seed.constant, seed.compartment));
+    }
+    ast::RxnList filteredReactions;
+    filteredPlan.expand(filteredSpecies, filteredReactions, 0,
+                        [](const ast::SpeciesGraph&) { return false; },
+                        filteredSpecies.size());
+    CHECK(filteredSpecies.size() == 2);
+    CHECK(filteredReactions.size() == 0);
+}
+
+TEST_CASE("compiled unary state-change pruning keeps zero-rate networks atomic",
+          "[NetworkRulePlan][compiled][unary][zero-rate]") {
+    auto source = parseModel(R"(
+begin parameters
+    k 0
+end parameters
+begin molecule types
+    A(s~U~P)
+end molecule types
+begin seed species
+    A(s~U) 3
+end seed species
+begin reaction rules
+    activate: A(s~U) -> A(s~P) k
+end reaction rules
+)");
+    REQUIRE(source != nullptr);
+    const compile::CompiledModel compiled(*source);
+    compile::BNGcoreLoweringContext context(compiled);
+    engine::NetworkRulePlan plan(compiled.rules().front(),
+                                 compiled.rules().front().forward(),
+                                 compiled, context, false, true);
+    CHECK_FALSE(plan.usesLegacyKernel());
+
+    ast::SpeciesList species;
+    species.add(ast::Species(
+        compile::lowerPatternToSpeciesGraph(compiled.seeds().front().pattern, context),
+        *compiled.seeds().front().evaluatedAmount));
+    ast::RxnList reactions;
+    plan.expand(species, reactions, 0, {}, species.size());
+    CHECK(species.size() == 1);
+    CHECK(reactions.size() == 0);
 }
 
 TEST_CASE("compiled zero-order creation filters do not leave partial species",
@@ -969,6 +1081,7 @@ end reaction rules
 
     compile::BNGcoreLoweringContext loweringContext(compiled);
     engine::NetworkRulePlan plan(rule, *rule.reverse(), compiled, loweringContext, true);
+    CHECK(plan.usesLegacyKernel());
     ast::SpeciesList species;
     species.add(ast::Species(
         ast::SpeciesGraph(model->getSeedSpecies().at(1).getGraph()), 1.0));

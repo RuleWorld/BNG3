@@ -316,9 +316,14 @@ def test_inventory_preserves_all_snapshot_issues_and_missing_scope():
     import json
 
     catalog = json.loads((q.ROOT / "provenance/issue-obligations.json").read_text())
-    assert {i["number"] for i in catalog["issues"]} == set(
-        catalog["snapshot"]["issue_numbers"]
-    )
+    catalog_numbers = {i["number"] for i in catalog["issues"]}
+    assert set(catalog["snapshot"]["issue_numbers"]) <= catalog_numbers
+    assert {471, 472, 473, 474, 475} <= catalog_numbers
+    assert set(catalog["snapshot"]["issue_numbers"]) == {
+        i["number"]
+        for i in catalog["issues"]
+        if i["number"] not in {471, 472, 473, 474, 475}
+    }
     assert {141, 151, 155} <= set(catalog["snapshot"]["issue_numbers"])
     all_obligations = [o for i in catalog["issues"] for o in i["obligations"]]
     assert len({o["id"] for o in all_obligations}) == len(all_obligations)

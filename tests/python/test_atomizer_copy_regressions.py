@@ -58,6 +58,28 @@ def test_structures_molecule_copy_avoids_random_hash_allocation(monkeypatch):
     assert copied.components[0].states == ["P"]
 
 
+def test_structures_molecule_extend_updates_first_duplicate_component():
+    molecule = structures.Molecule("M")
+    first = structures.Component("site")
+    first.bonds = ["1"]
+    last = structures.Component("site")
+    last.bonds = ["2"]
+    molecule.components = [first, last]
+
+    incoming = structures.Molecule("M")
+    update = structures.Component("site")
+    update.bonds = ["3"]
+    update.states = ["P"]
+    incoming.components = [update]
+
+    molecule.extend(incoming)
+
+    assert first.bonds == ["1", "3"]
+    assert first.states == ["P", "0"]
+    assert last.bonds == ["2"]
+    assert last.states == []
+
+
 def test_smallstructures_molecule_copy_preserves_metadata_without_new_identifier(
     monkeypatch,
 ):

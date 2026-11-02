@@ -34,6 +34,23 @@ bool isPatternMoleculeNode(const BNGcore::Node &node) {
          name != BNGcore::COMPONENT_NODE_TYPE.get_type_name();
 }
 
+bool isUnaryBondNode(const BNGcore::Node& node) {
+    return node.get_type().get_type_name() ==
+           BNGcore::BOND_NODE_TYPE.get_type_name();
+}
+
+bool isUnaryComponentNode(const BNGcore::Node& node) {
+    if (isUnaryBondNode(node)) return false;
+    for (auto edge = node.edges_in_begin(); edge != node.edges_in_end(); ++edge) {
+        if (!isUnaryBondNode(**edge)) return true;
+    }
+    return false;
+}
+
+bool isUnaryMoleculeNode(const BNGcore::Node& node) {
+    return !isUnaryBondNode(node) && !isUnaryComponentNode(node);
+}
+
 struct ScopeBinding {
   std::string localName;
   compile::PatternSide side = compile::PatternSide::Reactant;
@@ -613,6 +630,180 @@ std::optional<double> evaluateStructuralExpression(
     return std::nullopt;
 }
 
+bool unboundOnly(const compile::PatternSiteDescriptor& site) {
+    const auto unbound = [](compile::BondConstraintKind kind) {
+        return kind == compile::BondConstraintKind::Unbound ||
+               kind == compile::BondConstraintKind::Unspecified;
+    };
+    if (!site.bondConstraints.empty()) {
+        return std::all_of(site.bondConstraints.begin(), site.bondConstraints.end(),
+                           [&](const auto& bond) { return unbound(bond.kind); });
+    }
+    return unbound(site.bondKind);
+}
+
+std::optional<double> staticCompiledParameterRate(
+    const compile::CompiledRuleDirection& direction,
+    const compile::CompiledModel& model) {
+    if (!direction.rateLaw.has_value() ||
+        direction.rateLaw->kind != compile::RateLawKind::Expression ||
+        !direction.rateLaw->fullyResolved()) {
+        return std::nullopt;
+    }
+    const auto& expression = direction.rateLaw->resolvedExpression();
+    if (expression.kind != compile::ResolvedExpressionKind::ParameterRef ||
+        !expression.symbol.has_value() ||
+        expression.symbol->kind != compile::SymbolKind::Parameter) {
+        return std::nullopt;
+    }
+    const auto* parameter = model.parameter(
+        compile::ParameterId::fromDenseIndex(expression.symbol->index));
+    if (parameter == nullptr || parameter->timeDependent)
+        return std::nullopt;
+    return parameter->constantValue;
+}
+
+bool hasOnlyExplicitUnboundMonomerSeeds(const compile::CompiledModel& model) {
+    if (model.seeds().empty() || model.rules().size() != 1 ||
+        !model.populationMaps().empty() || !model.populationTypes().empty() ||
+        !model.compartments().empty()) {
+        return false;
+    }
+
+    for (const auto& seed : model.seeds()) {
+        const auto& pattern = seed.pattern;
+        if (!seed.evaluatedAmount.has_value() || !pattern.isResolved() ||
+            pattern.molecules().size() != 1 ||
+            !pattern.compartment().empty() || pattern.compartmentIsPrefix()) {
+            return false;
+        }
+        const auto& molecule = pattern.molecules().front();
+        if (!molecule.moleculeTypeId.has_value() ||
+            !molecule.compartment.empty()) {
+            return false;
+        }
+        const auto* declaration = model.moleculeType(*molecule.moleculeTypeId);
+        if (declaration == nullptr || molecule.sites.size() !=
+                                         declaration->components.size()) {
+            return false;
+        }
+
+        std::vector<compile::ComponentTypeId> seenComponents;
+        for (const auto& site : molecule.sites) {
+            if (!site.componentType.has_value() ||
+                declaration->component(*site.componentType) == nullptr ||
+                std::find(seenComponents.begin(), seenComponents.end(),
+                          *site.componentType) != seenComponents.end() ||
+                !unboundOnly(site) ||
+                site.stateConstraintResolved.kind !=
+                    compile::StateConstraintKind::Exact ||
+                !site.stateConstraintResolved.exact.has_value()) {
+                return false;
+            }
+            seenComponents.push_back(*site.componentType);
+        }
+    }
+    return true;
+}
+
+bool qualifiesDirectUnaryStateChange(
+    const compile::CompiledRule& rule,
+    const compile::CompiledRuleDirection& direction,
+    const compile::CompiledModel& model) {
+    if (rule.isBidirectional() || rule.delayExpression().has_value() ||
+        rule.resolvedDelayExpression().has_value() || rule.hasDrivingWork() ||
+        !rule.modifiers().empty() || !direction.transformationsComplete ||
+        direction.reactantPatterns.size() != 1 ||
+        direction.productPatterns.size() != 1 ||
+        direction.mutations.size() != 1 ||
+        !direction.wholeSpeciesDeletions.empty() ||
+        !direction.filters.empty() || !direction.localScopes.empty() ||
+        !staticCompiledParameterRate(direction, model).has_value() ||
+        !hasOnlyExplicitUnboundMonomerSeeds(model)) {
+        return false;
+    }
+
+    const auto& reactant = direction.reactantPatterns.front();
+    const auto& product = direction.productPatterns.front();
+    if (!reactant.isResolved() || !product.isResolved() ||
+        reactant.molecules().size() != 1 || product.molecules().size() != 1 ||
+        reactant.compartment() != product.compartment() ||
+        reactant.compartmentIsPrefix() || product.compartmentIsPrefix()) {
+        return false;
+    }
+
+    const auto& reactantMolecule = reactant.molecules().front();
+    const auto& productMolecule = product.molecules().front();
+    if (!reactantMolecule.moleculeTypeId.has_value() ||
+        reactantMolecule.moleculeTypeId != productMolecule.moleculeTypeId ||
+        !reactantMolecule.compartment.empty() ||
+        !productMolecule.compartment.empty() ||
+        reactantMolecule.sites.empty() ||
+        reactantMolecule.sites.size() != productMolecule.sites.size()) {
+        return false;
+    }
+
+    const auto* moleculeType = model.moleculeType(*reactantMolecule.moleculeTypeId);
+    if (moleculeType == nullptr ||
+        moleculeType->components.size() != reactantMolecule.sites.size()) {
+        return false;
+    }
+
+    std::vector<compile::ComponentTypeId> seenComponents;
+    std::optional<std::size_t> changedSite;
+    for (std::size_t siteIndex = 0; siteIndex < reactantMolecule.sites.size(); ++siteIndex) {
+        const auto& from = reactantMolecule.sites[siteIndex];
+        const auto& to = productMolecule.sites[siteIndex];
+        if (!from.componentType.has_value() ||
+            from.componentType != to.componentType ||
+            moleculeType->component(*from.componentType) == nullptr ||
+            std::find(seenComponents.begin(), seenComponents.end(),
+                      *from.componentType) != seenComponents.end() ||
+            !unboundOnly(from) || !unboundOnly(to) ||
+            from.stateConstraintResolved.kind != compile::StateConstraintKind::Exact ||
+            to.stateConstraintResolved.kind != compile::StateConstraintKind::Exact ||
+            !from.stateConstraintResolved.exact.has_value() ||
+            !to.stateConstraintResolved.exact.has_value()) {
+            return false;
+        }
+        seenComponents.push_back(*from.componentType);
+        if (from.stateConstraintResolved.exact != to.stateConstraintResolved.exact) {
+            if (changedSite.has_value()) return false;
+            changedSite = siteIndex;
+        }
+    }
+    if (!changedSite.has_value()) return false;
+
+    const auto& mutation = direction.mutations.front();
+    const auto* productStateName = mutation.newStateId.has_value()
+        ? model.stateName(*mutation.newStateId)
+        : nullptr;
+    return mutation.kind == compile::MutationKind::ChangeState &&
+           mutation.source == compile::PatternSiteRef{
+               compile::PatternSide::Reactant, 0, 0, *changedSite} &&
+           mutation.newStateId.has_value() &&
+           productStateName != nullptr &&
+           productMolecule.sites[*changedSite].stateConstraintResolved.exact ==
+               mutation.newStateId;
+}
+
+BNGcore::PatternGraph cloneGraph(const BNGcore::PatternGraph& source) {
+    BNGcore::PatternGraph result;
+    std::map<const BNGcore::Node*, BNGcore::Node*> clones;
+    for (auto node = source.begin(); node != source.end(); ++node) {
+        auto* clone = (*node)->clone();
+        result.add_node(clone);
+        clones[*node] = clone;
+    }
+    for (auto node = source.begin(); node != source.end(); ++node) {
+        for (auto edge = (*node)->edges_out_begin();
+             edge != (*node)->edges_out_end(); ++edge) {
+            result.add_edge(clones.at(*node), clones.at(*edge));
+        }
+    }
+    return result;
+}
+
 } // namespace
 
 struct NetworkRulePlan::Impl {
@@ -622,10 +813,18 @@ struct NetworkRulePlan::Impl {
     bool pruneZeroRates = false;
     std::unique_ptr<LegacyNetworkRuleKernel> kernel;
     bool directSynthesis = false;
+    bool directUnaryStateChange = false;
     bool synthesisApplied = false;
+    BNGcore::PatternGraph unaryReactantGraph;
+    std::size_t unaryChangedSite = 0;
+    std::string unaryMoleculeName;
+    std::string unaryChangedComponentName;
+    std::string unaryProductState;
+    std::optional<double> unaryStaticRate;
+    std::set<std::size_t> unaryVisitedSpecies;
     std::vector<ast::SpeciesGraph> synthesisProducts;
-    std::string synthesisRateLaw = "0";
-    std::optional<ast::Expression> synthesisRateExpression;
+    std::string directRateLaw = "0";
+    std::optional<ast::Expression> directRateExpression;
     std::vector<RuntimeFilter> filters;
     std::vector<RuntimeObservable> localObservables;
     LegacyNetworkRuleHooks hooks;
@@ -647,6 +846,8 @@ struct NetworkRulePlan::Impl {
                           !compiledRule.delayExpression().has_value() &&
                           !compiledRule.resolvedDelayExpression().has_value() &&
                           !compiledRule.hasDrivingWork()),
+          directUnaryStateChange(qualifiesDirectUnaryStateChange(
+              compiledRule, direction, model)),
           filters(lowerFilters(direction, context)),
           localObservables(lowerLocalObservableDependencies(
             compiledRule, direction, model, context, reverseDirection)),
@@ -666,10 +867,28 @@ struct NetworkRulePlan::Impl {
             if (direction.rateLaw.has_value()) {
                 auto resolved = model.expandFunctions(
                     direction.rateLaw->resolvedExpression());
-                synthesisRateExpression =
+                directRateExpression =
                     compile::lowerResolvedExpressionToAst(resolved, model);
-                synthesisRateLaw = synthesisRateExpression->toString();
+                directRateLaw = directRateExpression->toString();
             }
+        } else if (directUnaryStateChange) {
+            unaryReactantGraph = compile::lowerPatternToBNGcore(
+                direction.reactantPatterns.front(), context);
+            unaryChangedSite = direction.mutations.front().source.siteIndex;
+            unaryProductState = *model.stateName(
+                *direction.mutations.front().newStateId);
+            const auto& compiledMolecule =
+                direction.reactantPatterns.front().molecules().front();
+            unaryMoleculeName = model.moleculeType(
+                *compiledMolecule.moleculeTypeId)->name;
+            unaryChangedComponentName = model.component(
+                *compiledMolecule.sites[unaryChangedSite].componentType)->name;
+            unaryStaticRate = staticCompiledParameterRate(direction, model);
+            auto resolved = model.expandFunctions(
+                direction.rateLaw->resolvedExpression());
+            directRateExpression =
+                compile::lowerResolvedExpressionToAst(resolved, model);
+            directRateLaw = directRateExpression->toString();
         } else {
             kernel = std::make_unique<LegacyNetworkRuleKernel>(
                 compiledRule, direction, model, context, reverseDirection);
@@ -854,6 +1073,99 @@ struct NetworkRulePlan::Impl {
         }
         if (kernel) kernel->setHooks(hooks);
     }
+
+    std::size_t expandUnaryStateChange(
+        ast::SpeciesList& species,
+        ast::RxnList& reactions,
+        const std::function<bool(const ast::SpeciesGraph&)>& productFilter,
+        std::size_t speciesBoundary) {
+        std::size_t created = 0;
+
+        for (std::size_t speciesIndex = 0;
+             speciesIndex < speciesBoundary && speciesIndex < species.size();
+             ++speciesIndex) {
+            if (!unaryVisitedSpecies.insert(speciesIndex).second) continue;
+            const auto& sourceSpecies = species.get(speciesIndex);
+            const auto& sourceGraph = sourceSpecies.getSpeciesGraph();
+            if (!sourceSpecies.getCompartment().empty()) continue;
+            const bool hasCompartment = std::any_of(
+                sourceGraph.getGraph().begin(), sourceGraph.getGraph().end(),
+                [](const auto* node) {
+                    return isUnaryMoleculeNode(*node) &&
+                           !node->get_compartment().empty();
+                });
+            if (hasCompartment) continue;
+            if (!core::patternMatchesSpecies(
+                    unaryReactantGraph, sourceGraph.getGraph())) {
+                continue;
+            }
+            if (pruneZeroRates && unaryStaticRate.has_value() &&
+                *unaryStaticRate == 0.0) {
+                continue;
+            }
+            auto productGraph = ast::SpeciesGraph(
+                cloneGraph(sourceGraph.getGraph()), sourceGraph.getCompartment());
+            const bool validOuterShape = std::count_if(
+                productGraph.getGraph().begin(), productGraph.getGraph().end(),
+                [](const auto* node) { return isUnaryMoleculeNode(*node); }) == 1;
+            if (!validOuterShape) continue;
+
+            BNGcore::Node* changedComponent = nullptr;
+            for (auto node = productGraph.getGraph().begin();
+                 node != productGraph.getGraph().end(); ++node) {
+                if ((*node)->get_type().get_type_name() != unaryChangedComponentName)
+                    continue;
+                bool belongsToTargetMolecule = false;
+                for (auto incoming = (*node)->edges_in_begin();
+                     incoming != (*node)->edges_in_end(); ++incoming) {
+                    if (isUnaryMoleculeNode(**incoming) &&
+                        (*incoming)->get_type().get_type_name() == unaryMoleculeName) {
+                        belongsToTargetMolecule = true;
+                        break;
+                    }
+                }
+                if (!belongsToTargetMolecule) continue;
+                if (changedComponent != nullptr) {
+                    changedComponent = nullptr;
+                    break;
+                }
+                changedComponent = *node;
+            }
+            if (changedComponent == nullptr) continue;
+
+            const auto* stateType = dynamic_cast<const BNGcore::LabelStateType*>(
+                &changedComponent->get_type().get_state_type());
+            if (stateType == nullptr ||
+                !changedComponent->set_state(
+                    BNGcore::LabelState(*stateType, unaryProductState))) {
+                continue;
+            }
+
+            if (productFilter && !productFilter(productGraph)) continue;
+            if (hooks.rejectZeroRate) {
+                ast::RateCandidateContext candidate;
+                candidate.productSpeciesGraphs.push_back(&productGraph.getGraph());
+                candidate.productPatternIndices.push_back(0);
+                if (hooks.rejectZeroRate(candidate)) continue;
+            }
+
+            ast::Species product(std::move(productGraph), 0.0, false,
+                                 sourceSpecies.getCompartment());
+            const auto reactantLabel = sourceGraph.canonicalLabel();
+            const auto productLabel = product.getSpeciesGraph().canonicalLabel();
+            const auto label = name + "|unary|" + reactantLabel + "->" + productLabel;
+            std::string exact;
+            const auto existing = species.findExact(product, exact);
+            const auto productIndex = existing.has_value()
+                ? *existing
+                : species.addWithExactKey(std::move(product), std::move(exact)).first;
+            reactions.add(ast::Rxn(label, {speciesIndex}, {productIndex},
+                                   directRateLaw, 1.0, name,
+                                   directRateExpression));
+            ++created;
+        }
+        return created;
+    }
 };
 
 NetworkRulePlan::NetworkRulePlan(
@@ -873,6 +1185,10 @@ NetworkRulePlan& NetworkRulePlan::operator=(NetworkRulePlan&&) noexcept = defaul
 
 const std::string& NetworkRulePlan::name() const noexcept {
     return impl_->kernel ? impl_->kernel->name() : impl_->name;
+}
+
+bool NetworkRulePlan::usesLegacyKernel() const noexcept {
+    return static_cast<bool>(impl_->kernel);
 }
 
 void NetworkRulePlan::clearPatternMatchCache() {
@@ -953,9 +1269,13 @@ std::size_t NetworkRulePlan::expand(
         for (const auto& label : productLabels) productLabel += label + ";";
         const std::string label = name() + "|synth->" + productLabel;
         reactions.add(ast::Rxn(label, {}, std::move(productIndices),
-                               impl_->synthesisRateLaw, 1.0, name(),
-                               impl_->synthesisRateExpression));
+                               impl_->directRateLaw, 1.0, name(),
+                               impl_->directRateExpression));
         return 1;
+    }
+    if (impl_->directUnaryStateChange) {
+        return impl_->expandUnaryStateChange(
+            species, reactions, productFilter, speciesBoundary);
     }
     return impl_->kernel->expand(
         species, reactions, currentIteration, productFilter, speciesBoundary);

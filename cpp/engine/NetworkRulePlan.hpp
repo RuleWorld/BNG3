@@ -31,6 +31,8 @@ public:
     NetworkRulePlan& operator=(const NetworkRulePlan&) = delete;
 
     const std::string& name() const noexcept;
+    // Runtime architecture guard used by compiled-path regressions.
+    bool usesLegacyKernel() const noexcept;
     void clearPatternMatchCache();
 
     std::size_t expand(
