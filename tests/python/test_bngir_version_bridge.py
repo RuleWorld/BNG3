@@ -88,7 +88,7 @@ def test_frozen_v01_migrates_to_pinned_schema_valid_v02_and_round_trips():
     structural_document = json.loads(first_export)
     jsonschema.validate(structural_document, _schema("0.2"))
 
-    restored_model = bionetgen.from_bngir(structural_document)
+    restored_model = bionetgen.from_bngir(expected_document)
     assert bionetgen.semantic_equal(legacy_model, restored_model, version="0.2")
     restored_export = bionetgen.to_bngir(restored_model, version="0.2").encode("utf-8")
     assert restored_export == expected_wire
@@ -110,7 +110,7 @@ def test_frozen_v01_migrates_to_pinned_schema_valid_v02_and_round_trips():
     assert len(reachable_states) == 11
     assert exact_edges[(reachable_states[0], reachable_states[1])] == Fraction(10, 10)
 
-    native_model = bionetgen.from_bngir(structural_document, native=True)
+    native_model = bionetgen.from_bngir(expected_document, native=True)
     assert json.loads(native_model.to_bngir(version="0.2")) == structural_document
     assert bionetgen.semantic_equal(legacy_model, native_model, version="0.2")
     network = native_model.generate_network()
