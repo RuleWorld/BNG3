@@ -112,6 +112,11 @@ def test_strict_consumer_accepts_three_cases_with_unavailable_roadrunner(tmp_pat
     assert set(result["case_verdicts"]) == {"ordinary", "boundary", "interaction"}
 
 
+def test_malformed_report_root_fails_closed(tmp_path):
+    with pytest.raises(CONSUMER.GateError, match="root must be a JSON object"):
+        CONSUMER.consume(_write(tmp_path, []), REVISION)
+
+
 @pytest.mark.parametrize(
     ("stage_id", "status"),
     [

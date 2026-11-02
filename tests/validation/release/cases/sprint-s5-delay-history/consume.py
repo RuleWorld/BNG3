@@ -38,8 +38,9 @@ _RTOL = 1e-9
 _CONTRACT_SPEC = importlib.util.spec_from_file_location(
     "s5_consumer_case_contract", Path(__file__).with_name("case_contract.py")
 )
+if _CONTRACT_SPEC is None or _CONTRACT_SPEC.loader is None:
+    raise RuntimeError("cannot load the independent delay case contract")
 _CONTRACT = importlib.util.module_from_spec(_CONTRACT_SPEC)
-assert _CONTRACT_SPEC.loader is not None
 _CONTRACT_SPEC.loader.exec_module(_CONTRACT)
 
 
@@ -128,6 +129,8 @@ def consume(report_path: Path, expected_revision: str) -> dict:
         report = json.loads(report_path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         _fail(f"cannot read replay report: {exc}")
+    if not isinstance(report, dict):
+        _fail("replay report root must be a JSON object")
     if report.get("harness_revision") != expected_revision:
         _fail("harness revision does not match the selected source revision")
     if report.get("native_source_revision") != expected_revision:
