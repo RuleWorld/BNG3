@@ -6,6 +6,8 @@ import hashlib
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
+import sys
 
 import pytest
 
@@ -115,6 +117,29 @@ def test_strict_consumer_accepts_three_cases_with_unavailable_roadrunner(tmp_pat
 def test_malformed_report_root_fails_closed(tmp_path):
     with pytest.raises(CONSUMER.GateError, match="root must be a JSON object"):
         CONSUMER.consume(_write(tmp_path, []), REVISION)
+
+
+def test_cli_writes_a_separate_receipt_inside_the_artifact_directory(tmp_path):
+    report_path = _write(tmp_path, _valid_manifest(tmp_path))
+    receipt_path = tmp_path / "consumer-receipt.json"
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(HERE / "consume.py"),
+            str(report_path),
+            "--revision",
+            REVISION,
+            "--receipt",
+            str(receipt_path),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    receipt = json.loads(receipt_path.read_text(encoding="utf-8"))
+    assert receipt["status"] == "PASS"
+    assert receipt["expected_revision"] == REVISION
 
 
 @pytest.mark.parametrize(

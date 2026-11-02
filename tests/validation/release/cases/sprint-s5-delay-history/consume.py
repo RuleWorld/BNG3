@@ -209,8 +209,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("report", type=Path)
     parser.add_argument("--revision", required=True)
+    parser.add_argument("--receipt", type=Path, required=True)
     args = parser.parse_args()
     receipt = consume(args.report, args.revision)
+    report_directory = args.report.resolve().parent
+    receipt_path = args.receipt.resolve()
+    if not receipt_path.is_relative_to(report_directory):
+        _fail("consumer receipt must be written inside the replay artifact directory")
+    receipt_path.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
     print(json.dumps(receipt, indent=2))
     return 0
 
