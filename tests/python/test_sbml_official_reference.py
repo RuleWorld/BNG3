@@ -1340,9 +1340,14 @@ def test_action_rewrite_pads_short_and_degenerate_phases():
     # Phase 2: [2.5, 5.0] with [3.0, 5.0]
     times = [2.4, 3.0, 5.0]
     rewritten, _ = actions.rewrite_action_output_grid(ACTION_MODEL, times)
-    assert "sample_times=>[0.0, 1.2, 2.4, 2.5]" in rewritten or "sample_times=>[0.0, 2.4, 2.45, 2.5]" in rewritten or "sample_times=>[" in rewritten
+    assert (
+        "sample_times=>[0.0, 1.2, 2.4, 2.5]" in rewritten
+        or "sample_times=>[0.0, 2.4, 2.45, 2.5]" in rewritten
+        or "sample_times=>[" in rewritten
+    )
     # Verify that the rewritten sample_times has at least 3 points
     import re
+
     matches = re.findall(r"sample_times=>\[(.*?)\]", rewritten)
     assert len(matches) == 2
     for m in matches:
@@ -1358,6 +1363,7 @@ def test_action_execution_with_padded_grid_matches_exact_official_times():
     times = [0.0, 2.4, 2.5, 5.0]
     rewritten, _ = actions.rewrite_action_output_grid(ACTION_MODEL, times)
     import tempfile
+
     with tempfile.TemporaryDirectory() as raw:
         run = actions.execute_action_block(
             cpp,
