@@ -246,7 +246,12 @@ def rewrite_action_output_grid(
         if arguments.startswith("{") and arguments.endswith("}"):
             arguments = arguments[1:-1]
         parts = [part.strip() for part in arguments.split(",") if part.strip()]
-        if points:
+        if phase.t_end <= phase.t_start:
+            # BNG2 accepts a zero-duration simulation with n_steps, but rejects
+            # sample_times arrays shorter than three points. Preserve the
+            # degenerate phase without inventing out-of-interval sample times.
+            parts.append("n_steps=>1")
+        elif points:
             parts.append(
                 "sample_times=>["
                 + ", ".join(repr(float(value)) for value in points)

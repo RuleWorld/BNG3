@@ -121,6 +121,22 @@ def test_concentration_event_assignment_lowers_to_the_species_amount():
     assert _assignment_lines(bngl) == ['setConcentration("@C:M_S2()", "0.1")']
 
 
+def test_atomizer_zero_duration_phase_uses_one_step_output_grid():
+    actions = _load_actions()
+    bngl = _atomize(CONCENTRATION_MODEL)
+
+    rewritten, block = actions.rewrite_action_output_grid(bngl, [0.0, 0.5, 1.0])
+    zero_duration_phases = [
+        phase for phase in block.phases if phase.t_start == phase.t_end
+    ]
+
+    assert zero_duration_phases
+    for phase in zero_duration_phases:
+        action = rewritten.splitlines()[phase.line_index]
+        assert "n_steps=>1" in action
+        assert "sample_times=>" not in action
+
+
 def test_concentration_event_assignment_reaches_the_native_dispatcher(tmp_path):
     """The native dispatcher has to apply the lowered amount."""
 
