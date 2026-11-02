@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
+import math
 import re
 from pathlib import Path
 
@@ -31,6 +33,14 @@ _REQUIRED_STAGES = {
     "public-bng3-execution": {"PASS"},
     "public-bng3-output-comparison": {"PASS"},
 }
+_ATOL = 1e-9
+_RTOL = 1e-9
+_CONTRACT_SPEC = importlib.util.spec_from_file_location(
+    "s5_consumer_case_contract", Path(__file__).with_name("case_contract.py")
+)
+_CONTRACT = importlib.util.module_from_spec(_CONTRACT_SPEC)
+assert _CONTRACT_SPEC.loader is not None
+_CONTRACT_SPEC.loader.exec_module(_CONTRACT)
 
 
 def _fail(message: str) -> None:
@@ -76,6 +86,39 @@ def _check_runtime_identity(stage: dict, case_id: str) -> None:
     )
     if identity.get("consumer") != expected_consumer:
         _fail(f"{case_id}: execution did not use the required public API consumer")
+
+
+def _compare_native_outputs(case_id: str, output: Path) -> None:
+    try:
+        rows = json.loads(output.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        _fail(f"{case_id}: cannot read native output artifact: {exc}")
+    if not isinstance(rows, list) or not rows:
+        _fail(f"{case_id}: native output artifact has no observations")
+    for row in rows:
+        if not isinstance(row, dict):
+            _fail(f"{case_id}: malformed native output observation")
+        try:
+            time = float(row["time"])
+            reference = _CONTRACT.expected(case_id, time)
+            actuals = {
+                "x": float(row["x_amt"]),
+                "z": float(row["z_amt"]),
+                "y": float(row["y"]),
+                "q": float(row["q"]),
+            }
+        except (KeyError, TypeError, ValueError) as exc:
+            _fail(f"{case_id}: malformed native output value: {exc}")
+        if not math.isfinite(time) or not 0.0 <= time <= 2.0:
+            _fail(f"{case_id}: native output time is outside the declared horizon")
+        for quantity, actual in actuals.items():
+            if not math.isclose(
+                actual, reference[quantity], abs_tol=_ATOL, rel_tol=_RTOL
+            ):
+                _fail(
+                    f"{case_id}: native output {quantity} at t={time:g} does not "
+                    "match the analytic source law"
+                )
 
 
 def consume(report_path: Path, expected_revision: str) -> dict:
@@ -146,6 +189,7 @@ def consume(report_path: Path, expected_revision: str) -> dict:
             _fail(
                 f"{case_id}: compared output artifact is outside the retained artifact"
             )
+        _compare_native_outputs(case_id, output)
         verdicts[case_id] = case["verdict"]
     return {
         "status": "PASS",

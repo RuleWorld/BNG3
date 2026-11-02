@@ -10,6 +10,13 @@ from pathlib import Path
 import pytest
 
 HERE = Path(__file__).resolve().parent
+CONTRACT_SPEC = importlib.util.spec_from_file_location(
+    "s5_consumer_contract", HERE / "case_contract.py"
+)
+CONTRACT = importlib.util.module_from_spec(CONTRACT_SPEC)
+assert CONTRACT_SPEC.loader is not None
+CONTRACT_SPEC.loader.exec_module(CONTRACT)
+
 SPEC = importlib.util.spec_from_file_location("s5_consume", HERE / "consume.py")
 CONSUMER = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
@@ -26,7 +33,21 @@ def _valid_manifest(tmp_path: Path) -> dict:
         source = tmp_path / f"{case_id}-source.xml"
         source.write_text(f"<sbml id='{case_id}'/>", encoding="utf-8")
         output = tmp_path / f"{case_id}-public-bng3.json"
-        output.write_text("[]\n", encoding="utf-8")
+        output.write_text(
+            json.dumps(
+                [
+                    {
+                        "time": time,
+                        "x_amt": CONTRACT.expected(case_id, time)["x"],
+                        "z_amt": CONTRACT.expected(case_id, time)["z"],
+                        "y": CONTRACT.expected(case_id, time)["y"],
+                        "q": CONTRACT.expected(case_id, time)["q"],
+                    }
+                    for time in CONTRACT.sample_times(case_id)
+                ]
+            ),
+            encoding="utf-8",
+        )
         segments = {
             "ordinary": [[0.0, 2.0]],
             "boundary": [[0.0, 0.5], [0.5, 2.0]],
@@ -119,6 +140,22 @@ def test_scientific_verdict_cannot_mask_missing_output_comparison(tmp_path):
         if row["id"] != "public-bng3-output-comparison"
     ]
     with pytest.raises(CONSUMER.GateError, match="public-bng3-output-comparison"):
+        CONSUMER.consume(_write(tmp_path, report), REVISION)
+
+
+def test_scientific_verdict_cannot_mask_wrong_retained_native_outputs(tmp_path):
+    report = _valid_manifest(tmp_path)
+    output = Path(
+        next(
+            row
+            for row in report["cases"][2]["stages"]
+            if row["id"] == "public-bng3-output-comparison"
+        )["artifact"]
+    )
+    rows = json.loads(output.read_text(encoding="utf-8"))
+    rows[-1]["x_amt"] += 1.0
+    output.write_text(json.dumps(rows), encoding="utf-8")
+    with pytest.raises(CONSUMER.GateError, match="analytic source law"):
         CONSUMER.consume(_write(tmp_path, report), REVISION)
 
 
