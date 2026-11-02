@@ -77,3 +77,17 @@ def test_state_dependent_constraint_is_explicitly_unsupported_for_execution():
         _model("<apply><gt/><ci>A</ci><cn>0</cn></apply>")
     )
     assert not result.success
+
+
+def test_level3v2_constraint_without_math_does_not_restrict_model():
+    source = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+      level="3" version="2">
+  <model id="constraint_without_math">
+    <listOfParameters><parameter id="p" value="3" constant="true"/></listOfParameters>
+    <listOfConstraints><constraint/></listOfConstraints>
+  </model>
+</sbml>"""
+
+    model = SBMLParser().parse(source)
+    assert not any(w.category == "constraint" for w in model.import_warnings)
+    assert Atomizer(quiet_mode=True).atomize(source).success

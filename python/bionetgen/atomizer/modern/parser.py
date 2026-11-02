@@ -106,10 +106,12 @@ def _math_element_is_optional(level: Optional[int], version: Optional[int]) -> b
 
     SBML Level 3 Version 2 Core relaxed the ``math`` element from required to
     optional on ``InitialAssignment`` (Sec. 4.8.3), ``Rule`` (Sec. 4.9.1),
-    ``FunctionDefinition`` (Sec. 4.3.2) and ``KineticLaw`` (Sec. 4.11.5), and
-    gave each construct a defined meaning when the element is absent.  In
-    SBML Level 2 and Level 3 Version 1 the element is required, so a document
-    that omits it does not conform to the specification.
+    ``FunctionDefinition`` (Sec. 4.3.2), ``KineticLaw`` (Sec. 4.11.5), and
+    ``Constraint`` (Sec. 4.10.1), and gave each construct a defined meaning
+    when the element is absent. An absent constraint math imposes no
+    restriction on model behavior. In SBML Level 2 and Level 3 Version 1 the
+    element is required, so a document that omits it does not conform to the
+    specification.
     """
 
     return level == 3 and version is not None and version >= 2
@@ -4209,6 +4211,16 @@ class SBMLParser:
         constraints = SBMLParser._xml_items(model, "listOfConstraints", "constraint")
         unresolved_constraints = []
         for constraint in constraints:
+            if (
+                level_value == 3
+                and version_value is not None
+                and version_value >= 2
+                and _first_child(constraint, "math") is None
+            ):
+                # SBML L3V2 Core Sec. 4.10.1 permits a constraint without math;
+                # without a package extension it places no restriction on the
+                # model. Do not confuse it with an unevaluable state predicate.
+                continue
             value = SBMLParser._constant_constraint_value(constraint)
             if value is False:
                 unresolved_constraints.append("constraint is false at t=0")

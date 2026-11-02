@@ -418,6 +418,84 @@ def test_historical_nfsim_failure_evidence_is_retained_without_masking_failure()
         assert path in paths
 
 
+def test_historical_nfsim_prepares_xml_before_native_consumer(tmp_path):
+    """Direct NF execution need not write the XML the upstream validator reads."""
+    import json
+    import os
+    import subprocess
+    import sys
+
+    validation = tmp_path / "oracle-nfsim" / "validate"
+    models = validation / "basicModels"
+    models.mkdir(parents=True)
+    source = """begin model
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  $A() 5
+end seed species
+begin observables
+  Molecules Atot A()
+end observables
+end model
+simulate_nf({t_end=>1,n_steps=>1})
+"""
+    (models / "v1.bngl").write_text(source)
+    (models / "r1.txt").write_text("NFSIM ONLY: source export\n-sim 1 -oSteps 1")
+    # This is the upstream consumer boundary: XML must exist before the
+    # validator starts, without relying on simulate_nf's incidental outputs.
+    (validation / "validate.py").write_text(
+        "from pathlib import Path\n"
+        "import sys, xml.etree.ElementTree as ET\n"
+        "p = Path(sys.argv[1]) / 'basicModels' / 'v1.xml'\n"
+        "assert p.is_file(), 'missing native NFsim input XML'\n"
+        "tree = ET.parse(p)\n"
+        "assert any(e.get('name') == 'A' for e in tree.iter())\n"
+    )
+    job = _parse_workflow()["jobs"]["nfsim-source-validation"]
+    command = next(
+        s["run"]
+        for s in job["steps"]
+        if s.get("name") == "Run the source NFsim validation framework"
+    )
+    # This contract job validates workflow wiring without building the native
+    # extension, so stand in for the writer the preparation step imports.
+    stub = tmp_path / "stub"
+    package = stub / "bionetgen"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("from . import _bionetgen_cpp\n")
+    (package / "_bionetgen_cpp.py").write_text(
+        "from pathlib import Path\n"
+        "\n"
+        "class _IO:\n"
+        "    @staticmethod\n"
+        "    def write_xml_string(model):\n"
+        "        return '<model><species name=\"A\"/></model>'\n"
+        "\n"
+        "io = _IO()\n"
+        "\n"
+        "def parse_file(path):\n"
+        "    if not Path(path).is_file():\n"
+        "        raise FileNotFoundError(path)\n"
+        "    return path\n"
+    )
+    root = Path(__file__).resolve().parents[2]
+    env = dict(os.environ, RUNNER_TEMP=str(tmp_path))
+    env["PATH"] = str(Path(sys.executable).parent) + os.pathsep + env["PATH"]
+    env["PYTHONPATH"] = os.pathsep.join(
+        (str(stub), str(root / "python"), str(root / "build/cpp"))
+    )
+    result = subprocess.run(
+        ["bash", "-c", command], env=env, text=True, capture_output=True
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (models / "v1.bngl").read_text() == source
+    assert not (models / "v1.gdat").exists(), "preparation must not execute actions"
+    prepared = json.loads((models / "prepared-xml.json").read_text())
+    assert [entry["xml"] for entry in prepared] == ["v1.xml"]
+
+
 def test_issue160_diagnostic_controls_run_without_claiming_release_acceptance():
     steps = _parse_workflow()["jobs"]["oracle-lock"]["steps"]
     step = next(
