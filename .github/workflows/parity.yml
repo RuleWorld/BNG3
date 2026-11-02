@@ -381,8 +381,7 @@ jobs:
         run: |
           set -euo pipefail
           .venv/bin/python -m pytest -c tests/validation/pytest.ini \
-            tests/validation/sprint_s3_unary.py \
-            -o 'python_files=sprint_s3_*.py' \
+            tests/validation/test_sprint_s3_unary.py \
             --bng-cpp build/cpp/bng_cpp \
             -q -ra \
             --junitxml="$RUNNER_TEMP/sprint-s3-unary.xml"
