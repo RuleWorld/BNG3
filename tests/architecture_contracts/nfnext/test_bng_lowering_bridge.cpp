@@ -304,6 +304,36 @@ end reaction rules
     assert(!lowered.ok());
 }
 
+void refusesTimeDependentNestedGlobalFunctionRate() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin parameters
+  clock_rate time()+1
+end parameters
+begin molecule types
+  A(x~u~p)
+end molecule types
+begin seed species
+  A(x~u) 6
+end seed species
+begin functions
+  inner_rate() = clock_rate
+  outer_rate() = inner_rate()
+end functions
+begin reaction rules
+  convert: A(x~u) -> A(x~p) outer_rate()
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    assert(semantic.parameters().front().timeDependent);
+    const auto& sourceRate = semantic.rules().front().forward().rateLaw;
+    assert(sourceRate.has_value());
+    assert(sourceRate->dependencies().function);
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(!lowered.ok());
+}
+
 void identicalReactantsHaveUnorderedEmbeddings() {
     const auto ast = bng::parser::parseModel(R"BNGL(
 begin parameters
@@ -1230,6 +1260,7 @@ end reaction rules
     lowersStaticallyResolvableUserFunctionRate();
     representsNestedObservableDependentFunctionRate();
     refusesDirectObservableRateWithoutGlobalFunction();
+    refusesTimeDependentNestedGlobalFunctionRate();
     identicalReactantsHaveUnorderedEmbeddings();
     identicalComplexReactantsHaveUnorderedEmbeddings();
     rejectsUnrepresentablePackedSiteIndex();
