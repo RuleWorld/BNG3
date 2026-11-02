@@ -1104,7 +1104,7 @@ jobs:
           CIBW_BUILD: "cp39-* cp310-* cp311-* cp312-* cp313-* cp314-*"
           CIBW_SKIP: "*-musllinux_* *-manylinux_i686 *-win32"
           CIBW_BUILD_VERBOSITY: 1
-          CIBW_TEST_REQUIRES: pytest numpy click pandas python-libsbml
+          CIBW_TEST_REQUIRES: pytest numpy click pandas python-libsbml xmltodict
           CIBW_TEST_COMMAND: >-
             python {project}/scripts/ci/check_python_package_identity.py
             --source-revision ${{ github.sha }} &&
