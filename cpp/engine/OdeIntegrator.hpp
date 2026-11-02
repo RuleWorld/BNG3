@@ -58,6 +58,7 @@ struct OdeOptions {
     bool printFunctions = false;   // Whether to write .fdat output file
     std::vector<double> sampleTimes; // Non-uniform output time points (overrides nSteps)
     std::size_t maxSimSteps = 0;   // Max internal simulation steps (0 = unlimited)
+    bool maxSimStepsSpecified = false; // Distinguish an action limit of 0 from no limit
     bool saveProgress = false;     // Write .net checkpoint at each output step
     bool printNet = false;         // Write .net file after simulation with final concentrations
     bool continueSimulation = false; // Continue one committed native trajectory/session
@@ -83,6 +84,7 @@ struct OdeResult {
     std::vector<std::vector<double>> concentrations;   // [timeIndex][speciesIndex]
     std::vector<std::vector<double>> observables;      // [timeIndex][groupIndex]
     std::vector<std::vector<double>> functions;        // [timeIndex][zero-arg function]
+    std::vector<std::size_t> everPopulatedSpeciesCounts; // SSA event history, when available
     std::size_t eventCount = 0;                              // Internal SSA event count
     std::size_t batchSize = 0;                               // 0 = single trajectory
     std::vector<std::vector<double>> batchStdDevs;           // [timeIndex][speciesIndex] std dev (batch mode only)
@@ -99,6 +101,7 @@ public:
     void setAlgebraicRules(
         const std::vector<std::pair<std::string, std::string>>& rules);
     void writeOutputFiles(const std::string& prefix, const OdeResult& result, bool printCDAT = true, bool printFunctions = false, bool append = false) const;
+    void writeSpeciesStatsFile(const std::string& prefix, const OdeResult& result, bool append = false) const;
     void writeBinaryOutputFiles(const std::string& prefix, const OdeResult& result, bool printCDAT = true) const;
     void writeBatchStdDevsFile(const std::string& prefix, const OdeResult& result) const;
     void derivs(double t, const double* y, double* dydt) const;
