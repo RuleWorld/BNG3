@@ -15,7 +15,7 @@ def test_integrated_validation_job_runs_locked_oracles_and_retains_strict_eviden
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     job = workflow["jobs"]["integrated-semantic-validation"]
 
-    assert job["needs"] == "oracle-lock"
+    assert set(job["needs"]) == {"oracle-lock", "release-obligation-142"}
     assert job["timeout-minutes"] >= 30
     checkout = next(
         step

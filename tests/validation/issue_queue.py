@@ -9,6 +9,8 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
+import os
 import re
 import sys
 from collections import Counter
@@ -18,6 +20,598 @@ from . import campaign, inventory
 
 ROOT = Path(__file__).resolve().parents[2]
 FAILURES = {"FAIL", "HARNESS_ERROR", "TIMEOUT", "INVALID_INPUT"}
+ISSUE_142_CHECKS = (
+    "release-graph-identity",
+    "release-graph-observables",
+    "release-obligation-142",
+)
+S6_SIMULATE_ROWS = (
+    "action.simulate.t_start",
+    "action.simulate.t_end",
+    "action.simulate.n_steps",
+    "action.simulate.sample_times",
+    "action.simulate.continue",
+    "action.simulate.method",
+    "action.simulate.atol",
+    "action.simulate.rtol",
+)
+S6_SIMULATE_SELECTOR = (
+    "tests/validation/release/cases/sprint-s6-simulate-options/"
+    "test_simulate_options.py::test_simulate_option_contract[{row}]"
+)
+S6_SIMULATE_ORACLE = (
+    "pinned BNG2 plus the analytic first-order conversion law; "
+    "SSA scope is invariant-only"
+)
+S6_SIMULATE_SCOPE = (
+    "default, explicit, invalid, and one row-relevant interaction; "
+    "only the admitted ODE/SSA pair is attempted"
+)
+S6_EXPECTED_LAW = (
+    "For A -> B at k=0.4 from A(0)=10, B(0)=0, "
+    "A(t)=10*exp(-0.4*t), B(t)=10-A(t). ODE observable error bound: "
+    "1e-6 absolute; schedule assertions are exact apart from 1e-12 time representation."
+)
+S6_EXPECTED_SSA_SCOPE = (
+    "The admitted SSA case checks dispatch, requested schedule, integer populations, "
+    "and A+B conservation only. It does not claim distributional or pathwise parity."
+)
+S6_SIMULATE_CONTRACT = (
+    "tests/validation/release/cases/sprint-s6-simulate-options/contract.json"
+)
+S6_SCENARIOS = ("default", "explicit", "invalid", "interaction")
+
+
+def issue142_receipt_reports(
+    receipt, identity_path, observables_path, revision, *, artifact_run_id=None
+):
+    """Adapt the dedicated Issue 142 receipt and both child reports to queue leaves."""
+    if not isinstance(receipt, dict) or receipt.get("schema_version") != 1:
+        raise ValueError("invalid Issue 142 receipt schema")
+    if receipt.get("acceptance_check") != "release-obligation-142":
+        raise ValueError("conflicting Issue 142 receipt identity")
+    source_revision = receipt.get("source_revision")
+    if source_revision != revision:
+        raise ValueError("stale Issue 142 receipt revision")
+    if receipt.get("source_dirty") is not False:
+        raise ValueError("Issue 142 receipt source was not recorded clean")
+    checks = receipt.get("checks")
+    if not isinstance(checks, dict) or set(checks) != set(ISSUE_142_CHECKS):
+        raise ValueError("Issue 142 receipt is missing or has conflicting child checks")
+    for check_id, result in checks.items():
+        if not isinstance(result, dict) or result.get("status") != "PASS":
+            raise ValueError(f"Issue 142 check {check_id} did not pass")
+
+    identity = checks["release-graph-identity"]
+    observables = checks["release-graph-observables"]
+    hash_fields = {
+        "release-graph-identity": (
+            "independent_isomorphism_oracle_sha256",
+            "subject_sha256",
+            "report_sha256",
+        ),
+        "release-graph-observables": (
+            "bng2_script_sha256",
+            "nfsim_binary_sha256",
+            "subject_sha256",
+            "report_sha256",
+        ),
+    }
+    for check_id, fields in hash_fields.items():
+        for field in fields:
+            value = checks[check_id].get(field)
+            if not isinstance(value, str) or not re.fullmatch(r"[0-9a-f]{64}", value):
+                raise ValueError(
+                    f"Issue 142 check {check_id} lacks valid {field} identity"
+                )
+    for check_id in ("release-graph-observables",):
+        for field in ("bng2_revision", "nfsim_revision"):
+            if not isinstance(checks[check_id].get(field), str) or not re.fullmatch(
+                r"[0-9a-f]{40}", checks[check_id][field]
+            ):
+                raise ValueError(f"Issue 142 check {check_id} lacks valid {field}")
+    if identity.get("case_count") != 9 or identity.get("exhaustive_case_count") != 116:
+        raise ValueError(
+            "Issue 142 graph identity receipt has stale bounded case counts"
+        )
+    if observables.get("run_count") != 200 or observables.get("dkw_alpha") != 0.005:
+        raise ValueError(
+            "Issue 142 observable receipt has stale run budget or error control"
+        )
+    if artifact_run_id is not None and not re.fullmatch(r"[0-9]+", artifact_run_id):
+        raise ValueError("invalid Issue 142 artifact workflow run ID")
+    for label, path, expected_hash in (
+        ("identity", identity_path, identity["report_sha256"]),
+        ("observables", observables_path, observables["report_sha256"]),
+    ):
+        if (
+            not path.is_file()
+            or hashlib.sha256(path.read_bytes()).hexdigest() != expected_hash
+        ):
+            raise ValueError(
+                f"Issue 142 {label} report hash differs from the consumed receipt"
+            )
+    identity_report = json.loads(identity_path.read_text())
+    observables_report = json.loads(observables_path.read_text())
+
+    def verify_source(report, label):
+        if report.get("source_revision") != revision:
+            raise ValueError(f"stale Issue 142 {label} report source revision")
+        if report.get("source_dirty") is not False:
+            raise ValueError(f"Issue 142 {label} report source was not recorded clean")
+
+    verify_source(identity_report, "identity")
+    verify_source(observables_report, "observables")
+    if identity_report.get("acceptance_check") != "release-graph-identity":
+        raise ValueError("conflicting Issue 142 identity report check ID")
+    if observables_report.get("acceptance_check") != "release-graph-observables":
+        raise ValueError("conflicting Issue 142 observables report check ID")
+    if (
+        identity_report.get("independent_isomorphism_oracle_sha256")
+        != identity["independent_isomorphism_oracle_sha256"]
+        or identity_report.get("subject_sha256") != identity["subject_sha256"]
+        or identity_report.get("case_count") != 9
+        or identity_report.get("exhaustive_case_count") != 116
+    ):
+        raise ValueError(
+            "Issue 142 identity report conflicts with the consumed receipt"
+        )
+    if (
+        observables_report.get("bng2_revision") != observables["bng2_revision"]
+        or observables_report.get("bng2_script_sha256")
+        != observables["bng2_script_sha256"]
+        or observables_report.get("nfsim_revision") != observables["nfsim_revision"]
+        or observables_report.get("nfsim_binary_sha256")
+        != observables["nfsim_binary_sha256"]
+        or observables_report.get("model_source_sha256")
+        != observables["subject_sha256"]
+        or observables_report.get("run_count") != 200
+        or observables_report.get("dkw_alpha") != 0.005
+    ):
+        raise ValueError(
+            "Issue 142 observables report conflicts with the consumed receipt"
+        )
+    from .graph_identity_contract import CASES, CHECKS
+
+    expected_identity_ids = {
+        f"graph-identity-contract:{case['id']}:{check}"
+        for case in CASES
+        for check in CHECKS
+    }
+    catalog_identity_ids = {
+        check["id"]
+        for issue in json.loads(
+            (ROOT / "provenance/issue-obligations.json").read_text()
+        )["issues"]
+        if issue["number"] == 142
+        for obligation in issue["obligations"]
+        for check in obligation["required_checks"]
+        if check["id"].startswith("graph-identity-contract:")
+    }
+    if not catalog_identity_ids <= expected_identity_ids:
+        raise ValueError("Issue 142 catalog names unknown identity component checks")
+    identity_rows = identity_report.get("results")
+    if not isinstance(identity_rows, list):
+        raise ValueError("Issue 142 identity report has no component rows")
+    by_id = {row.get("id"): row for row in identity_rows if isinstance(row, dict)}
+    if len(by_id) != len(identity_rows) or set(by_id) != expected_identity_ids:
+        raise ValueError(
+            "Issue 142 identity report has missing or conflicting component checks"
+        )
+    if any(row.get("status") != "PASS" for row in identity_rows):
+        raise ValueError("an Issue 142 identity component check did not pass")
+
+    source = {"revision": source_revision, "dirty": False}
+    replay_references = {}
+    if artifact_run_id is not None:
+        replay_references = {
+            "workflow_run_id": artifact_run_id,
+            "identity": {
+                "artifact_name": f"issue142-release-graph-identity-{artifact_run_id}",
+                "file": identity_path.name,
+                "sha256": identity["report_sha256"],
+            },
+            "observables": {
+                "artifact_name": f"issue142-release-graph-observables-{artifact_run_id}",
+                "file": observables_path.name,
+                "sha256": observables["report_sha256"],
+            },
+        }
+    identity_report_for_queue = {
+        "source": source,
+        "references": {
+            "independent_isomorphism": {
+                "sha256": identity["independent_isomorphism_oracle_sha256"]
+            }
+        },
+        "subject": {"sha256": identity["subject_sha256"]},
+        "checks": checks,
+        "results": [
+            dict(
+                row,
+                stage="graph-identity-contract",
+                related_issues=[142],
+                supported_execution=True,
+                evidence_kind="supported-execution",
+                receipt=identity,
+            )
+            for row in identity_rows
+        ],
+    }
+    observables_report_for_queue = {
+        "source": source,
+        "references": {
+            "bionetgen": {
+                "revision": observables["bng2_revision"],
+                "sha256": observables["bng2_script_sha256"],
+            },
+            "nfsim": {
+                "revision": observables["nfsim_revision"],
+                "sha256": observables["nfsim_binary_sha256"],
+            },
+        },
+        "subject": {"sha256": observables["subject_sha256"]},
+        "checks": checks,
+        "results": [],
+    }
+    receipt_report = {
+        "source": source,
+        "references": {
+            "independent_isomorphism": {
+                "sha256": identity["independent_isomorphism_oracle_sha256"]
+            },
+            "bionetgen": {
+                "revision": observables["bng2_revision"],
+                "sha256": observables["bng2_script_sha256"],
+            },
+            "nfsim": {
+                "revision": observables["nfsim_revision"],
+                "sha256": observables["nfsim_binary_sha256"],
+            },
+        },
+        "checks": checks,
+        "results": [],
+    }
+    for check_id, report in (
+        ("release-graph-identity", identity_report_for_queue),
+        ("release-graph-observables", observables_report_for_queue),
+        ("release-obligation-142", receipt_report),
+    ):
+        evidence_kind = (
+            "disposition"
+            if check_id == "release-obligation-142"
+            else "supported-execution"
+        )
+        row = {
+            "id": check_id,
+            "status": "PASS",
+            "stage": "issue142-release-receipt",
+            "check": check_id,
+            "related_issues": [142],
+            "evidence_kind": evidence_kind,
+            "receipt": checks[check_id],
+        }
+        if evidence_kind == "supported-execution":
+            row["supported_execution"] = True
+        report["results"].append(row)
+    receipt_report["results"].append(
+        {
+            "id": "qualification:issue:142:closure-record",
+            "status": "PASS",
+            "stage": "issue142-release-receipt",
+            "check": "release-obligation-142",
+            "related_issues": [142],
+            "evidence_kind": "disposition",
+            "receipt": checks["release-obligation-142"],
+        }
+    )
+    if replay_references:
+        for report in (
+            identity_report_for_queue,
+            observables_report_for_queue,
+            receipt_report,
+        ):
+            report["replay_references"] = replay_references
+    return [identity_report_for_queue, observables_report_for_queue, receipt_report]
+
+
+def _s6_expected_times(row, scenario):
+    """Return the declared output grid for a valid S6 scenario."""
+    grids = {
+        ("action.simulate.t_start", "default"): [0, 0.25, 0.5, 0.75, 1],
+        ("action.simulate.t_start", "explicit"): [0.5, 0.75, 1, 1.25, 1.5],
+        ("action.simulate.t_start", "interaction"): [0.5, 0.75, 1, 1.25, 1.5],
+        ("action.simulate.t_end", "default"): [0, 0.5, 1],
+        ("action.simulate.t_end", "explicit"): [0, 0.5, 1, 1.5],
+        ("action.simulate.t_end", "interaction"): [0, 0.4, 0.8, 1],
+        ("action.simulate.n_steps", "default"): [0, 1],
+        ("action.simulate.sample_times", "explicit"): [0, 0.25, 0.75],
+        ("action.simulate.sample_times", "interaction"): [0, 0.4, 0.8, 1],
+        ("action.simulate.continue", "default"): [0, 0.25, 0.5],
+    }
+    if scenario == "invalid" or (
+        row == "action.simulate.method" and scenario == "default"
+    ):
+        return None
+    return grids.get((row, scenario), [0, 0.25, 0.5, 0.75, 1])
+
+
+def _s6_validate_outcome(outcome, row, scenario, expected_rejection, engine):
+    if not isinstance(outcome, dict):
+        raise ValueError(f"S6 {engine} scenario has no execution outcome")
+    transcript_hash = outcome.get("transcript_sha256")
+    if not isinstance(transcript_hash, str) or not re.fullmatch(
+        r"[0-9a-f]{64}", transcript_hash
+    ):
+        raise ValueError(f"S6 {engine} scenario lacks transcript identity")
+    return_code = outcome.get("return_code")
+    if not isinstance(return_code, int) or isinstance(return_code, bool):
+        raise ValueError(f"S6 {engine} scenario lacks a valid process exit code")
+    nonincreasing_time = scenario == "invalid" and row in {
+        "action.simulate.t_start",
+        "action.simulate.t_end",
+    }
+    if expected_rejection and not nonincreasing_time:
+        if (
+            outcome.get("execution_status") != "REJECTED"
+            or outcome.get("rejected") is not True
+            or return_code == 0
+        ):
+            raise ValueError(
+                f"S6 {engine} expected-rejection control requires a nonzero exit"
+            )
+        if (
+            outcome.get("output") is None and outcome.get("output_sha256") is not None
+        ) or (
+            outcome.get("output") is not None
+            and (
+                not isinstance(outcome.get("output"), str)
+                or not outcome["output"]
+                or not isinstance(outcome.get("output_sha256"), str)
+                or not re.fullmatch(r"[0-9a-f]{64}", outcome["output_sha256"])
+            )
+        ):
+            raise ValueError(
+                f"S6 {engine} rejected case has invalid diagnostic output identity"
+            )
+        return
+    if nonincreasing_time and outcome.get("execution_status") == "REJECTED":
+        if (
+            outcome.get("rejected") is not True
+            or return_code == 0
+            or outcome.get("trajectory") is not None
+        ):
+            raise ValueError(
+                f"S6 {engine} invalid time interval has conflicting outcome"
+            )
+        return
+    if (
+        outcome.get("execution_status") != "PRODUCED"
+        or outcome.get("rejected") is not False
+        or return_code != 0
+        or not outcome.get("output")
+        or not isinstance(outcome.get("output_sha256"), str)
+        or not re.fullmatch(r"[0-9a-f]{64}", outcome["output_sha256"])
+    ):
+        raise ValueError(
+            f"S6 {engine} produced outcome needs a successful exit and output identity"
+        )
+    trajectory = outcome.get("trajectory")
+    if not isinstance(trajectory, dict) or trajectory.get("columns") != [
+        "time",
+        "A_count",
+        "B_count",
+    ]:
+        raise ValueError(f"S6 {engine} trajectory lacks the declared observables")
+    values = trajectory.get("values")
+    expected_times = _s6_expected_times(row, scenario)
+    if (
+        not isinstance(values, list)
+        or expected_times is None
+        or len(values) != len(expected_times)
+    ):
+        if nonincreasing_time and isinstance(values, list) and len(values) == 1:
+            if (
+                trajectory.get("shape") != [1, 3]
+                or len(values[0]) != 3
+                or not all(math.isfinite(float(item)) for item in values[0])
+                or values[0][1:] != [10.0, 0.0]
+            ):
+                raise ValueError(
+                    f"S6 {engine} nonincreasing interval changed initial observables"
+                )
+            return
+        raise ValueError(f"S6 {engine} trajectory has an undeclared output grid")
+    if trajectory.get("shape") != [len(values), 3] or any(
+        not isinstance(point, list)
+        or len(point) != 3
+        or not all(math.isfinite(float(value)) for value in point)
+        for point in values
+    ):
+        raise ValueError(f"S6 {engine} trajectory has invalid shape or values")
+    if any(
+        abs(float(point[0]) - time) > 1e-12
+        for point, time in zip(values, expected_times)
+    ):
+        raise ValueError(f"S6 {engine} trajectory schedule differs from the contract")
+    if row == "action.simulate.method" and scenario == "interaction":
+        if any(
+            any(value < 0 or value != int(value) for value in point[1:])
+            or sum(point[1:]) != 10
+            for point in values
+        ):
+            raise ValueError(f"S6 {engine} SSA invariants were violated")
+        return
+    relative_start = (
+        0.5
+        if row == "action.simulate.t_start" and scenario in {"explicit", "interaction"}
+        else 0.0
+    )
+    for time, a_count, b_count in values:
+        expected_a = 10 * math.exp(-0.4 * (time - relative_start))
+        if abs(a_count - expected_a) > 1e-6 or abs(b_count - (10 - expected_a)) > 1e-6:
+            raise ValueError(f"S6 {engine} trajectory differs from the analytic law")
+
+
+def s6_simulate_receipt_report(
+    receipt_dir, revision, contract, *, artifact_run_id=None
+):
+    """Validate and adapt the eight bounded S6 receipts as queue evidence."""
+    if not re.fullmatch(r"[0-9a-f]{40}", revision):
+        raise ValueError("invalid S6 candidate revision")
+    if not isinstance(contract, dict) or contract.get("schema_version") != 1:
+        raise ValueError("invalid S6 contract schema")
+    oracle = contract.get("source")
+    if (
+        not isinstance(oracle, dict)
+        or oracle.get("repository") != "RuleWorld/bionetgen"
+        or oracle.get("path") != "bng2/Perl2/BNGAction.pm"
+        or not re.fullmatch(r"[0-9a-f]{40}", str(oracle.get("revision", "")))
+        or not re.fullmatch(r"[0-9a-f]{64}", str(oracle.get("sha256", "")))
+    ):
+        raise ValueError("S6 contract lacks the pinned BNG2 source identity")
+    oracle_contract = contract.get("oracle")
+    if (
+        not isinstance(oracle_contract, dict)
+        or oracle_contract.get("identity")
+        != "pinned BNG2 executable at source revision above; separately derived mass-action law"
+        or oracle_contract.get("law") != S6_EXPECTED_LAW
+        or oracle_contract.get("stochastic_scope") != S6_EXPECTED_SSA_SCOPE
+    ):
+        raise ValueError("S6 contract changed its independent oracle or bounded law")
+    from scripts.ci.oracle_sources import load_lock, load_oracle_source
+
+    if oracle["revision"] != load_oracle_source(load_lock(), "bionetgen")["revision"]:
+        raise ValueError("S6 contract BNG2 revision differs from the source lock")
+    if not isinstance(contract.get("rows"), dict) or set(contract["rows"]) != set(
+        S6_SIMULATE_ROWS
+    ):
+        raise ValueError("S6 contract must name exactly the eight simulate rows")
+    for row, scenarios in contract["rows"].items():
+        if (
+            not isinstance(scenarios, dict)
+            or set(scenarios) != set(S6_SCENARIOS)
+            or any(
+                not isinstance(description, str) or not description
+                for description in scenarios.values()
+            )
+        ):
+            raise ValueError(f"S6 contract has incomplete scenarios for {row}")
+    if artifact_run_id is not None and not re.fullmatch(r"[0-9]+", artifact_run_id):
+        raise ValueError("invalid S6 artifact workflow run ID")
+    receipt_dir = Path(receipt_dir)
+    files = sorted(receipt_dir.glob("*.json")) if receipt_dir.is_dir() else []
+    if len(files) != len(S6_SIMULATE_ROWS) or {path.name for path in files} != {
+        f"{row}.json" for row in S6_SIMULATE_ROWS
+    }:
+        raise ValueError("S6 receipt directory must contain exactly eight named rows")
+
+    receipts = []
+    product_sha256 = None
+    for row in S6_SIMULATE_ROWS:
+        path = receipt_dir / f"{row}.json"
+        try:
+            receipt = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"cannot read S6 receipt {path.name}: {exc}") from exc
+        if not isinstance(receipt, dict) or receipt.get("row_id") != row:
+            raise ValueError(f"S6 receipt row identity conflicts: {path.name}")
+        if receipt.get("selector") != S6_SIMULATE_SELECTOR.format(row=row):
+            raise ValueError(f"S6 receipt has unexpected selector: {row}")
+        if receipt.get("status") != "PASS" or receipt.get("failures") != []:
+            raise ValueError(f"S6 receipt did not pass: {row}")
+        if (
+            receipt.get("oracle") != S6_SIMULATE_ORACLE
+            or receipt.get("scope") != S6_SIMULATE_SCOPE
+        ):
+            raise ValueError(f"S6 receipt changed its declared oracle or scope: {row}")
+        reported_oracle = receipt.get("source")
+        if (
+            not isinstance(reported_oracle, dict)
+            or reported_oracle.get("revision") != oracle["revision"]
+            or reported_oracle.get("path") != oracle["path"]
+            or reported_oracle.get("sha256") != oracle["sha256"]
+        ):
+            raise ValueError(f"S6 receipt conflicts with the pinned BNG2 oracle: {row}")
+        product = receipt.get("product")
+        if (
+            not isinstance(product, dict)
+            or product.get("revision") != revision
+            or not re.fullmatch(r"[0-9a-f]{64}", str(product.get("bng_cpp_sha256", "")))
+        ):
+            raise ValueError(f"S6 product identity is stale or invalid: {row}")
+        if product_sha256 is None:
+            product_sha256 = product["bng_cpp_sha256"]
+        elif product_sha256 != product["bng_cpp_sha256"]:
+            raise ValueError(
+                "S6 receipts were produced by conflicting bng_cpp binaries"
+            )
+        scenarios = receipt.get("scenarios")
+        if not isinstance(scenarios, list) or [
+            item.get("name") if isinstance(item, dict) else None for item in scenarios
+        ] != list(S6_SCENARIOS):
+            raise ValueError(f"S6 receipt has missing or duplicated scenarios: {row}")
+        for scenario in scenarios:
+            name = scenario["name"]
+            expected_rejection = name == "invalid" or (
+                row == "action.simulate.method" and name == "default"
+            )
+            if (
+                scenario.get("status") != "PASS"
+                or scenario.get("failures") != []
+                or scenario.get("expected_rejection") is not expected_rejection
+                or not re.fullmatch(
+                    r"[0-9a-f]{64}", str(scenario.get("source_sha256", ""))
+                )
+            ):
+                raise ValueError(
+                    f"S6 scenario did not pass its named contract: {row}/{name}"
+                )
+            for engine in ("bng2", "bng3"):
+                _s6_validate_outcome(
+                    scenario.get(engine), row, name, expected_rejection, engine
+                )
+        receipts.append((row, path, receipt))
+
+    references = {
+        "bionetgen": {"revision": oracle["revision"], "sha256": oracle["sha256"]},
+        "s6_receipts": {
+            row.replace(".", "_"): {
+                "sha256": hashlib.sha256(path.read_bytes()).hexdigest()
+            }
+            for row, path, _ in receipts
+        },
+    }
+    if artifact_run_id is not None:
+        references["workflow_run_id"] = artifact_run_id
+    return {
+        "source": {"revision": revision, "dirty": False},
+        "references": references,
+        "subject": {"sha256": product_sha256},
+        "artifact": {
+            "name": "bng3-s6-simulate-option-receipts",
+            "workflow_run_id": artifact_run_id,
+        },
+        "scope": S6_SIMULATE_SCOPE,
+        "claim_limit": "SSA evidence checks invariants only; no pathwise or distributional equivalence is claimed.",
+        "results": [
+            {
+                "id": row,
+                "status": "PASS",
+                "stage": "s6-simulate-options",
+                "check": f"release-capability[{row}] (new parameterized case)",
+                "related_issues": [140],
+                "capabilities": [row],
+                "test_file": S6_SIMULATE_SELECTOR.format(row=row).split("::", 1)[0],
+                "supported_execution": True,
+                "evidence_kind": "supported-execution",
+                "receipt_sha256": references["s6_receipts"][row.replace(".", "_")][
+                    "sha256"
+                ],
+            }
+            for row, path, _ in receipts
+        ],
+    }
 
 
 def acceptance_criteria(issue):
@@ -275,6 +869,7 @@ def obligation_inventory(issues, catalog=None):
                     issue=number,
                     criterion=text,
                     scope=text,
+                    live_acceptance_criteria=[dict(live)],
                     live_body_sha256=digest,
                     scope_status="CURRENT",
                     dependencies=live.get("dependencies", []),
@@ -702,6 +1297,17 @@ def acceptance_dashboard(queue, assessment, campaigns):
         obligations = [
             o for o in assessment["obligations"] if o.get("issue") == row["number"]
         ]
+        live_status = {
+            o["criterion"]: o["status"]
+            for o in obligations
+            if o.get("live_acceptance_criteria") and o.get("scope_status") == "CURRENT"
+        }
+        for criterion in row["acceptance_criteria"]:
+            status = live_status.get(criterion["text"])
+            if status:
+                criterion["evidence_status"] = (
+                    "PASS" if status == "DEMONSTRATED" else status
+                )
         row["obligations"] = obligations
         row["obligation_outcomes"] = dict(Counter(o["status"] for o in obligations))
         row["demonstrated_obligations"] = [
@@ -732,7 +1338,17 @@ def acceptance_dashboard(queue, assessment, campaigns):
                 unmapped_scope=o["unmapped_scope"],
             )
             for o in obligations
-            if o["decisions"] or o["unmapped_scope"]
+            if o["decisions"]
+        ]
+        row["scope_reconciliation_required"] = [
+            dict(
+                obligation=o["id"],
+                scope_status=o.get("scope_status"),
+                unmapped_scope=o["unmapped_scope"],
+            )
+            for o in obligations
+            if o.get("scope_status") in {"STALE_SCOPE", "UNMAPPED"}
+            or o["unmapped_scope"]
         ]
         row["ranking_basis"] = dict(
             confirmed_failures=sum(o["status"] == "FAIL" for o in obligations),
@@ -899,6 +1515,10 @@ def main(argv=None):
     )
     parser.add_argument("--max-families", type=int, default=3)
     parser.add_argument("--report", action="append", type=Path, default=[])
+    parser.add_argument("--issue142-release-record", type=Path)
+    parser.add_argument("--issue142-identity-report", type=Path)
+    parser.add_argument("--issue142-observables-report", type=Path)
+    parser.add_argument("--s6-simulate-receipt-dir", type=Path)
     parser.add_argument("--revision", required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--upstream-heads", type=Path)
@@ -913,6 +1533,76 @@ def main(argv=None):
         issues_bytes = args.issues_json.read_bytes()
         issues = json.loads(issues_bytes)
         reports = [json.loads(path.read_text()) for path in args.report]
+        receipt_reports = []
+        if args.issue142_release_record:
+            if (
+                not args.issue142_identity_report
+                or not args.issue142_observables_report
+            ):
+                raise ValueError(
+                    "Issue 142 receipt requires both raw child reports for exact evidence"
+                )
+            receipt_reports = issue142_receipt_reports(
+                json.loads(args.issue142_release_record.read_text()),
+                args.issue142_identity_report,
+                args.issue142_observables_report,
+                args.revision,
+                artifact_run_id=os.environ.get("GITHUB_RUN_ID"),
+            )
+            reports.extend(receipt_reports)
+            queue_receipt = receipt_reports[-1]
+            receipt_reports = [
+                dict(
+                    kind="issue142-release-record",
+                    path=str(args.issue142_release_record),
+                    sha256=inventory.sha256(args.issue142_release_record),
+                    replay_references=queue_receipt.get("replay_references", {}),
+                    component_reports=[
+                        {
+                            "path": str(path),
+                            "sha256": inventory.sha256(path),
+                        }
+                        for path in (
+                            args.issue142_identity_report,
+                            args.issue142_observables_report,
+                        )
+                    ],
+                ),
+            ]
+        if args.s6_simulate_receipt_dir:
+            if campaign.git(ROOT, "status", "--porcelain"):
+                raise ValueError("S6 receipt consumer requires a clean candidate tree")
+            workflow_run_id = os.environ.get("GITHUB_RUN_ID")
+            if not workflow_run_id:
+                raise ValueError(
+                    "S6 receipt consumer requires the workflow run identity"
+                )
+            contract_path = ROOT / S6_SIMULATE_CONTRACT
+            contract = json.loads(contract_path.read_text(encoding="utf-8"))
+            s6_report = s6_simulate_receipt_report(
+                args.s6_simulate_receipt_dir,
+                args.revision,
+                contract,
+                artifact_run_id=workflow_run_id,
+            )
+            reports.append(s6_report)
+            receipt_reports.append(
+                {
+                    "kind": "s6-simulate-option-receipts",
+                    "path": str(args.s6_simulate_receipt_dir),
+                    "artifact_name": s6_report["artifact"]["name"],
+                    "workflow_run_id": s6_report["artifact"]["workflow_run_id"],
+                    "files": [
+                        {
+                            "name": f"{row}.json",
+                            "sha256": s6_report["references"]["s6_receipts"][
+                                row.replace(".", "_")
+                            ]["sha256"],
+                        }
+                        for row in S6_SIMULATE_ROWS
+                    ],
+                }
+            )
         heads = (
             json.loads(args.upstream_heads.read_text()) if args.upstream_heads else None
         )
@@ -957,7 +1647,8 @@ def main(argv=None):
             issue_snapshot_scope="provided snapshot; collection completeness not inferred",
             evidence_reports=[
                 dict(path=str(p), sha256=inventory.sha256(p)) for p in args.report
-            ],
+            ]
+            + receipt_reports,
             queue=queue,
             acceptance=assessment,
             campaign_selection=campaigns,
