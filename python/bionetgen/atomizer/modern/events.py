@@ -9419,7 +9419,7 @@ def synthesize_event_actions(
                 # `sample_times` requires at least three values. Preserve the
                 # requested output grid by lowering each adjacent pair to a
                 # one-step simulation; continued actions suppress repeated
-                # boundary rows, so no synthetic sample times are introduced.
+                # initial timestamps, so no synthetic sample times are added.
                 points = samples if include_start else [start, *samples]
                 return [
                     render_simulation(
