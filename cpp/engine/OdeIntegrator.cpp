@@ -1725,6 +1725,7 @@ void OdeIntegrator::updateFunctions(
     const std::vector<double>& groupValues,
     double time,
     std::vector<double>& functionValues) const {
+    (void)groupValues;
     functionValues.clear();
 
     // Functions are not state variables, but zero-argument functions are
@@ -1737,13 +1738,20 @@ void OdeIntegrator::updateFunctions(
     // and nested delay() calls from one state/time context.
     const auto& functions = model_.getFunctions();
     const auto functionState = historyStateAt(time);
+    // All result functions share this state and instant, so resolve the
+    // observable snapshot and historical parameters once instead of once per
+    // function.
+    const auto functionParameters = historyParametersAt(time);
+    std::vector<double> functionGroupValues;
+    updateGroups(functionState.data(), functionGroupValues);
 
     for (const auto index : resultFunctionIndices_) {
         const auto& function = functions[index];
         try {
             functionValues.push_back(
-                evaluateExpressionWithHistory(
-                    function.getExpression(), time, functionState.data()));
+                evaluateExpressionWithHistoryPrepared(
+                    function.getExpression(), time, functionState.data(),
+                    functionParameters, functionGroupValues));
         } catch (const std::exception&) {
             // Keep a malformed optional function from invalidating an
             // otherwise executable state trajectory.  The writer/parser
@@ -2169,14 +2177,33 @@ std::unordered_map<std::string, double> OdeIntegrator::historyParametersAt(
 double OdeIntegrator::evaluateExpressionWithHistory(
     const ast::Expression& expression, double time, const double* state,
     bool discreteReactantCounts) const {
+    const auto parameters = historyParametersAt(time);
+    std::vector<double> groupValues;
+    updateGroups(state, groupValues);
+    return evaluateExpressionWithHistoryPrepared(
+        expression, time, state, parameters, groupValues,
+        discreteReactantCounts);
+}
+
+double OdeIntegrator::evaluateExpressionWithHistoryPrepared(
+    const ast::Expression& expression, double time, const double* state,
+    const std::unordered_map<std::string, double>& parameters,
+    const std::vector<double>& groupValues,
+    bool discreteReactantCounts) const {
     std::function<double(const ast::Expression&, double, const double*,
-                         const std::unordered_map<std::string, double>&, bool)> evaluateAt;
+                         const std::unordered_map<std::string, double>&, bool,
+                         const std::vector<double>*)> evaluateAt;
     evaluateAt = [&](const ast::Expression& current, double currentTime,
                      const double* currentState,
-                     const std::unordered_map<std::string, double>& parameters,
-                     bool useCurrentEventValues) {
-        std::vector<double> groupValues;
-        updateGroups(currentState, groupValues);
+                     const std::unordered_map<std::string, double>& currentParameters,
+                     bool useCurrentEventValues,
+                     const std::vector<double>* presetGroupValues) {
+        std::vector<double> localGroupValues;
+        if (presetGroupValues == nullptr) {
+            updateGroups(currentState, localGroupValues);
+            presetGroupValues = &localGroupValues;
+        }
+        const auto& currentGroupValues = *presetGroupValues;
         const auto resolver = [&](const std::string& name) -> double {
             if (name == "time" || name == "t") return currentTime;
             if (name.rfind("__substrate_", 0) == 0) {
@@ -2217,11 +2244,11 @@ double OdeIntegrator::evaluateExpressionWithHistory(
             }
             const auto observable = observableIndex_.find(name);
             if (observable != observableIndex_.end() &&
-                observable->second < groupValues.size()) {
-                return groupValues[observable->second];
+                observable->second < currentGroupValues.size()) {
+                return currentGroupValues[observable->second];
             }
-            const auto historicalParameter = parameters.find(name);
-            if (historicalParameter != parameters.end()) {
+            const auto historicalParameter = currentParameters.find(name);
+            if (historicalParameter != currentParameters.end()) {
                 return historicalParameter->second;
             }
             static const std::unordered_map<std::string, double> noEventValues;
@@ -2243,11 +2270,12 @@ double OdeIntegrator::evaluateExpressionWithHistory(
                 const auto delayedState = historyStateAt(delayedTime);
                 const auto delayedParameters = historyParametersAt(delayedTime);
                 return evaluateAt(delayedExpression, delayedTime,
-                                  delayedState.data(), delayedParameters, false);
+                                  delayedState.data(), delayedParameters, false,
+                                  nullptr);
             };
         return functionEvaluator_.evaluate(current, resolver, currentTime, delayed);
     };
-    return evaluateAt(expression, time, state, historyParametersAt(time), true);
+    return evaluateAt(expression, time, state, parameters, true, &groupValues);
 }
 
 void OdeIntegrator::recordHistoryPoint(double time,

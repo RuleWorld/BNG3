@@ -30,6 +30,16 @@ public:
         const std::function<double(const std::string&)>& resolveIdentifier,
         double time = 0.0,
         const ast::Expression::DelayedEvaluator& evaluateDelayed = {}) const {
+        // Expanding rebuilds the whole expression tree.  The overwhelmingly
+        // common case is a rate/function body that names no user function, so
+        // skip the rebuild when there is nothing to substitute.  The tree is
+        // immutable during evaluation, which makes this check exact: the
+        // predicate mirrors every rewrite expandFunctionCalls performs.
+        if (!needsExpansion(expression)) {
+            return expression.evaluateWithFunctions(
+                resolveIdentifier, time, ast::Expression::FunctionResolver(),
+                ast::Expression::FunctionPredicate(), evaluateDelayed);
+        }
         const auto expandedExpression = expandFunctions(expression);
         std::vector<std::size_t> callStack;
         ast::Expression::FunctionResolver resolveFunction;
@@ -112,6 +122,28 @@ public:
     }
 
 private:
+    // True when expandFunctionCalls would rewrite this tree: a declared
+    // function is called (either as Function/ObservableRef, or as a bare
+    // identifier naming a zero-argument function), or one of its arguments
+    // contains such a call.  Keep this in lockstep with expandFunctionCalls.
+    bool needsExpansion(const ast::Expression& expression) const {
+        const auto declared = functionIndex_.find(expression.name());
+        if (declared != functionIndex_.end()) {
+            if (expression.kind() == ast::ExpressionKind::Function ||
+                expression.kind() == ast::ExpressionKind::ObservableRef) {
+                return true;
+            }
+            if (expression.kind() == ast::ExpressionKind::Identifier &&
+                model_.getFunctions()[declared->second].getArgs().empty()) {
+                return true;
+            }
+        }
+        for (const auto& child : expression.args()) {
+            if (needsExpansion(child)) return true;
+        }
+        return false;
+    }
+
     ast::Expression expandFunctionCalls(const ast::Expression& expression) const {
         std::vector<std::size_t> callStack;
         std::unordered_map<std::string, ast::Expression> locals;
