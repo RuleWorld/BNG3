@@ -13,6 +13,7 @@
 #include <fstream>
 #include <iomanip>
 #include <limits>
+#include <optional>
 #include <random>
 #include <sstream>
 #include <stdexcept>
@@ -1866,6 +1867,55 @@ void OdeIntegrator::evaluateFunctionalRateCoefficients(
         }
     };
 
+    // Every compiled functional rate at this time/state shares the same
+    // identifier/function/observable resolution and only differs in which
+    // reaction supplies the reactant counts.  Build the evaluation context
+    // once; rebuilding its std::function payload for each of the (typically
+    // many) functional reactions dominated derivs() allocation cost.  The
+    // context is created lazily so models whose functional rates stay on the
+    // AST path do not pay for it.
+    std::optional<bng::compile::RateEvaluationContext> compiledContext;
+    const std::vector<std::size_t>* currentReactants = nullptr;
+    const auto compiledContextFor = [&]() -> bng::compile::RateEvaluationContext& {
+        if (!compiledContext.has_value()) {
+            bng::compile::RateEvaluationContext ctx;
+            ctx.time = t;
+            ctx.resolveIdentifier = resolver;
+            ctx.resolveLocal = resolver;
+            ctx.resolveParameter = [&](std::size_t, const std::string& name) {
+                return resolver(name);
+            };
+            ctx.resolveObservable = [&](std::size_t, const std::string& name) {
+                return resolver(name);
+            };
+            ctx.resolveFunction = [&](const std::string& funcName,
+                                      const std::vector<double>& args) -> double {
+                if (args.empty()) {
+                    return functionEvaluator_.evaluate(
+                        ast::Expression::identifier(funcName), resolver, t);
+                }
+                std::vector<ast::Expression> argExprs;
+                argExprs.reserve(args.size());
+                for (double val : args) {
+                    argExprs.push_back(ast::Expression::number(val));
+                }
+                return functionEvaluator_.evaluate(
+                    ast::Expression::function(funcName, argExprs), resolver, t);
+            };
+            ctx.discreteReactantCounts = discreteReactantCounts;
+            ctx.resolveReactantCount = [&](std::size_t reactantIdx) {
+                if (currentReactants != nullptr &&
+                    reactantIdx < currentReactants->size()) {
+                    const std::size_t specIdx = (*currentReactants)[reactantIdx];
+                    return (specIdx < nSpecies_) ? y[specIdx] : 0.0;
+                }
+                return 0.0;
+            };
+            compiledContext.emplace(std::move(ctx));
+        }
+        return *compiledContext;
+    };
+
     for (const auto idx : functionalRxnIndices_) {
         const auto& rxn = compiledRxns_[idx];
         double rate;
@@ -1874,39 +1924,8 @@ void OdeIntegrator::evaluateFunctionalRateCoefficients(
             !rxn.compiledRateLaw->dependsOnDelay() &&
             !hasPositiveExpressionDelay_) {
             try {
-                bng::compile::RateEvaluationContext ctx;
-                ctx.time = t;
-                ctx.resolveIdentifier = resolver;
-                ctx.resolveLocal = resolver;
-                ctx.resolveParameter = [&](std::size_t, const std::string& name) {
-                    return resolver(name);
-                };
-                ctx.resolveObservable = [&](std::size_t, const std::string& name) {
-                    return resolver(name);
-                };
-                ctx.resolveFunction = [&](const std::string& funcName,
-                                          const std::vector<double>& args) -> double {
-                    if (args.empty()) {
-                        return functionEvaluator_.evaluate(
-                            ast::Expression::identifier(funcName), resolver, t);
-                    }
-                    std::vector<ast::Expression> argExprs;
-                    argExprs.reserve(args.size());
-                    for (double val : args) {
-                        argExprs.push_back(ast::Expression::number(val));
-                    }
-                    return functionEvaluator_.evaluate(
-                        ast::Expression::function(funcName, argExprs), resolver, t);
-                };
-                ctx.discreteReactantCounts = discreteReactantCounts;
-                ctx.resolveReactantCount = [&](std::size_t reactantIdx) {
-                    if (reactantIdx < rxn.reactantIndices.size()) {
-                        const std::size_t specIdx = rxn.reactantIndices[reactantIdx];
-                        return (specIdx < nSpecies_) ? y[specIdx] : 0.0;
-                    }
-                    return 0.0;
-                };
-                rate = rxn.compiledRateLaw->evaluate(ctx);
+                currentReactants = &rxn.reactantIndices;
+                rate = rxn.compiledRateLaw->evaluate(compiledContextFor());
             } catch (const std::exception& error) {
                 if (failOnError) {
                     throw std::runtime_error(
