@@ -6,9 +6,7 @@
 # sys.setdefaultencoding("ISO-8859-1")
 
 import re
-from copy import deepcopy
 from bionetgen.atomizer.utils.util import TranslationException, logMess
-import string
 
 try:
     # 3.0.0 and above
@@ -23,7 +21,6 @@ from itertools import dropwhile
 
 # import StringIO
 from io import StringIO
-import pyparsing as pyp
 
 
 def evaluatePiecewiseFunction(function):
@@ -105,11 +102,13 @@ def balanceTranslator(reactant, product, translator):
     newTranslator = {}
     for species in reactant:
         if species[0] in translator:
-            newTranslator[species[0]] = deepcopy(translator[species[0]])
+            # ⚡ Bolt: Replace deepcopy with faster dict comprehension and copy()
+            newTranslator[species[0]] = translator[species[0]].copy()
             rMolecules.extend(newTranslator[species[0]].molecules)
     for species in product:
         if species[0] in translator:
-            newTranslator[species[0]] = deepcopy(translator[species[0]])
+            # ⚡ Bolt: Replace deepcopy with faster dict comprehension and copy()
+            newTranslator[species[0]] = translator[species[0]].copy()
             pMolecules.extend(newTranslator[species[0]].molecules)
 
     for rMolecule in rMolecules:
@@ -593,7 +592,7 @@ def extendFunction(function, subfunctionName, subfunction):
     # following line errors out with IndexError, let's handle it.
     try:
         body = subfunction.split(" = ")[1]
-    except IndexError as e:
+    except IndexError:
         logMess(
             "ERROR:TRS002",
             "This function doesn't have a definition, note that atomizer doesn't allow for function linking: {}".format(
