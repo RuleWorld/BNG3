@@ -38,8 +38,11 @@ supported scope rather than reimplementing them.
 - [x] BNGIR 0.1/0.2 serialization, structural snapshots and validation;
   native structural import remains open (D01).
 - [x] Modern Atomizer, supported SBML Core/Multi lowerings, physical-unit
-  infrastructure and exact analytic event subsets. Native dynamic events
-  remain rejected (E01–E02).
+  infrastructure, analytic event lowerings, and a bounded native ODE event
+  runtime with continuous trigger/root and queued-execution semantics.
+  Stochastic event execution, general event classes, and complete official
+  conformance remain separate unqualified obligations (E01–E02); see
+  [ADR 0004](adr/0004-native-sbml-event-runtime.md).
 - [x] Lean semantic/reference modules, scoped interpreter-refinement proofs,
   explicit Smoke/Coverage/axiom gates and native NFnext contract tests.
 - [x] SSTS revision-lock and official-reference comparison machinery;

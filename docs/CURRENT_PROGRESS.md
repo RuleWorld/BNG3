@@ -1,5 +1,25 @@
 # BNG3 current progress
 
+## Source-head checkpoint — 2026-11-06 (not issue acceptance)
+
+The latest `main` source inspected for this documentation update is
+[`29d8320659832fb2d411e2a51972e227559a9499`](https://github.com/RuleWorld/BNG3/commit/29d8320659832fb2d411e2a51972e227559a9499),
+which merged [PR #602](https://github.com/RuleWorld/BNG3/pull/602).
+It replaces deep-copy operations in the *legacy* Atomizer's reaction-context
+and translator paths with more specialized copying. The reaction-context
+backup copies two mapping levels and uses `copy()` on their nested values;
+`Species.copy()` independently copies molecules/components in the writer path.
+Because these paths have mutable nested data, equivalence and performance
+remain validation questions rather than qualified improvements. The merge diff
+contains no new tests or benchmark results.
+
+**Do not substitute this head SHA into the issue table below.** That table
+records earlier assessments, including `3ef3ac00` and a separate `#137`
+checkpoint. None of those per-issue release obligations or evidence statuses
+has been requalified simply because a newer source commit exists. The
+issue-specific acceptance reports must be regenerated at the target head
+before any status promotion.
+
 Issue-keyed evidence index assessed at main SHA `3ef3ac00645dc894133a8755a1499ca86711d286`. This SHA identifies the assessed revision; it does not imply any listed check passed. No exact-main release-check artifacts were verified for this snapshot, so artifact links are recorded as none verified and results remain unverified. Each issue retains its full acceptance criteria and open obligations. Earlier progress narratives and artifact references are preserved in the [historical archive](archive/reports/CURRENT_PROGRESS_HISTORY.md).
 
 | Issue | Intended check IDs | Current main SHA assessed | Artifact links | Result / status | Outstanding obligations |

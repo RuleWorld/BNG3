@@ -26,7 +26,11 @@ BioNetGen 3 is a unified platform for rule-based modeling of biochemical systems
 pip install bionetgen
 ```
 
-No Perl runtime required. No subprocess calls. Everything runs in-process.
+The default Python simulation path uses the in-process C++ backend and does
+not require Perl. Explicit legacy Perl compatibility is still supported and
+may invoke external processes; validation/oracle and worker workflows also
+run separate executables. The in-process description is not a blanket claim
+about every repository command.
 
 ### Requirements
 

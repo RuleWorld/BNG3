@@ -31,7 +31,8 @@ python scripts/generate_corpus_manifest.py --check
 python -m tests.validation.exception_ledger --max-exceptions 1
 python -m pytest tests/test_ci_contract.py -q
 
-# the strict provenance gate, which NO job runs
+# strict provenance: the release workflow invokes this gate;
+# running the non-strict lint check alone is insufficient
 python scripts/validate_provenance.py --require-approved
 
 # C++ build and suites

@@ -9,7 +9,7 @@
 **Capability source:** `cpp/engine/BngsimAdapter.cpp` (always compiled)
 **Network adapter:** `cpp/engine/BngsimAdapter.cpp` (`buildBngsimNetwork` is optional)
 **Pinned BNGsim:** `49dc939035f5a272da663f8c9586e3c9f0e1c041` (see `provenance/upstreams.lock.yml`)
-**Default backend:** `native` (auto-select prefers `bngsim` only when faithfully lowerable)
+**Default backend:** `native`; `bngsim` is an explicitly selected optional backend for faithfully lowerable models (see ADR 0003 and `DECISIONS.md`)
 
 ## How to read
 
@@ -86,7 +86,12 @@ with and without `BUILD_BNGSIM_ADAPTER`; an unsupported model reports the same
 first blocker in the capability check and adapter preflight. The adapter remains
 responsible for constructing `bngsim::NetworkModel` only after that preflight.
 
-## Migration phases (per ADR 0003)
+## Historical migration phases (not the accepted default policy)
+
+The phase descriptions below retain the earlier exploration sequence; phase D's
+proposed automatic preference for BNGsim was superseded by the maintainer's
+accepted native-default policy. Do not implement automatic BNGsim promotion
+merely because it appears in this historical sequence.
 
 - **Phase A (this doc):** architecture explicit, inventory complete, no behavior change required, tests still pass.
 - **Phase B (harden lowering):** reduce `ast::Model` coupling, use `CompiledModel` where available, classify every rejection, expand Type-A gaps, keep fail-closed.
