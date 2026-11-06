@@ -365,6 +365,16 @@ private:
         const ast::Expression& expression, double time,
         const double* state,
         bool discreteReactantCounts = false) const;
+    // Same evaluation with the history parameters and observable snapshot
+    // supplied by the caller.  updateFunctions evaluates many expressions
+    // against one state and time, so hoisting that context out of the loop
+    // avoids rebuilding it once per function.
+    double evaluateExpressionWithHistoryPrepared(
+        const ast::Expression& expression, double time,
+        const double* state,
+        const std::unordered_map<std::string, double>& parameters,
+        const std::vector<double>& groupValues,
+        bool discreteReactantCounts = false) const;
     void recordHistoryPoint(double time, const std::vector<double>& state);
     void recordHistoryJump(double time, const std::vector<double>& state);
     double reactionFlux(const CompiledReaction& reaction,

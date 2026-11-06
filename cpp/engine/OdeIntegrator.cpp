@@ -13,6 +13,7 @@
 #include <fstream>
 #include <iomanip>
 #include <limits>
+#include <optional>
 #include <random>
 #include <sstream>
 #include <stdexcept>
@@ -1725,6 +1726,7 @@ void OdeIntegrator::updateFunctions(
     const std::vector<double>& groupValues,
     double time,
     std::vector<double>& functionValues) const {
+    (void)groupValues;
     functionValues.clear();
 
     // Functions are not state variables, but zero-argument functions are
@@ -1737,13 +1739,20 @@ void OdeIntegrator::updateFunctions(
     // and nested delay() calls from one state/time context.
     const auto& functions = model_.getFunctions();
     const auto functionState = historyStateAt(time);
+    // All result functions share this state and instant, so resolve the
+    // observable snapshot and historical parameters once instead of once per
+    // function.
+    const auto functionParameters = historyParametersAt(time);
+    std::vector<double> functionGroupValues;
+    updateGroups(functionState.data(), functionGroupValues);
 
     for (const auto index : resultFunctionIndices_) {
         const auto& function = functions[index];
         try {
             functionValues.push_back(
-                evaluateExpressionWithHistory(
-                    function.getExpression(), time, functionState.data()));
+                evaluateExpressionWithHistoryPrepared(
+                    function.getExpression(), time, functionState.data(),
+                    functionParameters, functionGroupValues));
         } catch (const std::exception&) {
             // Keep a malformed optional function from invalidating an
             // otherwise executable state trajectory.  The writer/parser
@@ -1858,6 +1867,55 @@ void OdeIntegrator::evaluateFunctionalRateCoefficients(
         }
     };
 
+    // Every compiled functional rate at this time/state shares the same
+    // identifier/function/observable resolution and only differs in which
+    // reaction supplies the reactant counts.  Build the evaluation context
+    // once; rebuilding its std::function payload for each of the (typically
+    // many) functional reactions dominated derivs() allocation cost.  The
+    // context is created lazily so models whose functional rates stay on the
+    // AST path do not pay for it.
+    std::optional<bng::compile::RateEvaluationContext> compiledContext;
+    const std::vector<std::size_t>* currentReactants = nullptr;
+    const auto compiledContextFor = [&]() -> bng::compile::RateEvaluationContext& {
+        if (!compiledContext.has_value()) {
+            bng::compile::RateEvaluationContext ctx;
+            ctx.time = t;
+            ctx.resolveIdentifier = resolver;
+            ctx.resolveLocal = resolver;
+            ctx.resolveParameter = [&](std::size_t, const std::string& name) {
+                return resolver(name);
+            };
+            ctx.resolveObservable = [&](std::size_t, const std::string& name) {
+                return resolver(name);
+            };
+            ctx.resolveFunction = [&](const std::string& funcName,
+                                      const std::vector<double>& args) -> double {
+                if (args.empty()) {
+                    return functionEvaluator_.evaluate(
+                        ast::Expression::identifier(funcName), resolver, t);
+                }
+                std::vector<ast::Expression> argExprs;
+                argExprs.reserve(args.size());
+                for (double val : args) {
+                    argExprs.push_back(ast::Expression::number(val));
+                }
+                return functionEvaluator_.evaluate(
+                    ast::Expression::function(funcName, argExprs), resolver, t);
+            };
+            ctx.discreteReactantCounts = discreteReactantCounts;
+            ctx.resolveReactantCount = [&](std::size_t reactantIdx) {
+                if (currentReactants != nullptr &&
+                    reactantIdx < currentReactants->size()) {
+                    const std::size_t specIdx = (*currentReactants)[reactantIdx];
+                    return (specIdx < nSpecies_) ? y[specIdx] : 0.0;
+                }
+                return 0.0;
+            };
+            compiledContext.emplace(std::move(ctx));
+        }
+        return *compiledContext;
+    };
+
     for (const auto idx : functionalRxnIndices_) {
         const auto& rxn = compiledRxns_[idx];
         double rate;
@@ -1866,39 +1924,8 @@ void OdeIntegrator::evaluateFunctionalRateCoefficients(
             !rxn.compiledRateLaw->dependsOnDelay() &&
             !hasPositiveExpressionDelay_) {
             try {
-                bng::compile::RateEvaluationContext ctx;
-                ctx.time = t;
-                ctx.resolveIdentifier = resolver;
-                ctx.resolveLocal = resolver;
-                ctx.resolveParameter = [&](std::size_t, const std::string& name) {
-                    return resolver(name);
-                };
-                ctx.resolveObservable = [&](std::size_t, const std::string& name) {
-                    return resolver(name);
-                };
-                ctx.resolveFunction = [&](const std::string& funcName,
-                                          const std::vector<double>& args) -> double {
-                    if (args.empty()) {
-                        return functionEvaluator_.evaluate(
-                            ast::Expression::identifier(funcName), resolver, t);
-                    }
-                    std::vector<ast::Expression> argExprs;
-                    argExprs.reserve(args.size());
-                    for (double val : args) {
-                        argExprs.push_back(ast::Expression::number(val));
-                    }
-                    return functionEvaluator_.evaluate(
-                        ast::Expression::function(funcName, argExprs), resolver, t);
-                };
-                ctx.discreteReactantCounts = discreteReactantCounts;
-                ctx.resolveReactantCount = [&](std::size_t reactantIdx) {
-                    if (reactantIdx < rxn.reactantIndices.size()) {
-                        const std::size_t specIdx = rxn.reactantIndices[reactantIdx];
-                        return (specIdx < nSpecies_) ? y[specIdx] : 0.0;
-                    }
-                    return 0.0;
-                };
-                rate = rxn.compiledRateLaw->evaluate(ctx);
+                currentReactants = &rxn.reactantIndices;
+                rate = rxn.compiledRateLaw->evaluate(compiledContextFor());
             } catch (const std::exception& error) {
                 if (failOnError) {
                     throw std::runtime_error(
@@ -2169,14 +2196,33 @@ std::unordered_map<std::string, double> OdeIntegrator::historyParametersAt(
 double OdeIntegrator::evaluateExpressionWithHistory(
     const ast::Expression& expression, double time, const double* state,
     bool discreteReactantCounts) const {
+    const auto parameters = historyParametersAt(time);
+    std::vector<double> groupValues;
+    updateGroups(state, groupValues);
+    return evaluateExpressionWithHistoryPrepared(
+        expression, time, state, parameters, groupValues,
+        discreteReactantCounts);
+}
+
+double OdeIntegrator::evaluateExpressionWithHistoryPrepared(
+    const ast::Expression& expression, double time, const double* state,
+    const std::unordered_map<std::string, double>& parameters,
+    const std::vector<double>& groupValues,
+    bool discreteReactantCounts) const {
     std::function<double(const ast::Expression&, double, const double*,
-                         const std::unordered_map<std::string, double>&, bool)> evaluateAt;
+                         const std::unordered_map<std::string, double>&, bool,
+                         const std::vector<double>*)> evaluateAt;
     evaluateAt = [&](const ast::Expression& current, double currentTime,
                      const double* currentState,
-                     const std::unordered_map<std::string, double>& parameters,
-                     bool useCurrentEventValues) {
-        std::vector<double> groupValues;
-        updateGroups(currentState, groupValues);
+                     const std::unordered_map<std::string, double>& currentParameters,
+                     bool useCurrentEventValues,
+                     const std::vector<double>* presetGroupValues) {
+        std::vector<double> localGroupValues;
+        if (presetGroupValues == nullptr) {
+            updateGroups(currentState, localGroupValues);
+            presetGroupValues = &localGroupValues;
+        }
+        const auto& currentGroupValues = *presetGroupValues;
         const auto resolver = [&](const std::string& name) -> double {
             if (name == "time" || name == "t") return currentTime;
             if (name.rfind("__substrate_", 0) == 0) {
@@ -2217,11 +2263,11 @@ double OdeIntegrator::evaluateExpressionWithHistory(
             }
             const auto observable = observableIndex_.find(name);
             if (observable != observableIndex_.end() &&
-                observable->second < groupValues.size()) {
-                return groupValues[observable->second];
+                observable->second < currentGroupValues.size()) {
+                return currentGroupValues[observable->second];
             }
-            const auto historicalParameter = parameters.find(name);
-            if (historicalParameter != parameters.end()) {
+            const auto historicalParameter = currentParameters.find(name);
+            if (historicalParameter != currentParameters.end()) {
                 return historicalParameter->second;
             }
             static const std::unordered_map<std::string, double> noEventValues;
@@ -2243,11 +2289,12 @@ double OdeIntegrator::evaluateExpressionWithHistory(
                 const auto delayedState = historyStateAt(delayedTime);
                 const auto delayedParameters = historyParametersAt(delayedTime);
                 return evaluateAt(delayedExpression, delayedTime,
-                                  delayedState.data(), delayedParameters, false);
+                                  delayedState.data(), delayedParameters, false,
+                                  nullptr);
             };
         return functionEvaluator_.evaluate(current, resolver, currentTime, delayed);
     };
-    return evaluateAt(expression, time, state, historyParametersAt(time), true);
+    return evaluateAt(expression, time, state, parameters, true, &groupValues);
 }
 
 void OdeIntegrator::recordHistoryPoint(double time,

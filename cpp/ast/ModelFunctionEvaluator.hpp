@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <functional>
+#include <optional>
 #include <unordered_set>
 #include <stdexcept>
 #include <string>
@@ -20,8 +21,25 @@ class ModelFunctionEvaluator {
 public:
     explicit ModelFunctionEvaluator(const ast::Model& model) : model_(model) {
         const auto& functions = model_.getFunctions();
+        functionIndex_.reserve(functions.size());
         for (std::size_t index = 0; index < functions.size(); ++index) {
             functionIndex_.emplace(functions[index].getName(), index);
+        }
+        // A call to a zero-argument function expands to exactly its fully
+        // inlined body, which is immutable for the life of the model.  Pay
+        // that allocation once here instead of rebuilding the same tree on
+        // every derivative/output evaluation.  Bodies that cannot be expanded
+        // (for example a recursive declaration) stay empty so the error is
+        // still raised at evaluation time, exactly as before.
+        expandedZeroArgBodies_.resize(functions.size());
+        for (std::size_t index = 0; index < functions.size(); ++index) {
+            if (!functions[index].getArgs().empty()) continue;
+            try {
+                expandedZeroArgBodies_[index] =
+                    expandFunctionCalls(functions[index].getExpression());
+            } catch (const std::exception&) {
+                // Fall back to the evaluating-time expansion path.
+            }
         }
     }
 
@@ -30,6 +48,27 @@ public:
         const std::function<double(const std::string&)>& resolveIdentifier,
         double time = 0.0,
         const ast::Expression::DelayedEvaluator& evaluateDelayed = {}) const {
+        // A whole expression that is a zero-argument function call can be
+        // evaluated through its precomputed expansion.  When that expansion
+        // no longer names any declared function (the normal case) it can go
+        // straight to the identifier resolver, avoiding both the tree rebuild
+        // and the user-function machinery.
+        if (const auto* expanded = expandedZeroArgBody(expression);
+            expanded != nullptr && !namesDeclaredFunction(*expanded)) {
+            return expanded->evaluateWithFunctions(
+                resolveIdentifier, time, ast::Expression::FunctionResolver(),
+                ast::Expression::FunctionPredicate(), evaluateDelayed);
+        }
+        // Expanding rebuilds the whole expression tree.  The overwhelmingly
+        // common case is a rate/function body that names no user function, so
+        // skip the rebuild when there is nothing to substitute.  The tree is
+        // immutable during evaluation, which makes this check exact: the
+        // predicate mirrors every rewrite expandFunctionCalls performs.
+        if (!needsExpansion(expression)) {
+            return expression.evaluateWithFunctions(
+                resolveIdentifier, time, ast::Expression::FunctionResolver(),
+                ast::Expression::FunctionPredicate(), evaluateDelayed);
+        }
         const auto expandedExpression = expandFunctions(expression);
         std::vector<std::size_t> callStack;
         ast::Expression::FunctionResolver resolveFunction;
@@ -112,6 +151,61 @@ public:
     }
 
 private:
+    // The precomputed expansion of a call to the declared zero-argument
+    // function named by `expression`, or nullptr when this is not such a call
+    // (or the body expansion failed).
+    const ast::Expression* expandedZeroArgBody(
+        const ast::Expression& expression) const {
+        const auto kind = expression.kind();
+        if (kind != ast::ExpressionKind::Function &&
+            kind != ast::ExpressionKind::ObservableRef &&
+            kind != ast::ExpressionKind::Identifier) {
+            return nullptr;
+        }
+        if (!expression.args().empty()) return nullptr;
+        const auto declared = functionIndex_.find(expression.name());
+        if (declared == functionIndex_.end()) return nullptr;
+        const auto& cached = expandedZeroArgBodies_[declared->second];
+        return cached.has_value() ? &*cached : nullptr;
+    }
+
+    // True when the tree still names a declared function after expansion.
+    // A fully expanded tree normally names none; the remaining false positive
+    // is an invalid bare identifier naming an argument-taking function, which
+    // must keep going through the user-function resolver so it raises the
+    // same arity diagnostic instead of being read as a parameter.
+    bool namesDeclaredFunction(const ast::Expression& expression) const {
+        if (functionIndex_.find(expression.name()) != functionIndex_.end()) {
+            return true;
+        }
+        for (const auto& child : expression.args()) {
+            if (namesDeclaredFunction(child)) return true;
+        }
+        return false;
+    }
+
+    // True when expandFunctionCalls would rewrite this tree: a declared
+    // function is called (either as Function/ObservableRef, or as a bare
+    // identifier naming a zero-argument function), or one of its arguments
+    // contains such a call.  Keep this in lockstep with expandFunctionCalls.
+    bool needsExpansion(const ast::Expression& expression) const {
+        const auto declared = functionIndex_.find(expression.name());
+        if (declared != functionIndex_.end()) {
+            if (expression.kind() == ast::ExpressionKind::Function ||
+                expression.kind() == ast::ExpressionKind::ObservableRef) {
+                return true;
+            }
+            if (expression.kind() == ast::ExpressionKind::Identifier &&
+                model_.getFunctions()[declared->second].getArgs().empty()) {
+                return true;
+            }
+        }
+        for (const auto& child : expression.args()) {
+            if (needsExpansion(child)) return true;
+        }
+        return false;
+    }
+
     ast::Expression expandFunctionCalls(const ast::Expression& expression) const {
         std::vector<std::size_t> callStack;
         std::unordered_map<std::string, ast::Expression> locals;
@@ -198,6 +292,7 @@ private:
 
     const ast::Model& model_;
     std::unordered_map<std::string, std::size_t> functionIndex_;
+    std::vector<std::optional<ast::Expression>> expandedZeroArgBodies_;
 };
 
 } // namespace bng::ast
