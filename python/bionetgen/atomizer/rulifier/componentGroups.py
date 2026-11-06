@@ -5,7 +5,6 @@ from collections import defaultdict
 # from cStringIO import StringIO
 from io import StringIO
 from bionetgen.atomizer.utils import extractAtomic
-from copy import deepcopy
 import networkx as nx
 
 
@@ -581,7 +580,11 @@ def getContextRequirements(
     # print('++++')
 
     # print(reactionCenterStateDictionary['Ras%0'][('Ras_GTPmod',0,'Ras_GTP')]['Ras_GDPmod'])
-    backupstatedictionary = deepcopy(reactionCenterStateDictionary)
+    # ⚡ Bolt: Replace deepcopy with nested dict comprehension and copy() for performance
+    backupstatedictionary = {
+        k: {k2: v2.copy() for k2, v2 in v.items()}
+        for k, v in reactionCenterStateDictionary.items()
+    }
     # print(reactionCenterStateDictionary['EGFR%1'][('_Pmod',0,'_P')])
     # print(reactionCenterStateDictionary['EGFR%0'][('_Pmod',0,'_P')])
     # return
