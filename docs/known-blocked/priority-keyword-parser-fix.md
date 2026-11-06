@@ -24,9 +24,12 @@ contracts for:
   and assignment fields in the same model.
 
 The field and modifier syntax remains distinct from identifier positions.
-These parser contracts establish representation, not native event execution;
-dynamic events remain explicitly rejected by compilation
-([#157](https://github.com/RuleWorld/BNG3/issues/157)).
+These parser contracts establish representation, not event-runtime
+qualification. A bounded native ODE event runtime now exists; unsupported
+event constructs still fail closed. The full acceptance scope, including
+stochastic event behavior, remains tracked by
+[#157](https://github.com/RuleWorld/BNG3/issues/157) and
+[ADR 0004](../adr/0004-native-sbml-event-runtime.md).
 
 ## Historical provenance
 

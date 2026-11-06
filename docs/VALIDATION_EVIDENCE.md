@@ -4,6 +4,13 @@
 [convergence checklist](BNG3_CONVERGENCE_DONE_CHECKLIST.md) and live issues own
 the operational task index; [ADRs](adr/) record architectural decisions.
 
+**Current-reading note (2026-11-06).** This file records historical gates and
+measurements. In particular, the statement in section 2.6 that no workflow
+invoked `--require-approved` was true of the audited revision, not of current
+`main`: `.github/workflows/release.yml` now includes
+`python scripts/validate_provenance.py --require-approved`. Do not promote
+any dated measurement below to a 2026-11-06 conformance result.
+
 **Historical audit:** `main` at `6889fba` (2026-09-30). **Targeted corrections:**
 2026-10-07 at [main `e1836c32`](https://github.com/RuleWorld/BNG3/tree/e1836c3274e685996d5e86883761e00e98257e09),
 covering SSTS locking/reference machinery, RHS coverage and hosted-run status.
@@ -18,7 +25,7 @@ recorded by `git log`; resolve with `git rev-parse <sha>`.
 
 ---
 
-## 1. What is a real gate today
+## 1. Gate map at the audited revision (not a current workflow inventory)
 
 A gate is a job that runs and can fail. All of the following are on pull requests
 to `main` and pushes to `main`/`develop` (`.github/workflows/ci.yml:3-9`).

@@ -136,15 +136,15 @@ values.
 The formal `NFnextPacking` layer exists specifically to make this conversion
 checked and explicit.
 
-Candidate PR [#198](https://github.com/RuleWorld/BNG3/pull/198) at
-`5cc1fd576a0d4aff7a75ee8a10af2d827e979ebd` adds a production preflight for
-canonical declaration positions and NFIR v5 field widths, plus a parser-to-
-lowering contract that rejects component index 65,536. This is bounded
-candidate evidence for ID packing; the PR remains unmerged, so it is not current
-`main` behavior. Its checks cover the named molecule-rule graph subset and do
-not prove general pattern, rate, bond, or transformation refinement. The
-[candidate CXX mapping](https://github.com/RuleWorld/BNG3/blob/5cc1fd576a0d4aff7a75ee8a10af2d827e979ebd/formal/lean/CXX_MAPPING.md#issue-166-production-declaration-to-nfnext-id-packing)
-records the tested boundary.
+PR [#198](https://github.com/RuleWorld/BNG3/pull/198) was merged into `main`
+at `2038e18693e29a0c646c723998d7a59d737b8cff` on 2026-10-09. It added
+a production preflight for canonical declaration positions and NFIR v5 field
+widths, plus a parser-to-lowering contract that rejects component index 65,536.
+The original candidate was `5cc1fd576a0d4aff7a75ee8a10af2d827e979ebd`;
+its bounded test evidence and the merged source are distinguished in
+[VALIDATION.md](VALIDATION.md) and [CXX_MAPPING.md](CXX_MAPPING.md).
+These checks cover the named molecule-rule graph subset and do not prove
+general pattern, rate, bond, or transformation refinement.
 
 **Remaining migration:** retain fail-closed packing checks and qualify the
 production/reference correspondence beyond this bounded candidate slice (#166).

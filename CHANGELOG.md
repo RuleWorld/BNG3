@@ -1,5 +1,28 @@
 # Changelog
 
+## 2026-11-06 — main implementation checkpoint (unreleased)
+
+### Changed
+
+- Merged [PR #602](https://github.com/RuleWorld/BNG3/pull/602) at
+  [`29d8320`](https://github.com/RuleWorld/BNG3/commit/29d8320659832fb2d411e2a51972e227559a9499):
+  legacy Atomizer `rulifier/componentGroups.py` replaces `deepcopy` of the
+  reaction-center state dictionary with a two-level mapping copy whose inner
+  values use shallow `.copy()`; legacy `writer/bnglWriter.py` uses the
+  domain-specific `Species.copy()` path (which copies molecules and components)
+  instead of `deepcopy` while balancing reactant/product translators. Unused
+  imports were also removed.
+
+### Verification boundary
+
+- PR #602 changes copy mechanics, not the supported SBML/BNGL feature set.
+  Its two-file merge diff adds no regression tests or benchmark measurements.
+  Confirm output equivalence and that the shallow inner copies do not alias
+  nested mutable state, and confirm any performance gain, before treating the
+  change as a qualified optimization.
+- This entry records source changes on the named main commit, not release
+  acceptance or current results for the wider capability inventory.
+
 ## [Unreleased] - 2026-09-15
 
 

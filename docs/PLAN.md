@@ -1,5 +1,15 @@
 # BNG3 Phase 2 release plan
 
+> **Plan versus verified status (reviewed 2026-11-06).** This document
+> contains a historical sequencing proposal and acceptance targets. Its
+> delegation schedules, selected baselines, and task order are not a live
+> report of branches, merged work, or issue closure. The most recent source
+> commit inspected for this documentation pass is
+> [`29d8320`](https://github.com/RuleWorld/BNG3/commit/29d8320659832fb2d411e2a51972e227559a9499),
+> merging the legacy Atomizer copy optimization (PR #602). Consult the
+> [issue-keyed status](CURRENT_PROGRESS.md), [capability inventory](CAPABILITY_UNION_INVENTORY.md),
+> and exact-head CI receipts before claiming a work package complete.
+
 BNG3 will deliver the entire 994-row capability inventory with the source semantics of BNG2, NFsim and PyBioNetGen and the BNG3 additions. Exact-main independent checks determine release readiness.
 
 The five largest obstacles are unverified inventory statuses; incomplete independent acceptance and expected outputs; shared compiled-model and backend semantics; SBML and network-free semantic coverage; and CI latency with incomplete per-case evidence. Consolidate the two capability lists, duplicated workflow-property checks, status reporting and backend decisions without removing evidence or weakening distinct checks.

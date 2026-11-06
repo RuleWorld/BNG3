@@ -207,8 +207,11 @@ evidence cannot depend on the caller's environment.
 
 ### Finite-network backend boundary (ADR 0003)
 
-BNG3 treats finite-network numerics as an external concern owned by **BNGsim**
-where semantics are supported. The boundary is narrow and explicit:
+BNG3's **native** finite-network ODE/SSA/PLA/PSA solvers are the default.
+**BNGsim** is a supported *optional* finite-network backend where its adapter
+can preserve model semantics. This is the accepted policy in
+[ADR 0003](adr/0003-bngsim-canonical-finite-backend.md), not a plan to
+retire native solvers. The optional adapter boundary is narrow and explicit:
 
 - `cpp/engine/FiniteBackend.{hpp,cpp}` owns the `FiniteBackend` enum
   (`native`/`bngsim`), build-level `BngsimCapabilities` (`available`,
@@ -263,11 +266,10 @@ model.simulate(method="nf")  ─── rule model → NFsim (independent)
 The evaluated adapter preserves generated species, statistical factors, direct
 elementary/function rate references, and pattern-weighted observables.
 It was tested against BNGsim commit
-`49dc939035f5a272da663f8c9586e3c9f0e1c041`. The selection of BNGsim as the
-intended canonical finite backend and the full rejection inventory are recorded
-in [ADR 0003](adr/0003-bngsim-canonical-finite-backend.md) and
-[bngsim-migration-status.md](bngsim-migration-status.md); ADR 0002 remains the
-historical evaluation record.
+`49dc939035f5a272da663f8c9586e3c9f0e1c041`. The accepted native-default/optional-BNGsim policy and the full rejection
+inventory are recorded in [ADR 0003](adr/0003-bngsim-canonical-finite-backend.md)
+and [bngsim-migration-status.md](bngsim-migration-status.md); ADR 0002
+remains the historical evaluation record.
 
 ### BNGIR document boundary
 
