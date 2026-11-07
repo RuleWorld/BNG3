@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import os
 import random
+import ast
 import re
 import sys
 from dataclasses import dataclass
@@ -33,6 +34,32 @@ def deepCopy(value: T) -> T:
     """Return a recursive copy, matching the helper's public contract."""
 
     return copy.deepcopy(value)
+
+
+def clone_ast(node: Any) -> Any:
+    """Fast, specialized replacement for copy.deepcopy on ast.AST nodes."""
+    if node is None:
+        return None
+    if isinstance(node, list):
+        return [clone_ast(n) for n in node]
+    if type(node) is ast.Name:
+        return ast.Name(id=node.id, ctx=clone_ast(node.ctx))
+    if type(node) is ast.Load:
+        return ast.Load()
+    if type(node) is ast.Store:
+        return ast.Store()
+    if type(node) is ast.Del:
+        return ast.Del()
+    if isinstance(node, ast.AST):
+        new_node = type(node)()
+        for field, value in ast.iter_fields(node):
+            setattr(new_node, field, clone_ast(value))
+        if hasattr(node, "_attributes"):
+            for attr in node._attributes:
+                if hasattr(node, attr):
+                    setattr(new_node, attr, getattr(node, attr))
+        return new_node
+    return node
 
 
 class Counter(Dict[T, int], Generic[T]):
@@ -489,6 +516,7 @@ __all__ = [
     "compare_lists",
     "convertMathFunction",
     "convert_math_function",
+    "clone_ast",
     "deepCopy",
     "deep_copy",
     "factorial",

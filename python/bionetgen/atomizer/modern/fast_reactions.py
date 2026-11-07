@@ -49,7 +49,6 @@ reduced.
 from __future__ import annotations
 
 import ast
-import copy
 import math
 import re
 from collections import OrderedDict
@@ -58,6 +57,7 @@ from typing import Any, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .math_builtins import evaluate_math_builtin, format_number
 from .types import SBMLModel, SBMLReaction, SBMLSpecies, standardize_name
+from .helpers import clone_ast
 
 
 @dataclass
@@ -1338,7 +1338,7 @@ class _FunctionInliner(ast.NodeTransformer):
         if body is None or key in self._stack or len(arguments) != len(node.args):
             return node
         mapping = {
-            argument: copy.deepcopy(actual)
+            argument: clone_ast(actual)
             for argument, actual in zip(arguments, node.args)
         }
         expanded = _Substituter(mapping).visit(body.body)
@@ -1370,7 +1370,7 @@ class _Substituter(ast.NodeTransformer):
         replacement = self._mapping.get(standardize_name(node.id))
         if replacement is None:
             return node
-        return copy.deepcopy(replacement)
+        return clone_ast(replacement)
 
 
 def _merge_species(
