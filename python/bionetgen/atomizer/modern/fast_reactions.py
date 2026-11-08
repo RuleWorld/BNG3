@@ -49,6 +49,7 @@ reduced.
 from __future__ import annotations
 
 import ast
+from .helpers import clone_ast
 import copy
 import math
 import re
@@ -1338,7 +1339,7 @@ class _FunctionInliner(ast.NodeTransformer):
         if body is None or key in self._stack or len(arguments) != len(node.args):
             return node
         mapping = {
-            argument: copy.deepcopy(actual)
+            argument: clone_ast(actual)
             for argument, actual in zip(arguments, node.args)
         }
         expanded = _Substituter(mapping).visit(body.body)
@@ -1370,7 +1371,7 @@ class _Substituter(ast.NodeTransformer):
         replacement = self._mapping.get(standardize_name(node.id))
         if replacement is None:
             return node
-        return copy.deepcopy(replacement)
+        return clone_ast(replacement)
 
 
 def _merge_species(

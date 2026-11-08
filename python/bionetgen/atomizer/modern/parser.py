@@ -13,6 +13,7 @@ import base64
 import ast
 import copy
 import xml.etree.ElementTree as ET
+from .helpers import clone_ast
 from collections import OrderedDict
 from fractions import Fraction
 from pathlib import Path
@@ -2131,13 +2132,11 @@ def _lower_simple_algebraic_parameters(model: SBMLModel) -> None:
                     class SubstituteArguments(ast.NodeTransformer):
                         def visit_Name(self, name_node: ast.Name) -> ast.AST:
                             replacement = arguments.get(standardize_name(name_node.id))
-                            return (
-                                copy.deepcopy(replacement) if replacement else name_node
-                            )
+                            return clone_ast(replacement) if replacement else name_node
 
                     substituted = SubstituteArguments().visit(body)
                     return inline_user_functions(substituted, (*stack, function_key))
-        copied = copy.deepcopy(node)
+        copied = clone_ast(node)
         for field, value in ast.iter_fields(copied):
             if isinstance(value, ast.AST):
                 setattr(copied, field, inline_user_functions(value, stack))

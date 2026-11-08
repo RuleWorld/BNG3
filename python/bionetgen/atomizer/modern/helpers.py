@@ -516,3 +516,19 @@ __all__ = [
     "standardizeName",
     "standardize_name",
 ]
+
+import ast
+
+
+def clone_ast(node: ast.AST) -> ast.AST:
+    if not isinstance(node, ast.AST):
+        if isinstance(node, list):
+            return [clone_ast(x) for x in node]
+        return node
+    new_node = type(node)()
+    for field, value in ast.iter_fields(node):
+        setattr(new_node, field, clone_ast(value))
+    for attr in ("lineno", "col_offset", "end_lineno", "end_col_offset"):
+        if hasattr(node, attr):
+            setattr(new_node, attr, getattr(node, attr))
+    return new_node
