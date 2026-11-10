@@ -9,6 +9,7 @@ libSBML; the expected tie law follows from the two symmetric event choices.
 from __future__ import annotations
 
 import hashlib
+import ast
 import math
 from pathlib import Path
 from typing import Any
@@ -116,6 +117,43 @@ def validate_source(source_path: str | Path = SOURCE_RELATIVE_PATH) -> dict[str,
         _require(_assignments(event) == {f"chi{count}": f"chi{count} + 1"},
                  f"histogram event _E{count} has changed counter")
 
+    classify = events.get("_E17")
+    _require(classify is not None and _formula(classify.getTrigger()) == "assemble >= 1",
+             "missing source histogram-classification event")
+    _require(classify.isSetPriority() and _formula(classify.getPriority()) == "1",
+             "classification priority differs from source")
+    _require(_assignments(classify) == {
+        "tests": "tests + 1", "chitest": "0", "assemble": "0"
+    }, "classification assignments differ from source")
+
+    evaluate = events.get("_E18")
+    expected_call = "calculateerror(" + ", ".join(f"chi{i}" for i in range(17)) + ")"
+    _require(evaluate is not None and _formula(evaluate.getTrigger()) == "(tests >= 6240) && (finalchi == 0)",
+             "final chi-square trigger differs from source")
+    _require(evaluate.isSetPriority() and _formula(evaluate.getPriority()) == "0",
+             "final chi-square priority differs from source")
+    _require(_assignments(evaluate) == {"finalchi": expected_call},
+             "final chi-square calculation differs from source")
+
+    error_event = events.get("error_check")
+    _require(error_event is not None and _formula(error_event.getTrigger()) == "finalchi > 50",
+             "source error trigger differs from finalchi > 50")
+    _require(error_event.isSetPriority() and _formula(error_event.getPriority()) == "-1",
+             "source error-event priority differs")
+    _require(_assignments(error_event) == {"error": "1"},
+             "source error-event assignment differs")
+
+    calculation = model.getFunctionDefinition("calculateerror")
+    _require(calculation is not None, "missing source calculateerror function")
+    function_math = calculation.getMath()
+    _require(function_math.getNumChildren() == BLOCK_SIZE + 2,
+             "calculateerror must accept 17 histogram counters")
+    _require(
+        [function_math.getChild(i).getName() for i in range(BLOCK_SIZE + 1)]
+        == [f"x{i}" for i in range(BLOCK_SIZE + 1)],
+        "calculateerror argument order differs from source histogram order",
+    )
+
     _require("S" in parameters, "missing derived S parameter")
     unit_roundoff = np.finfo(float).eps / 2
     gamma_n = (FLIPS_PER_RUN * unit_roundoff) / (1 - FLIPS_PER_RUN * unit_roundoff)
@@ -127,6 +165,7 @@ def validate_source(source_path: str | Path = SOURCE_RELATIVE_PATH) -> dict[str,
         "tie_pair": list(tie_names),
         "initial_Q": parameters["Q"].getValue(),
         "initial_R": parameters["R"].getValue(),
+        "source_variables": sorted(parameters),
         "block_size": BLOCK_SIZE,
         "blocks_per_run": BLOCKS_PER_RUN,
         "flips_per_run": FLIPS_PER_RUN,
@@ -137,6 +176,42 @@ def validate_source(source_path: str | Path = SOURCE_RELATIVE_PATH) -> dict[str,
         "s_roundoff_bound": float(s_bound),
         "source_path": str(path.resolve()),
     }
+
+
+def source_calculateerror(histogram: list[int], source_path: str | Path = SOURCE_RELATIVE_PATH) -> float:
+    """Evaluate the official SBML `calculateerror` MathML without `eval`."""
+    if len(histogram) != BLOCK_SIZE + 1:
+        raise ValueError("calculateerror requires all 17 source histogram bins")
+    document = libsbml.readSBMLFromFile(str(source_path))
+    calculation = document.getModel().getFunctionDefinition("calculateerror")
+    function_math = calculation.getMath()
+    formula = libsbml.formulaToL3String(function_math.getChild(function_math.getNumChildren() - 1))
+    values = {f"x{i}": float(histogram[i]) for i in range(BLOCK_SIZE + 1)}
+    tree = ast.parse(formula.replace("^", "**"), mode="eval").body
+
+    def evaluate(node: ast.AST) -> float:
+        if isinstance(node, ast.Constant) and type(node.value) in (int, float):
+            return float(node.value)
+        if isinstance(node, ast.Name) and node.id in values:
+            return values[node.id]
+        if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.UAdd, ast.USub)):
+            operand = evaluate(node.operand)
+            return operand if isinstance(node.op, ast.UAdd) else -operand
+        if isinstance(node, ast.BinOp):
+            left, right = evaluate(node.left), evaluate(node.right)
+            if isinstance(node.op, ast.Add):
+                return left + right
+            if isinstance(node.op, ast.Sub):
+                return left - right
+            if isinstance(node.op, ast.Mult):
+                return left * right
+            if isinstance(node.op, ast.Div):
+                return left / right
+            if isinstance(node.op, ast.Pow):
+                return left**right
+        raise SourceContractError("calculateerror contains unsupported MathML")
+
+    return evaluate(tree)
 
 
 def validate_settings(settings_path: str | Path = SETTINGS_RELATIVE_PATH) -> dict[str, Any]:
