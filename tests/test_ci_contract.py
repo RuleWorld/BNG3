@@ -888,6 +888,15 @@ def test_external_parity_jobs_use_pinned_oracle_checkouts_and_fail_closed():
     assert "build/cpp/NFsim" not in nfsim
 
 
+def test_scheduled_parity_stages_the_legacy_sbml_translator():
+    """SBML-backed reference cases need the locked BNG2 oracle's translator."""
+
+    bng2 = _workflow_job_from(PARITY_WORKFLOW, "bng2-parity")
+    assert "Provide sbmlTranslator for legacy SBML inputs" in bng2
+    assert '"$oracle_bin/sbmlTranslator"' in bng2
+    assert 'test -x "$oracle_bin/sbmlTranslator"' in bng2
+
+
 def test_nfsim_parity_uses_regular_installed_api_and_pinned_native_oracle():
     """NFsim parity uses installed BNG3 API and the independently built oracle."""
 
