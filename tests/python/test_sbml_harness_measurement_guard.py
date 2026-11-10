@@ -303,6 +303,45 @@ def _run_harness(
     )
 
 
+def _run_with_foreign_package(script: Path, arguments: list[str], foreign: Path):
+    """Run a CLI after startup selects a controlled foreign package.
+
+    Editable installs register an import finder from a ``.pth`` file, which
+    takes precedence over a test's ``PYTHONPATH``. Injecting the stand-in from
+    ``sitecustomize`` models a package already selected by the interpreter,
+    while retaining normal installed dependencies and preventing external
+    service calls before package provenance is checked.
+    """
+
+    startup = foreign.parent / "python-startup"
+    startup.mkdir()
+    (startup / "sitecustomize.py").write_text(
+        "import importlib.util, os, sys\n"
+        "package_file = os.environ['BNG3_TEST_FOREIGN_PACKAGE']\n"
+        "spec = importlib.util.spec_from_file_location(\n"
+        "    'bionetgen', package_file,\n"
+        "    submodule_search_locations=[os.path.dirname(package_file)],\n"
+        ")\n"
+        "package = importlib.util.module_from_spec(spec)\n"
+        "sys.modules['bionetgen'] = package\n"
+        "spec.loader.exec_module(package)\n",
+        encoding="utf-8",
+    )
+    environment = dict(os.environ)
+    pythonpath = [str(startup), str(foreign.parent)]
+    if environment.get("PYTHONPATH"):
+        pythonpath.append(environment["PYTHONPATH"])
+    environment["PYTHONPATH"] = os.pathsep.join(pythonpath)
+    environment["BNG3_TEST_FOREIGN_PACKAGE"] = str(foreign / "__init__.py")
+    return subprocess.run(
+        [sys.executable, str(script), *arguments],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        env=environment,
+    )
+
+
 # ── the imported Python package ────────────────────────────────────────────
 
 
@@ -396,10 +435,21 @@ def test_sbml_suite_harness_refuses_to_measure_a_foreign_package(tmp_path):
     suite, lock = _locked_ssts_checkout(tmp_path)
     foreign = _stand_in_package(tmp_path / "site-packages", "0.0.0-foreign")
     report = tmp_path / "report.json"
-    environment = dict(os.environ)
-    environment["PYTHONPATH"] = str(foreign.parent)
-
-    result = _run_harness(suite, lock, report, environment=environment)
+    result = _run_with_foreign_package(
+        SUITE_HARNESS,
+        [
+            "--suite-dir",
+            str(suite),
+            "--lock",
+            str(lock),
+            "--json",
+            str(report),
+            "--categories",
+            "semantic",
+            "--isolate-cases",
+        ],
+        foreign,
+    )
 
     assert result.returncode == 1
     assert "package preflight failed" in result.stderr
@@ -413,22 +463,15 @@ def test_sbml_suite_harness_refuses_to_measure_a_foreign_package(tmp_path):
 def test_biomodels_harness_refuses_to_measure_a_foreign_package(tmp_path):
     foreign = _stand_in_package(tmp_path / "site-packages", "0.0.0-foreign")
     report = tmp_path / "report.json"
-    environment = dict(os.environ)
-    environment["PYTHONPATH"] = str(foreign.parent)
-
-    result = subprocess.run(
+    result = _run_with_foreign_package(
+        BIOMODELS_HARNESS,
         [
-            sys.executable,
-            str(BIOMODELS_HARNESS),
             "--cache-dir",
             str(tmp_path / "cache"),
             "--json",
             str(report),
         ],
-        cwd=REPO,
-        capture_output=True,
-        text=True,
-        env=environment,
+        foreign,
     )
 
     assert result.returncode == 1
