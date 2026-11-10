@@ -139,6 +139,15 @@ jobs:
             echo "- Linux run_network SHA-256: $digest"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Provide sbmlTranslator for legacy SBML inputs
+        run: |
+          set -euo pipefail
+          oracle_bin="$RUNNER_TEMP/oracle-bionetgen/bng2/bin"
+          mkdir -p "$oracle_bin"
+          printf '%s\n' '#!/bin/sh' 'PYTHONPATH="$GITHUB_WORKSPACE/python${PYTHONPATH:+:$PYTHONPATH}" exec python3 "$GITHUB_WORKSPACE/python/bionetgen/atomizer/sbmlTranslator.py" "$@"' > "$oracle_bin/sbmlTranslator"
+          chmod +x "$oracle_bin/sbmlTranslator"
+          test -x "$oracle_bin/sbmlTranslator"
+
       - name: Checkout and build locked native NFsim oracle
         run: |
           set -euo pipefail
