@@ -1936,6 +1936,22 @@ end reaction rules
                         Catch::Matchers::ContainsSubstring("trigger requires"));
 }
 
+TEST_CASE("CVODE executes recurring event at the final sample time",
+          "[OdeOptions][Events]") {
+    auto model = parser::parseModel(kDiscreteTriggerModel);
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 1.0;
+    options.nSteps = 100;
+    const auto result = engine::OdeIntegrator(*model, network).integrate(options);
+    REQUIRE_FALSE(result.observables.empty());
+    CAPTURE(result.observables.back()[0]);
+    CHECK_THAT(result.observables.back()[1], Catch::Matchers::WithinAbs(100.0, 1e-9));
+}
+
 TEST_CASE("CVODE re-tests arithmetic triggers over species that only events change",
           "[OdeOptions][Events]") {
     auto model = parser::parseModel(R"(
