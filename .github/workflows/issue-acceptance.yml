@@ -101,6 +101,7 @@ jobs:
           mkdir -p "$RUNNER_TEMP/issue-157-artifacts"
           .venv/bin/python -m pytest -q \
             tests/validation/release/cases/issue-157/test_dynamic_threshold.py \
+            tests/validation/release/cases/issue-157/test_00966_oracle.py \
             --junitxml="$RUNNER_TEMP/issue-157-artifacts/pytest.xml"
 
       - name: Record product build identity
