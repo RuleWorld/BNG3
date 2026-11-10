@@ -155,7 +155,9 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y cmake ninja-build
           pip install scikit-build-core pybind11
-          pip install -e .[full,dev]
+          # The release test suite imports scipy in device qualification
+          # contracts even when no optional GPU backend is available.
+          pip install -e .[full,dev] scipy
           pip install libroadrunner
         env:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
