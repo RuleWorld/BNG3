@@ -2494,6 +2494,13 @@ def test_reference_ci_jobs_enable_strict_reference_validation():
     assert "--strict-references" in weekly_job
 
 
+def test_weekly_python_full_suite_installs_scipy():
+    """The full test suite's qualification contracts require scipy at import."""
+
+    weekly_job = _workflow_job_from(WEEKLY_WORKFLOW, "python-full")
+    assert re.search(r"pip install[^\n]*scipy", weekly_job)
+
+
 def test_reference_ci_jobs_emit_terminal_validation_summaries():
     """PR and weekly reference jobs must publish their result table."""
 
