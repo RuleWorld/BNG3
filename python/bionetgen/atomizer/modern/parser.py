@@ -11,7 +11,6 @@ import math
 import re
 import base64
 import ast
-import copy
 import xml.etree.ElementTree as ET
 from collections import OrderedDict
 from fractions import Fraction
@@ -411,7 +410,7 @@ def _flatten_simple_inline_comp(sbml_string: str) -> Optional[str]:
             target = ET.Element(core_tag(_local_name(child.tag)))
             model.append(target)
         for item in list(child):
-            target.append(copy.deepcopy(item))
+            target.append(clone_ast(item))
 
     model.remove(submodels_list)
     for element in list(root):
@@ -654,7 +653,7 @@ def _flatten_simple_external_comp(
             target = ET.Element(core_tag(_local_name(child.tag)))
             model.append(target)
         for item in list(child):
-            target.append(copy.deepcopy(item))
+            target.append(clone_ast(item))
 
     model.remove(submodels_list)
     for element in list(root):
