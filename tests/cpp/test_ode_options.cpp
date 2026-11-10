@@ -1880,6 +1880,62 @@ TEST_CASE("CVODE re-tests a trigger over species that only events change",
     CHECK_THAT(last[2], Catch::Matchers::WithinAbs(1.0, 1e-9));
 }
 
+TEST_CASE("CVODE re-tests discrete triggers with an identically zero reaction rate",
+          "[OdeOptions][Events]") {
+    std::string source(kDiscreteTriggerModel);
+    const auto events = source.find("begin bng3_events");
+    REQUIRE(events != std::string::npos);
+    source.insert(events, R"(
+begin functions
+    zero_rate() = 0
+end functions
+begin reaction rules
+    0 -> Tick() zero_rate() TotalRate
+end reaction rules
+)");
+    auto model = parser::parseModel(source);
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 0.165;
+    options.nSteps = 33;
+    const auto result = engine::OdeIntegrator(*model, network).integrate(options);
+    REQUIRE_FALSE(result.observables.empty());
+    CHECK_THAT(result.observables.back()[1], Catch::Matchers::WithinAbs(16.0, 1e-9));
+    CHECK_THAT(result.observables.back()[2], Catch::Matchers::WithinAbs(1.0, 1e-9));
+}
+
+TEST_CASE("CVODE does not classify a mutable zero rate as discrete",
+          "[OdeOptions][Events]") {
+    std::string source(kDiscreteTriggerModel);
+    source.insert(0, "begin parameters\n  k 0\nend parameters\n");
+    const auto tickAssignment = source.find("assignment: ticks = ticks + 1");
+    REQUIRE(tickAssignment != std::string::npos);
+    source.insert(tickAssignment, "assignment: k = 1\n        ");
+    const auto events = source.find("begin bng3_events");
+    REQUIRE(events != std::string::npos);
+    source.insert(events, R"(
+begin functions
+    variable_rate() = k
+end functions
+begin reaction rules
+    0 -> Tick() variable_rate() TotalRate
+end reaction rules
+)");
+    auto model = parser::parseModel(source);
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 0.165;
+    options.nSteps = 33;
+    REQUIRE_THROWS_WITH(engine::OdeIntegrator(*model, network).integrate(options),
+                        Catch::Matchers::ContainsSubstring("trigger requires"));
+}
+
 TEST_CASE("CVODE re-tests arithmetic triggers over species that only events change",
           "[OdeOptions][Events]") {
     auto model = parser::parseModel(R"(
