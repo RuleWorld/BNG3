@@ -70,7 +70,9 @@ def test_oracle_gate_does_not_promote_inventory_declarations_to_execution(
 
 
 BNG2_SOURCE_REVISION = "9601746f8884ed19ab2acea49fe87fc4660ace46"
-BNG2_EXECUTABLE_SHA256 = "9f39d22ebdad7aefc38f8ceddf287799f0f262ed0e914b42b1f7cb640a7ffa39"
+BNG2_EXECUTABLE_SHA256 = (
+    "9f39d22ebdad7aefc38f8ceddf287799f0f262ed0e914b42b1f7cb640a7ffa39"
+)
 
 
 def _write_upstream_lock(root: Path) -> None:
@@ -160,12 +162,18 @@ def _minimal_root(tmp_path: Path) -> Path:
 
 
 def test_oracle_consumer_rejects_unlocked_or_self_generated_receipt(tmp_path: Path):
-    row = {"id": "sbml.case", "status": "implemented", "oracle": "pinned BNG2 reference"}
+    row = {
+        "id": "sbml.case",
+        "status": "implemented",
+        "oracle": "pinned BNG2 reference",
+    }
     receipt = _valid_receipt("sbml.case", "a" * 40)
     artifacts = tmp_path / "artifacts"
     _write_artifacts(artifacts)
     root = _minimal_root(tmp_path)
-    errors, comparison = checks._oracle_receipt_errors(row, receipt, "a" * 40, artifacts, root)
+    errors, comparison = checks._oracle_receipt_errors(
+        row, receipt, "a" * 40, artifacts, root
+    )
     assert errors == []
     assert comparison is not None
 
@@ -184,7 +192,11 @@ def test_oracle_consumer_rejects_unlocked_or_self_generated_receipt(tmp_path: Pa
 def test_owned_comparator_hashes_artifact_bytes_instead_of_receipt_claims(
     tmp_path: Path,
 ):
-    row = {"id": "sbml.case", "status": "implemented", "oracle": "pinned BNG2 reference"}
+    row = {
+        "id": "sbml.case",
+        "status": "implemented",
+        "oracle": "pinned BNG2 reference",
+    }
     receipt = _valid_receipt("sbml.case", "a" * 40)
     artifacts = tmp_path / "artifacts"
     _write_artifacts(artifacts)
@@ -218,7 +230,11 @@ def test_artifact_root_rejects_missing_traversal_and_symlink_artifacts(tmp_path:
 def test_verified_output_bytes_are_compared_even_if_receipt_claims_success(
     tmp_path: Path,
 ):
-    row = {"id": "sbml.case", "status": "implemented", "oracle": "pinned BNG2 reference"}
+    row = {
+        "id": "sbml.case",
+        "status": "implemented",
+        "oracle": "pinned BNG2 reference",
+    }
     receipt = _valid_receipt("sbml.case", "a" * 40)
     artifacts = tmp_path / "artifacts"
     _write_artifacts(artifacts)

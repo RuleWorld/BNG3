@@ -84,9 +84,15 @@ def _oracle_receipt_errors(
         errors.append(f"{row_id}: pinned oracle execution record is missing")
         oracle_execution = {}
     for key in ("executable", "version", "command"):
-        if not isinstance(oracle_execution.get(key), str) or not oracle_execution[key].strip():
+        if (
+            not isinstance(oracle_execution.get(key), str)
+            or not oracle_execution[key].strip()
+        ):
             errors.append(f"{row_id}: oracle execution {key} is missing")
-    if type(oracle_execution.get("exit_code")) is not int or oracle_execution.get("exit_code") != 0:
+    if (
+        type(oracle_execution.get("exit_code")) is not int
+        or oracle_execution.get("exit_code") != 0
+    ):
         errors.append(f"{row_id}: pinned oracle did not exit successfully")
     if not _sha256(oracle.get("artifact_sha256")):
         errors.append(f"{row_id}: oracle artifact SHA-256 is invalid")
@@ -216,10 +222,14 @@ def _locked_oracle_errors(
         (alias for alias in aliases[source_id] if alias in declaration), None
     )
     if matching_alias is None or matching_alias not in oracle_name:
-        return [f"{row_id}: receipt oracle does not match the matrix source declaration"]
+        return [
+            f"{row_id}: receipt oracle does not match the matrix source declaration"
+        ]
 
     oracle_lock = lock.get("oracles", {}).get(source_id)
-    source_key = oracle_lock.get("source") if isinstance(oracle_lock, dict) else source_id
+    source_key = (
+        oracle_lock.get("source") if isinstance(oracle_lock, dict) else source_id
+    )
     source = lock["sources"].get(source_key)
     expected_revision = source.get("revision") if isinstance(source, dict) else None
     source_status = source.get("status") if isinstance(source, dict) else None
@@ -236,8 +246,13 @@ def _locked_oracle_errors(
             return [f"{row_id}: oracle {source_id} is not locked"]
         artifact_digest = str(oracle_lock.get("artifact_digest", ""))
         expected_executable = artifact_digest.removeprefix("sha256:")
-        if not _sha256(expected_executable) or oracle.get("executable_sha256") != expected_executable:
-            return [f"{row_id}: oracle executable digest does not match the pinned lock"]
+        if (
+            not _sha256(expected_executable)
+            or oracle.get("executable_sha256") != expected_executable
+        ):
+            return [
+                f"{row_id}: oracle executable digest does not match the pinned lock"
+            ]
     return []
 
 
