@@ -53,9 +53,13 @@ def write_json(path: Path, value: Any) -> None:
 
 def add_output_functions(bngl: str) -> tuple[str, dict[str, str]]:
     """Add read-only functions so the API returns source parameter trajectories."""
-    exported = {name: f"check_{name}" for name in ("S", "Q", "R", *(f"chi{i}" for i in range(17)))}
-    declarations = "\n".join(f"  {function}() = {name}" for name, function in exported.items())
-    block = f"\nbegin functions\n{declarations}\nend functions\n"
+    names = ("S", "Q", "R", *(f"chi{i}" for i in range(17)))
+    exported = {name: f"check_{name}" for name in names}
+    declarations = []
+    for name, function in exported.items():
+        expr = name if name == "S" else f"{name}_amt"
+        declarations.append(f"  {function}() = {expr}")
+    block = "\nbegin functions\n" + "\n".join(declarations) + "\nend functions\n"
     end_model = bngl.rfind("end model")
     if end_model < 0:
         raise RuntimeError("fresh Atomizer output has no 'end model'")
