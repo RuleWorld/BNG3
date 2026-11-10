@@ -895,9 +895,11 @@ def test_scheduled_parity_stages_the_legacy_sbml_translator():
     assert "Provide sbmlTranslator for legacy SBML inputs" in bng2
     assert '"$oracle_bin/sbmlTranslator"' in bng2
     assert 'test -x "$oracle_bin/sbmlTranslator"' in bng2
-    assert '--name pybionetgen' in bng2
-    assert '$RUNNER_TEMP/oracle-pybionetgen/bionetgen/atomizer/sbmlTranslator.py' in bng2
-    assert '$GITHUB_WORKSPACE/python/bionetgen/atomizer/sbmlTranslator.py' not in bng2
+    assert "--name pybionetgen" in bng2
+    assert (
+        "$RUNNER_TEMP/oracle-pybionetgen/bionetgen/atomizer/sbmlTranslator.py" in bng2
+    )
+    assert "$GITHUB_WORKSPACE/python/bionetgen/atomizer/sbmlTranslator.py" not in bng2
 
 
 def test_nfsim_parity_uses_regular_installed_api_and_pinned_native_oracle():
