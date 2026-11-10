@@ -1,11 +1,15 @@
+#include <catch2/catch_approx.hpp>
 #include <catch2/catch_test_macros.hpp>
 
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <sstream>
 #include <string>
 
+#include "actions/ActionDispatch.hpp"
 #include "io/SbmlReader.hpp"
+#include "parser/BNGAstVisitor.hpp"
 #include "tinyxml.h"
 
 namespace {
@@ -276,4 +280,32 @@ TEST_CASE("SBML reader preserves Core unit metadata") {
     CHECK(parsed.compartmentUnits.at("cell") == "fL");
     REQUIRE(parsed.speciesUnits.size() == 1);
     CHECK(parsed.speciesUnits.front() == "item");
+}
+
+TEST_CASE("SBML readFile preserves observable trajectories", "[SbmlReader][Actions]") {
+    const auto directory = std::filesystem::temp_directory_path() /
+        "bng3_sbml_readfile_observables";
+    std::filesystem::create_directories(directory);
+    const auto xml = std::filesystem::path(BNG3_SOURCE_DIR) / "tests" / "validation" /
+        "Validate" / "INPUT_FILES" / "test_sbml_structured_SBML.xml";
+    const auto source = directory / "runner.bngl";
+    const std::string bngl = "readFile({file=>\"" + xml.string() + "\",atomize=>1})\n"
+        "generate_network({overwrite=>1})\n"
+        "simulate({method=>\"ode\",t_end=>1,n_steps=>1})\n";
+    auto model = bng::parser::parseModel(bngl);
+    REQUIRE(model != nullptr);
+    bng::actions::ActionDispatch::execute(*model, source);
+    std::ifstream output(directory / "runner.gdat");
+    REQUIRE(output.good());
+    std::string header, initial, final;
+    REQUIRE(static_cast<bool>(std::getline(output, header)));
+    REQUIRE(static_cast<bool>(std::getline(output, initial)));
+    REQUIRE(static_cast<bool>(std::getline(output, final)));
+    CHECK(header.find("MolA_cell") != std::string::npos);
+    double time = 0, value = 0;
+    std::istringstream row(final);
+    REQUIRE(static_cast<bool>(row >> time >> value));
+    CHECK(time == Catch::Approx(1.0));
+    CHECK(value == Catch::Approx(0.63723514).margin(1e-5));
+    std::filesystem::remove_all(directory);
 }

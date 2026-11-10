@@ -1410,6 +1410,7 @@ engine::GeneratedNetwork networkFromParsedData(
             idxStr, reactants, products, rateStr, 1.0, {}, std::nullopt,
             std::nullopt, false, absoluteFlux));
     }
+    addNetObservables(parseResult, model);
     return loadedNetwork;
 }
 
