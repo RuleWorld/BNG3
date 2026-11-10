@@ -277,9 +277,17 @@ jobs:
 
       - name: Provide sbmlTranslator
         run: |
+          set -euo pipefail
+          python scripts/ci/checkout_oracle.py --name pybionetgen \
+            --destination "$RUNNER_TEMP/oracle-pybionetgen" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+          python -m venv "$RUNNER_TEMP/oracle-translator-venv"
+          "$RUNNER_TEMP/oracle-translator-venv/bin/python" -m pip install \
+            -r "$RUNNER_TEMP/oracle-pybionetgen/requirements.txt"
           mkdir -p "$RUNNER_TEMP/oracle-bionetgen/bng2/bin"
-          printf '%s\n' '#!/bin/sh' 'PYTHONPATH="$GITHUB_WORKSPACE/python${PYTHONPATH:+:$PYTHONPATH}" exec python3 "$GITHUB_WORKSPACE/python/bionetgen/atomizer/sbmlTranslator.py" "$@"' > "$RUNNER_TEMP/oracle-bionetgen/bng2/bin/sbmlTranslator"
+          printf '%s\n' '#!/bin/sh' 'PYTHONPATH="$RUNNER_TEMP/oracle-pybionetgen" exec "$RUNNER_TEMP/oracle-translator-venv/bin/python" "$RUNNER_TEMP/oracle-pybionetgen/bionetgen/atomizer/sbmlTranslator.py" "$@"' > "$RUNNER_TEMP/oracle-bionetgen/bng2/bin/sbmlTranslator"
           chmod +x "$RUNNER_TEMP/oracle-bionetgen/bng2/bin/sbmlTranslator"
+          "$RUNNER_TEMP/oracle-bionetgen/bng2/bin/sbmlTranslator" --help > /dev/null
 
       - name: Build bng_cpp
         run: |

@@ -226,3 +226,6 @@ def test_weekly_sbml_translator_is_installed_in_bng2_lookup_directory():
 
     assert 'mkdir -p "$RUNNER_TEMP/oracle-bionetgen/bng2/bin"' in workflow
     assert '> "$RUNNER_TEMP/oracle-bionetgen/bng2/bin/sbmlTranslator"' in workflow
+    assert '--name pybionetgen' in workflow
+    assert '$RUNNER_TEMP/oracle-pybionetgen/bionetgen/atomizer/sbmlTranslator.py' in workflow
+    assert '$GITHUB_WORKSPACE/python/bionetgen/atomizer/sbmlTranslator.py' not in workflow
