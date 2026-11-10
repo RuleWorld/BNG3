@@ -43,7 +43,9 @@ def test_source_contract_rejects_semantic_mutations(tmp_path, mutation):
         # Change only Qinc's priority while preserving parseable XML.
         marker = '<event id="Qinc"'
         start = text.index(marker)
-        priority = text.index('<math xmlns="http://www.w3.org/1998/Math/MathML">', start)
+        priority = text.index(
+            '<math xmlns="http://www.w3.org/1998/Math/MathML">', start
+        )
         text = text[:priority] + text[priority:].replace(
             '<cn type="integer"> 10 </cn>', '<cn type="integer"> 11 </cn>', 1
         )
@@ -76,7 +78,10 @@ def test_exact_binomial_acceptance_rejects_deterministic_tie_order():
         "S": np.arange(1001, dtype=float),
         "Q": np.arange(1001, dtype=float),
         "R": np.zeros(1001, dtype=float),
-        **{f"chi{k}": np.asarray([BLOCKS_PER_RUN if k == BLOCK_SIZE else 0.0]) for k in range(17)},
+        **{
+            f"chi{k}": np.asarray([BLOCKS_PER_RUN if k == BLOCK_SIZE else 0.0])
+            for k in range(17)
+        },
     }
     report = check_trajectory(result, seed=1)
     assert not report["passed"]
