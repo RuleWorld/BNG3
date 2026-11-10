@@ -276,9 +276,11 @@ jobs:
             build/Testing/Temporary/
 
       - name: Upload bng_cpp artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: bng_cpp-${{ matrix.os }}-${{ matrix.compiler }}
+          if-no-files-found: warn
           path: |
             build/cpp/bng_cpp*
 
@@ -861,11 +863,12 @@ jobs:
             python-results.xml
 
       - name: Upload coverage
-        if: matrix.os == 'ubuntu-22.04' && matrix.python-version == '3.12'
+        if: always() && matrix.os == 'ubuntu-22.04' && matrix.python-version == '3.12'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: coverage.xml
+          if-no-files-found: warn
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Python Integration Tests (atomizer, legacy compat)
@@ -1126,10 +1129,12 @@ jobs:
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
 
       - name: Upload wheels
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.os }}
           path: ./wheelhouse/*.whl
+          if-no-files-found: warn
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Source Distribution
@@ -1157,10 +1162,12 @@ jobs:
         run: python -m build --sdist
 
       - name: Upload sdist
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: sdist
           path: dist/*.tar.gz
+          if-no-files-found: warn
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Publish to PyPI (on tagged release)

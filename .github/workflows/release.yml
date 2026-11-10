@@ -158,10 +158,12 @@ jobs:
           cd dist && tar czf ${{ matrix.artifact_name }}.tar.gz ${{ matrix.artifact_name }}/
 
       - name: Upload binary artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
           path: dist/${{ matrix.artifact_name }}.tar.gz
+          if-no-files-found: warn
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Build Python wheels for all platforms
@@ -225,10 +227,12 @@ jobs:
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
 
       - name: Upload wheels
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.os }}
           path: ./wheelhouse/*.whl
+          if-no-files-found: warn
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Build source distribution
@@ -250,10 +254,12 @@ jobs:
       - run: pip install build
       - run: python -m build --sdist
 
-      - uses: actions/upload-artifact@v4
+      - if: always()
+        uses: actions/upload-artifact@v4
         with:
           name: sdist
           path: dist/*.tar.gz
+          if-no-files-found: warn
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Create GitHub Release with all artifacts
