@@ -478,13 +478,17 @@ def test_release_ci_topology_keeps_independent_parity_jobs_parallel_and_artifact
     tmp_path: Path,
 ):
     workflow = checks.check_workflow_topology(ROOT / ".github/workflows/parity.yml")
-    # The current final obligation receipt upload is success-only. Preserve
-    # that concrete topology gap as a finding until the workflow owner wires it.
+    assert workflow["static_result"] == "pass"
+    assert workflow["errors"] == []
+    assert workflow["independent_jobs"] == [
+        "bng2-parity",
+        "nfsim-parity",
+        "pybionetgen-compat",
+    ]
+    # Acceptance remains fail until full maintained-workflow audit and replay
+    # evidence are consumed on an exact revision.
+    assert workflow["acceptance_result"] == "fail"
     assert workflow["result"] == "fail"
-    assert any(
-        "release-obligation-142: artifact upload does not run after failure" in error
-        for error in workflow["errors"]
-    )
 
     mutated = {
         "jobs": {
