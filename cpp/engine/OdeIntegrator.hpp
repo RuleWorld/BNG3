@@ -325,6 +325,24 @@ private:
     std::vector<double> lastRootValues_;
     // The instant at which each event's trigger last rose.
     std::vector<double> triggerRoseAt_;
+    // Analytically scheduled time >= reset + h clocks. Only the same
+    // zero-delay event group may write reset, and every writer assigns time.
+    struct PeriodicEventClock {
+        std::size_t group = 0;
+        std::size_t species = 0;
+        double period = 0.0;
+        double origin = 0.0;
+        std::uint64_t ticks = 0;
+        double next = 0.0;
+        bool armed = true;
+        bool roseAtStart = false;
+    };
+    std::vector<PeriodicEventClock> periodicEventClocks_;
+    std::unordered_map<const ast::Expression*, std::size_t> periodicClockTriggers_;
+    void initializePeriodicEventClocks(const std::vector<double>& state,
+                                       bool continuing, double startTime);
+    void advancePeriodicEventClocks(std::size_t event, double time);
+    void queueDuePeriodicEventClocks(double time, const std::vector<double>& state);
     void validateEventRootSurface();
     double evaluateParameterWithEventState(
         const std::string& name, double time,
