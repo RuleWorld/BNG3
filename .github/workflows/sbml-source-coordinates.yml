@@ -1,0 +1,63 @@
+name: Bounded SBML source-coordinate ODE validation
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '43 4 * * 0'
+  pull_request:
+    paths:
+      - '.github/workflows/sbml-source-coordinates.yml'
+      - 'scripts/ci/check_sbml_source_coordinates.py'
+      - 'tests/validation/*sbml_source_coordinates*'
+      - 'tests/validation/Validate/INPUT_FILES/*SBML.xml'
+      - 'cpp/io/SbmlReader*'
+      - 'cpp/actions/ActionDispatch.cpp'
+      - 'python/bionetgen/atomizer/**'
+
+permissions:
+  contents: read
+
+jobs:
+  source-coordinate-ode:
+    name: Two-fixture source-coordinate ODE (graph identity reported separately)
+    runs-on: ubuntu-22.04
+    timeout-minutes: 35
+    env:
+      CMAKE_ARGS: '-DBUILD_TESTS=OFF -DBUILD_CLI=ON'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install runtime and build fresh product
+        run: |
+          sudo apt-get update && sudo apt-get install -y cmake ninja-build perl
+          python -m pip install scikit-build-core pybind11
+          python -m pip install --config-settings=build-dir=build -e '.[full]' pytest sympy pyyaml
+          test -x build/cpp/bng_cpp
+      - name: Check the independent comparator and negative controls
+        run: python -m pytest -q tests/validation/test_sbml_source_coordinates.py
+      - name: Checkout pinned independent sources
+        run: |
+          python scripts/ci/checkout_oracle.py --name bionetgen --destination "$RUNNER_TEMP/bng2"
+          python scripts/ci/checkout_oracle.py --name pybionetgen --destination "$RUNNER_TEMP/translator"
+          python -m venv "$RUNNER_TEMP/translator-runtime"
+          "$RUNNER_TEMP/translator-runtime/bin/python" -m pip install -r "$RUNNER_TEMP/translator/requirements.txt"
+      - name: Replay original SBML in source coordinates
+        run: |
+          python scripts/ci/check_sbml_source_coordinates.py \
+            --bng-cpp "$GITHUB_WORKSPACE/build/cpp/bng_cpp" \
+            --bng2-root "$RUNNER_TEMP/bng2" \
+            --translator-root "$RUNNER_TEMP/translator" \
+            --translator-python "$RUNNER_TEMP/translator-runtime/bin/python" \
+            --artifacts "$RUNNER_TEMP/sbml-source-coordinates"
+      - name: Preserve partial evidence and strict graph differences
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbml-source-coordinates-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/sbml-source-coordinates/
+          if-no-files-found: warn
+          retention-days: 30
