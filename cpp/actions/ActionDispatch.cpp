@@ -1345,7 +1345,8 @@ std::string readArgument(const ast::Action& action, const std::string& key, cons
 }
 
 engine::GeneratedNetwork networkFromParsedData(
-    const io::NetReader::ParseResult& parseResult, ast::Model& model) {
+    const io::NetReader::ParseResult& parseResult, ast::Model& model,
+    bool importStructuredObservables) {
     engine::GeneratedNetwork loadedNetwork;
     for (std::size_t index = 0; index < parseResult.species.size(); ++index) {
         const auto& [pattern, concStr] = parseResult.species[index];
@@ -1410,7 +1411,9 @@ engine::GeneratedNetwork networkFromParsedData(
             idxStr, reactants, products, rateStr, 1.0, {}, std::nullopt,
             std::nullopt, false, absoluteFlux));
     }
-    addNetObservables(parseResult, model);
+    // The structured reader emits one exact indexed group per SBML species.
+    // Flat-reader assignment groups are not generally exact expressions.
+    if (importStructuredObservables) addNetObservables(parseResult, model);
     return loadedNetwork;
 }
 
@@ -3200,7 +3203,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                         name, {}, bng::parser::parseExpression(expression)));
                 }
                 evaluateParametersAndRefresh();
-                network = networkFromParsedData(parseResult, model);
+                network = networkFromParsedData(parseResult, model, atomize);
                 loadedNetData = std::move(parseResult);
                 if (verbose) {
                     std::cerr << "[bng_cpp] Read flat SBML file: " << path << "\n";
