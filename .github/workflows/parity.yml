@@ -252,7 +252,7 @@ jobs:
             echo 'Backlog snapshot unavailable; issue evidence scope is mapped-only.' >> "$GITHUB_STEP_SUMMARY"
           fi
           corpus_tier=s
-          if [[ "${{ github.event_name }}" == "schedule" ]]; then
+          if [[ "${{ github.event_name }}" == "schedule" || ( "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.bounded }}" != "true" ) ]]; then
             corpus_tier=p
           fi
           .venv/bin/python scripts/validate.py --tier smoke \

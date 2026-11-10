@@ -1,4 +1,5 @@
 from pathlib import Path
+import subprocess
 
 from tests.workflow_yaml import parse_workflow
 
@@ -46,6 +47,37 @@ def test_differential_reporting_is_additive_and_nightly():
     assert "--report-only" in report["run"]
     assert "--bng2-root" in report["run"]
     assert "--corpus-tier" in report["run"]
+
+
+def test_unbounded_manual_conformance_uses_the_scheduled_corpus():
+    workflow = parse_workflow(ROOT / ".github/workflows/parity.yml")
+    steps = workflow["jobs"]["bng2-parity"]["steps"]
+    command = next(
+        s["run"]
+        for s in steps
+        if "scripts/validate.py --tier smoke" in s.get("run", "")
+    )
+    selection = command[
+        command.index("corpus_tier=s") : command.index(
+            ".venv/bin/python scripts/validate.py"
+        )
+    ]
+    for event, bounded, expected in [
+        ("schedule", "false", "p"),
+        ("workflow_dispatch", "false", "p"),
+        ("workflow_dispatch", "true", "s"),
+        ("pull_request", "false", "s"),
+    ]:
+        script = selection.replace("${{ github.event_name }}", event).replace(
+            "${{ inputs.bounded }}", bounded
+        )
+        result = subprocess.run(
+            ["bash", "-c", script + '\nprintf "%s" "$corpus_tier"'],
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+        assert result.stdout == expected
 
 
 def test_curated_biomodels_lane_is_manual_and_uses_the_pinned_full_inventory():
