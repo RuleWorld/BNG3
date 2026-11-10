@@ -2485,6 +2485,22 @@ bool OdeIntegrator::steadyStateReached(const OdeOptions& options,
 void OdeIntegrator::markContinuousSpecies() {
     continuousSpecies_.assign(network_.species.size(), false);
     for (const auto& reaction : network_.reactions.all()) {
+        // Only a literal zero after function expansion proves that this
+        // reaction cannot change its species. A parameter currently equal
+        // to zero may later change, including through an event assignment.
+        try {
+            const auto rate = reaction.getRateExpression()
+                                  ? *reaction.getRateExpression()
+                                  : parser::parseExpression(reaction.getRateLaw());
+            const auto expanded = functionEvaluator_.expandFunctions(rate);
+            if (expanded.kind() == ast::ExpressionKind::Number &&
+                expanded.numberValue() == 0.0) {
+                continue;
+            }
+        } catch (const std::exception&) {
+            // Unknown or specialized rate syntax remains conservatively
+            // continuous; normal rate compilation reports invalid input.
+        }
         std::unordered_map<std::size_t, long> net;
         for (const auto species : reaction.getReactants()) --net[species];
         for (const auto species : reaction.getProducts()) ++net[species];
