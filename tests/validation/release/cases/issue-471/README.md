@@ -10,18 +10,25 @@ capability matrix or claim support from an oracle declaration alone.
 python -m pytest -q tests/validation/release/cases/issue-471/test_issue471_checks.py
 ```
 
-The oracle gate reads one JSON consumer receipt per capability ID from a
-separate receipt directory. Each receipt binds the source and product to the
-same full commit SHA, names the external/analytic oracle and its immutable
-artifact digest, and records distinct producer output and downstream consumer
-digests. A missing receipt, unresolved oracle origin, stale revision, mismatched
-consumer inputs, or inventory status other than `implemented` fails the gate.
-The gate reports the matrix status counts unchanged; it does not mutate or
-promote them. Producer receipts alone cannot satisfy it.
+The oracle gate reads one schema-version-2 JSON receipt per capability ID and
+three actual files beneath a separate artifact root: the producer output, the
+oracle expectation, and the downstream consumer output. Receipt paths must be
+safe relative paths without symlinks; the verifier hashes each file and checks
+the recorded digest. It then runs its owned byte-equality comparator over the
+consumer and oracle bytes and records the comparator implementation digest.
+Receipt claims such as `result: pass` or `comparison: pass` do not exist in or
+control this schema. A missing file, stale revision, unresolved oracle origin,
+mismatched digest, consumer input mismatch, unequal output, or matrix status
+other than `implemented` fails the gate. The verifier independently checks
+matrix IDs against `docs/CAPABILITY_UNION_INVENTORY.md`; an empty or mismatched
+inventory fails closed. It preserves source status counts and does not promote
+them. Without `--artifacts`, the report is explicitly `DECLARATION_ONLY` and
+cannot count any grounded execution rows.
 
 ```sh
 python tests/validation/release/cases/issue-471/issue471_checks.py oracle \
   --root . --receipts "$RUNNER_TEMP/oracle-consumer-receipts" \
+  --artifacts "$RUNNER_TEMP/oracle-consumer-artifacts" \
   --revision "$GITHUB_SHA" --report "$RUNNER_TEMP/oracle-independence.json"
 ```
 
@@ -31,6 +38,10 @@ analytic specification as appropriate.” No fresh exact-revision consumer
 receipts are supplied by this package, so `release-oracle-independence`
 correctly remains `fail`. The remaining named declarations are inventory
 metadata, not execution evidence.
+
+The current byte-equality comparator is a bounded exact-output contract.
+Numeric or tolerance-based cases need an explicitly owned comparator extension
+rather than a receipt assertion.
 
 The tamper tests exercise existing base-revision policy functions against
 negative Git fixtures: product code mixed with existing expected data, a
