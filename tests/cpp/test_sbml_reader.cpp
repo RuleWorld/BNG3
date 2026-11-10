@@ -289,7 +289,7 @@ TEST_CASE("SBML readFile preserves observable trajectories", "[SbmlReader][Actio
     const auto xml = std::filesystem::path(BNG3_SOURCE_DIR) / "tests" / "validation" /
         "Validate" / "INPUT_FILES" / "test_sbml_structured_SBML.xml";
     const auto source = directory / "runner.bngl";
-    const std::string bngl = "readFile({file=>\"" + xml.string() + "\",atomize=>1})\n"
+    const std::string bngl = "readFile({file=>\"" + xml.generic_string() + "\",atomize=>1})\n"
         "generate_network({overwrite=>1})\n"
         "simulate({method=>\"ode\",t_end=>1,n_steps=>1})\n";
     auto model = bng::parser::parseModel(bngl);
