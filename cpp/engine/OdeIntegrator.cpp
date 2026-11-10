@@ -3002,6 +3002,10 @@ void OdeIntegrator::assignEventValues(const NativeEvent& event, std::vector<doub
 
 bool OdeIntegrator::triggerHolds(const ast::Expression& trigger, double time,
                                   const double* state) const {
+    const auto clock = periodicClockTriggers_.find(&trigger);
+    if (clock != periodicClockTriggers_.end()) {
+        return time >= periodicEventClocks_[clock->second].next;
+    }
     return eventValue(trigger, time, state) != 0.0;
 }
 
@@ -3096,6 +3100,10 @@ bool OdeIntegrator::isStrictTrigger(const ast::Expression& trigger) {
 
 double OdeIntegrator::eventRootValue(const ast::Expression& trigger, double time,
                                       const double* state) const {
+    const auto clock = periodicClockTriggers_.find(&trigger);
+    if (clock != periodicClockTriggers_.end()) {
+        return time - periodicEventClocks_[clock->second].next;
+    }
     const auto conjuncts = triggerConjuncts(trigger);
     if (conjuncts.size() == 1) {
         const auto& arguments = conjuncts.front()->args();
@@ -3187,6 +3195,9 @@ double OdeIntegrator::eventDelay(const NativeEvent& event, double time,
 
 bool OdeIntegrator::applyDueEvents(double time, std::vector<double>& state) {
     bool applied = false;
+    // Calendar crossings and zero-delay cascades share exact represented
+    // instants. They need no solver-root localization tolerance.
+    const double timeTolerance = periodicEventClocks_.empty() ? 1e-12 : 0.0;
     while (true) {
         // The queued events are executed in the order the specification
         // defines: the events with the earliest execution instant first, and
@@ -3194,7 +3205,7 @@ bool OdeIntegrator::applyDueEvents(double time, std::vector<double>& state) {
         // priority, the highest priority first (SBML L3V2 Core Sec. 4.12.3).
         double earliest = std::numeric_limits<double>::infinity();
         for (const auto& pending : pendingEvents_) {
-            if (pending.executionTime <= time + 1e-12) {
+            if (pending.executionTime <= time + timeTolerance) {
                 earliest = std::min(earliest, pending.executionTime);
             }
         }
@@ -3204,7 +3215,7 @@ bool OdeIntegrator::applyDueEvents(double time, std::vector<double>& state) {
         std::vector<std::vector<PendingEvent>::iterator> equalPriority;
         for (auto candidate = pendingEvents_.begin();
              candidate != pendingEvents_.end(); ++candidate) {
-            if (candidate->executionTime > earliest + 1e-12) continue;
+            if (candidate->executionTime > earliest + timeTolerance) continue;
             const auto& event = nativeEvents_[candidate->event];
             const double priority = event.dynamicPriority
                 ? eventValue(*event.dynamicPriority, candidate->executionTime,
@@ -3260,11 +3271,12 @@ bool OdeIntegrator::applyDueEvents(double time, std::vector<double>& state) {
         heldBefore.reserve(nativeEvents_.size());
         for (std::size_t index = 0; index < nativeEvents_.size(); ++index) {
             const bool justRose =
-                std::abs(triggerRoseAt_[index] - instant) <= 1e-12;
+                std::abs(triggerRoseAt_[index] - instant) <= timeTolerance;
             heldBefore.push_back(
                 justRose || triggerHolds(nativeEvents_[index].trigger, instant, state.data()));
         }
         assignEventValues(event, state, values);
+        advancePeriodicEventClocks(pending.event, instant);
         applied = true;
         retestTriggers(instant, state, heldBefore);
     }
@@ -3276,7 +3288,10 @@ void OdeIntegrator::cvodeEventRoots(double time, const double* scaledState,
     std::vector<double> state(nSpecies_);
     for (std::size_t i = 0; i < nSpecies_; ++i) state[i] = scaledState[i] * cvodeStateScale_[i];
     for (std::size_t root = 0; root < nativeEventRoots_.size(); ++root) {
-        roots[root] = eventRootValue(*nativeEventRoots_[root].second, time, state.data());
+        // Analytic clocks stop the solver at their known next instant; they
+        // do not need root localization (or its interpolation error).
+        roots[root] = periodicClockTriggers_.count(nativeEventRoots_[root].second)
+            ? 1.0 : eventRootValue(*nativeEventRoots_[root].second, time, state.data());
     }
 }
 
@@ -3486,6 +3501,8 @@ OdeResult OdeIntegrator::integrate(const OdeOptions& options) {
 }
 
 OdeResult OdeIntegrator::integrateCore(const OdeOptions& options) {
+    periodicEventClocks_.clear();
+    periodicClockTriggers_.clear();
     if (!nativeEvents_.empty() && options.method != "cvode" &&
         options.method != "ssa") {
         throw std::runtime_error(
@@ -4540,6 +4557,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
         times.front() != opts.tStart) {
         times.insert(times.begin(), opts.tStart);
     }
+    initializePeriodicEventClocks(initialState, opts.continueSimulation, opts.tStart);
     if (!nativeEvents_.empty()) {
         // The root function value of every group at the start of the run.
         // A group whose value changed its sign since then crossed its trigger
@@ -4643,6 +4661,9 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
             scale = std::max(scale, std::abs(initialDerivatives[i]) * timeScale);
         }
         if (!std::isfinite(scale) || scale < 1e-30) scale = 1.0;
+        // Event-only propagation is exact; scaling would unnecessarily round
+        // discrete counters and captured reset times on every assignment.
+        if (!periodicEventClocks_.empty()) scale = 1.0;
         cvodeStateScale_[i] = scale;
         NV_Ith_S(y, i) = initialState[i] / scale;
     }
@@ -4819,6 +4840,9 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                 // A queued event executes at its own instant, so the solver
                 // stops there before the output grid continues.
                 double target = tOut;
+                for (const auto& clock : periodicEventClocks_) {
+                    if (clock.next > t && clock.next < target) target = clock.next;
+                }
                 for (const auto& pending : pendingEvents_) {
                     if (pending.executionTime < target) target = pending.executionTime;
                 }
@@ -4862,7 +4886,8 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                     }
                     continue;
                 }
-                if (target < tOut - 1e-12 || recordsHistory()) {
+                if (periodicEventClocks_.empty() &&
+                    (target < tOut - 1e-12 || recordsHistory())) {
                     // CV_NORMAL may step past a returned output/root time.
                     // If target is already inside that step, CVode interpolates
                     // to it; a stop behind the internal time is invalid.
@@ -4878,8 +4903,18 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                 // Method-of-steps needs every accepted solver state in the
                 // history. Keep CV_NORMAL for ordinary simulations so this
                 // feature does not change their established CVODE path.
-                flag = CVode(cvode_mem, target, y, &t,
-                             recordsHistory() ? CV_ONE_STEP : CV_NORMAL);
+                if (!periodicEventClocks_.empty()) {
+                    // The clock proof establishes zero continuous dynamics
+                    // and known crossing instants for every remaining root.
+                    // Propagation between instants is the identity, including
+                    // adjacent floating-point times too close for CVODE to
+                    // take an initial step. No future event is brought forward.
+                    t = target;
+                    flag = CV_SUCCESS;
+                } else {
+                    flag = CVode(cvode_mem, target, y, &t,
+                                 recordsHistory() ? CV_ONE_STEP : CV_NORMAL);
+                }
 
                 if (flag == CV_ROOT_RETURN) {
                     // CVodeGetRootInfo writes one entry per registered root
@@ -4995,6 +5030,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                         dueState[i] = NV_Ith_S(y, i) * cvodeStateScale_[i];
                     }
                     recordHistoryPoint(t, dueState);
+                    queueDuePeriodicEventClocks(t, dueState);
                     if (applyDueEvents(t, dueState)) {
                         for (std::size_t i = 0; i < nSpecies_; ++i) {
                             NV_Ith_S(y, i) = dueState[i] / cvodeStateScale_[i];
@@ -5006,8 +5042,9 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                         }
                         continue;
                     }
-                    if (t < target - 1e-12) continue;
-                    if (target < tOut - 1e-12) {
+                    const double timeTolerance = periodicEventClocks_.empty() ? 1e-12 : 0.0;
+                    if (t < target - timeTolerance) continue;
+                    if (target < tOut - timeTolerance) {
                         // A method-of-steps kink (including a sum-generated
                         // breakpoint) becomes a source discontinuity for each
                         // other delay in the model.
