@@ -307,5 +307,6 @@ TEST_CASE("SBML readFile preserves observable trajectories", "[SbmlReader][Actio
     REQUIRE(static_cast<bool>(row >> time >> value));
     CHECK(time == Catch::Approx(1.0));
     CHECK(value == Catch::Approx(0.63723514).margin(1e-5));
+    output.close();
     std::filesystem::remove_all(directory);
 }
