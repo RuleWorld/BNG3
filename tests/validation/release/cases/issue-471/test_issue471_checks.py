@@ -503,3 +503,12 @@ def test_release_ci_topology_keeps_independent_parity_jobs_parallel_and_artifact
     errors = checks.topology_errors(mutated, [["oracle-a", "oracle-b"]])
     assert any("serialized" in error for error in errors)
     assert any("does not run after failure" in error for error in errors)
+
+
+def test_release_ci_topology_all_maintained_workflows():
+    report = checks.check_workflows_topology(ROOT / ".github/workflows")
+    assert report["static_result"] == "pass"
+    assert report["errors"] == []
+    assert len(report["audited_workflows"]) >= 13
+    assert report["acceptance_result"] == "fail"
+    assert report["result"] == "fail"
