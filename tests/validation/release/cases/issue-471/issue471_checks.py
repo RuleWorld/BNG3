@@ -413,14 +413,14 @@ def oracle_independence_report(
 
 
 def topology_errors(
-    workflow: dict[str, Any], independent_groups: list[list[str]]
+    workflow: dict[str, Any], independent_groups: list[list[str]] | None = None
 ) -> list[str]:
     """Check declared parallel job groups and unconditional partial-artifact uploads."""
     jobs = workflow.get("jobs")
     if not isinstance(jobs, dict) or not jobs:
         return ["workflow has no jobs"]
     errors: list[str] = []
-    for group in independent_groups:
+    for group in independent_groups or []:
         for job_name in group:
             if job_name not in jobs:
                 errors.append(f"independent job is missing: {job_name}")
@@ -441,7 +441,7 @@ def topology_errors(
         for step in job.get("steps", []) if isinstance(job, dict) else []:
             if str(step.get("uses", "")).startswith("actions/upload-artifact@"):
                 condition = str(step.get("if", ""))
-                if "always()" not in condition:
+                if "always()" not in condition and "!cancelled()" not in condition:
                     errors.append(
                         f"{job_name}: artifact upload does not run after failure"
                     )
@@ -453,12 +453,13 @@ def check_workflow_topology(path: Path) -> dict[str, Any]:
     groups = [["bng2-parity", "nfsim-parity", "pybionetgen-compat"]]
     errors = topology_errors(workflow, groups)
     # These jobs share source-lock validation but their scientific checks are independent.
-    expected_needs = {name: ["oracle-lock"] for name in groups[0]}
-    for name, expected in expected_needs.items():
-        needs = workflow["jobs"].get(name, {}).get("needs", [])
-        observed = [needs] if isinstance(needs, str) else needs
-        if observed != expected:
-            errors.append(f"{name}: needs must be {expected}, observed {observed}")
+    if path.name == "parity.yml":
+        expected_needs = {name: ["oracle-lock"] for name in groups[0]}
+        for name, expected in expected_needs.items():
+            needs = workflow["jobs"].get(name, {}).get("needs", [])
+            observed = [needs] if isinstance(needs, str) else needs
+            if observed != expected:
+                errors.append(f"{name}: needs must be {expected}, observed {observed}")
     required_workflows = [
         "ci.yml",
         "parity.yml",
@@ -477,7 +478,7 @@ def check_workflow_topology(path: Path) -> dict[str, Any]:
         "schema_version": 1,
         "check_id": "release-ci-topology",
         "workflow": str(path),
-        "independent_jobs": groups[0],
+        "independent_jobs": groups[0] if path.name == "parity.yml" else [],
         "static_result": "pass" if not errors else "fail",
         "acceptance_result": "fail",
         "coverage": [path.name],
@@ -487,6 +488,47 @@ def check_workflow_topology(path: Path) -> dict[str, Any]:
             "no interrupted-run replay receipt was consumed",
         ],
         "errors": errors,
+        "result": "fail",
+    }
+
+
+def check_workflows_topology(workflows_dir: Path) -> dict[str, Any]:
+    workflow_paths = sorted(workflows_dir.glob("*.yml"))
+    per_workflow: list[dict[str, Any]] = []
+    upload_errors: list[str] = []
+    for path in workflow_paths:
+        workflow = yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+        errs = topology_errors(workflow)
+        per_workflow.append(
+            {
+                "workflow": path.name,
+                "static_result": "pass" if not errs else "fail",
+                "errors": errs,
+            }
+        )
+        upload_errors.extend(f"{path.name}: {err}" for err in errs)
+    parity = workflows_dir / "parity.yml"
+    parity_report = (
+        check_workflow_topology(parity)
+        if parity.is_file()
+        else {"static_result": "fail", "errors": ["parity.yml missing"]}
+    )
+    return {
+        "schema_version": 2,
+        "check_id": "release-ci-topology",
+        "workflows_dir": str(workflows_dir),
+        "audited_workflows": [p.name for p in workflow_paths],
+        "per_workflow": per_workflow,
+        "parity": parity_report,
+        "static_result": "pass"
+        if not upload_errors and parity_report.get("static_result") == "pass"
+        else "fail",
+        "acceptance_result": "fail",
+        "acceptance_gaps": [
+            "parallel-job serialization audit is not yet complete for all maintained workflows",
+            "no interrupted-run replay receipt was consumed",
+        ],
+        "errors": upload_errors + list(parity_report.get("errors", [])),
         "result": "fail",
     }
 
@@ -511,6 +553,8 @@ def main() -> int:
     topology.add_argument(
         "--workflow", type=Path, default=Path(".github/workflows/parity.yml")
     )
+    topology.add_argument("--workflows-dir", type=Path)
+    topology.add_argument("--all-workflows", action="store_true")
     topology.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
     if args.check == "oracle":
@@ -518,7 +562,13 @@ def main() -> int:
             args.root, args.receipts, args.revision, args.artifacts
         )
     else:
-        report = check_workflow_topology(args.workflow)
+        workflows_dir = args.workflows_dir
+        if args.all_workflows and workflows_dir is None:
+            workflows_dir = Path(".github/workflows")
+        if workflows_dir is not None:
+            report = check_workflows_topology(workflows_dir)
+        else:
+            report = check_workflow_topology(args.workflow)
     write_report(report, args.report)
     print(
         json.dumps(

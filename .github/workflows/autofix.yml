@@ -57,7 +57,7 @@ jobs:
           fi
 
       - name: Upload formatting patch
-        if: steps.patch.outputs.required == 'true'
+        if: always() && steps.patch.outputs.required == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: formatting-patch

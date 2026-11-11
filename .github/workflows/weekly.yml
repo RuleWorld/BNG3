@@ -235,10 +235,12 @@ jobs:
         run: python benchmarks/run_benchmarks.py --json benchmarks/results/latest.json --markdown benchmarks/results/latest.md
 
       - name: Upload benchmark artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-results
           path: benchmarks/results/latest.json
+          if-no-files-found: warn
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Cross-validation: C++ vs Perl (requires Perl)
