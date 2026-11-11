@@ -2210,7 +2210,8 @@ std::any BNGAstVisitor::visitReaction_rule_def(BNGParser::Reaction_rule_defConte
 }
 
 void BNGAstVisitor::addAction(const std::string& name, BNGParser::Action_argsContext* args) {
-    currentModel_->addAction(buildActionFromArgs(name, args));
+    const std::string normalizedName = (name == "simulate_ps") ? "simulate_pla" : name;
+    currentModel_->addAction(buildActionFromArgs(normalizedName, args));
 }
 
 std::any BNGAstVisitor::visitGenerate_network_cmd(BNGParser::Generate_network_cmdContext* ctx) {

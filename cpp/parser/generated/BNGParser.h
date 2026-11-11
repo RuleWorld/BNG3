@@ -2119,6 +2119,7 @@ public:
     antlr4::tree::TerminalNode *SETVOLUME();
     antlr4::tree::TerminalNode *INCLUDE_MODEL();
     antlr4::tree::TerminalNode *INCLUDE_NETWORK();
+    antlr4::tree::TerminalNode *STRING();
     Action_argsContext *action_args();
     Action_arg_valueContext *action_arg_value();
     antlr4::tree::TerminalNode *SEMI();

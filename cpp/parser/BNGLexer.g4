@@ -115,7 +115,7 @@ SPARSE: 'sparse';
 
 SIMULATE_SSA: 'simulate_ssa';
 
-SIMULATE_PLA: 'simulate_pla' | 'simulate_ps';
+SIMULATE_PLA: 'simulate_pla';
 PLA_CONFIG: 'pla_config';
 PLA_OUTPUT: 'pla_output';
 
