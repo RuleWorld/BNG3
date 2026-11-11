@@ -223,8 +223,10 @@ jobs:
       - name: Install dependencies (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu')
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build
+          which cmake ninja > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y cmake ninja-build
+          }
 
       - name: Install dependencies (macOS)
         if: startsWith(matrix.os, 'macos')
@@ -276,9 +278,11 @@ jobs:
             build/Testing/Temporary/
 
       - name: Upload bng_cpp artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: bng_cpp-${{ matrix.os }}-${{ matrix.compiler }}
+          if-no-files-found: warn
           path: |
             build/cpp/bng_cpp*
 
@@ -302,8 +306,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build
+          which cmake ninja > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y cmake ninja-build
+          }
           python -m pip install pytest numpy
 
       - name: Configure with ASan
@@ -352,8 +358,10 @@ jobs:
 
       - name: Install build and focused-test dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build
+          which cmake ninja > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y cmake ninja-build
+          }
           python -m pip install pytest numpy
 
       - name: Configure Python bindings
@@ -427,8 +435,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build curl ca-certificates binutils
+          which cmake ninja curl binutils > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y cmake ninja-build curl ca-certificates binutils
+          }
           python -m pip install pytest numpy
 
       - name: Install the CUDA toolkit
@@ -530,8 +540,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build
+          which cmake ninja > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y cmake ninja-build
+          }
           python -m pip install pytest numpy scipy
 
       - name: Configure with the Python bindings
@@ -709,7 +721,7 @@ jobs:
           cache-dependency-path: pyproject.toml
 
       - name: Install native build tools
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+        run: which cmake ninja > /dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y cmake ninja-build; }
 
       - name: Install package with optional JAX dependencies
         run: python -m pip install '.[jax]' pytest
@@ -776,7 +788,7 @@ jobs:
 
       - name: Install system dependencies (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu')
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+        run: which cmake ninja > /dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y cmake ninja-build; }
 
       - name: Install system dependencies (macOS)
         if: startsWith(matrix.os, 'macos')
@@ -861,11 +873,12 @@ jobs:
             python-results.xml
 
       - name: Upload coverage
-        if: matrix.os == 'ubuntu-22.04' && matrix.python-version == '3.12'
+        if: always() && matrix.os == 'ubuntu-22.04' && matrix.python-version == '3.12'
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
           path: coverage.xml
+          if-no-files-found: warn
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Python Integration Tests (atomizer, legacy compat)
@@ -901,7 +914,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y cmake ninja-build
+          which cmake ninja > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y cmake ninja-build
+          }
           # The BNGIR version-bridge test imports jsonschema during pytest collection.
           # Workflow selector collection also imports the SciPy-backed source-law test.
           pip install scikit-build-core pybind11 numpy scipy pytest jsonschema libroadrunner
@@ -1015,8 +1031,10 @@ jobs:
 
       - name: Install packaging and native build dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build
+          which cmake ninja > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y cmake ninja-build
+          }
           python -m pip install build
 
       - name: Build source distribution
@@ -1126,10 +1144,12 @@ jobs:
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
 
       - name: Upload wheels
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: wheels-${{ matrix.os }}
           path: ./wheelhouse/*.whl
+          if-no-files-found: warn
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Source Distribution
@@ -1157,10 +1177,12 @@ jobs:
         run: python -m build --sdist
 
       - name: Upload sdist
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: sdist
           path: dist/*.tar.gz
+          if-no-files-found: warn
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Publish to PyPI (on tagged release)

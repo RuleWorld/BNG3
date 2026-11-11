@@ -37,6 +37,13 @@ def test_native_acceptance_is_opt_in_and_keeps_prerequisite_separate():
             WORKFLOW["jobs"][f"issue-{issue}"]["if"]
             == f"github.event_name == 'pull_request' || inputs.run_issue_{issue}"
         )
+    semantic = inputs["run_semantic_00966"]
+    assert semantic["type"] == "boolean"
+    assert semantic["default"] is False
+    assert (
+        WORKFLOW["jobs"]["semantic-00966"]["if"]
+        == "github.event_name == 'workflow_dispatch' && inputs.run_semantic_00966"
+    )
 
     ci = (REPO / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
     assert "tests/validation/release/cases/issue-159/test_stochastic_00003_law.py" in ci

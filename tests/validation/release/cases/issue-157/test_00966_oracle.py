@@ -1,6 +1,11 @@
 """Pure, independently derived checks for official SSTS semantic/00966."""
 
+import sys
 from pathlib import Path
+
+_CASE_DIR = Path(__file__).resolve().parent
+if str(_CASE_DIR) not in sys.path:
+    sys.path.insert(0, str(_CASE_DIR))
 
 import numpy as np
 import pytest

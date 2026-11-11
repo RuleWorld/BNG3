@@ -33,7 +33,10 @@ jobs:
           python-version: '3.12'
       - name: Install runtime and build fresh product
         run: |
-          sudo apt-get update && sudo apt-get install -y cmake ninja-build perl
+          which cmake ninja perl > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y cmake ninja-build perl
+          }
           python -m pip install scikit-build-core pybind11
           python -m pip install --config-settings=build-dir=build -e '.[full]' pytest sympy pyyaml
           test -x build/cpp/bng_cpp

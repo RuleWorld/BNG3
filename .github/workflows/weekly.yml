@@ -33,7 +33,7 @@ jobs:
 
       - name: Install build deps (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu')
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+        run: which cmake ninja > /dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y cmake ninja-build; }
 
       - name: Install build deps (macOS)
         if: startsWith(matrix.os, 'macos')
@@ -81,7 +81,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y cmake ninja-build
+          which cmake ninja > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y cmake ninja-build
+          }
           pip install numpy scipy
 
       - name: Build NFSim
@@ -153,7 +156,10 @@ jobs:
 
       - name: Install dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y cmake ninja-build
+          which cmake ninja > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y cmake ninja-build
+          }
           pip install scikit-build-core pybind11
           # The release test suite imports scipy in device qualification
           # contracts even when no optional GPU backend is available.
@@ -188,7 +194,10 @@ jobs:
           python-version: "3.12"
       - name: Build native extension and install test dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y cmake ninja-build
+          which cmake ninja > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y cmake ninja-build
+          }
           python -m pip install scikit-build-core pybind11 pytest numpy scipy
           cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_PYTHON_BINDINGS=ON -DBUILD_CLI=OFF -DBUILD_TESTS=OFF
           cmake --build build --parallel 2
@@ -222,7 +231,10 @@ jobs:
 
       - name: Install build deps
         run: |
-          sudo apt-get update && sudo apt-get install -y cmake ninja-build
+          which cmake ninja > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y cmake ninja-build
+          }
           pip install scikit-build-core pybind11
 
       - name: Install package
@@ -235,10 +247,12 @@ jobs:
         run: python benchmarks/run_benchmarks.py --json benchmarks/results/latest.json --markdown benchmarks/results/latest.md
 
       - name: Upload benchmark artifact
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: benchmark-results
           path: benchmarks/results/latest.json
+          if-no-files-found: warn
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Cross-validation: C++ vs Perl (requires Perl)
@@ -256,7 +270,10 @@ jobs:
 
       - name: Install Perl and dependencies
         run: |
-          sudo apt-get update && sudo apt-get install -y perl cmake ninja-build build-essential
+          which cmake ninja perl gcc g++ > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y perl cmake ninja-build build-essential
+          }
           python -m pip install numpy python-libsbml pyyaml scikit-build-core pybind11
           python -m pip install -e .[full]
 

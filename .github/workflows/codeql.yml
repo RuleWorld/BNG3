@@ -49,7 +49,7 @@ jobs:
 
       - name: Install C++ build dependencies
         if: matrix.language == 'cpp'
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+        run: which cmake ninja > /dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y cmake ninja-build; }
 
       - name: Configure C++ project
         if: matrix.language == 'cpp'
