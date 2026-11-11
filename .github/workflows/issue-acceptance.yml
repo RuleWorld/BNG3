@@ -151,10 +151,10 @@ jobs:
       - name: Install build tools and locked SBML runtime
         run: |
           set -euo pipefail
-          which cmake ninja gcc g++ > /dev/null 2>&1 || {
+          which cmake ninja gcc g++ perl > /dev/null 2>&1 || {
             sudo apt-get update
-            sudo apt-get install -y build-essential cmake ninja-build
-          } perl
+            sudo apt-get install -y build-essential cmake ninja-build perl
+          }
           python -m venv .venv
           .venv/bin/python -m pip install --require-hashes -r provenance/ssts-ci-linux-py312.lock
 
@@ -372,7 +372,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/semantic-00966-artifacts"
-          python - <<'PY'
+          .venv/bin/python - <<'PY'
           import os, subprocess
           from pathlib import Path
           from scripts.ci.validate_sbml_test_suite import _suite_lock_entry

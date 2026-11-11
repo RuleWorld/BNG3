@@ -520,9 +520,11 @@ def check_workflows_topology(workflows_dir: Path) -> dict[str, Any]:
         "audited_workflows": [p.name for p in workflow_paths],
         "per_workflow": per_workflow,
         "parity": parity_report,
-        "static_result": "pass"
-        if not upload_errors and parity_report.get("static_result") == "pass"
-        else "fail",
+        "static_result": (
+            "pass"
+            if not upload_errors and parity_report.get("static_result") == "pass"
+            else "fail"
+        ),
         "acceptance_result": "fail",
         "acceptance_gaps": [
             "parallel-job serialization audit is not yet complete for all maintained workflows",
