@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "../antlr_compat.hpp"
 
+#include "../antlr_compat.hpp"
 
 #include "antlr4-runtime.h"
 
@@ -32,40 +32,40 @@ public:
     SAMPLE_TIMES = 73, SAVE_PROGRESS = 74, PRINT_CDAT = 75, PRINT_FUNCTIONS = 76,
     PRINT_NET = 77, PRINT_END = 78, STOP_IF = 79, PRINT_ON_STOP = 80, SIMULATE_ODE = 81,
     ATOL = 82, RTOL = 83, STEADY_STATE = 84, SPARSE = 85, SIMULATE_SSA = 86,
-    SIMULATE_PLA = 87, PLA_CONFIG = 88, PLA_OUTPUT = 89, SIMULATE_NF = 90,
-    SIMULATE_RM = 91, PARAM = 92, COMPLEX = 93, GET_FINAL_STATE = 94, GML = 95,
-    NOCSLF = 96, NOTF = 97, BINARY_OUTPUT = 98, UTL = 99, EQUIL = 100, PARAMETER_SCAN = 101,
-    BIFURCATE = 102, LINEAR_PARAMETER_SENSITIVITY = 103, PARAMETER = 104,
-    PAR_MIN = 105, PAR_MAX = 106, N_SCAN_PTS = 107, LOG_SCALE = 108, RESET_CONC = 109,
-    READFILE = 110, FILE = 111, ATOMIZE = 112, BLOCKS = 113, SKIPACTIONS = 114,
-    VISUALIZE = 115, TYPE = 116, BACKGROUND = 117, COLLAPSE = 118, OPTS = 119,
-    WRITESSC = 120, WRITESSCCFG = 121, FORMAT = 122, WRITEFILE = 123, WRITEMODEL = 124,
-    WRITEXML = 125, WRITENETWORK = 126, WRITESBML = 127, WRITESBMLMULTI = 128,
-    WRITEMDL = 129, WRITELATEX = 130, INCLUDE_MODEL = 131, INCLUDE_NETWORK = 132,
-    PRETTY_FORMATTING = 133, EVALUATE_EXPRESSIONS = 134, TEXTREACTION = 135,
-    TEXTSPECIES = 136, WRITEMFILE = 137, WRITEMEXFILE = 138, WRITECPPFILE = 139,
-    WRITECPYFILE = 140, BDF = 141, MAX_STEP = 142, MAXORDER = 143, STATS = 144,
-    MAX_NUM_STEPS = 145, MAX_ERR_TEST_FAILS = 146, MAX_CONV_FAILS = 147,
-    STIFF = 148, SETCONCENTRATION = 149, ADDCONCENTRATION = 150, SAVECONCENTRATIONS = 151,
-    RESETCONCENTRATIONS = 152, SETPARAMETER = 153, SAVEPARAMETERS = 154,
-    RESETPARAMETERS = 155, SETVOLUME = 156, SIMULATE_PSA = 157, SIMULATE_PROTOCOL = 158,
-    PROTOCOL = 159, POPLEVEL = 160, MOL_THRESHOLD = 161, NFSIM_EXEC = 162,
-    QUIT = 163, TRUE = 164, FALSE = 165, SAT = 166, MM = 167, HILL = 168,
-    ARRHENIUS = 169, MRATIO = 170, TFUN = 171, FUNCTIONPRODUCT = 172, PRIORITY = 173,
-    IF = 174, EXP = 175, LN = 176, LOG10 = 177, LOG2 = 178, SQRT = 179,
-    RINT = 180, ABS = 181, SIN = 182, COS = 183, TAN = 184, ASIN = 185,
-    ACOS = 186, ATAN = 187, SINH = 188, COSH = 189, TANH = 190, ASINH = 191,
-    ACOSH = 192, ATANH = 193, PI = 194, EULERIAN = 195, MIN = 196, MAX = 197,
-    SUM = 198, AVG = 199, TIME = 200, FLOAT = 201, INT = 202, STRING = 203,
-    QUOTED_STRING = 204, SINGLE_QUOTED_STRING = 205, SEMI = 206, COLON = 207,
-    LSBRACKET = 208, RSBRACKET = 209, LBRACKET = 210, RBRACKET = 211, COMMA = 212,
-    DOT = 213, LPAREN = 214, RPAREN = 215, UNI_REACTION_SIGN = 216, BI_REACTION_SIGN = 217,
-    DOLLAR = 218, TILDE = 219, AT = 220, GTE = 221, GT = 222, LTE = 223,
-    LT = 224, ASSIGNS = 225, EQUALS = 226, NOT_EQUALS = 227, BECOMES = 228,
-    LOGICAL_AND = 229, LOGICAL_OR = 230, LOGICAL_XOR = 231, DIV = 232, TIMES = 233,
-    MINUS = 234, PLUS = 235, POWER = 236, MOLECULE_TAG_TOKEN = 237, MOD = 238,
-    PIPE = 239, QMARK = 240, EMARK = 241, AMPERSAND = 242, VERSION_NUMBER = 243,
-    ULB = 244
+    SIMULATE_PLA = 87, SIMULATE_PS = 88, PLA_CONFIG = 89, PLA_OUTPUT = 90,
+    SIMULATE_NF = 91, SIMULATE_RM = 92, PARAM = 93, COMPLEX = 94, GET_FINAL_STATE = 95,
+    GML = 96, NOCSLF = 97, NOTF = 98, BINARY_OUTPUT = 99, UTL = 100, EQUIL = 101,
+    PARAMETER_SCAN = 102, BIFURCATE = 103, LINEAR_PARAMETER_SENSITIVITY = 104,
+    PARAMETER = 105, PAR_MIN = 106, PAR_MAX = 107, N_SCAN_PTS = 108, LOG_SCALE = 109,
+    RESET_CONC = 110, READFILE = 111, FILE = 112, ATOMIZE = 113, BLOCKS = 114,
+    SKIPACTIONS = 115, VISUALIZE = 116, TYPE = 117, BACKGROUND = 118, COLLAPSE = 119,
+    OPTS = 120, WRITESSC = 121, WRITESSCCFG = 122, FORMAT = 123, WRITEFILE = 124,
+    WRITEMODEL = 125, WRITEXML = 126, WRITENETWORK = 127, WRITESBML = 128,
+    WRITESBMLMULTI = 129, WRITEMDL = 130, WRITELATEX = 131, INCLUDE_MODEL = 132,
+    INCLUDE_NETWORK = 133, PRETTY_FORMATTING = 134, EVALUATE_EXPRESSIONS = 135,
+    TEXTREACTION = 136, TEXTSPECIES = 137, WRITEMFILE = 138, WRITEMEXFILE = 139,
+    WRITECPPFILE = 140, WRITECPYFILE = 141, BDF = 142, MAX_STEP = 143, MAXORDER = 144,
+    STATS = 145, MAX_NUM_STEPS = 146, MAX_ERR_TEST_FAILS = 147, MAX_CONV_FAILS = 148,
+    STIFF = 149, SETCONCENTRATION = 150, ADDCONCENTRATION = 151, SAVECONCENTRATIONS = 152,
+    RESETCONCENTRATIONS = 153, SETPARAMETER = 154, SAVEPARAMETERS = 155,
+    RESETPARAMETERS = 156, SETVOLUME = 157, SIMULATE_PSA = 158, SIMULATE_PROTOCOL = 159,
+    PROTOCOL = 160, POPLEVEL = 161, MOL_THRESHOLD = 162, NFSIM_EXEC = 163,
+    QUIT = 164, TRUE = 165, FALSE = 166, SAT = 167, MM = 168, HILL = 169,
+    ARRHENIUS = 170, MRATIO = 171, TFUN = 172, FUNCTIONPRODUCT = 173, PRIORITY = 174,
+    IF = 175, EXP = 176, LN = 177, LOG10 = 178, LOG2 = 179, SQRT = 180,
+    RINT = 181, ABS = 182, SIN = 183, COS = 184, TAN = 185, ASIN = 186,
+    ACOS = 187, ATAN = 188, SINH = 189, COSH = 190, TANH = 191, ASINH = 192,
+    ACOSH = 193, ATANH = 194, PI = 195, EULERIAN = 196, MIN = 197, MAX = 198,
+    SUM = 199, AVG = 200, TIME = 201, FLOAT = 202, INT = 203, STRING = 204,
+    QUOTED_STRING = 205, SINGLE_QUOTED_STRING = 206, SEMI = 207, COLON = 208,
+    LSBRACKET = 209, RSBRACKET = 210, LBRACKET = 211, RBRACKET = 212, COMMA = 213,
+    DOT = 214, LPAREN = 215, RPAREN = 216, UNI_REACTION_SIGN = 217, BI_REACTION_SIGN = 218,
+    DOLLAR = 219, TILDE = 220, AT = 221, GTE = 222, GT = 223, LTE = 224,
+    LT = 225, ASSIGNS = 226, EQUALS = 227, NOT_EQUALS = 228, BECOMES = 229,
+    LOGICAL_AND = 230, LOGICAL_OR = 231, LOGICAL_XOR = 232, DIV = 233, TIMES = 234,
+    MINUS = 235, PLUS = 236, POWER = 237, MOLECULE_TAG_TOKEN = 238, MOD = 239,
+    PIPE = 240, QMARK = 241, EMARK = 242, AMPERSAND = 243, VERSION_NUMBER = 244,
+    ULB = 245
   };
 
   enum {
@@ -82,28 +82,29 @@ public:
     RuleBond_spec = 32, RuleComponent_label = 33, RuleBond_id = 34, RuleObservables_block = 35,
     RuleObservable_def = 36, RuleObservable_type = 37, RuleObservable_pattern_list = 38,
     RuleObservable_pattern = 39, RuleReaction_rules_block = 40, RuleReaction_rule_def = 41,
-    RuleLabel_def = 42, RuleReactant_patterns = 43, RuleProduct_patterns = 44,
-    RuleReaction_sign = 45, RuleRate_law = 46, RuleRate_law_expr = 47, RuleRate_law_or_expr = 48,
-    RuleRate_law_xor_expr = 49, RuleRate_law_and_expr = 50, RuleRate_law_eq_expr = 51,
-    RuleRate_law_add_expr = 52, RuleRate_law_mul_expr = 53, RuleRate_law_pow_expr = 54,
-    RuleRate_law_unary_expr = 55, RuleRate_law_primary_expr = 56, RuleRule_modifiers = 57,
-    RulePattern_list = 58, RuleFunctions_block = 59, RuleFunction_def = 60,
-    RuleFunction_name = 61, RuleParam_list = 62, RuleCompartments_block = 63,
-    RuleCompartment_def = 64, RuleEnergy_patterns_block = 65, RuleEnergy_pattern_def = 66,
-    RulePopulation_maps_block = 67, RulePopulation_map_def = 68, RuleBng3_events_block = 69,
-    RuleEvent_def = 70, RuleEvent_delay = 71, RuleEvent_priority = 72, RuleEvent_assignment = 73,
-    RuleBoolean_literal = 74, RuleActions_block = 75, RuleWrapped_actions_block = 76,
-    RuleBegin_actions_block = 77, RuleProtocol_block = 78, RuleAction_command = 79,
-    RuleSimulate_protocol_cmd = 80, RuleGenerate_network_cmd = 81, RuleSimulate_cmd = 82,
-    RuleWrite_cmd = 83, RuleSet_cmd = 84, RuleOther_action_cmd = 85, RuleAction_args = 86,
-    RuleAction_arg_list = 87, RuleAction_arg = 88, RuleAction_arg_value = 89,
-    RuleQuoted_string = 90, RuleKeyword_as_value = 91, RuleNested_hash_list = 92,
-    RuleNested_hash_item = 93, RuleArg_name = 94, RuleExpression_list = 95,
-    RuleExpression = 96, RuleConditional_expr = 97, RuleOr_expr = 98, RuleXor_expr = 99,
-    RuleAnd_expr = 100, RuleEquality_expr = 101, RuleRelational_expr = 102,
-    RuleAdditive_expr = 103, RuleMultiplicative_expr = 104, RulePower_expr = 105,
-    RuleUnary_expr = 106, RulePrimary_expr = 107, RuleFunction_call = 108,
-    RuleObservable_ref = 109, RuleLiteral = 110, RuleObservable_name = 111
+    RuleLabel_token = 42, RuleLabel_def = 43, RuleReactant_patterns = 44,
+    RuleProduct_patterns = 45, RuleReaction_sign = 46, RuleRate_law = 47,
+    RuleRate_law_expr = 48, RuleRate_law_or_expr = 49, RuleRate_law_xor_expr = 50,
+    RuleRate_law_and_expr = 51, RuleRate_law_eq_expr = 52, RuleRate_law_add_expr = 53,
+    RuleRate_law_mul_expr = 54, RuleRate_law_pow_expr = 55, RuleRate_law_unary_expr = 56,
+    RuleRate_law_primary_expr = 57, RuleRule_modifiers = 58, RulePattern_list = 59,
+    RuleFunctions_block = 60, RuleFunction_def = 61, RuleFunction_name = 62,
+    RuleParam_list = 63, RuleCompartments_block = 64, RuleCompartment_def = 65,
+    RuleEnergy_patterns_block = 66, RuleEnergy_pattern_def = 67, RulePopulation_maps_block = 68,
+    RulePopulation_map_def = 69, RuleBng3_events_block = 70, RuleEvent_def = 71,
+    RuleEvent_delay = 72, RuleEvent_priority = 73, RuleEvent_assignment = 74,
+    RuleBoolean_literal = 75, RuleActions_block = 76, RuleWrapped_actions_block = 77,
+    RuleBegin_actions_block = 78, RuleProtocol_block = 79, RuleAction_command = 80,
+    RuleSimulate_protocol_cmd = 81, RuleGenerate_network_cmd = 82, RuleSimulate_cmd = 83,
+    RuleWrite_cmd = 84, RuleSet_cmd = 85, RuleOther_action_cmd = 86, RuleAction_args = 87,
+    RuleAction_arg_list = 88, RuleAction_arg = 89, RuleAction_arg_value = 90,
+    RuleQuoted_string = 91, RuleKeyword_as_value = 92, RuleNested_hash_list = 93,
+    RuleNested_hash_item = 94, RuleArg_name = 95, RuleExpression_list = 96,
+    RuleExpression = 97, RuleConditional_expr = 98, RuleOr_expr = 99, RuleXor_expr = 100,
+    RuleAnd_expr = 101, RuleEquality_expr = 102, RuleRelational_expr = 103,
+    RuleAdditive_expr = 104, RuleMultiplicative_expr = 105, RulePower_expr = 106,
+    RuleUnary_expr = 107, RulePrimary_expr = 108, RuleFunction_call = 109,
+    RuleObservable_ref = 110, RuleLiteral = 111, RuleObservable_name = 112
   };
 
   explicit BNGParser(antlr4::TokenStream *input);
@@ -165,6 +166,7 @@ public:
   class Observable_patternContext;
   class Reaction_rules_blockContext;
   class Reaction_rule_defContext;
+  class Label_tokenContext;
   class Label_defContext;
   class Reactant_patternsContext;
   class Product_patternsContext;
@@ -1144,19 +1146,72 @@ public:
 
   Reaction_rule_defContext* reaction_rule_def();
 
+  class  Label_tokenContext : public antlr4::ParserRuleContext {
+  public:
+    Label_tokenContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *STRING();
+    antlr4::tree::TerminalNode *INT();
+    antlr4::tree::TerminalNode *QUOTED_STRING();
+    antlr4::tree::TerminalNode *SINGLE_QUOTED_STRING();
+    antlr4::tree::TerminalNode *END();
+    antlr4::tree::TerminalNode *MODEL();
+    antlr4::tree::TerminalNode *PARAMETERS();
+    antlr4::tree::TerminalNode *COMPARTMENTS();
+    antlr4::tree::TerminalNode *MOLECULE();
+    antlr4::tree::TerminalNode *MOLECULES();
+    antlr4::tree::TerminalNode *SPECIES();
+    antlr4::tree::TerminalNode *OBSERVABLES();
+    antlr4::tree::TerminalNode *FUNCTIONS();
+    antlr4::tree::TerminalNode *REACTION();
+    antlr4::tree::TerminalNode *REACTIONS();
+    antlr4::tree::TerminalNode *RULES();
+    antlr4::tree::TerminalNode *REACTION_RULES();
+    antlr4::tree::TerminalNode *MOLECULE_TYPES();
+    antlr4::tree::TerminalNode *GROUPS();
+    antlr4::tree::TerminalNode *ACTIONS();
+    antlr4::tree::TerminalNode *POPULATION();
+    antlr4::tree::TerminalNode *MAPS();
+    antlr4::tree::TerminalNode *ENERGY();
+    antlr4::tree::TerminalNode *PATTERNS();
+    antlr4::tree::TerminalNode *MOLECULAR();
+    antlr4::tree::TerminalNode *COUNTER();
+    antlr4::tree::TerminalNode *TYPES();
+    antlr4::tree::TerminalNode *SEED();
+    antlr4::tree::TerminalNode *TOTALRATE();
+    antlr4::tree::TerminalNode *DELAY();
+    antlr4::tree::TerminalNode *MATCHONCE();
+    antlr4::tree::TerminalNode *DELETEMOLECULES();
+    antlr4::tree::TerminalNode *MOVECONNECTED();
+    antlr4::tree::TerminalNode *NONCONSUMING();
+    antlr4::tree::TerminalNode *INCLUDE_REACTANTS();
+    antlr4::tree::TerminalNode *INCLUDE_PRODUCTS();
+    antlr4::tree::TerminalNode *EXCLUDE_REACTANTS();
+    antlr4::tree::TerminalNode *EXCLUDE_PRODUCTS();
+    antlr4::tree::TerminalNode *LPAREN();
+    antlr4::tree::TerminalNode *RPAREN();
+    antlr4::tree::TerminalNode *MINUS();
+
+    virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
+    virtual void exitRule(antlr4::tree::ParseTreeListener *listener) override;
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+
+  };
+
+  Label_tokenContext* label_token();
+
   class  Label_defContext : public antlr4::ParserRuleContext {
   public:
     Label_defContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *COLON();
-    std::vector<antlr4::tree::TerminalNode *> INT();
-    antlr4::tree::TerminalNode* INT(size_t i);
-    std::vector<antlr4::tree::TerminalNode *> STRING();
-    antlr4::tree::TerminalNode* STRING(size_t i);
-    std::vector<antlr4::tree::TerminalNode *> LPAREN();
-    antlr4::tree::TerminalNode* LPAREN(size_t i);
-    std::vector<antlr4::tree::TerminalNode *> RPAREN();
-    antlr4::tree::TerminalNode* RPAREN(size_t i);
+    antlr4::tree::TerminalNode *INT();
+    antlr4::tree::TerminalNode *STRING();
+    antlr4::tree::TerminalNode *QUOTED_STRING();
+    antlr4::tree::TerminalNode *SINGLE_QUOTED_STRING();
+    std::vector<Label_tokenContext *> label_token();
+    Label_tokenContext* label_token(size_t i);
 
     virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
     virtual void exitRule(antlr4::tree::ParseTreeListener *listener) override;
@@ -1968,6 +2023,7 @@ public:
     antlr4::tree::TerminalNode *SIMULATE_ODE();
     antlr4::tree::TerminalNode *SIMULATE_SSA();
     antlr4::tree::TerminalNode *SIMULATE_PLA();
+    antlr4::tree::TerminalNode *SIMULATE_PS();
     antlr4::tree::TerminalNode *SIMULATE_NF();
     antlr4::tree::TerminalNode *SIMULATE_RM();
     antlr4::tree::TerminalNode *SIMULATE_PSA();

@@ -570,3 +570,50 @@ end seed species
     CHECK(model->getSeedSpecies().front().getPattern() == "A(x)");
     CHECK(model->getSeedSpecies().front().getAmount().toString() == "(10 * (NA * V))");
 }
+
+TEST_CASE("rule labels with keywords and quoted strings parse successfully") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin molecule types
+  Actin(barbed,pointed)
+end molecule types
+begin parameters
+  k 1.0
+end parameters
+begin reaction rules
+  Barbed end elongation :\
+  Actin(barbed,pointed) -> Actin(barbed,pointed) k
+  Pointed end elongation :\
+  Actin(barbed,pointed) -> Actin(barbed,pointed) k
+  'Pointed end':\
+  Actin(barbed,pointed) -> Actin(barbed,pointed) k
+end reaction rules
+)BNGL");
+
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getReactionRules().size() == 3);
+    CHECK(model->getReactionRules()[0].getLabel() == "Barbedendelongation:");
+    CHECK(model->getReactionRules()[1].getLabel() == "Pointedendelongation:");
+    CHECK(model->getReactionRules()[2].getLabel() == "'Pointed end':");
+}
+
+TEST_CASE("legacy simulate_ps action parses and maps to simulate_pla") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin reaction rules
+  A() -> 0 1.0
+end reaction rules
+simulate_ps({t_end=>10,n_steps=>100,max_prob=>0.05})
+)BNGL");
+
+    REQUIRE(model != nullptr);
+    REQUIRE(model->getActions().size() == 1);
+    CHECK(model->getActions().front().name == "simulate_pla");
+    CHECK(model->getActions().front().arguments.at("t_end") == "10");
+    CHECK(model->getActions().front().arguments.at("n_steps") == "100");
+    CHECK(model->getActions().front().arguments.at("max_prob") == "0.05");
+}

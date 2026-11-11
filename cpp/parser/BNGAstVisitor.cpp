@@ -492,9 +492,9 @@ std::string normalizeEmptyHybridActionList(const std::string& source) {
 }
 
 bool isLooseActionLine(const std::string& line) {
-    static constexpr std::array<std::string_view, 27> actionNames = {
+    static constexpr std::array<std::string_view, 28> actionNames = {
         "generate_network", "generatenetwork", "simulate", "simulate_ode",
-        "simulate_ssa", "simulate_nf", "simulate_pla", "simulate_psa",
+        "simulate_ssa", "simulate_nf", "simulate_pla", "simulate_ps", "simulate_psa",
         "simulate_rm", "simulate_protocol", "writefile", "writexml",
         "writesbml", "writesbmlmulti", "writenetwork", "writemodel",
         "writemfile", "writemexfile", "writecppfile", "writecpyfile",
@@ -2219,7 +2219,9 @@ std::any BNGAstVisitor::visitGenerate_network_cmd(BNGParser::Generate_network_cm
 }
 
 std::any BNGAstVisitor::visitSimulate_cmd(BNGParser::Simulate_cmdContext* ctx) {
-    addAction(toLower(ctx->children.front()->getText()), ctx->action_args());
+    std::string name = toLower(ctx->children.front()->getText());
+    if (name == "simulate_ps") name = "simulate_pla";
+    addAction(name, ctx->action_args());
     return {};
 }
 
