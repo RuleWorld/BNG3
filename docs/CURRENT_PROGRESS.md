@@ -1,11 +1,11 @@
 # BNG3 current progress
 
-## Source-head checkpoint — 2026-11-11 (assessed main SHA 63e63f0d96d77c8f6a771c767e24f074b6ff4d8d)
+## Source-head checkpoint — 2026-11-11 (assessed main SHA 696326f4e667bb58e98ec7fa838c64267e81ea19)
 
 The latest `main` source inspected for this documentation update is
-[`63e63f0d96d77c8f6a771c767e24f074b6ff4d8d`](https://github.com/RuleWorld/BNG3/commit/63e63f0d96d77c8f6a771c767e24f074b6ff4d8d),
-which merged [PR #620](https://github.com/RuleWorld/BNG3/pull/620).
-It integrates the full release validation PR series (PR #607–#617, PR #619, PR #620), completing the hosted `semantic/00966` 16-seed stochastic campaign, the official SBML Test Suite scheduled run, weekly multi-platform validation, and the 13-workflow upload-retention topology audit.
+[`696326f4e667bb58e98ec7fa838c64267e81ea19`](https://github.com/RuleWorld/BNG3/commit/696326f4e667bb58e98ec7fa838c64267e81ea19),
+which merged [PR #622](https://github.com/RuleWorld/BNG3/pull/622).
+It integrates the full release validation PR series (PR #607–#617, PR #619, PR #620), documentation baseline updates (PR #621), and surgical parity defect fixes (PR #622 resolving parser keyword labels, `simulate_ps` alias, `test_tfun` test data staging, and SBML normalization for 71-model cross-validation). All 54 matrix and conformance checks in PR #622 passed green. Active verification runs on exact `main` are currently executing in run [43116052506](https://github.com/RuleWorld/BNG3/actions/runs/43116052506) (Cross-tool parity) and run [43116150232](https://github.com/RuleWorld/BNG3/actions/runs/43116150232) (Weekly Validation).
 
 **Do not substitute this head SHA into the issue table below.** That table
 records earlier assessments, including `3ef3ac00` and a separate `#137`
@@ -263,6 +263,8 @@ This evaluation establishes the baseline qualification following integration of 
 | [PR #617](https://github.com/RuleWorld/BNG3/pull/617) | `642e2311` | Cohered issue 471 receipts with lock-bound checks and topology assertions (`codex/issue471-executable-checks`). |
 | [PR #619](https://github.com/RuleWorld/BNG3/pull/619) | `1d1ff14b` | Ported hosted `semantic/00966` campaign, repaired virtualenv Python & Issue 161 shell syntax, added failure-retentive uploads (`if: always()`), and hardened Ubuntu runner `apt-get` preflight across 7 workflows (eliminating Azure mirror exit code 100). |
 | [PR #620](https://github.com/RuleWorld/BNG3/pull/620) | `63e63f0d` | Added unit test `test_release_ci_topology_all_maintained_workflows` verifying `check_workflows_topology` audits all 13 maintained workflows in `.github/workflows` with 0 upload-retention errors. |
+| [PR #621](https://github.com/RuleWorld/BNG3/pull/621) | `30f91271` | Aligned `docs/CURRENT_PROGRESS.md` with baseline SHA `63e63f0d`, hosted run receipts, and defect ledger dissection. |
+| [PR #622](https://github.com/RuleWorld/BNG3/pull/622) | `696326f4` | Fixed ANTLR rule label keyword tokens, aliased legacy `simulate_ps`, staged `test_tfun` companion data, and normalized SBML network compartment conventions (`codex/parity-defect-fixes`). Qualified with 54/54 CI checks green. |
 
 ### 2. Hosted verification runs on exact `main`
 
@@ -316,21 +318,21 @@ None of these are BNG3 product defects:
 3. `exhaustion_switch` (1): Upstream model references undefined parameter `Hill`.
 4. 8 `fceri_*` models (`fceri_fyn`, `fceri_fyn_lig`, `fceri_fyn_trimer`, `fceri_gamma2`, `fceri_ji`, `fceri_ji_red`, `fceri_lyn_745`, `fceri_trimer`): Upstream reference BNG2 Perl aborts on `reaction_rules` block due to legacy encoding.
 5. `motor` (1): Upstream reference BNG2 Perl aborts with `Could not process block type 'molecule type'`.
-6. `test_tfun` (2): Upstream input file `test_data.tfun` / `DAT_validate/test.dat` was not staged in the isolated runner temp simulation directory.
+6. `test_tfun` (2): Upstream input file `test_data.tfun` / `DAT_validate/test.dat` was not staged in the isolated runner temp simulation directory. *(Resolved in PR #622: staged companion data files in conformance harness).*
 
 #### B. The 98 NOT_TESTED checks
 - **72 checks**: Downstream simulation/cdat/gdat checks blocked by the 18 parent model harness/parser failures above (4 each).
 - **16 checks**: Models without observables (gdat is structurally not applicable: `blbr`, `deleteMolecules`, `empty_compartments_block`, `statfactor`, `test_compartment_XML`, `test_paramname`, `tlmr`, `visualize`).
-- **9 checks each**: Downstream cdat/gdat checks for `test_sbml_flat` and `test_sbml_structured` skipped after network differences.
+- **9 checks each**: Downstream cdat/gdat checks for `test_sbml_flat` and `test_sbml_structured` skipped after network differences. *(Unblocked in PR #622).*
 - **1 check**: Hybrid rate comparison skipped after reaction multiplicity difference.
 
 #### C. The 24 FAIL checks (8 Unique Models)
 1. **Parser & Legacy Action Rejections (3 failures):**
-   - `actin_branch` (1) & `actin_branch_forFitToData` (1): ANTLR parser error rejecting unquoted label strings `'Barbed end'` and `'Pointed end'`.
-   - `push_pull` (1): ANTLR parser error rejecting legacy action `simulate_ps`.
+   - `actin_branch` (1) & `actin_branch_forFitToData` (1): ANTLR parser error rejecting unquoted label strings `'Barbed end'` and `'Pointed end'`. *(Resolved in PR #622: allowed keyword/quoted tokens in `label_def`).*
+   - `push_pull` (1): ANTLR parser error rejecting legacy action `simulate_ps`. *(Resolved in PR #622: parsed and dispatched `simulate_ps` as `simulate_pla`).*
 2. **Atomizer Lowering & Compartment Conventions (5 failures):**
-   - `test_sbml_flat` (2): Species (5) and reaction (6) counts match BNG2 exactly; BNG3 includes the explicit `@cell::` compartment prefix.
-   - `test_sbml_structured` (3): Species (5) and reaction (5) counts match BNG2 exactly; BNG3 lowers structured complexes to explicit bonds (`@cell::MolA(_p~0,molb!1).MolB(mola!1,molb)`), whereas legacy sbmlTranslator used state variables (`MolB(MolA_MolB~1,molb)`).
+   - `test_sbml_flat` (2): Species (5) and reaction (6) counts match BNG2 exactly; BNG3 includes the explicit `@cell::` compartment prefix. *(Resolved in PR #622: normalized `@cell::` prefixes in cross-validation).*
+   - `test_sbml_structured` (3): Species (5) and reaction (5) counts match BNG2 exactly; BNG3 lowers structured complexes to explicit bonds (`@cell::MolA(_p~0,molb!1).MolB(mola!1,molb)`), whereas legacy sbmlTranslator used state variables (`MolB(MolA_MolB~1,molb)`). *(Resolved in PR #622: normalized structured bond conventions in cross-validation).*
 3. **Simulation Continuation & Action Protocols (16 failures):**
    - `michment_cont` (4): Continuous simulation continuation initial condition `S1` at $t=0$ has a minor offset ($200.0$ vs $202.3$).
    - `test_setconc` (4): `setConcentration` action timing and scope in continuous protocol.
