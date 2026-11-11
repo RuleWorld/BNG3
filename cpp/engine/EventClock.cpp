@@ -17,7 +17,7 @@ void OdeIntegrator::initializePeriodicEventClocks(const std::vector<double>& sta
     periodicEventClocks_.clear();
     periodicClockTriggers_.clear();
     // In an event-only system the state is exactly constant between events.
-    // Keep reaction-coupled systems on the ordinary CVODE root path.
+    // Keep reaction-coupled systems on the standard CVODE root path.
     if (std::any_of(continuousSpecies_.begin(), continuousSpecies_.end(),
                     [](bool continuous) { return continuous; })) return;
     for (std::size_t group = 0; group < nativeEventGroups_.size(); ++group) {
