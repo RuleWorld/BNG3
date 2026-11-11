@@ -1,4 +1,5 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <catch2/matchers/catch_matchers_floating_point.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
 
@@ -1878,6 +1879,216 @@ TEST_CASE("CVODE re-tests a trigger over species that only events change",
     CHECK_THAT(last[0], Catch::Matchers::WithinAbs(0.16, 1e-9));
     CHECK_THAT(last[1], Catch::Matchers::WithinAbs(16.0, 1e-9));
     CHECK_THAT(last[2], Catch::Matchers::WithinAbs(1.0, 1e-9));
+}
+
+TEST_CASE("CVODE re-tests discrete triggers with an identically zero reaction rate",
+          "[OdeOptions][Events]") {
+    std::string source(kDiscreteTriggerModel);
+    const auto events = source.find("begin bng3_events");
+    REQUIRE(events != std::string::npos);
+    source.insert(events, R"(
+begin functions
+    zero_rate() = 0
+end functions
+begin reaction rules
+    0 -> Tick() zero_rate() TotalRate
+end reaction rules
+)");
+    auto model = parser::parseModel(source);
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 0.165;
+    options.nSteps = 33;
+    const auto result = engine::OdeIntegrator(*model, network).integrate(options);
+    REQUIRE_FALSE(result.observables.empty());
+    CHECK_THAT(result.observables.back()[1], Catch::Matchers::WithinAbs(16.0, 1e-9));
+    CHECK_THAT(result.observables.back()[2], Catch::Matchers::WithinAbs(1.0, 1e-9));
+}
+
+TEST_CASE("CVODE does not classify a mutable zero rate as discrete",
+          "[OdeOptions][Events]") {
+    std::string source(kDiscreteTriggerModel);
+    source.insert(0, "begin parameters\n  k 0\nend parameters\n");
+    const auto tickAssignment = source.find("assignment: ticks = ticks + 1");
+    REQUIRE(tickAssignment != std::string::npos);
+    source.insert(tickAssignment, "assignment: k = 1\n        ");
+    const auto events = source.find("begin bng3_events");
+    REQUIRE(events != std::string::npos);
+    source.insert(events, R"(
+begin functions
+    variable_rate() = k
+end functions
+begin reaction rules
+    0 -> Tick() variable_rate() TotalRate
+end reaction rules
+)");
+    auto model = parser::parseModel(source);
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 0.165;
+    options.nSteps = 33;
+    REQUIRE_THROWS_WITH(engine::OdeIntegrator(*model, network).integrate(options),
+                        Catch::Matchers::ContainsSubstring("trigger requires"));
+}
+
+TEST_CASE("CVODE executes recurring event at the final sample time",
+          "[OdeOptions][Events]") {
+    auto model = parser::parseModel(kDiscreteTriggerModel);
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 1.0;
+    options.nSteps = 100;
+    const auto result = engine::OdeIntegrator(*model, network).integrate(options);
+    REQUIRE_FALSE(result.observables.empty());
+    CAPTURE(result.observables.back()[0]);
+    CHECK_THAT(result.observables.back()[1], Catch::Matchers::WithinAbs(100.0, 1e-9));
+}
+
+TEST_CASE("CVODE recurring clocks retain their phase across output grids",
+          "[OdeOptions][Events]") {
+    const auto steps = GENERATE(1, 7, 100);
+    auto model = parser::parseModel(kDiscreteTriggerModel);
+    REQUIRE(model != nullptr);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 10.0;
+    options.nSteps = steps;
+    const auto result = engine::OdeIntegrator(*model, network).integrate(options);
+    CHECK(result.observables.back()[0] == 10.0);
+    CHECK(result.observables.back()[1] == 1000.0);
+}
+
+TEST_CASE("CVODE never advances a genuinely later recurring clock",
+          "[OdeOptions][Events]") {
+    const auto laterPeriod = GENERATE("0.010000000000001", "0.010000000000000002");
+    std::string source(kDiscreteTriggerModel);
+    const auto period = source.find("reset + 0.01");
+    REQUIRE(period != std::string::npos);
+    source.replace(period, std::string("reset + 0.01").size(),
+                   std::string("reset + ") + laterPeriod);
+    auto model = parser::parseModel(source);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 1.0;
+    options.nSteps = 100;
+    const auto result = engine::OdeIntegrator(*model, network).integrate(options);
+    CHECK(result.observables.back()[1] == 99.0);
+}
+
+TEST_CASE("CVODE recurring clocks preserve phase in a new continuing integrator",
+          "[OdeOptions][Events]") {
+    auto model = parser::parseModel(kDiscreteTriggerModel);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 0.333;
+    options.nSteps = 7;
+    const auto first = engine::OdeIntegrator(*model, network).integrate(options);
+    REQUIRE(first.observables.back()[1] == 33.0);
+    options.tStart = 0.333;
+    options.tEnd = 1.0;
+    options.continueSimulation = true;
+    const auto second = engine::OdeIntegrator(*model, network).integrate(options);
+    CHECK(second.observables.back()[0] == 1.0);
+    CHECK(second.observables.back()[1] == 100.0);
+}
+
+TEST_CASE("CVODE recurring clocks cancel competing nonpersistent events",
+          "[OdeOptions][Events]") {
+    std::string source(kDiscreteTriggerModel);
+    const auto begin = source.find("    event \"tick\"");
+    const auto end = source.find("    end event", begin) +
+        std::string("    end event").size();
+    std::string other = source.substr(begin, end - begin);
+    other.replace(other.find("\"tick\""), 6, "\"other\"");
+    source.insert(end, "\n" + other);
+    auto model = parser::parseModel(source);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 1.0;
+    options.nSteps = 7;
+    options.seed = 73;
+    const auto result = engine::OdeIntegrator(*model, network).integrate(options);
+    CHECK(result.observables.back()[0] == 1.0);
+    CHECK(result.observables.back()[1] == 100.0);
+}
+
+TEST_CASE("CVODE recurring clocks respect initialValue at a late start",
+          "[OdeOptions][Events]") {
+    const bool initiallyTrue = GENERATE(false, true);
+    std::string source(kDiscreteTriggerModel);
+    if (initiallyTrue) {
+        const auto initial = source.find("initial_value: false");
+        source.replace(initial, std::string("initial_value: false").size(),
+                       "initial_value: true");
+    }
+    auto model = parser::parseModel(source);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tStart = 0.1;
+    options.tEnd = 0.2;
+    options.nSteps = 3;
+    const auto result = engine::OdeIntegrator(*model, network).integrate(options);
+    CHECK(result.observables.back()[1] == (initiallyTrue ? 0.0 : 11.0));
+}
+
+TEST_CASE("CVODE reports an unrepresentable periodic event instant",
+          "[OdeOptions][Events]") {
+    std::string source(kDiscreteTriggerModel);
+    source.replace(source.find("Reset() 0"), std::string("Reset() 0").size(),
+                   "Reset() 1e16");
+    auto model = parser::parseModel(source);
+    engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tStart = 1e16;
+    options.tEnd = 1e16 + 4;
+    options.nSteps = 1;
+    CHECK_THROWS_WITH(engine::OdeIntegrator(*model, network).integrate(options),
+                      Catch::Matchers::ContainsSubstring("below time precision"));
+}
+
+TEST_CASE("CVODE recurring clock re-tests an external reset intervention",
+          "[OdeOptions][Events]") {
+    auto model = parser::parseModel(kDiscreteTriggerModel);
+    engine::NetworkGenerator generator(*model);
+    auto network = generator.generateNative();
+    engine::OdeOptions options;
+    options.method = "cvode";
+    options.tEnd = 0.5;
+    options.nSteps = 1;
+    const auto first = engine::OdeIntegrator(*model, network).integrate(options);
+    REQUIRE(first.observables.back()[1] == 50.0);
+    // Preserve the completed counter while moving only the clock reset.
+    for (std::size_t i = 0; i < network.species.size(); ++i) {
+        network.species.get(i).setAmount(first.concentrations.back()[i]);
+    }
+    network.species.get(0).setAmount(0.0);
+    options.tStart = 0.5;
+    options.tEnd = 1.0;
+    options.continueSimulation = true;
+    const auto second = engine::OdeIntegrator(*model, network).integrate(options);
+    CHECK(second.observables.front()[1] == 51.0);
+    CHECK(second.observables.back()[1] == 101.0);
 }
 
 TEST_CASE("CVODE re-tests arithmetic triggers over species that only events change",

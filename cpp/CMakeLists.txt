@@ -100,6 +100,7 @@ add_library(bng_engine STATIC
     engine/LegacyNetworkRuleKernel.cpp
     engine/ObservableProjection.cpp
     engine/OdeIntegrator.cpp
+    engine/EventClock.cpp
     engine/BatchSsa.cpp
     engine/gpu/GpuSsaBackend.cpp
     engine/PlaSimulator.cpp

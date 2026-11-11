@@ -33,6 +33,11 @@ struct SimulationSession {
         std::vector<double> values;
     };
 
+    struct PeriodicEventPhase {
+        double origin = 0.0;
+        std::uint64_t ticks = 0;
+    };
+
     bool initialized = false;
     double startTime = 0.0;
     double currentTime = 0.0;
@@ -46,6 +51,7 @@ struct SimulationSession {
     std::vector<PendingNativeEvent> pendingNativeEvents;
     std::vector<double> eventTriggerRoseAt;
     std::unordered_map<std::string, double> eventParameterValues;
+    std::unordered_map<std::string, PeriodicEventPhase> periodicEventPhases;
     std::mt19937_64 rng;
     bool rngInitialized = false;
     bool ssaHazardInitialized = false;
@@ -66,6 +72,7 @@ struct SimulationSession {
         pendingNativeEvents.clear();
         eventTriggerRoseAt.clear();
         eventParameterValues.clear();
+        periodicEventPhases.clear();
         rngInitialized = false;
         ssaHazardInitialized = false;
         ssaRemainingHazard = 0.0;
