@@ -139,6 +139,22 @@ jobs:
             echo "- Linux run_network SHA-256: $digest"
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Provide sbmlTranslator for legacy SBML inputs
+        run: |
+          set -euo pipefail
+          python scripts/ci/checkout_oracle.py --name pybionetgen \
+            --destination "$RUNNER_TEMP/oracle-pybionetgen" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+          python -m venv "$RUNNER_TEMP/oracle-translator-venv"
+          "$RUNNER_TEMP/oracle-translator-venv/bin/python" -m pip install \
+            -r "$RUNNER_TEMP/oracle-pybionetgen/requirements.txt"
+          oracle_bin="$RUNNER_TEMP/oracle-bionetgen/bng2/bin"
+          mkdir -p "$oracle_bin"
+          printf '%s\n' '#!/bin/sh' 'PYTHONPATH="$RUNNER_TEMP/oracle-pybionetgen" exec "$RUNNER_TEMP/oracle-translator-venv/bin/python" "$RUNNER_TEMP/oracle-pybionetgen/bionetgen/atomizer/sbmlTranslator.py" "$@"' > "$oracle_bin/sbmlTranslator"
+          chmod +x "$oracle_bin/sbmlTranslator"
+          test -x "$oracle_bin/sbmlTranslator"
+          "$oracle_bin/sbmlTranslator" --help > /dev/null
+
       - name: Checkout and build locked native NFsim oracle
         run: |
           set -euo pipefail
