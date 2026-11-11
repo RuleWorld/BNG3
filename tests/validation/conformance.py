@@ -445,6 +445,7 @@ def _model(name, source, args, directory, reference, env):
     raw_test_net = work / "subject" / (source.stem + ".net")
     if name in ("test_sbml_flat", "test_sbml_structured"):
         from scripts.cross_validate import normalize_legacy_sbml_network_file
+
         test_net = work / "subject" / f"{source.stem}.normalized.net"
         normalize_legacy_sbml_network_file(raw_test_net, test_net, name)
     else:

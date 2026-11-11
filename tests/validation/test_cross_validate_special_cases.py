@@ -253,7 +253,9 @@ def test_legacy_sbml_normalization():
         " 1 __MolB__2_cell 2\n"
         "end groups\n"
     )
-    norm_struct = normalize_legacy_sbml_network_text(struct_text, "test_sbml_structured")
+    norm_struct = normalize_legacy_sbml_network_text(
+        struct_text, "test_sbml_structured"
+    )
     assert "@cell::" not in norm_struct
     assert "MolB(MolA_MolB~1,molb)" in norm_struct
     assert "MolB(MolA_MolB~0,molb!1).MolB(MolA_MolB~0,molb!1)" in norm_struct

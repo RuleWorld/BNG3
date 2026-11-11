@@ -981,7 +981,10 @@ def normalize_legacy_sbml_network_text(text: str, model_name: str) -> str:
         text = re.sub(r"@\w+::", "", text)
         replacements = [
             ("MolA(_p~0,molb!1).MolB(mola!1,molb)", "MolB(MolA_MolB~1,molb)"),
-            ("MolB(mola,molb!1).MolB(mola,molb!1)", "MolB(MolA_MolB~0,molb!1).MolB(MolA_MolB~0,molb!1)"),
+            (
+                "MolB(mola,molb!1).MolB(mola,molb!1)",
+                "MolB(MolA_MolB~0,molb!1).MolB(MolA_MolB~0,molb!1)",
+            ),
             ("MolA(_p~0,molb)", "MolA(p~0)"),
             ("MolA(_p~_P,molb)", "MolA(p~P)"),
             ("MolB(mola,molb)", "MolB(MolA_MolB~0,molb)"),
@@ -1018,7 +1021,10 @@ def compare_network_files(
     reference = parse_net(reference_net)
     if model_name in ("test_sbml_flat", "test_sbml_structured"):
         test_net_path = Path(test_net)
-        normalized_path = test_net_path.parent / f"{test_net_path.stem}.normalized{test_net_path.suffix}"
+        normalized_path = (
+            test_net_path.parent
+            / f"{test_net_path.stem}.normalized{test_net_path.suffix}"
+        )
         normalize_legacy_sbml_network_file(test_net_path, normalized_path, model_name)
         test = parse_net(normalized_path)
     else:
