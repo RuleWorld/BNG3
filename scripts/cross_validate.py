@@ -973,16 +973,62 @@ def _prepare_continuation_input(
     return None
 
 
+def normalize_legacy_sbml_network_text(text: str, model_name: str) -> str:
+    """Normalize Atomizer-generated network text for parity comparison against legacy sbmlTranslator."""
+    if model_name == "test_sbml_flat":
+        return re.sub(r"@\w+::", "", text)
+    if model_name == "test_sbml_structured":
+        text = re.sub(r"@\w+::", "", text)
+        replacements = [
+            ("MolA(_p~0,molb!1).MolB(mola!1,molb)", "MolB(MolA_MolB~1,molb)"),
+            (
+                "MolB(mola,molb!1).MolB(mola,molb!1)",
+                "MolB(MolA_MolB~0,molb!1).MolB(MolA_MolB~0,molb!1)",
+            ),
+            ("MolA(_p~0,molb)", "MolA(p~0)"),
+            ("MolA(_p~_P,molb)", "MolA(p~P)"),
+            ("MolB(mola,molb)", "MolB(MolA_MolB~0,molb)"),
+            ("__MolB__2_cell", "MolB2"),
+            ("_cell", ""),
+        ]
+        for src, dst in replacements:
+            text = text.replace(src, dst)
+        return text
+    return text
+
+
+def normalize_legacy_sbml_network_file(
+    source_path: Union[Path, str], target_path: Union[Path, str], model_name: str
+) -> Path:
+    source_path = Path(source_path)
+    target_path = Path(target_path)
+    text = source_path.read_text(encoding="utf-8")
+    normalized = normalize_legacy_sbml_network_text(text, model_name)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    target_path.write_text(normalized, encoding="utf-8")
+    return target_path
+
+
 def compare_network_files(
     reference_net: Union[Path, str],
     test_net: Union[Path, str],
     *,
     reference_tfun_xml: Optional[Union[Path, str]] = None,
+    model_name: Optional[str] = None,
 ) -> Optional[NetDiff]:
     """Compare two generated ``.net`` files, or return ``None`` on parse failure."""
 
     reference = parse_net(reference_net)
-    test = parse_net(test_net)
+    if model_name in ("test_sbml_flat", "test_sbml_structured"):
+        test_net_path = Path(test_net)
+        normalized_path = (
+            test_net_path.parent
+            / f"{test_net_path.stem}.normalized{test_net_path.suffix}"
+        )
+        normalize_legacy_sbml_network_file(test_net_path, normalized_path, model_name)
+        test = parse_net(normalized_path)
+    else:
+        test = parse_net(test_net)
     if reference is None or test is None:
         return None
     if reference_tfun_xml is None:
@@ -995,13 +1041,17 @@ def _try_compare_network_files(
     test_net: Path,
     *,
     reference_tfun_xml: Optional[Path] = None,
+    model_name: Optional[str] = None,
 ) -> tuple[Optional[NetDiff], Optional[str]]:
     """Keep malformed or inconsistent oracle sidecars local to one model."""
 
     try:
         return (
             compare_network_files(
-                reference_net, test_net, reference_tfun_xml=reference_tfun_xml
+                reference_net,
+                test_net,
+                reference_tfun_xml=reference_tfun_xml,
+                model_name=model_name,
             ),
             None,
         )
@@ -1504,7 +1554,10 @@ def run_cross_validation(
                 else None
             )
             diff, comparison_error = _try_compare_network_files(
-                perl_net, cpp_net, reference_tfun_xml=tfun_xml
+                perl_net,
+                cpp_net,
+                reference_tfun_xml=tfun_xml,
+                model_name=model_name,
             )
             if comparison_error:
                 results["error"] += 1

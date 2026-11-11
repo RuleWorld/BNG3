@@ -117,8 +117,8 @@ std::string hybridActionName(const std::string& action) {
 bool isHybridSimulationAction(const std::string& name) {
     static const std::set<std::string> simulationActions = {
         "simulate",     "simulate_ode", "simulate_ssa",         "simulate_pla",
-        "simulate_nf",  "simulate_rm",  "simulate_psa",         "simulate_protocol",
-        "parameter_scan", "bifurcate",  "linearparametersensitivity"};
+        "simulate_ps",  "simulate_nf",  "simulate_rm",          "simulate_psa",
+        "simulate_protocol", "parameter_scan", "bifurcate",     "linearparametersensitivity"};
     return simulationActions.find(name) != simulationActions.end();
 }
 
@@ -2934,7 +2934,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         for (const auto& protoAction : protocol) {
             const auto actionIndex = compiledActionIndex++;
             const auto* compiledSimulationOptions = simulationOptionsAt(actionIndex);
-            const auto protoName = lowercase(protoAction.name);
+            const auto rawProtoName = lowercase(protoAction.name);
+            const auto protoName = rawProtoName == "simulate_ps" ? std::string("simulate_pla") : rawProtoName;
             if (protoName == "simulate_nf" ||
                 (protoName == "simulate" &&
                  resolveSimulationMethod(protoAction) == "nf")) {
@@ -3134,6 +3135,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         // same semantics as parsed BNGL sources.
         if (actionName == "readnetwork" || actionName == "readmodel") {
             actionName = "readfile";
+        }
+        if (actionName == "simulate_ps") {
+            actionName = "simulate_pla";
         }
 
         if (actionName == "readfile") {

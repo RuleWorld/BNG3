@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "../antlr_compat.hpp"
 
+#include "../antlr_compat.hpp"
 
 #include "antlr4-runtime.h"
 #include "BNGParserVisitor.h"
@@ -182,6 +182,10 @@ public:
   }
 
   virtual std::any visitReaction_rule_def(BNGParser::Reaction_rule_defContext *ctx) override {
+    return visitChildren(ctx);
+  }
+
+  virtual std::any visitLabel_token(BNGParser::Label_tokenContext *ctx) override {
     return visitChildren(ctx);
   }
 

@@ -234,3 +234,30 @@ def test_weekly_sbml_translator_is_installed_in_bng2_lookup_directory():
     assert (
         "$GITHUB_WORKSPACE/python/bionetgen/atomizer/sbmlTranslator.py" not in workflow
     )
+
+
+def test_legacy_sbml_normalization():
+    from scripts.cross_validate import normalize_legacy_sbml_network_text
+
+    flat_text = "begin species\n 1 @cell::A() 1.0\n 2 @cell::B() 2.0\nend species\n"
+    norm_flat = normalize_legacy_sbml_network_text(flat_text, "test_sbml_flat")
+    assert "@cell::" not in norm_flat
+    assert "A() 1.0" in norm_flat
+
+    struct_text = (
+        "begin species\n"
+        " 1 @cell::MolA(_p~0,molb!1).MolB(mola!1,molb) 0\n"
+        " 2 @cell::MolB(mola,molb!1).MolB(mola,molb!1) 0\n"
+        "end species\n"
+        "begin groups\n"
+        " 1 __MolB__2_cell 2\n"
+        "end groups\n"
+    )
+    norm_struct = normalize_legacy_sbml_network_text(
+        struct_text, "test_sbml_structured"
+    )
+    assert "@cell::" not in norm_struct
+    assert "MolB(MolA_MolB~1,molb)" in norm_struct
+    assert "MolB(MolA_MolB~0,molb!1).MolB(MolA_MolB~0,molb!1)" in norm_struct
+    assert "MolB2" in norm_struct
+    assert "_cell" not in norm_struct

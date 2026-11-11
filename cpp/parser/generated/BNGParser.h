@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "../antlr_compat.hpp"
 
+#include "../antlr_compat.hpp"
 
 #include "antlr4-runtime.h"
 
@@ -82,28 +82,29 @@ public:
     RuleBond_spec = 32, RuleComponent_label = 33, RuleBond_id = 34, RuleObservables_block = 35,
     RuleObservable_def = 36, RuleObservable_type = 37, RuleObservable_pattern_list = 38,
     RuleObservable_pattern = 39, RuleReaction_rules_block = 40, RuleReaction_rule_def = 41,
-    RuleLabel_def = 42, RuleReactant_patterns = 43, RuleProduct_patterns = 44,
-    RuleReaction_sign = 45, RuleRate_law = 46, RuleRate_law_expr = 47, RuleRate_law_or_expr = 48,
-    RuleRate_law_xor_expr = 49, RuleRate_law_and_expr = 50, RuleRate_law_eq_expr = 51,
-    RuleRate_law_add_expr = 52, RuleRate_law_mul_expr = 53, RuleRate_law_pow_expr = 54,
-    RuleRate_law_unary_expr = 55, RuleRate_law_primary_expr = 56, RuleRule_modifiers = 57,
-    RulePattern_list = 58, RuleFunctions_block = 59, RuleFunction_def = 60,
-    RuleFunction_name = 61, RuleParam_list = 62, RuleCompartments_block = 63,
-    RuleCompartment_def = 64, RuleEnergy_patterns_block = 65, RuleEnergy_pattern_def = 66,
-    RulePopulation_maps_block = 67, RulePopulation_map_def = 68, RuleBng3_events_block = 69,
-    RuleEvent_def = 70, RuleEvent_delay = 71, RuleEvent_priority = 72, RuleEvent_assignment = 73,
-    RuleBoolean_literal = 74, RuleActions_block = 75, RuleWrapped_actions_block = 76,
-    RuleBegin_actions_block = 77, RuleProtocol_block = 78, RuleAction_command = 79,
-    RuleSimulate_protocol_cmd = 80, RuleGenerate_network_cmd = 81, RuleSimulate_cmd = 82,
-    RuleWrite_cmd = 83, RuleSet_cmd = 84, RuleOther_action_cmd = 85, RuleAction_args = 86,
-    RuleAction_arg_list = 87, RuleAction_arg = 88, RuleAction_arg_value = 89,
-    RuleQuoted_string = 90, RuleKeyword_as_value = 91, RuleNested_hash_list = 92,
-    RuleNested_hash_item = 93, RuleArg_name = 94, RuleExpression_list = 95,
-    RuleExpression = 96, RuleConditional_expr = 97, RuleOr_expr = 98, RuleXor_expr = 99,
-    RuleAnd_expr = 100, RuleEquality_expr = 101, RuleRelational_expr = 102,
-    RuleAdditive_expr = 103, RuleMultiplicative_expr = 104, RulePower_expr = 105,
-    RuleUnary_expr = 106, RulePrimary_expr = 107, RuleFunction_call = 108,
-    RuleObservable_ref = 109, RuleLiteral = 110, RuleObservable_name = 111
+    RuleLabel_token = 42, RuleLabel_def = 43, RuleReactant_patterns = 44,
+    RuleProduct_patterns = 45, RuleReaction_sign = 46, RuleRate_law = 47,
+    RuleRate_law_expr = 48, RuleRate_law_or_expr = 49, RuleRate_law_xor_expr = 50,
+    RuleRate_law_and_expr = 51, RuleRate_law_eq_expr = 52, RuleRate_law_add_expr = 53,
+    RuleRate_law_mul_expr = 54, RuleRate_law_pow_expr = 55, RuleRate_law_unary_expr = 56,
+    RuleRate_law_primary_expr = 57, RuleRule_modifiers = 58, RulePattern_list = 59,
+    RuleFunctions_block = 60, RuleFunction_def = 61, RuleFunction_name = 62,
+    RuleParam_list = 63, RuleCompartments_block = 64, RuleCompartment_def = 65,
+    RuleEnergy_patterns_block = 66, RuleEnergy_pattern_def = 67, RulePopulation_maps_block = 68,
+    RulePopulation_map_def = 69, RuleBng3_events_block = 70, RuleEvent_def = 71,
+    RuleEvent_delay = 72, RuleEvent_priority = 73, RuleEvent_assignment = 74,
+    RuleBoolean_literal = 75, RuleActions_block = 76, RuleWrapped_actions_block = 77,
+    RuleBegin_actions_block = 78, RuleProtocol_block = 79, RuleAction_command = 80,
+    RuleSimulate_protocol_cmd = 81, RuleGenerate_network_cmd = 82, RuleSimulate_cmd = 83,
+    RuleWrite_cmd = 84, RuleSet_cmd = 85, RuleOther_action_cmd = 86, RuleAction_args = 87,
+    RuleAction_arg_list = 88, RuleAction_arg = 89, RuleAction_arg_value = 90,
+    RuleQuoted_string = 91, RuleKeyword_as_value = 92, RuleNested_hash_list = 93,
+    RuleNested_hash_item = 94, RuleArg_name = 95, RuleExpression_list = 96,
+    RuleExpression = 97, RuleConditional_expr = 98, RuleOr_expr = 99, RuleXor_expr = 100,
+    RuleAnd_expr = 101, RuleEquality_expr = 102, RuleRelational_expr = 103,
+    RuleAdditive_expr = 104, RuleMultiplicative_expr = 105, RulePower_expr = 106,
+    RuleUnary_expr = 107, RulePrimary_expr = 108, RuleFunction_call = 109,
+    RuleObservable_ref = 110, RuleLiteral = 111, RuleObservable_name = 112
   };
 
   explicit BNGParser(antlr4::TokenStream *input);
@@ -165,6 +166,7 @@ public:
   class Observable_patternContext;
   class Reaction_rules_blockContext;
   class Reaction_rule_defContext;
+  class Label_tokenContext;
   class Label_defContext;
   class Reactant_patternsContext;
   class Product_patternsContext;
@@ -1144,19 +1146,72 @@ public:
 
   Reaction_rule_defContext* reaction_rule_def();
 
+  class  Label_tokenContext : public antlr4::ParserRuleContext {
+  public:
+    Label_tokenContext(antlr4::ParserRuleContext *parent, size_t invokingState);
+    virtual size_t getRuleIndex() const override;
+    antlr4::tree::TerminalNode *STRING();
+    antlr4::tree::TerminalNode *INT();
+    antlr4::tree::TerminalNode *QUOTED_STRING();
+    antlr4::tree::TerminalNode *SINGLE_QUOTED_STRING();
+    antlr4::tree::TerminalNode *END();
+    antlr4::tree::TerminalNode *MODEL();
+    antlr4::tree::TerminalNode *PARAMETERS();
+    antlr4::tree::TerminalNode *COMPARTMENTS();
+    antlr4::tree::TerminalNode *MOLECULE();
+    antlr4::tree::TerminalNode *MOLECULES();
+    antlr4::tree::TerminalNode *SPECIES();
+    antlr4::tree::TerminalNode *OBSERVABLES();
+    antlr4::tree::TerminalNode *FUNCTIONS();
+    antlr4::tree::TerminalNode *REACTION();
+    antlr4::tree::TerminalNode *REACTIONS();
+    antlr4::tree::TerminalNode *RULES();
+    antlr4::tree::TerminalNode *REACTION_RULES();
+    antlr4::tree::TerminalNode *MOLECULE_TYPES();
+    antlr4::tree::TerminalNode *GROUPS();
+    antlr4::tree::TerminalNode *ACTIONS();
+    antlr4::tree::TerminalNode *POPULATION();
+    antlr4::tree::TerminalNode *MAPS();
+    antlr4::tree::TerminalNode *ENERGY();
+    antlr4::tree::TerminalNode *PATTERNS();
+    antlr4::tree::TerminalNode *MOLECULAR();
+    antlr4::tree::TerminalNode *COUNTER();
+    antlr4::tree::TerminalNode *TYPES();
+    antlr4::tree::TerminalNode *SEED();
+    antlr4::tree::TerminalNode *TOTALRATE();
+    antlr4::tree::TerminalNode *DELAY();
+    antlr4::tree::TerminalNode *MATCHONCE();
+    antlr4::tree::TerminalNode *DELETEMOLECULES();
+    antlr4::tree::TerminalNode *MOVECONNECTED();
+    antlr4::tree::TerminalNode *NONCONSUMING();
+    antlr4::tree::TerminalNode *INCLUDE_REACTANTS();
+    antlr4::tree::TerminalNode *INCLUDE_PRODUCTS();
+    antlr4::tree::TerminalNode *EXCLUDE_REACTANTS();
+    antlr4::tree::TerminalNode *EXCLUDE_PRODUCTS();
+    antlr4::tree::TerminalNode *LPAREN();
+    antlr4::tree::TerminalNode *RPAREN();
+    antlr4::tree::TerminalNode *MINUS();
+
+    virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
+    virtual void exitRule(antlr4::tree::ParseTreeListener *listener) override;
+
+    virtual std::any accept(antlr4::tree::ParseTreeVisitor *visitor) override;
+
+  };
+
+  Label_tokenContext* label_token();
+
   class  Label_defContext : public antlr4::ParserRuleContext {
   public:
     Label_defContext(antlr4::ParserRuleContext *parent, size_t invokingState);
     virtual size_t getRuleIndex() const override;
     antlr4::tree::TerminalNode *COLON();
-    std::vector<antlr4::tree::TerminalNode *> INT();
-    antlr4::tree::TerminalNode* INT(size_t i);
-    std::vector<antlr4::tree::TerminalNode *> STRING();
-    antlr4::tree::TerminalNode* STRING(size_t i);
-    std::vector<antlr4::tree::TerminalNode *> LPAREN();
-    antlr4::tree::TerminalNode* LPAREN(size_t i);
-    std::vector<antlr4::tree::TerminalNode *> RPAREN();
-    antlr4::tree::TerminalNode* RPAREN(size_t i);
+    antlr4::tree::TerminalNode *INT();
+    antlr4::tree::TerminalNode *STRING();
+    antlr4::tree::TerminalNode *QUOTED_STRING();
+    antlr4::tree::TerminalNode *SINGLE_QUOTED_STRING();
+    std::vector<Label_tokenContext *> label_token();
+    Label_tokenContext* label_token(size_t i);
 
     virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;
     virtual void exitRule(antlr4::tree::ParseTreeListener *listener) override;
@@ -2064,6 +2119,7 @@ public:
     antlr4::tree::TerminalNode *SETVOLUME();
     antlr4::tree::TerminalNode *INCLUDE_MODEL();
     antlr4::tree::TerminalNode *INCLUDE_NETWORK();
+    antlr4::tree::TerminalNode *STRING();
     Action_argsContext *action_args();
     Action_arg_valueContext *action_arg_value();
     antlr4::tree::TerminalNode *SEMI();

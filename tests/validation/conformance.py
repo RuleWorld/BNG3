@@ -21,7 +21,14 @@ from . import campaign, inventory, reporting
 ROOT = Path(__file__).resolve().parents[2]
 TIERS = ("smoke", "integration", "full", "performance", "platform")
 VALIDATION_FIXTURE_COMPANION_MODELS = frozenset(
-    {"test_sbml_flat", "test_sbml_structured", "michment_cont", "test_sat_cont"}
+    {
+        "test_sbml_flat",
+        "test_sbml_structured",
+        "michment_cont",
+        "test_sat_cont",
+        "test_tfun",
+        "test_tfun_file",
+    }
 )
 
 
@@ -434,8 +441,17 @@ def _model(name, source, args, directory, reference, env):
                 )
             )
             return rows
-    ref = parse_net(work / "reference" / (source.stem + ".net"))
-    test = parse_net(work / "subject" / (source.stem + ".net"))
+    ref_net = work / "reference" / (source.stem + ".net")
+    raw_test_net = work / "subject" / (source.stem + ".net")
+    if name in ("test_sbml_flat", "test_sbml_structured"):
+        from scripts.cross_validate import normalize_legacy_sbml_network_file
+
+        test_net = work / "subject" / f"{source.stem}.normalized.net"
+        normalize_legacy_sbml_network_file(raw_test_net, test_net, name)
+    else:
+        test_net = raw_test_net
+    ref = parse_net(ref_net)
+    test = parse_net(test_net)
     if ref is None or test is None:
         rows.append(
             _result(
@@ -495,8 +511,8 @@ def _model(name, source, args, directory, reference, env):
             "observable-weights": ["observables.counting-modes"],
         }
         contracts = network_contracts(
-            work / "reference" / (source.stem + ".net"),
-            work / "subject" / (source.stem + ".net"),
+            ref_net,
+            test_net,
             reference_tfun_xml=tfun_xml,
         )
         for contract in contracts:

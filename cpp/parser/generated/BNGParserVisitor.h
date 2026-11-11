@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "../antlr_compat.hpp"
 
+#include "../antlr_compat.hpp"
 
 #include "antlr4-runtime.h"
 #include "BNGParser.h"
@@ -104,6 +104,8 @@ public:
     virtual std::any visitReaction_rules_block(BNGParser::Reaction_rules_blockContext *context) = 0;
 
     virtual std::any visitReaction_rule_def(BNGParser::Reaction_rule_defContext *context) = 0;
+
+    virtual std::any visitLabel_token(BNGParser::Label_tokenContext *context) = 0;
 
     virtual std::any visitLabel_def(BNGParser::Label_defContext *context) = 0;
 

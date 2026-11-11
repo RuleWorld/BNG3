@@ -255,11 +255,53 @@ reaction_rule_def
             reactant_patterns reaction_sign product_patterns rate_law rule_modifiers*
         ;
 
-// Labels can be: "ruleName:", "1:", "1 Description:", or just inline before the rule
-// The multi-word format is: INT (STRING | INT | LPAREN | RPAREN)* COLON
-// Also support bare INT labels without colon (e.g. "1 A->B")
+// Labels can be: "ruleName:", "1:", "1 Description:", "'Barbed end':", or bare INT "1 A->B"
+label_token
+    : STRING
+    | INT
+    | QUOTED_STRING
+    | SINGLE_QUOTED_STRING
+    | END
+    | MODEL
+    | PARAMETERS
+    | COMPARTMENTS
+    | MOLECULE
+    | MOLECULES
+    | SPECIES
+    | OBSERVABLES
+    | FUNCTIONS
+    | REACTION
+    | REACTIONS
+    | RULES
+    | REACTION_RULES
+    | MOLECULE_TYPES
+    | GROUPS
+    | ACTIONS
+    | POPULATION
+    | MAPS
+    | ENERGY
+    | PATTERNS
+    | MOLECULAR
+    | COUNTER
+    | TYPES
+    | SEED
+    | TOTALRATE
+    | DELAY
+    | MATCHONCE
+    | DELETEMOLECULES
+    | MOVECONNECTED
+    | NONCONSUMING
+    | INCLUDE_REACTANTS
+    | INCLUDE_PRODUCTS
+    | EXCLUDE_REACTANTS
+    | EXCLUDE_PRODUCTS
+    | LPAREN
+    | RPAREN
+    | MINUS
+    ;
+
 label_def
-    : (INT | STRING) (STRING | INT | LPAREN STRING? RPAREN)* COLON
+    : (INT | STRING | QUOTED_STRING | SINGLE_QUOTED_STRING) label_token* COLON
     | INT
     ;
 
@@ -488,7 +530,7 @@ set_cmd
 other_action_cmd
     : (SAVECONCENTRATIONS | RESETCONCENTRATIONS | SAVEPARAMETERS | RESETPARAMETERS | QUIT
        | PARAMETER_SCAN | BIFURCATE | LINEAR_PARAMETER_SENSITIVITY | VISUALIZE | GENERATEHYBRIDMODEL | READFILE | SETVOLUME
-       | INCLUDE_MODEL | INCLUDE_NETWORK)
+       | INCLUDE_MODEL | INCLUDE_NETWORK | STRING)
       LPAREN (action_args | action_arg_value)? RPAREN SEMI? LB*
     ;
 

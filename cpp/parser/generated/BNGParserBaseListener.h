@@ -3,8 +3,8 @@
 
 #pragma once
 
-#include "../antlr_compat.hpp"
 
+#include "../antlr_compat.hpp"
 
 #include "antlr4-runtime.h"
 #include "BNGParserListener.h"
@@ -143,6 +143,9 @@ public:
 
   virtual void enterReaction_rule_def(BNGParser::Reaction_rule_defContext * /*ctx*/) override { }
   virtual void exitReaction_rule_def(BNGParser::Reaction_rule_defContext * /*ctx*/) override { }
+
+  virtual void enterLabel_token(BNGParser::Label_tokenContext * /*ctx*/) override { }
+  virtual void exitLabel_token(BNGParser::Label_tokenContext * /*ctx*/) override { }
 
   virtual void enterLabel_def(BNGParser::Label_defContext * /*ctx*/) override { }
   virtual void exitLabel_def(BNGParser::Label_defContext * /*ctx*/) override { }

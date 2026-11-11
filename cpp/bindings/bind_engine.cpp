@@ -84,7 +84,7 @@ public:
         auto& actions = model_.getActions();
         const std::set<std::string> simulationActions = {
             "simulate", "simulate_ode", "simulate_ssa", "simulate_nf",
-            "simulate_pla", "simulate_psa"};
+            "simulate_pla", "simulate_ps", "simulate_psa"};
         const std::set<std::string> supportedKeys = {
             "t_start", "t_end", "n_steps"};
 
