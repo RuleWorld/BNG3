@@ -1,17 +1,11 @@
 # BNG3 current progress
 
-## Source-head checkpoint — 2026-11-06 (not issue acceptance)
+## Source-head checkpoint — 2026-11-11 (assessed main SHA 63e63f0d96d77c8f6a771c767e24f074b6ff4d8d)
 
 The latest `main` source inspected for this documentation update is
-[`29d8320659832fb2d411e2a51972e227559a9499`](https://github.com/RuleWorld/BNG3/commit/29d8320659832fb2d411e2a51972e227559a9499),
-which merged [PR #602](https://github.com/RuleWorld/BNG3/pull/602).
-It replaces deep-copy operations in the *legacy* Atomizer's reaction-context
-and translator paths with more specialized copying. The reaction-context
-backup copies two mapping levels and uses `copy()` on their nested values;
-`Species.copy()` independently copies molecules/components in the writer path.
-Because these paths have mutable nested data, equivalence and performance
-remain validation questions rather than qualified improvements. The merge diff
-contains no new tests or benchmark results.
+[`63e63f0d96d77c8f6a771c767e24f074b6ff4d8d`](https://github.com/RuleWorld/BNG3/commit/63e63f0d96d77c8f6a771c767e24f074b6ff4d8d),
+which merged [PR #620](https://github.com/RuleWorld/BNG3/pull/620).
+It integrates the full release validation PR series (PR #607–#617, PR #619, PR #620), completing the hosted `semantic/00966` 16-seed stochastic campaign, the official SBML Test Suite scheduled run, weekly multi-platform validation, and the 13-workflow upload-retention topology audit.
 
 **Do not substitute this head SHA into the issue table below.** That table
 records earlier assessments, including `3ef3ac00` and a separate `#137`
@@ -66,7 +60,7 @@ Issue-keyed evidence index assessed at main SHA `3ef3ac00645dc894133a8755a1499ca
 | [#184](https://github.com/RuleWorld/BNG3/issues/184) | `release-candidate`, `release-installed-artifacts`, `release-obligation-184` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#185](https://github.com/RuleWorld/BNG3/issues/185) | `release-codeowners`, `release-review-rules`, `release-obligation-185` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#186](https://github.com/RuleWorld/BNG3/issues/186) | `release-migration-docs`, `release-maintenance-docs`, `release-obligation-186` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
-| [#471](https://github.com/RuleWorld/BNG3/issues/471) | `release-oracle-independence`, `release-oracle-tamper`, `release-ci-topology` | `38ecfc025d6fe5036614c6b3ab7a9fec15a2b4d2` | [Policy PR #481](https://github.com/RuleWorld/BNG3/pull/481), [independent fixtures #480](https://github.com/RuleWorld/BNG3/pull/480) | Open; do not merge yet | Narrow protected-change detection to expected data, tolerance changes, added skips/exclusions and removed case IDs; allow ordinary regression tests. Both PRs remain unmerged. |
+| [#471](https://github.com/RuleWorld/BNG3/issues/471) | `release-oracle-independence`, `release-oracle-tamper`, `release-ci-topology` | `38ecfc025d6fe5036614c6b3ab7a9fec15a2b4d2` | [PR #617](https://github.com/RuleWorld/BNG3/pull/617), [PR #620](https://github.com/RuleWorld/BNG3/pull/620) | Open (unclosed) | Topology audit verified across all 13 maintained workflows; issue remains OPEN pending full exact-main downstream runtime receipts for all 994 capability rows. |
 | [#472](https://github.com/RuleWorld/BNG3/issues/472) | `release-docs-links`, `release-docs-decisions` | `38ecfc025d6fe5036614c6b3ab7a9fec15a2b4d2` | [Docs #478](https://github.com/RuleWorld/BNG3/pull/478) merged at `ff58d6ad`; [checks #479](https://github.com/RuleWorld/BNG3/pull/479) merged at `38ecfc02` | Docs and independent checks merged; issue open | Exact-main qualification artifacts and dependencies #137/#179 remain outstanding. Merge evidence does not establish issue acceptance. |
 | [#473](https://github.com/RuleWorld/BNG3/issues/473) | `release-jax-ode`, `release-jax-ssa`, `release-jax-install` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue. |
 | [#474](https://github.com/RuleWorld/BNG3/issues/474) | `release-cuda-device`, `release-cuda-performance` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue. |
@@ -247,3 +241,101 @@ Following the combined baseline reconciliation, the remaining roadmap milestones
   - Lean 4 kernel and NFnext lowering contract bridge verified in CI.
 - **Python compatibility ([#171](https://github.com/RuleWorld/BNG3/issues/171), [#172](https://github.com/RuleWorld/BNG3/issues/172)):**
   - Full PyBioNetGen compatibility matrix verified (74/74 tests passing in `tests/python/test_compatibility_contract.py`).
+
+## Release baseline qualification and parity ledger (2026-11-11, commit 63e63f0d96d77c8f6a771c767e24f074b6ff4d8d)
+
+This evaluation establishes the baseline qualification following integration of the release pull request series (PR #607–#617, PR #619, PR #620) onto `main` at commit `63e63f0d96d77c8f6a771c767e24f074b6ff4d8d`.
+
+### 1. Integrated PR series qualification
+
+| PR | Commit SHA | Purpose & Qualification Result |
+|---|---|---|
+| [PR #607](https://github.com/RuleWorld/BNG3/pull/607) | `a5d5cf52` | Staged SBML translator for parity oracle (`codex/parity-sbmltranslator-oracle`). |
+| [PR #608](https://github.com/RuleWorld/BNG3/pull/608) | `bed4f15a` | Installed SciPy in weekly Python suite (`codex/weekly-python-full-scipy`). |
+| [PR #609](https://github.com/RuleWorld/BNG3/pull/609) | `b8ae8c3c` | Isolated SBML package probe test under editable installs (`codex/sbml-package-guard-test-isolation`). |
+| [PR #610](https://github.com/RuleWorld/BNG3/pull/610) | `9088737e` | Recognized zero-rate reactions in discrete event triggers (`codex/issue-00966-zero-rate-events`). |
+| [PR #611](https://github.com/RuleWorld/BNG3/pull/611) | `c2330ab8` | Used pinned independent translator in weekly cross-validation (`codex/weekly-independent-translator`). |
+| [PR #612](https://github.com/RuleWorld/BNG3/pull/612) | `f7e9785f` | Ran full conformance corpus on unbounded dispatch (`codex/full-parity-dispatch`). |
+| [PR #613](https://github.com/RuleWorld/BNG3/pull/613) | `8e642635` | Retained SBML observable groups during `readFile` (`codex/sbml-readfile-observables`). |
+| [PR #614](https://github.com/RuleWorld/BNG3/pull/614) | `7c79f546` | Scheduled proven event-only clocks without cumulative root drift (`codex/issue-00966-event-time`). |
+| [PR #615](https://github.com/RuleWorld/BNG3/pull/615) | `5106b4b0` | Compared weekly SBML translated networks against independent source ODEs (`codex/weekly-sbml-source-coordinates`). |
+| [PR #616](https://github.com/RuleWorld/BNG3/pull/616) | `93365a9c` | Added independent semantic 00966 acceptance checks (`codex/issue-00966-independent-checks`). |
+| [PR #617](https://github.com/RuleWorld/BNG3/pull/617) | `642e2311` | Cohered issue 471 receipts with lock-bound checks and topology assertions (`codex/issue471-executable-checks`). |
+| [PR #619](https://github.com/RuleWorld/BNG3/pull/619) | `1d1ff14b` | Ported hosted `semantic/00966` campaign, repaired virtualenv Python & Issue 161 shell syntax, added failure-retentive uploads (`if: always()`), and hardened Ubuntu runner `apt-get` preflight across 7 workflows (eliminating Azure mirror exit code 100). |
+| [PR #620](https://github.com/RuleWorld/BNG3/pull/620) | `63e63f0d` | Added unit test `test_release_ci_topology_all_maintained_workflows` verifying `check_workflows_topology` audits all 13 maintained workflows in `.github/workflows` with 0 upload-retention errors. |
+
+### 2. Hosted verification runs on exact `main`
+
+The full release-validation suites were dispatched on `main` at commits `1d1ff14b...` and `63e63f0d...`:
+
+1. **Hosted `semantic/00966` 16-Seed Full Stochastic Campaign** (Workflow Run [43071739219](https://github.com/RuleWorld/BNG3/actions/runs/43071739219)):
+   - **Result: PASSED (GREEN)** in 4m26s.
+   - Pinned 16-seed campaign completed with `seeds_passed: 16`, `seeds_total: 16`, `failures: {}`.
+   - Confirms that the event tie-breaking random order matches the analytical binomial invariant ($H_0$: binomial tie parity, $\alpha = 10^{-6}$).
+
+2. **Official SBML Test Suite (SSTS) Full Scheduled Suite** (Workflow Run [43071808096](https://github.com/RuleWorld/BNG3/actions/runs/43071808096)):
+   - Artifact: `ssts-1d1ff14b2faeec1747d97886336bbea2d80504f6-1`.
+   - Evaluated 1,923 total cases:
+     - **1,817 PASS**
+     - **105 UNSUPPORTED** (legitimate spec boundaries: non-constant rates in fast reactions, delay equations unsupported by downstream solvers, etc.)
+     - **1 FAIL** (`semantic/00966` in `independent_comparison` with libRoadRunner because libRoadRunner and BNG3 execute concurrent untied events in different pseudo-random sequence order; fully qualified under the 16-seed stochastic campaign above)
+     - **0 TIMEOUT**
+     - **0 INVALID SOURCE**
+
+3. **Weekly Validation Suite** (Workflow Run [43071813498](https://github.com/RuleWorld/BNG3/actions/runs/43071813498)):
+   - **BNG Validation Full Corpus (macOS 15 arm64):** PASSED (5m30s).
+   - **BNG Validation Full Corpus (Ubuntu 22.04):** PASSED (3m58s).
+   - **BNG Validation Full Corpus (Windows 2022 MSVC):** PASSED (8m5s).
+   - **NFsim Execution Smoke:** PASSED (4m55s).
+   - **Python Full Suite:** PASSED (10m8s).
+   - **Release Product Mutation Ratchet:** PASSED (10m28s, artifact retained).
+   - **Performance Benchmarks:** PASSED (10m1s, artifact retained).
+   - **71-Model C++ vs Perl Cross-Validation:** 69 PASS, 2 FAIL (`test_sbml_flat` and `test_sbml_structured`), 0 ERROR.
+
+4. **Cross-Tool Parity Suite** (Workflow Run [43071743572](https://github.com/RuleWorld/BNG3/actions/runs/43071743572)):
+   - `Validate parity source lock`: PASSED (54s).
+   - `PyBioNetGen API compatibility`: PASSED (3m27s).
+   - `NFsim historical validation (scheduled)`: PASSED (6m58s, artifact retained).
+   - `BNG3 vs independent NFsim`: PASSED (14m47s, artifact retained).
+   - `BNG3 numerical, expression and export parity`: PASSED (28m22s, artifacts retained).
+   - `release-obligation-142`: PASSED (17s, artifact retained).
+   - Artifact `bng3-conformance-workflow_dispatch-43071743572` confirmed the exact baseline ledger:
+     - **3,138 PASS**
+     - **24 FAIL**
+     - **15 HARNESS_ERROR**
+     - **98 NOT_TESTED**
+
+### 3. Dissected defect ledger (24 FAIL / 15 HARNESS_ERROR / 98 NOT_TESTED)
+
+Inspection of the downloaded parity report (`/tmp/parity-conformance/report.json`) isolates every failure to its precise cause:
+
+#### A. The 15 HARNESS_ERROR checks (Reference / Upstream Oracle Limitations)
+None of these are BNG3 product defects:
+1. `AN` (1) & `ANx` (1): BNG2 `writeFile()` aborts with `no reactions were found` because these models execute export actions directly rather than generating networks.
+2. `actin_simple` (1): Upstream reference model has a dangling bond in observable `Actin_ADF` (`SpeciesGraph::updateEdges(): dangling edge not allowed in species graph!`), which BNG2 Perl rejects at parse time.
+3. `exhaustion_switch` (1): Upstream model references undefined parameter `Hill`.
+4. 8 `fceri_*` models (`fceri_fyn`, `fceri_fyn_lig`, `fceri_fyn_trimer`, `fceri_gamma2`, `fceri_ji`, `fceri_ji_red`, `fceri_lyn_745`, `fceri_trimer`): Upstream reference BNG2 Perl aborts on `reaction_rules` block due to legacy encoding.
+5. `motor` (1): Upstream reference BNG2 Perl aborts with `Could not process block type 'molecule type'`.
+6. `test_tfun` (2): Upstream input file `test_data.tfun` / `DAT_validate/test.dat` was not staged in the isolated runner temp simulation directory.
+
+#### B. The 98 NOT_TESTED checks
+- **72 checks**: Downstream simulation/cdat/gdat checks blocked by the 18 parent model harness/parser failures above (4 each).
+- **16 checks**: Models without observables (gdat is structurally not applicable: `blbr`, `deleteMolecules`, `empty_compartments_block`, `statfactor`, `test_compartment_XML`, `test_paramname`, `tlmr`, `visualize`).
+- **9 checks each**: Downstream cdat/gdat checks for `test_sbml_flat` and `test_sbml_structured` skipped after network differences.
+- **1 check**: Hybrid rate comparison skipped after reaction multiplicity difference.
+
+#### C. The 24 FAIL checks (8 Unique Models)
+1. **Parser & Legacy Action Rejections (3 failures):**
+   - `actin_branch` (1) & `actin_branch_forFitToData` (1): ANTLR parser error rejecting unquoted label strings `'Barbed end'` and `'Pointed end'`.
+   - `push_pull` (1): ANTLR parser error rejecting legacy action `simulate_ps`.
+2. **Atomizer Lowering & Compartment Conventions (5 failures):**
+   - `test_sbml_flat` (2): Species (5) and reaction (6) counts match BNG2 exactly; BNG3 includes the explicit `@cell::` compartment prefix.
+   - `test_sbml_structured` (3): Species (5) and reaction (5) counts match BNG2 exactly; BNG3 lowers structured complexes to explicit bonds (`@cell::MolA(_p~0,molb!1).MolB(mola!1,molb)`), whereas legacy sbmlTranslator used state variables (`MolB(MolA_MolB~1,molb)`).
+3. **Simulation Continuation & Action Protocols (16 failures):**
+   - `michment_cont` (4): Continuous simulation continuation initial condition `S1` at $t=0$ has a minor offset ($200.0$ vs $202.3$).
+   - `test_setconc` (4): `setConcentration` action timing and scope in continuous protocol.
+   - `test_time` (8): Time-dependent rate expression evaluation at discrete time points.
+
+### 4. Policy and issue #471 status
+
+- **Issue #471 remains OPEN:** Passing the static 13-workflow upload-retention topology audit (`test_release_ci_topology_all_maintained_workflows`) is a necessary prerequisite, but does not satisfy release receipt closure. Issue #471 cannot be closed until fresh exact-main downstream runtime receipts are executed for all capability rows.
