@@ -109,8 +109,10 @@ jobs:
 
       - name: Install build and comparison dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build perl
+          which cmake ninja gcc g++ perl > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y build-essential cmake ninja-build perl
+          }
           python -m venv .venv
           .venv/bin/python -m pip install scikit-build-core pybind11 pytest numpy scipy
 
@@ -521,8 +523,10 @@ jobs:
 
       - name: Install native build and validation dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential cmake ninja-build perl
+          which cmake ninja gcc g++ perl > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y build-essential cmake ninja-build perl
+          }
           python -m pip install scikit-build-core pybind11 pytest numpy scipy pyyaml python-libsbml libroadrunner
 
       - name: Checkout locked BioNetGen oracle
@@ -825,8 +829,10 @@ jobs:
 
       - name: Install build and validation dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build perl
+          which cmake ninja perl > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y cmake ninja-build perl
+          }
           python -m pip install pytest numpy scipy
 
       - name: Checkout locked BNG2 translation oracle
@@ -1050,8 +1056,10 @@ jobs:
 
       - name: Install NFsim validation dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build
+          which cmake ninja > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y cmake ninja-build
+          }
           python -m pip install numpy scipy seaborn
 
       - name: Checkout locked NFsim source
@@ -1147,8 +1155,10 @@ jobs:
 
       - name: Install BNG3 compatibility dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build
+          which cmake ninja > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y cmake ninja-build
+          }
           python -m pip install scikit-build-core pybind11 pytest numpy
           python -m pip install ".[full,dev]"
         env:

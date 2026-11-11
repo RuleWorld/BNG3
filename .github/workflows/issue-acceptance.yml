@@ -102,7 +102,7 @@ jobs:
         id: acceptance
         if: always() && steps.build_native.outcome == 'success'
         env:
-          PYTHONPATH: python:build/cpp
+          PYTHONPATH: python:build/cpp:tests/validation/release/cases/issue-157
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/issue-157-artifacts"

@@ -116,7 +116,7 @@ jobs:
 
       - name: Install dependencies (Ubuntu)
         if: startsWith(matrix.os, 'ubuntu')
-        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+        run: which cmake ninja > /dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y cmake ninja-build; }
 
       - name: Install dependencies (macOS)
         if: startsWith(matrix.os, 'macos')

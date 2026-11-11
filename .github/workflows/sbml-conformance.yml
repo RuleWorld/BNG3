@@ -120,8 +120,10 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/ssts-artifacts"
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build
+          which cmake ninja > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y cmake ninja-build
+          }
           python -m venv "$RUNNER_TEMP/ssts-venv"
           echo "$RUNNER_TEMP/ssts-venv/bin" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/ssts-venv/bin/python" -m pip install --require-hashes \
@@ -387,8 +389,10 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sudo apt-get update
-          sudo apt-get install -y cmake ninja-build
+          which cmake ninja > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y cmake ninja-build
+          }
           python -m venv "$RUNNER_TEMP/biomodels-venv"
           echo "$RUNNER_TEMP/biomodels-venv/bin" >> "$GITHUB_PATH"
           "$RUNNER_TEMP/biomodels-venv/bin/python" -m pip install --require-hashes \
