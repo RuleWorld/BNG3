@@ -975,6 +975,11 @@ jobs:
         env:
           SYMPY_USE_GMPY: "0"
 
+      - name: Run published BioModels harness support contracts
+        run: pytest tests/test_published_biomodels_support.py -v --tb=short --maxfail=1
+        env:
+          SYMPY_USE_GMPY: "0"
+
       - name: Retain integration test results
         if: always()
         uses: actions/upload-artifact@v4
