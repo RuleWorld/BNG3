@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 import bionetgen._bionetgen_cpp as cpp
-import bionetgen._bionetgen_cpp.io as io
+from bionetgen._bionetgen_cpp import io
 
 
 def _set_energy_gate(enabled: bool) -> None:

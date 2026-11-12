@@ -737,12 +737,12 @@ jobs:
           python -c 'import jax, jaxlib; print(jax.__version__, jaxlib.__version__, jax.devices()); assert jax.default_backend() == "cpu"'
 
       - name: Test JAX float32 ODE and vectorized SSA
-        run: python -m pytest tests/python/test_jax_ode.py tests/python/test_jax_ssa.py -q
+        run: python -m pytest tests/python/test_jax_ode.py tests/python/test_jax_ssa.py tests/python/test_jax_dynamic_rates.py -q
         env:
           JAX_ENABLE_X64: "false"
 
       - name: Test JAX float64 ODE
-        run: python -m pytest tests/python/test_jax_ode.py -q
+        run: python -m pytest tests/python/test_jax_ode.py tests/python/test_jax_dynamic_rates.py -q
         env:
           JAX_ENABLE_X64: "true"
 
@@ -977,6 +977,14 @@ jobs:
 
       - name: Run published BioModels harness support contracts
         run: pytest tests/test_published_biomodels_support.py -v --tb=short --maxfail=1
+        env:
+          SYMPY_USE_GMPY: "0"
+
+      - name: Validate independent issue-177 barrier and reservoir energy laws
+        run: >-
+          python -m pytest
+          --confcutdir=tests/validation/release/cases/issue-177
+          -q tests/validation/release/cases/issue-177/
         env:
           SYMPY_USE_GMPY: "0"
 
