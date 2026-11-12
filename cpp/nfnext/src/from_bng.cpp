@@ -3,6 +3,7 @@
 #include "compile/CompiledModel.hpp"
 #include "nfnext/compiler.hpp"
 #include "nfnext/counter_rng.hpp"
+#include "nfnext/function_vm.hpp"
 #include "nfnext/generic_matcher.hpp"
 #include "nfnext/transformation.hpp"
 
@@ -1394,6 +1395,37 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         observables.push_back({observable.name, observable.kind, std::move(terms)});
     }
 
+    std::unordered_map<ObservableId, std::size_t> observableIdToDefIndex;
+    FunctionEnvironment functionEnvironment;
+    for (std::size_t i = 0; i < source.observables().size(); ++i) {
+        const auto obsId = static_cast<ObservableId>(source.observables()[i].id.value());
+        observableIdToDefIndex[obsId] = i;
+        functionEnvironment.addObservable("observable_" + std::to_string(obsId), 0.0, obsId);
+    }
+
+    struct PreparedRuleRate {
+        bool isDynamic{false};
+        double elementaryRate{0.0};
+        std::optional<CompiledFunction> compiledFunction;
+    };
+    std::vector<PreparedRuleRate> preparedRates;
+    preparedRates.reserve(model.expanded_rules.size());
+    for (const auto& rule : model.expanded_rules) {
+        if (rule.rate_law.kind == RateLawKind::Function) {
+            try {
+                preparedRates.push_back({
+                    true,
+                    0.0,
+                    FunctionCompiler().compile(rule.rate_law.expression, functionEnvironment)
+                });
+            } catch (const std::exception& e) {
+                refuse("invalid dynamic rate function: " + std::string(e.what()));
+            }
+        } else {
+            preparedRates.push_back({false, rule.rate, std::nullopt});
+        }
+    }
+
     std::vector<CompiledTransformation> compiled_transformations;
     compiled_transformations.reserve(model.expanded_rules.size());
     for (const auto& rule : model.expanded_rules) {
@@ -1402,6 +1434,29 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
     }
 
     GenericMatcher matcher(model);
+
+    auto evaluateObservable = [&](ObservableId obsId) -> double {
+        const auto it = observableIdToDefIndex.find(obsId);
+        if (it == observableIdToDefIndex.end()) refuse("unresolved observable dependency");
+        const auto& obs = observables[it->second];
+        double value = 0.0;
+        if (obs.kind == bng::compile::ObservableKind::Molecules) {
+            for (const auto& term : obs.terms)
+                value += matcher.enumerate(term, state).size();
+        } else if (obs.kind == bng::compile::ObservableKind::Species) {
+            std::set<std::uint32_t> matched_complexes;
+            for (const auto& term : obs.terms) {
+                for (const auto& match : matcher.enumerate(term, state)) {
+                    if (!match.particles().empty()) {
+                        matched_complexes.insert(state.complexId(match.particle(0)));
+                    }
+                }
+            }
+            value = static_cast<double>(matched_complexes.size());
+        }
+        return value;
+    };
+
     CounterRng rng(request.seed, 0);
     const auto layout = RngLayout::exactSSA();
     double time = 0.0;
@@ -1413,10 +1468,29 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         for (;;) {
             if (!pending) {
                 std::vector<std::vector<Embedding>> matches;
+                std::vector<double> currentRates(model.expanded_rules.size(), 0.0);
+                std::unordered_map<ObservableId, double> currentObservableValues;
                 double total = 0.0;
-                for (const auto& rule : model.expanded_rules) {
+                for (std::size_t index = 0; index < model.expanded_rules.size(); ++index) {
+                    const auto& rule = model.expanded_rules[index];
+                    const auto& prep = preparedRates[index];
+                    double rate = prep.elementaryRate;
+                    if (prep.isDynamic) {
+                        for (const auto depId : prep.compiledFunction->observableDependencies()) {
+                            auto obsIt = currentObservableValues.find(depId);
+                            if (obsIt == currentObservableValues.end()) {
+                                obsIt = currentObservableValues.emplace(depId, evaluateObservable(depId)).first;
+                            }
+                            functionEnvironment.set("observable_" + std::to_string(depId), obsIt->second);
+                        }
+                        rate = prep.compiledFunction->evaluate(functionEnvironment);
+                        if (!std::isfinite(rate) || rate < 0.0) {
+                            refuse("dynamic rate must be finite and non-negative");
+                        }
+                    }
+                    currentRates[index] = rate;
                     matches.push_back(matcher.enumerate(rule.pattern, state));
-                    total += rule.rate * matches.back().size();
+                    total += rate * matches.back().size();
                 }
                 if (!std::isfinite(total)) refuse("nonfinite total propensity");
                 next_time = total > 0.0
@@ -1427,9 +1501,9 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                         layout.word(RngPurpose::FamilyChoice, output.event_count)) * total;
                     bool found = false;
                     for (std::size_t index = 0; index < matches.size() && !found; ++index) {
-                        const auto& rule = model.expanded_rules[index];
+                        const double rate = currentRates[index];
                         for (const auto& match : matches[index]) {
-                            choice -= rule.rate;
+                            choice -= rate;
                             if (choice < 0.0) {
                                 selected_rule = index;
                                 selected_match = match;
