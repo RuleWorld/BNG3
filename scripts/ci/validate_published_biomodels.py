@@ -1611,6 +1611,11 @@ def _simulate_and_compare(
             horizon_mask = bng_time <= t_end + max(1e-9, abs(t_end) * 1e-9)
             bng_time = bng_time[horizon_mask]
             action_values = action_values[horizon_mask]
+            unscored_pre_event_rows = [
+                row
+                for row in unscored_pre_event_rows
+                if row["time"] <= t_end + max(1e-9, abs(t_end) * 1e-9)
+            ]
             bng_values = {
                 name: action_values[:, column_indices[name]]
                 for name in observable_names
