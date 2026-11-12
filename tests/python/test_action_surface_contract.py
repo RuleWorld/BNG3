@@ -454,14 +454,18 @@ end actions
 
     # Phase 3 (continue=1, separate prefix): append mode writes without header,
     # starting from step 1 (t=11), continuing smoothly from phase 2 end state (t=10, S~36.79)
-    p3_lines = [l for l in (tmp_path / "phase3.gdat").read_text().splitlines() if l.strip()]
+    p3_lines = [
+        l for l in (tmp_path / "phase3.gdat").read_text().splitlines() if l.strip()
+    ]
     p3_first = [float(v) for v in p3_lines[0].split()]
     assert float(p3_first[0]) == pytest.approx(11.0)
     assert p3_first[s_idx] < p2_last[s_idx]
     assert p3_first[s_idx] == pytest.approx(p2_last[s_idx] * 0.904837418, rel=1e-3)
 
 
-def test_simulation_after_protocol_and_add_concentration_reinitializes_baseline(tmp_path):
+def test_simulation_after_protocol_and_add_concentration_reinitializes_baseline(
+    tmp_path,
+):
     source = tmp_path / "model_proto.bngl"
     source.write_text("""begin model
 begin parameters
