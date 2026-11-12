@@ -616,3 +616,20 @@ budget. They remain trajectory disagreements without an established cause;
 neither source-law acceptance nor equal seeds establishes full path equivalence.
 `--quantity-laws-only` selects the new bounded campaign; `--full` expands it.
 Manual workflow `bounded=true` retains PR selection on a stacked candidate.
+
+## Upstream reference limitations and oracle discrepancies
+
+Differential parity validation against legacy BNG2 Perl or historical binaries distinguishes true product defects from documented reference oracle bugs and protocol lifecycle differences:
+
+1. **`test_time` (Continuous `time()` rate law integration):**
+   - *Model:* Reaction $0 \to B()$ with rate $\text{time}()$.
+   - *Analytic Law:* $\frac{dB}{dt} = t \implies B(t) = \int_0^t \tau\,d\tau = \frac{1}{2}t^2$. At $t=0.02$, $B(0.02) = 0.0002$.
+   - *Behavior:* BNG3 continuously evaluates time-dependent rate expressions during ODE integration, matching analytical truth ($0.0002000000006587$). Upstream BNG2 Perl CVode (historical Issue #222) evaluated `time()` at 0 during CVode RHS evaluations, holding $B(0.02) = 0.0$. BNG3 preserves mathematical correctness; this discrepancy is an upstream reference oracle limitation.
+
+2. **`test_setconc` (Symbolic vs. numeric `setConcentration` evaluation):**
+   - *Model:* `setConcentration("L(r)", "2e-9*NA*V")` where `NA` and `V` are model parameters.
+   - *Behavior:* Pinned BNG2 Perl exhibits an internal discrepancy where symbolic expressions evaluate differently than numeric equivalents (documented in `provenance/sbml-campaign/scheduled-parity-triage-39755620648.json` as `oracle-inconsistency-not-product-defect`). BNG3 correctly produces the consistent numeric result ($2 \times 602210 = 1204420$).
+
+3. **`michment_cont` (Sequential protocol concentration lifecycle):**
+   - *Protocol:* Multi-phase simulation models in BioNetGen (`legacy/perl/Perl2/BNGAction.pm:780-799`) update live species amounts from the final row of `.cdat`. Subsequent simulations (such as equilibration followed by kinetics in `egfr_net.bngl`) intentionally proceed from that post-simulation state unless `resetConcentrations()` is explicitly invoked.
+   - *Behavior:* Appending synthetic verification actions without `continue=>1` in the validation harness exposes the accumulated intermediate state, which is expected canonical protocol behavior rather than a defect.
