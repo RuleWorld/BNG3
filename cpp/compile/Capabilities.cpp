@@ -228,12 +228,13 @@ std::optional<std::string> nfSimPhysicalUnitBridgeRejection(
                 if (reactantType == nullptr || reactantType->population)
                     return "unimolecular physical rates require item-count molecule reactants";
                 rateCompartmentId = compartmentId(reactant, reactantMolecule);
-                if (rateCompartmentId != productCompartmentId)
-                    return "unimolecular physical rates require one shared reactant/product compartment";
-                if (!model.compartments().empty() && !rateCompartmentId.has_value())
-                    return "unimolecular physical rates require an explicit compartment when compartments are declared";
+                if (!model.compartments().empty() &&
+                    (!rateCompartmentId.has_value() || !productCompartmentId.has_value()))
+                    return "unimolecular physical rates require explicit compartments when compartments are declared";
                 if (rateCompartmentId.has_value() && !validStaticVolume(*rateCompartmentId))
                     return "unimolecular physical rates require a positive static declared 3D compartment";
+                if (productCompartmentId.has_value() && !validStaticVolume(*productCompartmentId))
+                    return "unimolecular physical rates require a positive static declared 3D compartment for products";
             } else if (direction.reactantPatterns.size() == 2 &&
                        direction.reactantPatterns[0].molecules().size() == 1 &&
                        direction.reactantPatterns[1].molecules().size() == 1) {

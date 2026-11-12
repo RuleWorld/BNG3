@@ -26,6 +26,12 @@ RATE_PER_SECOND = 0.5
 END_TIME = 1.0
 BIMOLECULAR_INITIAL = 10
 BIMOLECULAR_COUNT_RATE = 0.05
+ZERO_ORDER_INITIAL = 0
+ZERO_ORDER_COUNT_RATE = 100.0
+ZERO_ORDER_PHYSICAL_RATE = 1.660538863127e-7
+ZERO_ORDER_END_TIME = 0.5
+ZERO_ORDER_RUNS = 200
+ZERO_ORDER_BASE_SEED = 5000
 SYMMETRIC_MOLECULES = 10
 SYMMETRIC_BINDING_RATE = 0.1
 SYMMETRIC_RUNS = 200
@@ -169,6 +175,98 @@ writeXML()
 """
 
 
+def _physical_zero_order_source(volume_femtoliters: float = 1.0) -> str:
+    return f"""begin model
+  setOption("units", "strict")
+  setOption("NumberPerQuantityUnit", 6.02214076e23)
+  begin units
+    timeunits second
+  end units
+  begin parameters
+    k_synth = {ZERO_ORDER_PHYSICAL_RATE} [M/second]
+    Vc = {volume_femtoliters} [fL]
+  end parameters
+  begin compartments
+    cell 3 Vc [fL]
+  end compartments
+  begin molecule types
+    A()
+  end molecule types
+  begin seed species
+    A()@cell {ZERO_ORDER_INITIAL}
+  end seed species
+  begin observables
+    Molecules A_count A()@cell
+  end observables
+  begin reaction rules
+    synth: 0 -> A()@cell k_synth
+  end reaction rules
+end model
+"""
+
+
+def _independent_bng2_zero_order_source() -> str:
+    return f"""begin model
+begin parameters
+  k_count {ZERO_ORDER_COUNT_RATE}
+end parameters
+begin compartments
+  cell 3 1
+end compartments
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A()@cell {ZERO_ORDER_INITIAL}
+end seed species
+begin observables
+  Molecules A_count A()@cell
+end observables
+begin reaction rules
+  synth: 0 -> A()@cell k_count
+end reaction rules
+end model
+generate_network({{overwrite=>1}})
+writeXML()
+"""
+
+
+def _physical_transport_source(
+    v_cell: float = 1.0, v_ec: float = 10.0, k_trans: float = 0.5
+) -> str:
+    return f"""begin model
+  setOption("units", "strict")
+  setOption("NumberPerQuantityUnit", 6.02214076e23)
+  begin units
+    timeunits second
+  end units
+  begin parameters
+    k_t = {k_trans} [second^-1]
+    V_cell = {v_cell} [fL]
+    V_ec = {v_ec} [fL]
+  end parameters
+  begin compartments
+    ec 3 V_ec [fL]
+    cell 3 V_cell ec [fL]
+  end compartments
+  begin molecule types
+    A()
+  end molecule types
+  begin seed species
+    @cell:A() {INITIAL_A}
+    @ec:A() 0
+  end seed species
+  begin observables
+    Molecules cell_A @cell:A()
+    Molecules ec_A @ec:A()
+  end observables
+  begin reaction rules
+    transport: @cell:A() -> @ec:A() k_t
+  end reaction rules
+end model
+"""
+
+
 def _symmetric_dimer_source() -> str:
     return f"""begin model
 begin parameters
@@ -261,6 +359,22 @@ def _assert_bimolecular_ctmc_marginal(converted_counts: list[int]) -> None:
     expected_cdf = np.cumsum(expected_probabilities)
     observed_cdf = np.cumsum(np.bincount(converted_counts, minlength=states) / RUNS)
     epsilon = math.sqrt(math.log(2.0 / 0.005) / (2.0 * RUNS))
+    assert np.max(np.abs(observed_cdf - expected_cdf)) <= epsilon
+
+
+def _assert_poisson_count_marginal(
+    counts: list[int],
+    expected_mean: float,
+    runs: int = ZERO_ORDER_RUNS,
+    alpha: float = 0.005,
+) -> None:
+    """Compare observed arrival counts with exact Poisson(expected_mean) CDF via DKW bound."""
+    from scipy.stats import poisson
+
+    max_c = max(max(counts) + 10, int(expected_mean + 4 * math.sqrt(expected_mean)))
+    expected_cdf = poisson.cdf(np.arange(max_c + 1), expected_mean)
+    observed_cdf = np.cumsum(np.bincount(counts, minlength=max_c + 1) / runs)
+    epsilon = math.sqrt(math.log(2.0 / alpha) / (2.0 * runs))
     assert np.max(np.abs(observed_cdf - expected_cdf)) <= epsilon
 
 
@@ -380,6 +494,330 @@ def test_physical_bimolecular_rate_matches_independent_native_count_law(
 
     _assert_bimolecular_ctmc_marginal(direct_counts)
     _assert_bimolecular_ctmc_marginal(native_counts)
+
+
+@pytest.mark.nf
+@pytest.mark.slow
+def test_physical_zero_order_rate_matches_independent_native_count_law(
+    api, tmp_path, monkeypatch
+):
+    configured_bng2 = os.environ.get("BNG2_PERL")
+    require_oracle(
+        bool(configured_bng2) and Path(configured_bng2).is_file(),
+        "independent BNG2 XML translation requires explicit BNG2_PERL",
+    )
+    require_oracle(oracle_nfsim.nfsim_available(), "set independent NFSIM_BIN")
+
+    monkeypatch.delenv("BNG_NFSIM_FORCE_XML", raising=False)
+    monkeypatch.delenv("BNG_NFSIM_ALLOW_XML_FALLBACK", raising=False)
+    physical_source = tmp_path / "physical_zero_order.bngl"
+    physical_source.write_text(_physical_zero_order_source(), encoding="utf-8")
+
+    bng2_source = tmp_path / "independent_zero_order_count_law.bngl"
+    bng2_source.write_text(_independent_bng2_zero_order_source(), encoding="utf-8")
+    translated = subprocess.run(
+        [os.environ.get("PERL", "perl"), configured_bng2, str(bng2_source)],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert translated.returncode == 0, translated.stdout + translated.stderr
+    bng2_xml = tmp_path / "independent_zero_order_count_law.xml"
+    assert bng2_xml.is_file(), "independent BNG2 produced no XML"
+
+    direct_counts = []
+    native_counts = []
+    for offset in range(ZERO_ORDER_RUNS):
+        seed = ZERO_ORDER_BASE_SEED + offset
+        result = api.load(str(physical_source)).simulate(
+            method="nf", t_end=ZERO_ORDER_END_TIME, n_steps=1, seed=seed
+        )
+        trajectory = runner._result_to_trajectory(result)
+        assert trajectory.construction_path == "direct"
+        direct_counts.append(
+            int(trajectory.data[-1, trajectory.columns.index("A_count")])
+        )
+
+        gdat, error = oracle_nfsim.run_nfsim(
+            bng2_xml,
+            tmp_path / f"native_zero_order_{seed}",
+            t_end=ZERO_ORDER_END_TIME,
+            n_steps=1,
+            seed=seed,
+        )
+        assert gdat is not None, error
+        data, columns = compare.parse_gdat(gdat)
+        assert data is not None and columns is not None
+        native_counts.append(int(data[-1, columns.index("A_count")]))
+
+    expected_mean = ZERO_ORDER_COUNT_RATE * ZERO_ORDER_END_TIME
+    _assert_poisson_count_marginal(
+        direct_counts, expected_mean=expected_mean, runs=ZERO_ORDER_RUNS
+    )
+    _assert_poisson_count_marginal(
+        native_counts, expected_mean=expected_mean, runs=ZERO_ORDER_RUNS
+    )
+
+
+@pytest.mark.nf
+@pytest.mark.slow
+def test_physical_unimolecular_transport_matches_analytic_law(
+    api, tmp_path, monkeypatch
+):
+    """Verify physical-unit unimolecular transport across compartments in direct NFsim."""
+    monkeypatch.delenv("BNG_NFSIM_FORCE_XML", raising=False)
+    monkeypatch.delenv("BNG_NFSIM_ALLOW_XML_FALLBACK", raising=False)
+    transport_source = tmp_path / "physical_transport.bngl"
+    transport_source.write_text(_physical_transport_source(), encoding="utf-8")
+
+    direct_counts = []
+    for offset in range(RUNS):
+        seed = BASE_SEED + offset
+        result = api.load(str(transport_source)).simulate(
+            method="nf", t_end=END_TIME, n_steps=1, seed=seed
+        )
+        trajectory = runner._result_to_trajectory(result)
+        assert trajectory.construction_path == "direct"
+        cell_count = int(trajectory.data[-1, trajectory.columns.index("cell_A")])
+        ec_count = int(trajectory.data[-1, trajectory.columns.index("ec_A")])
+        assert cell_count + ec_count == INITIAL_A
+        direct_counts.append(cell_count)
+
+    _assert_binomial_count_marginal(direct_counts)
+
+
+@pytest.mark.nf
+@pytest.mark.slow
+def test_release_nf_units(api, tmp_path, monkeypatch, record_property):
+    """Release acceptance check for issue #151: unit-annotated BNG3 models match independent count laws.
+
+    Covers zero-order, unimolecular decay, unimolecular transport, and bimolecular
+    reactions with physical units in strict unit mode. Validates exact marginal
+    distributions against independent analytical Poisson, Binomial, and pure-birth
+    CTMC laws via DKW bounds.
+    """
+    record_property("acceptance_check", "release-nf-units")
+    monkeypatch.delenv("BNG_NFSIM_FORCE_XML", raising=False)
+    monkeypatch.delenv("BNG_NFSIM_ALLOW_XML_FALLBACK", raising=False)
+
+    # 1. Zero-order physical synthesis: k = 1.660538863127e-7 M/s in 1 fL -> 100 items/s
+    zero_file = tmp_path / "zero_order_acc.bngl"
+    zero_file.write_text(_physical_zero_order_source(), encoding="utf-8")
+    zero_model = api.load(str(zero_file))
+    zero_counts = []
+    for offset in range(ZERO_ORDER_RUNS):
+        res = zero_model.simulate(
+            method="nf",
+            t_end=ZERO_ORDER_END_TIME,
+            n_steps=1,
+            seed=ZERO_ORDER_BASE_SEED + offset,
+        )
+        traj = runner._result_to_trajectory(res)
+        assert traj.construction_path == "direct"
+        zero_counts.append(int(traj.data[-1, traj.columns.index("A_count")]))
+    _assert_poisson_count_marginal(
+        zero_counts,
+        expected_mean=ZERO_ORDER_COUNT_RATE * ZERO_ORDER_END_TIME,
+        runs=ZERO_ORDER_RUNS,
+    )
+
+    # 2. Unimolecular physical decay: k = 0.5 s^-1 in 1 fL -> Binomial(100, exp(-0.5))
+    uni_file = tmp_path / "unimolecular_acc.bngl"
+    uni_file.write_text(_physical_bng3_source(), encoding="utf-8")
+    uni_model = api.load(str(uni_file))
+    uni_counts = []
+    for offset in range(RUNS):
+        res = uni_model.simulate(
+            method="nf", t_end=END_TIME, n_steps=1, seed=BASE_SEED + offset
+        )
+        traj = runner._result_to_trajectory(res)
+        assert traj.construction_path == "direct"
+        uni_counts.append(_a_count(traj.data, traj.columns))
+    _assert_binomial_count_marginal(uni_counts)
+
+    # 3. Bimolecular physical combination: k = 3.01107038e7 M^-1 s^-1 in 1 fL -> 0.05 item^-1 s^-1
+    bi_file = tmp_path / "bimolecular_acc.bngl"
+    bi_file.write_text(_physical_bimolecular_source(), encoding="utf-8")
+    bi_model = api.load(str(bi_file))
+    bi_counts = []
+    for offset in range(RUNS):
+        res = bi_model.simulate(
+            method="nf", t_end=END_TIME, n_steps=1, seed=BASE_SEED + offset
+        )
+        traj = runner._result_to_trajectory(res)
+        assert traj.construction_path == "direct"
+        bi_counts.append(_bimolecular_conversion_count(traj.data, traj.columns))
+    _assert_bimolecular_ctmc_marginal(bi_counts)
+
+
+def test_release_unit_scaling(record_property):
+    """Release acceptance check for issue #151: verify Avogadro, volume, and molecularity scaling formulas.
+
+    Directly verifies hand-derived conversion formulas:
+      - Zero-order:  k_count = k_phys * N_A * V
+      - Unimolecular: k_count = k_phys (independent of N_A, V)
+      - Bimolecular: k_count = k_phys / (N_A * V)
+      - Homodimer:   k_count = 0.5 * k_phys / (N_A * V)
+    Confirms that missing conversion, double conversion, and invalid unit dimensions
+    are strictly detected and refused.
+    """
+    record_property("acceptance_check", "release-unit-scaling")
+    from bionetgen import _bionetgen_cpp as cpp
+
+    def _compile_rate(
+        rule_decl: str,
+        param_decl: str,
+        na: float = 6.02214076e23,
+        v: float = 1.0,
+    ) -> float:
+        source = f"""begin model
+  setOption("units", "strict")
+  setOption("NumberPerQuantityUnit", {na})
+  begin units
+    timeunits second
+  end units
+  begin parameters
+    {param_decl}
+    Vc = {v} [fL]
+  end parameters
+  begin compartments
+    cell 3 Vc [fL]
+  end compartments
+  begin molecule types
+    A()
+    B()
+    C()
+  end molecule types
+  begin seed species
+    A()@cell 10
+    B()@cell 10
+    C()@cell 0
+  end seed species
+  begin reaction rules
+    {rule_decl}
+  end reaction rules
+end model
+"""
+        m = cpp.parse_string(source)
+        net = cpp.generate_network(m)
+        flat = cpp.jax_ode_flatten(m, net)
+        return float(flat["rate_constants"][0])
+
+    # 1. Zero-order rate: k_count = k_phys * N_A * V
+    k0_ref = _compile_rate("0 -> C()@cell k", "k = 1.0e-8 [M/second]", na=1.0e23, v=1.0)
+    assert pytest.approx(k0_ref, rel=1e-6) == 1.0
+    k0_v25 = _compile_rate("0 -> C()@cell k", "k = 1.0e-8 [M/second]", na=1.0e23, v=2.5)
+    assert pytest.approx(k0_v25, rel=1e-6) == 2.5
+    assert pytest.approx(k0_v25 / k0_ref, rel=1e-6) == 2.5
+    # Catch missing volume conversion (which would give ratio 1.0)
+    assert abs(k0_v25 / k0_ref - 1.0) > 0.5
+    # Catch double volume conversion (which would give ratio 6.25)
+    assert abs(k0_v25 / k0_ref - 6.25) > 1.0
+
+    k0_na2 = _compile_rate("0 -> C()@cell k", "k = 1.0e-8 [M/second]", na=2.0e23, v=1.0)
+    assert pytest.approx(k0_na2, rel=1e-6) == 2.0
+    assert pytest.approx(k0_na2 / k0_ref, rel=1e-6) == 2.0
+    # Catch missing Avogadro conversion
+    assert abs(k0_na2 / k0_ref - 1.0) > 0.5
+
+    # 2. Unimolecular rate: k_count = k_phys (independent of V and N_A)
+    k1_ref = _compile_rate(
+        "A()@cell -> B()@cell k", "k = 0.5 [second^-1]", na=1.0e23, v=1.0
+    )
+    assert pytest.approx(k1_ref, rel=1e-6) == 0.5
+    k1_v5 = _compile_rate(
+        "A()@cell -> B()@cell k", "k = 0.5 [second^-1]", na=1.0e23, v=5.0
+    )
+    assert pytest.approx(k1_v5, rel=1e-6) == 0.5
+    assert pytest.approx(k1_v5 / k1_ref, rel=1e-6) == 1.0
+    # Catch spurious volume scaling
+    assert abs(k1_v5 / k1_ref - 5.0) > 1.0
+
+    k1_na3 = _compile_rate(
+        "A()@cell -> B()@cell k", "k = 0.5 [second^-1]", na=3.0e23, v=1.0
+    )
+    assert pytest.approx(k1_na3, rel=1e-6) == 0.5
+    assert pytest.approx(k1_na3 / k1_ref, rel=1e-6) == 1.0
+    # Catch spurious Avogadro scaling
+    assert abs(k1_na3 / k1_ref - 3.0) > 1.0
+
+    # 3. Bimolecular rate: k_count = k_phys / (N_A * V)
+    k2_ref = _compile_rate(
+        "A()@cell + B()@cell -> C()@cell k",
+        "k = 1.0e7 [M^-1/second]",
+        na=1.0e23,
+        v=1.0,
+    )
+    assert pytest.approx(k2_ref, rel=1e-6) == 0.1
+    k2_v2 = _compile_rate(
+        "A()@cell + B()@cell -> C()@cell k",
+        "k = 1.0e7 [M^-1/second]",
+        na=1.0e23,
+        v=2.0,
+    )
+    assert pytest.approx(k2_v2, rel=1e-6) == 0.05
+    assert pytest.approx(k2_v2 / k2_ref, rel=1e-6) == 0.5
+    # Catch missing volume conversion (ratio 1.0)
+    assert abs(k2_v2 / k2_ref - 1.0) > 0.2
+    # Catch inverted volume scaling (ratio 2.0)
+    assert abs(k2_v2 / k2_ref - 2.0) > 0.5
+
+    k2_na2 = _compile_rate(
+        "A()@cell + B()@cell -> C()@cell k",
+        "k = 1.0e7 [M^-1/second]",
+        na=2.0e23,
+        v=1.0,
+    )
+    assert pytest.approx(k2_na2, rel=1e-6) == 0.05
+    assert pytest.approx(k2_na2 / k2_ref, rel=1e-6) == 0.5
+    # Catch missing Avogadro conversion
+    assert abs(k2_na2 / k2_ref - 1.0) > 0.2
+
+    # 4. Homodimer bimolecular rate: k_count = 0.5 * k_phys / (N_A * V)
+    homo_source = """begin model
+  setOption("units", "strict")
+  setOption("NumberPerQuantityUnit", 1.0e23)
+  begin units
+    timeunits second
+  end units
+  begin parameters
+    kon = 1.0e7 [M^-1/second]
+    Vc = 1.0 [fL]
+  end parameters
+  begin compartments
+    cell 3 Vc [fL]
+  end compartments
+  begin molecule types
+    A(b)
+  end molecule types
+  begin seed species
+    A(b)@cell 10
+  end seed species
+  begin reaction rules
+    bind: A(b)@cell + A(b)@cell -> A(b!1).A(b!1)@cell kon
+  end reaction rules
+end model
+"""
+    m_homo = cpp.parse_string(homo_source)
+    net_homo = cpp.generate_network(m_homo)
+    k_homo = float(cpp.jax_ode_flatten(m_homo, net_homo)["rate_constants"][0])
+    assert pytest.approx(k_homo, rel=1e-6) == 0.05
+    assert pytest.approx(k_homo / k2_ref, rel=1e-6) == 0.5
+
+    # 5. Strict dimensional error detection (negative controls)
+    # 5a. Zero-order rule with unimolecular unit [second^-1]
+    with pytest.raises(RuntimeError, match="molecularity 0 requires concentration"):
+        _compile_rate("0 -> C()@cell k", "k = 0.5 [second^-1]")
+
+    # 5b. Bimolecular rule with unimolecular unit [second^-1]
+    with pytest.raises(RuntimeError, match="molecularity 2 requires concentration"):
+        _compile_rate("A()@cell + B()@cell -> C()@cell k", "k = 0.5 [second^-1]")
+
+    # 5c. Unimolecular rule with bimolecular unit [M^-1/second]
+    with pytest.raises(RuntimeError, match="molecularity 1 requires concentration"):
+        _compile_rate("A()@cell -> B()@cell k", "k = 0.5 [M^-1/second]")
 
 
 @pytest.mark.nf
