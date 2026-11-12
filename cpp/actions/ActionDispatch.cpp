@@ -1677,7 +1677,9 @@ void runSimulation(
     bool verbose,
     std::vector<double>& lastSimulationState,
     double& lastSimulationEndTime,
-    const compile::ProtocolAction::SimulationOptions* compiledOptions = nullptr) {
+    const compile::ProtocolAction::SimulationOptions* compiledOptions = nullptr,
+    std::vector<double>* baselineConcentrations = nullptr,
+    bool* hasRunSimulation = nullptr) {
 
     // Handle argfile: read arguments from file (file args have lower priority than inline args)
     ast::Action action = actionOrig;
@@ -2147,6 +2149,16 @@ void runSimulation(
         if (verbose) {
             std::cerr << "[bng_cpp] Continuing from current network state (continue=1)\n";
         }
+    } else if (hasRunSimulation != nullptr && *hasRunSimulation) {
+        // When continue is false/0 after a prior simulation, restore species amounts
+        // from baseline initial concentrations (matching BNG2's implicit resetConcentrations()
+        // contract) rather than carrying over intermediate action mutations.
+        if (baselineConcentrations != nullptr && !baselineConcentrations->empty()) {
+            restoreConcentrations(network, *baselineConcentrations);
+        }
+        network.resetSimulationSession();
+        lastSimulationState.clear();
+        lastSimulationEndTime = 0.0;
     }
 
     // Run simulation
@@ -2185,6 +2197,13 @@ void runSimulation(
     // Save end time for potential continue (used as tStart for next phase)
     lastSimulationEndTime = result.timePoints.empty()
         ? opts.tEnd : result.timePoints.back();
+
+    if (hasRunSimulation != nullptr) {
+        *hasRunSimulation = true;
+    }
+    if (baselineConcentrations != nullptr && baselineConcentrations->empty()) {
+        *baselineConcentrations = snapshotConcentrations(network);
+    }
 
     // Write output files
     const auto prefix = simulationPrefix(action, sourcePath);
@@ -2282,6 +2301,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
     // For continue simulation: track last simulation state
     std::vector<double> lastSimulationState;
     double lastSimulationEndTime = 0.0;
+    bool hasRunSimulation = false;
+    std::vector<double> baselineConcentrations;
 
     // Store loaded .net data for passthrough writing (readFile)
     std::optional<io::NetReader::ParseResult> loadedNetData;
@@ -2349,6 +2370,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             // for simulation must not export a .net file that loses them.
             network = generator.generate(
                 model.getEvents().empty() ? sourcePath : std::filesystem::path{});
+            if (baselineConcentrations.empty()) {
+                baselineConcentrations = snapshotConcentrations(*network);
+            }
         }
     };
 
@@ -2966,7 +2990,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 }
                 runSimulation(model, actualAction, sourcePath, *network, verbose,
                               lastSimulationState, lastSimulationEndTime,
-                              compiledSimulationOptions);
+                              compiledSimulationOptions, &baselineConcentrations,
+                              &hasRunSimulation);
                 continue;
             }
 
@@ -3032,6 +3057,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 }
                 if (protoName == "setconcentration") {
                     network->species.get(*found).setAmount(value);
+                    if (*found < baselineConcentrations.size()) {
+                        baselineConcentrations[*found] = value;
+                    }
                 } else {
                     network->species.get(*found).setAmount(
                         network->species.get(*found).getAmount() + value);
@@ -3086,6 +3114,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             if (protoName == "resetconcentrations" || protoName == "reset_concentrations") {
                 ensureNetwork();
+                hasRunSimulation = false;
                 network->resetSimulationSession();
                 lastSimulationState.clear();
                 lastSimulationEndTime = 0.0;
@@ -3098,6 +3127,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     restoreConcentrations(*network, found->second);
                 } else if (label != "default") {
                     throw std::runtime_error("resetConcentrations label not found: " + label);
+                } else if (!baselineConcentrations.empty()) {
+                    restoreConcentrations(*network, baselineConcentrations);
                 } else {
                     const compile::Document currentDocument(model);
                     for (std::size_t i = 0; i < network->species.size(); ++i) {
@@ -3168,6 +3199,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
                 network = networkFromNetData(parseResult, model);
                 loadedNetData = std::move(parseResult);
+                baselineConcentrations = snapshotConcentrations(*network);
 
                 if (verbose) {
                     std::cerr << "[bng_cpp] Read .net file: " << path << "\n";
@@ -3209,6 +3241,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 evaluateParametersAndRefresh();
                 network = networkFromParsedData(parseResult, model, atomize);
                 loadedNetData = std::move(parseResult);
+                baselineConcentrations = snapshotConcentrations(*network);
                 if (verbose) {
                     std::cerr << "[bng_cpp] Read flat SBML file: " << path << "\n";
                     std::cerr << "[bng_cpp]   Parameters: "
@@ -3299,6 +3332,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
                         network = networkFromNetData(parseResult, model);
                         loadedNetData = std::move(parseResult);
+                        baselineConcentrations = snapshotConcentrations(*network);
 
                         if (verbose) {
                             std::cerr << "[bng_cpp] Loaded existing .net file (overwrite=0): " << netPath << "\n";
@@ -3339,6 +3373,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             if (!savedAmounts.empty()) {
                 restoreAmountsBySpecies(*network, savedAmounts);
             }
+            baselineConcentrations = snapshotConcentrations(*network);
             writeCurrentNetwork(writerOptions);  // Triggers NetWriter::buildDerivedRateParams
             continue;
         }
@@ -3477,6 +3512,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 throw std::runtime_error("setConcentration target species not found: " + stripQuotes(target));
             }
             network->species.get(*found).setAmount(value);
+            if (*found < baselineConcentrations.size()) {
+                baselineConcentrations[*found] = value;
+            }
             // Concentration changes affect the live state, not the network
             // snapshot emitted by an earlier generate_network action.
             continue;
@@ -3491,10 +3529,13 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         if (actionName == "resetconcentrations") {
             ensureNetwork();
+            hasRunSimulation = false;
             const auto label = stripQuotes(readArgument(action, "value", "default"));
             const auto found = savedConcentrations.find(label);
             if (found != savedConcentrations.end()) {
                 restoreConcentrations(*network, found->second);
+            } else if (label == "default" && !baselineConcentrations.empty()) {
+                restoreConcentrations(*network, baselineConcentrations);
             } else {
                 // Perl BNG2 behavior: reset to initial seed species concentrations
                 const compile::Document currentDocument(model);
@@ -3529,6 +3570,12 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         if (actionName == "simulate_pla") {
             ensureNetwork();
+            if (hasRunSimulation && !baselineConcentrations.empty()) {
+                restoreConcentrations(*network, baselineConcentrations);
+                network->resetSimulationSession();
+                lastSimulationState.clear();
+                lastSimulationEndTime = 0.0;
+            }
             const auto tEnd = stripQuotes(readArgument(action, "t_end", ""));
             const auto nSteps = stripQuotes(readArgument(action, "n_steps", stripQuotes(readArgument(action, "n_output_steps", ""))));
             if (tEnd.empty() || nSteps.empty()) {
@@ -3598,6 +3645,12 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         if (actionName == "simulate_psa") {
             ensureNetwork();
+            if (hasRunSimulation && !baselineConcentrations.empty()) {
+                restoreConcentrations(*network, baselineConcentrations);
+                network->resetSimulationSession();
+                lastSimulationState.clear();
+                lastSimulationEndTime = 0.0;
+            }
             const auto tEnd = stripQuotes(readArgument(action, "t_end", ""));
             const auto nSteps = stripQuotes(readArgument(action, "n_steps", stripQuotes(readArgument(action, "n_output_steps", ""))));
             if (tEnd.empty() || nSteps.empty()) {
@@ -3675,13 +3728,14 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             continue;
         }
 
-        if (actionName == "simulate" || action.name == "simulate_ode" || action.name == "simulate_ssa") {
+        if (actionName == "simulate" || actionName == "simulate_ode" || actionName == "simulate_ssa") {
             ensureNetwork();
             // Don't re-write .net file - already written by generate_network
             // Re-writing would cause duplicate parameters and corrupt stat factors
             runSimulation(model, action, sourcePath, *network, verbose,
                           lastSimulationState, lastSimulationEndTime,
-                          compiledSimulationOptions);
+                          compiledSimulationOptions, &baselineConcentrations,
+                          &hasRunSimulation);
             continue;
         }
 

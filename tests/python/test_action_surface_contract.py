@@ -402,3 +402,107 @@ end actions
         match="hybrid population execution refinement is not supported",
     ):
         bionetgen.load(unsupported).execute()
+
+
+def test_simulation_without_continue_reinitializes_baseline_concentrations(tmp_path):
+    source = tmp_path / "model_reset.bngl"
+    source.write_text("""begin model
+begin parameters
+  k 0.1
+end parameters
+begin molecule types
+  S()
+  P()
+end molecule types
+begin seed species
+  S() 100
+  P() 0
+end seed species
+begin observables
+  Molecules S_obs S()
+  Molecules P_obs P()
+end observables
+begin reaction rules
+  S() -> P() k
+end reaction rules
+end model
+
+begin actions
+generate_network({overwrite=>1})
+simulate_ode({prefix=>"phase1", t_end=>10, n_steps=>10})
+simulate_ode({prefix=>"phase2", t_end=>10, n_steps=>10})
+simulate_ode({prefix=>"phase3", t_end=>10, n_steps=>10, continue=>1})
+end actions
+""")
+    bionetgen.load(source).execute()
+
+    # Phase 1: starts at 100, ends depleted
+    p1_lines = (tmp_path / "phase1.gdat").read_text().splitlines()
+    p1_cols = p1_lines[0].lstrip("#").split()
+    s_idx = p1_cols.index("S_obs")
+    p1_first = [float(v) for v in p1_lines[1].split()]
+    p1_last = [float(v) for v in p1_lines[-1].split()]
+    assert p1_first[s_idx] == pytest.approx(100.0)
+    assert p1_last[s_idx] < 50.0
+
+    # Phase 2 (continue=0 / omitted): reinitializes to baseline (100)
+    p2_lines = (tmp_path / "phase2.gdat").read_text().splitlines()
+    p2_first = [float(v) for v in p2_lines[1].split()]
+    p2_last = [float(v) for v in p2_lines[-1].split()]
+    assert p2_first[s_idx] == pytest.approx(100.0)
+    assert p2_last[s_idx] < 50.0
+
+    # Phase 3 (continue=1, separate prefix): append mode writes without header,
+    # starting from step 1 (t=11), continuing smoothly from phase 2 end state (t=10, S~36.79)
+    p3_lines = [l for l in (tmp_path / "phase3.gdat").read_text().splitlines() if l.strip()]
+    p3_first = [float(v) for v in p3_lines[0].split()]
+    assert float(p3_first[0]) == pytest.approx(11.0)
+    assert p3_first[s_idx] < p2_last[s_idx]
+    assert p3_first[s_idx] == pytest.approx(p2_last[s_idx] * 0.904837418, rel=1e-3)
+
+
+def test_simulation_after_protocol_and_add_concentration_reinitializes_baseline(tmp_path):
+    source = tmp_path / "model_proto.bngl"
+    source.write_text("""begin model
+begin parameters
+  k 0.01
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 50
+end seed species
+begin observables
+  Molecules A_obs A()
+end observables
+begin reaction rules
+  A() -> 0 k
+end reaction rules
+begin protocol
+  setConcentration("A()", 100)
+  simulate_ode({prefix=>"sim1", t_end=>5, n_steps=>5})
+  addConcentration("A()", 50)
+  simulate_ode({prefix=>"sim2", t_end=>5, n_steps=>5})
+end protocol
+end model
+
+begin actions
+generate_network({overwrite=>1})
+simulate_protocol()
+simulate_ode({prefix=>"sim3", t_end=>1, n_steps=>2})
+end actions
+""")
+    bionetgen.load(source).execute()
+
+    # sim1 starts at setConcentration baseline (100)
+    s1_lines = (tmp_path / "sim1.gdat").read_text().splitlines()
+    s1_first = [float(v) for v in s1_lines[1].split()]
+    assert s1_first[1] == pytest.approx(100.0)
+
+    # sim3 is a standalone non-continuation action after protocol:
+    # must reinitialize to baseline concentration (100, established by setConcentration),
+    # not mutated state from sim2 + addConcentration
+    s3_lines = (tmp_path / "sim3.gdat").read_text().splitlines()
+    s3_first = [float(v) for v in s3_lines[1].split()]
+    assert s3_first[1] == pytest.approx(100.0)
