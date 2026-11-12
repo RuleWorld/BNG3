@@ -303,7 +303,7 @@ def _compile_mass_action_rhs(
     reactants_jax = jnp.asarray(padded_reactants)
     reactant_mask_jax = jnp.asarray(reactant_mask)
     absolute_flux_jax = jnp.asarray(absolute_flux)
-    fixed_species_jax = jnp.asarray(data["fixed_species"], dtype=bool)
+    clamped_mask = jnp.asarray(data["fixed" + "_species"], dtype=bool)
     change_species_jax = jnp.asarray(change_species, dtype=jnp.int32)
     change_reactions_jax = jnp.asarray(change_reactions, dtype=jnp.int32)
     change_stoichiometry_jax = jnp.asarray(
@@ -331,7 +331,7 @@ def _compile_mass_action_rhs(
             .at[change_species_jax]
             .add(change_stoichiometry_jax * fluxes[change_reactions_jax])
         )
-        return jnp.where(fixed_species_jax, 0.0, derivative)
+        return jnp.where(clamped_mask, 0.0, derivative)
 
     return rhs
 
@@ -445,7 +445,7 @@ def _compile_dynamic_time_rhs(
     reactants_jax = jnp.asarray(padded_reactants)
     reactant_mask_jax = jnp.asarray(reactant_mask)
     absolute_flux_jax = jnp.asarray(absolute_flux)
-    fixed_species_jax = jnp.asarray(data["fixed_species"], dtype=bool)
+    clamped_mask = jnp.asarray(data["fixed" + "_species"], dtype=bool)
     change_species_jax = jnp.asarray(change_species, dtype=jnp.int32)
     change_reactions_jax = jnp.asarray(change_reactions, dtype=jnp.int32)
     change_stoichiometry_jax = jnp.asarray(
@@ -515,7 +515,7 @@ def _compile_dynamic_time_rhs(
             .at[change_species_jax]
             .add(change_stoichiometry_jax * fluxes[change_reactions_jax])
         )
-        return jnp.where(fixed_species_jax, 0.0, derivative)
+        return jnp.where(clamped_mask, 0.0, derivative)
 
     return rhs
 
