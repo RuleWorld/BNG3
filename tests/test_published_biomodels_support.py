@@ -105,4 +105,3 @@ simulate({method=>"ode",t_start=>1.0,t_end=>5.0,n_steps=>10,continue=>1})
         reference_selections={"A": "A"},
     )
     assert result.get("passed") is True
-
