@@ -651,6 +651,9 @@ std::optional<double> staticCompiledParameterRate(
         return std::nullopt;
     }
     const auto& expression = direction.rateLaw->resolvedExpression();
+    if (expression.kind == compile::ResolvedExpressionKind::Number) {
+        return expression.numberValue;
+    }
     if (expression.kind != compile::ResolvedExpressionKind::ParameterRef ||
         !expression.symbol.has_value() ||
         expression.symbol->kind != compile::SymbolKind::Parameter) {
@@ -787,6 +790,65 @@ bool qualifiesDirectUnaryStateChange(
                mutation.newStateId;
 }
 
+bool qualifiesDirectUnaryDeletion(
+    const compile::CompiledRule& rule,
+    const compile::CompiledRuleDirection& direction,
+    const compile::CompiledModel& model) {
+    if (rule.delayExpression().has_value() ||
+        rule.resolvedDelayExpression().has_value() || rule.hasDrivingWork() ||
+        !rule.modifiers().empty() || !direction.transformationsComplete ||
+        direction.reactantPatterns.size() != 1 ||
+        !direction.productPatterns.empty() ||
+        !direction.filters.empty() || !direction.localScopes.empty() ||
+        !staticCompiledParameterRate(direction, model).has_value() ||
+        !model.compartments().empty() || !model.populationMaps().empty() ||
+        !model.populationTypes().empty()) {
+        return false;
+    }
+
+    if (direction.wholeSpeciesDeletions.size() != 1 ||
+        direction.wholeSpeciesDeletions.front() != 0) {
+        return false;
+    }
+
+    for (const auto& mutation : direction.mutations) {
+        if (mutation.kind != compile::MutationKind::DeleteMolecule) {
+            return false;
+        }
+    }
+
+    const auto& reactant = direction.reactantPatterns.front();
+    if (!reactant.isResolved() || reactant.molecules().size() != 1 ||
+        !reactant.compartment().empty() || reactant.compartmentIsPrefix()) {
+        return false;
+    }
+
+    const auto& reactantMolecule = reactant.molecules().front();
+    if (!reactantMolecule.moleculeTypeId.has_value() ||
+        !reactantMolecule.compartment.empty()) {
+        return false;
+    }
+
+    const auto* moleculeType = model.moleculeType(*reactantMolecule.moleculeTypeId);
+    if (moleculeType == nullptr) {
+        return false;
+    }
+
+    for (const auto& site : reactantMolecule.sites) {
+        if (!site.componentType.has_value() ||
+            moleculeType->component(*site.componentType) == nullptr ||
+            !unboundOnly(site)) {
+            return false;
+        }
+        if (site.stateConstraintResolved.kind != compile::StateConstraintKind::Any &&
+            site.stateConstraintResolved.kind != compile::StateConstraintKind::Exact) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 BNGcore::PatternGraph cloneGraph(const BNGcore::PatternGraph& source) {
     BNGcore::PatternGraph result;
     std::map<const BNGcore::Node*, BNGcore::Node*> clones;
@@ -814,6 +876,7 @@ struct NetworkRulePlan::Impl {
     std::unique_ptr<LegacyNetworkRuleKernel> kernel;
     bool directSynthesis = false;
     bool directUnaryStateChange = false;
+    bool directUnaryDeletion = false;
     bool synthesisApplied = false;
     BNGcore::PatternGraph unaryReactantGraph;
     std::size_t unaryChangedSite = 0;
@@ -822,6 +885,9 @@ struct NetworkRulePlan::Impl {
     std::string unaryProductState;
     std::optional<double> unaryStaticRate;
     std::set<std::size_t> unaryVisitedSpecies;
+    BNGcore::PatternGraph deletionReactantGraph;
+    std::optional<double> deletionStaticRate;
+    std::set<std::size_t> deletionVisitedSpecies;
     std::vector<ast::SpeciesGraph> synthesisProducts;
     std::string directRateLaw = "0";
     std::optional<ast::Expression> directRateExpression;
@@ -848,6 +914,8 @@ struct NetworkRulePlan::Impl {
                           !compiledRule.hasDrivingWork()),
           directUnaryStateChange(qualifiesDirectUnaryStateChange(
               compiledRule, direction, model)),
+          directUnaryDeletion(!directSynthesis && !directUnaryStateChange &&
+              qualifiesDirectUnaryDeletion(compiledRule, direction, model)),
           filters(lowerFilters(direction, context)),
           localObservables(lowerLocalObservableDependencies(
             compiledRule, direction, model, context, reverseDirection)),
@@ -889,6 +957,17 @@ struct NetworkRulePlan::Impl {
             directRateExpression =
                 compile::lowerResolvedExpressionToAst(resolved, model);
             directRateLaw = directRateExpression->toString();
+        } else if (directUnaryDeletion) {
+            deletionReactantGraph = compile::lowerPatternToBNGcore(
+                direction.reactantPatterns.front(), context);
+            deletionStaticRate = staticCompiledParameterRate(direction, model);
+            if (direction.rateLaw.has_value()) {
+                auto resolved = model.expandFunctions(
+                    direction.rateLaw->resolvedExpression());
+                directRateExpression =
+                    compile::lowerResolvedExpressionToAst(resolved, model);
+                directRateLaw = directRateExpression->toString();
+            }
         } else {
             kernel = std::make_unique<LegacyNetworkRuleKernel>(
                 compiledRule, direction, model, context, reverseDirection);
@@ -1166,6 +1245,56 @@ struct NetworkRulePlan::Impl {
         }
         return created;
     }
+
+    std::size_t expandUnaryDeletion(
+        ast::SpeciesList& species,
+        ast::RxnList& reactions,
+        std::size_t speciesBoundary) {
+        std::size_t created = 0;
+
+        for (std::size_t speciesIndex = 0;
+             speciesIndex < speciesBoundary && speciesIndex < species.size();
+             ++speciesIndex) {
+            if (!deletionVisitedSpecies.insert(speciesIndex).second) continue;
+            const auto& sourceSpecies = species.get(speciesIndex);
+            const auto& sourceGraph = sourceSpecies.getSpeciesGraph();
+            if (!sourceSpecies.getCompartment().empty()) continue;
+            const bool hasCompartment = std::any_of(
+                sourceGraph.getGraph().begin(), sourceGraph.getGraph().end(),
+                [](const auto* node) {
+                    return isUnaryMoleculeNode(*node) &&
+                           !node->get_compartment().empty();
+                });
+            if (hasCompartment) continue;
+
+            const bool isMonomer = std::count_if(
+                sourceGraph.getGraph().begin(), sourceGraph.getGraph().end(),
+                [](const auto* node) { return isUnaryMoleculeNode(*node); }) == 1;
+            if (!isMonomer) continue;
+
+            const auto matchCount = core::countPatternMatches(
+                deletionReactantGraph, sourceGraph.getGraph());
+            if (matchCount == 0) continue;
+
+            if (pruneZeroRates && deletionStaticRate.has_value() &&
+                *deletionStaticRate == 0.0) {
+                continue;
+            }
+
+            if (hooks.rejectZeroRate) {
+                ast::RateCandidateContext candidate;
+                candidate.speciesGraphs.push_back(&sourceGraph.getGraph());
+                if (hooks.rejectZeroRate(candidate)) continue;
+            }
+
+            const auto label = name + "|" + std::to_string(speciesIndex) + "->";
+            reactions.add(ast::Rxn(label, {speciesIndex}, {},
+                                   directRateLaw, static_cast<double>(matchCount), name,
+                                   directRateExpression));
+            ++created;
+        }
+        return created;
+    }
 };
 
 NetworkRulePlan::NetworkRulePlan(
@@ -1193,6 +1322,8 @@ bool NetworkRulePlan::usesLegacyKernel() const noexcept {
 
 void NetworkRulePlan::clearPatternMatchCache() {
     if (impl_->kernel) impl_->kernel->clearPatternMatchCache();
+    impl_->unaryVisitedSpecies.clear();
+    impl_->deletionVisitedSpecies.clear();
 }
 
 std::size_t NetworkRulePlan::expand(
@@ -1276,6 +1407,10 @@ std::size_t NetworkRulePlan::expand(
     if (impl_->directUnaryStateChange) {
         return impl_->expandUnaryStateChange(
             species, reactions, productFilter, speciesBoundary);
+    }
+    if (impl_->directUnaryDeletion) {
+        return impl_->expandUnaryDeletion(
+            species, reactions, speciesBoundary);
     }
     return impl_->kernel->expand(
         species, reactions, currentIteration, productFilter, speciesBoundary);
