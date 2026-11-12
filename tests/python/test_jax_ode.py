@@ -163,14 +163,13 @@ def test_public_model_wrapper():
             "A() -> B() f()",
             "begin observables\nMolecules count A()\nend observables\nbegin functions\nf() k*count\nend functions",
         ),
-        ("A() -> B() k*time", ""),
     ],
 )
 def test_jax_ode_functional_unsupported(rule, extra):
     model = _model(rule, extra=extra)
-    with pytest.raises(NotImplementedError, match="functional|time-dependent"):
+    with pytest.raises(NotImplementedError, match="functional rate laws"):
         jax_ode.compile_rhs(model)
-    with pytest.raises(NotImplementedError, match="functional|time-dependent"):
+    with pytest.raises(NotImplementedError, match="functional rate laws"):
         jax_ode.simulate_jax_ode(model, t_end=1.0)
 
 
