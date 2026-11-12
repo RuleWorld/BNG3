@@ -2346,7 +2346,7 @@
     },
     {
       "number": 142,
-      "body_sha256": "acde1176ba0c66a93a3e58675c9ab8063d2b45221e2cbb665157195b3b3bee84",
+      "body_sha256": "fa21deb3d074453599b7a4d6e8f318d35f00bc0a1d1ff04941d4232a47738b18",
       "obligations": [
         {
           "id": "issue:142:compare-the-two-graph-encodings-canonicalizers-against-independe",
