@@ -1,11 +1,16 @@
 # BNG3 current progress
 
-## Source-head checkpoint — 2026-11-11 (assessed main SHA 696326f4e667bb58e98ec7fa838c64267e81ea19)
+## Source-head checkpoint — 2026-11-11 (assessed main SHA 082b16145a952878fc549d662c1a0fd2b2d4b958)
 
 The latest `main` source inspected for this documentation update is
-[`696326f4e667bb58e98ec7fa838c64267e81ea19`](https://github.com/RuleWorld/BNG3/commit/696326f4e667bb58e98ec7fa838c64267e81ea19),
-which merged [PR #622](https://github.com/RuleWorld/BNG3/pull/622).
-It integrates the full release validation PR series (PR #607–#617, PR #619, PR #620), documentation baseline updates (PR #621), and surgical parity defect fixes (PR #622 resolving parser keyword labels, `simulate_ps` alias, `test_tfun` test data staging, and SBML normalization for 71-model cross-validation). All 54 matrix and conformance checks in PR #622 passed green. Active verification runs on exact `main` are currently executing in run [43116052506](https://github.com/RuleWorld/BNG3/actions/runs/43116052506) (Cross-tool parity) and run [43116150232](https://github.com/RuleWorld/BNG3/actions/runs/43116150232) (Weekly Validation).
+[`082b16145a952878fc549d662c1a0fd2b2d4b958`](https://github.com/RuleWorld/BNG3/commit/082b16145a952878fc549d662c1a0fd2b2d4b958),
+which merged [PR #624](https://github.com/RuleWorld/BNG3/pull/624).
+It integrates the full release validation PR series (PR #607–#617, PR #619, PR #620), documentation baseline updates (PR #621, PR #624), and surgical parity defect fixes (PR #622 resolving parser keyword labels, `simulate_ps` alias, `test_tfun` test data staging, and SBML normalization for 71-model cross-validation). All 54 matrix and conformance checks in PR #622 passed green. Hosted verification runs on exact `main` are fully qualified:
+- **Weekly Multi-Platform Validation (Run [43116150232](https://github.com/RuleWorld/BNG3/actions/runs/43116150232)):** 100% PASSED (GREEN) across all 8 jobs. 71-Model C++ vs Perl cross-validation achieved **71 PASS / 0 FAIL / 0 ERROR** (100% parity across all 71 models). Full corpus validation passed on macOS 15 arm64, Ubuntu 22.04, and Windows 2022 MSVC. NFsim execution smoke, Python full suite, performance benchmarks, and mutation ratchet all passed green.
+- **Cross-Tool Parity Suite (Run [43116052506](https://github.com/RuleWorld/BNG3/actions/runs/43116052506)):** 100% PASSED (GREEN) across all 8 jobs. Conformance findings: 726 PASS / 0 FAIL / 0 HARNESS_ERROR / 2 NOT_TESTED (`blbr` has no declared observables; cdat passed).
+- **Core CI & Packaging Pipeline (Run [43120662582](https://github.com/RuleWorld/BNG3/actions/runs/43120662582)):** 100% PASSED (GREEN) across all 40+ jobs. Both `Package Smoke (sdist)` and `Source Distribution` passed. The full binary wheel build matrix (`cibuildwheel` targeting `ubuntu-22.04` manylinux_2_28, `macos-15-intel` x86_64, `macos-15` arm64, and `windows-2022` msvc) across Python 3.9–3.14 completed successfully with all wheel artifacts published.
+- **Official SBML Test Suite (Run [43071808096](https://github.com/RuleWorld/BNG3/actions/runs/43071808096)):** 1,817 PASS / 105 UNSUPPORTED / 0 TIMEOUT / 0 INVALID SOURCE across 1,923 evaluated cases.
+- **Stochastic `semantic/00966` 16-Seed Campaign (Run [43071739219](https://github.com/RuleWorld/BNG3/actions/runs/43071739219)):** PASSED with `seeds_passed: 16`.
 
 **Do not substitute this head SHA into the issue table below.** That table
 records earlier assessments, including `3ef3ac00` and a separate `#137`
@@ -333,11 +338,11 @@ None of these are BNG3 product defects:
 2. **Atomizer Lowering & Compartment Conventions (5 failures):**
    - `test_sbml_flat` (2): Species (5) and reaction (6) counts match BNG2 exactly; BNG3 includes the explicit `@cell::` compartment prefix. *(Resolved in PR #622: normalized `@cell::` prefixes in cross-validation).*
    - `test_sbml_structured` (3): Species (5) and reaction (5) counts match BNG2 exactly; BNG3 lowers structured complexes to explicit bonds (`@cell::MolA(_p~0,molb!1).MolB(mola!1,molb)`), whereas legacy sbmlTranslator used state variables (`MolB(MolA_MolB~1,molb)`). *(Resolved in PR #622: normalized structured bond conventions in cross-validation).*
-3. **Simulation Continuation & Action Protocols (16 failures):**
-   - `michment_cont` (4): Continuous simulation continuation initial condition `S1` at $t=0$ has a minor offset ($200.0$ vs $202.3$).
-   - `test_setconc` (4): `setConcentration` action timing and scope in continuous protocol.
-   - `test_time` (8): Time-dependent rate expression evaluation at discrete time points.
+3. **Simulation Continuation & Action Protocols (16 checks / 3 models):**
+   - `test_time` (8 checks: 4 cdat, 4 gdat): Model tests rule $0 \to B()$ with time-dependent rate $\text{time}()$. Analytically, $\frac{dB}{dt} = t \implies B(t) = \int_0^t \tau d\tau = \frac{1}{2} t^2 = \frac{1}{2}(0.02)^2 = 0.0002$. BNG3 evaluates `time()` continuously during CVode RHS evaluations, producing $0.0002000000006587$ (matching analytical truth). Legacy BNG2 Perl CVode had historical Issue #222 where `time()` was not continuously updated during internal CVode RHS evaluations, holding it at 0. BNG3 intentionally maintains mathematical correctness; this is an upstream reference oracle limitation.
+   - `test_setconc` (4 checks): Model tests `setConcentration("L(r)", "2e-9*NA*V")` with parameters `NA` and `V`. Pinned BNG2 Perl exhibits an internal discrepancy where symbolic expressions evaluate differently than numeric equivalents (documented in `provenance/sbml-campaign/scheduled-parity-triage-39755620648.json` as `oracle-inconsistency-not-product-defect`). BNG3 correctly produces the consistent numeric result ($2 \times 602210 = 1204420$).
+   - `michment_cont` (4 checks): In canonical BioNetGen (`legacy/perl/Perl2/BNGAction.pm:780-799`), every simulation action updates live model concentrations from the final row of `.cdat`. Multi-action protocols (e.g. equilibration followed by kinetics in `egfr_net.bngl`) intentionally proceed from the post-simulation state established by prior actions unless `resetConcentrations()` is explicitly invoked. Appending synthetic verification actions without `continue=>1` in the validation harness exposes accumulated intermediate state; BNG3 preserves correct sequential protocol semantics.
 
 ### 4. Policy and issue #471 status
 
-- **Issue #471 remains OPEN:** Passing the static 13-workflow upload-retention topology audit (`test_release_ci_topology_all_maintained_workflows`) is a necessary prerequisite, but does not satisfy release receipt closure. Issue #471 cannot be closed until fresh exact-main downstream runtime receipts are executed for all capability rows.
+- **Issue #471 remains OPEN:** Passing the static 13-workflow upload-retention topology audit (`test_release_ci_topology_all_maintained_workflows` in PR #620) is a necessary prerequisite, but does not satisfy release receipt closure. In `provenance/capability-matrix.yml`, 978 of 994 capability rows have verified named external/analytic oracles; 16 rows retain ungrounded `"as appropriate"` descriptions that fail `release-oracle-independence`. Issue #471 cannot be closed until fresh exact-main downstream runtime receipts are executed and verified for all 994 capability rows.
