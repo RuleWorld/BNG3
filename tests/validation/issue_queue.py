@@ -711,7 +711,9 @@ def issue471_checks_report(
     if topology_report_path:
         topology_report_path = Path(topology_report_path)
         if not topology_report_path.is_file():
-            raise ValueError(f"Issue 471 topology report missing: {topology_report_path}")
+            raise ValueError(
+                f"Issue 471 topology report missing: {topology_report_path}"
+            )
         data = json.loads(topology_report_path.read_text(encoding="utf-8"))
         if data.get("check_id") != "release-ci-topology":
             raise ValueError("Issue 471 topology report check_id mismatch")
@@ -1007,9 +1009,8 @@ def obligation_inventory(issues, catalog=None):
             live_criteria = item.get("live_acceptance_criteria", [])
             has_live = bool(live_criteria)
             criterion_in_live = item.get("criterion") in texts
-            current = (
-                item.get("live_body_sha256") == digest
-                or (entry_digest_current and criterion_in_live and not has_live)
+            current = item.get("live_body_sha256") == digest or (
+                entry_digest_current and criterion_in_live and not has_live
             )
             row = dict(
                 item, issue=number, scope_status="CURRENT" if current else "STALE_SCOPE"

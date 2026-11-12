@@ -191,10 +191,15 @@ def test_issue472_docs_report_consumer(tmp_path):
         ],
     }
     report_file.write_text(json.dumps(valid_data), encoding="utf-8")
-    report = issue_queue.issue472_docs_report(report_file, REVISION, artifact_run_id="12345")
+    report = issue_queue.issue472_docs_report(
+        report_file, REVISION, artifact_run_id="12345"
+    )
     assert report["source"] == {"revision": REVISION, "dirty": False}
     assert report["artifact"]["workflow_run_id"] == "12345"
-    assert {r["id"] for r in report["results"]} == {"release-docs-links", "release-docs-decisions"}
+    assert {r["id"] for r in report["results"]} == {
+        "release-docs-links",
+        "release-docs-decisions",
+    }
     assert all(r["status"] == "PASS" for r in report["results"])
     assert all(r["supported_execution"] is True for r in report["results"])
 
@@ -213,7 +218,11 @@ def test_issue472_docs_report_consumer(tmp_path):
         valid_data,
         status="FAIL",
         checks=[
-            {"check_id": "release-docs-links", "status": "FAIL", "findings": ["broken link"]},
+            {
+                "check_id": "release-docs-links",
+                "status": "FAIL",
+                "findings": ["broken link"],
+            },
             {"check_id": "release-docs-decisions", "status": "PASS", "findings": []},
         ],
     )
@@ -225,28 +234,34 @@ def test_issue472_docs_report_consumer(tmp_path):
 def test_issue471_checks_report_consumer(tmp_path):
     oracle_file = tmp_path / "oracle.json"
     oracle_file.write_text(
-        json.dumps({
-            "check_id": "release-oracle-independence",
-            "evaluated_revision": REVISION,
-            "working_tree_dirty": False,
-            "result": "pass",
-        }),
+        json.dumps(
+            {
+                "check_id": "release-oracle-independence",
+                "evaluated_revision": REVISION,
+                "working_tree_dirty": False,
+                "result": "pass",
+            }
+        ),
         encoding="utf-8",
     )
     topo_file = tmp_path / "topology.json"
     topo_file.write_text(
-        json.dumps({
-            "check_id": "release-ci-topology",
-            "result": "pass",
-        }),
+        json.dumps(
+            {
+                "check_id": "release-ci-topology",
+                "result": "pass",
+            }
+        ),
         encoding="utf-8",
     )
     tamper_file = tmp_path / "tamper.json"
     tamper_file.write_text(
-        json.dumps({
-            "check_id": "release-oracle-tamper",
-            "result": "pass",
-        }),
+        json.dumps(
+            {
+                "check_id": "release-oracle-tamper",
+                "result": "pass",
+            }
+        ),
         encoding="utf-8",
     )
     report = issue_queue.issue471_checks_report(
@@ -263,12 +278,14 @@ def test_issue471_checks_report_consumer(tmp_path):
     # Negative control
     bad_oracle = tmp_path / "bad_oracle.json"
     bad_oracle.write_text(
-        json.dumps({
-            "check_id": "release-oracle-independence",
-            "evaluated_revision": REVISION,
-            "working_tree_dirty": False,
-            "result": "fail",
-        }),
+        json.dumps(
+            {
+                "check_id": "release-oracle-independence",
+                "evaluated_revision": REVISION,
+                "working_tree_dirty": False,
+                "result": "fail",
+            }
+        ),
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="did not pass"):
@@ -278,16 +295,24 @@ def test_issue471_checks_report_consumer(tmp_path):
 def test_s5_delay_receipt_report_consumer(tmp_path):
     receipt_file = tmp_path / "s5-receipt.json"
     receipt_file.write_text(
-        json.dumps({
-            "status": "PASS",
-            "expected_revision": REVISION,
-            "case_verdicts": {"ordinary": "PASS", "boundary": "PASS", "interaction": "PASS"},
-            "scope": "three S5 analytic delay-history cases only",
-            "release_delay_ode": "not discharged",
-        }),
+        json.dumps(
+            {
+                "status": "PASS",
+                "expected_revision": REVISION,
+                "case_verdicts": {
+                    "ordinary": "PASS",
+                    "boundary": "PASS",
+                    "interaction": "PASS",
+                },
+                "scope": "three S5 analytic delay-history cases only",
+                "release_delay_ode": "not discharged",
+            }
+        ),
         encoding="utf-8",
     )
-    report = issue_queue.s5_delay_receipt_report(receipt_file, REVISION, artifact_run_id="555")
+    report = issue_queue.s5_delay_receipt_report(
+        receipt_file, REVISION, artifact_run_id="555"
+    )
     assert report["source"] == {"revision": REVISION, "dirty": False}
     assert report["results"][0]["id"] == "release-delay-history"
     assert report["results"][0]["status"] == "PASS"
@@ -295,12 +320,14 @@ def test_s5_delay_receipt_report_consumer(tmp_path):
     # Negative control: stale revision
     stale_receipt = tmp_path / "stale-s5.json"
     stale_receipt.write_text(
-        json.dumps({
-            "status": "PASS",
-            "expected_revision": "b" * 40,
-            "case_verdicts": {"ordinary": "PASS"},
-            "scope": "three S5 analytic delay-history cases only",
-        }),
+        json.dumps(
+            {
+                "status": "PASS",
+                "expected_revision": "b" * 40,
+                "case_verdicts": {"ordinary": "PASS"},
+                "scope": "three S5 analytic delay-history cases only",
+            }
+        ),
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="stale"):
@@ -373,7 +400,10 @@ def test_historical_versus_live_precedence_in_obligation_inventory():
 
     # Mapped live criterion gets CURRENT
     assert "issue:142:live-acceptance:release-graph-identity" in by_id
-    assert by_id["issue:142:live-acceptance:release-graph-identity"]["scope_status"] == "CURRENT"
+    assert (
+        by_id["issue:142:live-acceptance:release-graph-identity"]["scope_status"]
+        == "CURRENT"
+    )
 
     # Unmapped live criterion gets UNMAPPED (not ignored)
     unmapped = [o for o in obligations if o["id"].startswith("issue:142:unmapped:")]
