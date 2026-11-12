@@ -266,6 +266,179 @@ generate_network({max_iter=>3})
     CHECK(network.species.get(2).getAmount() == 2.0);
 }
 
+TEST_CASE("NetworkRulePlan executes direct monomer deletion and reversible creation/deletion without legacy kernel",
+          "[NetworkRulePlan][compiled][deletion]") {
+    SECTION("Direct monomer deletion after AST destruction") {
+        auto source = parseModel(R"(
+begin parameters
+    kd 0.25
+end parameters
+begin molecule types
+    A(s~U~P)
+end molecule types
+begin seed species
+    A(s~U) 5
+    A(s~P) 3
+end seed species
+begin reaction rules
+    degrade: A(s~U) -> 0 kd
+end reaction rules
+generate_network({max_iter=>2})
+)");
+        REQUIRE(source != nullptr);
+        auto document = std::make_unique<compile::Document>(*source);
+        REQUIRE(document->valid());
+        source.reset();
+
+        const auto& compiled = document->model();
+        REQUIRE(compiled.rules().size() == 1);
+        compile::BNGcoreLoweringContext context(compiled);
+        auto plans = engine::lowerNetworkRules(compiled, context);
+        REQUIRE(plans.size() == 1);
+        CHECK_FALSE(plans.front().usesLegacyKernel());
+
+        engine::NetworkGenerator generator(*document);
+        const auto network = generator.generateNative(2);
+        // Seeds are A(s~U) and A(s~P). Deletion does not produce new species.
+        REQUIRE(network.species.size() == 2);
+        REQUIRE(network.reactions.size() == 1);
+        const auto& reaction = network.reactions.all().front();
+        REQUIRE(reaction.getReactants().size() == 1);
+        CHECK(reaction.getProducts().empty());
+        CHECK(reaction.getRateLaw() == "kd");
+        CHECK(reaction.getFactor() == 1.0);
+        CHECK(network.species.get(reaction.getReactants().front()).getSpeciesGraph().toString() == "A(s~U)");
+    }
+
+    SECTION("Reversible creation and deletion executes without legacy kernel") {
+        auto source = parseModel(R"(
+begin parameters
+    ks 1.5
+    kd 0.3
+end parameters
+begin molecule types
+    A(s~U)
+end molecule types
+begin seed species
+    A(s~U) 2
+end seed species
+begin reaction rules
+    turnover: 0 <-> A(s~U) ks, kd
+end reaction rules
+generate_network({max_iter=>2})
+)");
+        REQUIRE(source != nullptr);
+        auto document = std::make_unique<compile::Document>(*source);
+        REQUIRE(document->valid());
+        source.reset();
+
+        const auto& compiled = document->model();
+        REQUIRE(compiled.rules().size() == 1);
+        compile::BNGcoreLoweringContext context(compiled);
+        auto plans = engine::lowerNetworkRules(compiled, context);
+        REQUIRE(plans.size() == 2);
+        CHECK_FALSE(plans[0].usesLegacyKernel());
+        CHECK_FALSE(plans[1].usesLegacyKernel());
+
+        engine::NetworkGenerator generator(*document);
+        const auto network = generator.generateNative(2);
+        REQUIRE(network.species.size() == 1);
+        REQUIRE(network.reactions.size() == 2);
+
+        // One reaction is synthesis (0 -> A), one is deletion (A -> 0)
+        const auto& rxn0 = network.reactions.all()[0];
+        const auto& rxn1 = network.reactions.all()[1];
+        const bool synthFirst = rxn0.getReactants().empty();
+        const auto& synthRxn = synthFirst ? rxn0 : rxn1;
+        const auto& delRxn = synthFirst ? rxn1 : rxn0;
+
+        CHECK(synthRxn.getReactants().empty());
+        REQUIRE(synthRxn.getProducts().size() == 1);
+        CHECK(synthRxn.getProducts().front() == 0);
+        CHECK(synthRxn.getRateLaw() == "ks");
+
+        REQUIRE(delRxn.getReactants().size() == 1);
+        CHECK(delRxn.getReactants().front() == 0);
+        CHECK(delRxn.getProducts().empty());
+        CHECK(delRxn.getRateLaw() == "kd");
+        CHECK(delRxn.getFactor() == 1.0);
+    }
+
+    SECTION("Pruning zero rate with pruneZeroRates = true") {
+        auto source = parseModel(R"(
+begin parameters
+    kd 0
+end parameters
+begin molecule types
+    A(s~U)
+end molecule types
+begin seed species
+    A(s~U) 4
+end seed species
+begin reaction rules
+    degrade: A(s~U) -> 0 kd
+end reaction rules
+generate_network({max_iter=>2})
+)");
+        REQUIRE(source != nullptr);
+        auto document = std::make_unique<compile::Document>(*source);
+        REQUIRE(document->valid());
+        source.reset();
+
+        const auto& compiled = document->model();
+        REQUIRE(compiled.rules().size() == 1);
+        compile::BNGcoreLoweringContext context(compiled);
+        auto plans = engine::lowerNetworkRules(compiled, context, /*pruneZeroRates=*/true);
+        REQUIRE(plans.size() == 1);
+        CHECK_FALSE(plans.front().usesLegacyKernel());
+
+        ast::SpeciesList species;
+        species.add(ast::Species(
+            compile::lowerPatternToSpeciesGraph(compiled.seeds().front().pattern, context),
+            4.0));
+        ast::RxnList reactions;
+        plans.front().expand(species, reactions, 0, {}, species.size());
+        CHECK(reactions.size() == 0);
+    }
+
+    SECTION("Negative control: wrong reactant state / wrong multiplicity is rejected") {
+        auto source = parseModel(R"(
+begin parameters
+    kd 0.5
+end parameters
+begin molecule types
+    A(s~U~P)
+end molecule types
+begin seed species
+    A(s~P) 10
+end seed species
+begin reaction rules
+    degrade: A(s~U) -> 0 kd
+end reaction rules
+generate_network({max_iter=>2})
+)");
+        REQUIRE(source != nullptr);
+        auto document = std::make_unique<compile::Document>(*source);
+        REQUIRE(document->valid());
+        source.reset();
+
+        const auto& compiled = document->model();
+        compile::BNGcoreLoweringContext context(compiled);
+        auto plans = engine::lowerNetworkRules(compiled, context);
+        REQUIRE(plans.size() == 1);
+        CHECK_FALSE(plans.front().usesLegacyKernel());
+
+        ast::SpeciesList species;
+        species.add(ast::Species(
+            compile::lowerPatternToSpeciesGraph(compiled.seeds().front().pattern, context),
+            10.0));
+        ast::RxnList reactions;
+        plans.front().expand(species, reactions, 0, {}, species.size());
+        // Wrong state A(s~P) vs rule pattern A(s~U): no reaction should be created
+        CHECK(reactions.size() == 0);
+    }
+}
+
 TEST_CASE("compiled unary state-change pruning keeps zero-rate networks atomic",
           "[NetworkRulePlan][compiled][unary][zero-rate]") {
     auto source = parseModel(R"(
