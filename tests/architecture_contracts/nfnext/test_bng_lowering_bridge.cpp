@@ -279,6 +279,139 @@ end reaction rules
     assert(std::abs(compiled.evaluate(environment) - 1.2) < 1e-12);
 }
 
+void executesLiveObservableDependentFunctionRate() {
+    auto ast = bng::parser::parseModel(R"BNGL(
+begin parameters
+  k 0.05
+end parameters
+begin molecule types
+  A(x~u~p)
+end molecule types
+begin seed species
+  A(x~u) 4
+end seed species
+begin observables
+  Molecules A_count A(x~u)
+  Molecules P_count A(x~p)
+end observables
+begin functions
+  current_a() = A_count
+  per_embedding_rate() = k * current_a()
+end functions
+begin reaction rules
+  convert: A(x~u) -> A(x~p) per_embedding_rate()
+end reaction rules
+)BNGL");
+    assert(ast);
+
+    // Verify AST lifetime independence: compile model, then destroy source AST.
+    const bng::compile::CompiledModel semantic(*ast);
+    ast.reset();
+    assert(semantic.valid());
+    assert(semantic.observables().size() == 2);
+    assert(semantic.functions().size() == 2);
+
+    // Independent analytical CTMC solution for pure death process q(n, n-1) = k * n^2.
+    // Initial condition: n0 = 4, k = 0.05, t_end = 2.0.
+    // Transition rates: lambda_4 = 0.8, lambda_3 = 0.45, lambda_2 = 0.20, lambda_1 = 0.05, lambda_0 = 0.
+    // Predeclared theoretical cumulative distribution function F(n) = P(A(t=2.0) <= n) for n in {0, 1, 2, 3, 4}:
+    const std::array<double, 5> expectedCdf{
+        0.0013544362389112,
+        0.0481464800572286,
+        0.3302791648703271,
+        0.7981034820053446,
+        1.0,
+    };
+
+    constexpr std::size_t runCount = 200;
+    std::array<std::size_t, 5> observedCounts{};
+    nfnext::BngExecutionRequest request;
+    request.sample_times = {0.0, 1.0, 2.0};
+
+    for (std::size_t run = 0; run < runCount; ++run) {
+        request.seed = 20261102 + run;
+        const auto result = nfnext::executeFromBioNetGen(semantic, request);
+        assert((result.columns == std::vector<std::string>{"time", "A_count", "P_count"}));
+        assert(result.rows.size() == 3);
+        // Conservation check at every sample time: A_count + P_count == 4.
+        for (const auto& row : result.rows) {
+            assert(row[1] + row[2] == 4.0);
+        }
+        // Monotonic non-increasing trajectory for pure-death reactant.
+        assert(result.rows[0][1] >= result.rows[1][1]);
+        assert(result.rows[1][1] >= result.rows[2][1]);
+
+        const auto finalA = static_cast<int>(result.rows[2][1]);
+        assert(finalA >= 0 && finalA <= 4);
+        ++observedCounts[static_cast<std::size_t>(finalA)];
+    }
+
+    // Dvoretzky-Kiefer-Wolfowitz bound for alpha = 0.01 error allocation.
+    const double epsilon = std::sqrt(std::log(2.0 / 0.01) / (2.0 * runCount)); // ~0.1151
+    double observedCdf = 0.0;
+    double maxDistance = 0.0;
+    for (std::size_t n = 0; n < observedCounts.size(); ++n) {
+        observedCdf += static_cast<double>(observedCounts[n]) / runCount;
+        maxDistance = std::max(maxDistance, std::abs(observedCdf - expectedCdf[n]));
+    }
+    assert(maxDistance <= epsilon);
+
+    // Negative control 1: Zeroed dynamic rates mutant.
+    // If rate were frozen at zero, all runs remain in state 4 (0 transitions),
+    // producing an empirical CDF of [0, 0, 0, 0, 1], whose KS distance against expectedCdf
+    // is ~0.7981 >> epsilon.
+    {
+        std::array<std::size_t, 5> zeroedCounts{0, 0, 0, 0, runCount};
+        double zeroedCdf = 0.0;
+        double zeroedMaxDistance = 0.0;
+        for (std::size_t n = 0; n < zeroedCounts.size(); ++n) {
+            zeroedCdf += static_cast<double>(zeroedCounts[n]) / runCount;
+            zeroedMaxDistance = std::max(zeroedMaxDistance, std::abs(zeroedCdf - expectedCdf[n]));
+        }
+        assert(zeroedMaxDistance > epsilon);
+    }
+
+    // Negative control 2: Frozen observable mutant.
+    // If rate were frozen at initial observable value (k * 4 = 0.20 per embedding),
+    // the death process has rates lambda_n = n * 0.20 instead of n * (0.05 * n).
+    // The theoretical frozen CDF at t=2.0 is [0.0118, 0.1079, 0.4009, 0.7981, 1.0].
+    {
+        const std::array<double, 5> frozenTheoreticalCdf{
+            0.01181327, 0.10789036, 0.40091271, 0.79810348, 1.0
+        };
+        double frozenVsLiveDist = 0.0;
+        for (std::size_t n = 0; n < 5; ++n) {
+            frozenVsLiveDist = std::max(frozenVsLiveDist, std::abs(frozenTheoreticalCdf[n] - expectedCdf[n]));
+        }
+        // Frozen observable law differs measurably from the live process.
+        assert(frozenVsLiveDist >= 0.07);
+    }
+
+    // Negative control 3: Wrong multiplicity mutant.
+    // If rate omitted reactant embedding count (propensity = k * A_count rather than A_count * k * A_count),
+    // lambda_4 would be 0.2 rather than 0.8, leading to P(A=4)=exp(-0.4) ~ 0.67 instead of 0.2019.
+    {
+        const double wrongMultiplicityP4 = std::exp(-0.05 * 4.0 * 2.0); // exp(-0.4) ~ 0.6703
+        assert(std::abs(wrongMultiplicityP4 - (1.0 - expectedCdf[3])) > epsilon);
+    }
+
+    // Deterministic reproducibility check: identical seed yields identical trajectories and event counts.
+    request.seed = 20261102;
+    const auto runA = nfnext::executeFromBioNetGen(semantic, request);
+    const auto runB = nfnext::executeFromBioNetGen(semantic, request);
+    assert(runA.rows == runB.rows);
+    assert(runA.event_count == runB.event_count);
+
+    // Absorption check: long horizon reaches absorbing state 0.
+    nfnext::BngExecutionRequest absorbRequest;
+    absorbRequest.sample_times = {0.0, 100.0};
+    absorbRequest.seed = 20261102;
+    const auto absorbRun = nfnext::executeFromBioNetGen(semantic, absorbRequest);
+    assert(absorbRun.rows.back()[1] == 0.0);
+    assert(absorbRun.rows.back()[2] == 4.0);
+    assert(absorbRun.event_count == 4);
+}
+
 void refusesDirectObservableRateWithoutGlobalFunction() {
     const auto ast = bng::parser::parseModel(R"BNGL(
 begin parameters
@@ -1259,6 +1392,7 @@ end reaction rules
     refusesClockDependentParameterRates();
     lowersStaticallyResolvableUserFunctionRate();
     representsNestedObservableDependentFunctionRate();
+    executesLiveObservableDependentFunctionRate();
     refusesDirectObservableRateWithoutGlobalFunction();
     refusesTimeDependentNestedGlobalFunctionRate();
     identicalReactantsHaveUnorderedEmbeddings();
