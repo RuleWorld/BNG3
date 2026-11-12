@@ -2346,7 +2346,7 @@
     },
     {
       "number": 142,
-      "body_sha256": "fa21deb3d074453599b7a4d6e8f318d35f00bc0a1d1ff04941d4232a47738b18",
+      "body_sha256": "8ecb459668ca33a7fe8051c791b87f71312fab9c1a96bfd0389b88ea2f07bbd4",
       "obligations": [
         {
           "id": "issue:142:compare-the-two-graph-encodings-canonicalizers-against-independe",
@@ -2562,7 +2562,7 @@
               "id": "issue:142:acceptance:1",
               "check_id": "release-graph-identity",
               "text": "`release-graph-identity`: independent exhaustive small-graph isomorphism matches both production paths.",
-              "live_body_sha256": "fa21deb3d074453599b7a4d6e8f318d35f00bc0a1d1ff04941d4232a47738b18"
+              "live_body_sha256": "8ecb459668ca33a7fe8051c791b87f71312fab9c1a96bfd0389b88ea2f07bbd4"
             }
           ]
         },
@@ -2784,7 +2784,7 @@
               "id": "issue:142:acceptance:3",
               "check_id": "release-obligation-142",
               "text": "`release-obligation-142`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
-              "live_body_sha256": "fa21deb3d074453599b7a4d6e8f318d35f00bc0a1d1ff04941d4232a47738b18"
+              "live_body_sha256": "8ecb459668ca33a7fe8051c791b87f71312fab9c1a96bfd0389b88ea2f07bbd4"
             }
           ]
         },
@@ -2832,7 +2832,7 @@
               "id": "issue:142:acceptance:2",
               "check_id": "release-graph-observables",
               "text": "`release-graph-observables`: BNG2/native NFsim reaction multiplicities and observable weights agree for symmetric complexes.",
-              "live_body_sha256": "fa21deb3d074453599b7a4d6e8f318d35f00bc0a1d1ff04941d4232a47738b18"
+              "live_body_sha256": "8ecb459668ca33a7fe8051c791b87f71312fab9c1a96bfd0389b88ea2f07bbd4"
             }
           ]
         }
@@ -16568,7 +16568,7 @@
     },
     {
       "number": 177,
-      "body_sha256": "bd4185e7e35d1b4568ff8af570bc9e41a011ebb1cbd9c573515ac2a2f21bfd13",
+      "body_sha256": "9619a03b703ca4c2760e9726e392655e30cfc1f19dc75f9a247916c267022607",
       "obligations": [
         {
           "id": "issue:177:use-analytic-expectations-and-an-independent-reference-for-detai",
@@ -16959,7 +16959,7 @@
           "id": "issue:177:live-acceptance:release-barrier-energy",
           "criterion": "`release-barrier-energy`: analytic transition rates and detailed-balance identities pass for barrier fixtures.",
           "scope": "`release-barrier-energy`: analytic transition rates and detailed-balance identities pass for barrier fixtures.",
-          "live_body_sha256": "c9ea1a6f0d72ee8742851d8d90d0aff043ac3039de0d5d9c0f1688583ee1fb02",
+          "live_body_sha256": "9619a03b703ca4c2760e9726e392655e30cfc1f19dc75f9a247916c267022607",
           "dependencies": [
             143
           ],
@@ -16972,14 +16972,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-barrier-energy.",
-                "No revision-locked consuming receipt producer is declared for required live check release-barrier-energy."
-              ]
+              "selector": "tests/validation/release/cases/issue-177/test_barrier_energy.py::test_analytic_barrier_transition_rates",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/ci.yml#Validate independent issue-177 barrier and reservoir energy laws",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -16991,7 +16988,7 @@
           "id": "issue:177:live-acceptance:release-reservoir-energy",
           "criterion": "`release-reservoir-energy`: independent cycle affinity/current and stationary distribution checks pass under driven protocols.",
           "scope": "`release-reservoir-energy`: independent cycle affinity/current and stationary distribution checks pass under driven protocols.",
-          "live_body_sha256": "c9ea1a6f0d72ee8742851d8d90d0aff043ac3039de0d5d9c0f1688583ee1fb02",
+          "live_body_sha256": "9619a03b703ca4c2760e9726e392655e30cfc1f19dc75f9a247916c267022607",
           "dependencies": [
             143
           ],
@@ -17004,14 +17001,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-reservoir-energy.",
-                "No revision-locked consuming receipt producer is declared for required live check release-reservoir-energy."
-              ]
+              "selector": "tests/validation/release/cases/issue-177/test_reservoir_energy.py::test_analytic_reservoir_transition_rates",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/ci.yml#Validate independent issue-177 barrier and reservoir energy laws",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -17023,7 +17017,7 @@
           "id": "issue:177:live-acceptance:release-capability-coverage-177",
           "criterion": "`release-capability-coverage-177`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
           "scope": "`release-capability-coverage-177`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
-          "live_body_sha256": "c9ea1a6f0d72ee8742851d8d90d0aff043ac3039de0d5d9c0f1688583ee1fb02",
+          "live_body_sha256": "9619a03b703ca4c2760e9726e392655e30cfc1f19dc75f9a247916c267022607",
           "dependencies": [
             143
           ],
@@ -17036,14 +17030,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-capability-coverage-177.",
-                "No revision-locked consuming receipt producer is declared for required live check release-capability-coverage-177."
-              ]
+              "selector": "tests/validation/release/cases/issue-177/test_barrier_energy.py,tests/validation/release/cases/issue-177/test_reservoir_energy.py",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/ci.yml#Validate independent issue-177 barrier and reservoir energy laws",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -18641,13 +18632,13 @@
     },
     {
       "number": 472,
-      "body_sha256": "72efa5f96c0cb3b5503be59c40b0ede9b5c50faea4f4ac5b22d4e479883073b6",
+      "body_sha256": "193848ea219fc0eb9fdfa30c741e43a832615813ba12327027cea8ab076eb77d",
       "obligations": [
         {
           "id": "issue:472:live-acceptance:release-docs-links",
           "criterion": "`release-docs-links`: every link/issue/row/check reference resolves and inventory source rows are complete.",
           "scope": "`release-docs-links`: every link/issue/row/check reference resolves and inventory source rows are complete.",
-          "live_body_sha256": "72efa5f96c0cb3b5503be59c40b0ede9b5c50faea4f4ac5b22d4e479883073b6",
+          "live_body_sha256": "193848ea219fc0eb9fdfa30c741e43a832615813ba12327027cea8ab076eb77d",
           "dependencies": [
             137,
             179
@@ -18666,10 +18657,8 @@
               "selector": "python tests/validation/release/cases/issue-472/docs_checks.py#release-docs-links",
               "selector_status": "COLLECTED",
               "receipt_producer": ".github/workflows/issue-472-docs-acceptance.yml",
-              "receipt_producer_status": "MISSING_CONSUMER",
-              "missing_evidence": [
-                "Workflow artifact is produced, but no issue_queue-compatible consuming receipt is wired."
-              ]
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [
@@ -18689,7 +18678,7 @@
           "id": "issue:472:live-acceptance:release-docs-decisions",
           "criterion": "`release-docs-decisions`: active documents contain no conflicting scope/default/approval statement; archived history is labeled as history.",
           "scope": "`release-docs-decisions`: active documents contain no conflicting scope/default/approval statement; archived history is labeled as history.",
-          "live_body_sha256": "72efa5f96c0cb3b5503be59c40b0ede9b5c50faea4f4ac5b22d4e479883073b6",
+          "live_body_sha256": "193848ea219fc0eb9fdfa30c741e43a832615813ba12327027cea8ab076eb77d",
           "dependencies": [
             137,
             179
@@ -18708,10 +18697,8 @@
               "selector": "python tests/validation/release/cases/issue-472/docs_checks.py#release-docs-decisions",
               "selector_status": "COLLECTED",
               "receipt_producer": ".github/workflows/issue-472-docs-acceptance.yml",
-              "receipt_producer_status": "MISSING_CONSUMER",
-              "missing_evidence": [
-                "Workflow artifact is produced, but no issue_queue-compatible consuming receipt is wired."
-              ]
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [
