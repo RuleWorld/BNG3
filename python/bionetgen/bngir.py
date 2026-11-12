@@ -3754,6 +3754,60 @@ def exact_process_equal(
             {},
         )
 
+    def _match_observables(
+        left_obs: list[Any],
+        right_obs: list[Any],
+        type_mapping: Mapping[str, str],
+    ) -> bool:
+        if len(left_obs) != len(right_obs):
+            return False
+        if not left_obs:
+            return True
+
+        substitutions = sorted(type_mapping, key=len, reverse=True)
+        pat_re = (
+            re.compile(
+                r"(?<![A-Za-z0-9_])(?:"
+                + "|".join(re.escape(name) for name in substitutions)
+                + r")(?=\s*\()"
+            )
+            if substitutions
+            else None
+        )
+
+        def rename_pat(p: str) -> str:
+            return pat_re.sub(lambda m: type_mapping[m.group(0)], p) if pat_re else p
+
+        n = len(left_obs)
+        adj: list[list[int]] = []
+        for o_l in left_obs:
+            type_l = o_l.type
+            mapped_pats = tuple(sorted(rename_pat(p) for p in o_l.patterns))
+            edges = []
+            for j, o_r in enumerate(right_obs):
+                type_r = o_r.type
+                if type_l == type_r and mapped_pats == tuple(sorted(o_r.patterns)):
+                    edges.append(j)
+            adj.append(edges)
+
+        match_r = [-1] * n
+
+        def dfs(u: int, visited: list[bool]) -> bool:
+            for v in adj[u]:
+                if not visited[v]:
+                    visited[v] = True
+                    if match_r[v] < 0 or dfs(match_r[v], visited):
+                        match_r[v] = u
+                        return True
+            return False
+
+        for u in range(n):
+            visited = [False] * n
+            if not dfs(u, visited):
+                return False
+
+        return True
+
     def molecule_type_signatures(model: Any) -> dict[str, tuple[Any, ...]]:
         return {
             molecule_type.name: (
@@ -3867,22 +3921,19 @@ def exact_process_equal(
                     {"jump": key, "left_rate": str(rate_l), "right_rate": str(rate_r)},
                 )
 
-        obs_l = tuple(
-            sorted(
-                (o.name, o.type, tuple(o.patterns))
-                for o in left_model._model.observables
-            )
-        )
-        obs_r = tuple(
-            sorted(
-                (o.name, o.type, tuple(o.patterns))
-                for o in right_model._model.observables
-            )
-        )
-        if obs_l != obs_r:
+        obs_l = list(left_model._model.observables)
+        obs_r = list(right_model._model.observables)
+        if not _match_observables(obs_l, obs_r, {t: t for t in type_signatures_l}):
             raise EqualityUndecided(
                 "Observable patterns differ and have no verified equivalence certificate",
-                {"left_observables": obs_l, "right_observables": obs_r},
+                {
+                    "left_observables": tuple(
+                        sorted((o.name, o.type, tuple(o.patterns)) for o in obs_l)
+                    ),
+                    "right_observables": tuple(
+                        sorted((o.name, o.type, tuple(o.patterns)) for o in obs_r)
+                    ),
+                },
             )
 
         return True
@@ -3932,7 +3983,7 @@ def exact_process_equal(
         if len(set(species_mapping.values())) == len(species_mapping) and set(
             species_mapping.values()
         ) == set(species_r):
-            candidates.append(species_mapping)
+            candidates.append((type_mapping, species_mapping))
 
     if not candidates:
         raise EqualityUndecided(
@@ -3944,7 +3995,7 @@ def exact_process_equal(
         )
 
     transition_mapping_with_initial_mismatch = False
-    for mapping in candidates:
+    for type_mapping, mapping in candidates:
         mapped_jumps_l = {}
         for (reactants, products), rate in jumps_l.items():
             mapped_reactants = tuple(sorted(mapping[sp] for sp in reactants))
@@ -3958,8 +4009,14 @@ def exact_process_equal(
                     for source, target in mapping.items()
                 )
                 if initial_matches:
-                    return True
-                transition_mapping_with_initial_mismatch = True
+                    if _match_observables(
+                        list(left_model._model.observables),
+                        list(right_model._model.observables),
+                        type_mapping,
+                    ):
+                        return True
+                else:
+                    transition_mapping_with_initial_mismatch = True
 
     if transition_mapping_with_initial_mismatch:
         return False
