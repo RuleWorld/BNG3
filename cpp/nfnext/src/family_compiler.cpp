@@ -123,6 +123,15 @@ std::string shapeKey(const ExpandedRuleIR& rule, std::uint32_t index) {
     }
     key << '|';
     appendPatternKey(key, rule.pattern);
+    key << "|m:" << (rule.match_once ? '1' : '0')
+        << (rule.total_rate ? '1' : '0')
+        << (rule.move_connected ? '1' : '0') << '|';
+    key << "f:" << rule.filters.size() << ':';
+    for (const auto& filt : rule.filters) {
+        key << (filt.include ? 'i' : 'e') << (filt.products ? 'p' : 'r')
+            << filt.pattern_index << ':';
+        for (const auto& pat : filt.patterns) appendPatternKey(key, pat);
+    }
     return key.str();
 }
 
@@ -144,8 +153,21 @@ bool samePredicateShape(const PredicateIR& a, std::uint32_t ai,
 bool sameRuleShape(const ExpandedRuleIR& a, std::uint32_t ai,
                    const ExpandedRuleIR& b, std::uint32_t bi) noexcept {
     if (!sameRateLaw(a.rate_law, b.rate_law) || a.predicates.size() != b.predicates.size() ||
-        a.actions.size() != b.actions.size() || !samePattern(a.pattern, b.pattern))
+        a.actions.size() != b.actions.size() || !samePattern(a.pattern, b.pattern) ||
+        a.match_once != b.match_once || a.total_rate != b.total_rate ||
+        a.move_connected != b.move_connected || a.filters.size() != b.filters.size())
         return false;
+    for (std::size_t i = 0; i < a.filters.size(); ++i) {
+        if (a.filters[i].include != b.filters[i].include ||
+            a.filters[i].products != b.filters[i].products ||
+            a.filters[i].pattern_index != b.filters[i].pattern_index ||
+            a.filters[i].patterns.size() != b.filters[i].patterns.size())
+            return false;
+        for (std::size_t j = 0; j < a.filters[i].patterns.size(); ++j) {
+            if (!samePattern(a.filters[i].patterns[j], b.filters[i].patterns[j]))
+                return false;
+        }
+    }
     for (std::size_t i = 0; i < a.predicates.size(); ++i)
         if (!samePredicateShape(a.predicates[i], ai, b.predicates[i], bi)) return false;
     for (std::size_t i = 0; i < a.actions.size(); ++i) {
@@ -162,6 +184,21 @@ bool sameRuleShape(const ExpandedRuleIR& a, std::uint32_t ai,
 std::string rejectionReason(const ExpandedRuleIR& a, std::uint32_t ai,
                             const ExpandedRuleIR& b, std::uint32_t bi) {
     if (!sameRateLaw(a.rate_law, b.rate_law)) return "rate-law mismatch";
+    if (a.match_once != b.match_once) return "match_once mismatch";
+    if (a.total_rate != b.total_rate) return "total_rate mismatch";
+    if (a.move_connected != b.move_connected) return "move_connected mismatch";
+    if (a.filters.size() != b.filters.size()) return "filter count mismatch";
+    for (std::size_t i = 0; i < a.filters.size(); ++i) {
+        if (a.filters[i].include != b.filters[i].include ||
+            a.filters[i].products != b.filters[i].products ||
+            a.filters[i].pattern_index != b.filters[i].pattern_index ||
+            a.filters[i].patterns.size() != b.filters[i].patterns.size())
+            return "filter mismatch";
+        for (std::size_t j = 0; j < a.filters[i].patterns.size(); ++j) {
+            if (!samePattern(a.filters[i].patterns[j], b.filters[i].patterns[j]))
+                return "filter pattern mismatch";
+        }
+    }
     if (a.predicates.size() != b.predicates.size()) return "predicate count mismatch";
     for (std::size_t i = 0; i < a.predicates.size(); ++i)
         if (!samePredicateShape(a.predicates[i], ai, b.predicates[i], bi))
@@ -188,6 +225,10 @@ RuleFamilyIR singleton(const ExpandedRuleIR& rule) {
     family.actions = rule.actions;
     family.pattern = rule.pattern;
     family.source_rules.push_back(rule.id);
+    family.match_once = rule.match_once;
+    family.total_rate = rule.total_rate;
+    family.move_connected = rule.move_connected;
+    family.filters = rule.filters;
     return family;
 }
 
@@ -204,6 +245,10 @@ RuleFamilyIR merged(const std::vector<const ExpandedRuleIR*>& rules,
     family.actions = first.actions;
     family.pattern = first.pattern;
     family.coordinate_parameterized = true;
+    family.match_once = first.match_once;
+    family.total_rate = first.total_rate;
+    family.move_connected = first.move_connected;
+    family.filters = first.filters;
     family.indexed_rates.reserve(rules.size());
     family.source_rules.reserve(rules.size());
     for (const auto* rule : rules) {

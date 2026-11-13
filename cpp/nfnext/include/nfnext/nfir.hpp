@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <initializer_list>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -165,6 +166,14 @@ struct ActionIR {
     std::uint16_t partner_site{0};
 };
 
+// Include/exclude filter carried through NFIR for rule application constraints.
+struct FilterIR {
+    bool include{true};
+    bool products{false};
+    std::size_t pattern_index{0};
+    std::vector<PatternIR> patterns;
+};
+
 struct ExpandedRuleIR {
     RuleId id{0};
     std::string name;
@@ -175,6 +184,10 @@ struct ExpandedRuleIR {
     PatternIR pattern;
     SourceSpan source;
     std::unordered_map<std::string, std::string> annotations;
+    bool match_once{false};
+    bool total_rate{false};
+    bool move_connected{false};
+    std::vector<FilterIR> filters;
 };
 
 struct RuleFamilyIR {
@@ -190,6 +203,10 @@ struct RuleFamilyIR {
     PatternIR pattern;
     std::vector<RuleId> source_rules;
     bool coordinate_parameterized{false};
+    bool match_once{false};
+    bool total_rate{false};
+    bool move_connected{false};
+    std::vector<FilterIR> filters;
 };
 
 struct DependencyIndexIR {
@@ -198,8 +215,33 @@ struct DependencyIndexIR {
     std::unordered_map<std::uint64_t, std::vector<FamilyId>> feature_to_families;
 };
 
+// Compartment declaration carried through NFIR for spatial semantics.
+struct CompartmentIR {
+    CompartmentId id{0};
+    std::string name;
+    int dimensions{3};
+    double volume{1.0};
+    std::optional<CompartmentId> parent;
+};
+
+// Energy pattern carried through NFIR for energy-based rate modification.
+struct EnergyPatternIR {
+    std::string label;
+    PatternIR pattern;
+    double energy{0.0};
+    std::string expression;
+};
+
+// Population map carried through NFIR for hybrid particle-population execution.
+struct PopulationMapIR {
+    PatternIR pattern;
+    std::string population_name;
+    double rate{0.0};
+    std::string rate_expression;
+};
+
 struct ModelIR {
-    static constexpr std::uint32_t kFormatVersion = 5;
+    static constexpr std::uint32_t kFormatVersion = 6;
 
     std::string model_name;
     std::vector<MoleculeTypeIR> molecule_types;
@@ -208,6 +250,9 @@ struct ModelIR {
     DependencyIndexIR dependencies;
     BackendKind preferred_backend{BackendKind::Generic};
     std::uint32_t lattice_length{0};
+    std::vector<CompartmentIR> compartments;
+    std::vector<EnergyPatternIR> energy_patterns;
+    std::vector<PopulationMapIR> population_maps;
 
     std::uint64_t fingerprint() const noexcept;
     std::string summary() const;

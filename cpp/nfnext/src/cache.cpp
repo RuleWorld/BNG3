@@ -248,6 +248,17 @@ void ModelCache::save(const ModelIR& model, const std::string& path) {
         writeVector<ActionIR>(out, f.actions, writeAction);
         writePattern(out, f.pattern);
         writeVector<RuleId>(out, f.source_rules, [](std::ostream& o, RuleId x){ writePod(o, x); });
+        writePod(out, static_cast<std::uint8_t>(f.match_once ? 1 : 0));
+        writePod(out, static_cast<std::uint8_t>(f.total_rate ? 1 : 0));
+        writePod(out, static_cast<std::uint8_t>(f.move_connected ? 1 : 0));
+        writePod(out, static_cast<std::uint64_t>(f.filters.size()));
+        for (const auto& filter : f.filters) {
+            writePod(out, static_cast<std::uint8_t>(filter.include ? 1 : 0));
+            writePod(out, static_cast<std::uint8_t>(filter.products ? 1 : 0));
+            writePod(out, static_cast<std::uint64_t>(filter.pattern_index));
+            writePod(out, static_cast<std::uint64_t>(filter.patterns.size()));
+            for (const auto& p : filter.patterns) writePattern(out, p);
+        }
     }
 
     writePod(out, static_cast<std::uint64_t>(model.dependencies.feature_to_families.size()));
@@ -255,6 +266,30 @@ void ModelCache::save(const ModelIR& model, const std::string& path) {
         writePod(out, kv.first);
         writeVector<FamilyId>(out, kv.second, [](std::ostream& o, FamilyId x){ writePod(o, x); });
     }
+
+    // Compartments (v6+)
+    writePod(out, static_cast<std::uint64_t>(model.compartments.size()));
+    for (const auto& c : model.compartments) {
+        writePod(out, c.id); writeString(out, c.name);
+        writePod(out, c.dimensions); writePod(out, c.volume);
+        writePod(out, static_cast<std::uint8_t>(c.parent.has_value() ? 1 : 0));
+        if (c.parent) writePod(out, *c.parent);
+    }
+
+    // Energy patterns (v6+)
+    writePod(out, static_cast<std::uint64_t>(model.energy_patterns.size()));
+    for (const auto& e : model.energy_patterns) {
+        writeString(out, e.label); writePattern(out, e.pattern);
+        writePod(out, e.energy); writeString(out, e.expression);
+    }
+
+    // Population maps (v6+)
+    writePod(out, static_cast<std::uint64_t>(model.population_maps.size()));
+    for (const auto& p : model.population_maps) {
+        writePattern(out, p.pattern); writeString(out, p.population_name);
+        writePod(out, p.rate); writeString(out, p.rate_expression);
+    }
+
     writePod(out, model.fingerprint());
 }
 
@@ -292,6 +327,25 @@ ModelIR ModelCache::load(const std::string& path) {
         f.actions = readVector<ActionIR>(in, readAction);
         f.pattern = readPattern(in);
         f.source_rules = readVector<RuleId>(in, [](std::istream& x){ return readPod<RuleId>(x); });
+        f.match_once = readPod<std::uint8_t>(in) != 0;
+        f.total_rate = readPod<std::uint8_t>(in) != 0;
+        f.move_connected = readPod<std::uint8_t>(in) != 0;
+        const auto nfilters = readPod<std::uint64_t>(in);
+        if (nfilters > (1ULL << 20)) throw std::runtime_error("NFIR cache invalid filter length");
+        f.filters.reserve(static_cast<std::size_t>(nfilters));
+        for (std::uint64_t fi = 0; fi < nfilters; ++fi) {
+            FilterIR filter;
+            filter.include = readPod<std::uint8_t>(in) != 0;
+            filter.products = readPod<std::uint8_t>(in) != 0;
+            filter.pattern_index = static_cast<std::size_t>(readPod<std::uint64_t>(in));
+            const auto npatterns = readPod<std::uint64_t>(in);
+            if (npatterns > (1ULL << 20)) throw std::runtime_error("NFIR cache invalid filter pattern length");
+            filter.patterns.reserve(static_cast<std::size_t>(npatterns));
+            for (std::uint64_t pi = 0; pi < npatterns; ++pi) {
+                filter.patterns.push_back(readPattern(in));
+            }
+            f.filters.push_back(std::move(filter));
+        }
         model.rule_families.push_back(std::move(f));
     }
 
@@ -301,6 +355,41 @@ ModelIR ModelCache::load(const std::string& path) {
         model.dependencies.feature_to_families.emplace(key,
             readVector<FamilyId>(in, [](std::istream& x){ return readPod<FamilyId>(x); }));
     }
+
+    // Compartments (v6+)
+    const auto ncompartments = readPod<std::uint64_t>(in);
+    if (ncompartments > (1ULL << 30)) throw std::runtime_error("NFIR cache invalid compartment length");
+    model.compartments.reserve(static_cast<std::size_t>(ncompartments));
+    for (std::uint64_t i = 0; i < ncompartments; ++i) {
+        CompartmentIR c;
+        c.id = readPod<CompartmentId>(in); c.name = readString(in);
+        c.dimensions = readPod<int>(in); c.volume = readPod<double>(in);
+        if (readPod<std::uint8_t>(in) != 0) c.parent = readPod<CompartmentId>(in);
+        model.compartments.push_back(std::move(c));
+    }
+
+    // Energy patterns (v6+)
+    const auto nenergy = readPod<std::uint64_t>(in);
+    if (nenergy > (1ULL << 30)) throw std::runtime_error("NFIR cache invalid energy-pattern length");
+    model.energy_patterns.reserve(static_cast<std::size_t>(nenergy));
+    for (std::uint64_t i = 0; i < nenergy; ++i) {
+        EnergyPatternIR e;
+        e.label = readString(in); e.pattern = readPattern(in);
+        e.energy = readPod<double>(in); e.expression = readString(in);
+        model.energy_patterns.push_back(std::move(e));
+    }
+
+    // Population maps (v6+)
+    const auto npop = readPod<std::uint64_t>(in);
+    if (npop > (1ULL << 30)) throw std::runtime_error("NFIR cache invalid population-map length");
+    model.population_maps.reserve(static_cast<std::size_t>(npop));
+    for (std::uint64_t i = 0; i < npop; ++i) {
+        PopulationMapIR p;
+        p.pattern = readPattern(in); p.population_name = readString(in);
+        p.rate = readPod<double>(in); p.rate_expression = readString(in);
+        model.population_maps.push_back(std::move(p));
+    }
+
     const auto expected = readPod<std::uint64_t>(in);
     if (model.fingerprint() != expected) throw std::runtime_error("NFIR cache fingerprint mismatch");
     return model;

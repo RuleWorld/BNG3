@@ -95,6 +95,35 @@ std::uint64_t ModelIR::fingerprint() const noexcept {
         }
         mixPattern(h, f.pattern);
         for (RuleId r : f.source_rules) mix(h, r);
+        mix(h, f.match_once ? 1ULL : 0ULL);
+        mix(h, f.total_rate ? 1ULL : 0ULL);
+        mix(h, f.move_connected ? 1ULL : 0ULL);
+        mix(h, static_cast<std::uint64_t>(f.filters.size()));
+        for (const auto& filt : f.filters) {
+            mix(h, filt.include ? 1ULL : 0ULL);
+            mix(h, filt.products ? 1ULL : 0ULL);
+            mix(h, static_cast<std::uint64_t>(filt.pattern_index));
+            mix(h, static_cast<std::uint64_t>(filt.patterns.size()));
+            for (const auto& pat : filt.patterns) mixPattern(h, pat);
+        }
+    }
+    // Include compartments in fingerprint
+    for (const auto& c : compartments) {
+        mix(h, c.id); mixString(h, c.name); mix(h, c.dimensions);
+        mix(h, doubleBits(c.volume));
+        mix(h, c.parent ? *c.parent + 1 : 0);
+    }
+    // Include energy patterns in fingerprint
+    for (const auto& e : energy_patterns) {
+        mixString(h, e.label); mixString(h, e.expression);
+        mix(h, doubleBits(e.energy));
+        mixPattern(h, e.pattern);
+    }
+    // Include population maps in fingerprint
+    for (const auto& p : population_maps) {
+        mixString(h, p.population_name); mixString(h, p.rate_expression);
+        mix(h, doubleBits(p.rate));
+        mixPattern(h, p.pattern);
     }
     return h;
 }
@@ -106,6 +135,9 @@ std::string ModelIR::summary() const {
         << ", expanded_rules=" << expanded_rules.size()
         << ", rule_families=" << rule_families.size()
         << ", dependency_features=" << dependencies.feature_to_families.size()
+        << ", compartments=" << compartments.size()
+        << ", energy_patterns=" << energy_patterns.size()
+        << ", population_maps=" << population_maps.size()
         << ", backend=" << static_cast<int>(preferred_backend)
         << ", lattice_length=" << lattice_length
         << ", fingerprint=0x" << std::hex << fingerprint() << std::dec << ")";

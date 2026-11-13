@@ -991,17 +991,64 @@ void addDirection(const bng::compile::CompiledRule& rule,
                   const bng::compile::CompiledModel& source,
                   BngLoweringResult& result) {
     const std::string entity = rule.name() + suffix;
+    // Lower filters into NFIR FilterIR. Filters constrain rule applicability
+    // by requiring or excluding species matching specific patterns in the
+    // reactant or product set. The filter patterns are lowered to PatternIR.
+    std::vector<FilterIR> loweredFilters;
     if (!direction.filters.empty()) {
-        issue(result, BngLoweringSeverity::Error, entity,
-              "include/exclude rule filters are not representable in NFIR v5");
-        return;
+        loweredFilters.reserve(direction.filters.size());
+        for (const auto& filter : direction.filters) {
+            FilterIR irFilter;
+            irFilter.include = filter.include;
+            irFilter.products = filter.products;
+            irFilter.pattern_index = filter.patternIndex;
+            irFilter.patterns.reserve(filter.patterns.size());
+            for (const auto& pattern : filter.patterns) {
+                BngLoweringResult filterValidation;
+                const auto loweredPattern = flattenReactants({pattern}, filterValidation, entity);
+                if (loweredPattern && filterValidation.ok()) {
+                    irFilter.patterns.push_back(loweredPattern->pattern);
+                } else {
+                    issue(result, BngLoweringSeverity::Error, entity,
+                          "include/exclude filter pattern could not be lowered to NFIR");
+                    return;
+                }
+            }
+            loweredFilters.push_back(std::move(irFilter));
+        }
     }
+    // Lower modifiers into NFIR rule annotations. Each modifier is carried
+    // through as a boolean or structural annotation on the ExpandedRuleIR.
+    // DeleteMolecules is already handled via the action lowering path.
+    bool matchOnce = false;
+    bool totalRate = false;
+    bool moveConnected = false;
     for (const auto& modifier : rule.modifiers()) {
-        if (modifier.kind == bng::compile::ModifierKind::DeleteMolecules) continue;
-        issue(result, BngLoweringSeverity::Error, entity,
-              "rule modifier '" + modifier.source +
-              "' is not representable in NFIR v5");
-        return;
+        switch (modifier.kind) {
+        case bng::compile::ModifierKind::DeleteMolecules:
+            // Already handled by deletion action lowering
+            break;
+        case bng::compile::ModifierKind::MatchOnce:
+            matchOnce = true;
+            break;
+        case bng::compile::ModifierKind::TotalRate:
+            totalRate = true;
+            break;
+        case bng::compile::ModifierKind::MoveConnected:
+            moveConnected = true;
+            break;
+        case bng::compile::ModifierKind::IncludeReactants:
+        case bng::compile::ModifierKind::ExcludeReactants:
+        case bng::compile::ModifierKind::IncludeProducts:
+        case bng::compile::ModifierKind::ExcludeProducts:
+            // These are already represented by CompiledFilter entries
+            break;
+        case bng::compile::ModifierKind::Unknown:
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "rule modifier '" + modifier.source +
+                  "' is not recognized by NFIR lowering");
+            return;
+        }
     }
     const auto flattened = flattenReactants(direction.reactantPatterns, result, entity);
     if (!flattened) return;
@@ -1092,18 +1139,23 @@ void addDirection(const bng::compile::CompiledRule& rule,
         rateText << *constant;
         lowered.rate_law.expression = rateText.str();
     } else {
-        if (!direction.rateLaw->dependencies().function) {
+        // Dynamic rate: the rate depends on the current state of the system
+        // through observables, functions, or parameters. We support two cases:
+        // 1. Single-observable arithmetic expressions (standard dynamic rates)
+        // 2. Multi-observable or general function-dependent expressions
+        if (!direction.rateLaw->dependencies().function &&
+            !direction.rateLaw->dependencies().observable &&
+            !direction.rateLaw->dependencies().parameter) {
             issue(result, BngLoweringSeverity::Error, entity,
-                  "dynamic NFIR rates require a resolved zero-argument global function");
+                  "dynamic NFIR rates require a resolved dependency on an observable, function or parameter");
             return;
         }
         std::set<std::size_t> observableIds;
         const auto expression = observableRateExpression(
             *expandedRate, source, observableIds);
-        if (!expression || observableIds.size() != 1) {
+        if (!expression) {
             issue(result, BngLoweringSeverity::Error, entity,
-                  "only a resolved arithmetic rate expression depending on exactly "
-                  "one global observable is representable as a dynamic NFIR rate");
+                  "dynamic rate expression could not be resolved to an NFIR arithmetic expression");
             return;
         }
         lowered.rate = 0.0; // Dynamic rates are carried only by rate_law.
@@ -1111,6 +1163,10 @@ void addDirection(const bng::compile::CompiledRule& rule,
         lowered.rate_law.expression = *expression;
     }
     lowered.annotations.emplace("bng.rule_label", rule.label());
+    lowered.match_once = matchOnce;
+    lowered.total_rate = totalRate;
+    lowered.move_connected = moveConnected;
+    lowered.filters = std::move(loweredFilters);
     result.model.expanded_rules.push_back(std::move(lowered));
 }
 
@@ -1221,15 +1277,79 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
         return result;
     }
     if (!validateNFnextIdPacking(source, result)) return result;
-    if (!source.compartments().empty())
+    // Lower compartment declarations into NFIR. Compartments are carried as
+    // metadata; volume-dependent rate scaling is the responsibility of the
+    // execution backend. When compartments are present the lowering produces a
+    // warning that execution does not yet interpret compartment-specific volume
+    // semantics, but all structural lowering proceeds normally.
+    if (!source.compartments().empty()) {
         issue(result, BngLoweringSeverity::Warning, source.metadata().name,
-              "NFIR v5 retains molecule topology/rules but does not yet carry compartment declarations");
-    if (!source.populationMaps().empty())
-        issue(result, BngLoweringSeverity::Error, source.metadata().name,
-              "population maps are not representable in NFIR v5");
-    if (!source.energyFactors().empty())
-        issue(result, BngLoweringSeverity::Error, source.metadata().name,
-              "energy patterns are not representable in NFIR v5 rate semantics");
+              "NFIR v6 carries compartment declarations but execution does not yet interpret compartment-specific volume semantics");
+        result.model.compartments.reserve(source.compartments().size());
+        for (const auto& compartment : source.compartments()) {
+            CompartmentIR irCompartment;
+            irCompartment.id = static_cast<CompartmentId>(compartment.id.value());
+            irCompartment.name = compartment.name;
+            irCompartment.dimensions = compartment.dimension;
+            irCompartment.volume = compartment.volume;
+            if (compartment.parent)
+                irCompartment.parent = static_cast<CompartmentId>(compartment.parent->value());
+            result.model.compartments.push_back(std::move(irCompartment));
+        }
+    }
+    // Lower energy patterns into NFIR. Energy patterns provide ground-state
+    // free energy contributions that modify reaction rates through Boltzmann
+    // factors. The pattern is lowered to the same PatternIR used for rules.
+    if (!source.energyFactors().empty()) {
+        result.model.energy_patterns.reserve(source.energyFactors().size());
+        for (const auto& factor : source.energyFactors()) {
+            EnergyPatternIR irEnergy;
+            irEnergy.label = factor.label;
+            irEnergy.expression = factor.energyExpression;
+            if (factor.evaluatedValue) {
+                irEnergy.energy = *factor.evaluatedValue;
+            } else {
+                issue(result, BngLoweringSeverity::Error, factor.label,
+                      "dynamic energy pattern expressions with unresolvable static evaluation are not supported in NFIR lowering");
+            }
+            BngLoweringResult patternValidation;
+            const auto pattern = flattenReactants({factor.pattern}, patternValidation, factor.label);
+            if (pattern && patternValidation.ok()) {
+                irEnergy.pattern = pattern->pattern;
+            } else {
+                issue(result, BngLoweringSeverity::Error, factor.label,
+                      "energy pattern could not be lowered to NFIR");
+            }
+            result.model.energy_patterns.push_back(std::move(irEnergy));
+        }
+    }
+    // Lower population maps into NFIR. Population maps define the mapping
+    // between particle-level species and population-level species for hybrid
+    // particle-population simulation.
+    if (!source.populationMaps().empty()) {
+        result.model.population_maps.reserve(source.populationMaps().size());
+        for (const auto& popMap : source.populationMaps()) {
+            PopulationMapIR irPopMap;
+            irPopMap.population_name = popMap.populationName;
+            irPopMap.rate_expression = popMap.sourceRate;
+            BngLoweringResult patternValidation;
+            const auto pattern = flattenReactants({popMap.pattern}, patternValidation, popMap.populationName);
+            if (pattern && patternValidation.ok()) {
+                irPopMap.pattern = pattern->pattern;
+            } else {
+                issue(result, BngLoweringSeverity::Error, popMap.populationName,
+                      "population map pattern could not be lowered to NFIR");
+            }
+            const auto rateValue = constantExpression(popMap.rate, source);
+            if (rateValue) {
+                irPopMap.rate = *rateValue;
+            } else {
+                issue(result, BngLoweringSeverity::Error, popMap.populationName,
+                      "dynamic population map rates with unresolvable static evaluation are not supported in NFIR lowering");
+            }
+            result.model.population_maps.push_back(std::move(irPopMap));
+        }
+    }
     if (!result.ok()) return result;
 
     result.model.molecule_types.reserve(source.moleculeTypes().size());
@@ -1274,13 +1394,15 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             refuse("sample_times must be finite, nonnegative and strictly increasing");
         previous = time;
     }
-    if (!source.compartments().empty() || !source.barrierFactors().empty() ||
-        !source.populationTypes().empty() ||
-        !source.metadata().unitDefaults.empty() ||
+    if (!source.compartments().empty()) refuse("compartments");
+    if (!source.barrierFactors().empty()) refuse("barrier factors");
+    if (!source.populationTypes().empty() || !source.populationMaps().empty())
+        refuse("population maps and population types");
+    if (!source.metadata().unitDefaults.empty() ||
         !source.metadata().unitDefinitions.empty() ||
         !source.metadata().substanceUnits.empty() ||
         !source.metadata().options.empty())
-        refuse("compartments, units, functions, options and population types");
+        refuse("units, functions and options");
     if (source.features().contains(bng::compile::Feature::Units))
         refuse("physical units");
     for (const auto& rule : source.rules()) {
@@ -1298,6 +1420,21 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             if (issue.severity == BngLoweringSeverity::Error) refuse(issue.message);
     }
     const auto& model = lowered.model;
+    if (!model.compartments.empty()) refuse("compartments");
+    if (!model.energy_patterns.empty()) refuse("energy patterns");
+    if (!model.population_maps.empty()) refuse("population maps");
+    for (const auto& rule : model.expanded_rules) {
+        if (rule.match_once) refuse("MatchOnce modifier");
+        if (rule.total_rate) refuse("TotalRate modifier");
+        if (rule.move_connected) refuse("MoveConnected modifier");
+        if (!rule.filters.empty()) refuse("rule filters");
+    }
+    for (const auto& family : model.rule_families) {
+        if (family.match_once) refuse("MatchOnce modifier");
+        if (family.total_rate) refuse("TotalRate modifier");
+        if (family.move_connected) refuse("MoveConnected modifier");
+        if (!family.filters.empty()) refuse("rule filters");
+    }
     if (request.max_particles > std::numeric_limits<std::uint32_t>::max())
         refuse("particle budget exceeds native index capacity");
     GenericGraphState state(model);
