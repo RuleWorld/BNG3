@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "issue": 151,
+  "title": "C06: Implement the verified NFsim physical-unit count-rate bridge",
+  "source": {
+    "repository": "RuleWorld/BNG3",
+    "contract": "Physical-unit count and rate conversion for NFsim across molecularity, compartment volumes, and inter-compartment transport in strict unit mode"
+  },
+  "oracle": {
+    "identity": "Independent analytical count laws (Poisson, Binomial for decay and transport, pure-birth CTMC via DKW bounds), hand-derived scaling formulas, pinned BNG2, and native NFsim",
+    "law": "Zero-order Poisson(lambda*t), unimolecular Binomial(N0, exp(-k*t)) for decay and transport, bimolecular pure-birth CTMC; hand-derived k_count Avogadro/volume/molecularity scaling formulas and strict dimensional failure guards."
+  },
+  "acceptance_checks": [
+    "release-nf-units",
+    "release-unit-scaling",
+    "release-obligation-151"
+  ],
+  "obligations": [
+    "issue:151:amount-count-conversion",
+    "issue:151:elementary-rate-conversion",
+    "issue:151:molecularity",
+    "issue:151:compartment-context",
+    "issue:151:independent-count-model-comparison",
+    "issue:151:missing-context-refusal",
+    "issue:151:unsupported-dimension-refusal",
+    "issue:151:double-scaling-refusal",
+    "issue:151:implementation-or-disposition",
+    "issue:151:exact-revision",
+    "issue:151:validation-receipt",
+    "issue:151:remaining-limits",
+    "issue:151:slice:native.source-cdf",
+    "issue:151:slice:native.marginal-means",
+    "issue:151:slice:source-compiled-rate-multiset",
+    "issue:151:slice:compiled-net-rate-multiset",
+    "issue:151:executed-slice:quantity-zero-order-physical_source_law",
+    "issue:151:executed-slice:quantity-zero-order-bngl_count",
+    "issue:151:executed-slice:quantity-first-order-physical_source_law",
+    "issue:151:executed-slice:quantity-first-order-bngl_count",
+    "issue:151:executed-slice:quantity-second-order-physical_source_law",
+    "issue:151:executed-slice:quantity-second-order-bngl_count",
+    "issue:151:live-acceptance:release-nf-units",
+    "issue:151:live-acceptance:release-unit-scaling",
+    "issue:151:live-acceptance:release-obligation-151"
+  ]
+}
