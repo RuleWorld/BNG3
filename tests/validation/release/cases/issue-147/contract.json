@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "issue": 147,
+  "title": "C02: Extend NFnext lowering for approved unsupported semantic families",
+  "source": {
+    "repository": "RuleWorld/BNG3",
+    "contract": "CompiledModel to NFIR lowering, executable representation invariants, canonical model facts, and pure-death stochastic reference"
+  },
+  "oracle": {
+    "identity": "Canonical model facts, native NFsim input facts, and exact binomial pure-death continuous-time Markov chain law",
+    "law": "Pure-death analytical law: unconverted count ~ Binomial(N0, exp(-k*T)) with 4.0-sigma bound over 64/256 runs; exact fail-closed rejection for unsupported families."
+  },
+  "acceptance_checks": [
+    "release-nfir-lowering",
+    "release-nfir-roundtrip",
+    "release-obligation-147"
+  ],
+  "inventory_rows": [
+    "bngl.model-blocks",
+    "bngl.parameters",
+    "bngl.molecule-types",
+    "bngl.species-and-seed-species",
+    "bngl.reaction-rules",
+    "bngl.observables",
+    "bngl.functions",
+    "bngl.internal-states",
+    "bngl.unbound-sites"
+  ],
+  "obligations": [
+    "issue:147:select-supported-additions-for-dynamic-rates-filters-modifiers-c",
+    "issue:147:add-representation-executor-and-independent-tests-per-slice-reta",
+    "issue:147:closure-record",
+    "issue:147:live-acceptance:release-nfir-lowering",
+    "issue:147:live-acceptance:release-nfir-roundtrip",
+    "issue:147:live-acceptance:release-obligation-147"
+  ]
+}
