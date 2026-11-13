@@ -651,6 +651,23 @@ def test_release_nf_units(api, tmp_path, monkeypatch, record_property):
         bi_counts.append(_bimolecular_conversion_count(traj.data, traj.columns))
     _assert_bimolecular_ctmc_marginal(bi_counts)
 
+    # 4. Unimolecular physical transport: k_t = 0.5 s^-1 across cell (1 fL) and ec (10 fL) -> Binomial(100, exp(-0.5))
+    trans_file = tmp_path / "transport_acc.bngl"
+    trans_file.write_text(_physical_transport_source(), encoding="utf-8")
+    trans_model = api.load(str(trans_file))
+    trans_counts = []
+    for offset in range(RUNS):
+        res = trans_model.simulate(
+            method="nf", t_end=END_TIME, n_steps=1, seed=BASE_SEED + offset
+        )
+        traj = runner._result_to_trajectory(res)
+        assert traj.construction_path == "direct"
+        cell_count = int(traj.data[-1, traj.columns.index("cell_A")])
+        ec_count = int(traj.data[-1, traj.columns.index("ec_A")])
+        assert cell_count + ec_count == INITIAL_A
+        trans_counts.append(cell_count)
+    _assert_binomial_count_marginal(trans_counts)
+
 
 def test_release_unit_scaling(record_property):
     """Release acceptance check for issue #151: verify Avogadro, volume, and molecularity scaling formulas.
