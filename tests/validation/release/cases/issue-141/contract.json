@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "issue": 141,
+  "title": "B04: Qualify compile-once model reuse and independent trajectory state",
+  "source": {
+    "repository": "RuleWorld/BNG3",
+    "contract": "Compile-once model reuse, independent trajectory and RNG isolation, parameter invalidation, and exception recovery"
+  },
+  "oracle": {
+    "identity": "Analytic mass-action law for conversion/dimerization models, and fresh compilation equivalence",
+    "law": "A(t) = 10*exp(-0.4*t) for conversion model; fresh compilation agreement tolerance: 1e-10."
+  },
+  "acceptance_checks": [
+    "release-instance-isolation",
+    "release-lifecycle",
+    "release-obligation-141"
+  ],
+  "obligations": [
+    "issue:141:repeated-instantiation",
+    "issue:141:concurrent-instantiation",
+    "issue:141:parameter-mutation-invalidation",
+    "issue:141:exception-recovery",
+    "issue:141:live-acceptance:release-instance-isolation",
+    "issue:141:live-acceptance:release-lifecycle",
+    "issue:141:live-acceptance:release-obligation-141"
+  ]
+}

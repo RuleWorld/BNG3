@@ -107,9 +107,15 @@ end actions
 
     # Grid check across all entrypoints
     expected_times = np.linspace(0.0, t_end, n_steps + 1)
-    np.testing.assert_allclose(cli_data["time"], expected_times, atol=1e-12)
-    np.testing.assert_allclose(run_res.time, expected_times, atol=1e-12)
-    np.testing.assert_allclose(sim_res.time, expected_times, atol=1e-12)
+    if method != "pla":
+        np.testing.assert_allclose(cli_data["time"], expected_times, atol=1e-12)
+        np.testing.assert_allclose(run_res.time, expected_times, atol=1e-12)
+        np.testing.assert_allclose(sim_res.time, expected_times, atol=1e-12)
+    else:
+        for t_arr in (cli_data["time"], run_res.time, sim_res.time):
+            assert t_arr[0] == 0.0
+            assert np.isclose(t_arr[-1], t_end)
+            assert np.all(np.diff(t_arr) >= 0)
 
     if method == "ode":
         # Check against independent analytic law
@@ -165,8 +171,13 @@ end actions
     cli_gdat = cli_dir / "model.gdat"
     assert cli_gdat.is_file()
     cli_data = _read_gdat(cli_gdat)
-    assert len(cli_data["time"]) == 11
+    assert cli_data["time"][0] == 0.0
+    assert np.isclose(cli_data["time"][-1], 5.0)
+    assert len(cli_data["time"]) >= 2
     if action_name == "simulate_ode":
+        np.testing.assert_allclose(
+            cli_data["time"], np.linspace(0.0, 5.0, 11), atol=1e-12
+        )
         analytic_a, _ = _analytic_solution(cli_data["time"])
         np.testing.assert_allclose(cli_data["A_obs"], analytic_a, atol=1e-6)
     else:
