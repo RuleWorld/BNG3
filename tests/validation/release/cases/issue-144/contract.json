@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "issue": 144,
+  "title": "B07: Resolve and execute the canonical finite-backend migration",
+  "source": {
+    "repository": "RuleWorld/BNG3",
+    "contract": "Native BNG3 solvers are the default. BNGsim is a supported optional backend (ADR 0003). Common backend interface, availability reporting, fail-closed lowering, and backend selection."
+  },
+  "oracle": {
+    "identity": "Analytic mass-action laws, ADR 0003 contract, and pinned BNG2 where applicable",
+    "law": "Native solvers default. BNGsim availability reflects build configuration. Lowering rejects unsupported constructs fail-closed."
+  },
+  "acceptance_checks": [
+    "release-bngsim",
+    "release-bngsim-parity",
+    "release-capability-coverage-144"
+  ],
+  "inventory_rows": [
+    "backend.bngsim"
+  ]
+}
