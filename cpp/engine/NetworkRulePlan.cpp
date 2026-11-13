@@ -850,6 +850,14 @@ bool qualifiesDirectUnaryDeletion(
     return true;
 }
 
+bool hasDuplicateComponentNames(const compile::CompiledMoleculeType& type) {
+    std::set<std::string> seen;
+    for (const auto& comp : type.components) {
+        if (!seen.insert(comp.name).second) return true;
+    }
+    return false;
+}
+
 bool qualifiesDirectBinaryBinding(
     const compile::CompiledRule& rule,
     const compile::CompiledRuleDirection& direction,
@@ -896,7 +904,9 @@ bool qualifiesDirectBinaryBinding(
     const auto* typeB = model.moleculeType(*molB.moleculeTypeId);
     if (typeA == nullptr || typeB == nullptr ||
         molA.sites.size() != typeA->components.size() ||
-        molB.sites.size() != typeB->components.size()) {
+        molB.sites.size() != typeB->components.size() ||
+        hasDuplicateComponentNames(*typeA) ||
+        hasDuplicateComponentNames(*typeB)) {
         return false;
     }
 
@@ -919,19 +929,25 @@ bool qualifiesDirectBinaryBinding(
 
     for (std::size_t i = 0; i < molA.sites.size(); ++i) {
         const auto& site = molA.sites[i];
-        if (!site.componentType.has_value() || typeA->component(*site.componentType) == nullptr) {
+        if (!site.componentType.has_value()) return false;
+        const auto* comp = typeA->component(*site.componentType);
+        if (comp == nullptr || !unboundOnly(site)) {
             return false;
         }
-        if (!unboundOnly(site)) {
+        if (comp->stateNames.size() > 1 &&
+            site.stateConstraintResolved.kind != compile::StateConstraintKind::Exact) {
             return false;
         }
     }
     for (std::size_t i = 0; i < molB.sites.size(); ++i) {
         const auto& site = molB.sites[i];
-        if (!site.componentType.has_value() || typeB->component(*site.componentType) == nullptr) {
+        if (!site.componentType.has_value()) return false;
+        const auto* comp = typeB->component(*site.componentType);
+        if (comp == nullptr || !unboundOnly(site)) {
             return false;
         }
-        if (!unboundOnly(site)) {
+        if (comp->stateNames.size() > 1 &&
+            site.stateConstraintResolved.kind != compile::StateConstraintKind::Exact) {
             return false;
         }
     }
@@ -984,7 +1000,9 @@ bool qualifiesDirectBinaryUnbinding(
     const auto* typeB = model.moleculeType(*molB.moleculeTypeId);
     if (typeA == nullptr || typeB == nullptr ||
         molA.sites.size() != typeA->components.size() ||
-        molB.sites.size() != typeB->components.size()) {
+        molB.sites.size() != typeB->components.size() ||
+        hasDuplicateComponentNames(*typeA) ||
+        hasDuplicateComponentNames(*typeB)) {
         return false;
     }
 
@@ -1002,10 +1020,26 @@ bool qualifiesDirectBinaryUnbinding(
     const auto siteIdxB = (mutation.source.moleculeIndex == 0) ? mutation.partner.siteIndex : mutation.source.siteIndex;
 
     for (std::size_t i = 0; i < molA.sites.size(); ++i) {
-        if (i != siteIdxA && !unboundOnly(molA.sites[i])) return false;
+        const auto& site = molA.sites[i];
+        if (!site.componentType.has_value()) return false;
+        const auto* comp = typeA->component(*site.componentType);
+        if (comp == nullptr) return false;
+        if (i != siteIdxA && !unboundOnly(site)) return false;
+        if (comp->stateNames.size() > 1 &&
+            site.stateConstraintResolved.kind != compile::StateConstraintKind::Exact) {
+            return false;
+        }
     }
     for (std::size_t i = 0; i < molB.sites.size(); ++i) {
-        if (i != siteIdxB && !unboundOnly(molB.sites[i])) return false;
+        const auto& site = molB.sites[i];
+        if (!site.componentType.has_value()) return false;
+        const auto* comp = typeB->component(*site.componentType);
+        if (comp == nullptr) return false;
+        if (i != siteIdxB && !unboundOnly(site)) return false;
+        if (comp->stateNames.size() > 1 &&
+            site.stateConstraintResolved.kind != compile::StateConstraintKind::Exact) {
+            return false;
+        }
     }
 
     return true;
@@ -1124,6 +1158,7 @@ struct NetworkRulePlan::Impl {
     std::optional<double> bindingStaticRate;
     std::set<std::pair<std::size_t, std::size_t>> bindingVisitedPairs;
     BNGcore::PatternGraph unbindingReactantGraph;
+    bool unbindingIsHomodimer = false;
     std::string unbindingMoleculeNameA;
     std::string unbindingComponentNameA;
     std::string unbindingMoleculeNameB;
@@ -1251,6 +1286,7 @@ struct NetworkRulePlan::Impl {
             unbindingComponentNameA = model.component(*molA.sites[siteA].componentType)->name;
             unbindingComponentNameB = model.component(*molB.sites[siteB].componentType)->name;
             unbindingStaticRate = staticCompiledParameterRate(direction, model);
+            unbindingIsHomodimer = (direction.productPatterns[0] == direction.productPatterns[1]);
             if (direction.rateLaw.has_value()) {
                 auto resolved = model.expandFunctions(
                     direction.rateLaw->resolvedExpression());
@@ -1592,7 +1628,6 @@ struct NetworkRulePlan::Impl {
         const std::function<bool(const ast::SpeciesGraph&)>& productFilter,
         std::size_t speciesBoundary) {
         std::size_t created = 0;
-        const double factor = bindingIsHomodimer ? 0.5 : 1.0;
 
         for (std::size_t i = 0; i < speciesBoundary && i < species.size(); ++i) {
             if (!species.get(i).getCompartment().empty()) continue;
@@ -1710,6 +1745,7 @@ struct NetworkRulePlan::Impl {
                     : species.addWithExactKey(std::move(product), std::move(exact)).first;
 
                 const auto label = name + "|bind|" + spALabel + "+" + spBLabel + "->" + productLabel;
+                const double factor = (i == j) ? 0.5 : 1.0;
                 const double rxnFactor = factor * static_cast<double>(matchCountA * matchCountB);
                 reactions.add(ast::Rxn(label, {i, j}, {productIndex},
                                        directRateLaw, rxnFactor, name,
@@ -1726,6 +1762,7 @@ struct NetworkRulePlan::Impl {
         const std::function<bool(const ast::SpeciesGraph&)>& productFilter,
         std::size_t speciesBoundary) {
         std::size_t created = 0;
+        const double factor = unbindingIsHomodimer ? 0.5 : 1.0;
 
         for (std::size_t i = 0; i < speciesBoundary && i < species.size(); ++i) {
             if (!unbindingVisitedSpecies.insert(i).second) continue;
@@ -1841,8 +1878,9 @@ struct NetworkRulePlan::Impl {
 
             const auto label = name + "|unbind|" + reactantLabel + "->" +
                                productLabels[0] + "+" + productLabels[1];
+            const double rxnFactor = factor * static_cast<double>(matchCount);
             reactions.add(ast::Rxn(label, {i}, std::move(productIndices),
-                                   directRateLaw, static_cast<double>(matchCount), name,
+                                   directRateLaw, rxnFactor, name,
                                    directRateExpression));
             ++created;
         }
