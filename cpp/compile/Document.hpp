@@ -60,10 +60,26 @@ struct ProtocolAction {
         std::string sampleTimesFile;
         std::optional<Diagnostic> sampleTimesDiagnostic;
         std::optional<std::string> prefix;
+        std::optional<std::string> suffix;
         std::optional<unsigned int> seed;
         std::optional<double> rtol;
         std::optional<double> atol;
         std::optional<double> maxStep;
+        std::optional<bool> sparse;
+        std::optional<std::size_t> maxSimSteps;
+        std::optional<Diagnostic> maxSimStepsDiagnostic;
+        std::optional<double> checkProductScale;
+        std::optional<Diagnostic> checkProductScaleDiagnostic;
+        std::optional<std::string> plaConfig;
+        std::optional<double> poplevel;
+        std::optional<Diagnostic> poplevelDiagnostic;
+        std::optional<bool> verbose;
+        std::optional<bool> saveProgress;
+        std::optional<bool> printEnd;
+        std::optional<bool> printOnStop;
+        std::optional<bool> printActiveSpecies;
+        std::optional<std::string> netfile;
+        std::optional<std::string> argfile;
     };
     struct SetParameterOptions {
         std::string target;

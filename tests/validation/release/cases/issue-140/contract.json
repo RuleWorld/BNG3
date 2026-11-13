@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "issue": 140,
+  "title": "B03: Type simulation protocol actions and share option semantics",
+  "source": {
+    "repository": "RuleWorld/BNG3",
+    "contract": "Typed simulation protocol actions and shared option semantics across BNGL, CLI, and Python entrypoints"
+  },
+  "oracle": {
+    "identity": "Analytic mass-action law for conversion model, and pinned BNG2 where available",
+    "law": "For A -> B at k=0.4 from A(0)=10, B(0)=0: A(t)=10*exp(-0.4*t), B(t)=10-A(t). Error bound: 1e-6."
+  },
+  "acceptance_checks": [
+    "release-actions",
+    "release-entrypoints",
+    "release-capability-coverage-140"
+  ],
+  "inventory_rows": [
+    "action.simulate_pla",
+    "action.simulate_pla.method",
+    "action.simulate_psa",
+    "action.simulate_psa.method",
+    "action.simulate.suffix",
+    "action.simulate.sparse",
+    "action.simulate.max_sim_steps",
+    "action.simulate.check_product_scale",
+    "action.simulate.pla_config",
+    "action.simulate.poplevel",
+    "action.simulate.verbose",
+    "action.simulate.save_progress",
+    "action.simulate.print_end",
+    "action.simulate.print_on_stop",
+    "action.simulate.print_n_species_active",
+    "action.simulate.netfile",
+    "action.simulate.argfile"
+  ]
+}

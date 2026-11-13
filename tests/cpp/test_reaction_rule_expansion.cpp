@@ -878,7 +878,7 @@ TEST_CASE("simulation n_steps diagnostics preserve raw source and defer failure"
     }
 }
 
-TEST_CASE("absent n_steps stays unset and non-finite backends are not typed") {
+TEST_CASE("absent n_steps stays unset and network-free NFsim backend is not finite-typed") {
     auto model = modelWithSimulationAction("simulate_ode({t_end=>1})");
     REQUIRE(model != nullptr);
     const compile::Document document(*model);
@@ -887,17 +887,76 @@ TEST_CASE("absent n_steps stays unset and non-finite backends are not typed") {
     CHECK_FALSE(document.protocol().actions.front().simulationOptions->nSteps.has_value());
     CHECK_FALSE(document.protocol().actions.front().simulationOptions->nStepsDiagnostic.has_value());
 
-    for (const auto& actionSource : {
-             "simulate({method=>\"nf\",t_end=>1,n_steps=>2**3})",
-             "simulate_pla({t_end=>1,n_steps=>2**3})",
-             "simulate({method=>\"psa\",t_end=>1,n_steps=>2**3})"}) {
-        INFO("action: " << actionSource);
-        auto backendModel = modelWithSimulationAction(actionSource);
-        REQUIRE(backendModel != nullptr);
-        const compile::Document backendDocument(*backendModel);
-        REQUIRE(backendDocument.protocol().actions.size() == 1);
-        CHECK_FALSE(backendDocument.protocol().actions.front().simulationOptions.has_value());
-    }
+    auto nfModel = modelWithSimulationAction("simulate({method=>\"nf\",t_end=>1,n_steps=>2**3})");
+    REQUIRE(nfModel != nullptr);
+    const compile::Document nfDocument(*nfModel);
+    REQUIRE(nfDocument.protocol().actions.size() == 1);
+    CHECK_FALSE(nfDocument.protocol().actions.front().simulationOptions.has_value());
+}
+
+TEST_CASE("finite simulation protocol actions type pla and psa options") {
+    auto plaModel = modelWithSimulationAction("simulate_pla({t_end=>1,n_steps=>2**3,pla_config=>\"fEuler|pre-neg:sb|eps=0.03\"})");
+    REQUIRE(plaModel != nullptr);
+    const compile::Document plaDocument(*plaModel);
+    REQUIRE(plaDocument.protocol().actions.size() == 1);
+    const auto& plaAction = plaDocument.protocol().actions.front();
+    REQUIRE(plaAction.simulationOptions.has_value());
+    CHECK(plaAction.simulationOptions->method == "pla");
+    REQUIRE(plaAction.simulationOptions->nSteps.has_value());
+    CHECK(*plaAction.simulationOptions->nSteps == 8);
+    REQUIRE(plaAction.simulationOptions->plaConfig.has_value());
+    CHECK(*plaAction.simulationOptions->plaConfig == "fEuler|pre-neg:sb|eps=0.03");
+
+    auto psaModel = modelWithSimulationAction("simulate({method=>\"psa\",t_end=>1,n_steps=>2**3,poplevel=>100})");
+    REQUIRE(psaModel != nullptr);
+    const compile::Document psaDocument(*psaModel);
+    REQUIRE(psaDocument.protocol().actions.size() == 1);
+    const auto& psaAction = psaDocument.protocol().actions.front();
+    REQUIRE(psaAction.simulationOptions.has_value());
+    CHECK(psaAction.simulationOptions->method == "psa");
+    REQUIRE(psaAction.simulationOptions->nSteps.has_value());
+    CHECK(*psaAction.simulationOptions->nSteps == 8);
+    REQUIRE(psaAction.simulationOptions->poplevel.has_value());
+    CHECK(*psaAction.simulationOptions->poplevel == 100.0);
+}
+
+TEST_CASE("simulation options compile typed values for shared options") {
+    auto model = modelWithSimulationAction("simulate({method=>\"ode\",t_end=>1,sparse=>1,max_sim_steps=>500,check_product_scale=>1e4,verbose=>1,save_progress=>1,print_end=>1,suffix=>\"run1\"})");
+    REQUIRE(model != nullptr);
+    const compile::Document document(*model);
+    REQUIRE(document.protocol().actions.size() == 1);
+    const auto& action = document.protocol().actions.front();
+    REQUIRE(action.simulationOptions.has_value());
+    CHECK(action.simulationOptions->sparse == true);
+    REQUIRE(action.simulationOptions->maxSimSteps.has_value());
+    CHECK(*action.simulationOptions->maxSimSteps == 500);
+    REQUIRE(action.simulationOptions->checkProductScale.has_value());
+    CHECK(*action.simulationOptions->checkProductScale == 1e4);
+    CHECK(action.simulationOptions->verbose == true);
+    CHECK(action.simulationOptions->saveProgress == true);
+    CHECK(action.simulationOptions->printEnd == true);
+    REQUIRE(action.simulationOptions->suffix.has_value());
+    CHECK(*action.simulationOptions->suffix == "run1");
+}
+
+TEST_CASE("simulation options report diagnostics for invalid option values") {
+    auto invalidStepsModel = modelWithSimulationAction("simulate_ode({t_end=>1,max_sim_steps=>-5})");
+    REQUIRE(invalidStepsModel != nullptr);
+    const compile::Document invalidStepsDoc(*invalidStepsModel);
+    REQUIRE(invalidStepsDoc.protocol().actions.front().simulationOptions.has_value());
+    CHECK(invalidStepsDoc.protocol().actions.front().simulationOptions->maxSimStepsDiagnostic.has_value());
+
+    auto invalidScaleModel = modelWithSimulationAction("simulate_ode({t_end=>1,check_product_scale=>-1.5})");
+    REQUIRE(invalidScaleModel != nullptr);
+    const compile::Document invalidScaleDoc(*invalidScaleModel);
+    REQUIRE(invalidScaleDoc.protocol().actions.front().simulationOptions.has_value());
+    CHECK(invalidScaleDoc.protocol().actions.front().simulationOptions->checkProductScaleDiagnostic.has_value());
+
+    auto invalidPoplevelModel = modelWithSimulationAction("simulate({method=>\"psa\",t_end=>1,poplevel=>-10})");
+    REQUIRE(invalidPoplevelModel != nullptr);
+    const compile::Document invalidPoplevelDoc(*invalidPoplevelModel);
+    REQUIRE(invalidPoplevelDoc.protocol().actions.front().simulationOptions.has_value());
+    CHECK(invalidPoplevelDoc.protocol().actions.front().simulationOptions->poplevelDiagnostic.has_value());
 }
 
 TEST_CASE("parameter-backed simulation n_steps remain execution-time values") {

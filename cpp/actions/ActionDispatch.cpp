@@ -2013,6 +2013,9 @@ void runSimulation(
 
     const auto saveProgressText = lowercase(stripQuotes(readArgument(action, "save_progress", "0")));
     opts.saveProgress = (saveProgressText == "1" || saveProgressText == "true");
+    if (compiledOptions != nullptr && compiledOptions->saveProgress.has_value()) {
+        opts.saveProgress = *compiledOptions->saveProgress;
+    }
 
     // Parse print_net flag (BNG2 parity: write .net file after simulation with final concentrations)
     const auto printNetText = lowercase(stripQuotes(readArgument(action, "print_net", "0")));
@@ -2024,9 +2027,17 @@ void runSimulation(
     // Parse print_end flag (BNG2 parity: output final state when simulation stops early)
     const auto printEndText = lowercase(stripQuotes(readArgument(action, "print_end", "0")));
     opts.printEnd = (printEndText == "1" || printEndText == "true");
+    if (compiledOptions != nullptr && compiledOptions->printEnd.has_value()) {
+        opts.printEnd = *compiledOptions->printEnd;
+    } else if (compiledOptions != nullptr && compiledOptions->printOnStop.has_value()) {
+        opts.printEnd = *compiledOptions->printOnStop;
+    }
 
     // Parse netfile option (BNG2 parity: use custom .net file instead of auto-generating)
     opts.netfile = stripQuotes(readArgument(action, "netfile", ""));
+    if (compiledOptions != nullptr && compiledOptions->netfile.has_value() && opts.netfile.empty()) {
+        opts.netfile = *compiledOptions->netfile;
+    }
     if (!opts.netfile.empty()) {
         const auto extension = lowercase(
             std::filesystem::path(opts.netfile).extension().string());
@@ -2050,22 +2061,34 @@ void runSimulation(
         opts.outputStepInterval = *compiledOptions->outputStepInterval;
     }
 
+    if (compiledOptions != nullptr && compiledOptions->maxSimStepsDiagnostic.has_value()) {
+        throw std::runtime_error(compiledOptions->maxSimStepsDiagnostic->message);
+    }
     const auto maxSimStepsText = readArgument(action, "max_sim_steps", "");
     if (!maxSimStepsText.empty()) {
         opts.maxSimSteps = parseNonNegativeCount(
             maxSimStepsText, model, "max_sim_steps");
+        opts.maxSimStepsSpecified = true;
+    } else if (compiledOptions != nullptr && compiledOptions->maxSimSteps.has_value()) {
+        opts.maxSimSteps = *compiledOptions->maxSimSteps;
         opts.maxSimStepsSpecified = true;
     }
 
     // Parse sparse option (request sparse Jacobian for large networks)
     const auto sparseText = lowercase(stripQuotes(readArgument(action, "sparse", "0")));
     opts.sparse = (sparseText == "1" || sparseText == "true");
+    if (compiledOptions != nullptr && compiledOptions->sparse.has_value()) {
+        opts.sparse = *compiledOptions->sparse;
+    }
 
     // Parse evaluate_expressions option (BNG2: keep symbolic expressions in .net)
     const auto evalExprText = lowercase(stripQuotes(readArgument(action, "evaluate_expressions", "1")));
     opts.evaluateExpressions = (evalExprText != "0" && evalExprText != "false");
 
     // Parse check_product_scale option (validate product concentrations)
+    if (compiledOptions != nullptr && compiledOptions->checkProductScaleDiagnostic.has_value()) {
+        throw std::runtime_error(compiledOptions->checkProductScaleDiagnostic->message);
+    }
     const auto checkProdScaleText = readArgument(action, "check_product_scale", "");
     if (!checkProdScaleText.empty()) {
         opts.checkProductScale = parseScalarValue(checkProdScaleText, model);
@@ -2073,6 +2096,16 @@ void runSimulation(
             throw std::runtime_error(
                 "check_product_scale must be finite and non-negative");
         }
+    } else if (compiledOptions != nullptr && compiledOptions->checkProductScale.has_value()) {
+        opts.checkProductScale = *compiledOptions->checkProductScale;
+    }
+
+    if (compiledOptions != nullptr && compiledOptions->poplevelDiagnostic.has_value()) {
+        throw std::runtime_error(compiledOptions->poplevelDiagnostic->message);
+    }
+
+    if (compiledOptions != nullptr && compiledOptions->verbose.has_value()) {
+        verbose = *compiledOptions->verbose;
     }
 
     const bool isOdeMethod = opts.method == "cvode" || opts.method == "euler" ||
@@ -2100,6 +2133,10 @@ void runSimulation(
     if (!isOdeMethod && opts.method != "psa" && opts.checkProductScale > 0.0) {
         throw std::runtime_error(
             "check_product_scale requires an ODE or PSA simulation method");
+    }
+    const auto poplevelCheckText = readArgument(action, "poplevel", "");
+    if (!poplevelCheckText.empty() && opts.method != "psa") {
+        throw std::runtime_error("poplevel requires a PSA simulation method");
     }
 
     // BNGL actions emit the initial state at t_start even when an explicit
@@ -2153,12 +2190,23 @@ void runSimulation(
     engine::OdeResult result;
     if (opts.method == "pla") {
         // PLA simulation
-        const auto plaConfigStr = stripQuotes(readArgument(action, "pla_config", "fEuler|pre-neg:sb|eps=0.03"));
+        std::string defaultPlaConfig = "fEuler|pre-neg:sb|eps=0.03";
+        if (compiledOptions != nullptr && compiledOptions->plaConfig.has_value()) {
+            defaultPlaConfig = *compiledOptions->plaConfig;
+        }
+        const auto plaConfigStr = stripQuotes(readArgument(action, "pla_config", defaultPlaConfig));
         auto plaConfig = engine::PlaConfig::parse(plaConfigStr);
         engine::PlaSimulator simulator(model, network);
         result = simulator.simulate(opts, plaConfig);
     } else if (opts.method == "psa") {
-        const auto poplevelText = readArgument(action, "poplevel", "0");
+        if (compiledOptions != nullptr && compiledOptions->poplevelDiagnostic.has_value()) {
+            throw std::runtime_error(compiledOptions->poplevelDiagnostic->message);
+        }
+        double defaultPoplevel = 0.0;
+        if (compiledOptions != nullptr && compiledOptions->poplevel.has_value()) {
+            defaultPoplevel = *compiledOptions->poplevel;
+        }
+        const auto poplevelText = readArgument(action, "poplevel", std::to_string(defaultPoplevel));
         const double poplevel = parseScalarValue(poplevelText, model);
         if (!std::isfinite(poplevel) || poplevel < 0.0) {
             throw std::runtime_error("poplevel must be finite and non-negative");
@@ -3527,159 +3575,25 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             continue;
         }
 
-        if (actionName == "simulate_pla") {
-            ensureNetwork();
-            const auto tEnd = stripQuotes(readArgument(action, "t_end", ""));
-            const auto nSteps = stripQuotes(readArgument(action, "n_steps", stripQuotes(readArgument(action, "n_output_steps", ""))));
-            if (tEnd.empty() || nSteps.empty()) {
-                throw std::runtime_error("simulate_pla requires t_end and n_steps");
-            }
-
-            engine::OdeOptions opts;
-            if (compiledSimulationOptions != nullptr && compiledSimulationOptions->tEnd.has_value()) {
-                opts.tEnd = *compiledSimulationOptions->tEnd;
-            } else {
-                opts.tEnd = parseScalarValue(tEnd, model);
-            }
-            if (compiledSimulationOptions != nullptr && compiledSimulationOptions->tStart.has_value()) {
-                opts.tStart = *compiledSimulationOptions->tStart;
-            } else {
-                opts.tStart = parseScalarValue(
-                    stripQuotes(readArgument(action, "t_start", "0")), model);
-            }
-            if (compiledSimulationOptions != nullptr && compiledSimulationOptions->nSteps.has_value()) {
-                opts.nSteps = *compiledSimulationOptions->nSteps;
-            } else {
-                opts.nSteps = parseNonNegativeCount(nSteps, model, "n_steps");
-            }
-            if (opts.nSteps == 0) {
-                throw std::runtime_error("n_steps must be positive");
-            }
-            if (!std::isfinite(opts.tStart) || !std::isfinite(opts.tEnd) ||
-                opts.tEnd < opts.tStart) {
-                throw std::runtime_error(
-                    "simulate_pla requires finite times with t_end greater than or equal to t_start");
-            }
-            opts.method = "pla";
-
-            if (compiledSimulationOptions != nullptr && compiledSimulationOptions->seed.has_value()) {
-                opts.seed = *compiledSimulationOptions->seed;
-            } else {
-                const auto seedText = readArgument(action, "seed", "");
-                if (!seedText.empty()) {
-                    opts.seed = static_cast<unsigned int>(parseScalarValue(seedText, model));
-                }
-            }
-
-            // Parse PLA config
-            const auto plaConfigStr = stripQuotes(readArgument(action, "pla_config", "fEuler|pre-neg:sb|eps=0.03"));
-            auto plaConfig = engine::PlaConfig::parse(plaConfigStr);
-
-            if (verbose) {
-                std::cerr << "[bng_cpp] Simulating PLA with config: " << plaConfigStr
-                          << " t_end=" << opts.tEnd << " n_steps=" << opts.nSteps << "\n";
-            }
-
-            // Run PLA simulation
-            engine::PlaSimulator simulator(model, *network);
-            auto result = simulator.simulate(opts, plaConfig);
-
-            // Write output files using OdeIntegrator's writer
-            const auto prefix = simulationPrefix(action, sourcePath);
-            const auto outputPrefix = sourcePath.parent_path() / prefix;
-            engine::OdeIntegrator integrator(model, *network);
-            integrator.writeOutputFiles(outputPrefix.string(), result);
-
-            if (verbose) {
-                std::cerr << "[bng_cpp] Wrote PLA output: " << outputPrefix.string() << ".cdat, .gdat\n";
-            }
-            continue;
-        }
-
-        if (actionName == "simulate_psa") {
-            ensureNetwork();
-            const auto tEnd = stripQuotes(readArgument(action, "t_end", ""));
-            const auto nSteps = stripQuotes(readArgument(action, "n_steps", stripQuotes(readArgument(action, "n_output_steps", ""))));
-            if (tEnd.empty() || nSteps.empty()) {
-                throw std::runtime_error("simulate_psa requires t_end and n_steps");
-            }
-
-            engine::OdeOptions opts;
-            if (compiledSimulationOptions != nullptr && compiledSimulationOptions->tEnd.has_value()) {
-                opts.tEnd = *compiledSimulationOptions->tEnd;
-            } else {
-                opts.tEnd = parseScalarValue(tEnd, model);
-            }
-            if (compiledSimulationOptions != nullptr && compiledSimulationOptions->tStart.has_value()) {
-                opts.tStart = *compiledSimulationOptions->tStart;
-            } else {
-                opts.tStart = parseScalarValue(
-                    stripQuotes(readArgument(action, "t_start", "0")), model);
-            }
-            if (compiledSimulationOptions != nullptr && compiledSimulationOptions->nSteps.has_value()) {
-                opts.nSteps = *compiledSimulationOptions->nSteps;
-            } else {
-                opts.nSteps = parseNonNegativeCount(nSteps, model, "n_steps");
-            }
-            if (opts.nSteps == 0) {
-                throw std::runtime_error("n_steps must be positive");
-            }
-            if (!std::isfinite(opts.tStart) || !std::isfinite(opts.tEnd) ||
-                opts.tEnd < opts.tStart) {
-                throw std::runtime_error(
-                    "simulate_psa requires finite times with t_end greater than or equal to t_start");
-            }
-
-            if (compiledSimulationOptions != nullptr && compiledSimulationOptions->seed.has_value()) {
-                opts.seed = *compiledSimulationOptions->seed;
-            } else {
-                const auto seedText = readArgument(action, "seed", "");
-                if (!seedText.empty()) {
-                    opts.seed = static_cast<unsigned int>(parseScalarValue(seedText, model));
-                }
-            }
-
-            // Parse poplevel: threshold for population (ODE) vs particle (SSA)
-            // Default 0 means pure SSA
-            double poplevel = 0.0;
-            const auto poplevelText = readArgument(action, "poplevel", "");
-            if (!poplevelText.empty()) {
-                poplevel = parseScalarValue(poplevelText, model);
-            }
-
-            if (verbose) {
-                std::cerr << "[bng_cpp] Simulating PSA (hybrid particle/population) with"
-                          << " poplevel=" << poplevel
-                          << " t_end=" << opts.tEnd << " n_steps=" << opts.nSteps << "\n";
-            }
-
-            // Run PSA simulation
-            engine::PsaSimulator simulator(model, *network);
-            auto result = simulator.simulate(opts, poplevel);
-
-            // Write output files
-            const auto prefix = simulationPrefix(action, sourcePath);
-            const auto outputPrefix = sourcePath.parent_path() / prefix;
-            engine::OdeIntegrator integrator(model, *network);
-            integrator.writeOutputFiles(outputPrefix.string(), result);
-
-            if (verbose) {
-                std::cerr << "[bng_cpp] Wrote PSA output: " << outputPrefix.string() << ".cdat, .gdat\n";
-            }
-            continue;
-        }
-
         if (actionName == "simulate_nf" ||
             (actionName == "simulate" && resolveSimulationMethod(action) == "nf")) {
             runNfSimulation(action);
             continue;
         }
 
-        if (actionName == "simulate" || action.name == "simulate_ode" || action.name == "simulate_ssa") {
+        if (actionName == "simulate" || actionName == "simulate_ode" ||
+            actionName == "simulate_ssa" || actionName == "simulate_pla" ||
+            actionName == "simulate_psa" || actionName == "simulate_ps") {
             ensureNetwork();
+            ast::Action actualAction = action;
+            if (actionName == "simulate_pla" || actionName == "simulate_ps") {
+                actualAction.arguments["method"] = "pla";
+            } else if (actionName == "simulate_psa") {
+                actualAction.arguments["method"] = "psa";
+            }
             // Don't re-write .net file - already written by generate_network
             // Re-writing would cause duplicate parameters and corrupt stat factors
-            runSimulation(model, action, sourcePath, *network, verbose,
+            runSimulation(model, actualAction, sourcePath, *network, verbose,
                           lastSimulationState, lastSimulationEndTime,
                           compiledSimulationOptions);
             continue;

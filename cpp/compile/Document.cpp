@@ -42,6 +42,13 @@ std::string trim(std::string value) {
     return std::string(first, last);
 }
 
+std::string toLowerString(std::string text) {
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return text;
+}
+
 Diagnostic concentrationValueDiagnostic(const std::string& entity,
                                         const std::string& source,
                                         const std::string& reason) {
@@ -1039,6 +1046,139 @@ SimulationOptions compileSimulationOptions(
         options.prefix = unquoteActionValue(prefixFound->second);
     }
 
+    const auto suffixFound = arguments.find("suffix");
+    if (suffixFound != arguments.end()) {
+        options.suffix = unquoteActionValue(suffixFound->second);
+    }
+
+    const auto sparseFound = arguments.find("sparse");
+    if (sparseFound != arguments.end()) {
+        const auto val = toLowerString(unquoteActionValue(sparseFound->second));
+        options.sparse = (val == "1" || val == "true" || val == "yes");
+    }
+
+    const auto maxSimStepsFound = arguments.find("max_sim_steps");
+    if (maxSimStepsFound != arguments.end()) {
+        const auto& source = maxSimStepsFound->second;
+        const auto expressionSource = unquoteActionValue(source);
+        if (containsOnlyNumericActionSyntax(expressionSource)) {
+            try {
+                const auto expr = parser::parseExpression(expressionSource);
+                double val = 0.0;
+                if (evaluateFiniteStaticExpression(expr, val)) {
+                    if (val < 0.0 || std::floor(val) != val) {
+                        options.maxSimStepsDiagnostic = nStepsDiagnostic(
+                            source, "max_sim_steps must be a non-negative integer");
+                    } else {
+                        options.maxSimSteps = static_cast<std::size_t>(val);
+                    }
+                }
+            } catch (...) {
+                options.maxSimStepsDiagnostic = nStepsDiagnostic(
+                    source, "could not parse max_sim_steps as a numeric expression");
+            }
+        }
+    }
+
+    const auto checkScaleFound = arguments.find("check_product_scale");
+    if (checkScaleFound != arguments.end()) {
+        double val = 0.0;
+        if (tryParseStaticScalar(checkScaleFound->second, val, options.checkProductScaleDiagnostic,
+                                 [&](const std::string& reason) {
+                                     Diagnostic d;
+                                     d.code = DiagnosticCode::InvalidModel;
+                                     d.severity = Severity::Error;
+                                     d.category = ValidationCategory::Expressions;
+                                     d.entity = "simulation.check_product_scale";
+                                     d.message = "invalid check_product_scale '" + checkScaleFound->second + "': " + reason;
+                                     return d;
+                                 })) {
+            if (val < 0.0) {
+                Diagnostic d;
+                d.code = DiagnosticCode::InvalidModel;
+                d.severity = Severity::Error;
+                d.category = ValidationCategory::Expressions;
+                d.entity = "simulation.check_product_scale";
+                d.message = "check_product_scale must be non-negative";
+                options.checkProductScaleDiagnostic = d;
+            } else {
+                options.checkProductScale = val;
+            }
+        }
+    }
+
+    const auto plaConfigFound = arguments.find("pla_config");
+    if (plaConfigFound != arguments.end()) {
+        options.plaConfig = unquoteActionValue(plaConfigFound->second);
+    }
+
+    const auto poplevelFound = arguments.find("poplevel");
+    if (poplevelFound != arguments.end()) {
+        double val = 0.0;
+        if (tryParseStaticScalar(poplevelFound->second, val, options.poplevelDiagnostic,
+                                 [&](const std::string& reason) {
+                                     Diagnostic d;
+                                     d.code = DiagnosticCode::InvalidModel;
+                                     d.severity = Severity::Error;
+                                     d.category = ValidationCategory::Expressions;
+                                     d.entity = "simulation.poplevel";
+                                     d.message = "invalid poplevel '" + poplevelFound->second + "': " + reason;
+                                     return d;
+                                 })) {
+            if (val < 0.0) {
+                Diagnostic d;
+                d.code = DiagnosticCode::InvalidModel;
+                d.severity = Severity::Error;
+                d.category = ValidationCategory::Expressions;
+                d.entity = "simulation.poplevel";
+                d.message = "poplevel must be finite and non-negative";
+                options.poplevelDiagnostic = d;
+            } else {
+                options.poplevel = val;
+            }
+        }
+    }
+
+    const auto verboseFound = arguments.find("verbose");
+    if (verboseFound != arguments.end()) {
+        const auto val = toLowerString(unquoteActionValue(verboseFound->second));
+        options.verbose = (val == "1" || val == "true" || val == "yes");
+    }
+
+    const auto saveProgressFound = arguments.find("save_progress");
+    if (saveProgressFound != arguments.end()) {
+        const auto val = toLowerString(unquoteActionValue(saveProgressFound->second));
+        options.saveProgress = (val == "1" || val == "true" || val == "yes");
+    }
+
+    const auto printEndFound = arguments.find("print_end");
+    if (printEndFound != arguments.end()) {
+        const auto val = toLowerString(unquoteActionValue(printEndFound->second));
+        options.printEnd = (val == "1" || val == "true" || val == "yes");
+    }
+
+    const auto printOnStopFound = arguments.find("print_on_stop");
+    if (printOnStopFound != arguments.end()) {
+        const auto val = toLowerString(unquoteActionValue(printOnStopFound->second));
+        options.printOnStop = (val == "1" || val == "true" || val == "yes");
+    }
+
+    const auto printActiveFound = arguments.find("print_n_species_active");
+    if (printActiveFound != arguments.end()) {
+        const auto val = toLowerString(unquoteActionValue(printActiveFound->second));
+        options.printActiveSpecies = (val != "0" && val != "false" && !val.empty());
+    }
+
+    const auto netfileFound = arguments.find("netfile");
+    if (netfileFound != arguments.end()) {
+        options.netfile = unquoteActionValue(netfileFound->second);
+    }
+
+    const auto argfileFound = arguments.find("argfile");
+    if (argfileFound != arguments.end()) {
+        options.argfile = unquoteActionValue(argfileFound->second);
+    }
+
     const auto seedFound = arguments.find("seed");
     if (seedFound != arguments.end()) {
         const auto val = unquoteActionValue(seedFound->second);
@@ -1105,7 +1245,11 @@ std::optional<SimulationOptions> compileSimulationOptions(
                                  method == "rk4"));
     const bool stochastic = name == "simulate_ssa" ||
         (name == "simulate" && method == "ssa");
-    if (!deterministic && !stochastic) {
+    const bool leaping = name == "simulate_pla" || name == "simulate_ps" ||
+        (name == "simulate" && (method == "pla" || method == "ps"));
+    const bool population = name == "simulate_psa" ||
+        (name == "simulate" && method == "psa");
+    if (!deterministic && !stochastic && !leaping && !population) {
         return std::nullopt;
     }
 
@@ -1116,7 +1260,12 @@ std::optional<SimulationOptions> compileSimulationOptions(
     if (!options.method.has_value()) {
         if (name == "simulate_ode") options.method = "cvode";
         else if (name == "simulate_ssa") options.method = "ssa";
-        else options.method = method.empty() ? "ode" : method;
+        else if (name == "simulate_pla" || name == "simulate_ps") options.method = "pla";
+        else if (name == "simulate_psa") options.method = "psa";
+        else options.method = method.empty() ? "ode" : (method == "ps" ? "pla" : method);
+    }
+    if (options.method == "ps") {
+        options.method = "pla";
     }
     // These defaults belong to the BNGL action contract. The public Python
     // API keeps its independent method="ode" and n_steps=100 defaults.
