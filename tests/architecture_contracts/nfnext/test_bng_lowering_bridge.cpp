@@ -16,6 +16,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cmath>
+#include <filesystem>
 #include <iostream>
 #include <iterator>
 #include <limits>
@@ -1743,7 +1744,7 @@ end reaction rules
     const auto lowered = nfnext::lowerFromBioNetGen(semantic);
     assert(lowered.ok());
 
-    const std::string cachePath = "/tmp/test_nfir_v6_cache.bin";
+    const std::string cachePath = (std::filesystem::temp_directory_path() / "test_nfir_v6_cache.bin").string();
     nfnext::ModelCache::save(lowered.model, cachePath);
     const auto loaded = nfnext::ModelCache::load(cachePath);
 
@@ -1785,7 +1786,8 @@ end reaction rules
     assert(loaded.rule_families[1].total_rate);
     assert(loaded.rule_families[1].filters.empty());
 
-    std::remove(cachePath.c_str());
+    std::error_code ec;
+    std::filesystem::remove(cachePath, ec);
 }
 
 } // namespace
