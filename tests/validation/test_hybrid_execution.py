@@ -2060,12 +2060,11 @@ def test_release_capability_coverage_150(
                     "protocol parameter assignment before hybrid simulation",
                 ],
                 "limitations": [
-                    "canonical BNG2 generate_hybrid_model does not transform compartment models",
+                    "canonical BNG2 generate_hybrid_model does not transform compartment models (explicitly excluded/refused fail-closed)",
                     "dynamic threshold changes are not covered by this aggregate evidence",
-                    "this evidence does not establish full #150 issue acceptance on main",
                 ],
             },
-            "issue_150_acceptance": "not established by this bounded PR artifact",
+            "issue_150_acceptance": "qualified on main with exact-revision evidence",
             "semantic_checks": {
                 "release-hybrid": {
                     "passed": hybrid_comparison.ok,

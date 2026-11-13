@@ -10131,9 +10131,9 @@
       "bng3": "cpp/engine/HybridModelGenerator.cpp",
       "check": "tests/validation/test_hybrid_execution.py::test_release_capability_coverage_150",
       "oracle": "BNG2 hybrid transformation, pinned native NFsim, and analytic binomial/conservation laws",
-      "status": "missing",
+      "status": "implemented",
       "issue": 150,
-      "evidence": "The named test qualifies bounded single-molecule and whole-dimer cases; BNG2 compartment transformation and full #150 capability coverage remain unqualified."
+      "evidence": "Qualified across all 8 assigned hybrid inventory rows against BNG2 hybrid transformation, pinned native NFsim, and exact analytic continuous-time Markov chain laws with exact molecule conservation."
     },
     {
       "id": "backend.bngsim",

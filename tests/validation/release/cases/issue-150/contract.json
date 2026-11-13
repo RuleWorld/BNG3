@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "issue": 150,
+  "title": "C05: Complete or disposition hybrid particle-population execution",
+  "source": {
+    "repository": "RuleWorld/BNG3",
+    "contract": "Complete particle-population hybrid execution: whole-complex conversion, population count updates, reverse conversion without changing transition rates, mapped rates, observables, conservation, and generate_hybrid_model actions."
+  },
+  "oracle": {
+    "identity": "Pinned BNG2 hybrid transformation, pinned native NFsim, and exact analytic binomial/conservation continuous-time Markov chain laws",
+    "law": "Pure-death and reversible two-state CTMC analytical distributions, exact particle and molecule conservation laws (A_total + B_total = N, dimer A_units = 2*N), and 4.0-sigma stochastic agreement between native NFsim and BNG3."
+  },
+  "acceptance_checks": [
+    "release-hybrid",
+    "release-hybrid-conservation",
+    "release-capability-coverage-150"
+  ],
+  "inventory_rows": [
+    "action.generate_hybrid_model",
+    "action.generate_hybrid_model.actions",
+    "action.generate_hybrid_model.execute",
+    "action.generate_hybrid_model.overwrite",
+    "action.generate_hybrid_model.prefix",
+    "action.generate_hybrid_model.suffix",
+    "action.generate_hybrid_model.verbose",
+    "hybrid.execution"
+  ],
+  "obligations": [
+    "issue:150:distinguish-population-map-storage-and-hybrid-bngl-generation-fr",
+    "issue:150:qualify-approved-conversion-rates-conservation-observables-and-c",
+    "issue:150:closure-record",
+    "issue:150:live-acceptance:release-hybrid",
+    "issue:150:live-acceptance:release-hybrid-conservation",
+    "issue:150:live-acceptance:release-capability-coverage-150"
+  ]
+}
