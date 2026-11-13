@@ -830,7 +830,8 @@ bool qualifiesDirectUnaryDeletion(
     }
 
     const auto* moleculeType = model.moleculeType(*reactantMolecule.moleculeTypeId);
-    if (moleculeType == nullptr) {
+    if (moleculeType == nullptr ||
+        reactantMolecule.sites.size() != moleculeType->components.size()) {
         return false;
     }
 
@@ -847,6 +848,263 @@ bool qualifiesDirectUnaryDeletion(
     }
 
     return true;
+}
+
+bool hasDuplicateComponentNames(const compile::CompiledMoleculeType& type) {
+    std::set<std::string> seen;
+    for (const auto& comp : type.components) {
+        if (!seen.insert(comp.name).second) return true;
+    }
+    return false;
+}
+
+bool qualifiesDirectBinaryBinding(
+    const compile::CompiledRule& rule,
+    const compile::CompiledRuleDirection& direction,
+    const compile::CompiledModel& model) {
+    if (rule.delayExpression().has_value() ||
+        rule.resolvedDelayExpression().has_value() || rule.hasDrivingWork() ||
+        !rule.modifiers().empty() || !direction.transformationsComplete ||
+        direction.reactantPatterns.size() != 2 ||
+        direction.productPatterns.size() != 1 ||
+        !direction.filters.empty() || !direction.localScopes.empty() ||
+        !staticCompiledParameterRate(direction, model).has_value() ||
+        !model.compartments().empty() || !model.populationMaps().empty() ||
+        !model.populationTypes().empty()) {
+        return false;
+    }
+
+    if (direction.mutations.size() != 1 ||
+        direction.mutations.front().kind != compile::MutationKind::AddBond) {
+        return false;
+    }
+
+    const auto& reactantA = direction.reactantPatterns[0];
+    const auto& reactantB = direction.reactantPatterns[1];
+    const auto& product = direction.productPatterns[0];
+
+    if (!reactantA.isResolved() || !reactantB.isResolved() || !product.isResolved() ||
+        reactantA.molecules().size() != 1 || reactantB.molecules().size() != 1 ||
+        product.molecules().size() != 2 ||
+        !reactantA.compartment().empty() || !reactantB.compartment().empty() ||
+        !product.compartment().empty() ||
+        reactantA.compartmentIsPrefix() || reactantB.compartmentIsPrefix() ||
+        product.compartmentIsPrefix()) {
+        return false;
+    }
+
+    const auto& molA = reactantA.molecules().front();
+    const auto& molB = reactantB.molecules().front();
+    if (!molA.moleculeTypeId.has_value() || !molB.moleculeTypeId.has_value() ||
+        !molA.compartment.empty() || !molB.compartment.empty()) {
+        return false;
+    }
+
+    const auto* typeA = model.moleculeType(*molA.moleculeTypeId);
+    const auto* typeB = model.moleculeType(*molB.moleculeTypeId);
+    if (typeA == nullptr || typeB == nullptr ||
+        molA.sites.size() != typeA->components.size() ||
+        molB.sites.size() != typeB->components.size() ||
+        hasDuplicateComponentNames(*typeA) ||
+        hasDuplicateComponentNames(*typeB)) {
+        return false;
+    }
+
+    const auto& mutation = direction.mutations.front();
+    if (mutation.source.side != compile::PatternSide::Reactant ||
+        mutation.partner.side != compile::PatternSide::Reactant) {
+        return false;
+    }
+    const bool standardOrder = (mutation.source.patternIndex == 0 && mutation.partner.patternIndex == 1);
+    const bool reverseOrder = (mutation.source.patternIndex == 1 && mutation.partner.patternIndex == 0);
+    if (!standardOrder && !reverseOrder) {
+        return false;
+    }
+    const auto siteIndexA = standardOrder ? mutation.source.siteIndex : mutation.partner.siteIndex;
+    const auto siteIndexB = standardOrder ? mutation.partner.siteIndex : mutation.source.siteIndex;
+
+    if (siteIndexA >= molA.sites.size() || siteIndexB >= molB.sites.size()) {
+        return false;
+    }
+
+    for (std::size_t i = 0; i < molA.sites.size(); ++i) {
+        const auto& site = molA.sites[i];
+        if (!site.componentType.has_value()) return false;
+        const auto* comp = typeA->component(*site.componentType);
+        if (comp == nullptr || !unboundOnly(site)) {
+            return false;
+        }
+        if (comp->stateNames.size() > 1 &&
+            site.stateConstraintResolved.kind != compile::StateConstraintKind::Exact) {
+            return false;
+        }
+    }
+    for (std::size_t i = 0; i < molB.sites.size(); ++i) {
+        const auto& site = molB.sites[i];
+        if (!site.componentType.has_value()) return false;
+        const auto* comp = typeB->component(*site.componentType);
+        if (comp == nullptr || !unboundOnly(site)) {
+            return false;
+        }
+        if (comp->stateNames.size() > 1 &&
+            site.stateConstraintResolved.kind != compile::StateConstraintKind::Exact) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool qualifiesDirectBinaryUnbinding(
+    const compile::CompiledRule& rule,
+    const compile::CompiledRuleDirection& direction,
+    const compile::CompiledModel& model) {
+    if (rule.delayExpression().has_value() ||
+        rule.resolvedDelayExpression().has_value() || rule.hasDrivingWork() ||
+        !rule.modifiers().empty() || !direction.transformationsComplete ||
+        direction.reactantPatterns.size() != 1 ||
+        direction.productPatterns.size() != 2 ||
+        !direction.filters.empty() || !direction.localScopes.empty() ||
+        !staticCompiledParameterRate(direction, model).has_value() ||
+        !model.compartments().empty() || !model.populationMaps().empty() ||
+        !model.populationTypes().empty()) {
+        return false;
+    }
+
+    if (direction.mutations.size() != 1 ||
+        direction.mutations.front().kind != compile::MutationKind::DeleteBond) {
+        return false;
+    }
+
+    const auto& reactant = direction.reactantPatterns[0];
+    const auto& prodA = direction.productPatterns[0];
+    const auto& prodB = direction.productPatterns[1];
+
+    if (!reactant.isResolved() || !prodA.isResolved() || !prodB.isResolved() ||
+        reactant.molecules().size() != 2 || prodA.molecules().size() != 1 ||
+        prodB.molecules().size() != 1 ||
+        !reactant.compartment().empty() || !prodA.compartment().empty() ||
+        !prodB.compartment().empty() ||
+        reactant.compartmentIsPrefix() || prodA.compartmentIsPrefix() ||
+        prodB.compartmentIsPrefix()) {
+        return false;
+    }
+
+    const auto& molA = reactant.molecules()[0];
+    const auto& molB = reactant.molecules()[1];
+    if (!molA.moleculeTypeId.has_value() || !molB.moleculeTypeId.has_value() ||
+        !molA.compartment.empty() || !molB.compartment.empty()) {
+        return false;
+    }
+    const auto* typeA = model.moleculeType(*molA.moleculeTypeId);
+    const auto* typeB = model.moleculeType(*molB.moleculeTypeId);
+    if (typeA == nullptr || typeB == nullptr ||
+        molA.sites.size() != typeA->components.size() ||
+        molB.sites.size() != typeB->components.size() ||
+        hasDuplicateComponentNames(*typeA) ||
+        hasDuplicateComponentNames(*typeB)) {
+        return false;
+    }
+
+    const auto& mutation = direction.mutations.front();
+    if (mutation.source.side != compile::PatternSide::Reactant ||
+        mutation.partner.side != compile::PatternSide::Reactant ||
+        mutation.source.patternIndex != 0 || mutation.partner.patternIndex != 0) {
+        return false;
+    }
+    if (mutation.source.moleculeIndex == mutation.partner.moleculeIndex) {
+        return false;
+    }
+
+    const auto siteIdxA = (mutation.source.moleculeIndex == 0) ? mutation.source.siteIndex : mutation.partner.siteIndex;
+    const auto siteIdxB = (mutation.source.moleculeIndex == 0) ? mutation.partner.siteIndex : mutation.source.siteIndex;
+
+    for (std::size_t i = 0; i < molA.sites.size(); ++i) {
+        const auto& site = molA.sites[i];
+        if (!site.componentType.has_value()) return false;
+        const auto* comp = typeA->component(*site.componentType);
+        if (comp == nullptr) return false;
+        if (i != siteIdxA && !unboundOnly(site)) return false;
+        if (comp->stateNames.size() > 1 &&
+            site.stateConstraintResolved.kind != compile::StateConstraintKind::Exact) {
+            return false;
+        }
+    }
+    for (std::size_t i = 0; i < molB.sites.size(); ++i) {
+        const auto& site = molB.sites[i];
+        if (!site.componentType.has_value()) return false;
+        const auto* comp = typeB->component(*site.componentType);
+        if (comp == nullptr) return false;
+        if (i != siteIdxB && !unboundOnly(site)) return false;
+        if (comp->stateNames.size() > 1 &&
+            site.stateConstraintResolved.kind != compile::StateConstraintKind::Exact) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+BNGcore::Node* findSharedBondNode(BNGcore::Node* lhsComponent, BNGcore::Node* rhsComponent) {
+    if (lhsComponent == nullptr || rhsComponent == nullptr) return nullptr;
+    for (auto lhsEdge = lhsComponent->edges_out_begin(); lhsEdge != lhsComponent->edges_out_end(); ++lhsEdge) {
+        if (!isUnaryBondNode(**lhsEdge)) continue;
+        for (auto rhsEdge = rhsComponent->edges_out_begin(); rhsEdge != rhsComponent->edges_out_end(); ++rhsEdge) {
+            if (*lhsEdge == *rhsEdge) return *lhsEdge;
+        }
+    }
+    return nullptr;
+}
+
+void removeUnboundMarkerNodes(BNGcore::PatternGraph& graph, BNGcore::Node* component) {
+    std::vector<BNGcore::Node*> toDelete;
+    for (auto edge = component->edges_out_begin(); edge != component->edges_out_end(); ++edge) {
+        if (isUnaryBondNode(**edge) && (*edge)->get_state() == BNGcore::UNBOUND_STATE) {
+            toDelete.push_back(*edge);
+        }
+    }
+    for (auto* node : toDelete) {
+        graph.delete_edge(component, node);
+        graph.delete_node(node);
+    }
+}
+
+std::vector<ast::SpeciesGraph> splitConnectedComponents(const BNGcore::PatternGraph& graph) {
+    std::vector<ast::SpeciesGraph> result;
+    std::set<const BNGcore::Node*> visited;
+    for (auto nodeIter = graph.begin(); nodeIter != graph.end(); ++nodeIter) {
+        if (visited.count(*nodeIter)) continue;
+        std::vector<const BNGcore::Node*> stack{*nodeIter};
+        std::vector<const BNGcore::Node*> compNodes;
+        while (!stack.empty()) {
+            const auto* curr = stack.back();
+            stack.pop_back();
+            if (!visited.insert(curr).second) continue;
+            compNodes.push_back(curr);
+            for (auto edge = curr->edges_in_begin(); edge != curr->edges_in_end(); ++edge) {
+                if (!visited.count(*edge)) stack.push_back(*edge);
+            }
+            for (auto edge = curr->edges_out_begin(); edge != curr->edges_out_end(); ++edge) {
+                if (!visited.count(*edge)) stack.push_back(*edge);
+            }
+        }
+        BNGcore::PatternGraph compGraph;
+        std::map<const BNGcore::Node*, BNGcore::Node*> clones;
+        for (const auto* n : compNodes) {
+            auto* clone = n->clone();
+            compGraph.add_node(clone);
+            clones[n] = clone;
+        }
+        for (const auto* n : compNodes) {
+            for (auto edge = n->edges_out_begin(); edge != n->edges_out_end(); ++edge) {
+                if (clones.count(*edge)) {
+                    compGraph.add_edge(clones.at(n), clones.at(*edge));
+                }
+            }
+        }
+        result.emplace_back(std::move(compGraph));
+    }
+    return result;
 }
 
 BNGcore::PatternGraph cloneGraph(const BNGcore::PatternGraph& source) {
@@ -877,6 +1135,8 @@ struct NetworkRulePlan::Impl {
     bool directSynthesis = false;
     bool directUnaryStateChange = false;
     bool directUnaryDeletion = false;
+    bool directBinaryBinding = false;
+    bool directBinaryUnbinding = false;
     bool synthesisApplied = false;
     BNGcore::PatternGraph unaryReactantGraph;
     std::size_t unaryChangedSite = 0;
@@ -888,6 +1148,23 @@ struct NetworkRulePlan::Impl {
     BNGcore::PatternGraph deletionReactantGraph;
     std::optional<double> deletionStaticRate;
     std::set<std::size_t> deletionVisitedSpecies;
+    bool bindingIsHomodimer = false;
+    BNGcore::PatternGraph bindingReactantGraphA;
+    BNGcore::PatternGraph bindingReactantGraphB;
+    std::string bindingMoleculeNameA;
+    std::string bindingComponentNameA;
+    std::string bindingMoleculeNameB;
+    std::string bindingComponentNameB;
+    std::optional<double> bindingStaticRate;
+    std::set<std::pair<std::size_t, std::size_t>> bindingVisitedPairs;
+    BNGcore::PatternGraph unbindingReactantGraph;
+    bool unbindingIsHomodimer = false;
+    std::string unbindingMoleculeNameA;
+    std::string unbindingComponentNameA;
+    std::string unbindingMoleculeNameB;
+    std::string unbindingComponentNameB;
+    std::optional<double> unbindingStaticRate;
+    std::set<std::size_t> unbindingVisitedSpecies;
     std::vector<ast::SpeciesGraph> synthesisProducts;
     std::string directRateLaw = "0";
     std::optional<ast::Expression> directRateExpression;
@@ -916,6 +1193,10 @@ struct NetworkRulePlan::Impl {
               compiledRule, direction, model)),
           directUnaryDeletion(!directSynthesis && !directUnaryStateChange &&
               qualifiesDirectUnaryDeletion(compiledRule, direction, model)),
+          directBinaryBinding(!directSynthesis && !directUnaryStateChange && !directUnaryDeletion &&
+              qualifiesDirectBinaryBinding(compiledRule, direction, model)),
+          directBinaryUnbinding(!directSynthesis && !directUnaryStateChange && !directUnaryDeletion && !directBinaryBinding &&
+              qualifiesDirectBinaryUnbinding(compiledRule, direction, model)),
           filters(lowerFilters(direction, context)),
           localObservables(lowerLocalObservableDependencies(
             compiledRule, direction, model, context, reverseDirection)),
@@ -961,6 +1242,51 @@ struct NetworkRulePlan::Impl {
             deletionReactantGraph = compile::lowerPatternToBNGcore(
                 direction.reactantPatterns.front(), context);
             deletionStaticRate = staticCompiledParameterRate(direction, model);
+            if (direction.rateLaw.has_value()) {
+                auto resolved = model.expandFunctions(
+                    direction.rateLaw->resolvedExpression());
+                directRateExpression =
+                    compile::lowerResolvedExpressionToAst(resolved, model);
+                directRateLaw = directRateExpression->toString();
+            }
+        } else if (directBinaryBinding) {
+            bindingReactantGraphA = compile::lowerPatternToBNGcore(
+                direction.reactantPatterns[0], context);
+            bindingReactantGraphB = compile::lowerPatternToBNGcore(
+                direction.reactantPatterns[1], context);
+            const auto& molA = direction.reactantPatterns[0].molecules().front();
+            const auto& molB = direction.reactantPatterns[1].molecules().front();
+            bindingMoleculeNameA = model.moleculeType(*molA.moleculeTypeId)->name;
+            bindingMoleculeNameB = model.moleculeType(*molB.moleculeTypeId)->name;
+            const auto& mutation = direction.mutations.front();
+            const bool standardOrder = (mutation.source.patternIndex == 0);
+            const auto siteA = standardOrder ? mutation.source.siteIndex : mutation.partner.siteIndex;
+            const auto siteB = standardOrder ? mutation.partner.siteIndex : mutation.source.siteIndex;
+            bindingComponentNameA = model.component(*molA.sites[siteA].componentType)->name;
+            bindingComponentNameB = model.component(*molB.sites[siteB].componentType)->name;
+            bindingStaticRate = staticCompiledParameterRate(direction, model);
+            bindingIsHomodimer = (direction.reactantPatterns[0] == direction.reactantPatterns[1]);
+            if (direction.rateLaw.has_value()) {
+                auto resolved = model.expandFunctions(
+                    direction.rateLaw->resolvedExpression());
+                directRateExpression =
+                    compile::lowerResolvedExpressionToAst(resolved, model);
+                directRateLaw = directRateExpression->toString();
+            }
+        } else if (directBinaryUnbinding) {
+            unbindingReactantGraph = compile::lowerPatternToBNGcore(
+                direction.reactantPatterns.front(), context);
+            const auto& molA = direction.reactantPatterns.front().molecules()[0];
+            const auto& molB = direction.reactantPatterns.front().molecules()[1];
+            unbindingMoleculeNameA = model.moleculeType(*molA.moleculeTypeId)->name;
+            unbindingMoleculeNameB = model.moleculeType(*molB.moleculeTypeId)->name;
+            const auto& mutation = direction.mutations.front();
+            const auto siteA = mutation.source.moleculeIndex == 0 ? mutation.source.siteIndex : mutation.partner.siteIndex;
+            const auto siteB = mutation.source.moleculeIndex == 1 ? mutation.source.siteIndex : mutation.partner.siteIndex;
+            unbindingComponentNameA = model.component(*molA.sites[siteA].componentType)->name;
+            unbindingComponentNameB = model.component(*molB.sites[siteB].componentType)->name;
+            unbindingStaticRate = staticCompiledParameterRate(direction, model);
+            unbindingIsHomodimer = (direction.productPatterns[0] == direction.productPatterns[1]);
             if (direction.rateLaw.has_value()) {
                 auto resolved = model.expandFunctions(
                     direction.rateLaw->resolvedExpression());
@@ -1295,6 +1621,271 @@ struct NetworkRulePlan::Impl {
         }
         return created;
     }
+
+    std::size_t expandBinaryBinding(
+        ast::SpeciesList& species,
+        ast::RxnList& reactions,
+        const std::function<bool(const ast::SpeciesGraph&)>& productFilter,
+        std::size_t speciesBoundary) {
+        std::size_t created = 0;
+
+        for (std::size_t i = 0; i < speciesBoundary && i < species.size(); ++i) {
+            if (!species.get(i).getCompartment().empty()) continue;
+            const auto& graphA = species.get(i).getSpeciesGraph().getGraph();
+            const bool isMonomerA = std::count_if(
+                graphA.begin(), graphA.end(),
+                [](const auto* node) { return isUnaryMoleculeNode(*node); }) == 1;
+            if (!isMonomerA) continue;
+
+            const auto matchCountA = core::countPatternMatches(
+                bindingReactantGraphA, graphA);
+            if (matchCountA == 0) continue;
+
+            const std::size_t startJ = bindingIsHomodimer ? i : 0;
+            for (std::size_t j = startJ; j < speciesBoundary && j < species.size(); ++j) {
+                if (!bindingVisitedPairs.insert({i, j}).second) continue;
+                if (!species.get(j).getCompartment().empty()) continue;
+                const auto& graphB = species.get(j).getSpeciesGraph().getGraph();
+                const bool isMonomerB = std::count_if(
+                    graphB.begin(), graphB.end(),
+                    [](const auto* node) { return isUnaryMoleculeNode(*node); }) == 1;
+                if (!isMonomerB) continue;
+
+                const auto matchCountB = core::countPatternMatches(
+                    bindingReactantGraphB, graphB);
+                if (matchCountB == 0) continue;
+
+                if (pruneZeroRates && bindingStaticRate.has_value() &&
+                    *bindingStaticRate == 0.0) {
+                    continue;
+                }
+
+                if (hooks.rejectZeroRate) {
+                    ast::RateCandidateContext candidate;
+                    candidate.speciesGraphs.push_back(&graphA);
+                    candidate.speciesGraphs.push_back(&graphB);
+                    if (hooks.rejectZeroRate(candidate)) continue;
+                }
+
+                BNGcore::PatternGraph productGraph;
+                std::map<const BNGcore::Node*, BNGcore::Node*> clonesA;
+                for (auto n = graphA.begin(); n != graphA.end(); ++n) {
+                    auto* c = (*n)->clone();
+                    productGraph.add_node(c);
+                    clonesA[*n] = c;
+                }
+                for (auto n = graphA.begin(); n != graphA.end(); ++n) {
+                    for (auto e = (*n)->edges_out_begin(); e != (*n)->edges_out_end(); ++e) {
+                        productGraph.add_edge(clonesA.at(*n), clonesA.at(*e));
+                    }
+                }
+
+                std::map<const BNGcore::Node*, BNGcore::Node*> clonesB;
+                for (auto n = graphB.begin(); n != graphB.end(); ++n) {
+                    auto* c = (*n)->clone();
+                    productGraph.add_node(c);
+                    clonesB[*n] = c;
+                }
+                for (auto n = graphB.begin(); n != graphB.end(); ++n) {
+                    for (auto e = (*n)->edges_out_begin(); e != (*n)->edges_out_end(); ++e) {
+                        productGraph.add_edge(clonesB.at(*n), clonesB.at(*e));
+                    }
+                }
+
+                BNGcore::Node* compNodeA = nullptr;
+                for (const auto& pair : clonesA) {
+                    auto* n = pair.second;
+                    if (isUnaryComponentNode(*n) && n->get_type().get_type_name() == bindingComponentNameA) {
+                        for (auto inc = n->edges_in_begin(); inc != n->edges_in_end(); ++inc) {
+                            if (isUnaryMoleculeNode(**inc) && (*inc)->get_type().get_type_name() == bindingMoleculeNameA) {
+                                compNodeA = n;
+                                break;
+                            }
+                        }
+                        if (compNodeA) break;
+                    }
+                }
+
+                BNGcore::Node* compNodeB = nullptr;
+                for (const auto& pair : clonesB) {
+                    auto* n = pair.second;
+                    if (isUnaryComponentNode(*n) && n->get_type().get_type_name() == bindingComponentNameB) {
+                        for (auto inc = n->edges_in_begin(); inc != n->edges_in_end(); ++inc) {
+                            if (isUnaryMoleculeNode(**inc) && (*inc)->get_type().get_type_name() == bindingMoleculeNameB) {
+                                compNodeB = n;
+                                break;
+                            }
+                        }
+                        if (compNodeB) break;
+                    }
+                }
+
+                if (!compNodeA || !compNodeB) continue;
+
+                removeUnboundMarkerNodes(productGraph, compNodeA);
+                removeUnboundMarkerNodes(productGraph, compNodeB);
+
+                auto* bn = new BNGcore::Node(BNGcore::BOND_NODE_TYPE);
+                bn->set_state(BNGcore::BOUND_STATE);
+                productGraph.add_node(bn);
+                productGraph.add_edge(compNodeA, bn);
+                productGraph.add_edge(compNodeB, bn);
+
+                ast::SpeciesGraph productSpeciesGraph(std::move(productGraph), "");
+                if (productFilter && !productFilter(productSpeciesGraph)) continue;
+
+                ast::Species product(std::move(productSpeciesGraph), 0.0, false);
+                const auto spALabel = species.get(i).getSpeciesGraph().canonicalLabel();
+                const auto spBLabel = species.get(j).getSpeciesGraph().canonicalLabel();
+                const auto productLabel = product.getSpeciesGraph().canonicalLabel();
+                std::string exact;
+                const auto existing = species.findExact(product, exact);
+                const auto productIndex = existing.has_value()
+                    ? *existing
+                    : species.addWithExactKey(std::move(product), std::move(exact)).first;
+
+                const auto label = name + "|bind|" + spALabel + "+" + spBLabel + "->" + productLabel;
+                const double factor = (i == j) ? 0.5 : 1.0;
+                const double rxnFactor = factor * static_cast<double>(matchCountA * matchCountB);
+                reactions.add(ast::Rxn(label, {i, j}, {productIndex},
+                                       directRateLaw, rxnFactor, name,
+                                       directRateExpression));
+                ++created;
+            }
+        }
+        return created;
+    }
+
+    std::size_t expandBinaryUnbinding(
+        ast::SpeciesList& species,
+        ast::RxnList& reactions,
+        const std::function<bool(const ast::SpeciesGraph&)>& productFilter,
+        std::size_t speciesBoundary) {
+        std::size_t created = 0;
+        const double factor = unbindingIsHomodimer ? 0.5 : 1.0;
+
+        for (std::size_t i = 0; i < speciesBoundary && i < species.size(); ++i) {
+            if (!unbindingVisitedSpecies.insert(i).second) continue;
+            if (!species.get(i).getCompartment().empty()) continue;
+            const auto& sourceGraph = species.get(i).getSpeciesGraph().getGraph();
+
+            const bool isDimer = std::count_if(
+                sourceGraph.begin(), sourceGraph.end(),
+                [](const auto* node) { return isUnaryMoleculeNode(*node); }) == 2;
+            if (!isDimer) continue;
+
+            const auto matchCount = core::countPatternMatches(
+                unbindingReactantGraph, sourceGraph);
+            if (matchCount == 0) continue;
+
+            if (pruneZeroRates && unbindingStaticRate.has_value() &&
+                *unbindingStaticRate == 0.0) {
+                continue;
+            }
+
+            if (hooks.rejectZeroRate) {
+                ast::RateCandidateContext candidate;
+                candidate.speciesGraphs.push_back(&sourceGraph);
+                if (hooks.rejectZeroRate(candidate)) continue;
+            }
+
+            BNGcore::PatternGraph aggregate = cloneGraph(sourceGraph);
+
+            BNGcore::Node* compNodeA = nullptr;
+            BNGcore::Node* compNodeB = nullptr;
+            BNGcore::Node* sharedBond = nullptr;
+
+            for (auto nA = aggregate.begin(); nA != aggregate.end(); ++nA) {
+                if (!isUnaryComponentNode(**nA) || (*nA)->get_type().get_type_name() != unbindingComponentNameA)
+                    continue;
+                bool isMolA = false;
+                for (auto inc = (*nA)->edges_in_begin(); inc != (*nA)->edges_in_end(); ++inc) {
+                    if (isUnaryMoleculeNode(**inc) && (*inc)->get_type().get_type_name() == unbindingMoleculeNameA) {
+                        isMolA = true;
+                        break;
+                    }
+                }
+                if (!isMolA) continue;
+
+                for (auto nB = aggregate.begin(); nB != aggregate.end(); ++nB) {
+                    if (*nA == *nB) continue;
+                    if (!isUnaryComponentNode(**nB) || (*nB)->get_type().get_type_name() != unbindingComponentNameB)
+                        continue;
+                    bool isMolB = false;
+                    for (auto inc = (*nB)->edges_in_begin(); inc != (*nB)->edges_in_end(); ++inc) {
+                        if (isUnaryMoleculeNode(**inc) && (*inc)->get_type().get_type_name() == unbindingMoleculeNameB) {
+                            isMolB = true;
+                            break;
+                        }
+                    }
+                    if (!isMolB) continue;
+
+                    auto* b = findSharedBondNode(*nA, *nB);
+                    if (b != nullptr) {
+                        compNodeA = *nA;
+                        compNodeB = *nB;
+                        sharedBond = b;
+                        break;
+                    }
+                }
+                if (sharedBond != nullptr) break;
+            }
+
+            if (!sharedBond || !compNodeA || !compNodeB) continue;
+
+            aggregate.delete_edge(compNodeA, sharedBond);
+            aggregate.delete_edge(compNodeB, sharedBond);
+            aggregate.delete_node(sharedBond);
+
+            auto* mA = new BNGcore::Node(BNGcore::BOND_NODE_TYPE);
+            mA->set_state(BNGcore::UNBOUND_STATE);
+            aggregate.add_node(mA);
+            aggregate.add_edge(compNodeA, mA);
+
+            auto* mB = new BNGcore::Node(BNGcore::BOND_NODE_TYPE);
+            mB->set_state(BNGcore::UNBOUND_STATE);
+            aggregate.add_node(mB);
+            aggregate.add_edge(compNodeB, mB);
+
+            auto products = splitConnectedComponents(aggregate);
+            if (products.size() != 2) continue;
+
+            const auto reactantLabel = species.get(i).getSpeciesGraph().canonicalLabel();
+            bool filtered = false;
+            std::vector<std::string> productLabels;
+            std::vector<ast::Species> productSpecies;
+            for (auto& prodGraph : products) {
+                if (productFilter && !productFilter(prodGraph)) {
+                    filtered = true;
+                    break;
+                }
+                ast::Species prod(std::move(prodGraph), 0.0, false);
+                productLabels.push_back(prod.getSpeciesGraph().canonicalLabel());
+                productSpecies.push_back(std::move(prod));
+            }
+            if (filtered) continue;
+
+            std::vector<std::size_t> productIndices;
+            productIndices.reserve(productSpecies.size());
+            for (auto& prod : productSpecies) {
+                std::string exact;
+                const auto existing = species.findExact(prod, exact);
+                const auto pIdx = existing.has_value()
+                    ? *existing
+                    : species.addWithExactKey(std::move(prod), std::move(exact)).first;
+                productIndices.push_back(pIdx);
+            }
+
+            const auto label = name + "|unbind|" + reactantLabel + "->" +
+                               productLabels[0] + "+" + productLabels[1];
+            const double rxnFactor = factor * static_cast<double>(matchCount);
+            reactions.add(ast::Rxn(label, {i}, std::move(productIndices),
+                                   directRateLaw, rxnFactor, name,
+                                   directRateExpression));
+            ++created;
+        }
+        return created;
+    }
 };
 
 NetworkRulePlan::NetworkRulePlan(
@@ -1324,6 +1915,8 @@ void NetworkRulePlan::clearPatternMatchCache() {
     if (impl_->kernel) impl_->kernel->clearPatternMatchCache();
     impl_->unaryVisitedSpecies.clear();
     impl_->deletionVisitedSpecies.clear();
+    impl_->bindingVisitedPairs.clear();
+    impl_->unbindingVisitedSpecies.clear();
 }
 
 std::size_t NetworkRulePlan::expand(
@@ -1411,6 +2004,14 @@ std::size_t NetworkRulePlan::expand(
     if (impl_->directUnaryDeletion) {
         return impl_->expandUnaryDeletion(
             species, reactions, speciesBoundary);
+    }
+    if (impl_->directBinaryBinding) {
+        return impl_->expandBinaryBinding(
+            species, reactions, productFilter, speciesBoundary);
+    }
+    if (impl_->directBinaryUnbinding) {
+        return impl_->expandBinaryUnbinding(
+            species, reactions, productFilter, speciesBoundary);
     }
     return impl_->kernel->expand(
         species, reactions, currentIteration, productFilter, speciesBoundary);

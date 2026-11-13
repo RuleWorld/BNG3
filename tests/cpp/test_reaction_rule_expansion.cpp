@@ -439,6 +439,301 @@ generate_network({max_iter=>2})
     }
 }
 
+TEST_CASE("NetworkRulePlan executes direct binary binding and unbinding without legacy kernel",
+          "[NetworkRulePlan][compiled][binding]") {
+    SECTION("Direct binary binding after AST destruction") {
+        auto source = parseModel(R"(
+begin parameters
+    kon 0.1
+end parameters
+begin molecule types
+    A(b)
+    B(a)
+end molecule types
+begin seed species
+    A(b) 10
+    B(a) 10
+end seed species
+begin reaction rules
+    bind: A(b) + B(a) -> A(b!1).B(a!1) kon
+end reaction rules
+generate_network({max_iter=>2})
+)");
+        REQUIRE(source != nullptr);
+        auto document = std::make_unique<compile::Document>(*source);
+        REQUIRE(document->valid());
+        source.reset();
+
+        const auto& compiled = document->model();
+        REQUIRE(compiled.rules().size() == 1);
+        compile::BNGcoreLoweringContext context(compiled);
+        auto plans = engine::lowerNetworkRules(compiled, context);
+        REQUIRE(plans.size() == 1);
+        CHECK_FALSE(plans.front().usesLegacyKernel());
+
+        engine::NetworkGenerator generator(*document);
+        const auto network = generator.generateNative(2);
+        REQUIRE(network.species.size() == 3);
+        REQUIRE(network.reactions.size() == 1);
+        const auto& reaction = network.reactions.all().front();
+        REQUIRE(reaction.getReactants().size() == 2);
+        REQUIRE(reaction.getProducts().size() == 1);
+        CHECK(reaction.getRateLaw() == "kon");
+        CHECK(reaction.getFactor() == 1.0);
+        CHECK(network.species.get(reaction.getProducts().front()).getSpeciesGraph().toString() == "A(b!1).B(a!1)");
+    }
+
+    SECTION("Direct binary unbinding after AST destruction") {
+        auto source = parseModel(R"(
+begin parameters
+    koff 0.05
+end parameters
+begin molecule types
+    A(b)
+    B(a)
+end molecule types
+begin seed species
+    A(b!1).B(a!1) 5
+end seed species
+begin reaction rules
+    unbind: A(b!1).B(a!1) -> A(b) + B(a) koff
+end reaction rules
+generate_network({max_iter=>2})
+)");
+        REQUIRE(source != nullptr);
+        auto document = std::make_unique<compile::Document>(*source);
+        REQUIRE(document->valid());
+        source.reset();
+
+        const auto& compiled = document->model();
+        REQUIRE(compiled.rules().size() == 1);
+        compile::BNGcoreLoweringContext context(compiled);
+        auto plans = engine::lowerNetworkRules(compiled, context);
+        REQUIRE(plans.size() == 1);
+        CHECK_FALSE(plans.front().usesLegacyKernel());
+
+        engine::NetworkGenerator generator(*document);
+        const auto network = generator.generateNative(2);
+        REQUIRE(network.species.size() == 3);
+        REQUIRE(network.reactions.size() == 1);
+        const auto& reaction = network.reactions.all().front();
+        REQUIRE(reaction.getReactants().size() == 1);
+        REQUIRE(reaction.getProducts().size() == 2);
+        CHECK(reaction.getRateLaw() == "koff");
+        CHECK(reaction.getFactor() == 1.0);
+        CHECK(network.species.get(reaction.getReactants().front()).getSpeciesGraph().toString() == "A(b!1).B(a!1)");
+    }
+
+    SECTION("Reversible binary binding and unbinding executes without legacy kernel") {
+        auto source = parseModel(R"(
+begin parameters
+    kon 0.2
+    koff 0.01
+end parameters
+begin molecule types
+    A(b)
+    B(a)
+end molecule types
+begin seed species
+    A(b) 10
+    B(a) 10
+end seed species
+begin reaction rules
+    bind_rev: A(b) + B(a) <-> A(b!1).B(a!1) kon, koff
+end reaction rules
+generate_network({max_iter=>2})
+)");
+        REQUIRE(source != nullptr);
+        auto document = std::make_unique<compile::Document>(*source);
+        REQUIRE(document->valid());
+        source.reset();
+
+        const auto& compiled = document->model();
+        REQUIRE(compiled.rules().size() == 1);
+        compile::BNGcoreLoweringContext context(compiled);
+        auto plans = engine::lowerNetworkRules(compiled, context);
+        REQUIRE(plans.size() == 2);
+        CHECK_FALSE(plans[0].usesLegacyKernel());
+        CHECK_FALSE(plans[1].usesLegacyKernel());
+
+        engine::NetworkGenerator generator(*document);
+        const auto network = generator.generateNative(2);
+        REQUIRE(network.species.size() == 3);
+        REQUIRE(network.reactions.size() == 2);
+    }
+
+    SECTION("Homodimer binding with symmetry factor 0.5 without legacy kernel") {
+        auto source = parseModel(R"(
+begin parameters
+    kon 0.1
+end parameters
+begin molecule types
+    A(b)
+end molecule types
+begin seed species
+    A(b) 10
+end seed species
+begin reaction rules
+    dimer: A(b) + A(b) -> A(b!1).A(b!1) kon
+end reaction rules
+generate_network({max_iter=>2})
+)");
+        REQUIRE(source != nullptr);
+        auto document = std::make_unique<compile::Document>(*source);
+        REQUIRE(document->valid());
+        source.reset();
+
+        const auto& compiled = document->model();
+        REQUIRE(compiled.rules().size() == 1);
+        compile::BNGcoreLoweringContext context(compiled);
+        auto plans = engine::lowerNetworkRules(compiled, context);
+        REQUIRE(plans.size() == 1);
+        CHECK_FALSE(plans.front().usesLegacyKernel());
+
+        engine::NetworkGenerator generator(*document);
+        const auto network = generator.generateNative(2);
+        REQUIRE(network.species.size() == 2);
+        REQUIRE(network.reactions.size() == 1);
+        const auto& reaction = network.reactions.all().front();
+        REQUIRE(reaction.getReactants().size() == 2);
+        CHECK(reaction.getReactants()[0] == reaction.getReactants()[1]);
+        CHECK(reaction.getFactor() == 0.5);
+    }
+
+    SECTION("Pruning zero rate on binary binding") {
+        auto source = parseModel(R"(
+begin parameters
+    kon 0
+end parameters
+begin molecule types
+    A(b)
+    B(a)
+end molecule types
+begin seed species
+    A(b) 10
+    B(a) 10
+end seed species
+begin reaction rules
+    bind: A(b) + B(a) -> A(b!1).B(a!1) kon
+end reaction rules
+generate_network({max_iter=>2})
+)");
+        REQUIRE(source != nullptr);
+        auto document = std::make_unique<compile::Document>(*source);
+        REQUIRE(document->valid());
+        source.reset();
+
+        const auto& compiled = document->model();
+        compile::BNGcoreLoweringContext context(compiled);
+        auto plans = engine::lowerNetworkRules(compiled, context, /*pruneZeroRates=*/true);
+        REQUIRE(plans.size() == 1);
+        CHECK_FALSE(plans.front().usesLegacyKernel());
+
+        ast::SpeciesList species;
+        for (const auto& seed : compiled.seeds()) {
+            species.add(ast::Species(
+                compile::lowerPatternToSpeciesGraph(seed.pattern, context),
+                10.0));
+        }
+        ast::RxnList reactions;
+        plans.front().expand(species, reactions, 0, {}, species.size());
+        CHECK(reactions.size() == 0);
+    }
+
+    SECTION("Negative control: non-matching site rejected") {
+        auto source = parseModel(R"(
+begin parameters
+    kon 0.1
+end parameters
+begin molecule types
+    A(b)
+    B(a)
+    C(x)
+end molecule types
+begin seed species
+    A(b) 10
+    C(x) 10
+end seed species
+begin reaction rules
+    bind: A(b) + B(a) -> A(b!1).B(a!1) kon
+end reaction rules
+generate_network({max_iter=>2})
+)");
+        REQUIRE(source != nullptr);
+        auto document = std::make_unique<compile::Document>(*source);
+        REQUIRE(document->valid());
+        source.reset();
+
+        const auto& compiled = document->model();
+        compile::BNGcoreLoweringContext context(compiled);
+        auto plans = engine::lowerNetworkRules(compiled, context);
+        REQUIRE(plans.size() == 1);
+        CHECK_FALSE(plans.front().usesLegacyKernel());
+
+        ast::SpeciesList species;
+        for (const auto& seed : compiled.seeds()) {
+            species.add(ast::Species(
+                compile::lowerPatternToSpeciesGraph(seed.pattern, context),
+                10.0));
+        }
+        ast::RxnList reactions;
+        plans.front().expand(species, reactions, 0, {}, species.size());
+        CHECK(reactions.size() == 0);
+    }
+
+    SECTION("Negative control: omitted-site binding rule retains legacy kernel") {
+        auto source = parseModel(R"(
+begin parameters
+    kp 1.0
+end parameters
+begin molecule types
+    R(r,r)
+    L(l,l)
+end molecule types
+begin seed species
+    R(r,r) 10
+    L(l,l) 10
+end seed species
+begin reaction rules
+    R(r) + L(l,l) -> R(r!1).L(l!1,l) kp
+end reaction rules
+)");
+        REQUIRE(source != nullptr);
+        compile::Document document(*source);
+        REQUIRE(document.valid());
+        const auto& compiled = document.model();
+        compile::BNGcoreLoweringContext context(compiled);
+        auto plans = engine::lowerNetworkRules(compiled, context);
+        REQUIRE(plans.size() == 1);
+        CHECK(plans.front().usesLegacyKernel());
+    }
+
+    SECTION("Negative control: omitted-site deletion rule retains legacy kernel") {
+        auto source = parseModel(R"(
+begin parameters
+    kdel 1.0
+end parameters
+begin molecule types
+    R(r,r)
+end molecule types
+begin seed species
+    R(r,r) 10
+end seed species
+begin reaction rules
+    R(r) -> 0 kdel DeleteMolecules
+end reaction rules
+)");
+        REQUIRE(source != nullptr);
+        compile::Document document(*source);
+        REQUIRE(document.valid());
+        const auto& compiled = document.model();
+        compile::BNGcoreLoweringContext context(compiled);
+        auto plans = engine::lowerNetworkRules(compiled, context);
+        REQUIRE(plans.size() == 1);
+        CHECK(plans.front().usesLegacyKernel());
+    }
+}
+
 TEST_CASE("compiled unary state-change pruning keeps zero-rate networks atomic",
           "[NetworkRulePlan][compiled][unary][zero-rate]") {
     auto source = parseModel(R"(
