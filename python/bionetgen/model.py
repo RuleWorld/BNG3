@@ -1161,10 +1161,10 @@ class BioNetGenModel:
         if not isinstance(continue_simulation, bool):
             raise TypeError("continue_simulation must be a boolean")
         method = method.lower()
-        if method not in {"ode", "ssa", "nf", "pla", "psa"}:
+        if method not in {"ode", "ssa", "nf", "nfnext", "pla", "psa"}:
             raise ValueError(
                 "Unknown simulation method: "
-                f"{method!r}. Use 'ode', 'ssa', 'nf', 'pla', or 'psa'."
+                f"{method!r}. Use 'ode', 'ssa', 'nf', 'nfnext', 'pla', or 'psa'."
             )
         if self._algebraic_rules and method != "ode":
             raise ValueError("SBML algebraic rules require method='ode'")
@@ -1322,6 +1322,19 @@ class BioNetGenModel:
             # NFsim path remains independent; annotate backend for diagnostics.
             if isinstance(raw, dict) and "backend" not in raw:
                 raw["backend"] = "nfsim"
+        elif method == "nfnext":
+            times = normalized_sample_times
+            if not times:
+                dt = (t_end - t_start) / float(n_steps)
+                times = [t_start + i * dt for i in range(n_steps + 1)]
+            raw = _cpp.simulate_nfnext(
+                self._model,
+                sample_times=times,
+                seed=seed,
+                max_events=max_sim_steps if max_sim_steps > 0 else 1_000_000,
+            )
+            if isinstance(raw, dict) and "backend" not in raw:
+                raw["backend"] = "nfnext"
         else:
             # Finite-network backend dispatch (ADR 0003).
             # Default is "auto" -> native during migration; explicit "bngsim"

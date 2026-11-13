@@ -454,6 +454,7 @@ if(BUILD_PYTHON_BINDINGS)
         bindings/bind_parser.cpp
         bindings/bind_engine.cpp
         bindings/bind_nfsim.cpp
+        bindings/bind_nfnext.cpp
         bindings/bind_io.cpp
         bindings/bind_viz.cpp
         bindings/bind_jax_ssa.cpp

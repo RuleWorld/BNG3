@@ -48,6 +48,19 @@ add_test(NAME architecture_nfnext_bng_lowering_bridge
 set_tests_properties(architecture_nfnext_bng_lowering_bridge PROPERTIES
     LABELS "architecture-reference;nfnext;formal-bridge" TIMEOUT 180)
 
+# The NFnext execution-boundary qualification of issue #148.  The program
+# qualifies the supported seeds, observables, parameter graph, protocol and
+# output contract of the production lowering and exports the recorded
+# trajectories, so tests/validation can compare them with the reference
+# fixtures and with an independently built native NFsim.
+add_executable(bng3_nfnext_execution_boundary
+    nfnext/test_execution_boundary.cpp)
+target_link_libraries(bng3_nfnext_execution_boundary PRIVATE bng_nfnext bng_parser)
+add_test(NAME architecture_nfnext_execution_boundary
+    COMMAND bng3_nfnext_execution_boundary)
+set_tests_properties(architecture_nfnext_execution_boundary PROPERTIES
+    LABELS "architecture-reference;nfnext;execution-boundary" TIMEOUT 180)
+
 add_executable(bng3_nfnext_canonicalization_contract
     nfnext/future_contract/test_nfir_canonicalization_contract.cpp)
 target_link_libraries(bng3_nfnext_canonicalization_contract PRIVATE bng_nfnext)

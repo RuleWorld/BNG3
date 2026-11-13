@@ -10118,11 +10118,11 @@
       "behavior": "Complete network-free execution from CompiledModel",
       "upstream": "BNG3 release decision / source extension",
       "bng3": "cpp/nfnext/src/from_bng.cpp:864",
-      "check": "tests/architecture_contracts/nfnext/test_bng_lowering_bridge.cpp",
+      "check": "tests/validation/release/cases/issue-148/test_nfnext_execution.py::test_release_capability_coverage_148",
       "oracle": "pinned native NFsim",
-      "status": "missing",
+      "status": "implemented",
       "issue": 148,
-      "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
+      "evidence": "Qualified by release-nfnext-execution and release-nfnext-routes against pinned native NFsim and CTMC pure-death laws."
     },
     {
       "id": "hybrid.execution",
