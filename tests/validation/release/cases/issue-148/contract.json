@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "issue": 148,
+  "title": "C03: Qualify a complete model-to-NFnext execution boundary",
+  "source": {
+    "repository": "RuleWorld/BNG3",
+    "contract": "Complete general model execution loop from CompiledModel: initialization, embeddings, propensities, graph transformations, dependency updates, observables, and fail-closed refusal."
+  },
+  "oracle": {
+    "identity": "Pinned native NFsim, exact binomial pure-death CTMC law, and analytic continuous-time Markov chain distributions",
+    "law": "Pure-death and transition CTMC analytical distributions, exact particle and mass conservation, and 4.0-sigma stochastic agreement between native NFsim and BNG3."
+  },
+  "acceptance_checks": [
+    "release-nfnext-execution",
+    "release-nfnext-routes",
+    "release-capability-coverage-148"
+  ],
+  "inventory_rows": [
+    "nfnext.full"
+  ],
+  "obligations": [
+    "issue:148:carry-and-initialize-the-supported-seeds-observables-parameter-f",
+    "issue:148:compare-production-lowered-execution-with-reference-fixtures-and",
+    "issue:148:closure-record",
+    "issue:148:live-acceptance:release-nfnext-execution",
+    "issue:148:live-acceptance:release-nfnext-routes",
+    "issue:148:live-acceptance:release-capability-coverage-148"
+  ]
+}
