@@ -680,6 +680,58 @@ generate_network({max_iter=>2})
         plans.front().expand(species, reactions, 0, {}, species.size());
         CHECK(reactions.size() == 0);
     }
+
+    SECTION("Negative control: omitted-site binding rule retains legacy kernel") {
+        auto source = parseModel(R"(
+begin parameters
+    kp 1.0
+end parameters
+begin molecule types
+    R(r,r)
+    L(l,l)
+end molecule types
+begin seed species
+    R(r,r) 10
+    L(l,l) 10
+end seed species
+begin reaction rules
+    R(r) + L(l,l) -> R(r!1).L(l!1,l) kp
+end reaction rules
+)");
+        REQUIRE(source != nullptr);
+        compile::Document document(*source);
+        REQUIRE(document.valid());
+        const auto& compiled = document.model();
+        compile::BNGcoreLoweringContext context(compiled);
+        auto plans = engine::lowerNetworkRules(compiled, context);
+        REQUIRE(plans.size() == 1);
+        CHECK(plans.front().usesLegacyKernel());
+    }
+
+    SECTION("Negative control: omitted-site deletion rule retains legacy kernel") {
+        auto source = parseModel(R"(
+begin parameters
+    kdel 1.0
+end parameters
+begin molecule types
+    R(r,r)
+end molecule types
+begin seed species
+    R(r,r) 10
+end seed species
+begin reaction rules
+    R(r) -> 0 kdel DeleteMolecules
+end reaction rules
+)");
+        REQUIRE(source != nullptr);
+        compile::Document document(*source);
+        REQUIRE(document.valid());
+        const auto& compiled = document.model();
+        compile::BNGcoreLoweringContext context(compiled);
+        auto plans = engine::lowerNetworkRules(compiled, context);
+        REQUIRE(plans.size() == 1);
+        CHECK(plans.front().usesLegacyKernel());
+    }
 }
 
 TEST_CASE("compiled unary state-change pruning keeps zero-rate networks atomic",
