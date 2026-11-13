@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "issue": 138,
+  "title": "B01: Migrate remaining runtime consumers to the resolved semantic model",
+  "source": {
+    "repository": "RuleWorld/BNG3",
+    "contract": "Compile-owned semantic model declarations, expressions, patterns, and protocols without execution-time AST reconstruction or compatibility allowlist leakage"
+  },
+  "oracle": {
+    "identity": "Architecture dependency ratchets, pinned BNG2, and native NFsim simulation oracles",
+    "law": "Absence of unallowlisted AST dependencies in lowered/execution layers; exact preservation of generated networks and simulation trajectories after complete source AST destruction."
+  },
+  "acceptance_checks": [
+    "release-compiled-inputs",
+    "release-compiled-parity",
+    "release-capability-coverage-138"
+  ],
+  "inventory_rows": [
+    "bngl.model-blocks",
+    "bngl.parameters",
+    "bngl.molecule-types",
+    "bngl.species-and-seed-species",
+    "bngl.reaction-rules",
+    "bngl.observables",
+    "bngl.functions",
+    "bngl.compartments",
+    "bngl.energy-patterns",
+    "bngl.population-maps",
+    "bngl.actions",
+    "bngl.simulation-protocols",
+    "bngl.comments-and-line-continuations",
+    "bngl.source-file-include-readmodel",
+    "bngl.indexed-declarations",
+    "bngl.molecule-names",
+    "bngl.site-names",
+    "bngl.internal-states",
+    "bngl.numeric-bonds",
+    "bngl.wildcard-bonds",
+    "bngl.unbound-sites",
+    "bngl.omitted-sites",
+    "bngl.disconnected-patterns",
+    "bngl.molecule-and-pattern-labels",
+    "bngl.compartment-annotations",
+    "bngl.fixed-species",
+    "bngl.symmetric-identical-sites",
+    "bngl.integer-state-values",
+    "bngl.empty-compartment-lists",
+    "bngl.unnamed-rules"
+  ],
+  "obligations": [
+    "issue:138:inventory-the-43-allowed-ast-dependent-compatibility-files-and-m",
+    "issue:138:reduce-the-compatibility-allowlist-only-after-corresponding-beha",
+    "issue:138:closure-record",
+    "issue:138:live-acceptance:release-compiled-inputs",
+    "issue:138:live-acceptance:release-compiled-parity",
+    "issue:138:live-acceptance:release-capability-coverage-138"
+  ]
+}
