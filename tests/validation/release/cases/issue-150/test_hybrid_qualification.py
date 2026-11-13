@@ -136,13 +136,17 @@ def test_release_hybrid_architecture_contracts(tmp_path):
     """Verify native C++ population hybrid contract and generator tests."""
     pop_exe = ARCH_TESTS_DIR / "bng3_nfnext_population_hybrid_contract"
     assert pop_exe.is_file(), f"Missing population hybrid binary at {pop_exe}"
-    res_pop = subprocess.run([str(pop_exe)], cwd=tmp_path, capture_output=True, text=True)
+    res_pop = subprocess.run(
+        [str(pop_exe)], cwd=tmp_path, capture_output=True, text=True
+    )
     assert res_pop.returncode == 0, f"Population contract failed:\n{res_pop.stderr}"
     assert "passed=14 failed=0" in (res_pop.stdout + res_pop.stderr)
 
     gen_exe = CPP_TESTS_DIR / "test_hybrid_model_generator"
     assert gen_exe.is_file(), f"Missing hybrid generator binary at {gen_exe}"
-    res_gen = subprocess.run([str(gen_exe)], cwd=tmp_path, capture_output=True, text=True)
+    res_gen = subprocess.run(
+        [str(gen_exe)], cwd=tmp_path, capture_output=True, text=True
+    )
     assert res_gen.returncode == 0, f"Generator tests failed:\n{res_gen.stderr}"
     assert "All tests passed" in (res_gen.stdout + res_gen.stderr)
 
@@ -157,7 +161,9 @@ def test_release_hybrid_generate_hybrid_model_actions(tmp_path):
     model_file = tmp_path / "test_model.bngl"
 
     # 1. Defaults: generate_hybrid_model() writes model_hpp.bngl with writeXML() default
-    model_file.write_text(HYBRID_BASE_MODEL + "\nbegin actions\ngenerate_hybrid_model()\nend actions\n")
+    model_file.write_text(
+        HYBRID_BASE_MODEL + "\nbegin actions\ngenerate_hybrid_model()\nend actions\n"
+    )
     m = bionetgen.load(model_file)
     m.execute()
 
@@ -165,7 +171,9 @@ def test_release_hybrid_generate_hybrid_model_actions(tmp_path):
     assert default_hpp.is_file(), "Default hybrid BNGL was not written"
     content = default_hpp.read_text()
     assert "writeXML()" in content
-    assert not (tmp_path / "test_model_hpp.xml").exists(), "Should not execute actions by default"
+    assert not (
+        tmp_path / "test_model_hpp.xml"
+    ).exists(), "Should not execute actions by default"
 
     # 2. Overwrite protection: overwrite=>0 fails if file exists
     model_file_no_ow = tmp_path / "test_no_ow.bngl"
@@ -214,7 +222,7 @@ def test_release_hybrid_generate_hybrid_model_actions(tmp_path):
     invalid_file = tmp_path / "test_invalid.bngl"
     invalid_file.write_text(
         HYBRID_BASE_MODEL
-        + '\nbegin actions\ngenerate_hybrid_model({overwrite=>1, unknown_option=>42})\nend actions\n'
+        + "\nbegin actions\ngenerate_hybrid_model({overwrite=>1, unknown_option=>42})\nend actions\n"
     )
     with pytest.raises(RuntimeError, match="Unrecognized option"):
         bionetgen.load(invalid_file).execute()
@@ -300,7 +308,9 @@ def test_release_hybrid_storage_vs_execution_boundary():
     assert model is not None
     snap = cpp._compiled_snapshot(model)
     assert snap is not None
-    assert bool(snap.get("population_maps")), "Population maps must be present in AST/snapshot"
+    assert bool(
+        snap.get("population_maps")
+    ), "Population maps must be present in AST/snapshot"
 
     # Direct simulation of un-lowered model without hybrid generation must reject fail-closed
     with pytest.raises(Exception):
@@ -329,7 +339,11 @@ def test_release_capability_coverage_150():
     ]
 
     for row in ASSIGNED_INVENTORY_ROWS:
-        assert row in data.get("inventory_rows", []), f"Missing row {row} in contract.json"
+        assert row in data.get(
+            "inventory_rows", []
+        ), f"Missing row {row} in contract.json"
 
     for ob in ASSIGNED_OBLIGATIONS:
-        assert ob in data.get("obligations", []), f"Missing obligation {ob} in contract.json"
+        assert ob in data.get(
+            "obligations", []
+        ), f"Missing obligation {ob} in contract.json"
