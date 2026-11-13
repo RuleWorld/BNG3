@@ -43,14 +43,20 @@ end model
 """
 
 
-def _analytic_solution(t: np.ndarray, k: float = 0.4, a0: float = 10.0) -> tuple[np.ndarray, np.ndarray]:
+def _analytic_solution(
+    t: np.ndarray, k: float = 0.4, a0: float = 10.0
+) -> tuple[np.ndarray, np.ndarray]:
     a = a0 * np.exp(-k * t)
     b = a0 - a
     return a, b
 
 
 def _read_gdat(path: Path) -> dict[str, np.ndarray]:
-    lines = [line.strip() for line in path.read_text(encoding="utf-8").splitlines() if line.strip()]
+    lines = [
+        line.strip()
+        for line in path.read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
     header_line = next(line for line in lines if line.startswith("#"))
     headers = [col for col in header_line.lstrip("#").split() if col]
     data_lines = [line for line in lines if not line.startswith("#")]
@@ -80,7 +86,9 @@ begin actions
 end actions
 """
     cli_model.write_text(ANALYTIC_MODEL_TEMPLATE + action_block, encoding="utf-8")
-    proc = subprocess.run([str(bng_cpp), str(cli_model)], cwd=cli_dir, capture_output=True, text=True)
+    proc = subprocess.run(
+        [str(bng_cpp), str(cli_model)], cwd=cli_dir, capture_output=True, text=True
+    )
     assert proc.returncode == 0, f"CLI {method} failed: {proc.stderr}\n{proc.stdout}"
     cli_gdat = cli_dir / "model.gdat"
     assert cli_gdat.is_file()
@@ -114,7 +122,9 @@ end actions
         np.testing.assert_allclose(sim_res.observables["B_obs"], analytic_b, atol=1e-6)
 
         # Cross-entrypoint exact consistency
-        np.testing.assert_allclose(run_res.observables["A_obs"], sim_res.observables["A_obs"], atol=1e-8)
+        np.testing.assert_allclose(
+            run_res.observables["A_obs"], sim_res.observables["A_obs"], atol=1e-8
+        )
     else:
         # Stochastic invariant: total particle conservation A + B = 10
         for name, a_vals, b_vals in [
@@ -123,12 +133,19 @@ end actions
             ("py_sim", sim_res.observables["A_obs"], sim_res.observables["B_obs"]),
         ]:
             total = a_vals + b_vals
-            np.testing.assert_allclose(total, 10.0, atol=1e-12, err_msg=f"{name} {method} violated conservation")
+            np.testing.assert_allclose(
+                total,
+                10.0,
+                atol=1e-12,
+                err_msg=f"{name} {method} violated conservation",
+            )
             assert np.all(a_vals >= 0.0), f"{name} {method} produced negative counts"
             assert np.all(b_vals >= 0.0), f"{name} {method} produced negative counts"
 
 
-@pytest.mark.parametrize("action_name", ["simulate_ode", "simulate_ssa", "simulate_pla", "simulate_psa"])
+@pytest.mark.parametrize(
+    "action_name", ["simulate_ode", "simulate_ssa", "simulate_pla", "simulate_psa"]
+)
 def test_release_entrypoints_explicit_action_names(bng_cpp, tmp_path, action_name):
     """Verify dedicated action names (simulate_ode, simulate_pla, etc.) via CLI."""
     cli_dir = tmp_path / f"explicit_{action_name}"
@@ -141,7 +158,9 @@ begin actions
 end actions
 """
     cli_model.write_text(ANALYTIC_MODEL_TEMPLATE + action_block, encoding="utf-8")
-    proc = subprocess.run([str(bng_cpp), str(cli_model)], cwd=cli_dir, capture_output=True, text=True)
+    proc = subprocess.run(
+        [str(bng_cpp), str(cli_model)], cwd=cli_dir, capture_output=True, text=True
+    )
     assert proc.returncode == 0, f"{action_name} failed: {proc.stderr}\n{proc.stdout}"
     cli_gdat = cli_dir / "model.gdat"
     assert cli_gdat.is_file()
@@ -151,7 +170,9 @@ end actions
         analytic_a, _ = _analytic_solution(cli_data["time"])
         np.testing.assert_allclose(cli_data["A_obs"], analytic_a, atol=1e-6)
     else:
-        np.testing.assert_allclose(cli_data["A_obs"] + cli_data["B_obs"], 10.0, atol=1e-12)
+        np.testing.assert_allclose(
+            cli_data["A_obs"] + cli_data["B_obs"], 10.0, atol=1e-12
+        )
 
 
 # ==============================================================================
@@ -170,7 +191,9 @@ begin actions
 end actions
 """
     model_path.write_text(ANALYTIC_MODEL_TEMPLATE + action_block, encoding="utf-8")
-    proc = subprocess.run([str(bng_cpp), str(model_path)], cwd=tmp_path, capture_output=True, text=True)
+    proc = subprocess.run(
+        [str(bng_cpp), str(model_path)], cwd=tmp_path, capture_output=True, text=True
+    )
     assert proc.returncode == 0, proc.stderr
     assert (tmp_path / "model_run1.gdat").is_file()
     assert (tmp_path / "model.gdat").is_file()
@@ -190,7 +213,9 @@ end actions
 """,
         encoding="utf-8",
     )
-    proc = subprocess.run([str(bng_cpp), str(ode_model)], cwd=ode_dir, capture_output=True, text=True)
+    proc = subprocess.run(
+        [str(bng_cpp), str(ode_model)], cwd=ode_dir, capture_output=True, text=True
+    )
     assert proc.returncode == 0, proc.stderr
 
     ssa_dir = tmp_path / "sparse_ssa"
@@ -205,7 +230,9 @@ end actions
 """,
         encoding="utf-8",
     )
-    proc = subprocess.run([str(bng_cpp), str(ssa_model)], cwd=ssa_dir, capture_output=True, text=True)
+    proc = subprocess.run(
+        [str(bng_cpp), str(ssa_model)], cwd=ssa_dir, capture_output=True, text=True
+    )
     assert proc.returncode != 0
     assert "sparse require an ODE simulation method" in (proc.stderr + proc.stdout)
 
@@ -225,7 +252,9 @@ end actions
 """,
         encoding="utf-8",
     )
-    proc = subprocess.run([str(bng_cpp), str(valid_model)], cwd=valid_dir, capture_output=True, text=True)
+    proc = subprocess.run(
+        [str(bng_cpp), str(valid_model)], cwd=valid_dir, capture_output=True, text=True
+    )
     assert proc.returncode == 0, proc.stderr
 
     # Invalid negative integer raises diagnostic
@@ -241,7 +270,9 @@ end actions
 """,
         encoding="utf-8",
     )
-    proc = subprocess.run([str(bng_cpp), str(neg_model)], cwd=neg_dir, capture_output=True, text=True)
+    proc = subprocess.run(
+        [str(bng_cpp), str(neg_model)], cwd=neg_dir, capture_output=True, text=True
+    )
     assert proc.returncode != 0
     assert "max_sim_steps must be a non-negative integer" in (proc.stderr + proc.stdout)
 
@@ -258,9 +289,13 @@ end actions
 """,
         encoding="utf-8",
     )
-    proc = subprocess.run([str(bng_cpp), str(ode_model)], cwd=ode_dir, capture_output=True, text=True)
+    proc = subprocess.run(
+        [str(bng_cpp), str(ode_model)], cwd=ode_dir, capture_output=True, text=True
+    )
     assert proc.returncode != 0
-    assert "max_sim_steps requires an SSA or PSA simulation method" in (proc.stderr + proc.stdout)
+    assert "max_sim_steps requires an SSA or PSA simulation method" in (
+        proc.stderr + proc.stdout
+    )
 
 
 def test_release_actions_check_product_scale_option(bng_cpp, tmp_path):
@@ -278,7 +313,9 @@ end actions
 """,
         encoding="utf-8",
     )
-    proc = subprocess.run([str(bng_cpp), str(valid_model)], cwd=valid_dir, capture_output=True, text=True)
+    proc = subprocess.run(
+        [str(bng_cpp), str(valid_model)], cwd=valid_dir, capture_output=True, text=True
+    )
     assert proc.returncode == 0, proc.stderr
 
     # Invalid negative value
@@ -294,7 +331,9 @@ end actions
 """,
         encoding="utf-8",
     )
-    proc = subprocess.run([str(bng_cpp), str(neg_model)], cwd=neg_dir, capture_output=True, text=True)
+    proc = subprocess.run(
+        [str(bng_cpp), str(neg_model)], cwd=neg_dir, capture_output=True, text=True
+    )
     assert proc.returncode != 0
     assert "check_product_scale must be non-negative" in (proc.stderr + proc.stdout)
 
@@ -311,9 +350,13 @@ end actions
 """,
         encoding="utf-8",
     )
-    proc = subprocess.run([str(bng_cpp), str(ssa_model)], cwd=ssa_dir, capture_output=True, text=True)
+    proc = subprocess.run(
+        [str(bng_cpp), str(ssa_model)], cwd=ssa_dir, capture_output=True, text=True
+    )
     assert proc.returncode != 0
-    assert "check_product_scale requires an ODE or PSA simulation method" in (proc.stderr + proc.stdout)
+    assert "check_product_scale requires an ODE or PSA simulation method" in (
+        proc.stderr + proc.stdout
+    )
 
 
 def test_release_actions_poplevel_option(bng_cpp, tmp_path):
@@ -331,7 +374,9 @@ end actions
 """,
         encoding="utf-8",
     )
-    proc = subprocess.run([str(bng_cpp), str(valid_model)], cwd=valid_dir, capture_output=True, text=True)
+    proc = subprocess.run(
+        [str(bng_cpp), str(valid_model)], cwd=valid_dir, capture_output=True, text=True
+    )
     assert proc.returncode == 0, proc.stderr
 
     # Invalid negative value
@@ -347,7 +392,9 @@ end actions
 """,
         encoding="utf-8",
     )
-    proc = subprocess.run([str(bng_cpp), str(neg_model)], cwd=neg_dir, capture_output=True, text=True)
+    proc = subprocess.run(
+        [str(bng_cpp), str(neg_model)], cwd=neg_dir, capture_output=True, text=True
+    )
     assert proc.returncode != 0
     assert "poplevel must be finite and non-negative" in (proc.stderr + proc.stdout)
 
@@ -364,7 +411,9 @@ end actions
 """,
         encoding="utf-8",
     )
-    proc = subprocess.run([str(bng_cpp), str(ode_model)], cwd=ode_dir, capture_output=True, text=True)
+    proc = subprocess.run(
+        [str(bng_cpp), str(ode_model)], cwd=ode_dir, capture_output=True, text=True
+    )
     assert proc.returncode != 0
     assert "poplevel requires a PSA simulation method" in (proc.stderr + proc.stdout)
 
@@ -383,7 +432,9 @@ end actions
 """,
         encoding="utf-8",
     )
-    proc = subprocess.run([str(bng_cpp), str(pla_model)], cwd=pla_dir, capture_output=True, text=True)
+    proc = subprocess.run(
+        [str(bng_cpp), str(pla_model)], cwd=pla_dir, capture_output=True, text=True
+    )
     assert proc.returncode == 0, proc.stderr
     assert (pla_dir / "model.gdat").is_file()
 
@@ -402,7 +453,9 @@ end actions
 """,
         encoding="utf-8",
     )
-    proc = subprocess.run([str(bng_cpp), str(flags_model)], cwd=flags_dir, capture_output=True, text=True)
+    proc = subprocess.run(
+        [str(bng_cpp), str(flags_model)], cwd=flags_dir, capture_output=True, text=True
+    )
     assert proc.returncode == 0, proc.stderr
     assert (flags_dir / "model.gdat").is_file()
     assert (flags_dir / "model_end.net").is_file()
@@ -418,7 +471,9 @@ def test_release_capability_coverage_140():
     """Verify all assigned inventory rows in contract.json are documented and verified."""
     contract = json.loads((CASE_DIR / "contract.json").read_text(encoding="utf-8"))
     inventory_rows = contract.get("inventory_rows", [])
-    assert len(inventory_rows) >= 15, f"Expected comprehensive inventory list, got {len(inventory_rows)}"
+    assert (
+        len(inventory_rows) >= 15
+    ), f"Expected comprehensive inventory list, got {len(inventory_rows)}"
 
     expected_rows = {
         "action.simulate_pla",
