@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -614,6 +615,215 @@ def s6_simulate_receipt_report(
     }
 
 
+def issue472_docs_report(
+    report_path: Path, revision: str, *, artifact_run_id: str | None = None
+) -> dict:
+    """Validate and adapt the Issue 472 docs checks assessment as queue evidence."""
+    report_path = Path(report_path)
+    if not report_path.is_file():
+        raise ValueError(f"Issue 472 docs report missing: {report_path}")
+    data = json.loads(report_path.read_text(encoding="utf-8"))
+    if not isinstance(data, dict):
+        raise ValueError("invalid Issue 472 docs report schema")
+    if data.get("issue") != 472:
+        raise ValueError("Issue 472 docs report issue number mismatch")
+    if data.get("assessed_revision") != revision:
+        raise ValueError("stale Issue 472 docs report revision")
+    if data.get("assessed_working_tree_dirty") is not False:
+        raise ValueError("Issue 472 docs report working tree was dirty")
+    if data.get("status") != "PASS":
+        raise ValueError("Issue 472 docs report status is not PASS")
+    checks = data.get("checks", [])
+    expected_checks = {"release-docs-links", "release-docs-decisions"}
+    found_checks = {c.get("check_id") for c in checks if isinstance(c, dict)}
+    if found_checks != expected_checks:
+        raise ValueError("Issue 472 docs report missing required checks")
+    for check in checks:
+        if check.get("status") != "PASS":
+            raise ValueError(f"Issue 472 check {check.get('check_id')} did not pass")
+
+    artifact_name = f"issue-472-docs-acceptance-{revision}"
+    return {
+        "source": {"revision": revision, "dirty": False},
+        "artifact": {
+            "name": artifact_name,
+            "workflow_run_id": artifact_run_id,
+            "path": str(report_path),
+            "sha256": inventory.sha256(report_path),
+        },
+        "references": {
+            "checker_source_sha256": data.get("checker_source_sha256"),
+            "assessed_content_sha256": data.get("assessed_content_sha256"),
+        },
+        "results": [
+            {
+                "id": check["check_id"],
+                "status": "PASS",
+                "stage": "issue-472-docs",
+                "check": check["check_id"],
+                "related_issues": [472],
+                "test_file": "tests/validation/release/cases/issue-472/docs_checks.py",
+                "supported_execution": True,
+                "evidence_kind": "supported-execution",
+            }
+            for check in checks
+        ],
+    }
+
+
+def issue471_checks_report(
+    oracle_report_path: Path | None,
+    topology_report_path: Path | None,
+    tamper_report_path: Path | None,
+    revision: str,
+    *,
+    artifact_run_id: str | None = None,
+) -> dict:
+    """Validate and adapt the Issue 471 reports as queue evidence."""
+    results = []
+    references = {}
+    if oracle_report_path:
+        oracle_report_path = Path(oracle_report_path)
+        if not oracle_report_path.is_file():
+            raise ValueError(f"Issue 471 oracle report missing: {oracle_report_path}")
+        data = json.loads(oracle_report_path.read_text(encoding="utf-8"))
+        if data.get("check_id") != "release-oracle-independence":
+            raise ValueError("Issue 471 oracle report check_id mismatch")
+        if data.get("evaluated_revision") != revision:
+            raise ValueError("stale Issue 471 oracle report revision")
+        if data.get("working_tree_dirty") is not False:
+            raise ValueError("Issue 471 oracle report working tree was dirty")
+        if data.get("result") != "pass":
+            raise ValueError("Issue 471 oracle independence check did not pass")
+        references["oracle_report_sha256"] = inventory.sha256(oracle_report_path)
+        results.append(
+            {
+                "id": "release-oracle-independence",
+                "status": "PASS",
+                "stage": "issue-471-oracle",
+                "check": "release-oracle-independence",
+                "related_issues": [471],
+                "test_file": "tests/validation/release/cases/issue-471/issue471_checks.py",
+                "supported_execution": True,
+                "evidence_kind": "supported-execution",
+            }
+        )
+    if topology_report_path:
+        topology_report_path = Path(topology_report_path)
+        if not topology_report_path.is_file():
+            raise ValueError(
+                f"Issue 471 topology report missing: {topology_report_path}"
+            )
+        data = json.loads(topology_report_path.read_text(encoding="utf-8"))
+        if data.get("check_id") != "release-ci-topology":
+            raise ValueError("Issue 471 topology report check_id mismatch")
+        if data.get("result") != "pass":
+            raise ValueError("Issue 471 CI topology check did not pass")
+        references["topology_report_sha256"] = inventory.sha256(topology_report_path)
+        results.append(
+            {
+                "id": "release-ci-topology",
+                "status": "PASS",
+                "stage": "issue-471-topology",
+                "check": "release-ci-topology",
+                "related_issues": [471],
+                "test_file": "tests/validation/release/cases/issue-471/issue471_checks.py",
+                "supported_execution": True,
+                "evidence_kind": "supported-execution",
+            }
+        )
+    if tamper_report_path:
+        tamper_report_path = Path(tamper_report_path)
+        if not tamper_report_path.is_file():
+            raise ValueError(f"Issue 471 tamper report missing: {tamper_report_path}")
+        data = json.loads(tamper_report_path.read_text(encoding="utf-8"))
+        if data.get("check_id") != "release-oracle-tamper":
+            raise ValueError("Issue 471 tamper report check_id mismatch")
+        if data.get("result") != "pass":
+            raise ValueError("Issue 471 tamper check did not pass")
+        references["tamper_report_sha256"] = inventory.sha256(tamper_report_path)
+        results.append(
+            {
+                "id": "release-oracle-tamper",
+                "status": "PASS",
+                "stage": "issue-471-tamper",
+                "check": "release-oracle-tamper",
+                "related_issues": [471],
+                "test_file": "tests/validation/release/cases/issue-471/issue471_checks.py",
+                "supported_execution": True,
+                "evidence_kind": "supported-execution",
+            }
+        )
+
+    return {
+        "source": {"revision": revision, "dirty": False},
+        "artifact": {
+            "name": f"issue-471-acceptance-{revision}",
+            "workflow_run_id": artifact_run_id,
+        },
+        "references": references,
+        "results": results,
+    }
+
+
+def s5_delay_receipt_report(
+    report_or_receipt_path: Path, revision: str, *, artifact_run_id: str | None = None
+) -> dict:
+    """Validate and adapt the S5 delay replay or consumer receipt as queue evidence."""
+    report_or_receipt_path = Path(report_or_receipt_path)
+    if not report_or_receipt_path.is_file():
+        raise ValueError(f"S5 delay report missing: {report_or_receipt_path}")
+    raw_data = json.loads(report_or_receipt_path.read_text(encoding="utf-8"))
+    if (
+        isinstance(raw_data, dict)
+        and raw_data.get("scope") == "three S5 analytic delay-history cases only"
+        and "case_verdicts" in raw_data
+    ):
+        receipt = raw_data
+        if receipt.get("expected_revision") != revision:
+            raise ValueError("stale S5 delay receipt revision")
+        if receipt.get("status") != "PASS":
+            raise ValueError("S5 delay receipt status is not PASS")
+    else:
+        consumer_spec = importlib.util.spec_from_file_location(
+            "s5_consumer_module",
+            ROOT / "tests/validation/release/cases/sprint-s5-delay-history/consume.py",
+        )
+        if consumer_spec is None or consumer_spec.loader is None:
+            raise RuntimeError("cannot load the independent S5 delay consumer")
+        s5_consumer = importlib.util.module_from_spec(consumer_spec)
+        consumer_spec.loader.exec_module(s5_consumer)
+        receipt = s5_consumer.consume(report_or_receipt_path, revision)
+        if receipt.get("status") != "PASS":
+            raise ValueError("S5 delay replay consumer failed")
+
+    return {
+        "source": {"revision": revision, "dirty": False},
+        "artifact": {
+            "name": f"sprint-s5-delay-receipt-{revision}",
+            "workflow_run_id": artifact_run_id,
+            "path": str(report_or_receipt_path),
+            "sha256": inventory.sha256(report_or_receipt_path),
+        },
+        "references": {
+            "s5_scope": receipt.get("scope"),
+            "case_verdicts": receipt.get("case_verdicts"),
+        },
+        "results": [
+            {
+                "id": "release-delay-history",
+                "status": "PASS",
+                "stage": "sprint-s5-delay-history",
+                "check": "release-delay-history",
+                "related_issues": [160, 475],
+                "test_file": "tests/validation/release/cases/sprint-s5-delay-history/consume.py",
+                "supported_execution": True,
+                "evidence_kind": "supported-execution",
+            }
+        ],
+    }
+
+
 def acceptance_criteria(issue):
     """Retain live issue criteria separately from broad issue-linked evidence.
 
@@ -797,7 +1007,11 @@ def obligation_inventory(issues, catalog=None):
         represented_live = set()
         for item in reviewed:
             live_criteria = item.get("live_acceptance_criteria", [])
-            current = entry_digest_current or item.get("live_body_sha256") == digest
+            has_live = bool(live_criteria)
+            criterion_in_live = item.get("criterion") in texts
+            current = item.get("live_body_sha256") == digest or (
+                entry_digest_current and criterion_in_live and not has_live
+            )
             row = dict(
                 item, issue=number, scope_status="CURRENT" if current else "STALE_SCOPE"
             )
@@ -1300,7 +1514,11 @@ def acceptance_dashboard(queue, assessment, campaigns):
         live_status = {
             o["criterion"]: o["status"]
             for o in obligations
-            if o.get("live_acceptance_criteria") and o.get("scope_status") == "CURRENT"
+            if (
+                o.get("live_acceptance_criteria")
+                or o.get("id", "").startswith(f"issue:{row['number']}:live-acceptance:")
+            )
+            and o.get("scope_status") == "CURRENT"
         }
         for criterion in row["acceptance_criteria"]:
             status = live_status.get(criterion["text"])
@@ -1519,6 +1737,11 @@ def main(argv=None):
     parser.add_argument("--issue142-identity-report", type=Path)
     parser.add_argument("--issue142-observables-report", type=Path)
     parser.add_argument("--s6-simulate-receipt-dir", type=Path)
+    parser.add_argument("--issue472-docs-report", type=Path)
+    parser.add_argument("--issue471-oracle-report", type=Path)
+    parser.add_argument("--issue471-topology-report", type=Path)
+    parser.add_argument("--issue471-tamper-report", type=Path)
+    parser.add_argument("--s5-delay-replay-report", type=Path)
     parser.add_argument("--revision", required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--upstream-heads", type=Path)
@@ -1601,6 +1824,56 @@ def main(argv=None):
                         }
                         for row in S6_SIMULATE_ROWS
                     ],
+                }
+            )
+        if args.issue472_docs_report:
+            workflow_run_id = os.environ.get("GITHUB_RUN_ID")
+            doc_report = issue472_docs_report(
+                args.issue472_docs_report,
+                args.revision,
+                artifact_run_id=workflow_run_id,
+            )
+            reports.append(doc_report)
+            receipt_reports.append(
+                {
+                    "kind": "issue472-docs-report",
+                    "path": str(args.issue472_docs_report),
+                    "sha256": inventory.sha256(args.issue472_docs_report),
+                }
+            )
+        if (
+            args.issue471_oracle_report
+            or args.issue471_topology_report
+            or args.issue471_tamper_report
+        ):
+            workflow_run_id = os.environ.get("GITHUB_RUN_ID")
+            rep471 = issue471_checks_report(
+                args.issue471_oracle_report,
+                args.issue471_topology_report,
+                args.issue471_tamper_report,
+                args.revision,
+                artifact_run_id=workflow_run_id,
+            )
+            reports.append(rep471)
+            receipt_reports.append(
+                {
+                    "kind": "issue471-checks-report",
+                    "references": rep471["references"],
+                }
+            )
+        if args.s5_delay_replay_report:
+            workflow_run_id = os.environ.get("GITHUB_RUN_ID")
+            s5_rep = s5_delay_receipt_report(
+                args.s5_delay_replay_report,
+                args.revision,
+                artifact_run_id=workflow_run_id,
+            )
+            reports.append(s5_rep)
+            receipt_reports.append(
+                {
+                    "kind": "sprint-s5-delay-receipt",
+                    "path": str(args.s5_delay_replay_report),
+                    "sha256": inventory.sha256(args.s5_delay_replay_report),
                 }
             )
         heads = (

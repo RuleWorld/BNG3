@@ -1,5 +1,7 @@
 """Negative controls for issue/evidence reconciliation, not product simulations."""
 
+import hashlib
+import json
 import pytest
 
 from tests.validation import issue_queue
@@ -172,3 +174,239 @@ def test_issue_acceptance_checklist_is_preserved_without_inferring_completion():
         ),
     ]
     assert not item["closure_eligible"]
+
+
+def test_issue472_docs_report_consumer(tmp_path):
+    report_file = tmp_path / "issue472-assessment.json"
+    valid_data = {
+        "issue": 472,
+        "assessed_revision": REVISION,
+        "assessed_working_tree_dirty": False,
+        "checker_source_sha256": "a" * 64,
+        "assessed_content_sha256": "b" * 64,
+        "status": "PASS",
+        "checks": [
+            {"check_id": "release-docs-links", "status": "PASS", "findings": []},
+            {"check_id": "release-docs-decisions", "status": "PASS", "findings": []},
+        ],
+    }
+    report_file.write_text(json.dumps(valid_data), encoding="utf-8")
+    report = issue_queue.issue472_docs_report(
+        report_file, REVISION, artifact_run_id="12345"
+    )
+    assert report["source"] == {"revision": REVISION, "dirty": False}
+    assert report["artifact"]["workflow_run_id"] == "12345"
+    assert {r["id"] for r in report["results"]} == {
+        "release-docs-links",
+        "release-docs-decisions",
+    }
+    assert all(r["status"] == "PASS" for r in report["results"])
+    assert all(r["supported_execution"] is True for r in report["results"])
+
+    # Negative controls
+    stale_data = dict(valid_data, assessed_revision="b" * 40)
+    report_file.write_text(json.dumps(stale_data), encoding="utf-8")
+    with pytest.raises(ValueError, match="stale"):
+        issue_queue.issue472_docs_report(report_file, REVISION)
+
+    dirty_data = dict(valid_data, assessed_working_tree_dirty=True)
+    report_file.write_text(json.dumps(dirty_data), encoding="utf-8")
+    with pytest.raises(ValueError, match="dirty"):
+        issue_queue.issue472_docs_report(report_file, REVISION)
+
+    failing_data = dict(
+        valid_data,
+        status="FAIL",
+        checks=[
+            {
+                "check_id": "release-docs-links",
+                "status": "FAIL",
+                "findings": ["broken link"],
+            },
+            {"check_id": "release-docs-decisions", "status": "PASS", "findings": []},
+        ],
+    )
+    report_file.write_text(json.dumps(failing_data), encoding="utf-8")
+    with pytest.raises(ValueError, match="not PASS"):
+        issue_queue.issue472_docs_report(report_file, REVISION)
+
+
+def test_issue471_checks_report_consumer(tmp_path):
+    oracle_file = tmp_path / "oracle.json"
+    oracle_file.write_text(
+        json.dumps(
+            {
+                "check_id": "release-oracle-independence",
+                "evaluated_revision": REVISION,
+                "working_tree_dirty": False,
+                "result": "pass",
+            }
+        ),
+        encoding="utf-8",
+    )
+    topo_file = tmp_path / "topology.json"
+    topo_file.write_text(
+        json.dumps(
+            {
+                "check_id": "release-ci-topology",
+                "result": "pass",
+            }
+        ),
+        encoding="utf-8",
+    )
+    tamper_file = tmp_path / "tamper.json"
+    tamper_file.write_text(
+        json.dumps(
+            {
+                "check_id": "release-oracle-tamper",
+                "result": "pass",
+            }
+        ),
+        encoding="utf-8",
+    )
+    report = issue_queue.issue471_checks_report(
+        oracle_file, topo_file, tamper_file, REVISION, artifact_run_id="999"
+    )
+    assert report["source"] == {"revision": REVISION, "dirty": False}
+    assert {r["id"] for r in report["results"]} == {
+        "release-oracle-independence",
+        "release-ci-topology",
+        "release-oracle-tamper",
+    }
+    assert all(r["status"] == "PASS" for r in report["results"])
+
+    # Negative control
+    bad_oracle = tmp_path / "bad_oracle.json"
+    bad_oracle.write_text(
+        json.dumps(
+            {
+                "check_id": "release-oracle-independence",
+                "evaluated_revision": REVISION,
+                "working_tree_dirty": False,
+                "result": "fail",
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="did not pass"):
+        issue_queue.issue471_checks_report(bad_oracle, topo_file, tamper_file, REVISION)
+
+
+def test_s5_delay_receipt_report_consumer(tmp_path):
+    receipt_file = tmp_path / "s5-receipt.json"
+    receipt_file.write_text(
+        json.dumps(
+            {
+                "status": "PASS",
+                "expected_revision": REVISION,
+                "case_verdicts": {
+                    "ordinary": "PASS",
+                    "boundary": "PASS",
+                    "interaction": "PASS",
+                },
+                "scope": "three S5 analytic delay-history cases only",
+                "release_delay_ode": "not discharged",
+            }
+        ),
+        encoding="utf-8",
+    )
+    report = issue_queue.s5_delay_receipt_report(
+        receipt_file, REVISION, artifact_run_id="555"
+    )
+    assert report["source"] == {"revision": REVISION, "dirty": False}
+    assert report["results"][0]["id"] == "release-delay-history"
+    assert report["results"][0]["status"] == "PASS"
+
+    # Negative control: stale revision
+    stale_receipt = tmp_path / "stale-s5.json"
+    stale_receipt.write_text(
+        json.dumps(
+            {
+                "status": "PASS",
+                "expected_revision": "b" * 40,
+                "case_verdicts": {"ordinary": "PASS"},
+                "scope": "three S5 analytic delay-history cases only",
+            }
+        ),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="stale"):
+        issue_queue.s5_delay_receipt_report(stale_receipt, REVISION)
+
+
+def test_historical_versus_live_precedence_in_obligation_inventory():
+    body = (
+        "## Acceptance criteria\n"
+        "- [ ] `release-graph-identity`: identity check.\n"
+        "- [ ] `release-graph-observables`: observables check.\n"
+    )
+    digest = hashlib.sha256(body.encode()).hexdigest()
+    catalog = {
+        "issues": [
+            {
+                "number": 142,
+                "body_sha256": digest,
+                "obligations": [
+                    {
+                        "id": "issue:142:historical-parent",
+                        "criterion": "Historical audit description",
+                        "scope": "Historical audit description",
+                        "dependencies": [],
+                        "boundaries": [],
+                        "required_checks": [
+                            {
+                                "id": "release-graph-identity",
+                                "evidence_kind": "supported-execution",
+                                "expectation": "Matches.",
+                                "identity_requirements": ["source.revision"],
+                            }
+                        ],
+                        "test_references": [],
+                        "completion_condition": "Historical scope.",
+                        "decisions": [],
+                        "unmapped_scope": [],
+                        "live_acceptance_criteria": [
+                            {
+                                "id": "issue:142:acceptance:1",
+                                "check_id": "release-graph-identity",
+                                "text": "`release-graph-identity`: identity check.",
+                                "live_body_sha256": digest,
+                            }
+                        ],
+                    },
+                    {
+                        "id": "issue:142:historical-unmapped-task",
+                        "criterion": "Old intermediate milestone",
+                        "scope": "Old intermediate milestone",
+                        "dependencies": [],
+                        "boundaries": [],
+                        "required_checks": [],
+                        "test_references": [],
+                        "completion_condition": "Old task.",
+                        "decisions": [],
+                        "unmapped_scope": [],
+                    },
+                ],
+            }
+        ]
+    }
+    issue = {"number": 142, "title": "Graph identity", "state": "CLOSED", "body": body}
+    obligations = issue_queue.obligation_inventory([issue], catalog)
+    by_id = {o["id"]: o for o in obligations}
+
+    # Historical parent and unmapped task retain STALE_SCOPE
+    assert by_id["issue:142:historical-parent"]["scope_status"] == "STALE_SCOPE"
+    assert by_id["issue:142:historical-unmapped-task"]["scope_status"] == "STALE_SCOPE"
+
+    # Mapped live criterion gets CURRENT
+    assert "issue:142:live-acceptance:release-graph-identity" in by_id
+    assert (
+        by_id["issue:142:live-acceptance:release-graph-identity"]["scope_status"]
+        == "CURRENT"
+    )
+
+    # Unmapped live criterion gets UNMAPPED (not ignored)
+    unmapped = [o for o in obligations if o["id"].startswith("issue:142:unmapped:")]
+    assert len(unmapped) == 1
+    assert unmapped[0]["criterion"] == "`release-graph-observables`: observables check."
+    assert unmapped[0]["scope_status"] == "UNMAPPED"
