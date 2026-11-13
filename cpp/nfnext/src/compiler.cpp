@@ -61,6 +61,8 @@ CompileReport ModelCompiler::compile(ModelIR& model, const CompileOptions& optio
             f.rate_law = r.rate_law;
             f.predicates = r.predicates; f.actions = r.actions;
             f.pattern = r.pattern; f.source_rules.push_back(r.id);
+            f.match_once = r.match_once; f.total_rate = r.total_rate;
+            f.move_connected = r.move_connected; f.filters = r.filters;
             model.rule_families.push_back(std::move(f));
         }
         report.family_stats = {model.expanded_rules.size(), model.rule_families.size(), 0, model.rule_families.size()};

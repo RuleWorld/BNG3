@@ -93,6 +93,20 @@ void appendRule(std::ostringstream& out, const ExpandedRuleIR& rule) {
     }
     out << ':';
     appendPattern(out, rule.pattern);
+    out << ':' << (rule.match_once ? 1 : 0)
+        << ':' << (rule.total_rate ? 1 : 0)
+        << ':' << (rule.move_connected ? 1 : 0)
+        << ':' << rule.filters.size() << ':';
+    for (const auto& filt : rule.filters) {
+        out << (filt.include ? 1 : 0) << ':'
+            << (filt.products ? 1 : 0) << ':'
+            << filt.pattern_index << ':'
+            << filt.patterns.size() << ':';
+        for (const auto& p : filt.patterns) {
+            appendPattern(out, p);
+            out << ';';
+        }
+    }
 }
 
 void appendFamily(std::ostringstream& out, const RuleFamilyIR& family) {
@@ -119,6 +133,20 @@ void appendFamily(std::ostringstream& out, const RuleFamilyIR& family) {
     }
     out << ':';
     appendPattern(out, family.pattern);
+    out << ':' << (family.match_once ? 1 : 0)
+        << ':' << (family.total_rate ? 1 : 0)
+        << ':' << (family.move_connected ? 1 : 0)
+        << ':' << family.filters.size() << ':';
+    for (const auto& filt : family.filters) {
+        out << (filt.include ? 1 : 0) << ':'
+            << (filt.products ? 1 : 0) << ':'
+            << filt.pattern_index << ':'
+            << filt.patterns.size() << ':';
+        for (const auto& p : filt.patterns) {
+            appendPattern(out, p);
+            out << ';';
+        }
+    }
 }
 
 struct TypeRemap {
@@ -137,7 +165,13 @@ void remapPredicate(PredicateIR& predicate,
                     const std::vector<TypeRemap>& remaps) {
     const auto& remap = remapFor(by_old_id, remaps, predicate.molecule_type);
     predicate.molecule_type = remap.new_id;
-    predicate.site = remap.sites.at(predicate.site);
+    if (predicate.kind == PredicateKind::SiteStateEq ||
+        predicate.kind == PredicateKind::SiteBound ||
+        predicate.kind == PredicateKind::SiteFree) {
+        if (predicate.site < remap.sites.size()) {
+            predicate.site = remap.sites.at(predicate.site);
+        }
+    }
 }
 
 void remapAction(ActionIR& action,
@@ -145,7 +179,12 @@ void remapAction(ActionIR& action,
                  const std::vector<TypeRemap>& remaps) {
     const auto& remap = remapFor(by_old_id, remaps, action.molecule_type);
     action.molecule_type = remap.new_id;
-    action.site = remap.sites.at(action.site);
+    if (action.kind == ActionKind::SetSiteState || action.kind == ActionKind::Bind ||
+        action.kind == ActionKind::Unbind) {
+        if (action.site < remap.sites.size()) {
+            action.site = remap.sites.at(action.site);
+        }
+    }
 }
 
 void remapPattern(PatternIR& pattern,
@@ -228,6 +267,29 @@ std::string CanonicalModel::canonicalBytes() const {
     out << "families:" << model.rule_families.size() << ';';
     for (const auto& family : model.rule_families) {
         appendFamily(out, family);
+        out << ';';
+    }
+    out << "compartments:" << model.compartments.size() << ';';
+    for (const auto& c : model.compartments) {
+        out << c.id << ':'; appendString(out, c.name); out << ':'
+            << c.dimensions << ':' << c.volume << ':';
+        if (c.parent) out << *c.parent; else out << "none";
+        out << ';';
+    }
+    out << "energy_patterns:" << model.energy_patterns.size() << ';';
+    for (const auto& e : model.energy_patterns) {
+        appendString(out, e.label); out << ':';
+        appendString(out, e.expression); out << ':'
+            << e.energy << ':';
+        appendPattern(out, e.pattern);
+        out << ';';
+    }
+    out << "population_maps:" << model.population_maps.size() << ';';
+    for (const auto& p : model.population_maps) {
+        appendString(out, p.population_name); out << ':';
+        appendString(out, p.rate_expression); out << ':'
+            << p.rate << ':';
+        appendPattern(out, p.pattern);
         out << ';';
     }
     return out.str();
@@ -323,6 +385,8 @@ CanonicalModel canonicalizeModel(const ModelIR& input, const CanonicalOptions& o
         for (auto& predicate : rule.predicates) remapPredicate(predicate, by_old_id, remaps);
         for (auto& action : rule.actions) remapAction(action, by_old_id, remaps);
         remapPattern(rule.pattern, by_old_id, remaps);
+        for (auto& filt : rule.filters)
+            for (auto& p : filt.patterns) remapPattern(p, by_old_id, remaps);
         result.model.expanded_rules.push_back(std::move(rule));
     }
 
@@ -334,6 +398,14 @@ CanonicalModel canonicalizeModel(const ModelIR& input, const CanonicalOptions& o
         for (auto& predicate : family.predicates) remapPredicate(predicate, by_old_id, remaps);
         for (auto& action : family.actions) remapAction(action, by_old_id, remaps);
         remapPattern(family.pattern, by_old_id, remaps);
+        for (auto& filt : family.filters)
+            for (auto& p : filt.patterns) remapPattern(p, by_old_id, remaps);
+    }
+    for (auto& e : result.model.energy_patterns) {
+        remapPattern(e.pattern, by_old_id, remaps);
+    }
+    for (auto& p : result.model.population_maps) {
+        remapPattern(p.pattern, by_old_id, remaps);
     }
     result.model.dependencies.feature_to_families.clear();
     for (const auto& family : result.model.rule_families) {

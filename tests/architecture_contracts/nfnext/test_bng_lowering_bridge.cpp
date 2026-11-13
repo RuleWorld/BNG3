@@ -3,6 +3,8 @@
 #endif
 
 #include "compile/CompiledModel.hpp"
+#include "nfnext/cache.hpp"
+#include "nfnext/canonical.hpp"
 #include "nfnext/from_bng.hpp"
 #include "nfnext/function_vm.hpp"
 #include "nfnext/generic_matcher.hpp"
@@ -14,6 +16,7 @@
 #include <cassert>
 #include <cstdint>
 #include <cmath>
+#include <filesystem>
 #include <iostream>
 #include <iterator>
 #include <limits>
@@ -412,7 +415,7 @@ end reaction rules
     assert(absorbRun.event_count == 4);
 }
 
-void refusesDirectObservableRateWithoutGlobalFunction() {
+void acceptsDirectObservableRateWithoutGlobalFunction() {
     const auto ast = bng::parser::parseModel(R"BNGL(
 begin parameters
   k 0.2
@@ -434,7 +437,55 @@ end reaction rules
     const bng::compile::CompiledModel semantic(*ast);
     assert(semantic.valid());
     const auto lowered = nfnext::lowerFromBioNetGen(semantic);
-    assert(!lowered.ok());
+    // Direct observable-dependent rates are now representable in NFIR v6
+    // as dynamic Function rate laws.
+    assert(lowered.ok());
+    assert(lowered.model.expanded_rules.size() == 1);
+    assert(lowered.model.expanded_rules[0].rate_law.kind == nfnext::RateLawKind::Function);
+
+    // Dynamic execution qualification: executes exact state-updated jumps to absorption
+    nfnext::BngExecutionRequest req;
+    req.sample_times = {0.0, 50.0};
+    req.seed = 20261113;
+    const auto res = nfnext::executeFromBioNetGen(semantic, req);
+    assert(res.event_count == 6);
+    assert(res.rows.back()[1] == 0.0); // A_count drops to 0
+}
+
+void acceptsMultipleObservableArithmeticRate() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin parameters
+  k 0.05
+end parameters
+begin molecule types
+  A(x~u~p)
+end molecule types
+begin seed species
+  A(x~u) 4
+end seed species
+begin observables
+  Molecules A_u A(x~u)
+  Molecules A_p A(x~p)
+end observables
+begin reaction rules
+  convert: A(x~u) -> A(x~p) (A_u + A_p) * k
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(lowered.ok());
+    assert(lowered.model.expanded_rules.size() == 1);
+    assert(lowered.model.expanded_rules[0].rate_law.kind == nfnext::RateLawKind::Function);
+
+    nfnext::BngExecutionRequest req;
+    req.sample_times = {0.0, 50.0};
+    req.seed = 20261113;
+    const auto res = nfnext::executeFromBioNetGen(semantic, req);
+    assert(res.event_count == 4);
+    assert(res.rows.back()[1] == 0.0);
+    assert(res.rows.back()[2] == 4.0);
 }
 
 void refusesTimeDependentNestedGlobalFunctionRate() {
@@ -1289,6 +1340,456 @@ end reaction rules
     assert(wholeSpeciesAction->molecule_type == 1);
 }
 
+void lowersCompartmentDeclarations() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin compartments
+  EC 3 100.0
+  PM 2 10.0 EC
+  CP 3 50.0 PM
+end compartments
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin reaction rules
+  R1: A() -> 0 0.1
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(lowered.ok());
+    assert(lowered.model.compartments.size() == 3);
+
+    const auto& c0 = lowered.model.compartments[0];
+    assert(c0.name == "EC");
+    assert(c0.dimensions == 3);
+    assert(c0.volume == 100.0);
+    assert(!c0.parent.has_value());
+
+    const auto& c1 = lowered.model.compartments[1];
+    assert(c1.name == "PM");
+    assert(c1.dimensions == 2);
+    assert(c1.volume == 10.0);
+    assert(c1.parent.has_value());
+    assert(*c1.parent == c0.id);
+
+    const auto& c2 = lowered.model.compartments[2];
+    assert(c2.name == "CP");
+    assert(c2.dimensions == 3);
+    assert(c2.volume == 50.0);
+    assert(c2.parent.has_value());
+    assert(*c2.parent == c1.id);
+
+    // Negative control: execution refuses compartments fail-closed
+    nfnext::BngExecutionRequest req;
+    req.sample_times = {0.0, 1.0};
+    bool refused = false;
+    try {
+        nfnext::executeFromBioNetGen(semantic, req);
+    } catch (const std::exception& e) {
+        refused = true;
+        assert(std::string(e.what()).find("compartment") != std::string::npos);
+    }
+    assert(refused);
+
+    // Semantic differentiation: model with different volume has different fingerprint and canonical bytes
+    const auto ast2 = bng::parser::parseModel(R"BNGL(
+begin compartments
+  EC 3 200.0
+  PM 2 10.0 EC
+  CP 3 50.0 PM
+end compartments
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin reaction rules
+  R1: A() -> 0 0.1
+end reaction rules
+)BNGL");
+    const bng::compile::CompiledModel semantic2(*ast2);
+    const auto lowered2 = nfnext::lowerFromBioNetGen(semantic2);
+    assert(lowered2.ok());
+    assert(lowered.model.fingerprint() != lowered2.model.fingerprint());
+    assert(nfnext::canonicalizeModel(lowered.model).canonicalBytes() !=
+           nfnext::canonicalizeModel(lowered2.model).canonicalBytes());
+}
+
+void lowersEnergyPatterns() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin parameters
+  G0 -3.5
+end parameters
+begin molecule types
+  A(x~u~p)
+end molecule types
+begin seed species
+  A(x~u) 10
+end seed species
+begin energy patterns
+  ep1: A(x~p) G0
+end energy patterns
+begin reaction rules
+  R1: A(x~u) -> A(x~p) 0.1
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(lowered.ok());
+    assert(lowered.model.energy_patterns.size() == 1);
+    const auto& ep = lowered.model.energy_patterns[0];
+    assert(ep.label == "ep1");
+    assert(ep.energy == -3.5);
+    assert(ep.expression == "G0");
+    assert(ep.pattern.nodes.size() == 1);
+    assert(ep.pattern.nodes[0].constraints.size() == 1);
+    assert(ep.pattern.nodes[0].constraints[0].kind == nfnext::PatternIR::SiteConstraintKind::State);
+
+    // Negative control: execution refuses energy patterns fail-closed
+    nfnext::BngExecutionRequest req;
+    req.sample_times = {0.0, 1.0};
+    bool refused = false;
+    try {
+        nfnext::executeFromBioNetGen(semantic, req);
+    } catch (const std::exception& e) {
+        refused = true;
+        assert(std::string(e.what()).find("energy pattern") != std::string::npos);
+    }
+    assert(refused);
+
+    // Semantic differentiation: differing energy value yields different fingerprint
+    const auto ast2 = bng::parser::parseModel(R"BNGL(
+begin parameters
+  G0 -1.0
+end parameters
+begin molecule types
+  A(x~u~p)
+end molecule types
+begin seed species
+  A(x~u) 10
+end seed species
+begin energy patterns
+  ep1: A(x~p) G0
+end energy patterns
+begin reaction rules
+  R1: A(x~u) -> A(x~p) 0.1
+end reaction rules
+)BNGL");
+    const bng::compile::CompiledModel semantic2(*ast2);
+    const auto lowered2 = nfnext::lowerFromBioNetGen(semantic2);
+    assert(lowered2.ok());
+    assert(lowered.model.fingerprint() != lowered2.model.fingerprint());
+    assert(nfnext::canonicalizeModel(lowered.model).canonicalBytes() !=
+           nfnext::canonicalizeModel(lowered2.model).canonicalBytes());
+}
+
+void lowersPopulationMaps() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin molecule types
+  A(x~u~p)
+end molecule types
+begin population maps
+  A(x~p) -> PopA() 0.5
+end population maps
+begin seed species
+  A(x~u) 10
+end seed species
+begin reaction rules
+  R1: A(x~u) -> A(x~p) 0.1
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(lowered.ok());
+    assert(lowered.model.population_maps.size() == 1);
+    const auto& pop = lowered.model.population_maps[0];
+    assert(pop.population_name == "PopA");
+    assert(pop.rate == 0.5);
+    assert(pop.pattern.nodes.size() == 1);
+    assert(pop.pattern.nodes[0].constraints.size() == 1);
+    assert(pop.pattern.nodes[0].constraints[0].kind == nfnext::PatternIR::SiteConstraintKind::State);
+
+    // Negative control: execution refuses population maps fail-closed
+    nfnext::BngExecutionRequest req;
+    req.sample_times = {0.0, 1.0};
+    bool refused = false;
+    try {
+        nfnext::executeFromBioNetGen(semantic, req);
+    } catch (const std::exception& e) {
+        refused = true;
+        assert(std::string(e.what()).find("population map") != std::string::npos);
+    }
+    assert(refused);
+
+    // Semantic differentiation: differing population name yields different fingerprint
+    const auto ast2 = bng::parser::parseModel(R"BNGL(
+begin molecule types
+  A(x~u~p)
+end molecule types
+begin population maps
+  A(x~p) -> PopB() 0.5
+end population maps
+begin seed species
+  A(x~u) 10
+end seed species
+begin reaction rules
+  R1: A(x~u) -> A(x~p) 0.1
+end reaction rules
+)BNGL");
+    const bng::compile::CompiledModel semantic2(*ast2);
+    const auto lowered2 = nfnext::lowerFromBioNetGen(semantic2);
+    assert(lowered2.ok());
+    assert(lowered.model.fingerprint() != lowered2.model.fingerprint());
+    assert(nfnext::canonicalizeModel(lowered.model).canonicalBytes() !=
+           nfnext::canonicalizeModel(lowered2.model).canonicalBytes());
+}
+
+void lowersModifierFlags() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin molecule types
+  A(x~u~p)
+  B(y)
+end molecule types
+begin seed species
+  A(x~u) 10
+  B(y) 5
+end seed species
+begin reaction rules
+  R1: A(x~u) -> A(x~p) 0.1 MatchOnce
+  R2: A(x~p) -> A(x~u) 0.2 TotalRate
+  R3: A(x~p) + B(y) -> A(x~p!1).B(y!1) 0.3 MoveConnected
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(lowered.ok());
+    assert(lowered.model.expanded_rules.size() == 3);
+
+    // Check expanded rules
+    assert(lowered.model.expanded_rules[0].match_once);
+    assert(!lowered.model.expanded_rules[0].total_rate);
+    assert(!lowered.model.expanded_rules[0].move_connected);
+
+    assert(!lowered.model.expanded_rules[1].match_once);
+    assert(lowered.model.expanded_rules[1].total_rate);
+    assert(!lowered.model.expanded_rules[1].move_connected);
+
+    assert(!lowered.model.expanded_rules[2].match_once);
+    assert(!lowered.model.expanded_rules[2].total_rate);
+    assert(lowered.model.expanded_rules[2].move_connected);
+
+    // Check rule families preserve these modifiers through compilation
+    assert(lowered.model.rule_families.size() == 3);
+    assert(lowered.model.rule_families[0].match_once);
+    assert(lowered.model.rule_families[1].total_rate);
+    assert(lowered.model.rule_families[2].move_connected);
+
+    // Execution refusal for each modifier
+    nfnext::BngExecutionRequest req;
+    req.sample_times = {0.0, 1.0};
+    bool refused = false;
+    try {
+        nfnext::executeFromBioNetGen(semantic, req);
+    } catch (const std::exception& e) {
+        refused = true;
+        assert(std::string(e.what()).find("modifier") != std::string::npos ||
+               std::string(e.what()).find("MatchOnce") != std::string::npos);
+    }
+    assert(refused);
+
+    // Semantic differentiation: paired model differing only in modifier flag
+    const auto astNoMod = bng::parser::parseModel(R"BNGL(
+begin molecule types
+  A(x~u~p)
+  B(y)
+end molecule types
+begin seed species
+  A(x~u) 10
+  B(y) 5
+end seed species
+begin reaction rules
+  R1: A(x~u) -> A(x~p) 0.1
+  R2: A(x~p) -> A(x~u) 0.2
+  R3: A(x~p) + B(y) -> A(x~p!1).B(y!1) 0.3
+end reaction rules
+)BNGL");
+    const bng::compile::CompiledModel semanticNoMod(*astNoMod);
+    const auto loweredNoMod = nfnext::lowerFromBioNetGen(semanticNoMod);
+    assert(loweredNoMod.ok());
+    assert(lowered.model.fingerprint() != loweredNoMod.model.fingerprint());
+    assert(nfnext::canonicalizeModel(lowered.model).canonicalBytes() !=
+           nfnext::canonicalizeModel(loweredNoMod.model).canonicalBytes());
+}
+
+void lowersFilterPatterns() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin molecule types
+  A(x~u~p)
+  B(y)
+end molecule types
+begin seed species
+  A(x~u) 10
+end seed species
+begin reaction rules
+  R1: A(x~u) -> A(x~p) 0.1 include_reactants(1, A(x~u))
+  R2: A(x~p) -> A(x~u) 0.2 exclude_reactants(1, B(y))
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(lowered.ok());
+    assert(lowered.model.expanded_rules.size() == 2);
+
+    const auto& f0 = lowered.model.expanded_rules[0].filters;
+    assert(f0.size() == 1);
+    assert(f0[0].include);
+    assert(!f0[0].products);
+    assert(f0[0].pattern_index == 0);
+    assert(f0[0].patterns.size() == 1);
+    assert(f0[0].patterns[0].nodes.size() == 1);
+
+    const auto& f1 = lowered.model.expanded_rules[1].filters;
+    assert(f1.size() == 1);
+    assert(!f1[0].include);
+    assert(!f1[0].products);
+    assert(f1[0].pattern_index == 0);
+    assert(f1[0].patterns.size() == 1);
+    assert(f1[0].patterns[0].nodes.size() == 1);
+
+    // Rule families preserve filters through compilation
+    assert(lowered.model.rule_families.size() == 2);
+    assert(lowered.model.rule_families[0].filters.size() == 1);
+    assert(lowered.model.rule_families[0].filters[0].include);
+    assert(lowered.model.rule_families[1].filters.size() == 1);
+    assert(!lowered.model.rule_families[1].filters[0].include);
+
+    // Execution refusal for filters
+    nfnext::BngExecutionRequest req;
+    req.sample_times = {0.0, 1.0};
+    bool refused = false;
+    try {
+        nfnext::executeFromBioNetGen(semantic, req);
+    } catch (const std::exception& e) {
+        refused = true;
+        assert(std::string(e.what()).find("filter") != std::string::npos);
+    }
+    assert(refused);
+
+    // Semantic differentiation: model without filters has distinct fingerprint
+    const auto astNoFilter = bng::parser::parseModel(R"BNGL(
+begin molecule types
+  A(x~u~p)
+  B(y)
+end molecule types
+begin seed species
+  A(x~u) 10
+end seed species
+begin reaction rules
+  R1: A(x~u) -> A(x~p) 0.1
+  R2: A(x~p) -> A(x~u) 0.2
+end reaction rules
+)BNGL");
+    const bng::compile::CompiledModel semanticNoFilter(*astNoFilter);
+    const auto loweredNoFilter = nfnext::lowerFromBioNetGen(semanticNoFilter);
+    assert(loweredNoFilter.ok());
+    assert(lowered.model.fingerprint() != loweredNoFilter.model.fingerprint());
+    assert(nfnext::canonicalizeModel(lowered.model).canonicalBytes() !=
+           nfnext::canonicalizeModel(loweredNoFilter.model).canonicalBytes());
+}
+
+void cacheRoundTripsNewModelFields() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin compartments
+  EC 3 100.0
+  PM 2 10.0 EC
+end compartments
+begin parameters
+  G0 -2.0
+end parameters
+begin molecule types
+  A(x~u~p)
+  B(y)
+end molecule types
+begin energy patterns
+  ep1: A(x~p) G0
+end energy patterns
+begin population maps
+  A(x~p) -> PopA() 0.5
+end population maps
+begin seed species
+  A(x~u) 10
+end seed species
+begin reaction rules
+  R1: A(x~u) -> A(x~p) 0.1 MatchOnce include_reactants(1, A(x~u))
+  R2: A(x~p) -> A(x~u) 0.2 TotalRate
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(lowered.ok());
+
+    const std::string cachePath = (std::filesystem::temp_directory_path() / "test_nfir_v6_cache.bin").string();
+    nfnext::ModelCache::save(lowered.model, cachePath);
+    const auto loaded = nfnext::ModelCache::load(cachePath);
+
+    // Fingerprint preserved exactly across save/load
+    assert(loaded.fingerprint() == lowered.model.fingerprint());
+
+    // Compartments round-tripped
+    assert(loaded.compartments.size() == lowered.model.compartments.size());
+    assert(loaded.compartments.size() == 2);
+    assert(loaded.compartments[0].name == "EC");
+    assert(loaded.compartments[0].volume == 100.0);
+    assert(loaded.compartments[1].name == "PM");
+    assert(loaded.compartments[1].volume == 10.0);
+    assert(loaded.compartments[1].parent == loaded.compartments[0].id);
+
+    // Energy patterns round-tripped
+    assert(loaded.energy_patterns.size() == lowered.model.energy_patterns.size());
+    assert(loaded.energy_patterns.size() == 1);
+    assert(loaded.energy_patterns[0].label == "ep1");
+    assert(loaded.energy_patterns[0].energy == -2.0);
+    assert(loaded.energy_patterns[0].expression == "G0");
+
+    // Population maps round-tripped
+    assert(loaded.population_maps.size() == lowered.model.population_maps.size());
+    assert(loaded.population_maps.size() == 1);
+    assert(loaded.population_maps[0].population_name == "PopA");
+    assert(loaded.population_maps[0].rate == 0.5);
+
+    // Rule families with modifiers and filters round-tripped
+    assert(loaded.rule_families.size() == lowered.model.rule_families.size());
+    assert(loaded.rule_families.size() == 2);
+    assert(loaded.rule_families[0].match_once);
+    assert(!loaded.rule_families[0].total_rate);
+    assert(loaded.rule_families[0].filters.size() == 1);
+    assert(loaded.rule_families[0].filters[0].include);
+    assert(loaded.rule_families[0].filters[0].pattern_index == 0);
+
+    assert(!loaded.rule_families[1].match_once);
+    assert(loaded.rule_families[1].total_rate);
+    assert(loaded.rule_families[1].filters.empty());
+
+    std::error_code ec;
+    std::filesystem::remove(cachePath, ec);
+}
+
 } // namespace
 
 int main() {
@@ -1393,7 +1894,8 @@ end reaction rules
     lowersStaticallyResolvableUserFunctionRate();
     representsNestedObservableDependentFunctionRate();
     executesLiveObservableDependentFunctionRate();
-    refusesDirectObservableRateWithoutGlobalFunction();
+    acceptsDirectObservableRateWithoutGlobalFunction();
+    acceptsMultipleObservableArithmeticRate();
     refusesTimeDependentNestedGlobalFunctionRate();
     identicalReactantsHaveUnorderedEmbeddings();
     identicalComplexReactantsHaveUnorderedEmbeddings();
@@ -1405,6 +1907,12 @@ end reaction rules
     deleteMoleculesRemainsMoleculeScoped();
     reverseDirectionRetainsWholeSpeciesDeletionScope();
     rejectsSimultaneousMoleculeReplacement();
+    lowersCompartmentDeclarations();
+    lowersEnergyPatterns();
+    lowersPopulationMaps();
+    lowersModifierFlags();
+    lowersFilterPatterns();
+    cacheRoundTripsNewModelFields();
 
     std::cout << "BNG -> NFnext lowering bridge: PASS\n";
     return 0;
