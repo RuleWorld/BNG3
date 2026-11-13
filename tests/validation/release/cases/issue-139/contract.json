@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "issue": 139,
+  "title": "B02: Separate network-rule execution from reconstructed AST rules",
+  "source": {
+    "repository": "RuleWorld/BNG3",
+    "contract": "Compiled NetworkRulePlan execution directly from compile-owned data structures for matching, graph edits, multiplicities, rate evaluation, filters, and modifiers without legacy kernel or AST reconstruction"
+  },
+  "oracle": {
+    "identity": "Pinned BNG2 generated networks, analytic reaction multiplicities, and exact network comparators",
+    "law": "Exact isomorphism of generated reaction networks (species set, reaction set, stoichiometries, rate laws, and statistical factors); strict failure on injected multiplicity, deletion, and filter mutations."
+  },
+  "acceptance_checks": [
+    "release-network-rule-plan",
+    "release-network-rule-mutations",
+    "release-capability-coverage-139"
+  ],
+  "inventory_rows": [
+    "bngl.matchonce",
+    "bngl.irreversible-rules",
+    "bngl.reversible-rules",
+    "bngl.null-reactants-and-products",
+    "bngl.binding",
+    "bngl.unbinding",
+    "bngl.state-changes",
+    "bngl.molecule-creation",
+    "bngl.molecule-deletion",
+    "bngl.deletemolecules",
+    "bngl.moveconnected",
+    "bngl.totalrate",
+    "bngl.include-reactants",
+    "bngl.exclude-reactants",
+    "bngl.include-products",
+    "bngl.exclude-products",
+    "bngl.compartment-transport",
+    "bngl.reaction-center-symmetry",
+    "bngl.connected-context-preservation"
+  ],
+  "obligations": [
+    "issue:139:replace-the-necessary-legacynetworkrulekernel-reconstruction-wit",
+    "issue:139:demonstrate-graph-rate-filter-local-scope-and-reversible-rule-pa",
+    "issue:139:closure-record",
+    "issue:139:executed-slice:network-rule-execution-graph",
+    "issue:139:executed-slice:network-rule-execution-rate",
+    "issue:139:executed-slice:network-rule-execution-filter",
+    "issue:139:executed-slice:network-rule-execution-local-scope",
+    "issue:139:executed-slice:network-rule-execution-reversible",
+    "issue:139:live-acceptance:release-network-rule-plan",
+    "issue:139:live-acceptance:release-network-rule-mutations",
+    "issue:139:live-acceptance:release-capability-coverage-139"
+  ]
+}
