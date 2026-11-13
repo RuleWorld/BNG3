@@ -8,6 +8,7 @@ import random
 import ast
 import re
 import sys
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime
 from functools import wraps
@@ -38,6 +39,7 @@ def deepCopy(value: T) -> T:
 
 def clone_ast(node: Any) -> Any:
     """Fast, specialized replacement for copy.deepcopy on ast.AST nodes."""
+    # ⚡ Bolt: Fast manual recursive cloning avoids the heavy overhead of Python's generic copy.deepcopy
     if node is None:
         return None
     if isinstance(node, list):
@@ -59,6 +61,12 @@ def clone_ast(node: Any) -> Any:
                 if hasattr(node, attr):
                     setattr(new_node, attr, getattr(node, attr))
         return new_node
+    if isinstance(node, ET.Element):
+        new_elem = ET.Element(node.tag, node.attrib)
+        new_elem.text = node.text
+        new_elem.tail = node.tail
+        new_elem.extend(clone_ast(child) for child in node)
+        return new_elem
     return node
 
 
@@ -447,9 +455,8 @@ def isNode() -> bool:
 def compareLists(first: List[T], second: List[T]) -> bool:
     if len(first) != len(second):
         return False
-    left = Counter(map(str, first))
-    right = Counter(map(str, second))
-    return left == right
+    # ⚡ Bolt: For small/medium lists, C-level Timsort is significantly faster than building Counter dicts
+    return sorted(map(str, first)) == sorted(map(str, second))
 
 
 def setIntersection(first: Set[T], second: Set[T]) -> Set[T]:
