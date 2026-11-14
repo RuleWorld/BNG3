@@ -18836,14 +18836,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-jax-ode.",
-                "No revision-locked consuming receipt producer is declared for required live check release-jax-ode."
-              ]
+              "selector": "tests/validation/release/cases/issue-473/test_jax_backends_release.py::test_release_jax_ode",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/ci.yml#Validate independent issue-473 JAX release acceptance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -18879,14 +18876,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-jax-ssa.",
-                "No revision-locked consuming receipt producer is declared for required live check release-jax-ssa."
-              ]
+              "selector": "tests/validation/release/cases/issue-473/test_jax_backends_release.py::test_release_jax_ssa",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/ci.yml#Validate independent issue-473 JAX release acceptance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -18922,14 +18916,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-jax-install.",
-                "No revision-locked consuming receipt producer is declared for required live check release-jax-install."
-              ]
+              "selector": "tests/validation/release/cases/issue-473/test_jax_backends_release.py::test_release_jax_install",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/ci.yml#Validate independent issue-473 JAX release acceptance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -19252,14 +19243,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-delay-ode.",
-                "No revision-locked consuming receipt producer is declared for required live check release-delay-ode."
-              ]
+              "selector": "tests/validation/release/cases/issue-475/test_delayed_semantics_release.py::test_release_delay_ode",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#Validate independent issue-475 delayed semantics release acceptance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -19305,14 +19293,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-delay-ssa.",
-                "No revision-locked consuming receipt producer is declared for required live check release-delay-ssa."
-              ]
+              "selector": "tests/validation/release/cases/issue-475/test_delayed_semantics_release.py::test_release_delay_ssa",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#Validate independent issue-475 delayed semantics release acceptance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -19358,14 +19343,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-delay-formats.",
-                "No revision-locked consuming receipt producer is declared for required live check release-delay-formats."
-              ]
+              "selector": "tests/validation/release/cases/issue-475/test_delayed_semantics_release.py::test_release_delay_formats",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#Validate independent issue-475 delayed semantics release acceptance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],

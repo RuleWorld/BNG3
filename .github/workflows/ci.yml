@@ -750,6 +750,14 @@ jobs:
         env:
           JAX_ENABLE_X64: "true"
 
+      - name: Validate independent issue-473 JAX release acceptance
+        run: >-
+          python -m pytest
+          --confcutdir=tests/validation/release/cases/issue-473
+          -q tests/validation/release/cases/issue-473/
+        env:
+          JAX_ENABLE_X64: "true"
+
   python-test:
     name: Python ${{ matrix.python-version }} (${{ matrix.os }})
     needs: [cpp-build, python-integration]
