@@ -620,3 +620,75 @@ def test_closure_gate_cli_rejects_an_empty_snapshot(tmp_path):
         )
         == 1
     )
+
+
+@pytest.mark.parametrize(
+    "dependencies,statuses,expected",
+    [
+        ([[], [], [140]], ["PASS", "PASS", "PASS"], ["DEMONSTRATED"] * 3),
+        (
+            [[], [], [140]],
+            ["PASS", "FAIL", "PASS"],
+            ["DEMONSTRATED", "FAIL", "BLOCKED"],
+        ),
+        (
+            [[], [], [999]],
+            ["PASS", "PASS", "PASS"],
+            ["DEMONSTRATED", "DEMONSTRATED", "BLOCKED"],
+        ),
+        ([[141], [], [140]], ["PASS"] * 3, ["BLOCKED", "DEMONSTRATED", "BLOCKED"]),
+        ([[], [], ["upstream-a"]], ["PASS"] * 3, ["DEMONSTRATED"] * 3),
+        (
+            [[], [], ["missing"]],
+            ["PASS"] * 3,
+            ["DEMONSTRATED", "DEMONSTRATED", "BLOCKED"],
+        ),
+    ],
+)
+def test_dependency_acceptance_requires_demonstrated_obligations(
+    dependencies, statuses, expected
+):
+    obligations = []
+    rows = []
+    for identity, issue, deps, status in zip(
+        ["upstream-a", "upstream-b", "candidate"],
+        [140, 140, 141],
+        dependencies,
+        statuses,
+    ):
+        obligations.append(
+            dict(
+                id=identity,
+                issue=issue,
+                criterion=identity,
+                scope=identity,
+                completion_condition=identity,
+                dependencies=deps,
+                boundaries=[],
+                test_references=[],
+                decisions=[],
+                unmapped_scope=[],
+                required_checks=[
+                    dict(
+                        id=identity,
+                        evidence_kind="supported-execution",
+                        expectation="analytic law",
+                    )
+                ],
+            )
+        )
+        rows.append(
+            dict(
+                id=identity,
+                status=status,
+                supported_execution=True,
+                evidence_kind="supported-execution",
+            )
+        )
+    assessed = issue_queue.assess_obligations(obligations, [report(rows)], REVISION)[
+        "obligations"
+    ]
+    assert [row["status"] for row in assessed] == expected
+    assert assessed[-1]["blocked_dependencies"] == (
+        dependencies[-1] if expected[-1] == "BLOCKED" else []
+    )

@@ -1364,6 +1364,7 @@ def assess_obligations(obligations, reports, revision):
             )
         )
     # Fixed-point dependency audit also blocks cycles; do not interpret a cycle as proof.
+    assessed_issues = {o["issue"] for o in assessed if "issue" in o}
     demonstrated = set()
     while True:
         added = {
@@ -1374,8 +1375,14 @@ def assess_obligations(obligations, reports, revision):
         if not added:
             break
         demonstrated.update(added)
+        for issue_num in assessed_issues:
+            issue_obls = {o["id"] for o in assessed if o.get("issue") == issue_num}
+            if issue_obls and issue_obls <= demonstrated:
+                demonstrated.add(issue_num)
     for row in assessed:
-        row["blocked_dependencies"] = sorted(set(row["dependencies"]) - demonstrated)
+        row["blocked_dependencies"] = sorted(
+            dep for dep in row["dependencies"] if dep not in demonstrated
+        )
         if row["status"] == "DEMONSTRATED" and row["id"] not in demonstrated:
             row["status"] = "BLOCKED"
     return dict(obligations=assessed, evidence_audit=audit)

@@ -51,13 +51,9 @@ def clone_ast(node: Any) -> Any:
     if type(node) is ast.Del:
         return ast.Del()
     if isinstance(node, ast.AST):
-        new_node = type(node)()
+        new_node = copy.copy(node)
         for field, value in ast.iter_fields(node):
             setattr(new_node, field, clone_ast(value))
-        if hasattr(node, "_attributes"):
-            for attr in node._attributes:
-                if hasattr(node, attr):
-                    setattr(new_node, attr, getattr(node, attr))
         return new_node
     return node
 

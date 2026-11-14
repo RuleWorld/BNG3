@@ -497,24 +497,30 @@ simulate_nf({t_end=>1,n_steps=>1})
 
 
 def test_issue160_diagnostic_controls_run_without_claiming_release_acceptance():
-    steps = _parse_workflow()["jobs"]["oracle-lock"]["steps"]
-    step = next(
+    workflow = yaml.safe_load(
         (
-            s
-            for s in steps
-            if s.get("name")
-            == "Run Issue 160 diagnostic controls (not capability acceptance)"
-        ),
-        None,
+            Path(__file__).resolve().parents[2]
+            / ".github/workflows/issue-acceptance.yml"
+        ).read_text()
     )
-    assert step is not None
+    steps = workflow["jobs"]["issue-160"]["steps"]
+    name = "Run Issue 160 diagnostic controls (not capability acceptance)"
+    step = next(s for s in steps if s.get("name") == name)
+    build_index = next(i for i, s in enumerate(steps) if s.get("id") == "build_native")
+    assert steps.index(step) > build_index
+    assert "steps.build_native.outcome == 'success'" in step["if"]
     assert not step.get("continue-on-error", False)
+    assert ".venv/bin/python -m pytest" in step["run"]
     assert "--confcutdir=tests/validation/release/cases/issue-160" in step["run"]
     assert (
         "tests/validation/release/cases/issue-160/test_sbml_semantic_families.py"
         in step["run"]
     )
-    assert step["env"]["PYTHONPATH"] == "python:."
+    assert step["env"]["PYTHONPATH"] == "python:build/cpp:."
+    assert "--junitxml=" in step["run"]
+    assert not any(
+        s.get("name") == name for s in _parse_workflow()["jobs"]["oracle-lock"]["steps"]
+    )
 
 
 def test_s6_receipts_are_consumed_from_the_producer_run_and_contract_tested():
