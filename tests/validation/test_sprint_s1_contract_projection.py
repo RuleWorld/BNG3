@@ -223,7 +223,14 @@ def test_catalog_maps_new_issue_checks_and_keeps_missing_selectors_explicit():
         },
         472: {"release-docs-links", "release-docs-decisions"},
         473: {"release-jax-ode", "release-jax-ssa", "release-jax-install"},
-        474: {"release-cuda-device", "release-cuda-performance"},
+        474: {
+            "release-metal-device",
+            "release-metal-performance",
+            "release-cuda-device",
+            "release-cuda-performance",
+            "release-nf-gpu",
+            "release-capability-coverage-474",
+        },
         475: {"release-delay-ode", "release-delay-ssa", "release-delay-formats"},
     }
     for number, identities in expected.items():

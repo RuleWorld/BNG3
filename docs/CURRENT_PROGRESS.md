@@ -36,6 +36,17 @@ existing issue-queue dashboard. That warning requests reconciliation; missing
 current receipts alone do not invalidate historical results or prove a product
 bug. Successful refusal controls are diagnostic-only, never supported execution.
 
+## GPU scope decision — 2026-11-13
+
+All GPU-specific implementation and device/performance qualification are now
+owned by #474. Apple Metal is available locally; no CUDA device or self-hosted
+NVIDIA runner is available. Device evidence remains backend-specific and
+unqualified until actually executed. CPU work (#176), CPU measurements (#174)
+and the current CPU release milestone (#184) do not wait for GPU completion.
+See DECISIONS.md item 17. Historical GPU check assignments below retain their
+original assessment scope; they are not current prerequisites or pass claims.
+No engine behavior, CI expectation, hardware result or support status changed.
+
 ## Source-head checkpoint — 2026-11-12 (assessed main SHA a6649458ae8de3d2f4e3b997831fd39e4580e33a)
 
 The latest `main` source inspected for this documentation update is

@@ -10165,8 +10165,8 @@
       "check": "tests/test_batch_ssa_statistical_parity.py",
       "oracle": "analytic stochastic laws and native NFsim",
       "status": "missing",
-      "issue": 176,
-      "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
+      "issue": 474,
+      "evidence": "Separate GPU workstream #474 under DECISIONS.md item 17; deferred from the current CPU release milestone without a support-status promotion. Metal is locally available but requires actual-device scientific qualification. CUDA actual-device execution is blocked on external hardware access; compile-only/fallback evidence cannot qualify either backend."
     },
     {
       "id": "bngl.delay",
@@ -12048,11 +12048,12 @@
         "tests/cpp/test_gpu_batch_ssa_backend.cpp"
       ],
       "issues": [
-        175
+        175,
+        474
       ],
       "reference": "nvidia-cuda",
       "support": "unverified",
-      "notes": "Existing implementation/test mapping; independent qualification remains incomplete."
+      "notes": "CUDA implementation and device qualification are tracked in #474; historical #175 is retained as provenance. No NVIDIA device/runner is available locally. Compilation and CPU fallback do not establish CUDA execution."
     },
     {
       "id": "platform.jax",
