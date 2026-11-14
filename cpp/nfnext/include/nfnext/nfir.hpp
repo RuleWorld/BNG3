@@ -69,6 +69,7 @@ struct PatternIR {
     struct Node {
         TypeId molecule_type{0};
         std::vector<SiteConstraint> constraints;
+        std::optional<CompartmentId> compartment;
 
         void siteState(std::uint32_t site, std::int32_t state) {
             constraints.push_back({SiteConstraintKind::State, site, state, {}});
@@ -188,6 +189,7 @@ struct ExpandedRuleIR {
     bool match_once{false};
     bool total_rate{false};
     bool move_connected{false};
+    double volume_factor{1.0};
     std::vector<FilterIR> filters;
 };
 
@@ -207,6 +209,7 @@ struct RuleFamilyIR {
     bool match_once{false};
     bool total_rate{false};
     bool move_connected{false};
+    double volume_factor{1.0};
     std::vector<FilterIR> filters;
 };
 

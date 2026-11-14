@@ -97,6 +97,7 @@ struct TransformationOp {
     CreatedMoleculeId second_created{0};
     TypeId molecule_type{0};
     std::vector<std::pair<std::uint32_t, std::int32_t>> initial_states;
+    CompartmentId initial_compartment{0};
 };
 
 class TransformationIR {
@@ -119,15 +120,18 @@ public:
         ops_.push_back(std::move(op));
     }
     CreatedMoleculeId createMolecule(
-        TypeId type, std::vector<std::pair<std::uint32_t, std::int32_t>> initial_states) {
-        return createMoleculeWithId(next_created_id_++, type, std::move(initial_states));
+        TypeId type, std::vector<std::pair<std::uint32_t, std::int32_t>> initial_states,
+        CompartmentId compartment = 0) {
+        return createMoleculeWithId(next_created_id_++, type, std::move(initial_states), compartment);
     }
     CreatedMoleculeId createMoleculeWithId(
         CreatedMoleculeId id, TypeId type,
-        std::vector<std::pair<std::uint32_t, std::int32_t>> initial_states) {
+        std::vector<std::pair<std::uint32_t, std::int32_t>> initial_states,
+        CompartmentId compartment = 0) {
         TransformationOp op;
         op.kind = TransformationOpKind::CreateMolecule; op.created = id;
         op.molecule_type = type; op.initial_states = std::move(initial_states);
+        op.initial_compartment = compartment;
         ops_.push_back(std::move(op));
         if (id >= next_created_id_) next_created_id_ = id + 1;
         return id;

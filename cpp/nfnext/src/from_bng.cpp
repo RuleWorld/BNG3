@@ -1,6 +1,7 @@
 #include "nfnext/from_bng.hpp"
 
 #include "compile/CompiledModel.hpp"
+#include "compile/RuleUnitConversion.hpp"
 #include "nfnext/compiler.hpp"
 #include "nfnext/counter_rng.hpp"
 #include "nfnext/function_vm.hpp"
@@ -13,9 +14,11 @@
 #include <limits>
 #include <map>
 #include <optional>
+#include <queue>
 #include <set>
 #include <sstream>
 #include <tuple>
+#include <unordered_set>
 #include <utility>
 
 namespace nfnext {
@@ -430,24 +433,22 @@ bool appendPattern(const BngPattern& source, PatternIR& destination,
               "pattern is not fully symbol-resolved");
         return false;
     }
-    if (!source.compartment().empty()) {
-        issue(result, BngLoweringSeverity::Error, entity,
-              "compartment-scoped patterns are not representable in NFIR v5");
-        return false;
+    std::optional<CompartmentId> patternCompId;
+    if (source.compartmentId().has_value()) {
+        patternCompId = static_cast<CompartmentId>(source.compartmentId()->value());
     }
     firstNode = destination.nodes.size();
     std::map<std::size_t, std::vector<std::pair<std::size_t, std::uint32_t>>> exactBonds;
     for (const auto& molecule : source.molecules()) {
-        if (!molecule.compartment.empty()) {
-            issue(result, BngLoweringSeverity::Error, entity,
-                  "molecule-local compartments are not representable in NFIR v5");
-            return false;
-        }
         if (!molecule.moleculeTypeId) {
             issue(result, BngLoweringSeverity::Error, entity, "pattern molecule has no typed molecule ID");
             return false;
         }
         const auto node = destination.addNode(static_cast<TypeId>(molecule.moleculeTypeId->value()));
+        std::optional<CompartmentId> molCompId = molecule.compartmentId.has_value()
+            ? std::optional<CompartmentId>(static_cast<CompartmentId>(molecule.compartmentId->value()))
+            : patternCompId;
+        destination.node(node).compartment = molCompId;
         for (const auto& site : molecule.sites) {
             if (!site.componentType) {
                 issue(result, BngLoweringSeverity::Error, entity, "pattern site has no typed component ID");
@@ -683,6 +684,15 @@ bool appendCreateActions(
         create.molecule_type = static_cast<TypeId>(molecule.moleculeTypeId->value());
         create.target_node = nodes.productNodes.at(key);
         actions.push_back(create);
+
+        const auto compId = molecule.compartmentId ? molecule.compartmentId : direction.productPatterns[key.first].compartmentId();
+        if (compId) {
+            ActionIR setComp;
+            setComp.kind = ActionKind::SetCompartment;
+            setComp.target_node = create.target_node;
+            setComp.value = static_cast<std::int32_t>(compId->value());
+            actions.push_back(std::move(setComp));
+        }
 
         for (const auto& site : molecule.sites) {
             if (!site.componentType) {
@@ -981,6 +991,31 @@ bool addActions(const bng::compile::CompiledRule& rule,
         }
     }
 
+    // Compartment transport actions for mapped reactant molecules
+    for (const auto& [productRef, reactantRef] :
+         directionMoleculeMappings(rule, reverseDirection)) {
+        if (productRef.patternIndex >= direction.productPatterns.size() ||
+            reactantRef.patternIndex >= direction.reactantPatterns.size()) continue;
+        const auto& prodPattern = direction.productPatterns[productRef.patternIndex];
+        const auto& reactPattern = direction.reactantPatterns[reactantRef.patternIndex];
+        if (productRef.moleculeIndex >= prodPattern.molecules().size() ||
+            reactantRef.moleculeIndex >= reactPattern.molecules().size()) continue;
+        const auto& prodMol = prodPattern.molecules()[productRef.moleculeIndex];
+        const auto& reactMol = reactPattern.molecules()[reactantRef.moleculeIndex];
+        const auto prodComp = prodMol.compartmentId ? prodMol.compartmentId : prodPattern.compartmentId();
+        const auto reactComp = reactMol.compartmentId ? reactMol.compartmentId : reactPattern.compartmentId();
+        if (prodComp.has_value() && prodComp != reactComp) {
+            const auto node = nodeFor(reactantRef, pattern);
+            if (node) {
+                ActionIR setComp;
+                setComp.kind = ActionKind::SetCompartment;
+                setComp.target_node = *node;
+                setComp.value = static_cast<std::int32_t>(prodComp->value());
+                actions.push_back(std::move(setComp));
+            }
+        }
+    }
+
     if (!appendCreatedProductBonds(direction, *nodes, actions, result, entity)) return false;
     return appendDeletionActions(rule, direction, pattern, *nodes, actions, result, entity);
 }
@@ -1171,6 +1206,41 @@ void addDirection(const bng::compile::CompiledRule& rule,
     lowered.total_rate = totalRate;
     lowered.move_connected = moveConnected;
     lowered.filters = std::move(loweredFilters);
+
+    double volumeFactor = 1.0;
+    if (!source.compartments().empty()) {
+        if (direction.reactantPatterns.empty()) {
+            if (!direction.productPatterns.empty()) {
+                const auto& prod = direction.productPatterns.front();
+                auto pCompId = prod.compartmentId();
+                if (!pCompId && !prod.molecules().empty()) pCompId = prod.molecules().front().compartmentId;
+                if (pCompId) {
+                    const auto* comp = source.compartment(*pCompId);
+                    if (comp && std::isfinite(comp->volume) && comp->volume > 0.0) {
+                        volumeFactor = comp->volume;
+                    }
+                }
+            }
+        } else if (direction.reactantPatterns.size() >= 2) {
+            std::vector<bng::compile::ReactantCompartment> rcList;
+            for (const auto& rPat : direction.reactantPatterns) {
+                auto rCompId = rPat.compartmentId();
+                if (!rCompId && !rPat.molecules().empty()) rCompId = rPat.molecules().front().compartmentId;
+                if (rCompId) {
+                    const auto* comp = source.compartment(*rCompId);
+                    if (comp && std::isfinite(comp->volume) && comp->volume > 0.0) {
+                        rcList.push_back({comp->dimension, comp->volume});
+                    }
+                }
+            }
+            const auto factor = bng::compile::reactantUnitConversionFactor(rcList);
+            if (factor) {
+                volumeFactor = *factor;
+            }
+        }
+    }
+    lowered.volume_factor = volumeFactor;
+
     result.model.expanded_rules.push_back(std::move(lowered));
 }
 
@@ -1181,6 +1251,7 @@ TransformationIR buildRuleTransformation(const ExpandedRuleIR& rule) {
     std::map<PatternNodeId, CreatedMoleculeId> node_to_created;
     std::map<PatternNodeId, TypeId> created_types;
     std::map<PatternNodeId, std::vector<std::pair<std::uint32_t, std::int32_t>>> created_states;
+    std::map<PatternNodeId, CompartmentId> created_compartments;
 
     CreatedMoleculeId next_created = 0;
     for (const auto& action : rule.actions) {
@@ -1193,12 +1264,17 @@ TransformationIR buildRuleTransformation(const ExpandedRuleIR& rule) {
             }
         } else if (action.kind == ActionKind::SetSiteState && action.target_node >= reactant_node_count) {
             created_states[action.target_node].push_back({action.site, action.value});
+        } else if (action.kind == ActionKind::SetCompartment && action.target_node >= reactant_node_count) {
+            created_compartments[action.target_node] = static_cast<CompartmentId>(action.value);
         }
     }
 
-    // 1. Create all newly synthesized molecules with their initial site states
+    // 1. Create all newly synthesized molecules with their initial site states and compartments
     for (const auto& [node, cid] : node_to_created) {
-        transformation.createMoleculeWithId(cid, created_types[node], created_states[node]);
+        CompartmentId comp = 0;
+        const auto it = created_compartments.find(node);
+        if (it != created_compartments.end()) comp = it->second;
+        transformation.createMoleculeWithId(cid, created_types[node], created_states[node], comp);
     }
 
     // 2. Perform state updates, unbinding, and binding
@@ -1211,6 +1287,8 @@ TransformationIR buildRuleTransformation(const ExpandedRuleIR& rule) {
             if (action.target_node < reactant_node_count) {
                 transformation.setState(action.target_node, action.site, action.value);
             }
+            break;
+        case ActionKind::SetCompartment:
             break;
         case ActionKind::Unbind:
             transformation.deleteBond(action.target_node, action.site,
@@ -1287,8 +1365,6 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
     // warning that execution does not yet interpret compartment-specific volume
     // semantics, but all structural lowering proceeds normally.
     if (!source.compartments().empty()) {
-        issue(result, BngLoweringSeverity::Warning, source.metadata().name,
-              "NFIR v6 carries compartment declarations but execution does not yet interpret compartment-specific volume semantics");
         result.model.compartments.reserve(source.compartments().size());
         for (const auto& compartment : source.compartments()) {
             CompartmentIR irCompartment;
@@ -1398,7 +1474,14 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             refuse("sample_times must be finite, nonnegative and strictly increasing");
         previous = time;
     }
-    if (!source.compartments().empty()) refuse("compartments");
+    for (const auto& comp : source.compartments()) {
+        if (!std::isfinite(comp.volume) || comp.volume <= 0.0) {
+            refuse("compartments require positive finite volume");
+        }
+        if (comp.dimension < 1 || comp.dimension > 3) {
+            refuse("compartment dimensions must be 1, 2, or 3");
+        }
+    }
     if (!source.barrierFactors().empty()) refuse("barrier factors");
     if (!source.populationTypes().empty() || !source.populationMaps().empty())
         refuse("population maps and population types");
@@ -1424,21 +1507,14 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             if (issue.severity == BngLoweringSeverity::Error) refuse(issue.message);
     }
     const auto& model = lowered.model;
-    if (!model.compartments.empty()) refuse("compartments");
     if (!model.energy_patterns.empty()) refuse("energy patterns");
     if (!model.population_maps.empty()) refuse("population maps");
-    for (const auto& rule : model.expanded_rules) {
-        if (rule.move_connected) refuse("MoveConnected modifier");
-    }
-    for (const auto& family : model.rule_families) {
-        if (family.move_connected) refuse("MoveConnected modifier");
-    }
     if (request.max_particles > std::numeric_limits<std::uint32_t>::max())
         refuse("particle budget exceeds native index capacity");
     GenericGraphState state(model);
     for (const auto& seed : source.seeds()) {
         const auto amount = constantExpression(seed.amount, source);
-        if (seed.constant || seed.declaredUnit || !seed.compartment.empty() ||
+        if (seed.constant || seed.declaredUnit ||
             !amount || !std::isfinite(*amount) || *amount < 0.0 ||
             std::floor(*amount) != *amount)
             refuse("seeds require bounded static integer particle counts");
@@ -1488,7 +1564,9 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             particles.reserve(pat.nodes.size());
             for (std::size_t nodeIdx = 0; nodeIdx < pat.nodes.size(); ++nodeIdx) {
                 const auto& node = pat.nodes[nodeIdx];
-                const auto particle = state.create(node.molecule_type);
+                const CompartmentId comp = node.compartment.value_or(
+                    seed.compartmentId ? static_cast<CompartmentId>(seed.compartmentId->value()) : 0);
+                const auto particle = state.create(node.molecule_type, comp);
                 particles.push_back(particle);
                 for (const auto& constraint : node.constraints) {
                     if (constraint.kind == PatternIR::SiteConstraintKind::State) {
@@ -1623,6 +1701,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                             refuse("dynamic rate must be finite and non-negative");
                         }
                     }
+                    rate *= rule.volume_factor;
                     currentRates[index] = rate;
                     auto rawMatches = matcher.enumerate(rule.pattern, state);
                     if (!rule.filters.empty()) {
@@ -1711,11 +1790,69 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             if (output.event_count >= request.max_events) refuse("event budget exhausted");
             if (!(next_time > time)) refuse("event clock cannot advance");
             time = next_time;
+
+            const auto& rule = model.expanded_rules[selected_rule];
+            std::vector<CompartmentId> beforeCompartments;
+            std::set<ParticleId> explicitParticles;
+            if (rule.move_connected) {
+                beforeCompartments.reserve(selected_match.particles().size());
+                for (const auto& p : selected_match.particles()) {
+                    beforeCompartments.push_back(state.compartment(p));
+                    explicitParticles.insert(p);
+                }
+            }
+
             MatchEmbedding match_embedding;
             for (std::size_t node = 0; node < selected_match.particles().size(); ++node) {
                 match_embedding.bindNode(node, selected_match.particle(node));
             }
             applyTransformation(compiled_transformations[selected_rule], match_embedding, state);
+
+            for (const auto& action : rule.actions) {
+                if (action.kind == ActionKind::SetCompartment) {
+                    if (action.target_node < selected_match.particles().size()) {
+                        const auto p = selected_match.particle(action.target_node);
+                        if (state.alive(p)) {
+                            state.setCompartment(p, static_cast<CompartmentId>(action.value));
+                        }
+                    }
+                }
+            }
+
+            if (rule.move_connected) {
+                for (std::size_t node = 0; node < selected_match.particles().size(); ++node) {
+                    const auto p = selected_match.particle(node);
+                    if (!state.alive(p)) continue;
+                    const auto sourceComp = beforeCompartments[node];
+                    const auto targetComp = state.compartment(p);
+                    if (targetComp != sourceComp) {
+                        std::queue<ParticleId> q;
+                        std::set<ParticleId> visited;
+                        q.push(p);
+                        visited.insert(p);
+                        while (!q.empty()) {
+                            const auto curr = q.front();
+                            q.pop();
+                            const auto& type = model.molecule_types.at(state.type(curr));
+                            for (std::size_t s = 0; s < type.sites.size(); ++s) {
+                                const auto site = static_cast<std::uint16_t>(s);
+                                if (state.bound(curr, site)) {
+                                    const auto partner = state.bond(curr, site).particle;
+                                    if (visited.insert(partner).second) {
+                                        if (!explicitParticles.count(partner)) {
+                                            if (state.compartment(partner) == sourceComp) {
+                                                state.setCompartment(partner, targetComp);
+                                                q.push(partner);
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
             if (state.liveCount() > request.max_particles) refuse("particle budget exhausted");
             ++output.event_count;
             pending = false;

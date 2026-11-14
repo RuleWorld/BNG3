@@ -47,7 +47,7 @@ void appendAction(std::ostringstream& out, const ActionIR& action) {
 void appendPattern(std::ostringstream& out, const PatternIR& pattern) {
     out << "nodes:" << pattern.nodes.size() << ';';
     for (const auto& node : pattern.nodes) {
-        out << node.molecule_type << ':' << node.constraints.size() << ';';
+        out << node.molecule_type << ':' << (node.compartment.has_value() ? static_cast<long long>(*node.compartment) : -1LL) << ':' << node.constraints.size() << ';';
         for (const auto& constraint : node.constraints) {
             out << static_cast<unsigned>(constraint.kind) << ':' << constraint.site << ':'
                 << constraint.state << ':' << constraint.states.size() << ':';

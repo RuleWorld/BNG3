@@ -861,8 +861,8 @@ void refusesUnsupportedExecution() {
         "begin seed species\n $A(x~u) 2\nend seed species\n",
         // Uninitialized stateful site in seed
         "begin seed species\n A(x) 2\nend seed species\n",
-        // Compartments
-        "begin compartments\n c 3 1\nend compartments\n"
+        // Compartments with invalid volume
+        "begin compartments\n c 3 0\nend compartments\n"
         "begin seed species\n @c:A(x~u) 2\nend seed species\n",
         // Observable relation constraint
         "begin seed species\n A(x~u) 2\nend seed species\n"
@@ -1384,12 +1384,28 @@ end reaction rules
     assert(c2.parent.has_value());
     assert(*c2.parent == c1.id);
 
-    // Negative control: execution refuses compartments fail-closed
+    // Positive control: execution with compartments is now supported
     nfnext::BngExecutionRequest req;
     req.sample_times = {0.0, 1.0};
+    const auto execResult = nfnext::executeFromBioNetGen(semantic, req);
+    assert(!execResult.rows.empty());
+
+    // Negative control: compartment with zero volume is refused fail-closed
+    const auto astBadComp = bng::parser::parseModel(R"BNGL(
+begin compartments
+  EC 3 0.0
+end compartments
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+)BNGL");
+    const bng::compile::CompiledModel semanticBadComp(*astBadComp);
     bool refused = false;
     try {
-        nfnext::executeFromBioNetGen(semantic, req);
+        nfnext::executeFromBioNetGen(semanticBadComp, req);
     } catch (const std::exception& e) {
         refused = true;
         assert(std::string(e.what()).find("compartment") != std::string::npos);
@@ -1596,18 +1612,11 @@ end reaction rules
     assert(lowered.model.rule_families[1].total_rate);
     assert(lowered.model.rule_families[2].move_connected);
 
-    // Execution refusal for each modifier
+    // Execution of rule modifiers (MatchOnce, TotalRate, MoveConnected) is now supported
     nfnext::BngExecutionRequest req;
     req.sample_times = {0.0, 1.0};
-    bool refused = false;
-    try {
-        nfnext::executeFromBioNetGen(semantic, req);
-    } catch (const std::exception& e) {
-        refused = true;
-        assert(std::string(e.what()).find("modifier") != std::string::npos ||
-               std::string(e.what()).find("MatchOnce") != std::string::npos);
-    }
-    assert(refused);
+    const auto res = nfnext::executeFromBioNetGen(semantic, req);
+    assert(!res.rows.empty());
 
     // Semantic differentiation: paired model differing only in modifier flag
     const auto astNoMod = bng::parser::parseModel(R"BNGL(

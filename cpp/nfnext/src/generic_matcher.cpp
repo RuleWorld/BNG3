@@ -156,6 +156,8 @@ void validatePattern(const PatternIR& pattern, const ModelIR& model) {
 bool nodeMatches(const PatternIR::Node& node, ParticleId particle,
                  const GenericGraphState& state) {
     if (state.type(particle) != node.molecule_type) return false;
+    if (node.compartment.has_value() && state.compartment(particle) != *node.compartment)
+        return false;
     for (const auto& constraint : node.constraints) {
         switch (constraint.kind) {
             case PatternIR::SiteConstraintKind::State:

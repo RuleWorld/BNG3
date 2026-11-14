@@ -83,6 +83,8 @@ void writePattern(std::ostream& out, const PatternIR& pattern) {
     writePod(out, static_cast<std::uint64_t>(pattern.nodes.size()));
     for (const auto& node : pattern.nodes) {
         writePod(out, node.molecule_type);
+        writePod(out, static_cast<std::uint8_t>(node.compartment.has_value() ? 1 : 0));
+        if (node.compartment.has_value()) writePod(out, *node.compartment);
         writePod(out, static_cast<std::uint64_t>(node.constraints.size()));
         for (const auto& constraint : node.constraints) {
             writePod(out, static_cast<std::uint8_t>(constraint.kind));
@@ -129,6 +131,7 @@ PatternIR readPattern(std::istream& in) {
     for (std::uint64_t i = 0; i < nnodes; ++i) {
         PatternIR::Node node;
         node.molecule_type = readPod<TypeId>(in);
+        if (readPod<std::uint8_t>(in) != 0) node.compartment = readPod<CompartmentId>(in);
         const auto nconstraints = readPod<std::uint64_t>(in);
         if (nconstraints > (1ULL << 30)) throw std::runtime_error("NFIR cache invalid constraint length");
         node.constraints.reserve(static_cast<std::size_t>(nconstraints));

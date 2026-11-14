@@ -24,14 +24,17 @@ std::uint16_t GenericGraphState::typeSiteCount(TypeId type) const {
     return type_site_counts_[type];
 }
 
-ParticleId GenericGraphState::create(TypeId type) {
+ParticleId GenericGraphState::create(TypeId type, CompartmentId comp) {
     const auto sites = typeSiteCount(type);
     std::uint32_t slot;
     if (!free_.empty()) {
         slot = free_.back(); free_.pop_back(); alive_[slot] = 1; types_[slot] = type;
+        if (slot >= compartments_.size()) compartments_.resize(slot + 1, 0);
+        compartments_[slot] = comp;
     } else {
         slot = static_cast<std::uint32_t>(types_.size());
         types_.push_back(type); generations_.push_back(1); alive_.push_back(1);
+        compartments_.push_back(comp);
         site_states_.resize((static_cast<std::size_t>(slot) + 1) * stride_, 0);
         bond_particles_.resize((static_cast<std::size_t>(slot) + 1) * stride_);
         bond_sites_.resize((static_cast<std::size_t>(slot) + 1) * stride_, 0);
@@ -68,10 +71,20 @@ void GenericGraphState::destroy(ParticleId id) {
     require(id);
     const auto count = typeSiteCount(types_[id.index]);
     for (std::uint16_t s = 0; s < count; ++s) if (bound(id, s)) unbind(id, s);
+    if (id.index < compartments_.size()) compartments_[id.index] = 0;
     alive_[id.index] = 0; ++generations_[id.index]; free_.push_back(id.index); --live_count_;
 }
 
 TypeId GenericGraphState::type(ParticleId id) const { require(id); return types_[id.index]; }
+CompartmentId GenericGraphState::compartment(ParticleId id) const {
+    require(id);
+    return id.index < compartments_.size() ? compartments_[id.index] : 0;
+}
+void GenericGraphState::setCompartment(ParticleId id, CompartmentId comp) {
+    require(id);
+    if (id.index >= compartments_.size()) compartments_.resize(id.index + 1, 0);
+    compartments_[id.index] = comp;
+}
 std::int32_t GenericGraphState::siteState(ParticleId id, std::uint16_t site) const { return site_states_[offset(id, site)]; }
 void GenericGraphState::setSiteState(ParticleId id, std::uint16_t site, std::int32_t state) { site_states_[offset(id, site)] = state; }
 bool GenericGraphState::bound(ParticleId id, std::uint16_t site) const { return bond_particles_[offset(id, site)].valid(); }

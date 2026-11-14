@@ -375,10 +375,10 @@ end model
 def test_release_nfnext_routes_fail_closed_unsupported_rejection(tmp_path: Path):
     """Verify that unsupported features raise RuntimeError fail-closed when executing via NFnext."""
     unsupported_models = [
-        # Compartments
+        # Compartments with invalid zero volume
         """begin model
 begin compartments
-  cell 3 1.0
+  cell 3 0.0
 end compartments
 begin molecule types
   A()
@@ -427,18 +427,22 @@ begin reaction rules
 end reaction rules
 end model
 """,
-        # MoveConnected modifier
+        # Barrier patterns
         """begin model
+begin parameters
+  Gbar 1.0
+end parameters
 begin molecule types
-  A(b)
-  B(a)
+  A(x~u~p)
 end molecule types
 begin seed species
-  A(b) 10
-  B(a) 10
+  A(x~u) 10
 end seed species
+begin barrier patterns
+  A(x~u) -> A(x~p) Gbar
+end barrier patterns
 begin reaction rules
-  A(b) + B(a) -> A(b!1).B(a!1) 0.1 MoveConnected
+  A(x~u) -> A(x~p) 0.1
 end reaction rules
 end model
 """,
@@ -644,6 +648,224 @@ end model
     assert obs_exc["Bound_u"][-1] == 20.0
     assert obs_exc["Total_p"][-1] > 0.0
     assert obs_exc["Total_u"][-1] == 20.0 + (20.0 - obs_exc["Total_p"][-1])
+
+
+def test_release_nfnext_execution_compartment_volume_scaling():
+    """Verify bimolecular and zero-order volume scaling in cBNGL compartments."""
+
+    # 1. Zero-order synthesis: propensity is k * V.
+    # In V=1.0, Poisson mean after t=2.0 is k * V * t = 2.0 * 1.0 * 2.0 = 4.0.
+    # In V=3.0, Poisson mean after t=2.0 is k * V * t = 2.0 * 3.0 * 2.0 = 12.0.
+    def make_synth_bngl(vol: float) -> str:
+        return f"""begin model
+begin parameters
+  k_synth 2.0
+end parameters
+begin compartments
+  cell 3 {vol}
+end compartments
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  @cell:A() 0
+end seed species
+begin observables
+  Molecules A_tot @cell:A()
+end observables
+begin reaction rules
+  synth: 0 -> @cell:A() k_synth
+end reaction rules
+end model
+"""
+
+    k_runs = 80
+    t_end = 2.0
+
+    m_v1 = cpp.parse_string(make_synth_bngl(1.0))
+    counts_v1 = [
+        cpp.simulate_nfnext(m_v1, [0.0, t_end], seed=s)["observables"]["A_tot"][-1]
+        for s in range(k_runs)
+    ]
+    mean_v1 = sum(counts_v1) / k_runs
+    se_v1 = math.sqrt(4.0 / k_runs)
+    assert abs(mean_v1 - 4.0) <= 4.0 * se_v1, f"V=1 mean {mean_v1} outside 4*SE of 4.0"
+
+    m_v3 = cpp.parse_string(make_synth_bngl(3.0))
+    counts_v3 = [
+        cpp.simulate_nfnext(m_v3, [0.0, t_end], seed=s)["observables"]["A_tot"][-1]
+        for s in range(k_runs)
+    ]
+    mean_v3 = sum(counts_v3) / k_runs
+    se_v3 = math.sqrt(12.0 / k_runs)
+    assert (
+        abs(mean_v3 - 12.0) <= 4.0 * se_v3
+    ), f"V=3 mean {mean_v3} outside 4*SE of 12.0"
+    # Discriminate against unscaled alternative (V=3 producing V=1 rate)
+    assert abs(mean_v3 - 4.0) > 4.0 * se_v3
+
+    # 2. Bimolecular volume scaling: k / V.
+    # A(b) + B(a) -> A(b!1).B(a!1) with k=0.05. Double volume V=2.0 cuts reaction rate in half.
+    def make_bimo_bngl(vol: float) -> str:
+        return f"""begin model
+begin parameters
+  k_bind 0.05
+end parameters
+begin compartments
+  cell 3 {vol}
+end compartments
+begin molecule types
+  A(b)
+  B(a)
+end molecule types
+begin seed species
+  @cell:A(b) 20
+  @cell:B(a) 20
+end seed species
+begin observables
+  Molecules Bound @cell:A(b!1).B(a!1)
+end observables
+begin reaction rules
+  bind: @cell:A(b) + @cell:B(a) -> @cell:A(b!1).B(a!1) k_bind
+end reaction rules
+end model
+"""
+
+    m_b1 = cpp.parse_string(make_bimo_bngl(1.0))
+    m_b2 = cpp.parse_string(make_bimo_bngl(2.0))
+    c_v1 = [
+        cpp.simulate_nfnext(m_b1, [0.0, 1.0], seed=s)["observables"]["Bound"][-1]
+        for s in range(k_runs)
+    ]
+    c_v2 = [
+        cpp.simulate_nfnext(m_b2, [0.0, 1.0], seed=s)["observables"]["Bound"][-1]
+        for s in range(k_runs)
+    ]
+    # Slower in V=2 than in V=1
+    assert sum(c_v1) / k_runs > sum(c_v2) / k_runs
+
+
+def test_release_nfnext_execution_moveconnected_transport():
+    """Verify MoveConnected transports bound cargo across compartments while leaving free molecules and explicit product placements intact."""
+    # Scenario:
+    # A(b!1)@c1.B(a!1)@c1 (10 copies) and unbonded B(a)@c1 (10 copies).
+    # MoveConnected rule transports A to c2.
+    # Cargo B attached to A should move to c2, while unbonded B in c1 stays in c1.
+    bngl_mc = """begin model
+begin parameters
+  k_trans 100.0
+end parameters
+begin compartments
+  c1 3 1.0
+  c2 3 1.0
+end compartments
+begin molecule types
+  A(b)
+  B(a)
+end molecule types
+begin seed species
+  A(b!1)@c1.B(a!1)@c1 10
+  B(a)@c1 10
+end seed species
+begin observables
+  Molecules A_c1 @c1:A()
+  Molecules A_c2 @c2:A()
+  Molecules B_c1 @c1:B()
+  Molecules B_c2 @c2:B()
+  Molecules Bound_c2 A(b!1)@c2.B(a!1)@c2
+end observables
+begin reaction rules
+  transport: A()@c1 -> A()@c2 k_trans MoveConnected
+end reaction rules
+end model
+"""
+    model_mc = cpp.parse_string(bngl_mc)
+    out_mc = cpp.simulate_nfnext(model_mc, [0.0, 1.0], seed=42)
+    obs_mc = out_mc["observables"]
+
+    # All 10 A moved to c2
+    assert obs_mc["A_c2"][-1] == 10.0
+    assert obs_mc["A_c1"][-1] == 0.0
+    # The 10 cargo B bound to A were transported to c2
+    assert obs_mc["B_c2"][-1] == 10.0
+    assert obs_mc["Bound_c2"][-1] == 10.0
+    # The 10 free B in c1 stayed in c1
+    assert obs_mc["B_c1"][-1] == 10.0
+
+    # Negative control: transport without MoveConnected leaves cargo B in c1
+    bngl_nomc = """begin model
+begin parameters
+  k_trans 100.0
+end parameters
+begin compartments
+  c1 3 1.0
+  c2 3 1.0
+end compartments
+begin molecule types
+  A(b)
+  B(a)
+end molecule types
+begin seed species
+  A(b!1)@c1.B(a!1)@c1 10
+  B(a)@c1 10
+end seed species
+begin observables
+  Molecules A_c1 @c1:A()
+  Molecules A_c2 @c2:A()
+  Molecules B_c1 @c1:B()
+  Molecules B_c2 @c2:B()
+  Molecules Bound_c2 A(b!1)@c2.B(a!1)@c2
+end observables
+begin reaction rules
+  transport: A()@c1 -> A()@c2 k_trans
+end reaction rules
+end model
+"""
+    model_nomc = cpp.parse_string(bngl_nomc)
+    out_nomc = cpp.simulate_nfnext(model_nomc, [0.0, 1.0], seed=42)
+    obs_nomc = out_nomc["observables"]
+
+    assert obs_nomc["A_c2"][-1] == 10.0
+    assert obs_nomc["A_c1"][-1] == 0.0
+    # Without MoveConnected, no B moved to c2
+    assert obs_nomc["B_c2"][-1] == 0.0
+    assert obs_nomc["Bound_c2"][-1] == 0.0
+    assert obs_nomc["B_c1"][-1] == 20.0
+
+    # Exclusion control: explicit product placement overrides MoveConnected
+    bngl_override = """begin model
+begin parameters
+  k_trans 100.0
+end parameters
+begin compartments
+  c1 3 1.0
+  c2 3 1.0
+end compartments
+begin molecule types
+  A(b)
+  B(a)
+end molecule types
+begin seed species
+  A(b!1)@c1.B(a!1)@c1 10
+end seed species
+begin observables
+  Molecules A_c2 @c2:A()
+  Molecules B_c1 @c1:B()
+  Molecules B_c2 @c2:B()
+end observables
+begin reaction rules
+  transport: A(b!1)@c1.B(a!1)@c1 -> A(b!1)@c2.B(a!1)@c1 k_trans MoveConnected
+end reaction rules
+end model
+"""
+    model_override = cpp.parse_string(bngl_override)
+    out_override = cpp.simulate_nfnext(model_override, [0.0, 1.0], seed=42)
+    obs_override = out_override["observables"]
+
+    assert obs_override["A_c2"][-1] == 10.0
+    # B was explicitly retained in c1, so MoveConnected leaves it in c1
+    assert obs_override["B_c1"][-1] == 10.0
+    assert obs_override["B_c2"][-1] == 0.0
 
 
 # ==============================================================================
