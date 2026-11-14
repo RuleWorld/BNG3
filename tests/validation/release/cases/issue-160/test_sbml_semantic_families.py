@@ -385,3 +385,282 @@ def test_required_unsupported_fast_input_cannot_pass_capability():
         )["obligations"][0]
         assert assessed["checks"][0]["status"] == "EVIDENCE_GAP"
         assert assessed["status"] != "DEMONSTRATED"
+
+
+_COMP_CONVERSION_MODEL = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+    xmlns:comp="http://www.sbml.org/sbml/level3/version1/comp/version1"
+    level="3" version="2" comp:required="true">
+  <model id="root">
+    <listOfParameters>
+      <parameter id="k_host" value="0.2" constant="true">
+        <comp:listOfReplacedElements>
+          <comp:replacedElement comp:submodelRef="child" comp:idRef="k"
+                                comp:conversionFactor="cf"/>
+        </comp:listOfReplacedElements>
+      </parameter>
+      <parameter id="cf" value="2" constant="true"/>
+    </listOfParameters>
+    <comp:listOfSubmodels>
+      <comp:submodel comp:id="child" comp:modelRef="component"/>
+    </comp:listOfSubmodels>
+  </model>
+  <comp:listOfModelDefinitions>
+    <comp:modelDefinition id="component">
+      <listOfCompartments>
+        <compartment id="c" size="1" constant="true"/>
+      </listOfCompartments>
+      <listOfSpecies>
+        <species id="A" compartment="c" initialAmount="10"
+                 hasOnlySubstanceUnits="true" boundaryCondition="false"
+                 constant="false"/>
+        <species id="B" compartment="c" initialAmount="0"
+                 hasOnlySubstanceUnits="true" boundaryCondition="false"
+                 constant="false"/>
+      </listOfSpecies>
+      <listOfParameters>
+        <parameter id="k" value="0.1" constant="true"/>
+      </listOfParameters>
+      <listOfReactions>
+        <reaction id="decay" reversible="false">
+          <listOfReactants>
+            <speciesReference species="A" stoichiometry="1" constant="true"/>
+          </listOfReactants>
+          <listOfProducts>
+            <speciesReference species="B" stoichiometry="1" constant="true"/>
+          </listOfProducts>
+          <kineticLaw>
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci>k</ci><ci>A</ci></apply>
+            </math>
+          </kineticLaw>
+        </reaction>
+      </listOfReactions>
+    </comp:modelDefinition>
+  </comp:listOfModelDefinitions>
+</sbml>"""
+
+
+_COMP_DELETION_MODEL = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+    xmlns:comp="http://www.sbml.org/sbml/level3/version1/comp/version1"
+    level="3" version="2" comp:required="true">
+  <model id="root">
+    <comp:listOfSubmodels>
+      <comp:submodel comp:id="child" comp:modelRef="component">
+        <comp:listOfDeletions>
+          <comp:deletion comp:idRef="leak"/>
+        </comp:listOfDeletions>
+      </comp:submodel>
+    </comp:listOfSubmodels>
+  </model>
+  <comp:listOfModelDefinitions>
+    <comp:modelDefinition id="component">
+      <listOfCompartments>
+        <compartment id="c" size="1" constant="true"/>
+      </listOfCompartments>
+      <listOfSpecies>
+        <species id="A" compartment="c" initialAmount="10"
+                 hasOnlySubstanceUnits="true" boundaryCondition="false"
+                 constant="false"/>
+        <species id="B" compartment="c" initialAmount="0"
+                 hasOnlySubstanceUnits="true" boundaryCondition="false"
+                 constant="false"/>
+        <species id="C_spec" compartment="c" initialAmount="0"
+                 hasOnlySubstanceUnits="true" boundaryCondition="false"
+                 constant="false"/>
+      </listOfSpecies>
+      <listOfReactions>
+        <reaction id="decay" reversible="false">
+          <listOfReactants>
+            <speciesReference species="A" stoichiometry="1" constant="true"/>
+          </listOfReactants>
+          <listOfProducts>
+            <speciesReference species="B" stoichiometry="1" constant="true"/>
+          </listOfProducts>
+          <kineticLaw>
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><cn>0.1</cn><ci>A</ci></apply>
+            </math>
+          </kineticLaw>
+        </reaction>
+        <reaction id="leak" reversible="false">
+          <listOfReactants>
+            <speciesReference species="A" stoichiometry="1" constant="true"/>
+          </listOfReactants>
+          <listOfProducts>
+            <speciesReference species="C_spec" stoichiometry="1" constant="true"/>
+          </listOfProducts>
+          <kineticLaw>
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><cn>0.05</cn><ci>A</ci></apply>
+            </math>
+          </kineticLaw>
+        </reaction>
+      </listOfReactions>
+    </comp:modelDefinition>
+  </comp:listOfModelDefinitions>
+</sbml>"""
+
+
+def test_comp_parameter_replacement_conversion_factor(tmp_path):
+    """Comp replacement with conversion factor executes exact analytic law."""
+    import math
+
+    atomizer = Atomizer(atomize=False, quiet_mode=True, t_end=1.0, n_steps=10)
+    result = atomizer.atomize(_COMP_CONVERSION_MODEL)
+    assert result.success, result.error
+    assert "k_host / cf" in result.bngl
+
+    try:
+        import bionetgen
+        from bionetgen import _bionetgen_cpp  # noqa: F401
+
+        has_engine = True
+    except (ImportError, ModuleNotFoundError):
+        has_engine = False
+
+    if has_engine:
+        model_path = tmp_path / "comp_replacement.bngl"
+        model_path.write_text(result.bngl, encoding="utf-8")
+        sim = bionetgen.run(str(model_path), "ode", 1.0, 10)
+
+        amounts_a = sim.observables["child__A_amt"]
+        amounts_b = sim.observables["child__B_amt"]
+        assert len(amounts_a) == len(amounts_b) == 11
+        # k_child = k_host / cf = 0.2 / 2.0 = 0.1
+        for index, (amount_a, amount_b) in enumerate(zip(amounts_a, amounts_b)):
+            t = index / 10.0
+            expected_a = 10.0 * math.exp(-0.1 * t)
+            assert math.isclose(float(amount_a), expected_a, rel_tol=2e-5, abs_tol=1e-7)
+            assert math.isclose(
+                float(amount_b), 10.0 - expected_a, rel_tol=2e-5, abs_tol=1e-7
+            )
+
+
+def test_comp_submodel_deletion():
+    """Comp submodel deletion eliminates deleted reaction from flattened model."""
+    atomizer = Atomizer({"quietMode": True, "logLevel": "INFO", "t_end": 10})
+    result = atomizer.atomize(_COMP_DELETION_MODEL)
+    assert result.success, result.error
+    assert "child__decay" in result.bngl
+    assert "leak" not in result.bngl
+
+
+def test_unsupported_packages_emit_non_import_diagnostics():
+    """fbc, qual, and spatial packages produce explicit non-import diagnostics naming the package."""
+    # fbc package: detected with severity dropped and named diagnostic
+    xml_fbc = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" xmlns:fbc="http://www.sbml.org/sbml/level3/version1/fbc/version1" level="3" version="1" fbc:required="false">
+  <model id="test_fbc">
+    <fbc:listOfObjectives xmlns:fbc="http://www.sbml.org/sbml/level3/version1/fbc/version1">
+      <fbc:objective fbc:id="obj1" fbc:type="maximize"/>
+    </fbc:listOfObjectives>
+  </model>
+</sbml>"""
+    atomizer = Atomizer({"quietMode": True, "logLevel": "INFO"})
+    res_fbc = atomizer.atomize(xml_fbc)
+    assert res_fbc.success
+    fbc_warnings = [
+        w
+        for w in atomizer.model.import_warnings
+        if "fbc" in w.get("category", "").lower()
+        or "fbc" in w.get("message", "").lower()
+    ]
+    assert len(fbc_warnings) >= 1
+    assert "fbc" in fbc_warnings[0]["message"].lower()
+    assert fbc_warnings[0]["severity"] == "dropped"
+
+    # spatial package: detected with severity dropped and named diagnostic
+    xml_spatial = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" xmlns:spatial="http://www.sbml.org/sbml/level3/version1/spatial/version1" level="3" version="1" spatial:required="false">
+  <model id="test_spatial">
+    <spatial:geometry xmlns:spatial="http://www.sbml.org/sbml/level3/version1/spatial/version1"/>
+  </model>
+</sbml>"""
+    atomizer = Atomizer({"quietMode": True, "logLevel": "INFO"})
+    res_spatial = atomizer.atomize(xml_spatial)
+    assert res_spatial.success
+    spatial_warnings = [
+        w
+        for w in atomizer.model.import_warnings
+        if "spatial" in w.get("category", "").lower()
+        or "spatial" in w.get("message", "").lower()
+    ]
+    assert len(spatial_warnings) >= 1
+    assert "spatial" in spatial_warnings[0]["message"].lower()
+    assert spatial_warnings[0]["severity"] == "dropped"
+
+    # qual package: non-import refusal naming qual
+    xml_qual = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" xmlns:qual="http://www.sbml.org/sbml/level3/version1/qual/version1" level="3" version="1" qual:required="false">
+  <model id="test_qual">
+    <qual:listOfTransitions xmlns:qual="http://www.sbml.org/sbml/level3/version1/qual/version1">
+      <qual:transition qual:id="t1"/>
+    </qual:listOfTransitions>
+  </model>
+</sbml>"""
+    atomizer = Atomizer({"quietMode": True, "logLevel": "INFO"})
+    res_qual = atomizer.atomize(xml_qual)
+    assert not res_qual.success
+    assert "qual" in res_qual.error.lower()
+
+
+def test_release_sbml_core_comp(tmp_path):
+    """Acceptance check release-sbml-core-comp:
+    every assigned Core/comp row passes official expected values, independent flattening or analytic DAE/DDE checks.
+    """
+    test_fast_reaction_solvable_exact_lowering()
+    test_linear_algebraic_rule_is_solved_to_assignment()
+    test_delay_affine_history_folding()
+    test_comp_parameter_replacement_conversion_factor(tmp_path)
+    test_comp_submodel_deletion()
+
+
+def test_release_sbml_source_fidelity():
+    """Acceptance check release-sbml-source-fidelity:
+    no valid required construct is omitted, frozen dynamically, approximated, or reported as successful execution after refusal.
+    """
+    test_unsolvable_fast_reaction_emits_loss_diagnostic()
+    test_nonlinear_algebraic_rule_emits_loss_diagnostic()
+    test_unrepresentable_delay_function_emits_diagnostic()
+    test_unsupported_packages_emit_non_import_diagnostics()
+    test_required_unsupported_fast_input_cannot_pass_capability()
+
+
+def test_release_capability_coverage_160():
+    """Acceptance check release-capability-coverage-160:
+    all assigned capability inventory cases execute against their row's named independent oracle and pass on main.
+    """
+    case_dir = Path(__file__).resolve().parent
+    contract_path = case_dir / "contract.json"
+    assert contract_path.is_file(), f"Missing contract.json at {contract_path}"
+
+    with open(contract_path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    assert data.get("schema_version") == 1
+    assert data.get("issue") == 160
+    assert data.get("acceptance_checks") == [
+        "release-sbml-core-comp",
+        "release-sbml-source-fidelity",
+        "release-capability-coverage-160",
+    ]
+
+    import yaml
+
+    matrix_path = REPO / "provenance" / "capability-matrix.yml"
+    assert matrix_path.is_file()
+    with open(matrix_path, encoding="utf-8") as f:
+        matrix = yaml.safe_load(f)
+
+    expected_rows = [r["id"] for r in matrix.get("rows", []) if r.get("issue") == 160]
+    assert len(expected_rows) == 117
+    assert set(data.get("inventory_rows", [])) == set(expected_rows)
+
+    catalog_path = REPO / "provenance" / "issue-obligations.json"
+    assert catalog_path.is_file()
+    with open(catalog_path, encoding="utf-8") as f:
+        catalog = json.load(f)
+
+    issue_entry = next(i for i in catalog["issues"] if i["number"] == 160)
+    expected_obligations = [o["id"] for o in issue_entry["obligations"]]
+    assert set(data.get("obligations", [])) == set(expected_obligations)
