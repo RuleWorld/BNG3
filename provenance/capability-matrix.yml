@@ -10120,9 +10120,9 @@
       "bng3": "cpp/nfnext/src/from_bng.cpp:864",
       "check": "tests/validation/release/cases/issue-148/test_nfnext_execution.py::test_release_capability_coverage_148",
       "oracle": "pinned native NFsim",
-      "status": "implemented",
+      "status": "missing",
       "issue": 148,
-      "evidence": "Qualified by release-nfnext-execution and release-nfnext-routes against pinned native NFsim and CTMC pure-death laws."
+      "evidence": "Incomplete release capability. Production CompiledModel execution exists for a bounded subset, with CTMC/native-NFsim comparisons; compartments, population maps, energy, physical units, MatchOnce, TotalRate, MoveConnected and filters remain explicitly refused. Registration and refusal controls do not qualify the full corpus required by #148."
     },
     {
       "id": "hybrid.execution",
@@ -10131,9 +10131,9 @@
       "bng3": "cpp/engine/HybridModelGenerator.cpp",
       "check": "tests/validation/test_hybrid_execution.py::test_release_capability_coverage_150",
       "oracle": "BNG2 hybrid transformation, pinned native NFsim, and analytic binomial/conservation laws",
-      "status": "implemented",
+      "status": "missing",
       "issue": 150,
-      "evidence": "Qualified across all 8 assigned hybrid inventory rows against BNG2 hybrid transformation, pinned native NFsim, and exact analytic continuous-time Markov chain laws with exact molecule conservation."
+      "evidence": "Partial independent evidence exists in tests/validation/test_hybrid_execution.py for generated NFcore HPP, conversion/dimer/cycle/protocol ensembles and bounded compartment comparisons. NFnext population-map execution remains refused; dynamic threshold changes are not covered by the aggregate receipt. Full #150 acceptance is not established by formula-only or contract-registration tests."
     },
     {
       "id": "backend.bngsim",

@@ -2064,7 +2064,7 @@ def test_release_capability_coverage_150(
                     "dynamic threshold changes are not covered by this aggregate evidence",
                 ],
             },
-            "issue_150_acceptance": "qualified on main with exact-revision evidence",
+            "issue_150_acceptance": "partial; executed scope and limitations below, not full issue closure or main-branch qualification",
             "semantic_checks": {
                 "release-hybrid": {
                     "passed": hybrid_comparison.ok,
