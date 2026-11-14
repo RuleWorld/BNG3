@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "issue": 149,
+  "title": "C04: Decide maintained roles for NFcore, NFcore2 and NFnext",
+  "source": {
+    "repository": "RuleWorld/BNG3",
+    "contract": "Consolidate NFcore2 capabilities into NFnext while retaining NFcore as production default (method='nf' and selectable method='nfcore'), lowerPatternToNFsim for NFcore input, and containing unpromoted NFcore2 as an in-tree test oracle."
+  },
+  "oracle": {
+    "identity": "Pinned native NFsim (9b00d42f), in-repo NFcore comparator, analytical continuous-time Markov chain laws, and Catch2 architecture contracts",
+    "law": "Detailed balance for reversible isomerization, exponential decay for pure death, exact trajectory parity between method='nf' and method='nfcore' on deterministic seeds, and fail-closed refusal of unpromoted method='nfcore2'."
+  },
+  "acceptance_checks": [
+    "release-engine-consolidation",
+    "release-nf-default",
+    "release-obligation-149"
+  ],
+  "inventory_rows": [],
+  "obligations": [
+    "issue:149:document-which-engine-owns-each-supported-workload-and-whether-n",
+    "issue:149:implement-and-qualify-any-promoted-route-or-contain-deprecate-ov",
+    "issue:149:closure-record",
+    "issue:149:live-acceptance:release-engine-consolidation",
+    "issue:149:live-acceptance:release-nf-default",
+    "issue:149:live-acceptance:release-obligation-149"
+  ]
+}

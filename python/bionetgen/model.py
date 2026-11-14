@@ -1102,7 +1102,7 @@ class BioNetGenModel:
         Parameters
         ----------
         method : str
-            One of "ode", "ssa", "nf" (network-free), "pla", or "psa".
+            One of "ode", "ssa", "nf" (network-free default), "nfcore", "nfnext", "pla", or "psa".
         t_end : float
             End time for simulation.
         n_steps : int
@@ -1161,10 +1161,15 @@ class BioNetGenModel:
         if not isinstance(continue_simulation, bool):
             raise TypeError("continue_simulation must be a boolean")
         method = method.lower()
-        if method not in {"ode", "ssa", "nf", "nfnext", "pla", "psa"}:
+        if method == "nfcore2":
+            raise ValueError(
+                "method='nfcore2' is an unpromoted prototype engine; "
+                "use method='nf' for production NFcore or method='nfnext' for NFnext"
+            )
+        if method not in {"ode", "ssa", "nf", "nfcore", "nfnext", "pla", "psa"}:
             raise ValueError(
                 "Unknown simulation method: "
-                f"{method!r}. Use 'ode', 'ssa', 'nf', 'nfnext', 'pla', or 'psa'."
+                f"{method!r}. Use 'ode', 'ssa', 'nf', 'nfcore', 'nfnext', 'pla', or 'psa'."
             )
         if self._algebraic_rules and method != "ode":
             raise ValueError("SBML algebraic rules require method='ode'")
@@ -1219,9 +1224,9 @@ class BioNetGenModel:
             ) from exc
         if traversal_limit < -1:
             raise ValueError("traversal_limit must be -1 or a non-negative integer")
-        if method != "nf" and equilibrate != 0.0:
+        if method not in {"nf", "nfcore"} and equilibrate != 0.0:
             raise ValueError("equilibrate is supported only for method='nf'")
-        if method != "nf" and traversal_limit != -1:
+        if method not in {"nf", "nfcore"} and traversal_limit != -1:
             raise ValueError("traversal_limit is supported only for method='nf'")
         for option_name, option_value in {
             "max_sim_steps": max_sim_steps,
@@ -1282,30 +1287,35 @@ class BioNetGenModel:
                 "max_sim_steps and output_step_interval are supported only "
                 "for method='ssa'"
             )
-        if method not in {"ode", "ssa", "nf"} and (
+        if method not in {"ode", "ssa", "nf", "nfcore"} and (
             stop_if or max_sim_steps or output_step_interval
         ):
             raise ValueError(
                 "stop_if, max_sim_steps, and output_step_interval are supported "
                 "only for method='ode' or method='ssa'"
             )
-        if method == "nf" and (stop_if or max_sim_steps or output_step_interval):
+        if method in {"nf", "nfcore"} and (
+            stop_if or max_sim_steps or output_step_interval
+        ):
             raise ValueError(
                 "stop_if, max_sim_steps, and output_step_interval are supported "
                 "only for method='ode' or method='ssa'"
             )
 
         use_bngsim = False
-        if method == "nf":
+        if method in {"nf", "nfcore"}:
             # backend is not applicable to network-free; reject explicit bngsim
             if backend is not None and str(backend).lower() not in (
                 "auto",
                 "native",
                 "nf",
                 "nfsim",
+                "nfcore",
             ):
                 if str(backend).lower() == "bngsim":
-                    raise ValueError("backend='bngsim' is not valid for method='nf'")
+                    raise ValueError(
+                        f"backend='bngsim' is not valid for method={method!r}"
+                    )
             raw = _cpp.simulate_nf(
                 self._model,
                 t_end=t_end,
@@ -1693,7 +1703,7 @@ def run(
     path : str or Path
         Path to the .bngl file.
     method : str
-        Simulation method ("ode", "ssa", "nf", "pla", or "psa").
+        Simulation method ("ode", "ssa", "nf", "nfcore", "nfnext", "pla", or "psa").
     t_end : float
         End time.
     n_steps : int
