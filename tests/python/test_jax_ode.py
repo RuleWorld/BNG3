@@ -156,21 +156,16 @@ def test_public_model_wrapper():
     np.testing.assert_allclose(rhs(0.0, jax.numpy.array([20.0, 0.0])), [-4.0, 4.0])
 
 
-@pytest.mark.parametrize(
-    "rule,extra",
-    [
-        (
-            "A() -> B() f()",
-            "begin observables\nMolecules count A()\nend observables\nbegin functions\nf() k*count\nend functions",
-        ),
-    ],
-)
-def test_jax_ode_functional_unsupported(rule, extra):
+def test_jax_ode_functional_rates_supported():
+    rule = "A() -> B() f()"
+    extra = "begin observables\nMolecules count A()\nend observables\nbegin functions\nf() k*count\nend functions"
     model = _model(rule, extra=extra)
-    with pytest.raises(NotImplementedError, match="functional rate laws"):
-        jax_ode.compile_rhs(model)
-    with pytest.raises(NotImplementedError, match="functional rate laws"):
-        jax_ode.simulate_jax_ode(model, t_end=1.0)
+    rhs = jax_ode.compile_rhs(model)
+    # k=0.2, count=10 -> f=2.0 -> flux = 2.0 * 10 = 20.0
+    np.testing.assert_allclose(rhs(0.0, jax.numpy.array([10.0, 0.0])), [-20.0, 20.0])
+    res = jax_ode.simulate_jax_ode(model, t_end=1.0, n_steps=100)
+    # Analytic: A(t) = A0 / (1 + k*A0*t) = 20 / (1 + 0.2*20*1) = 20 / 5 = 4.0
+    np.testing.assert_allclose(res["concentrations"][-1, 0], 4.0, rtol=1e-3)
 
 
 def test_solver_method_is_not_silently_ignored():
