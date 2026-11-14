@@ -634,7 +634,7 @@ def test_closure_gate_cli_rejects_an_empty_snapshot(tmp_path):
         (
             [[], [], [999]],
             ["PASS", "PASS", "PASS"],
-            ["DEMONSTRATED", "DEMONSTRATED", "DEMONSTRATED"],
+            ["DEMONSTRATED", "DEMONSTRATED", "BLOCKED"],
         ),
         ([[141], [], [140]], ["PASS"] * 3, ["BLOCKED", "DEMONSTRATED", "BLOCKED"]),
         ([[], [], ["upstream-a"]], ["PASS"] * 3, ["DEMONSTRATED"] * 3),

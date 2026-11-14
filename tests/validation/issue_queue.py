@@ -1370,12 +1370,7 @@ def assess_obligations(obligations, reports, revision):
         added = {
             o["id"]
             for o in assessed
-            if o["status"] == "DEMONSTRATED"
-            and all(
-                dep in demonstrated
-                or (isinstance(dep, int) and dep not in assessed_issues)
-                for dep in o["dependencies"]
-            )
+            if o["status"] == "DEMONSTRATED" and set(o["dependencies"]) <= demonstrated
         } - demonstrated
         if not added:
             break
@@ -1386,10 +1381,7 @@ def assess_obligations(obligations, reports, revision):
                 demonstrated.add(issue_num)
     for row in assessed:
         row["blocked_dependencies"] = sorted(
-            dep
-            for dep in row["dependencies"]
-            if dep not in demonstrated
-            and not (isinstance(dep, int) and dep not in assessed_issues)
+            dep for dep in row["dependencies"] if dep not in demonstrated
         )
         if row["status"] == "DEMONSTRATED" and row["id"] not in demonstrated:
             row["status"] = "BLOCKED"
