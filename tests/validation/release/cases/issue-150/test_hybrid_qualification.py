@@ -233,68 +233,168 @@ def test_release_hybrid_generate_hybrid_model_actions(tmp_path):
 # ==============================================================================
 
 
-def test_release_hybrid_conservation_and_unimolecular_analytical_law():
-    """Verify analytical conversion and strict particle conservation: A_total + B_total = N."""
+def _simulate_hybrid_trajectory(
+    tmp_path: Path, model_text: str, model_name: str, seed: int, action: str
+) -> tuple[np.ndarray, dict[str, np.ndarray]]:
+    """Execute hybrid model generation and simulation, returning times and observable trajectories."""
+    model_file = tmp_path / f"{model_name}_{seed}.bngl"
+    out_prefix = tmp_path / f"{model_name}_{seed}_out"
+    action_text = (
+        f'generate_hybrid_model({{prefix=>"{out_prefix}", overwrite=>1, '
+        f'execute=>1, actions=>["{action}"]}})\n'
+    )
+    model_file.write_text(model_text + f"\nbegin actions\n{action_text}end actions\n")
+    m = bionetgen.load(model_file)
+    m.execute()
+
+    gdat_file = tmp_path / f"{model_name}_{seed}_out_hpp.gdat"
+    assert gdat_file.is_file(), f"Expected simulation output at {gdat_file}"
+
+    with open(gdat_file, "r", encoding="utf-8") as f:
+        header_line = None
+        data_lines = []
+        for line in f:
+            line_str = line.strip()
+            if not line_str:
+                continue
+            if line_str.startswith("#"):
+                header_line = line_str.lstrip("#").split()
+            else:
+                data_lines.append([float(x) for x in line_str.split()])
+
+    assert header_line is not None and data_lines, "Empty or corrupted gdat output"
+    data = np.array(data_lines)
+    times = data[:, 0]
+    observables = {
+        name: data[:, idx] for idx, name in enumerate(header_line) if idx > 0
+    }
+    return times, observables
+
+
+def test_release_hybrid_conservation_and_unimolecular_analytical_law(tmp_path):
+    """Verify analytical conversion and strict particle conservation on actual simulation trajectories."""
     n0 = 20
     k_make = 1.0
-    times = np.linspace(0.0, 1.0, 11)
+    t_end = 0.5
+    n_steps = 10
+    n_runs = 25
+    action = f"simulate_nf({{t_end=>{t_end}, n_steps=>{n_steps}, seed=>42}})"
 
-    for t in times:
-        # Analytical pure-death / conversion law
-        prob_b = math.exp(-k_make * t)
-        prob_a = 1.0 - prob_b
+    runs_b = []
+    runs_a = []
+    sim_times = None
 
-        expected_b = n0 * prob_b
-        expected_a = n0 * prob_a
+    for seed in range(42, 42 + n_runs):
+        act = f"simulate_nf({{t_end=>{t_end}, n_steps=>{n_steps}, seed=>{seed}}})"
+        times, obs = _simulate_hybrid_trajectory(
+            tmp_path, HYBRID_BASE_MODEL, "unimol", seed, act
+        )
+        sim_times = times
+        a = obs["A_total"]
+        b = obs["B_total"]
 
-        # Strict mass conservation invariant at every time t
-        assert abs((expected_a + expected_b) - n0) < 1e-12
+        # Strict stoichiometric mass conservation at every time point of every trajectory
+        assert np.allclose(a + b, float(n0)), f"Conservation violated at seed {seed}"
+        runs_a.append(a)
+        runs_b.append(b)
 
-        # Variance bounds under Binomial distribution: Var = n0 * p * (1-p)
-        var_b = n0 * prob_b * (1.0 - prob_b)
-        assert var_b >= 0.0
+    # Statistical convergence to CTMC analytical pure-death law: E[B(t)] = N0 * exp(-k*t)
+    mean_b = np.mean(runs_b, axis=0)
+    expected_b = n0 * np.exp(-k_make * sim_times)
+    # Standard error of the mean under Binomial: sqrt(N * p * (1-p) / R)
+    std_err = np.sqrt(
+        n0 * np.exp(-k_make * sim_times) * (1.0 - np.exp(-k_make * sim_times)) / n_runs
+    )
+    # Within 3.5 standard errors at all sample times
+    assert np.all(np.abs(mean_b - expected_b) <= np.maximum(3.5 * std_err, 0.5))
+
+    # Negative / wrong-implementation control: corrupted trajectory must be detected
+    corrupted_a = a.copy()
+    corrupted_a[2] -= 1.0  # simulate artificial particle loss
+    with pytest.raises(AssertionError):
+        assert np.allclose(corrupted_a + b, float(n0))
 
 
-def test_release_hybrid_whole_dimer_conversion_and_multiplicity():
-    """Verify whole dimer conversion to population preserves A_units = 2 * N_dimers."""
+def test_release_hybrid_whole_dimer_conversion_and_multiplicity(tmp_path):
+    """Verify whole dimer conversion to population preserves A_units = 2 * N_dimers on trajectories."""
     n_dimers = 8
-    k_off = 1.5
-    times = np.linspace(0.0, 1.0, 11)
+    t_end = 0.5
+    n_steps = 5
+    n_runs = 20
 
-    for t in times:
-        expected_dimers = n_dimers * math.exp(-k_off * t)
-        expected_monomers = 2 * (n_dimers - expected_dimers)
+    dimer_runs = []
+    sim_times = None
 
-        # Monomer units in complexes + free monomer units
-        total_a_units = 2 * expected_dimers + expected_monomers
-        assert abs(total_a_units - 2 * n_dimers) < 1e-12
+    for seed in range(100, 100 + n_runs):
+        act = f"simulate_nf({{t_end=>{t_end}, n_steps=>{n_steps}, seed=>{seed}}})"
+        times, obs = _simulate_hybrid_trajectory(
+            tmp_path, HYBRID_DIMER_MODEL, "dimer", seed, act
+        )
+        sim_times = times
+        a_units = obs["A_units"]
+        dimers = obs["Dimer_species"]
+
+        # Exact stoichiometric multiplicity invariant: 2 * N_dimers = 16 monomer units
+        assert np.allclose(
+            a_units, float(2 * n_dimers)
+        ), f"Multiplicity invariant violated at seed {seed}"
+        dimer_runs.append(dimers)
+
+    # Dimer degradation proceeds monotonically or non-increasingly in expectation
+    mean_dimers = np.mean(dimer_runs, axis=0)
+    assert (
+        mean_dimers[-1] < mean_dimers[0]
+    ), "Dimers did not unbind over simulation interval"
+
+    # Negative / wrong-implementation control: monomer unit destruction must be detected
+    corrupted_units = a_units.copy()
+    corrupted_units[1] += 2.0
+    with pytest.raises(AssertionError):
+        assert np.allclose(corrupted_units, float(2 * n_dimers))
 
 
-def test_release_hybrid_population_particle_conversion_cycle():
-    """Verify bidirectional reversible conversion cycle equilibrium and conservation."""
+def test_release_hybrid_population_particle_conversion_cycle(tmp_path):
+    """Verify bidirectional reversible conversion cycle equilibrium and conservation on trajectories."""
     n0 = 20
     kf = 2.0
     kr = 1.0
     k_sum = kf + kr
+    t_end = 1.0
+    n_steps = 10
+    n_runs = 20
 
-    times = np.linspace(0.0, 2.0, 21)
-    for t in times:
-        # Transient two-state CTMC distribution starting in state A
-        prob_b = (kf / k_sum) * (1.0 - math.exp(-k_sum * t))
-        prob_a = 1.0 - prob_b
+    runs_b = []
+    sim_times = None
 
-        expected_b = n0 * prob_b
-        expected_a = n0 * prob_a
+    for seed in range(200, 200 + n_runs):
+        act = f"simulate_nf({{t_end=>{t_end}, n_steps=>{n_steps}, seed=>{seed}}})"
+        times, obs = _simulate_hybrid_trajectory(
+            tmp_path, HYBRID_CYCLE_MODEL, "cycle", seed, act
+        )
+        sim_times = times
+        a = obs["A_total"]
+        b = obs["B_total"]
 
-        # Conservation invariant
-        assert abs((expected_a + expected_b) - n0) < 1e-12
+        # Conservation invariant on every step of every trajectory
+        assert np.allclose(
+            a + b, float(n0)
+        ), f"Cycle conservation violated at seed {seed}"
+        runs_b.append(b)
 
-    # Equilibrium as t -> infinity
-    eq_b = n0 * (kf / k_sum)
-    eq_a = n0 * (kr / k_sum)
-    assert abs(eq_b - 20.0 * (2.0 / 3.0)) < 1e-12
-    assert abs(eq_a - 20.0 * (1.0 / 3.0)) < 1e-12
-    assert abs((eq_a + eq_b) - n0) < 1e-12
+    # Transitions toward CTMC equilibrium: E[B] = n0 * (kf / k_sum) = 20 * (2/3) ~ 13.33
+    mean_b = np.mean(runs_b, axis=0)
+    # Monotonic rise towards equilibrium from 0
+    assert mean_b[-1] > mean_b[0]
+    expected_eq = n0 * (kf / k_sum)
+    assert (
+        abs(mean_b[-1] - expected_eq) < 3.0
+    ), f"Empirical mean {mean_b[-1]} diverges from theoretical equilibrium {expected_eq}"
+
+    # Negative control
+    corrupted_cycle = a.copy()
+    corrupted_cycle[-1] = 0.0
+    with pytest.raises(AssertionError):
+        assert np.allclose(corrupted_cycle + b, float(n0))
 
 
 # ==============================================================================
@@ -313,8 +413,8 @@ def test_release_hybrid_storage_vs_execution_boundary():
     ), "Population maps must be present in AST/snapshot"
 
     # Direct simulation of un-lowered model without hybrid generation must reject fail-closed
-    with pytest.raises(Exception):
-        cpp.execute_nfnext(model, 1.0, 5, 42)
+    with pytest.raises(RuntimeError, match="population maps"):
+        cpp.simulate_nfnext(model, [0.0, 1.0], seed=42)
 
 
 # ==============================================================================
