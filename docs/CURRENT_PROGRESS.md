@@ -24,7 +24,7 @@ implemented by it. A missing report alone is not proof of a product defect.
 | [#473](https://github.com/RuleWorld/BNG3/issues/473) | Existing JAX CPU mass-action/time-dependent ODE, gradients and first-order SSA-law tests are retained. | jax_ode.py explicitly refuses observable-dependent functional rates (including an existing refusal regression). The new wrapper does not complete all protocol/continuation/rate families, and its install check tests unavailable/import behavior rather than an installed-extra campaign. No semantic implementation changed in #663. |
 | [#475](https://github.com/RuleWorld/BNG3/issues/475) | Existing native ODE method-of-steps, continuation and BNGIR delayed-rule tests remain useful. | New SSA wrapper calls continuation examples rather than an independent delayed-jump distribution comparison. The SBML formats case conditionally parses then checks only file existence; it does not export/reimport/execute. BngsimAdapter still invokes requireNoDelayedSemantics; complete applicable backend/format behavior is unfinished. |
 
-The downloaded #150 artifact `release-hybrid-99b392cbf64e5f5e237d89c3bb85fb60b2012429-43568894380`
+The downloaded #150 artifact "release-hybrid-99b392cbf64e5f5e237d89c3bb85fb60b2012429-43568894380"
 from [run 43568894380](https://github.com/RuleWorld/BNG3/actions/runs/43568894380)
 binds source `99b392cbf64e5f5e237d89c3bb85fb60b2012429`; its
 `capability-coverage-150.json` explicitly records partial acceptance and missing
