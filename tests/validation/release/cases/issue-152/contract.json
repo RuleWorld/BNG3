@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "issue": 152,
+  "title": "C07: Reconcile newer NFsim energy, Rasi and protocol capabilities",
+  "source": {
+    "repository": "RuleWorld/BNG3",
+    "contract": "Canonical energy patterns and protocols in NFsim, source-linked real-model fixtures (RNA/uORF, motor, TQSSA, fceRI, multisite protocols), and nonequilibrium extensions (barrier patterns, driven reservoirs) under protocol execution."
+  },
+  "oracle": {
+    "identity": "Canonical NFsim (9b00d42f) source-linked fixtures, analytic two-state Markov chain law for flagellar motor, mass-action steady-state algebraic root for TQSSA, invariant conservation laws for fceRI/IL-2/RNA-synthesis, and nonequilibrium cycle affinity A = sum(W) for driven protocols.",
+    "law": "Exact source invariant preservation, closed-form analytic transition laws, Kolmogorov cycle criterion and driven cycle affinities, and fail-closed refusal when BNG_NFSIM_GENERAL_ENERGY is disabled."
+  },
+  "acceptance_checks": [
+    "release-energy-protocols",
+    "release-extension-protocols",
+    "release-obligation-152"
+  ],
+  "inventory_rows": [],
+  "obligations": [
+    "issue:152:review-source-behavior-after-the-recorded-cutoffs-classify-each",
+    "issue:152:add-relevant-real-rna-uorf-motor-tqssa-fceri-and-multisite-proto",
+    "issue:152:closure-record",
+    "issue:152:executed-slice:rna-uorf",
+    "issue:152:executed-slice:motor",
+    "issue:152:executed-slice:tqssa",
+    "issue:152:executed-slice:fceri",
+    "issue:152:executed-slice:multisite-protocol",
+    "issue:152:live-acceptance:release-energy-protocols",
+    "issue:152:live-acceptance:release-extension-protocols",
+    "issue:152:live-acceptance:release-obligation-152"
+  ]
+}

@@ -12,6 +12,7 @@ from . import (
     campaign,
     integrated_boundaries,
     bngir_adversarial,
+    real_model_fixtures,
     integrated_consumers,
     integrated_marginals,
     integrated_protocol,
@@ -28,6 +29,7 @@ OPERATIONS = (
     "graph-identity-contract",
     "bngir-adversarial",
     "quantity-laws",
+    "real-model-fixtures",
 )
 
 
@@ -55,6 +57,8 @@ def check_ids(operation, case=None, *, full=False):
         ]
     if operation == "bngir-adversarial":
         return bngir_adversarial.check_ids()
+    if operation == "real-model-fixtures":
+        return real_model_fixtures.check_ids()
     return [
         f"{case['id']}:nf-marginals:{engine}.{name}"
         for engine in ("embedded", "native")
@@ -70,6 +74,7 @@ def expected_ids(
     include_graph_identity_contract=True,
     include_bngir_adversarial=True,
     include_quantity_laws=True,
+    include_real_model_fixtures=True,
     full=False,
 ):
     ids = []
@@ -88,6 +93,8 @@ def expected_ids(
         )
     if include_bngir_adversarial:
         ids.extend(["campaign:bngir-adversarial", *check_ids("bngir-adversarial")])
+    if include_real_model_fixtures:
+        ids.extend(["campaign:real-model-fixtures", *check_ids("real-model-fixtures")])
     for case in cases:
         ids += [f"{case['id']}:protocol", *check_ids("protocol", case)]
         if case["family"] in ("decay", "reversible", "dimerization"):
@@ -113,6 +120,8 @@ def run_worker(operation, args):
         return run_graph_identity_contract(Path.cwd())
     if operation == "bngir-adversarial":
         return bngir_adversarial.run_worker(Path.cwd())
+    if operation == "real-model-fixtures":
+        return real_model_fixtures.run_worker(Path.cwd())
     if operation == "protocol":
         rows = integrated_protocol.run(
             args.input, args.case_id, Path.cwd(), case=json.loads(args.case_json)
