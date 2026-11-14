@@ -3,7 +3,7 @@
   "issues": [
     {
       "number": 137,
-      "body_sha256": "685b12d326c40655140fd8afb89ddb8fccddd3c3eae52840eba8d4992cf5802f",
+      "body_sha256": "6b9ba56b0f410905fb60f1d64efc7a66034652dbbec1c56c31afa9c3c81fa2e0",
       "obligations": [
         {
           "id": "issue:137:inventory-behavior-from-bionetgen-pybionetgen-canonical-newer-nf",
@@ -249,12 +249,14 @@
           "id": "issue:137:live-acceptance:release-inventory",
           "criterion": "`release-inventory`: enumerate pinned source entry points and compare with all inventory IDs; no uncovered behavior or dangling check.",
           "scope": "`release-inventory`: enumerate pinned source entry points and compare with all inventory IDs; no uncovered behavior or dangling check.",
-          "live_body_sha256": "09e0de76b37fd876141ec7bd2537e5aab485485ebf8f97b542381700bb62ffe7",
+          "live_body_sha256": "6b9ba56b0f410905fb60f1d64efc7a66034652dbbec1c56c31afa9c3c81fa2e0",
           "dependencies": [
             179,
             180
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-inventory",
@@ -276,18 +278,21 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "previous_live_body_sha256": "09e0de76b37fd876141ec7bd2537e5aab485485ebf8f97b542381700bb62ffe7"
         },
         {
           "id": "issue:137:live-acceptance:release-inventory-links",
           "criterion": "`release-inventory-links`: README, checklist and matrix resolve to the same complete inventory.",
           "scope": "`release-inventory-links`: README, checklist and matrix resolve to the same complete inventory.",
-          "live_body_sha256": "09e0de76b37fd876141ec7bd2537e5aab485485ebf8f97b542381700bb62ffe7",
+          "live_body_sha256": "6b9ba56b0f410905fb60f1d64efc7a66034652dbbec1c56c31afa9c3c81fa2e0",
           "dependencies": [
             179,
             180
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-inventory-links",
@@ -309,18 +314,21 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "previous_live_body_sha256": "09e0de76b37fd876141ec7bd2537e5aab485485ebf8f97b542381700bb62ffe7"
         },
         {
           "id": "issue:137:live-acceptance:release-capability-coverage-137",
           "criterion": "`release-capability-coverage-137`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
           "scope": "`release-capability-coverage-137`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
-          "live_body_sha256": "09e0de76b37fd876141ec7bd2537e5aab485485ebf8f97b542381700bb62ffe7",
+          "live_body_sha256": "6b9ba56b0f410905fb60f1d64efc7a66034652dbbec1c56c31afa9c3c81fa2e0",
           "dependencies": [
             179,
             180
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-capability-coverage-137",
@@ -342,7 +350,8 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "previous_live_body_sha256": "09e0de76b37fd876141ec7bd2537e5aab485485ebf8f97b542381700bb62ffe7"
         }
       ]
     },
@@ -15684,7 +15693,7 @@
     },
     {
       "number": 174,
-      "body_sha256": "65cba0c64ac94a4e807843d6bd5ecfedbb527fac924cbbbc7c59631a88340af7",
+      "body_sha256": "46a3c55feede422eb0a5bdfb36475b7a6a558c2441fb655c45367ce40b963ff1",
       "obligations": [
         {
           "id": "issue:174:measure-parse-compile-generate-ode-ssa-nfsim-scans-cold-warm-set",
@@ -16168,20 +16177,22 @@
         },
         {
           "id": "issue:174:live-acceptance:release-benchmarks",
-          "criterion": "`release-benchmarks`: reproducible machine/corpus/revision manifests include every backend and workload class.",
-          "scope": "`release-benchmarks`: reproducible machine/corpus/revision manifests include every backend and workload class.",
-          "live_body_sha256": "cd51f7405dc6944ca2016cb28a85f139ef1d8c936073cbf46499146312f13fd7",
+          "criterion": "`release-benchmarks`: reproducible machine/corpus/revision manifests cover all required CPU backends and workload classes. GPU measurements are tracked separately in #474.",
+          "scope": "`release-benchmarks`: reproducible machine/corpus/revision manifests cover all required CPU backends and workload classes. GPU measurements are tracked separately in #474.",
+          "live_body_sha256": "46a3c55feede422eb0a5bdfb36475b7a6a558c2441fb655c45367ce40b963ff1",
           "dependencies": [
             141,
             148,
             176
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-benchmarks",
               "evidence_kind": "supported-execution",
-              "expectation": "reproducible machine/corpus/revision manifests include every backend and workload class.",
+              "expectation": "reproducible machine/corpus/revision manifests cover all required CPU backends and workload classes. GPU measurements are tracked separately in #474.",
               "identity_requirements": [
                 "source.revision"
               ],
@@ -16190,32 +16201,37 @@
               "receipt_producer": null,
               "receipt_producer_status": "MISSING_PRODUCER",
               "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-benchmarks.",
-                "No revision-locked consuming receipt producer is declared for required live check release-benchmarks."
+                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
               ]
             }
           ],
           "test_references": [],
-          "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
+          "completion_condition": "Every work clause and acceptance check for the current scoped contract passes on main with exact-revision consuming evidence.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "previous_scope": {
+            "live_body_sha256": "cd51f7405dc6944ca2016cb28a85f139ef1d8c936073cbf46499146312f13fd7",
+            "criterion": "`release-benchmarks`: reproducible machine/corpus/revision manifests include every backend and workload class."
+          }
         },
         {
           "id": "issue:174:live-acceptance:release-benchmark-correctness",
-          "criterion": "`release-benchmark-correctness`: every measured workload passes canonical or analytic semantic checks.",
-          "scope": "`release-benchmark-correctness`: every measured workload passes canonical or analytic semantic checks.",
-          "live_body_sha256": "cd51f7405dc6944ca2016cb28a85f139ef1d8c936073cbf46499146312f13fd7",
+          "criterion": "`release-benchmark-correctness`: every measured CPU workload passes canonical or analytic semantic checks.",
+          "scope": "`release-benchmark-correctness`: every measured CPU workload passes canonical or analytic semantic checks.",
+          "live_body_sha256": "46a3c55feede422eb0a5bdfb36475b7a6a558c2441fb655c45367ce40b963ff1",
           "dependencies": [
             141,
             148,
             176
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-benchmark-correctness",
               "evidence_kind": "supported-execution",
-              "expectation": "every measured workload passes canonical or analytic semantic checks.",
+              "expectation": "every measured CPU workload passes canonical or analytic semantic checks.",
               "identity_requirements": [
                 "source.revision"
               ],
@@ -16224,32 +16240,37 @@
               "receipt_producer": null,
               "receipt_producer_status": "MISSING_PRODUCER",
               "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-benchmark-correctness.",
-                "No revision-locked consuming receipt producer is declared for required live check release-benchmark-correctness."
+                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
               ]
             }
           ],
           "test_references": [],
-          "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
+          "completion_condition": "Every work clause and acceptance check for the current scoped contract passes on main with exact-revision consuming evidence.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "previous_scope": {
+            "live_body_sha256": "cd51f7405dc6944ca2016cb28a85f139ef1d8c936073cbf46499146312f13fd7",
+            "criterion": "`release-benchmark-correctness`: every measured workload passes canonical or analytic semantic checks."
+          }
         },
         {
           "id": "issue:174:live-acceptance:release-obligation-174",
-          "criterion": "`release-obligation-174`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
-          "scope": "`release-obligation-174`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
-          "live_body_sha256": "cd51f7405dc6944ca2016cb28a85f139ef1d8c936073cbf46499146312f13fd7",
+          "criterion": "`release-obligation-174`: each CPU benchmark work clause has its named result, measurement limits, source/oracle identities and main commit recorded.",
+          "scope": "`release-obligation-174`: each CPU benchmark work clause has its named result, measurement limits, source/oracle identities and main commit recorded.",
+          "live_body_sha256": "46a3c55feede422eb0a5bdfb36475b7a6a558c2441fb655c45367ce40b963ff1",
           "dependencies": [
             141,
             148,
             176
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-obligation-174",
               "evidence_kind": "supported-execution",
-              "expectation": "each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
+              "expectation": "each CPU benchmark work clause has its named result, measurement limits, source/oracle identities and main commit recorded.",
               "identity_requirements": [
                 "source.revision"
               ],
@@ -16258,21 +16279,24 @@
               "receipt_producer": null,
               "receipt_producer_status": "MISSING_PRODUCER",
               "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-174.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-174."
+                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
               ]
             }
           ],
           "test_references": [],
-          "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
+          "completion_condition": "Every work clause and acceptance check for the current scoped contract passes on main with exact-revision consuming evidence.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "previous_scope": {
+            "live_body_sha256": "cd51f7405dc6944ca2016cb28a85f139ef1d8c936073cbf46499146312f13fd7",
+            "criterion": "`release-obligation-174`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures."
+          }
         }
       ]
     },
     {
       "number": 176,
-      "body_sha256": "d98a5b53f198c5d848694584ac7bb5fd2fedbe2e45c9870dbdf6aae560bde683",
+      "body_sha256": "1e21f1d0bc8b9eea17931026d24e55333a773d5bd9e7c5ee6466c1d9d8c8dba6",
       "obligations": [
         {
           "id": "issue:176:reconcile-the-old-plan-with-implemented-cpu-work-and-current-wor",
@@ -16467,19 +16491,21 @@
         },
         {
           "id": "issue:176:live-acceptance:release-nf-ensemble",
-          "criterion": "`release-nf-ensemble`: concurrency/RNG isolation and native NFsim distribution checks pass.",
-          "scope": "`release-nf-ensemble`: concurrency/RNG isolation and native NFsim distribution checks pass.",
-          "live_body_sha256": "a23f151e24d54bedb233908fe87c5e2c56a7256b7197265dc2dc27cd0be3f251",
+          "criterion": "`release-nf-ensemble`: CPU concurrency/RNG isolation and native NFsim distribution checks pass with fixed run budgets and error control.",
+          "scope": "`release-nf-ensemble`: CPU concurrency/RNG isolation and native NFsim distribution checks pass with fixed run budgets and error control.",
+          "live_body_sha256": "1e21f1d0bc8b9eea17931026d24e55333a773d5bd9e7c5ee6466c1d9d8c8dba6",
           "dependencies": [
-            141,
-            148
+            148,
+            141
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-nf-ensemble",
               "evidence_kind": "supported-execution",
-              "expectation": "concurrency/RNG isolation and native NFsim distribution checks pass.",
+              "expectation": "CPU concurrency/RNG isolation and native NFsim distribution checks pass with fixed run budgets and error control.",
               "identity_requirements": [
                 "source.revision"
               ],
@@ -16488,21 +16514,28 @@
               "receipt_producer": null,
               "receipt_producer_status": "MISSING_PRODUCER",
               "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-nf-ensemble.",
-                "No revision-locked consuming receipt producer is declared for required live check release-nf-ensemble."
+                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
               ]
             }
           ],
           "test_references": [],
-          "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
+          "completion_condition": "Every work clause and acceptance check for the current scoped contract passes on main with exact-revision consuming evidence.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "capability_rows": [],
+          "row_mapping_status": "CPU_WORK_CLAUSES_GPU_ROW_TRANSFERRED_TO_474",
+          "consumer_requirements": [
+            "Production CPU ensemble isolation, scientific laws and measured performance; GPU acceptance is separate in #474."
+          ],
+          "previous_scope": {
+            "live_body_sha256": "a23f151e24d54bedb233908fe87c5e2c56a7256b7197265dc2dc27cd0be3f251",
+            "criterion": "`release-nf-ensemble`: concurrency/RNG isolation and native NFsim distribution checks pass."
+          }
         },
         {
           "id": "issue:176:live-acceptance:release-nf-gpu",
           "criterion": "`release-nf-gpu`: actual GPU kernels execute the network-free corpus with independent law checks and recorded performance.",
           "scope": "`release-nf-gpu`: actual GPU kernels execute the network-free corpus with independent law checks and recorded performance.",
-          "live_body_sha256": "a23f151e24d54bedb233908fe87c5e2c56a7256b7197265dc2dc27cd0be3f251",
           "dependencies": [
             141,
             148
@@ -16529,23 +16562,27 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "historical_live_body_sha256": "a23f151e24d54bedb233908fe87c5e2c56a7256b7197265dc2dc27cd0be3f251",
+          "scope_transfer": "GPU acceptance moved to #474 under DECISIONS.md item 17; retained as historical scope, not current #176 acceptance."
         },
         {
           "id": "issue:176:live-acceptance:release-capability-coverage-176",
-          "criterion": "`release-capability-coverage-176`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
-          "scope": "`release-capability-coverage-176`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
-          "live_body_sha256": "a23f151e24d54bedb233908fe87c5e2c56a7256b7197265dc2dc27cd0be3f251",
+          "criterion": "`release-capability-coverage-176`: all CPU/ensemble work clauses execute through production entry points with independently checked outputs and measured startup, memory and throughput on main. GPU row backend.gpu and release-nf-gpu are owned by #474.",
+          "scope": "`release-capability-coverage-176`: all CPU/ensemble work clauses execute through production entry points with independently checked outputs and measured startup, memory and throughput on main. GPU row backend.gpu and release-nf-gpu are owned by #474.",
+          "live_body_sha256": "1e21f1d0bc8b9eea17931026d24e55333a773d5bd9e7c5ee6466c1d9d8c8dba6",
           "dependencies": [
-            141,
-            148
+            148,
+            141
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-capability-coverage-176",
               "evidence_kind": "supported-execution",
-              "expectation": "all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
+              "expectation": "all CPU/ensemble work clauses execute through production entry points with independently checked outputs and measured startup, memory and throughput on main. GPU row backend.gpu and release-nf-gpu are owned by #474.",
               "identity_requirements": [
                 "source.revision"
               ],
@@ -16554,15 +16591,23 @@
               "receipt_producer": null,
               "receipt_producer_status": "MISSING_PRODUCER",
               "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-capability-coverage-176.",
-                "No revision-locked consuming receipt producer is declared for required live check release-capability-coverage-176."
+                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
               ]
             }
           ],
           "test_references": [],
-          "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
+          "completion_condition": "Every work clause and acceptance check for the current scoped contract passes on main with exact-revision consuming evidence.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "capability_rows": [],
+          "row_mapping_status": "CPU_WORK_CLAUSES_GPU_ROW_TRANSFERRED_TO_474",
+          "consumer_requirements": [
+            "Production CPU ensemble isolation, scientific laws and measured performance; GPU acceptance is separate in #474."
+          ],
+          "previous_scope": {
+            "live_body_sha256": "a23f151e24d54bedb233908fe87c5e2c56a7256b7197265dc2dc27cd0be3f251",
+            "criterion": "`release-capability-coverage-176`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes."
+          }
         }
       ]
     },
@@ -17046,7 +17091,7 @@
     },
     {
       "number": 178,
-      "body_sha256": "d82274f22cfd712af957097044004755928a6e45a15d3918c72ea484df47b775",
+      "body_sha256": "969746e4bfab3f260f7eb395ce0b110e0f754bbda23d518396f736ccd7c6790a",
       "obligations": [
         {
           "id": "issue:178:identify-duplicate-option-rate-capability-logic-in-large-dispatc",
@@ -17153,7 +17198,7 @@
           "id": "issue:178:live-acceptance:release-shared-decisions",
           "criterion": "`release-shared-decisions`: architecture checks identify one implementation per option/rate/capability rule.",
           "scope": "`release-shared-decisions`: architecture checks identify one implementation per option/rate/capability rule.",
-          "live_body_sha256": "75736e37f8134de2590afe6846b251f7b716b47bb8b1d2515d3147cc80605b89",
+          "live_body_sha256": "969746e4bfab3f260f7eb395ce0b110e0f754bbda23d518396f736ccd7c6790a",
           "dependencies": [
             138,
             140,
@@ -17161,7 +17206,9 @@
             144,
             147
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-shared-decisions",
@@ -17183,13 +17230,14 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "previous_live_body_sha256": "75736e37f8134de2590afe6846b251f7b716b47bb8b1d2515d3147cc80605b89"
         },
         {
           "id": "issue:178:live-acceptance:release-interface-parity",
           "criterion": "`release-interface-parity`: all backend and format consumers agree with independent expected semantics.",
           "scope": "`release-interface-parity`: all backend and format consumers agree with independent expected semantics.",
-          "live_body_sha256": "75736e37f8134de2590afe6846b251f7b716b47bb8b1d2515d3147cc80605b89",
+          "live_body_sha256": "969746e4bfab3f260f7eb395ce0b110e0f754bbda23d518396f736ccd7c6790a",
           "dependencies": [
             138,
             140,
@@ -17197,7 +17245,9 @@
             144,
             147
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-interface-parity",
@@ -17219,13 +17269,14 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "previous_live_body_sha256": "75736e37f8134de2590afe6846b251f7b716b47bb8b1d2515d3147cc80605b89"
         },
         {
           "id": "issue:178:live-acceptance:release-obligation-178",
           "criterion": "`release-obligation-178`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
           "scope": "`release-obligation-178`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
-          "live_body_sha256": "75736e37f8134de2590afe6846b251f7b716b47bb8b1d2515d3147cc80605b89",
+          "live_body_sha256": "969746e4bfab3f260f7eb395ce0b110e0f754bbda23d518396f736ccd7c6790a",
           "dependencies": [
             138,
             140,
@@ -17233,7 +17284,9 @@
             144,
             147
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-obligation-178",
@@ -17255,13 +17308,14 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "previous_live_body_sha256": "75736e37f8134de2590afe6846b251f7b716b47bb8b1d2515d3147cc80605b89"
         },
         {
           "id": "issue:178:live-acceptance:release-backend-contract",
           "criterion": "`release-backend-contract`: every backend accepts the same compiled input and returns the same result schema; invalid options fail consistently.",
           "scope": "`release-backend-contract`: every backend accepts the same compiled input and returns the same result schema; invalid options fail consistently.",
-          "live_body_sha256": "75736e37f8134de2590afe6846b251f7b716b47bb8b1d2515d3147cc80605b89",
+          "live_body_sha256": "969746e4bfab3f260f7eb395ce0b110e0f754bbda23d518396f736ccd7c6790a",
           "dependencies": [
             138,
             140,
@@ -17269,7 +17323,9 @@
             144,
             147
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-backend-contract",
@@ -17291,13 +17347,14 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "previous_live_body_sha256": "75736e37f8134de2590afe6846b251f7b716b47bb8b1d2515d3147cc80605b89"
         },
         {
           "id": "issue:178:live-acceptance:release-backend-oracles",
           "criterion": "`release-backend-oracles`: each backend passes assigned inventory cases against BNG2/native NFsim/analytic laws; actual GPU kernels and optional installs execute.",
           "scope": "`release-backend-oracles`: each backend passes assigned inventory cases against BNG2/native NFsim/analytic laws; actual GPU kernels and optional installs execute.",
-          "live_body_sha256": "75736e37f8134de2590afe6846b251f7b716b47bb8b1d2515d3147cc80605b89",
+          "live_body_sha256": "969746e4bfab3f260f7eb395ce0b110e0f754bbda23d518396f736ccd7c6790a",
           "dependencies": [
             138,
             140,
@@ -17305,7 +17362,9 @@
             144,
             147
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-backend-oracles",
@@ -17327,7 +17386,8 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "previous_live_body_sha256": "75736e37f8134de2590afe6846b251f7b716b47bb8b1d2515d3147cc80605b89"
         }
       ]
     },
@@ -17618,7 +17678,7 @@
     },
     {
       "number": 181,
-      "body_sha256": "5f44c760c8f2fc23955a4e36515953926efbe6d0ef37076d399a5d45ebe5f98d",
+      "body_sha256": "85250bb18aa3e1f43c76940b9bfdff00318af8df6cf5733c8bd146bd22c3b202",
       "obligations": [
         {
           "id": "issue:181:reconcile-106-selected-models-and-the-separate-71-model-workflow",
@@ -17822,13 +17882,15 @@
           "id": "issue:181:live-acceptance:release-corpus-coverage",
           "criterion": "`release-corpus-coverage`: inventory row coverage is complete and manifests enumerate exact source/case identities.",
           "scope": "`release-corpus-coverage`: inventory row coverage is complete and manifests enumerate exact source/case identities.",
-          "live_body_sha256": "7910b3f41c1ef73b8cf9d0442f9c08b01dd362075155b8a2795be9dd8b4b1860",
+          "live_body_sha256": "85250bb18aa3e1f43c76940b9bfdff00318af8df6cf5733c8bd146bd22c3b202",
           "dependencies": [
             137,
             179,
             471
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-corpus-coverage",
@@ -17850,19 +17912,22 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "previous_live_body_sha256": "7910b3f41c1ef73b8cf9d0442f9c08b01dd362075155b8a2795be9dd8b4b1860"
         },
         {
           "id": "issue:181:live-acceptance:release-corpus-results",
           "criterion": "`release-corpus-results`: all release cases have independently checked results and resumable per-case artifacts.",
           "scope": "`release-corpus-results`: all release cases have independently checked results and resumable per-case artifacts.",
-          "live_body_sha256": "7910b3f41c1ef73b8cf9d0442f9c08b01dd362075155b8a2795be9dd8b4b1860",
+          "live_body_sha256": "85250bb18aa3e1f43c76940b9bfdff00318af8df6cf5733c8bd146bd22c3b202",
           "dependencies": [
             137,
             179,
             471
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-corpus-results",
@@ -17884,19 +17949,22 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "previous_live_body_sha256": "7910b3f41c1ef73b8cf9d0442f9c08b01dd362075155b8a2795be9dd8b4b1860"
         },
         {
           "id": "issue:181:live-acceptance:release-obligation-181",
           "criterion": "`release-obligation-181`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
           "scope": "`release-obligation-181`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
-          "live_body_sha256": "7910b3f41c1ef73b8cf9d0442f9c08b01dd362075155b8a2795be9dd8b4b1860",
+          "live_body_sha256": "85250bb18aa3e1f43c76940b9bfdff00318af8df6cf5733c8bd146bd22c3b202",
           "dependencies": [
             137,
             179,
             471
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-obligation-181",
@@ -17918,13 +17986,14 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "previous_live_body_sha256": "7910b3f41c1ef73b8cf9d0442f9c08b01dd362075155b8a2795be9dd8b4b1860"
         }
       ]
     },
     {
       "number": 184,
-      "body_sha256": "d16f52eb25779ac8d699e0854a25b983def552251ff2f228bbcd4b85908c2f67",
+      "body_sha256": "df065c861d62f353645d50e8022c86fc2d63789ef62cd0a99603106fba2df1a9",
       "obligations": [
         {
           "id": "issue:184:require-approved-provenance-corpora-scheduled-nfsim-results-clea",
@@ -18084,9 +18153,9 @@
         },
         {
           "id": "issue:184:live-acceptance:release-candidate",
-          "criterion": "`release-candidate`: complete independent capability matrix and all release-tier jobs pass on the same main revision.",
-          "scope": "`release-candidate`: complete independent capability matrix and all release-tier jobs pass on the same main revision.",
-          "live_body_sha256": "47e7f47069e04a426fb34298d6fc9d3e31299f3d2ae09dd75c9cbe300cdc1f5c",
+          "criterion": "`release-candidate`: the complete current CPU capability matrix and all CPU release-tier scientific, formal, platform, sanitizer and optional-backend jobs pass on the same main revision; GPU scope is explicitly deferred to #474 and not reported as passed.",
+          "scope": "`release-candidate`: the complete current CPU capability matrix and all CPU release-tier scientific, formal, platform, sanitizer and optional-backend jobs pass on the same main revision; GPU scope is explicitly deferred to #474 and not reported as passed.",
+          "live_body_sha256": "df065c861d62f353645d50e8022c86fc2d63789ef62cd0a99603106fba2df1a9",
           "dependencies": [
             137,
             179,
@@ -18094,15 +18163,16 @@
             185,
             186,
             471,
-            473,
-            474
+            473
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-candidate",
               "evidence_kind": "supported-execution",
-              "expectation": "complete independent capability matrix and all release-tier jobs pass on the same main revision.",
+              "expectation": "the complete current CPU capability matrix and all CPU release-tier scientific, formal, platform, sanitizer and optional-backend jobs pass on the same main revision; GPU scope is explicitly deferred to #474 and not reported as passed.",
               "identity_requirements": [
                 "source.revision"
               ],
@@ -18111,21 +18181,24 @@
               "receipt_producer": null,
               "receipt_producer_status": "MISSING_PRODUCER",
               "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-candidate.",
-                "No revision-locked consuming receipt producer is declared for required live check release-candidate."
+                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
               ]
             }
           ],
           "test_references": [],
-          "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
+          "completion_condition": "Every work clause and acceptance check for the current scoped contract passes on main with exact-revision consuming evidence.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "previous_scope": {
+            "live_body_sha256": "47e7f47069e04a426fb34298d6fc9d3e31299f3d2ae09dd75c9cbe300cdc1f5c",
+            "criterion": "`release-candidate`: complete independent capability matrix and all release-tier jobs pass on the same main revision."
+          }
         },
         {
           "id": "issue:184:live-acceptance:release-installed-artifacts",
-          "criterion": "`release-installed-artifacts`: actual wheels/sdist install and execute public examples on each declared platform.",
-          "scope": "`release-installed-artifacts`: actual wheels/sdist install and execute public examples on each declared platform.",
-          "live_body_sha256": "47e7f47069e04a426fb34298d6fc9d3e31299f3d2ae09dd75c9cbe300cdc1f5c",
+          "criterion": "`release-installed-artifacts`: actual wheels/sdist install and execute CPU public examples and CPU extras on each declared platform with truthful GPU availability/support metadata.",
+          "scope": "`release-installed-artifacts`: actual wheels/sdist install and execute CPU public examples and CPU extras on each declared platform with truthful GPU availability/support metadata.",
+          "live_body_sha256": "df065c861d62f353645d50e8022c86fc2d63789ef62cd0a99603106fba2df1a9",
           "dependencies": [
             137,
             179,
@@ -18133,15 +18206,16 @@
             185,
             186,
             471,
-            473,
-            474
+            473
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-installed-artifacts",
               "evidence_kind": "supported-execution",
-              "expectation": "actual wheels/sdist install and execute public examples on each declared platform.",
+              "expectation": "actual wheels/sdist install and execute CPU public examples and CPU extras on each declared platform with truthful GPU availability/support metadata.",
               "identity_requirements": [
                 "source.revision"
               ],
@@ -18150,21 +18224,24 @@
               "receipt_producer": null,
               "receipt_producer_status": "MISSING_PRODUCER",
               "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-installed-artifacts.",
-                "No revision-locked consuming receipt producer is declared for required live check release-installed-artifacts."
+                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
               ]
             }
           ],
           "test_references": [],
-          "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
+          "completion_condition": "Every work clause and acceptance check for the current scoped contract passes on main with exact-revision consuming evidence.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "previous_scope": {
+            "live_body_sha256": "47e7f47069e04a426fb34298d6fc9d3e31299f3d2ae09dd75c9cbe300cdc1f5c",
+            "criterion": "`release-installed-artifacts`: actual wheels/sdist install and execute public examples on each declared platform."
+          }
         },
         {
           "id": "issue:184:live-acceptance:release-obligation-184",
-          "criterion": "`release-obligation-184`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
-          "scope": "`release-obligation-184`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
-          "live_body_sha256": "47e7f47069e04a426fb34298d6fc9d3e31299f3d2ae09dd75c9cbe300cdc1f5c",
+          "criterion": "`release-obligation-184`: each CPU release work clause has a named consuming check, source/oracle identity and main revision recorded; GPU scope exclusions are explicit and limited to #474.",
+          "scope": "`release-obligation-184`: each CPU release work clause has a named consuming check, source/oracle identity and main revision recorded; GPU scope exclusions are explicit and limited to #474.",
+          "live_body_sha256": "df065c861d62f353645d50e8022c86fc2d63789ef62cd0a99603106fba2df1a9",
           "dependencies": [
             137,
             179,
@@ -18172,15 +18249,16 @@
             185,
             186,
             471,
-            473,
-            474
+            473
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-obligation-184",
               "evidence_kind": "supported-execution",
-              "expectation": "each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
+              "expectation": "each CPU release work clause has a named consuming check, source/oracle identity and main revision recorded; GPU scope exclusions are explicit and limited to #474.",
               "identity_requirements": [
                 "source.revision"
               ],
@@ -18189,15 +18267,18 @@
               "receipt_producer": null,
               "receipt_producer_status": "MISSING_PRODUCER",
               "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-184.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-184."
+                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
               ]
             }
           ],
           "test_references": [],
-          "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
+          "completion_condition": "Every work clause and acceptance check for the current scoped contract passes on main with exact-revision consuming evidence.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "previous_scope": {
+            "live_body_sha256": "47e7f47069e04a426fb34298d6fc9d3e31299f3d2ae09dd75c9cbe300cdc1f5c",
+            "criterion": "`release-obligation-184`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures."
+          }
         }
       ]
     },
@@ -18299,7 +18380,7 @@
     },
     {
       "number": 186,
-      "body_sha256": "a4237c9c3e2df6654577f7f6e17871a544b67d0a42870d82f64fe6941ad1bc06",
+      "body_sha256": "252d0f4dc567700bb28c6cfa6495e7bfd35aaed5d69e163e57db3e6ca2789151",
       "obligations": [
         {
           "id": "issue:186:document-alpha-installation-versus-legacy-stable-supported-exper",
@@ -18392,13 +18473,15 @@
           "id": "issue:186:live-acceptance:release-migration-docs",
           "criterion": "`release-migration-docs`: installed-package examples and every migration-table target execute successfully.",
           "scope": "`release-migration-docs`: installed-package examples and every migration-table target execute successfully.",
-          "live_body_sha256": "b9272c9485528e71801f4690375b009a2893067dc3e448d697563553ff6dce39",
+          "live_body_sha256": "252d0f4dc567700bb28c6cfa6495e7bfd35aaed5d69e163e57db3e6ca2789151",
           "dependencies": [
             144,
             149,
             171
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-migration-docs",
@@ -18420,19 +18503,22 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "previous_live_body_sha256": "b9272c9485528e71801f4690375b009a2893067dc3e448d697563553ff6dce39"
         },
         {
           "id": "issue:186:live-acceptance:release-maintenance-docs",
           "criterion": "`release-maintenance-docs`: README/user guide/ADRs agree with DECISIONS.md and contain no contradictory backend or retirement policy.",
           "scope": "`release-maintenance-docs`: README/user guide/ADRs agree with DECISIONS.md and contain no contradictory backend or retirement policy.",
-          "live_body_sha256": "b9272c9485528e71801f4690375b009a2893067dc3e448d697563553ff6dce39",
+          "live_body_sha256": "252d0f4dc567700bb28c6cfa6495e7bfd35aaed5d69e163e57db3e6ca2789151",
           "dependencies": [
             144,
             149,
             171
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-maintenance-docs",
@@ -18454,19 +18540,22 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "previous_live_body_sha256": "b9272c9485528e71801f4690375b009a2893067dc3e448d697563553ff6dce39"
         },
         {
           "id": "issue:186:live-acceptance:release-obligation-186",
           "criterion": "`release-obligation-186`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
           "scope": "`release-obligation-186`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
-          "live_body_sha256": "b9272c9485528e71801f4690375b009a2893067dc3e448d697563553ff6dce39",
+          "live_body_sha256": "252d0f4dc567700bb28c6cfa6495e7bfd35aaed5d69e163e57db3e6ca2789151",
           "dependencies": [
             144,
             149,
             171
           ],
-          "boundaries": [],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
           "required_checks": [
             {
               "id": "release-obligation-186",
@@ -18488,19 +18577,20 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "previous_live_body_sha256": "b9272c9485528e71801f4690375b009a2893067dc3e448d697563553ff6dce39"
         }
       ]
     },
     {
       "number": 471,
-      "body_sha256": "e8923af8a8989f706c2b5884f11f45b13870b0bc11a8c1c674a2743e45acf4ee",
+      "body_sha256": "8f2dde4cf34946802af5114a0769dfcfa1b58679a484f0fbc0b13b3271888873",
       "obligations": [
         {
           "id": "issue:471:live-acceptance:release-oracle-independence",
           "criterion": "`release-oracle-independence`: every inventory row maps to a named external/analytic oracle; no BNG3-generated expected answer.",
           "scope": "`release-oracle-independence`: every inventory row maps to a named external/analytic oracle; no BNG3-generated expected answer.",
-          "live_body_sha256": "e8923af8a8989f706c2b5884f11f45b13870b0bc11a8c1c674a2743e45acf4ee",
+          "live_body_sha256": "8f2dde4cf34946802af5114a0769dfcfa1b58679a484f0fbc0b13b3271888873",
           "dependencies": [
             137,
             179,
@@ -18508,7 +18598,8 @@
           ],
           "boundaries": [
             "Each assigned capability row names an independent external or analytic oracle.",
-            "Each intended consumer emits its own result receipt; producer outputs alone do not satisfy consumer checks."
+            "Each intended consumer emits its own result receipt; producer outputs alone do not satisfy consumer checks.",
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
           ],
           "required_checks": [
             {
@@ -18538,13 +18629,14 @@
           "consumer_requirements": [
             "Every row names an independent external or analytic oracle.",
             "Every intended BNG3 consumer emits a separate consuming result receipt."
-          ]
+          ],
+          "previous_live_body_sha256": "e8923af8a8989f706c2b5884f11f45b13870b0bc11a8c1c674a2743e45acf4ee"
         },
         {
           "id": "issue:471:live-acceptance:release-oracle-tamper",
           "criterion": "`release-oracle-tamper`: mixed product/expected-data PR fixtures fail and known product mutants are detected; report mutation score.",
           "scope": "`release-oracle-tamper`: mixed product/expected-data PR fixtures fail and known product mutants are detected; report mutation score.",
-          "live_body_sha256": "e8923af8a8989f706c2b5884f11f45b13870b0bc11a8c1c674a2743e45acf4ee",
+          "live_body_sha256": "8f2dde4cf34946802af5114a0769dfcfa1b58679a484f0fbc0b13b3271888873",
           "dependencies": [
             137,
             179,
@@ -18552,7 +18644,8 @@
           ],
           "boundaries": [
             "Each assigned capability row names an independent external or analytic oracle.",
-            "Each intended consumer emits its own result receipt; producer outputs alone do not satisfy consumer checks."
+            "Each intended consumer emits its own result receipt; producer outputs alone do not satisfy consumer checks.",
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
           ],
           "required_checks": [
             {
@@ -18582,13 +18675,14 @@
           "consumer_requirements": [
             "Every row names an independent external or analytic oracle.",
             "Every intended BNG3 consumer emits a separate consuming result receipt."
-          ]
+          ],
+          "previous_live_body_sha256": "e8923af8a8989f706c2b5884f11f45b13870b0bc11a8c1c674a2743e45acf4ee"
         },
         {
           "id": "issue:471:live-acceptance:release-ci-topology",
           "criterion": "`release-ci-topology`: independent jobs start without unnecessary needs chains and partial artifacts survive interruptions.",
           "scope": "`release-ci-topology`: independent jobs start without unnecessary needs chains and partial artifacts survive interruptions.",
-          "live_body_sha256": "e8923af8a8989f706c2b5884f11f45b13870b0bc11a8c1c674a2743e45acf4ee",
+          "live_body_sha256": "8f2dde4cf34946802af5114a0769dfcfa1b58679a484f0fbc0b13b3271888873",
           "dependencies": [
             137,
             179,
@@ -18596,7 +18690,8 @@
           ],
           "boundaries": [
             "Each assigned capability row names an independent external or analytic oracle.",
-            "Each intended consumer emits its own result receipt; producer outputs alone do not satisfy consumer checks."
+            "Each intended consumer emits its own result receipt; producer outputs alone do not satisfy consumer checks.",
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
           ],
           "required_checks": [
             {
@@ -18626,7 +18721,8 @@
           "consumer_requirements": [
             "Every row names an independent external or analytic oracle.",
             "Every intended BNG3 consumer emits a separate consuming result receipt."
-          ]
+          ],
+          "previous_live_body_sha256": "e8923af8a8989f706c2b5884f11f45b13870b0bc11a8c1c674a2743e45acf4ee"
         }
       ]
     },
@@ -18853,26 +18949,26 @@
     },
     {
       "number": 474,
-      "body_sha256": "5cefd5f71a36aeea09532160a4b9d9ec5c44acbe65ce16ecf461bc0ae1cee3be",
+      "body_sha256": "d6558e122c66c845a0ae1840a9c6564fa01f74c316878224bca322211d2b5413",
       "obligations": [
         {
           "id": "issue:474:live-acceptance:release-cuda-device",
-          "criterion": "`release-cuda-device`: logs and artifacts prove actual CUDA kernel execution with independent statistical tests.",
-          "scope": "`release-cuda-device`: logs and artifacts prove actual CUDA kernel execution with independent statistical tests.",
-          "live_body_sha256": "5cefd5f71a36aeea09532160a4b9d9ec5c44acbe65ce16ecf461bc0ae1cee3be",
+          "criterion": "`release-cuda-device`: actual CUDA kernels execute with recorded NVIDIA device/toolchain/source identity and independent scientific/RNG checks.",
+          "scope": "`release-cuda-device`: actual CUDA kernels execute with recorded NVIDIA device/toolchain/source identity and independent scientific/RNG checks.",
+          "live_body_sha256": "d6558e122c66c845a0ae1840a9c6564fa01f74c316878224bca322211d2b5413",
           "dependencies": [
-            174,
+            148,
+            141,
             176
           ],
           "boundaries": [
-            "The device receipt identifies actual CUDA kernel execution and independent statistical results.",
-            "The performance receipt includes the CPU/native baseline and semantic checks."
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
           ],
           "required_checks": [
             {
               "id": "release-cuda-device",
               "evidence_kind": "supported-execution",
-              "expectation": "logs and artifacts prove actual CUDA kernel execution with independent statistical tests.",
+              "expectation": "actual CUDA kernels execute with recorded NVIDIA device/toolchain/source identity and independent scientific/RNG checks.",
               "identity_requirements": [
                 "source.revision"
               ],
@@ -18881,42 +18977,46 @@
               "receipt_producer": null,
               "receipt_producer_status": "MISSING_PRODUCER",
               "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-cuda-device.",
-                "No revision-locked consuming receipt producer is declared for required live check release-cuda-device."
+                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
               ]
             }
           ],
           "test_references": [],
-          "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
+          "completion_condition": "Every work clause and acceptance check for the current scoped contract passes on main with exact-revision consuming evidence.",
           "decisions": [],
           "unmapped_scope": [],
           "capability_rows": [
             "backend.gpu"
           ],
-          "row_mapping_status": "ROW_EXISTS_WITH_LEGACY_ISSUE_OWNER_176",
+          "row_mapping_status": "ROW_OWNED_BY_GPU_WORKSTREAM_474",
           "missing_row_mapping": [],
           "consumer_requirements": [
-            "Actual CUDA device execution and performance receipts remain distinct from CPU fallback and compile-only checks."
-          ]
+            "Actual backend-specific Metal/CUDA executions must be consumed and compared against independent laws; compile-only/fallback or another backend cannot substitute.",
+            "Record device/toolchain/source identity and correctness alongside performance."
+          ],
+          "previous_scope": {
+            "live_body_sha256": "5cefd5f71a36aeea09532160a4b9d9ec5c44acbe65ce16ecf461bc0ae1cee3be",
+            "criterion": "`release-cuda-device`: logs and artifacts prove actual CUDA kernel execution with independent statistical tests."
+          }
         },
         {
           "id": "issue:474:live-acceptance:release-cuda-performance",
-          "criterion": "`release-cuda-performance`: reproducible device measurements include CPU/native reference baselines and semantic checks.",
-          "scope": "`release-cuda-performance`: reproducible device measurements include CPU/native reference baselines and semantic checks.",
-          "live_body_sha256": "5cefd5f71a36aeea09532160a4b9d9ec5c44acbe65ce16ecf461bc0ae1cee3be",
+          "criterion": "`release-cuda-performance`: reproducible CUDA measurements include CPU/native references, transfer/crossover costs and correctness evidence.",
+          "scope": "`release-cuda-performance`: reproducible CUDA measurements include CPU/native references, transfer/crossover costs and correctness evidence.",
+          "live_body_sha256": "d6558e122c66c845a0ae1840a9c6564fa01f74c316878224bca322211d2b5413",
           "dependencies": [
-            174,
+            148,
+            141,
             176
           ],
           "boundaries": [
-            "The device receipt identifies actual CUDA kernel execution and independent statistical results.",
-            "The performance receipt includes the CPU/native baseline and semantic checks."
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
           ],
           "required_checks": [
             {
               "id": "release-cuda-performance",
               "evidence_kind": "supported-execution",
-              "expectation": "reproducible device measurements include CPU/native reference baselines and semantic checks.",
+              "expectation": "reproducible CUDA measurements include CPU/native references, transfer/crossover costs and correctness evidence.",
               "identity_requirements": [
                 "source.revision"
               ],
@@ -18925,22 +19025,202 @@
               "receipt_producer": null,
               "receipt_producer_status": "MISSING_PRODUCER",
               "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-cuda-performance.",
-                "No revision-locked consuming receipt producer is declared for required live check release-cuda-performance."
+                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
               ]
             }
           ],
           "test_references": [],
-          "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
+          "completion_condition": "Every work clause and acceptance check for the current scoped contract passes on main with exact-revision consuming evidence.",
           "decisions": [],
           "unmapped_scope": [],
           "capability_rows": [
             "backend.gpu"
           ],
-          "row_mapping_status": "ROW_EXISTS_WITH_LEGACY_ISSUE_OWNER_176",
+          "row_mapping_status": "ROW_OWNED_BY_GPU_WORKSTREAM_474",
           "missing_row_mapping": [],
           "consumer_requirements": [
-            "Actual CUDA device execution and performance receipts remain distinct from CPU fallback and compile-only checks."
+            "Actual backend-specific Metal/CUDA executions must be consumed and compared against independent laws; compile-only/fallback or another backend cannot substitute.",
+            "Record device/toolchain/source identity and correctness alongside performance."
+          ],
+          "previous_scope": {
+            "live_body_sha256": "5cefd5f71a36aeea09532160a4b9d9ec5c44acbe65ce16ecf461bc0ae1cee3be",
+            "criterion": "`release-cuda-performance`: reproducible device measurements include CPU/native reference baselines and semantic checks."
+          }
+        },
+        {
+          "id": "issue:474:live-acceptance:release-metal-device",
+          "criterion": "`release-metal-device`: actual Metal kernels execute with recorded Apple device/toolchain/source identity and independent scientific/RNG checks.",
+          "scope": "`release-metal-device`: actual Metal kernels execute with recorded Apple device/toolchain/source identity and independent scientific/RNG checks.",
+          "live_body_sha256": "d6558e122c66c845a0ae1840a9c6564fa01f74c316878224bca322211d2b5413",
+          "dependencies": [
+            148,
+            141,
+            176
+          ],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
+          "required_checks": [
+            {
+              "id": "release-metal-device",
+              "evidence_kind": "supported-execution",
+              "expectation": "actual Metal kernels execute with recorded Apple device/toolchain/source identity and independent scientific/RNG checks.",
+              "identity_requirements": [
+                "source.revision"
+              ],
+              "selector": null,
+              "selector_status": "MISSING_SELECTOR",
+              "receipt_producer": null,
+              "receipt_producer_status": "MISSING_PRODUCER",
+              "missing_evidence": [
+                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Every work clause and acceptance check for the current scoped contract passes on main with exact-revision consuming evidence.",
+          "decisions": [],
+          "unmapped_scope": [],
+          "capability_rows": [
+            "backend.gpu"
+          ],
+          "row_mapping_status": "ROW_OWNED_BY_GPU_WORKSTREAM_474",
+          "missing_row_mapping": [],
+          "consumer_requirements": [
+            "Actual backend-specific Metal/CUDA executions must be consumed and compared against independent laws; compile-only/fallback or another backend cannot substitute.",
+            "Record device/toolchain/source identity and correctness alongside performance."
+          ]
+        },
+        {
+          "id": "issue:474:live-acceptance:release-metal-performance",
+          "criterion": "`release-metal-performance`: reproducible Metal measurements include CPU/native references, transfer/crossover costs and correctness evidence.",
+          "scope": "`release-metal-performance`: reproducible Metal measurements include CPU/native references, transfer/crossover costs and correctness evidence.",
+          "live_body_sha256": "d6558e122c66c845a0ae1840a9c6564fa01f74c316878224bca322211d2b5413",
+          "dependencies": [
+            148,
+            141,
+            176
+          ],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
+          "required_checks": [
+            {
+              "id": "release-metal-performance",
+              "evidence_kind": "supported-execution",
+              "expectation": "reproducible Metal measurements include CPU/native references, transfer/crossover costs and correctness evidence.",
+              "identity_requirements": [
+                "source.revision"
+              ],
+              "selector": null,
+              "selector_status": "MISSING_SELECTOR",
+              "receipt_producer": null,
+              "receipt_producer_status": "MISSING_PRODUCER",
+              "missing_evidence": [
+                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Every work clause and acceptance check for the current scoped contract passes on main with exact-revision consuming evidence.",
+          "decisions": [],
+          "unmapped_scope": [],
+          "capability_rows": [
+            "backend.gpu"
+          ],
+          "row_mapping_status": "ROW_OWNED_BY_GPU_WORKSTREAM_474",
+          "missing_row_mapping": [],
+          "consumer_requirements": [
+            "Actual backend-specific Metal/CUDA executions must be consumed and compared against independent laws; compile-only/fallback or another backend cannot substitute.",
+            "Record device/toolchain/source identity and correctness alongside performance."
+          ]
+        },
+        {
+          "id": "issue:474:live-acceptance:release-nf-gpu",
+          "criterion": "`release-nf-gpu`: actual network-free GPU execution matches independent source laws and pinned native NFsim across the required corpus; report Metal and CUDA separately. Transferred unchanged in intent from #176.",
+          "scope": "`release-nf-gpu`: actual network-free GPU execution matches independent source laws and pinned native NFsim across the required corpus; report Metal and CUDA separately. Transferred unchanged in intent from #176.",
+          "live_body_sha256": "d6558e122c66c845a0ae1840a9c6564fa01f74c316878224bca322211d2b5413",
+          "dependencies": [
+            148,
+            141,
+            176
+          ],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
+          "required_checks": [
+            {
+              "id": "release-nf-gpu",
+              "evidence_kind": "supported-execution",
+              "expectation": "actual network-free GPU execution matches independent source laws and pinned native NFsim across the required corpus; report Metal and CUDA separately. Transferred unchanged in intent from #176.",
+              "identity_requirements": [
+                "source.revision"
+              ],
+              "selector": null,
+              "selector_status": "MISSING_SELECTOR",
+              "receipt_producer": null,
+              "receipt_producer_status": "MISSING_PRODUCER",
+              "missing_evidence": [
+                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Every work clause and acceptance check for the current scoped contract passes on main with exact-revision consuming evidence.",
+          "decisions": [],
+          "unmapped_scope": [],
+          "capability_rows": [
+            "backend.gpu"
+          ],
+          "row_mapping_status": "ROW_OWNED_BY_GPU_WORKSTREAM_474",
+          "missing_row_mapping": [],
+          "consumer_requirements": [
+            "Actual backend-specific Metal/CUDA executions must be consumed and compared against independent laws; compile-only/fallback or another backend cannot substitute.",
+            "Record device/toolchain/source identity and correctness alongside performance."
+          ]
+        },
+        {
+          "id": "issue:474:live-acceptance:release-capability-coverage-474",
+          "criterion": "`release-capability-coverage-474`: backend.gpu is covered by actual backend-specific executions and consuming receipts; missing hardware, refusals, compilation and fallback cannot count as passes.",
+          "scope": "`release-capability-coverage-474`: backend.gpu is covered by actual backend-specific executions and consuming receipts; missing hardware, refusals, compilation and fallback cannot count as passes.",
+          "live_body_sha256": "d6558e122c66c845a0ae1840a9c6564fa01f74c316878224bca322211d2b5413",
+          "dependencies": [
+            148,
+            141,
+            176
+          ],
+          "boundaries": [
+            "GPU scope follows DECISIONS.md item 17. No execution result is inferred from scope reassignment."
+          ],
+          "required_checks": [
+            {
+              "id": "release-capability-coverage-474",
+              "evidence_kind": "supported-execution",
+              "expectation": "backend.gpu is covered by actual backend-specific executions and consuming receipts; missing hardware, refusals, compilation and fallback cannot count as passes.",
+              "identity_requirements": [
+                "source.revision"
+              ],
+              "selector": null,
+              "selector_status": "MISSING_SELECTOR",
+              "receipt_producer": null,
+              "receipt_producer_status": "MISSING_PRODUCER",
+              "missing_evidence": [
+                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
+              ]
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Every work clause and acceptance check for the current scoped contract passes on main with exact-revision consuming evidence.",
+          "decisions": [],
+          "unmapped_scope": [],
+          "capability_rows": [
+            "backend.gpu"
+          ],
+          "row_mapping_status": "ROW_OWNED_BY_GPU_WORKSTREAM_474",
+          "missing_row_mapping": [],
+          "consumer_requirements": [
+            "Actual backend-specific Metal/CUDA executions must be consumed and compared against independent laws; compile-only/fallback or another backend cannot substitute.",
+            "Record device/toolchain/source identity and correctness alongside performance."
           ]
         }
       ]

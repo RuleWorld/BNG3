@@ -181,7 +181,7 @@ Issue-specific worktree/branch names follow the package rule above, e.g. `checks
 | #171 Provide every PyBioNetGen capability in the public API | `python/bionetgen/__init__.py`; `python/bionetgen/model.py`; `tests/validation/release/cases/issue-171/` | `release-python-api`, `release-python-install`, `release-capability-coverage-171` |
 | #172 Consolidate legacy Python implementations behind the maintained API | `python/bionetgen/modelapi/`; `python/bionetgen/compat/`; `tests/validation/release/cases/issue-172/` | `release-python-consolidation`, `release-python-legacy`, `release-obligation-172` |
 | #174 Publish representative performance and memory measurements | `scripts/benchmark_atomizer_nfsim.py`; `tests/validation/release/cases/issue-174/` | `release-benchmarks`, `release-benchmark-correctness`, `release-obligation-174` |
-| #176 Complete NFnext CPU, ensemble and GPU performance work | `cpp/nfnext/`; `cpp/engine/BatchSsa.cpp`; `tests/validation/release/cases/issue-176/` | `release-nf-ensemble`, `release-nf-gpu`, `release-capability-coverage-176` |
+| #176 Complete NFnext CPU and ensemble performance work | `cpp/nfnext/`; `cpp/engine/BatchSsa.cpp`; `tests/validation/release/cases/issue-176/` | `release-nf-ensemble`, `release-capability-coverage-176` |
 | #177 Independently verify barrier and driven-reservoir extensions | `docs/nonequilibrium_energy.md`; `cpp/compile/Capabilities.cpp`; `tests/validation/release/cases/issue-177/` | `release-barrier-energy`, `release-reservoir-energy`, `release-capability-coverage-177` |
 | #178 Centralize option, rate and capability decisions | `cpp/actions/ActionDispatch.cpp`; `cpp/engine/OdeIntegrator.cpp`; `cpp/engine/FiniteBackend.cpp`; `cpp/engine/BngsimAdapter.cpp`; `tests/validation/release/cases/issue-178/` | `release-shared-decisions`, `release-interface-parity`, `release-obligation-178`, `release-backend-contract`, `release-backend-oracles` |
 | #179 Record accepted pins and enforce strict provenance | `provenance/upstreams.lock.yml`; `scripts/validate_provenance.py`; `.github/workflows/release.yml`; `tests/validation/release/cases/issue-179/` | `release-provenance`, `release-provenance-negative`, `release-obligation-179` |
@@ -191,7 +191,7 @@ Issue-specific worktree/branch names follow the package rule above, e.g. `checks
 | #185 Assign all review ownership to akutuva21 | `.github/CODEOWNERS`; `tests/validation/release/cases/issue-185/` | `release-codeowners`, `release-review-rules`, `release-obligation-185` |
 | #186 Publish the BNG3 installation and migration contract | `docs/migration_guide.md`; `tests/validation/release/cases/issue-186/` | `release-migration-docs`, `release-maintenance-docs`, `release-obligation-186` |
 
-New issues: #470 is merged into #178. #471 owns anti-gaming and oracle consolidation; #472 owns docs; #473 owns JAX; #474 owns physical-device qualification; #475 owns delayed-rule completion. Their `checks-N` and `product-N` packages follow the same paths, separation, tier and closing rules. Required checks are #471 `release-oracle-independence`, `release-oracle-tamper`, `release-ci-topology`; #472 `release-docs-links`, `release-docs-decisions`; #473 `release-jax-ode`, `release-jax-ssa`, `release-jax-install`; #474 `release-cuda-device`, `release-cuda-performance`; #475 `release-delay-formats`, `release-delay-ode`, `release-delay-ssa`.
+New issues: #470 is merged into #178. #471 owns anti-gaming and oracle consolidation; #472 owns docs; #473 owns JAX; #474 owns all GPU-specific implementation and Metal/CUDA device qualification; #475 owns delayed-rule completion. Their `checks-N` and `product-N` packages follow the same paths, separation, tier and closing rules. Required checks are #471 `release-oracle-independence`, `release-oracle-tamper`, `release-ci-topology`; #472 `release-docs-links`, `release-docs-decisions`; #473 `release-jax-ode`, `release-jax-ssa`, `release-jax-install`; #474 `release-metal-device`, `release-metal-performance`, `release-cuda-device`, `release-cuda-performance`, `release-nf-gpu`, `release-capability-coverage-474`; #475 `release-delay-formats`, `release-delay-ode`, `release-delay-ssa`.
 
 **Issue merges (applied).** #158 is closed as a duplicate of #157 and #470 is closed as a duplicate of #178. Their checks, inventory rows and dependencies were transferred to the surviving issues. Keep #139 separate from #138 and keep #154 and #155 separate from #153 because they hold independent checks. #173, #175, #135 and #136 are already closed; retain historical links and close nothing for those proposals. Keep #147/#148/#149/#176 and #159/#161/#162 separate.
 
@@ -597,3 +597,13 @@ Migration inventory below lists every `py.*` inventory row. “Candidate” mean
 | `py.atomizer.AtomizeTool` | candidate; verify behavior: `python/bionetgen/atomizer/atomizeTool.py` |
 | `py.atomizer.AtomizeTool.checkConfig` | candidate; verify behavior: `python/bionetgen/atomizer/atomizeTool.py` |
 | `py.atomizer.AtomizeTool.run` | candidate; verify behavior: `python/bionetgen/atomizer/atomizeTool.py` |
+
+## GPU workstream and current CPU milestone
+
+Maintainer decision 17 in `docs/DECISIONS.md` separates GPU work into #474.
+CPU implementation/ensembles (#176), representative CPU measurements (#174) and
+CPU release qualification (#184) proceed independently of GPU completion.
+Retain all scientific cases and unknown/missing GPU statuses. Metal is the local
+actual-device path; CUDA needs external NVIDIA access. Existing compile/fallback
+CI stays in place and cannot be presented as device execution. Full backend
+support and network-free GPU execution require the separate #474 checks.

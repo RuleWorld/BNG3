@@ -500,7 +500,7 @@ def test_inventory_consumers_preserve_all_rows_and_legacy_metadata():
         hashlib.sha256(
             json.dumps(legacy, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
-        == "8f7b31e5205b96912c41b58a81eac83dd0799d27b6f10d58988915dc6a3ae351"
+        == "52af06ea6034561e6debc5ff832f8e2d8378cc1f75d066a4986bccec9a356f8e"
     )
 
     selected = set(OPTIONS)
@@ -512,7 +512,7 @@ def test_inventory_consumers_preserve_all_rows_and_legacy_metadata():
         hashlib.sha256(
             json.dumps(untouched, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
-        == "a7c43d7ff16765b195a862daa1deb5c1926f3954b97119126f20ba358be0f7c6"
+        == "f73b63dca4408677651ebcf683dd5890ac6cd8d0f150da1c84e02e694b63fa7c"
     )
     selected_rows = {row["id"]: row for row in rows if row["id"] in selected}
     assert set(selected_rows) == selected

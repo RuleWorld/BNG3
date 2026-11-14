@@ -1,6 +1,6 @@
 # BNG3 release capability inventory
 
-This is the primary release-scope document. Every row is required. Scope is the complete canonical BNG2, NFsim and PyBioNetGen user-facing union plus BNG3 additions and SBML Level 3 Core, Multi and comp. Optional installation does not reduce support.
+This is the primary release-scope document. Every row is required for the full capability-union target. The current CPU release milestone explicitly defers GPU-specific row `backend.gpu` to [#474](https://github.com/RuleWorld/BNG3/issues/474), under DECISIONS.md item 17; that row remains unqualified and is not a CPU release pass. Scope is the complete canonical BNG2, NFsim and PyBioNetGen user-facing union plus BNG3 additions and SBML Level 3 Core, Multi and comp. Optional installation does not reduce support.
 
 Audit snapshot: `918a5fb1`. Source pins are in `DECISIONS.md` and `evidence/upstreams.lock.yml`. Source locations below are relative to the named pinned upstream. BNG3 paths refer to the audit snapshot.
 
@@ -937,7 +937,7 @@ The accompanying `capability-matrix.yml` is JSON-compatible YAML for `provenance
 | hybrid.execution | Particle-population execution | BNG3 release decision / source extension | cpp/engine/HybridModelGenerator.cpp | tests/validation/test_hybrid_execution.py::test_release_capability_coverage_150 | BNG2 hybrid transformation, pinned native NFsim, and analytic binomial/conservation laws | missing | #150 |
 | backend.bngsim | Supported optional BNGsim with native default | BNG3 release decision / source extension | cpp/engine/FiniteBackend.cpp:73 | tests/cpp/test_bngsim_adapter.cpp | pinned BNGsim and BNG2 | missing | #144 |
 | backend.jax | Optional JAX ODE/SSA full functionality | BNG3 release decision / source extension | python/bionetgen/jax_ode.py; python/bionetgen/jax_ssa.py | tests/python/test_jax_ode.py; tests/python/test_jax_ssa.py | analytic laws and BNG2 | missing | #171 |
-| backend.gpu | GPU finite and network-free execution | BNG3 release decision / source extension | cpp/engine/gpu/; cpp/nfnext/ | tests/test_batch_ssa_statistical_parity.py | analytic stochastic laws and native NFsim | missing | #176 |
+| backend.gpu | GPU finite and network-free execution | BNG3 release decision / source extension | cpp/engine/gpu/; cpp/nfnext/ | tests/test_batch_ssa_statistical_parity.py | analytic stochastic laws and native NFsim | missing | #474 |
 | bngl.delay | Delayed consuming and NonConsuming rules execute | BNG3 release decision / source extension | cpp/ast/ReactionRule.cpp; cpp/engine/OdeIntegrator.cpp | tests/python/test_delayed_simulation_api.py | analytic delay laws and independent delayed solver | missing | #143 |
 | bngl.ast.model | Complete bngl.ast.model | provenance/capability-matrix.yml at audited main | provenance/capability-matrix.yml | release-capability[bngl.ast.model] | canonical source or analytic specification as appropriate | missing | #137 |
 | nfsim.options.parameters | Complete nfsim.options.parameters | provenance/capability-matrix.yml at audited main | provenance/capability-matrix.yml | release-capability[nfsim.options.parameters] | canonical source or analytic specification as appropriate | missing | #137 |
