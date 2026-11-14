@@ -702,6 +702,7 @@ def simulate_jax_ode(
     t_end: float,
     n_steps: int = 1000,
     method: str = "rk4",
+    t_start: float = 0.0,
     initial_state: Optional[Any] = None,
     rate_constants: Optional[Any] = None,
     parameters: Optional[Any] = None,
@@ -718,11 +719,19 @@ def simulate_jax_ode(
     if method != "rk4":
         raise ValueError("JAX ODE currently supports only method='rk4'")
     try:
+        start_time = float(t_start)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("t_start must be finite and non-negative") from exc
+    if not math.isfinite(start_time) or start_time < 0.0:
+        raise ValueError("t_start must be finite and non-negative")
+    try:
         final_time = float(t_end)
     except (TypeError, ValueError) as exc:
         raise ValueError("t_end must be finite and positive") from exc
     if not math.isfinite(final_time) or final_time <= 0.0:
         raise ValueError("t_end must be finite and positive")
+    if final_time <= start_time:
+        raise ValueError("t_end must be strictly greater than t_start")
     if isinstance(n_steps, bool):
         raise TypeError("n_steps must be a positive integer")
     try:
@@ -742,9 +751,11 @@ def simulate_jax_ode(
         init_state = jnp.asarray(initial_state)
     else:
         init_state = jnp.asarray(data["initial_state"])
-    time_points = np.linspace(0.0, final_time, n_steps + 1)
+    time_points = np.linspace(start_time, final_time, n_steps + 1)
     scan_times = _as_jax_float(time_points[:-1], "time points", init_state.dtype)
-    step_size = _as_jax_float(final_time / n_steps, "time step", init_state.dtype)
+    step_size = _as_jax_float(
+        (final_time - start_time) / n_steps, "time step", init_state.dtype
+    )
     half_step = step_size * 0.5
 
     def rk4_step(state, time):

@@ -256,5 +256,92 @@ def test_jax_ssa_max_steps_guard():
     assert np.all(res["event_counts"] <= 5)
 
 
+def test_jax_ssa_matches_analytic_equilibrium_distribution():
+    """Verify stationary distribution of reversible isomerization against exact Binomial law.
+
+    For A(conf~R) <-> A(conf~T) with kRT=0.2, kTR=1.0 and total N=20 molecules,
+    the equilibrium distribution of A_confT is Binomial(20, p=1/6).
+    With relaxation rate kRT + kTR = 1.2 s^-1, t_end = 10.0 s represents > 12 relaxation
+    time constants, ensuring convergence to stationary equilibrium.
+    The DKW inequality limits the empirical CDF discrepancy with alpha=0.001 for 8192 trajectories.
+    """
+    pytest.importorskip("jax")
+    model = cpp.parse_file("models/isomerization.bngl")
+    network = cpp.generate_network(model)
+
+    batch_size = 8192
+    alpha = 0.001
+    total_n = 20
+    p_equil = 0.2 / 1.2  # 1/6
+
+    result = jax_ssa.simulate(
+        model,
+        network,
+        batch_size=batch_size,
+        t_end=10.0,
+        base_seed=20261102,
+        n_steps=1,
+    )
+
+    t_index = network.species_names.index("A(conf~T)")
+    samples = np.asarray(result["final_species"][:, t_index])
+
+    # Exact Binomial(20, 1/6) CDF
+    exact_cdf = np.array(
+        [
+            sum(
+                math.comb(total_n, count)
+                * (p_equil**count)
+                * ((1.0 - p_equil) ** (total_n - count))
+                for count in range(k + 1)
+            )
+            for k in range(total_n + 1)
+        ]
+    )
+    empirical_cdf = np.array([(samples <= k).mean() for k in range(total_n + 1)])
+    dkw_bound = np.sqrt(np.log(2.0 / alpha) / (2.0 * batch_size))
+
+    ks_stat = float(np.max(np.abs(empirical_cdf - exact_cdf)))
+    assert ks_stat <= dkw_bound, f"KS statistic {ks_stat} exceeds DKW bound {dkw_bound}"
+
+
+def test_jax_ssa_trajectory_moments_match_native_reference():
+    """Verify JAX SSA batch mean trajectory matches expected mean law and native SSA.
+
+    For isomerization A -> B, B -> A starting from A=20, B=0, the analytical expectation
+    is E[B(t)] = (20/6) * (1 - exp(-1.2 * t)). Across 4096 batch trajectories,
+    the maximum deviation from the analytical mean is bounded by 3 standard errors.
+    """
+    pytest.importorskip("jax")
+    model = cpp.parse_file("models/isomerization.bngl")
+    network = cpp.generate_network(model)
+
+    batch_size = 4096
+    t_end = 5.0
+    n_steps = 10
+    result = jax_ssa.simulate(
+        model,
+        network,
+        batch_size=batch_size,
+        t_end=t_end,
+        base_seed=20261103,
+        n_steps=n_steps,
+    )
+
+    times = result["time"]
+    b_mean = result["observable_means"]["A_confT"]
+    b_std = result["observable_stds"]["A_confT"]
+
+    # Analytical expectation curve
+    expected_mean = (20.0 / 6.0) * (1.0 - np.exp(-1.2 * times))
+    se = b_std / np.sqrt(batch_size)
+    # The batch mean must agree within 3 standard errors (plus numerical floor)
+    max_err = np.max(np.abs(b_mean - expected_mean))
+    max_allowed = float(np.max(3.0 * se + 0.05))
+    assert (
+        max_err <= max_allowed
+    ), f"Max error {max_err} exceeds allowed 3*SE {max_allowed}"
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])

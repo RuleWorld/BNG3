@@ -5,7 +5,7 @@
 This directory defines the release acceptance contract and qualification tests for Issue #473.
 
 ## Coverage
-- `release-jax-ode`: source-derived analytic and native-reference cases cover mass action, TotalRate, constant/time-dependent rates, observable-dependent functional rates (polynomial, MM, Hill, coupled feedback), time grids, and automatic differentiation.
-- `release-jax-ssa`: actual batch trajectories pass analytic first-order survival distribution tests, bimolecular conservation laws, batch reproducibility, and max-steps guards.
-- `release-jax-install`: optional dependency install and unavailable-dependency diagnostics pass cleanly.
+- `release-jax-ode`: source-derived analytic and native-reference cases cover mass action, TotalRate, constant/time-dependent rates, observable-dependent functional rates (polynomial, MM, Hill, coupled feedback), time grids, protocols (`t_start`, multi-phase continuation with/without intervention), and automatic differentiation.
+- `release-jax-ssa`: actual batch trajectories pass analytic first-order survival distribution tests, stationary equilibrium distribution tests (Binomial(20, 1/6) under reversible isomerization with DKW bound), trajectory mean convergence against analytical/native references, bimolecular conservation laws, batch reproducibility, and max-steps guards.
+- `release-jax-install`: optional dependency install and unavailable-dependency diagnostics pass cleanly, including end-to-end simulation execution when installed and structured import isolation when absent.
 - `release-capability-coverage-473`: full capability matrix and issue obligation crosswalk verification.

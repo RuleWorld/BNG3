@@ -31,6 +31,10 @@ def test_release_jax_ode():
     tjo.test_jax_ode_differentiation_initial_state()
     tjo.test_solver_method_is_not_silently_ignored()
     tjo.test_rate_overflowing_jax_state_dtype_is_rejected()
+    tjo.test_invalid_t_start_rejected(-1.0, 5.0)
+    tjo.test_jax_ode_nonzero_t_start_trajectory()
+    tjo.test_jax_ode_continuation_protocol()
+    tjo.test_jax_ode_continuation_with_rate_parameter_intervention()
     jdr.test_time_dependent_rhs_matches_analytic_law()
     jdr.test_time_dependent_simulation_matches_analytic_integral()
     jdr.test_time_dependent_automatic_differentiation()
@@ -38,6 +42,9 @@ def test_release_jax_ode():
     jdr.test_observable_dependent_functional_rate_rhs()
     jdr.test_observable_dependent_functional_rate_simulation()
     jdr.test_observable_dependent_functional_rate_differentiation()
+    jdr.test_observable_dependent_michaelis_menten()
+    jdr.test_observable_dependent_hill_kinetics()
+    jdr.test_observable_dependent_coupled_feedback()
 
 
 def test_release_jax_ssa():
@@ -50,6 +57,8 @@ def test_release_jax_ssa():
     tjs.test_jax_ssa_batch_reproducibility()
     tjs.test_jax_ssa_bimolecular_conservation()
     tjs.test_jax_ssa_matches_analytic_first_order_survival_distribution()
+    tjs.test_jax_ssa_matches_analytic_equilibrium_distribution()
+    tjs.test_jax_ssa_trajectory_moments_match_native_reference()
 
 
 def test_release_jax_install():
@@ -58,8 +67,68 @@ def test_release_jax_install():
     optional dependency install and unavailable-dependency diagnostics
     pass separately.
     """
+    # 1. Unavailable dependency diagnostic and import isolation
     tjs.test_jax_ssa_unavailable_without_optional_dependencies()
     tjs.test_jax_ssa_import_safety()
+
+    # 2. Installed dependency campaign execution when JAX is present
+    try:
+        import jax
+
+        has_jax = True
+    except (ImportError, ModuleNotFoundError):
+        has_jax = False
+
+    if has_jax:
+        from bionetgen import _bionetgen_cpp as cpp
+        from bionetgen import jax_ode, jax_ssa
+        import numpy as np
+
+        # Verify device availability includes CPU
+        devices = jax.devices()
+        assert len(devices) > 0, "No JAX devices available"
+
+        # Verify end-to-end installed JAX ODE execution
+        model = cpp.parse_string("""begin model
+begin parameters
+kf 0.2
+kr 0.1
+end parameters
+begin molecule types
+A()
+B()
+end molecule types
+begin seed species
+A() 10.0
+B() 0.0
+end seed species
+begin observables
+Molecules ObsA A()
+Molecules ObsB B()
+end observables
+begin reaction rules
+A() <-> B() kf, kr
+end reaction rules
+end model""")
+        ode_res = jax_ode.simulate_jax_ode(model, t_end=2.0, n_steps=20)
+        assert len(ode_res["time"]) == 21
+        assert ode_res["concentrations"].shape == (21, 2)
+        assert np.all(np.isfinite(ode_res["concentrations"]))
+        np.testing.assert_allclose(
+            ode_res["concentrations"].sum(axis=1), 10.0, atol=1e-5
+        )
+
+        # Verify end-to-end installed JAX SSA execution
+        network = cpp.generate_network(model)
+        ssa_res = jax_ssa.simulate(
+            model, network, batch_size=64, t_end=2.0, n_steps=5, base_seed=42
+        )
+        assert ssa_res["batch_size"] == 64
+        assert ssa_res["final_species"].shape == (64, 2)
+        assert ssa_res["trajectories_per_sec_sim"] > 0
+        np.testing.assert_array_equal(
+            ssa_res["final_species"].sum(axis=1), np.full(64, 10)
+        )
 
 
 def test_release_capability_coverage_473():

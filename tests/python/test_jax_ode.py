@@ -249,3 +249,98 @@ def test_jax_ode_custom_rate_constants_and_state():
     expected_b = 10.0 * (1.0 - np.exp(-0.4 * time))
     np.testing.assert_allclose(conc[:, 1], expected_b, rtol=1e-4, atol=1e-4)
     np.testing.assert_allclose(conc[:, 0] + conc[:, 1], 10.0, atol=1e-4)
+
+
+@pytest.mark.parametrize(
+    "t_start,t_end", [(-1.0, 5.0), (5.0, 5.0), (6.0, 5.0), (float("nan"), 5.0)]
+)
+def test_invalid_t_start_rejected(t_start, t_end):
+    model = _model("A() -> B() k")
+    with pytest.raises(ValueError):
+        jax_ode.simulate_jax_ode(model, t_end=t_end, t_start=t_start, n_steps=10)
+
+
+def test_jax_ode_nonzero_t_start_trajectory():
+    """Verify integration starting from t_start > 0 matches analytical law."""
+    model = _model("A() -> B() k", seeds="A() 10\nB() 5", rate="0.3")
+    t_start = 2.0
+    t_end = 6.0
+    n_steps = 40
+    res = jax_ode.simulate_jax_ode(model, t_end=t_end, t_start=t_start, n_steps=n_steps)
+    time = res["time"]
+    assert time[0] == t_start
+    assert time[-1] == t_end
+    assert len(time) == n_steps + 1
+    # Analytical: A(t) = A(t_start) * exp(-k * (t - t_start))
+    # B(t) = B(t_start) + A(t_start) * (1 - exp(-k * (t - t_start)))
+    dt = time - t_start
+    expected_a = 10.0 * np.exp(-0.3 * dt)
+    expected_b = 5.0 + 10.0 * (1.0 - np.exp(-0.3 * dt))
+    conc = res["concentrations"]
+    np.testing.assert_allclose(conc[:, 0], expected_a, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(conc[:, 1], expected_b, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(conc[:, 0] + conc[:, 1], 15.0, atol=1e-5)
+
+
+def test_jax_ode_continuation_protocol():
+    """Verify piecewise continuation trajectory matches continuous single run."""
+    model = _model("A() -> B() k", seeds="A() 25\nB() 0", rate="0.25")
+    # Single continuous run from 0 to 5.0 (100 steps, dt = 0.05)
+    res_full = jax_ode.simulate_jax_ode(model, t_end=5.0, t_start=0.0, n_steps=100)
+
+    # Phase 1: 0 to 2.0 (40 steps, dt = 0.05)
+    res_phase1 = jax_ode.simulate_jax_ode(model, t_end=2.0, t_start=0.0, n_steps=40)
+    # Phase 2: 2.0 to 5.0 (60 steps, dt = 0.05), starting from Phase 1 final state
+    res_phase2 = jax_ode.simulate_jax_ode(
+        model,
+        t_end=5.0,
+        t_start=2.0,
+        n_steps=60,
+        initial_state=res_phase1["concentrations"][-1],
+    )
+
+    # Verify Phase 1 matches first 41 points of continuous run
+    np.testing.assert_allclose(
+        res_phase1["concentrations"],
+        res_full["concentrations"][:41],
+        rtol=1e-6,
+        atol=1e-6,
+    )
+    # Verify Phase 2 matches points 40..100 of continuous run
+    np.testing.assert_allclose(
+        res_phase2["concentrations"],
+        res_full["concentrations"][40:],
+        rtol=1e-6,
+        atol=1e-6,
+    )
+
+
+def test_jax_ode_continuation_with_rate_parameter_intervention():
+    """Verify continuation under an intervention/rate change matches piecewise law."""
+    model = _model("A() -> B() k", seeds="A() 20\nB() 0", rate="0.1")
+    # Phase 1: k = 0.1 for t in [0.0, 2.0]
+    res1 = jax_ode.simulate_jax_ode(
+        model, t_end=2.0, t_start=0.0, n_steps=40, rate_constants=np.array([0.1])
+    )
+    # Phase 2: rate jumped to k = 0.5 for t in [2.0, 4.0]
+    res2 = jax_ode.simulate_jax_ode(
+        model,
+        t_end=4.0,
+        t_start=2.0,
+        n_steps=40,
+        initial_state=res1["concentrations"][-1],
+        rate_constants=np.array([0.5]),
+    )
+    # Analytical piecewise solution
+    t1 = res1["time"]
+    t2 = res2["time"]
+    a_phase1_expected = 20.0 * np.exp(-0.1 * t1)
+    a2_init = 20.0 * np.exp(-0.1 * 2.0)
+    a_phase2_expected = a2_init * np.exp(-0.5 * (t2 - 2.0))
+
+    np.testing.assert_allclose(
+        res1["concentrations"][:, 0], a_phase1_expected, rtol=1e-5, atol=1e-5
+    )
+    np.testing.assert_allclose(
+        res2["concentrations"][:, 0], a_phase2_expected, rtol=1e-5, atol=1e-5
+    )
