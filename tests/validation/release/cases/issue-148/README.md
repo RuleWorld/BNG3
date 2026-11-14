@@ -1,5 +1,7 @@
 # Issue #148 Release Case Package
 
+**Closure audit (2026-11-14): incomplete acceptance.** The production route now includes modifier/filter and compartment support; scaffold/genome examples were added. Energy, units and unlowered populations still refuse; added scaffold/genome examples do not replace full pinned-native corpus comparisons and shared population/lattice/protocol semantics. Contract membership is not execution coverage. See docs/CURRENT_PROGRESS.md for the assessed revision and retained evidence.
+
 **Issue Title**: C03: Qualify a complete model-to-NFnext execution boundary
 **Tracking Issue**: #148
 

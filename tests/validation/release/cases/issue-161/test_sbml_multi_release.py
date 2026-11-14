@@ -1,9 +1,10 @@
-"""Release acceptance tests for Issue #161: Structural Atomizer and SBML Multi.
+"""Bounded checks related to Issue #161.
 
-Validates:
-- release-sbml-multi: every Multi inventory row validates with libSBML and matches independent structural enumeration.
-- release-atomizer-structure: canonical source models retain bonds/states/compartments and execute with matching independent observables.
-- release-capability-coverage-161: all assigned capability inventory cases execute against their row's named independent oracle.
+Existing homodimer/stateful/Multi-math examples and mutation comparators provide bounded structural evidence.
+
+test_sbml_multi_release.py invokes a small selection of existing examples; its 45-row coverage check only compares JSON lists. It does not enumerate or execute every required Multi feature and consumer combination, or consume complete row-level results.
+Passing this module does not satisfy the complete live release contract or
+authorize issue closure. Existing test IDs are retained for historical evidence.
 """
 
 from __future__ import annotations

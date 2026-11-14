@@ -1,14 +1,10 @@
-"""Release acceptance tests for Issue #473: JAX ODE and SSA backends.
+"""Bounded checks related to Issue #473.
 
-Validates:
-- release-jax-ode: source-derived analytic/BNG2 cases cover rate/protocol
-  families and automatic differentiation.
-- release-jax-ssa: actual trajectories pass analytic/native-reference
-  distribution tests with stated error control.
-- release-jax-install: optional dependency install and unavailable-dependency
-  diagnostics pass separately.
-- release-capability-coverage-473: all assigned capability matrix rows and
-  issue obligations are verified.
+Existing JAX CPU mass-action/time-dependent ODE, gradients and first-order SSA-law tests are retained.
+
+jax_ode.py explicitly refuses observable-dependent functional rates (including an existing refusal regression). The new wrapper does not complete all protocol/continuation/rate families, and its install check tests unavailable/import behavior rather than an installed-extra campaign. No semantic implementation changed in #663.
+Passing this module does not satisfy the complete live release contract or
+authorize issue closure. Existing test IDs are retained for historical evidence.
 """
 
 from __future__ import annotations

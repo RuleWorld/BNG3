@@ -1,5 +1,7 @@
 # Issue #147: Extend NFnext Lowering for Approved Unsupported Semantic Families
 
+**Closure audit (2026-11-14): incomplete acceptance.** NFIR representation and selected dynamic-rate, modifier/filter and compartment execution improved in #656/#657. Energy/barrier execution and physical units still refuse in from_bng.cpp; unresolved dynamic energy/population rates refuse during lowering. The complete required family contract is not fulfilled by refusal controls. See docs/CURRENT_PROGRESS.md for the assessed revision and retained evidence.
+
 ## Overview
 
 This package retains the bounded candidate-family checks introduced in #646.

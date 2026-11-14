@@ -1,14 +1,10 @@
-"""Release acceptance tests for Issue #475.
+"""Bounded checks related to Issue #475.
 
-Validates:
-- release-delay-ode: analytic DDE histories and independent delayed
-  source solver agree including prehistory and discontinuities.
-- release-delay-ssa: independent delayed jump-process reference verifies
-  initiation/completion and NonConsuming distributions.
-- release-delay-formats: both BNGIR versions and all applicable formats
-  preserve delay semantics through actual consumers.
-- release-capability-coverage-475: all assigned capability matrix rows
-  and issue obligations are verified.
+Existing native ODE method-of-steps, continuation and BNGIR delayed-rule tests remain useful.
+
+New SSA wrapper calls continuation examples rather than an independent delayed-jump distribution comparison. The SBML formats case conditionally parses then checks only file existence; it does not export/reimport/execute. BngsimAdapter still invokes requireNoDelayedSemantics; complete applicable backend/format behavior is unfinished.
+Passing this module does not satisfy the complete live release contract or
+authorize issue closure. Existing test IDs are retained for historical evidence.
 """
 
 from __future__ import annotations

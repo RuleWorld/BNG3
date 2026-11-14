@@ -1,5 +1,7 @@
 # Issue #150: Particle-Population Hybrid Execution
 
+**Closure audit (2026-11-14): incomplete acceptance.** Generated NFcore HPP has independent native-NFsim ensembles. #658 replaces several formula-only checks with sampled trajectories. The cited run 43568894380 is pull_request head 99b392cb, not main 843aa9f0. Its aggregate says partial and excludes dynamic thresholds; the compartment receipt separately states oracle limits. NFnext still refuses unlowered population maps; its generic graph path does not demonstrate the required population/threshold executor. See docs/CURRENT_PROGRESS.md for the assessed revision and retained evidence.
+
 ## Overview
 
 This case adds bounded tests toward release qualification for **Issue #150 (C05)**:

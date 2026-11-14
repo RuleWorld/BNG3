@@ -1,5 +1,7 @@
 # Issue 473: Supported JAX ODE and SSA backends
 
+**Closure audit (2026-11-14): incomplete acceptance.** Existing JAX CPU mass-action/time-dependent ODE, gradients and first-order SSA-law tests are retained. jax_ode.py explicitly refuses observable-dependent functional rates (including an existing refusal regression). The new wrapper does not complete all protocol/continuation/rate families, and its install check tests unavailable/import behavior rather than an installed-extra campaign. No semantic implementation changed in #663. See docs/CURRENT_PROGRESS.md for the assessed revision and retained evidence.
+
 This directory defines the release acceptance contract and qualification tests for Issue #473.
 
 ## Coverage
