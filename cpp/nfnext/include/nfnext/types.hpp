@@ -59,7 +59,8 @@ enum class ActionKind : std::uint8_t {
     Create,
     Destroy,
     DestroyComplex,
-    MovePosition
+    MovePosition,
+    SetCompartment
 };
 
 struct SourceSpan {

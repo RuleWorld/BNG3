@@ -23,11 +23,13 @@ class GenericGraphState {
 public:
     explicit GenericGraphState(const ModelIR& model);
 
-    ParticleId create(TypeId type);
+    ParticleId create(TypeId type, CompartmentId comp = 0);
     void destroy(ParticleId id);
     bool alive(ParticleId id) const noexcept;
 
     TypeId type(ParticleId id) const;
+    CompartmentId compartment(ParticleId id) const;
+    void setCompartment(ParticleId id, CompartmentId comp);
     std::int32_t siteState(ParticleId id, std::uint16_t site) const;
     void setSiteState(ParticleId id, std::uint16_t site, std::int32_t state);
     bool bound(ParticleId id, std::uint16_t site) const;
@@ -66,6 +68,7 @@ private:
     std::vector<std::int32_t> site_states_;
     std::vector<ParticleId> bond_particles_;
     std::vector<std::uint16_t> bond_sites_;
+    std::vector<CompartmentId> compartments_;
     std::size_t live_count_{0};
 };
 

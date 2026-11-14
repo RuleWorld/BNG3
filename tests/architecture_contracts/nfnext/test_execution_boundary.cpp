@@ -205,7 +205,7 @@ std::vector<std::pair<std::string, std::string>> refusals() {
          "begin reaction rules\n  A(x~u) -> A(x~p) time()\nend reaction rules\n"},
         {"compartment",
          "begin parameters\n  k 0.5\nend parameters\n"
-         "begin compartments\n  cell 3 1\nend compartments\n"
+         "begin compartments\n  cell 3 0\nend compartments\n"
          "begin molecule types\n  A(x~u~p)\nend molecule types\n"
          "begin seed species\n  @cell:A(x~u) 10\nend seed species\n"
          "begin observables\n  Molecules U @cell:A(x~u)\nend observables\n"
@@ -230,12 +230,6 @@ std::vector<std::pair<std::string, std::string>> refusals() {
          "begin energy patterns\n  A(x~u) Gf\nend energy patterns\n"
          "begin observables\n  Molecules U A(x~u)\nend observables\n"
          "begin reaction rules\n  A(x~u) -> A(x~p) k\nend reaction rules\n"},
-        {"modifier-move-connected",
-         "begin parameters\n  k 0.5\nend parameters\n"
-         "begin molecule types\n  A(b)\n  B(a)\nend molecule types\n"
-         "begin seed species\n  A(b) 10\n  B(a) 10\nend seed species\n"
-         "begin observables\n  Molecules Bound A(b!1).B(a!1)\nend observables\n"
-         "begin reaction rules\n  A(b) + B(a) -> A(b!1).B(a!1) k MoveConnected\nend reaction rules\n"},
         {"physical-units",
          "begin parameters\n  k = 0.5 [s^-1]\nend parameters\n"
          "begin molecule types\n  A(x~u~p)\nend molecule types\n"

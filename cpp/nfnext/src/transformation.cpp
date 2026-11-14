@@ -95,7 +95,7 @@ void execute(const TransformationIR& transformation, const MatchEmbedding& embed
             case TransformationOpKind::CreateMolecule: {
                 const auto& type = typeFor(state.model(), op.molecule_type);
                 for (const auto& initial : op.initial_states) validateState(type, initial.first, initial.second);
-                const auto particle = state.create(op.molecule_type);
+                const auto particle = state.create(op.molecule_type, op.initial_compartment);
                 created.emplace(op.created, particle);
                 result.recordCreated(op.created, particle);
                 for (const auto& initial : op.initial_states)
