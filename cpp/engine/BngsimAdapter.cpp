@@ -333,6 +333,63 @@ BngsimLoweringCheck checkBngsimLowering(
     if (model.getEventFormatVersion().has_value()) {
         reject("BNGsim adapter rejected model: native events are unsupported");
     }
+    bool hasDelayBlocker = false;
+    for (const auto& rule : model.getReactionRules()) {
+        if (rule.getDelayExpression()) {
+            reject(
+                "BNGsim adapter rejected model: delayed reactions require the "
+                "native DDE method-of-steps solver");
+            hasDelayBlocker = true;
+            break;
+        }
+    }
+    if (!hasDelayBlocker) {
+        for (const auto& rxn : network.reactions.all()) {
+            if (rxn.getDelayExpression()) {
+                reject(
+                    "BNGsim adapter rejected model: delayed reactions require the "
+                    "native DDE method-of-steps solver");
+                hasDelayBlocker = true;
+                break;
+            }
+        }
+    }
+    bool hasDelayExprBlocker = false;
+    for (const auto& rule : model.getReactionRules()) {
+        for (const auto& rate : rule.getRates()) {
+            if (expressionUsesDelay(rate)) {
+                reject(
+                    "BNGsim adapter rejected model: delay() expressions require the "
+                    "native DDE method-of-steps solver");
+                hasDelayExprBlocker = true;
+                break;
+            }
+        }
+        if (hasDelayExprBlocker) break;
+    }
+    if (!hasDelayExprBlocker) {
+        for (const auto& fn : model.getFunctions()) {
+            if (expressionUsesDelay(fn.getExpression())) {
+                reject(
+                    "BNGsim adapter rejected model: delay() expressions require the "
+                    "native DDE method-of-steps solver");
+                hasDelayExprBlocker = true;
+                break;
+            }
+        }
+    }
+    if (!hasDelayExprBlocker) {
+        for (const auto& rxn : network.reactions.all()) {
+            if ((rxn.getRateExpression() &&
+                 expressionUsesDelay(*rxn.getRateExpression())) ||
+                (!rxn.getRateExpression() && containsDelayCall(rxn.getRateLaw()))) {
+                reject(
+                    "BNGsim adapter rejected model: delay() expressions require the "
+                    "native DDE method-of-steps solver");
+                break;
+            }
+        }
+    }
     if (!model.getCompartments().empty()) {
         reject("BNGsim adapter rejected model: compartments require a volume-aware bridge");
     }
