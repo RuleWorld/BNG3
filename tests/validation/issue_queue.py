@@ -1526,6 +1526,19 @@ def acceptance_dashboard(queue, assessment, campaigns):
                 criterion["evidence_status"] = (
                     "PASS" if status == "DEMONSTRATED" else status
                 )
+        # GitHub state/checkmarks are historical metadata, not current evidence.
+        # Retain closed issues in the audit when live acceptance is unverified;
+        # never infer automatic closure or erase their passing bounded checks.
+        row["acceptance_gaps"] = [
+            criterion["id"]
+            for criterion in row["acceptance_criteria"]
+            if criterion["evidence_status"] != "PASS"
+        ]
+        row["closed_acceptance_gap"] = row["state"] == "CLOSED" and bool(
+            row["acceptance_gaps"]
+        )
+        if row["closed_acceptance_gap"]:
+            row["next_action"] = "reconcile-closed-issue-acceptance"
         row["obligations"] = obligations
         row["obligation_outcomes"] = dict(Counter(o["status"] for o in obligations))
         row["demonstrated_obligations"] = [

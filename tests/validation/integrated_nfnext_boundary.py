@@ -121,8 +121,12 @@ def _boundary_row(name, status, detail, **evidence):
         status=status,
         detail=detail,
         related_issues=list(ISSUES),
-        evidence_kind="supported-execution",
-        supported_execution=status == "PASS",
+        evidence_kind=(
+            "diagnostic-only"
+            if name == "unsupported-refusals"
+            else "supported-execution"
+        ),
+        supported_execution=status == "PASS" and name != "unsupported-refusals",
         **evidence,
     )
 

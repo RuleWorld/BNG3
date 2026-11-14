@@ -121,3 +121,19 @@ def test_a_drifted_fixture_cannot_pass_against_the_component(tmp_path):
     recorded = {entry["source"]: entry for entry in artifact["fixtures"]}
     for fixture in boundary.FIXTURES:
         assert boundary.fixture_source(fixture) not in recorded
+
+
+@pytest.mark.parametrize("status", ["PASS", "FAIL", "NOT_TESTED"])
+def test_refusal_controls_never_claim_supported_execution(status):
+    from tests.validation import issue_queue
+
+    row = boundary._boundary_row("unsupported-refusals", status, "refusal control")
+    assert row["evidence_kind"] == "diagnostic-only"
+    assert row["supported_execution"] is False
+    if status == "PASS":
+        candidate = dict(source=dict(revision="a" * 40, dirty=False), results=[row])
+        queue = issue_queue.build_queue(
+            [dict(number=148, state="CLOSED")], [candidate], "a" * 40
+        )
+        assert queue[0]["outcomes"] == {}
+        assert queue[0]["diagnostic_control_outcomes"] == {"PASS": 1}

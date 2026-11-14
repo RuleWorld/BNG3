@@ -1,5 +1,41 @@
 # BNG3 current progress
 
+## Closure evidence correction — 2026-11-13
+
+Source assessed: main `1a20420e076b12f7e5436a51ed66cac2f06032c3`.
+This source/contract audit supersedes broad completion claims for #147–#150;
+older snapshots below remain historical, not fresh qualification receipts.
+No new scientific simulation or full-corpus run was performed for this audit.
+
+- **#147 / #647:** NFIR v6 representation, persistent modifier/filter identity and
+  bounded observable-rate execution are real progress. Required executor families
+  remain refused; the decision requires representation, execution and independent
+  checks. Closure is premature.
+- **#148 / #649:** The Python production route and bounded CTMC/native-NFsim
+  checks are delivered. `executeFromBioNetGen` still refuses compartments,
+  populations, energy, units, MatchOnce, TotalRate, MoveConnected and filters.
+  `nfnext.full` is incomplete; full-corpus acceptance has not been established.
+- **#149 / #650:** Explicit NFcore selection and prototype containment are useful
+  interim behavior. NFcore2 is still linked into the default combined core,
+  NFcore remains the default, and mapped unit-test filenames do not demonstrate
+  production capability transfer. Retirement/promotion obligations remain open.
+- **#150 / #648:** Existing generated NFcore HPP ensembles use independent native
+  NFsim and analytic laws. Preserve those results with their declared limits.
+  The newer formula-only checks add no product execution evidence; NFnext hybrid
+  execution and dynamic threshold coverage remain outstanding. `hybrid.execution`
+  is incomplete under the full release contract.
+
+The inventory uses `missing` for these incomplete release rows because it has no
+partial status; matrix evidence text retains the delivered subset. Existing
+models, scientific expected outputs, tolerances, seeds, exclusions and test IDs
+are unchanged. The S6 inventory-preservation checksum is refreshed solely for
+the `nfnext.full` metadata correction; all 994 row IDs and 85 legacy records remain.
+
+Closed issues with unverified current acceptance now appear explicitly in the
+existing issue-queue dashboard. That warning requests reconciliation; missing
+current receipts alone do not invalidate historical results or prove a product
+bug. Successful refusal controls are diagnostic-only, never supported execution.
+
 ## Source-head checkpoint — 2026-11-12 (assessed main SHA a6649458ae8de3d2f4e3b997831fd39e4580e33a)
 
 The latest `main` source inspected for this documentation update is

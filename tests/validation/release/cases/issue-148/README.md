@@ -7,9 +7,15 @@
 
 ## 1. Overview and Architecture
 
-This package qualifies the general model execution loop of **NFnext** directly from the production `CompiledModel` representation (`cpp/nfnext/src/from_bng.cpp:executeFromBioNetGen`).
+This package checks a bounded model execution subset of **NFnext** directly from the production `CompiledModel` representation (`cpp/nfnext/src/from_bng.cpp:executeFromBioNetGen`).
 
-The general NFnext execution loop carries:
+This is not complete `nfnext.full` acceptance. Required families remain refused
+(see item 7 below), and elementary/pure-death comparisons and bounded graph
+examples do not replace the required scaffold/genome/full network-free corpus.
+The contract-registration test checks metadata, not row-level execution.
+Keep #148 open until its full live contract passes on main with consumed evidence.
+
+The bounded NFnext execution loop carries:
 1. **Model Initialization**: Bounded static integer seed populations, stateful components, and complex multi-molecule seed species are loaded into `GenericGraphState`.
 2. **Observables Registration**: `Molecules` and `Species` observables are tracked and evaluated over the particle graph.
 3. **Rate Evaluation**: Elementary parameter rates and dynamic observable-dependent rate functions are compiled and evaluated.

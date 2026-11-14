@@ -54,6 +54,18 @@ def acceptance_markdown(report):
         lines.append(
             f"| {row['rank']} | #{row['number']} | {safe(row['obligation_outcomes'])} | {safe(', '.join(row['remaining_obligations']))} |"
         )
+    closed_gaps = [row for row in report["queue"] if row.get("closed_acceptance_gap")]
+    if closed_gaps:
+        lines += ["", "## Closed issues with unverified acceptance", ""]
+        lines.append(
+            "These closures need evidence reconciliation; missing current evidence "
+            "does not by itself establish a product defect or invalidate historical results."
+        )
+        for row in closed_gaps:
+            lines.append(
+                f"- #{row['number']}: {safe(', '.join(row['acceptance_gaps']))}. "
+                "Reconcile the closure against the complete live contract."
+            )
     lines += [
         "",
         "Ranking (live OPEN issues only; inactive evidence is retained below): confirmed failing obligations, shared selected-family impact, then remaining obligations. Counts are not completion percentages.",
