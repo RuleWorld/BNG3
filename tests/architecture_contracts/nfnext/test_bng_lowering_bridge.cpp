@@ -1677,17 +1677,11 @@ end reaction rules
     assert(lowered.model.rule_families[1].filters.size() == 1);
     assert(!lowered.model.rule_families[1].filters[0].include);
 
-    // Execution refusal for filters
+    // Execution of rule filters is now supported
     nfnext::BngExecutionRequest req;
     req.sample_times = {0.0, 1.0};
-    bool refused = false;
-    try {
-        nfnext::executeFromBioNetGen(semantic, req);
-    } catch (const std::exception& e) {
-        refused = true;
-        assert(std::string(e.what()).find("filter") != std::string::npos);
-    }
-    assert(refused);
+    const auto res = nfnext::executeFromBioNetGen(semantic, req);
+    assert(!res.rows.empty());
 
     // Semantic differentiation: model without filters has distinct fingerprint
     const auto astNoFilter = bng::parser::parseModel(R"BNGL(

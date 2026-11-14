@@ -991,6 +991,9 @@ void addDirection(const bng::compile::CompiledRule& rule,
                   const bng::compile::CompiledModel& source,
                   BngLoweringResult& result) {
     const std::string entity = rule.name() + suffix;
+    const auto flattened = flattenReactants(direction.reactantPatterns, result, entity);
+    if (!flattened) return;
+
     // Lower filters into NFIR FilterIR. Filters constrain rule applicability
     // by requiring or excluding species matching specific patterns in the
     // reactant or product set. The filter patterns are lowered to PatternIR.
@@ -1002,6 +1005,9 @@ void addDirection(const bng::compile::CompiledRule& rule,
             irFilter.include = filter.include;
             irFilter.products = filter.products;
             irFilter.pattern_index = filter.patternIndex;
+            irFilter.reactant_node_offset = (filter.patternIndex < flattened->patternOffsets.size())
+                ? flattened->patternOffsets[filter.patternIndex]
+                : 0;
             irFilter.patterns.reserve(filter.patterns.size());
             for (const auto& pattern : filter.patterns) {
                 BngLoweringResult filterValidation;
@@ -1050,8 +1056,6 @@ void addDirection(const bng::compile::CompiledRule& rule,
             return;
         }
     }
-    const auto flattened = flattenReactants(direction.reactantPatterns, result, entity);
-    if (!flattened) return;
     if (!direction.rateLaw) {
         issue(result, BngLoweringSeverity::Error, entity, "rule direction has no rate law");
         return;
@@ -1424,16 +1428,10 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
     if (!model.energy_patterns.empty()) refuse("energy patterns");
     if (!model.population_maps.empty()) refuse("population maps");
     for (const auto& rule : model.expanded_rules) {
-        if (rule.match_once) refuse("MatchOnce modifier");
-        if (rule.total_rate) refuse("TotalRate modifier");
         if (rule.move_connected) refuse("MoveConnected modifier");
-        if (!rule.filters.empty()) refuse("rule filters");
     }
     for (const auto& family : model.rule_families) {
-        if (family.match_once) refuse("MatchOnce modifier");
-        if (family.total_rate) refuse("TotalRate modifier");
         if (family.move_connected) refuse("MoveConnected modifier");
-        if (!family.filters.empty()) refuse("rule filters");
     }
     if (request.max_particles > std::numeric_limits<std::uint32_t>::max())
         refuse("particle budget exceeds native index capacity");
@@ -1626,8 +1624,61 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                         }
                     }
                     currentRates[index] = rate;
-                    matches.push_back(matcher.enumerate(rule.pattern, state));
-                    total += rate * matches.back().size();
+                    auto rawMatches = matcher.enumerate(rule.pattern, state);
+                    if (!rule.filters.empty()) {
+                        std::vector<Embedding> passedMatches;
+                        for (const auto& match : rawMatches) {
+                            bool matchPassed = true;
+                            for (const auto& filter : rule.filters) {
+                                if (filter.products) continue;
+                                const auto nodeIdx = filter.reactant_node_offset;
+                                if (nodeIdx >= match.particles().size()) continue;
+                                const auto partId = match.particle(nodeIdx);
+                                const auto compId = state.complexId(partId);
+                                bool anyMatched = false;
+                                for (const auto& fPat : filter.patterns) {
+                                    const auto fMatches = matcher.enumerate(fPat, state);
+                                    for (const auto& fm : fMatches) {
+                                        if (!fm.particles().empty() && state.complexId(fm.particle(0)) == compId) {
+                                            anyMatched = true;
+                                            break;
+                                        }
+                                    }
+                                    if (anyMatched) break;
+                                }
+                                if (filter.include && !anyMatched) {
+                                    matchPassed = false;
+                                    break;
+                                }
+                                if (!filter.include && anyMatched) {
+                                    matchPassed = false;
+                                    break;
+                                }
+                            }
+                            if (matchPassed) passedMatches.push_back(match);
+                        }
+                        rawMatches = std::move(passedMatches);
+                    }
+                    if (rule.match_once) {
+                        std::vector<Embedding> uniqueMatches;
+                        std::set<std::vector<std::uint32_t>> seenParticleSets;
+                        for (const auto& match : rawMatches) {
+                            std::vector<std::uint32_t> key;
+                            key.reserve(match.particles().size());
+                            for (const auto& p : match.particles()) key.push_back(p.index);
+                            std::sort(key.begin(), key.end());
+                            if (seenParticleSets.insert(key).second) {
+                                uniqueMatches.push_back(match);
+                            }
+                        }
+                        rawMatches = std::move(uniqueMatches);
+                    }
+                    matches.push_back(std::move(rawMatches));
+                    if (rule.total_rate) {
+                        total += matches.back().empty() ? 0.0 : rate;
+                    } else {
+                        total += rate * matches.back().size();
+                    }
                 }
                 if (!std::isfinite(total)) refuse("nonfinite total propensity");
                 next_time = total > 0.0
@@ -1638,9 +1689,12 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                         layout.word(RngPurpose::FamilyChoice, output.event_count)) * total;
                     bool found = false;
                     for (std::size_t index = 0; index < matches.size() && !found; ++index) {
-                        const double rate = currentRates[index];
+                        const auto& rule = model.expanded_rules[index];
+                        const double matchWeight = rule.total_rate
+                            ? (matches[index].empty() ? 0.0 : currentRates[index] / matches[index].size())
+                            : currentRates[index];
                         for (const auto& match : matches[index]) {
-                            choice -= rate;
+                            choice -= matchWeight;
                             if (choice < 0.0) {
                                 selected_rule = index;
                                 selected_match = match;
