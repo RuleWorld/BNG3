@@ -483,3 +483,15 @@ def test_barrier_mutations_fail():
     # Injected mutation 2: dropped barrier in reverse
     kr_mutated = kr * math.exp(2.0)
     assert not math.isclose(kf / kr_mutated, math.exp(-delta_G), rel_tol=1e-3)
+
+
+def test_release_barrier_energy():
+    """Verify release-barrier-energy acceptance criterion:
+    analytic transition rates and detailed balance cycle identities pass.
+    """
+    test_analytic_barrier_transition_rates()
+    test_barrier_detailed_balance_cycle_identity()
+    test_barrier_catalysis_and_obstruction_kinetics()
+    test_barrier_reversal_symmetry()
+    test_barrier_gate_fail_closed_refusal()
+    test_barrier_invalid_declarations_rejected()
