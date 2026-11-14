@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "issue": 473,
+  "title": "Complete supported JAX ODE and SSA backends",
+  "source": {
+    "repository": "RuleWorld/BNG3",
+    "contract": "Implement supported JAX ODE and SSA backends using the common compiled-model, rate, protocol, and result interfaces. Support functional and time-dependent rates, batch SSA simulation, analytic survival distributions, and automatic differentiation where advertised."
+  },
+  "oracle": {
+    "identity": "Analytic exponential survival distribution, mass action kinetics, exact time-dependent integrals, native BNG3 ODE/SSA reference solutions, and automatic differentiation gradients.",
+    "law": "Zero-reaction networks produce zero RHS and constant trajectory; unimolecular and bimolecular propensities match mass action; time-dependent rates integrate to exact Gaussian/exponential profiles; SSA batch distributions match first-order survival laws within error tolerance; differentiation with respect to rate constants and initial states matches analytic sensitivity."
+  },
+  "acceptance_checks": [
+    "release-jax-ode",
+    "release-jax-ssa",
+    "release-jax-install",
+    "release-capability-coverage-473"
+  ],
+  "inventory_rows": [
+    "backend.jax"
+  ],
+  "obligations": [
+    "issue:473:live-acceptance:release-jax-ode",
+    "issue:473:live-acceptance:release-jax-ssa",
+    "issue:473:live-acceptance:release-jax-install"
+  ]
+}
