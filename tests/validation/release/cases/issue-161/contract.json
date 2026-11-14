@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "issue": 161,
+  "title": "E05: Expand structural Atomizer and SBML Multi execution qualification",
+  "source": {
+    "repository": "RuleWorld/BNG3",
+    "contract": "Complete structural Atomizer and SBML Multi execution qualification against independent explicit-species expansion, libSBML validity, and canonical source models."
+  },
+  "oracle": {
+    "identity": "libSBML validation, independent explicit-species SBML Core ODE expansion, and canonical BNG2/libRoadRunner execution",
+    "law": "Exact preservation of species feature values, bonds, compartments, stateful binding kinetics, numericValue rates, and sum representationType observables within numerical tolerance."
+  },
+  "acceptance_checks": [
+    "release-sbml-multi",
+    "release-atomizer-structure",
+    "release-capability-coverage-161"
+  ],
+  "inventory_rows": [
+    "sbml.multi.CompartmentReference.compartment",
+    "sbml.multi.InSpeciesTypeBond.bindingSite1",
+    "sbml.multi.InSpeciesTypeBond.bindingSite2",
+    "sbml.multi.IntraSpeciesReaction.isIntraSpeciesReaction",
+    "sbml.multi.MultiCompartment.compartmentReferences",
+    "sbml.multi.MultiCompartment.compartmentType",
+    "sbml.multi.MultiCompartment.isType",
+    "sbml.multi.MultiMath.representationType",
+    "sbml.multi.MultiMath.speciesReference",
+    "sbml.multi.MultiSpecies.compartmentReference",
+    "sbml.multi.MultiSpecies.outwardBindingSites",
+    "sbml.multi.MultiSpecies.speciesFeatures",
+    "sbml.multi.MultiSpecies.speciesType",
+    "sbml.multi.MultiSpeciesReference.compartmentReference",
+    "sbml.multi.MultiSpeciesType.bindingSiteSpeciesType",
+    "sbml.multi.MultiSpeciesType.compartment",
+    "sbml.multi.MultiSpeciesType.id",
+    "sbml.multi.MultiSpeciesType.inSpeciesTypeBonds",
+    "sbml.multi.MultiSpeciesType.name",
+    "sbml.multi.MultiSpeciesType.speciesFeatureTypes",
+    "sbml.multi.MultiSpeciesType.speciesTypeComponentIndexes",
+    "sbml.multi.MultiSpeciesType.speciesTypeInstances",
+    "sbml.multi.OutwardBindingSite.bindingStatus",
+    "sbml.multi.OutwardBindingSite.component",
+    "sbml.multi.PossibleSpeciesFeatureValue.id",
+    "sbml.multi.PossibleSpeciesFeatureValue.numericValue",
+    "sbml.multi.SpeciesFeature.component",
+    "sbml.multi.SpeciesFeature.occur",
+    "sbml.multi.SpeciesFeature.speciesFeatureType",
+    "sbml.multi.SpeciesFeature.speciesFeatureValues",
+    "sbml.multi.SpeciesFeatureType.id",
+    "sbml.multi.SpeciesFeatureType.occur",
+    "sbml.multi.SpeciesFeatureType.possibleSpeciesFeatureValues",
+    "sbml.multi.SpeciesFeatureValue.value",
+    "sbml.multi.SpeciesTypeComponentIndex.component",
+    "sbml.multi.SpeciesTypeComponentIndex.id",
+    "sbml.multi.SpeciesTypeComponentIndex.identifyingParent",
+    "sbml.multi.SpeciesTypeComponentMapInProduct.productComponent",
+    "sbml.multi.SpeciesTypeComponentMapInProduct.reactant",
+    "sbml.multi.SpeciesTypeComponentMapInProduct.reactantComponent",
+    "sbml.multi.SpeciesTypeInstance.compartmentReference",
+    "sbml.multi.SpeciesTypeInstance.id",
+    "sbml.multi.SpeciesTypeInstance.speciesType",
+    "sbml.multi.SubListOfSpeciesFeatures.component",
+    "sbml.multi.SubListOfSpeciesFeatures.relation"
+  ],
+  "obligations": [
+    "issue:161:cover-reconstruction-reaction-bond-changes-compartments-quantiti",
+    "issue:161:compare-full-execution-and-semantic-round-trips-with-independent",
+    "issue:161:closure-record",
+    "issue:161:live-acceptance:release-sbml-multi",
+    "issue:161:live-acceptance:release-atomizer-structure",
+    "issue:161:live-acceptance:release-capability-coverage-161"
+  ]
+}
