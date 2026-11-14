@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "issue": 475,
+  "title": "Complete delayed-rule semantics across formats and engines",
+  "source": {
+    "repository": "RuleWorld/BNG3",
+    "contract": "Reconcile native consuming and NonConsuming ODE/SSA execution against exact initiation/completion laws, prehistory, and continuations. Preserve delays and pending state through both BNGIR versions (v0.1 and v0.2), SBML Level 3 Version 2 delay csymbol exports, and downstream consumers."
+  },
+  "oracle": {
+    "identity": "Analytic DDE histories, method-of-steps exact solutions, independent delayed jump-process reference, libSBML L3V2 Core §3.4.6 / §4.12.7, and lossless BNGIR roundtrip semantic-equality certificates.",
+    "law": "Consuming delayed rules decrement reactants at initiation and create products at completion; NonConsuming rules leave reactants intact until completion; prehistory evaluates negative-time history identically; BNGIR v0.1 and v0.2 serialize delay expressions and non-consuming flags without semantic loss."
+  },
+  "acceptance_checks": [
+    "release-delay-ode",
+    "release-delay-ssa",
+    "release-delay-formats",
+    "release-capability-coverage-475"
+  ],
+  "inventory_rows": [
+    "bngl.delay",
+    "bngir.v02",
+    "sbml.core.Delay.math",
+    "sbml.core.Delay.queued-firing",
+    "sbml.core.MathML.csymbol-delay"
+  ],
+  "obligations": [
+    "issue:475:live-acceptance:release-delay-ode",
+    "issue:475:live-acceptance:release-delay-ssa",
+    "issue:475:live-acceptance:release-delay-formats"
+  ]
+}
