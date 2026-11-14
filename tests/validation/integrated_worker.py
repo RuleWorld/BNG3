@@ -730,6 +730,7 @@ QUALIFICATION_OPERATIONS = (
     "graph-identity-contract",
     "bngir-adversarial",
     "quantity-laws",
+    "real-model-fixtures",
 )
 
 # The consumer operations the worker can dispatch.
