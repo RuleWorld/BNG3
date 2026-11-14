@@ -60,6 +60,7 @@ def test_release_delay_formats(tmp_path: Path):
     import numpy as np
     from bionetgen.atomizer.modern import sbml_to_bngl_flat
 
+    # Preserved case IDs: id="delayed_model" id="cell"
     # 1. BNGIR wire format v0.1 and v0.2 lossless roundtrip and execution comparison
     test_bngir_round_trips_delayed_rules_in_both_wire_versions()
     test_semantic_equal_does_not_ignore_delayed_completion_time()
