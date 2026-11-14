@@ -1483,8 +1483,8 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         }
     }
     if (!source.barrierFactors().empty()) refuse("barrier factors");
-    if (!source.populationTypes().empty() || !source.populationMaps().empty())
-        refuse("population maps and population types");
+    if (!source.populationMaps().empty())
+        refuse("un-lowered population maps require generate_hybrid_model");
     if (!source.metadata().unitDefaults.empty() ||
         !source.metadata().unitDefinitions.empty() ||
         !source.metadata().substanceUnits.empty() ||
@@ -1508,7 +1508,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
     }
     const auto& model = lowered.model;
     if (!model.energy_patterns.empty()) refuse("energy patterns");
-    if (!model.population_maps.empty()) refuse("population maps");
+    if (!model.population_maps.empty()) refuse("un-lowered population maps require generate_hybrid_model");
     if (request.max_particles > std::numeric_limits<std::uint32_t>::max())
         refuse("particle budget exceeds native index capacity");
     GenericGraphState state(model);
