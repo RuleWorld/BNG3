@@ -137,7 +137,8 @@ def simulate(
         for i in range(prod_offsets[r], prod_offsets[r + 1]):
             delta_V[r, prod_species[i]] += 1
 
-    obs_W = np.zeros((S, G), dtype=np.float32)
+    float_dtype = jnp.asarray(0.0).dtype
+    obs_W = np.zeros((S, G), dtype=np.float64)
     obs_offsets = flat["obs_offsets"]
     obs_species = flat["obs_species"]
     obs_weights = flat["obs_weights"]
@@ -149,7 +150,7 @@ def simulate(
     reactant_counts = np.diff(reactant_offsets)
     max_reactants = max(1, int(reactant_counts.max(initial=0)))
     padded_reactants = np.zeros((R, max_reactants), dtype=np.int32)
-    padded_offsets = np.zeros((R, max_reactants), dtype=np.float32)
+    padded_offsets = np.zeros((R, max_reactants), dtype=np.float64)
     reactant_mask = np.zeros((R, max_reactants), dtype=bool)
 
     for r in range(R):
@@ -164,27 +165,27 @@ def simulate(
             reactant_mask[r, :count] = True
 
     j_delta_V = jnp.asarray(delta_V)
-    j_obs_W = jnp.asarray(obs_W)
-    j_rate_constants = jnp.asarray(flat["rate_constants"], dtype=jnp.float32)
+    j_obs_W = jnp.asarray(obs_W, dtype=float_dtype)
+    j_rate_constants = jnp.asarray(flat["rate_constants"], dtype=float_dtype)
     j_padded_reactants = jnp.asarray(padded_reactants)
-    j_padded_offsets = jnp.asarray(padded_offsets)
+    j_padded_offsets = jnp.asarray(padded_offsets, dtype=float_dtype)
     j_reactant_mask = jnp.asarray(reactant_mask)
     j_initial_species = jnp.asarray(flat["initial_species"], dtype=jnp.int32)
     time_grid = np.linspace(0.0, final_time, n_steps + 1)
-    j_time_grid = jnp.asarray(time_grid, dtype=jnp.float32)
+    j_time_grid = jnp.asarray(time_grid, dtype=float_dtype)
 
     def compute_propensities(y):
-        pops = y[j_padded_reactants].astype(jnp.float32)
-        eff = jnp.maximum(0.0, pops - j_padded_offsets)
-        factors = jnp.where(j_reactant_mask, eff, 1.0)
+        pops = y[j_padded_reactants].astype(float_dtype)
+        eff = jnp.maximum(jnp.asarray(0.0, dtype=float_dtype), pops - j_padded_offsets)
+        factors = jnp.where(j_reactant_mask, eff, jnp.asarray(1.0, dtype=float_dtype))
         return j_rate_constants * jnp.prod(factors, axis=-1)
 
     def simulate_one(rng_key):
-        init_obs = j_initial_species.astype(jnp.float32) @ j_obs_W
-        obs_history = jnp.zeros((n_steps + 1, G), dtype=jnp.float32).at[0].set(init_obs)
+        init_obs = j_initial_species.astype(float_dtype) @ j_obs_W
+        obs_history = jnp.zeros((n_steps + 1, G), dtype=float_dtype).at[0].set(init_obs)
 
         init_val = (
-            jnp.float32(0.0),
+            jnp.asarray(0.0, dtype=float_dtype),
             j_initial_species,
             rng_key,
             jnp.uint32(0),
@@ -205,17 +206,33 @@ def simulate(
             a0 = jnp.sum(props)
 
             key, k1, k2 = jax.random.split(key, 3)
-            u1 = jax.random.uniform(k1, minval=1e-12, maxval=1.0)
-            u2 = jax.random.uniform(k2, minval=0.0, maxval=1.0)
+            u1 = jax.random.uniform(
+                k1,
+                shape=(),
+                dtype=float_dtype,
+                minval=jnp.asarray(1e-12, dtype=float_dtype),
+                maxval=jnp.asarray(1.0, dtype=float_dtype),
+            )
+            u2 = jax.random.uniform(
+                k2,
+                shape=(),
+                dtype=float_dtype,
+                minval=jnp.asarray(0.0, dtype=float_dtype),
+                maxval=jnp.asarray(1.0, dtype=float_dtype),
+            )
 
-            tau = jnp.where(a0 > 0.0, -jnp.log(u1) / a0, jnp.float32(1e30))
+            tau = jnp.where(
+                a0 > 0.0,
+                -jnp.log(u1) / a0,
+                jnp.asarray(1e30, dtype=float_dtype),
+            )
             t_event = t + tau
 
             grid_t = j_time_grid[jnp.minimum(next_idx, n_steps)]
             reach_grid = (grid_t <= t_event) & (grid_t <= final_time)
 
             def step_grid():
-                curr_obs = y.astype(jnp.float32) @ j_obs_W
+                curr_obs = y.astype(float_dtype) @ j_obs_W
                 new_obs = obs.at[next_idx].set(curr_obs)
                 return (grid_t, y, key, events, new_obs, next_idx + 1)
 
@@ -234,7 +251,7 @@ def simulate(
 
         def fill_remaining(val):
             idx, obs = val
-            curr_obs = final_y.astype(jnp.float32) @ j_obs_W
+            curr_obs = final_y.astype(float_dtype) @ j_obs_W
             return (idx + 1, obs.at[idx].set(curr_obs))
 
         def fill_cond(val):
