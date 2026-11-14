@@ -15,14 +15,15 @@ examples do not replace the required scaffold/genome/full network-free corpus.
 The contract-registration test checks metadata, not row-level execution.
 Keep #148 open until its full live contract passes on main with consumed evidence.
 
-The bounded NFnext execution loop carries:
+The production NFnext execution loop carries:
 1. **Model Initialization**: Bounded static integer seed populations, stateful components, and complex multi-molecule seed species are loaded into `GenericGraphState`.
 2. **Observables Registration**: `Molecules` and `Species` observables are tracked and evaluated over the particle graph.
-3. **Rate Evaluation**: Elementary parameter rates and dynamic observable-dependent rate functions are compiled and evaluated.
-4. **Embedding Enumeration**: `GenericMatcher` discovers pattern embeddings in the graph state, handling interchangeable symmetric reactant combinations ($\binom{N}{2}$ for duplicate pairs).
+3. **Rate Evaluation**: Elementary parameter rates, dynamic observable-dependent rate functions, and `TotalRate` modifiers are compiled and evaluated.
+4. **Embedding Enumeration & Filters**: `GenericMatcher` discovers pattern embeddings in the graph state, handling interchangeable symmetric reactant combinations ($\binom{N}{2}$ for duplicate pairs), `MatchOnce` symmetry suppression, and `include_reactants`/`exclude_reactants` filters.
 5. **Discrete-Event Simulation**: Continuous-time Markov chain progression via exact SSA waiting-time sampling and propensity-weighted discrete rule choice using `CounterRng`.
-6. **Graph Transformations**: In-place particle graph updates (state changes, bond creation, unbinding, synthesis, degradation, and whole-complex deletion).
-7. **Strict Fail-Closed Boundaries**: Unsupported constructs (compartments, time-dependent rates, native events, energy patterns, population maps, modifiers such as `MatchOnce` and `TotalRate`, rule filters, wildcard seed bonds) raise an explicit `RuntimeError` fail-closed rather than approximating semantics.
+6. **Graph Transformations**: In-place particle graph updates (state changes, bond creation, unbinding, synthesis, degradation, whole-complex deletion, compartment transport, and `MoveConnected`).
+7. **Corpus Coverage**: Elementary CTMC ensembles, bimolecular binding/unbinding, symmetric homodimer combinations, pre-formed complex seed species, multi-state signaling cascades, linear polymer elongation, multi-site scaffold recruitment, and gene expression/autoregulatory genome circuits.
+8. **Strict Fail-Closed Boundaries**: Unsupported constructs (un-lowered population maps requiring `generate_hybrid_model`, energy patterns, physical units, wildcard seed bonds) raise an explicit `RuntimeError` fail-closed rather than approximating semantics.
 
 ---
 
