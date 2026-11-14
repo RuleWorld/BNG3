@@ -448,6 +448,7 @@ target_compile_definitions(test_nfcore2_parity PRIVATE BNG_NFCORE2_PROTOTYPE)
 target_link_libraries(test_nfcore2_parity PRIVATE
     Catch2::Catch2WithMain Catch2::Catch2
     bionetgen_core
+    bng_nfcore2
     bng_parser)
 catch_discover_tests(test_nfcore2_parity)
 
