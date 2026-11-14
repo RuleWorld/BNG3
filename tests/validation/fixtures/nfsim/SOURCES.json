@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "description": "Real-model fixtures vendored from the canonical NFsim source for the #152 qualification. Every file is byte-identical to the recorded upstream revision; the source link is part of the fixture identity and is re-checked by the qualification.",
+  "source": {
+    "repository": "https://github.com/RuleWorld/NFsim.git",
+    "branch": "master",
+    "revision": "9b00d42f734dcc3e695205600f12cae5b44d1daa",
+    "role": "canonical-network-free-source-and-oracle-lineage"
+  },
+  "fixtures": [
+    {
+      "id": "rna-uorf-rna-synthesis3",
+      "family": "rna-uorf",
+      "path": "tests/validation/fixtures/nfsim/rna_synthesis3.bngl",
+      "sha256": "72ad7205a260fe2affd0d994b386b9d12b0bdb4b68461f9c69e842b758e558d8",
+      "source_path": "test/RNA/rna_synthesis3.bngl"
+    },
+    {
+      "id": "motor-motor",
+      "family": "motor",
+      "path": "tests/validation/fixtures/nfsim/motor.bngl",
+      "sha256": "39fda205770a2127ee6012cb9fdf0c747ae8877c2c70aa9d112db812bc87e728",
+      "source_path": "test/motor/motor.bngl"
+    },
+    {
+      "id": "tqssa-gk-simple",
+      "family": "tqssa",
+      "path": "tests/validation/fixtures/nfsim/gk_simple.bngl",
+      "sha256": "f2de4696562b1f6c774a46407456d23761c99f71338975d068c9b3d57631bf66",
+      "source_path": "test/TQSSA/gk_simple.bngl"
+    },
+    {
+      "id": "fceri-ji",
+      "family": "fceri",
+      "path": "tests/validation/fixtures/nfsim/fceri_ji.bngl",
+      "sha256": "b01ec9520112593187f807eddb5b5bcee7b67ad1e871132a72c39797dcf6832c",
+      "source_path": "models/fceRI_compendium/fceri_ji.bngl"
+    },
+    {
+      "id": "multisite-protocol-il2",
+      "family": "multisite-protocol",
+      "path": "tests/validation/fixtures/nfsim/il2.bngl",
+      "sha256": "e2ade512e4cb38b28460cccd9818a0f1b61845594b88c1a7a6132e5faec0b880",
+      "source_path": "test/il2/il2.bngl"
+    }
+  ]
+}
