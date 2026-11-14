@@ -1,5 +1,7 @@
 # Issue 162: Curated BioModels Source Qualification
 
+**Closure audit (2026-11-14): incomplete acceptance.** The new suite tests manifests, numerical floors, classification and fail-closed gate/report-comparator helpers. test_biomodels_release.py neither runs the curated corpus in both modes nor consumes full per-model source results or resolved triage packets. Synthetic baseline dictionaries and counts cannot establish 1,075 published SBML comparisons. See docs/CURRENT_PROGRESS.md for the assessed revision and retained evidence.
+
 This directory defines the release case contract and qualification checks for [Issue #162](https://github.com/RuleWorld/BNG3/issues/162).
 
 ## Goal and Decisions

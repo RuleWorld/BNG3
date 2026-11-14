@@ -1,4 +1,11 @@
-"""Release acceptance tests for Issue 159 (Official SBML Conformance)."""
+"""Bounded checks related to Issue #159.
+
+The new suite tests selected-gate logic, one analytic stochastic calibration and inventory/expectation registration.
+
+test_ssts_release.py does not execute the full official suite or consume full-run results. A fabricated _passed_case and 104 row IDs are not all valid Core outputs passing. Current PR subset workflows do not establish the full release contract.
+Passing this module does not satisfy the complete live release contract or
+authorize issue closure. Existing test IDs are retained for historical evidence.
+"""
 
 import json
 from pathlib import Path

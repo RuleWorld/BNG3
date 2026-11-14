@@ -1,12 +1,10 @@
-"""Release acceptance suite for Issue #162: Curated BioModels Qualification.
+"""Bounded checks related to Issue #162.
 
-Validates:
-- release-biomodels: complete revision-locked inventory produces per-model
-  flat/atomized source comparisons.
-- release-biomodels-triage: fail-closed triage categorizes records cleanly,
-  ensuring source solver errors have independent documented diagnoses.
-- release-obligation-162: verifies exact-revision release contracts,
-  inventory rows, and live acceptance obligations.
+The new suite tests manifests, numerical floors, classification and fail-closed gate/report-comparator helpers.
+
+test_biomodels_release.py neither runs the curated corpus in both modes nor consumes full per-model source results or resolved triage packets. Synthetic baseline dictionaries and counts cannot establish 1,075 published SBML comparisons.
+Passing this module does not satisfy the complete live release contract or
+authorize issue closure. Existing test IDs are retained for historical evidence.
 """
 
 from __future__ import annotations

@@ -1,5 +1,7 @@
 # Issue 161: authored SBML Multi checks
 
+**Closure audit (2026-11-14): incomplete acceptance.** Existing homodimer/stateful/Multi-math examples and mutation comparators provide bounded structural evidence. test_sbml_multi_release.py invokes a small selection of existing examples; its 45-row coverage check only compares JSON lists. It does not enumerate or execute every required Multi feature and consumer combination, or consume complete row-level results. See docs/CURRENT_PROGRESS.md for the assessed revision and retained evidence.
+
 This directory holds reduced export-parity inputs for the unresolved species/type pooling question. They cover the two-molecule trivalent-ligand and bivalent-receptor motif and a state-bearing binding case. The check runs the authored `writeSBMLMulti()` action in C++ BNG3 and pinned BNG2, reports strict structural XML differences, validates each output with libSBML, then checks bounded source-network parity and candidate reimport.
 
 Run from the repository root after the CI lane provides a fresh `bng_cpp` and the pinned `BNG2.pl`:

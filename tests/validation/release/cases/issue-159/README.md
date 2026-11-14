@@ -1,5 +1,7 @@
 # Issue 159: stochastic case 00003 calibration
 
+**Closure audit (2026-11-14): incomplete acceptance.** The new suite tests selected-gate logic, one analytic stochastic calibration and inventory/expectation registration. test_ssts_release.py does not execute the full official suite or consume full-run results. A fabricated _passed_case and 104 row IDs are not all valid Core outputs passing. Current PR subset workflows do not establish the full release contract. See docs/CURRENT_PROGRESS.md for the assessed revision and retained evidence.
+
 `stochastic_00003_law.py` derives the exact source law for the official
 birth–death model (birth rate `1 * X`, death rate `1.1 * X`, initial amount
 100). The tests compare its exact mean and standard deviation with pinned

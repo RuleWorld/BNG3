@@ -1,5 +1,7 @@
 # Issue 475: Delayed-rule semantics across formats and engines
 
+**Closure audit (2026-11-14): incomplete acceptance.** Existing native ODE method-of-steps, continuation and BNGIR delayed-rule tests remain useful. New SSA wrapper calls continuation examples rather than an independent delayed-jump distribution comparison. The SBML formats case conditionally parses then checks only file existence; it does not export/reimport/execute. BngsimAdapter still invokes requireNoDelayedSemantics; complete applicable backend/format behavior is unfinished. See docs/CURRENT_PROGRESS.md for the assessed revision and retained evidence.
+
 This directory defines the release acceptance contract and qualification tests for Issue #475.
 
 ## Coverage

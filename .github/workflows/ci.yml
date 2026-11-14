@@ -124,6 +124,8 @@ jobs:
           python -m pytest -q \
             tests/validation/test_inventory.py \
             tests/validation/test_issue_queue.py \
+            tests/validation/test_real_model_fixtures.py::test_source_registration_does_not_claim_scientific_execution \
+            tests/validation/test_real_model_fixtures.py::test_observed_fixture_law_retains_its_bounded_execution_evidence \
             tests/validation/test_nfnext_boundary.py \
             tests/validation/test_campaign.py \
             tests/validation/test_campaign_mutations.py \

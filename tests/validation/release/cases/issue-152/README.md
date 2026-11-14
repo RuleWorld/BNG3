@@ -1,5 +1,7 @@
 # Issue #152 Release Case Package: Energy, Rasi and Protocol Capabilities
 
+**Closure audit (2026-11-14): incomplete acceptance.** Five canonical source-linked fixtures run BNG3; motor/TQSSA have bounded analytic checks and others have initial-state/invariant checks. real_model_fixtures.py runs only the product, not a pinned native-NFsim comparison for each canonical fixture. Three fixture families have no trajectory law beyond invariants. test_energy_protocols.py Ising checks conservation; theoretical affinity arithmetic is separate from product rates. This does not establish the complete canonical behavior required by release-energy-protocols. See docs/CURRENT_PROGRESS.md for the assessed revision and retained evidence.
+
 This package validates the release acceptance criteria and obligations for **Issue #152** ("C07: Reconcile newer NFsim energy, Rasi and protocol capabilities") under maintainer Decisions 4 and 16 (`docs/DECISIONS.md`).
 
 ## Overview and Reconciled Scope

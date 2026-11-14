@@ -1,5 +1,7 @@
 # Issue #149 Release Case Package: Network-Free Engine Roles and NFcore2 Consolidation
 
+**Closure audit (2026-11-14): incomplete acceptance.** NFcore2 was unlinked from bionetgen_core in #660 and selected transferred behaviors have production NFnext examples. NFcore remains method="nf" default and closure explicitly preserves it. That is correct pending qualification, but default promotion and complete capability transfer/full native corpus required by the live contract remain unfinished. See docs/CURRENT_PROGRESS.md for the assessed revision and retained evidence.
+
 This package provides bounded route, containment and test-mapping checks toward the release acceptance criteria and obligations for **Issue #149** ("C04: Decide maintained roles for NFcore, NFcore2 and NFnext") under maintainer Decision 4 (`docs/DECISIONS.md`).
 
 ## Workload Ownership Matrix

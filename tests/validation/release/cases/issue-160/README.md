@@ -1,5 +1,7 @@
 # Issue 160: diagnostic controls for required Core/comp semantics
 
+**Closure audit (2026-11-14): incomplete acceptance.** Bounded fast/linear-algebraic/affine-delay/comp controls and package diagnostics remain useful. The PR changed validation only; required nonlinear algebraic, general fast/delay cases still produce loss diagnostics. Coverage is 117 registered row IDs, not executed row-level cases; closure claims 78. The comp conversion test can omit all simulation assertions if the native import fails. See docs/CURRENT_PROGRESS.md for the assessed revision and retained evidence.
+
 This directory retains diagnostic, historical-triage and lowering controls related to [issue #160](https://github.com/RuleWorld/BNG3/issues/160). A passing pytest result here is not release acceptance or proof of supported execution.
 
 ## Goal and Decisions

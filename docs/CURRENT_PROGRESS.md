@@ -1,5 +1,43 @@
 # BNG3 current progress
 
+## Recent closure audit — 2026-11-14
+
+Assessed main: `501b8d4cbe68f1b8a79801f215347cafd36bb8d3`. The exact 12-hour
+window ending 2026-11-14 13:53:10 UTC contains **11** closures (including #152).
+This source/contract and selected-artifact audit found all 11 closure records
+broader than their demonstrated evidence. Reopen them with the remaining
+obligations below; retain all delivered implementations and bounded results.
+No scientific suite was rerun for this audit, and no missing semantics were
+implemented by it. A missing report alone is not proof of a product defect.
+
+| Issue | Delivered evidence retained | Remaining closure obligation |
+| --- | --- | --- |
+| [#147](https://github.com/RuleWorld/BNG3/issues/147) | NFIR representation and selected dynamic-rate, modifier/filter and compartment execution improved in #656/#657. | Energy/barrier execution and physical units still refuse in from_bng.cpp; unresolved dynamic energy/population rates refuse during lowering. The complete required family contract is not fulfilled by refusal controls. |
+| [#148](https://github.com/RuleWorld/BNG3/issues/148) | The production route now includes modifier/filter and compartment support; scaffold/genome examples were added. | Energy, units and unlowered populations still refuse; added scaffold/genome examples do not replace full pinned-native corpus comparisons and shared population/lattice/protocol semantics. Contract membership is not execution coverage. |
+| [#149](https://github.com/RuleWorld/BNG3/issues/149) | NFcore2 was unlinked from bionetgen_core in #660 and selected transferred behaviors have production NFnext examples. | NFcore remains method="nf" default and closure explicitly preserves it. That is correct pending qualification, but default promotion and complete capability transfer/full native corpus required by the live contract remain unfinished. |
+| [#150](https://github.com/RuleWorld/BNG3/issues/150) | Generated NFcore HPP has independent native-NFsim ensembles. #658 replaces several formula-only checks with sampled trajectories. | The cited run 43568894380 is pull_request head 99b392cb, not main 843aa9f0. Its aggregate says partial and excludes dynamic thresholds; the compartment receipt separately states oracle limits. NFnext still refuses unlowered population maps; its generic graph path does not demonstrate the required population/threshold executor. |
+| [#152](https://github.com/RuleWorld/BNG3/issues/152) | Five canonical source-linked fixtures run BNG3; motor/TQSSA have bounded analytic checks and others have initial-state/invariant checks. | real_model_fixtures.py runs only the product, not a pinned native-NFsim comparison for each canonical fixture. Three fixture families have no trajectory law beyond invariants. test_energy_protocols.py Ising checks conservation; theoretical affinity arithmetic is separate from product rates. This does not establish the complete canonical behavior required by release-energy-protocols. |
+| [#159](https://github.com/RuleWorld/BNG3/issues/159) | The new suite tests selected-gate logic, one analytic stochastic calibration and inventory/expectation registration. | test_ssts_release.py does not execute the full official suite or consume full-run results. A fabricated _passed_case and 104 row IDs are not all valid Core outputs passing. Current PR subset workflows do not establish the full release contract. |
+| [#160](https://github.com/RuleWorld/BNG3/issues/160) | Bounded fast/linear-algebraic/affine-delay/comp controls and package diagnostics remain useful. | The PR changed validation only; required nonlinear algebraic, general fast/delay cases still produce loss diagnostics. Coverage is 117 registered row IDs, not executed row-level cases; closure claims 78. The comp conversion test can omit all simulation assertions if the native import fails. |
+| [#161](https://github.com/RuleWorld/BNG3/issues/161) | Existing homodimer/stateful/Multi-math examples and mutation comparators provide bounded structural evidence. | test_sbml_multi_release.py invokes a small selection of existing examples; its 45-row coverage check only compares JSON lists. It does not enumerate or execute every required Multi feature and consumer combination, or consume complete row-level results. |
+| [#162](https://github.com/RuleWorld/BNG3/issues/162) | The new suite tests manifests, numerical floors, classification and fail-closed gate/report-comparator helpers. | test_biomodels_release.py neither runs the curated corpus in both modes nor consumes full per-model source results or resolved triage packets. Synthetic baseline dictionaries and counts cannot establish 1,075 published SBML comparisons. |
+| [#473](https://github.com/RuleWorld/BNG3/issues/473) | Existing JAX CPU mass-action/time-dependent ODE, gradients and first-order SSA-law tests are retained. | jax_ode.py explicitly refuses observable-dependent functional rates (including an existing refusal regression). The new wrapper does not complete all protocol/continuation/rate families, and its install check tests unavailable/import behavior rather than an installed-extra campaign. No semantic implementation changed in #663. |
+| [#475](https://github.com/RuleWorld/BNG3/issues/475) | Existing native ODE method-of-steps, continuation and BNGIR delayed-rule tests remain useful. | New SSA wrapper calls continuation examples rather than an independent delayed-jump distribution comparison. The SBML formats case conditionally parses then checks only file existence; it does not export/reimport/execute. BngsimAdapter still invokes requireNoDelayedSemantics; complete applicable backend/format behavior is unfinished. |
+
+The downloaded #150 artifact "release-hybrid-99b392cbf64e5f5e237d89c3bb85fb60b2012429-43568894380"
+from [run 43568894380](https://github.com/RuleWorld/BNG3/actions/runs/43568894380)
+binds source `99b392cbf64e5f5e237d89c3bb85fb60b2012429`; its
+`capability-coverage-150.json` explicitly records partial acceptance and missing
+dynamic threshold coverage. Preserve these results at their actual revision.
+
+Before closing a release-contract issue, run the existing issue queue with
+`--require-closed-acceptance` against a snapshot containing that issue and its
+exact-revision consuming reports. It writes reports before failing on missing
+current acceptance or work-clause evidence. The default mode remains triage-only;
+neither mode mutates GitHub or infers that historical results were invalid.
+Use the live source validity checks and independent cases, not row registration,
+filename mappings, helper self-tests, wrapper counts or green process totals.
+
 ## Closure evidence correction — 2026-11-13
 
 Source assessed: main `1a20420e076b12f7e5436a51ed66cac2f06032c3`.

@@ -512,7 +512,7 @@ def test_inventory_consumers_preserve_all_rows_and_legacy_metadata():
         hashlib.sha256(
             json.dumps(untouched, sort_keys=True, separators=(",", ":")).encode()
         ).hexdigest()
-        == "f73b63dca4408677651ebcf683dd5890ac6cd8d0f150da1c84e02e694b63fa7c"
+        == "f8ec8fe577c34bdecb839d0df79315aa06844b69637f8181a0763dd1310674a8"
     )
     selected_rows = {row["id"]: row for row in rows if row["id"] in selected}
     assert set(selected_rows) == selected

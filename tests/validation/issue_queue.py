@@ -1616,6 +1616,37 @@ def acceptance_dashboard(queue, assessment, campaigns):
     return ranked + inactive
 
 
+def closed_acceptance_gaps(queue):
+    """Return unresolved current contracts for a caller-selected closed snapshot.
+
+    This gate audits supplied evidence, not historical validity, and never
+    mutates GitHub. Passing labels or a registration/process check cannot fill
+    missing current work clauses. Superseded scope remains in the report.
+    """
+    gaps = []
+    for row in queue:
+        if row["state"] != "CLOSED":
+            continue
+        criteria = row.get("acceptance_criteria", [])
+        missing = [c["id"] for c in criteria if c["evidence_status"] != "PASS"]
+        obligations = [
+            o["id"]
+            for o in row.get("obligations", [])
+            if o.get("scope_status") in {"CURRENT", "UNMAPPED"}
+            and o["status"] != "DEMONSTRATED"
+        ]
+        if not criteria or missing or obligations:
+            gaps.append(
+                dict(
+                    issue=row["number"],
+                    criteria=missing,
+                    obligations=obligations,
+                    missing_contract=not criteria,
+                )
+            )
+    return gaps
+
+
 def source_drift(lock, heads):
     rows = []
     for name, source in lock["sources"].items():
@@ -1757,6 +1788,11 @@ def main(argv=None):
     parser.add_argument("--s5-delay-replay-report", type=Path)
     parser.add_argument("--revision", required=True)
     parser.add_argument("--output-dir", type=Path, required=True)
+    parser.add_argument(
+        "--require-closed-acceptance",
+        action="store_true",
+        help="Exit nonzero after writing reports if a closed issue in the supplied snapshot lacks complete current acceptance evidence.",
+    )
     parser.add_argument("--upstream-heads", type=Path)
     parser.add_argument("--collect-upstream-heads", action="store_true")
     args = parser.parse_args(argv)
@@ -1936,6 +1972,7 @@ def main(argv=None):
             ]
             + receipt_reports,
             queue=queue,
+            closed_acceptance_gaps=closed_acceptance_gaps(queue),
             acceptance=assessment,
             campaign_selection=campaigns,
             obligations_sha256=inventory.sha256(args.obligations_json),
@@ -1966,6 +2003,20 @@ def main(argv=None):
             "",
         ]
         (args.output_dir / "issue-queue.md").write_text("\n".join(lines))
+        if args.require_closed_acceptance and not any(
+            row["state"] == "CLOSED" for row in queue
+        ):
+            print(
+                "Closure gate requires at least one CLOSED issue in the supplied snapshot.",
+                file=sys.stderr,
+            )
+            return 1
+        if args.require_closed_acceptance and report["closed_acceptance_gaps"]:
+            numbers = ", ".join(
+                "#" + str(gap["issue"]) for gap in report["closed_acceptance_gaps"]
+            )
+            print("Closed acceptance evidence incomplete: " + numbers, file=sys.stderr)
+            return 1
         return 0
     except (OSError, ValueError, KeyError, TypeError) as exc:
         (args.output_dir / "error.json").write_text(
