@@ -507,3 +507,116 @@ def test_demonstrated_current_checks_do_not_authorize_automatic_closure():
     assert row["closed_acceptance_gap"] is False
     assert row["acceptance_gaps"] == []
     assert row["closure_eligible"] is False
+
+
+@pytest.mark.parametrize(
+    "status", ["NOT_TESTED", "EVIDENCE_GAP", "UNSUPPORTED", "FAIL"]
+)
+def test_closure_gate_rejects_incomplete_current_work_even_with_passing_checklist(
+    status,
+):
+    row = dict(
+        number=149,
+        state="CLOSED",
+        acceptance_criteria=[dict(id="criterion", evidence_status="PASS")],
+        obligations=[
+            dict(id="retire-and-promote", scope_status="CURRENT", status=status)
+        ],
+    )
+    gaps = issue_queue.closed_acceptance_gaps([row])
+    assert gaps == [
+        dict(
+            issue=149,
+            criteria=[],
+            obligations=["retire-and-promote"],
+            missing_contract=False,
+        )
+    ]
+    row["state"] = "OPEN"
+    assert issue_queue.closed_acceptance_gaps([row]) == []
+
+
+def test_closure_gate_does_not_infer_acceptance_from_closed_state_or_registration():
+    row = dict(number=162, state="CLOSED", acceptance_criteria=[], obligations=[])
+    assert issue_queue.closed_acceptance_gaps([row]) == [
+        dict(issue=162, criteria=[], obligations=[], missing_contract=True)
+    ]
+
+
+def test_closure_gate_retains_historical_gaps_without_blocking_current_evidence():
+    row = dict(
+        number=148,
+        state="CLOSED",
+        acceptance_criteria=[dict(id="criterion", evidence_status="PASS")],
+        obligations=[
+            dict(id="old", scope_status="STALE_SCOPE", status="NOT_TESTED"),
+            dict(id="current", scope_status="CURRENT", status="DEMONSTRATED"),
+        ],
+    )
+    assert issue_queue.closed_acceptance_gaps([row]) == []
+    row["acceptance_criteria"][0]["evidence_status"] = "UNVERIFIED"
+    assert issue_queue.closed_acceptance_gaps([row])[0]["criteria"] == ["criterion"]
+
+
+def test_closure_gate_cli_is_opt_in_and_preserves_reports_on_failure(tmp_path):
+    issues = tmp_path / "issues.json"
+    catalog = tmp_path / "catalog.json"
+    issues.write_text(
+        json.dumps(
+            [
+                dict(
+                    number=162,
+                    title="BioModels",
+                    state="CLOSED",
+                    body="## Acceptance criteria\n- [x] `release-biomodels`: run every model.\n",
+                )
+            ]
+        )
+    )
+    catalog.write_text(json.dumps(dict(issues=[])))
+    revision = issue_queue.campaign.git(issue_queue.ROOT, "rev-parse", "HEAD")
+    common = [
+        "--issues-json",
+        str(issues),
+        "--obligations-json",
+        str(catalog),
+        "--revision",
+        revision,
+    ]
+    triage = tmp_path / "triage"
+    assert issue_queue.main(common + ["--output-dir", str(triage)]) == 0
+    gated = tmp_path / "gated"
+    assert (
+        issue_queue.main(
+            common + ["--output-dir", str(gated), "--require-closed-acceptance"]
+        )
+        == 1
+    )
+    result = json.loads((gated / "issue-queue.json").read_text())
+    assert result["closed_acceptance_gaps"][0]["issue"] == 162
+    assert (gated / "issue-queue.md").is_file()
+    assert not (gated / "error.json").exists()
+
+
+def test_closure_gate_cli_rejects_an_empty_snapshot(tmp_path):
+    issues = tmp_path / "issues.json"
+    catalog = tmp_path / "catalog.json"
+    issues.write_text("[]")
+    catalog.write_text(json.dumps(dict(issues=[])))
+    revision = issue_queue.campaign.git(issue_queue.ROOT, "rev-parse", "HEAD")
+    assert (
+        issue_queue.main(
+            [
+                "--issues-json",
+                str(issues),
+                "--obligations-json",
+                str(catalog),
+                "--revision",
+                revision,
+                "--output-dir",
+                str(tmp_path / "output"),
+                "--require-closed-acceptance",
+            ]
+        )
+        == 1
+    )

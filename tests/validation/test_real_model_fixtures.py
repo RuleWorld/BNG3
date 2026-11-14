@@ -133,3 +133,16 @@ def test_the_qualified_slice_is_declared():
 def test_the_operation_is_registered_in_the_campaign_registry():
     assert "real-model-fixtures" in extensions.OPERATIONS
     assert extensions.check_ids("real-model-fixtures") == fixtures.check_ids()
+
+
+@pytest.mark.parametrize("check", ["source-link", "family-coverage"])
+def test_source_registration_does_not_claim_scientific_execution(check):
+    row = fixtures._row(check, "PASS", "metadata verified")
+    assert row["supported_execution"] is False
+    assert row["evidence_kind"] == "diagnostic-only"
+
+
+def test_observed_fixture_law_retains_its_bounded_execution_evidence():
+    row = fixtures._row("closed-form-law", "PASS", "sampled trajectory matches law")
+    assert row["supported_execution"] is True
+    assert row["evidence_kind"] == "supported-execution"

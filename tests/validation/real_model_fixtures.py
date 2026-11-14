@@ -240,7 +240,10 @@ def _row(check, status, detail, **evidence):
         question="real-model-fixture-versus-independent-expectation",
         **evidence,
     )
-    if status in {"PASS", "FAIL"}:
+    if check in {"source-link", "family-coverage"}:
+        row["evidence_kind"] = "diagnostic-only"
+        row["supported_execution"] = False
+    elif status in {"PASS", "FAIL"}:
         row.setdefault("evidence_kind", "supported-execution")
         row.setdefault("supported_execution", True)
     else:

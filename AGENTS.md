@@ -14,6 +14,8 @@ The first release implements the complete capability inventory in `docs/CAPABILI
 
 `docs/DECISIONS.md` records final maintainer decisions. Apply them without requesting the same decision again. Every issue closes when all its listed acceptance checks pass on `main`; record the commit and artifacts. No additional closure approval is required.
 
+Before closing a release-contract issue, prepare a single-issue snapshot of its live body with state `CLOSED` in a temporary directory and run `python -m tests.validation.issue_queue --require-closed-acceptance` with the exact-main revision and actual consuming reports. This is a dry-run evidence gate, not a GitHub mutation. A nonzero result leaves the issue open; fix missing execution or evidence rather than weakening the contract. The gate checks supplied evidence structure and is necessary but does not replace source validity, independent scientific comparison, or review of every work clause.
+
 ## Read before changing code
 
 Inspect the repository and current branch before reasoning from memory:
