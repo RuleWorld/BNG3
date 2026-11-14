@@ -112,6 +112,7 @@ def expected_contract_ids(
     include_graph_identity_contract=True,
     include_bngir_adversarial=True,
     include_quantity_laws=True,
+    include_real_model_fixtures=True,
     full=False,
 ):
     return [
@@ -159,6 +160,7 @@ def expected_contract_ids(
         include_graph_identity_contract=include_graph_identity_contract,
         include_bngir_adversarial=include_bngir_adversarial,
         include_quantity_laws=include_quantity_laws,
+        include_real_model_fixtures=include_real_model_fixtures,
         full=full,
     )
 
@@ -943,6 +945,7 @@ def main(argv=None):
     parser.add_argument("--graph-identity-contract-only", action="store_true")
     parser.add_argument("--bngir-adversarial-only", action="store_true")
     parser.add_argument("--quantity-laws-only", action="store_true")
+    parser.add_argument("--real-model-fixtures-only", action="store_true")
     parser.add_argument("--ensemble-runs", type=int)
     args = parser.parse_args(argv)
     if (
@@ -953,6 +956,7 @@ def main(argv=None):
                 args.graph_identity_contract_only,
                 args.bngir_adversarial_only,
                 args.quantity_laws_only,
+                args.real_model_fixtures_only,
             )
         )
         > 1
@@ -979,6 +983,7 @@ def main(argv=None):
         or args.graph_identity_contract_only
         or args.bngir_adversarial_only
         or args.quantity_laws_only
+        or args.real_model_fixtures_only
     ):
         selected = []
     for name in (
@@ -1011,24 +1016,28 @@ def main(argv=None):
             or args.graph_identity_contract_only
             or args.bngir_adversarial_only
             or args.quantity_laws_only
+            or args.real_model_fixtures_only
         ),
         include_graph_identity=not (
             args.boundaries_only
             or args.graph_identity_contract_only
             or args.bngir_adversarial_only
             or args.quantity_laws_only
+            or args.real_model_fixtures_only
         ),
         include_graph_identity_contract=not (
             args.boundaries_only
             or args.graph_identity_only
             or args.bngir_adversarial_only
             or args.quantity_laws_only
+            or args.real_model_fixtures_only
         ),
         include_bngir_adversarial=not (
             args.boundaries_only
             or args.graph_identity_only
             or args.graph_identity_contract_only
             or args.quantity_laws_only
+            or args.real_model_fixtures_only
         ),
     )
     qualification_selection["include_quantity_laws"] = not (
@@ -1036,6 +1045,14 @@ def main(argv=None):
         or args.graph_identity_only
         or args.graph_identity_contract_only
         or args.bngir_adversarial_only
+        or args.real_model_fixtures_only
+    )
+    qualification_selection["include_real_model_fixtures"] = not (
+        args.boundaries_only
+        or args.graph_identity_only
+        or args.graph_identity_contract_only
+        or args.bngir_adversarial_only
+        or args.quantity_laws_only
     )
     required_ids = expected_contract_ids(
         selected, full=args.full, **qualification_selection
@@ -1058,6 +1075,10 @@ def main(argv=None):
             )
         if qualification_selection["include_quantity_laws"]:
             integrated_extensions.invoke("quantity-laws", args, rows, env, run_stage)
+        if qualification_selection["include_real_model_fixtures"]:
+            integrated_extensions.invoke(
+                "real-model-fixtures", args, rows, env, run_stage
+            )
         for case in selected:
             run_case(case, args, rows, env)
         # Inputs/oracles must still have their preflight identities after execution.
@@ -1101,23 +1122,27 @@ def main(argv=None):
             replay_base
             + (["--full"] if args.full else [])
             + (
-                ["--quantity-laws-only"]
-                if row.get("qualification") == "quantity-laws"
-                else []
-            )
-            + (
-                ["--boundaries-only"]
-                if row.get("qualification") == "boundaries"
+                ["--real-model-fixtures-only"]
+                if row.get("qualification") == "real-model-fixtures"
                 else (
-                    ["--bngir-adversarial-only"]
-                    if row.get("qualification") == "bngir-adversarial"
+                    ["--quantity-laws-only"]
+                    if row.get("qualification") == "quantity-laws"
                     else (
-                        ["--graph-identity-only"]
-                        if row.get("qualification") == "graph-identity"
+                        ["--boundaries-only"]
+                        if row.get("qualification") == "boundaries"
                         else (
-                            ["--graph-identity-contract-only"]
-                            if row.get("qualification") == "graph-identity-contract"
-                            else (["--case", case_id] if case_id else [])
+                            ["--bngir-adversarial-only"]
+                            if row.get("qualification") == "bngir-adversarial"
+                            else (
+                                ["--graph-identity-only"]
+                                if row.get("qualification") == "graph-identity"
+                                else (
+                                    ["--graph-identity-contract-only"]
+                                    if row.get("qualification")
+                                    == "graph-identity-contract"
+                                    else (["--case", case_id] if case_id else [])
+                                )
+                            )
                         )
                     )
                 )
@@ -1164,6 +1189,7 @@ def main(argv=None):
                     "bngir-adversarial": "tests/validation/bngir_adversarial.py",
                     "graph-identity": "tests/validation/graph_identity.py",
                     "graph-identity-contract": "tests/validation/graph_identity_contract.py",
+                    "real-model-fixtures": "tests/validation/real_model_fixtures.py",
                 }[row["stage"]]
             ]
             if row["stage"] == "graph-identity":
@@ -1172,6 +1198,10 @@ def main(argv=None):
                 row["source_locations"].append("cpp/core/IdentityContract.hpp")
                 row["question"] = (
                     "both-native-graph-encodings-vs-one-independent-identity-contract"
+                )
+            if row["stage"] == "real-model-fixtures":
+                row["question"] = (
+                    "canonical-nfsim-real-model-fixtures-invariants-and-laws"
                 )
         if row["stage"] == "rate-trace":
             row["source_locations"] = [
@@ -1194,6 +1224,8 @@ def main(argv=None):
                 issues = [142]
             elif stage == "graph-identity-contract":
                 issues = [142]
+            elif stage == "real-model-fixtures":
+                issues = [152]
             elif stage in integrated_consumers.ISSUES:
                 issues = list(integrated_consumers.ISSUES[stage])
             elif stage.startswith(("bngir-", "bngl-reload")):
