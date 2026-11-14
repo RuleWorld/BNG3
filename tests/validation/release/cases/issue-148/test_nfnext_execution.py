@@ -307,6 +307,117 @@ end model
     assert res_sig["observables"]["PhosSub"][-1] > 0.0
 
 
+def test_release_nfnext_execution_scaffold_and_genome_corpora():
+    """Verify multi-protein scaffold recruitment and gene expression/autoregulation execution."""
+    # 1. Multi-site scaffold assembly and intra-complex reaction
+    scaffold_bngl = """begin model
+begin parameters
+  k_bind 0.2
+  k_unbind 0.05
+  k_intra 2.0
+end parameters
+begin molecule types
+  Scaffold(k,p,sub)
+  Kinase(s)
+  Phos(s)
+  Substrate(s,t~u~p)
+end molecule types
+begin seed species
+  Scaffold(k,p,sub) 10
+  Kinase(s) 10
+  Phos(s) 10
+  Substrate(s,t~u) 20
+end seed species
+begin observables
+  Molecules TotalScaffold Scaffold()
+  Molecules ScaffoldWithSub Scaffold(sub!+)
+  Molecules FullComplex Scaffold(k!1,p!2,sub!3).Kinase(s!1).Phos(s!2).Substrate(s!3)
+  Molecules PhosSub Substrate(t~p)
+  Molecules UnphosSub Substrate(t~u)
+  Molecules TotalSub Substrate()
+end observables
+begin reaction rules
+  bind_k: Scaffold(k) + Kinase(s) <-> Scaffold(k!1).Kinase(s!1) k_bind, k_unbind
+  bind_p: Scaffold(p) + Phos(s) <-> Scaffold(p!1).Phos(s!1) k_bind, k_unbind
+  bind_sub: Scaffold(sub) + Substrate(s) <-> Scaffold(sub!1).Substrate(s!1) k_bind, k_unbind
+  intra_phos: Scaffold(k!+,sub!1).Substrate(s!1,t~u) -> Scaffold(k!+,sub!1).Substrate(s!1,t~p) k_intra
+end reaction rules
+end model
+"""
+    model_scaf = cpp.parse_string(scaffold_bngl)
+    res_scaf = cpp.simulate_nfnext(model_scaf, [0.0, 1.0, 5.0], seed=42)
+    obs_scaf = res_scaf["observables"]
+
+    # Initial state
+    assert obs_scaf["TotalScaffold"][0] == 10.0
+    assert obs_scaf["TotalSub"][0] == 20.0
+    assert obs_scaf["PhosSub"][0] == 0.0
+    assert obs_scaf["UnphosSub"][0] == 20.0
+    assert obs_scaf["ScaffoldWithSub"][0] == 0.0
+
+    # Mass conservation at all sampled times
+    for s_tot in obs_scaf["TotalScaffold"]:
+        assert s_tot == 10.0
+    for sub_tot, p_sub, u_sub in zip(
+        obs_scaf["TotalSub"], obs_scaf["PhosSub"], obs_scaf["UnphosSub"]
+    ):
+        assert sub_tot == 20.0
+        assert p_sub + u_sub == 20.0
+
+    # Scaffold assembly and intra-complex catalysis occurred
+    assert obs_scaf["ScaffoldWithSub"][-1] > 0.0
+    assert obs_scaf["PhosSub"][-1] > 0.0
+
+    # 2. Genome transcription, translation, and autoregulatory negative feedback
+    genome_bngl = """begin model
+begin parameters
+  k_tx 0.2
+  k_tl 0.5
+  k_deg_m 0.05
+  k_deg_p 0.02
+  k_rep 0.1
+  k_unrep 0.05
+end parameters
+begin molecule types
+  Gene(promoter~active~repressed)
+  mRNA(ribo)
+  Protein(dna)
+end molecule types
+begin seed species
+  Gene(promoter~active) 2
+  mRNA(ribo) 0
+  Protein(dna) 0
+end seed species
+begin observables
+  Molecules ActiveGene Gene(promoter~active)
+  Molecules RepressedGene Gene(promoter~repressed)
+  Molecules TotalmRNA mRNA()
+  Molecules TotalProtein Protein()
+  Molecules FreeProtein Protein(dna)
+end observables
+begin reaction rules
+  transcribe: Gene(promoter~active) -> Gene(promoter~active) + mRNA(ribo) k_tx
+  translate: mRNA() -> mRNA() + Protein(dna) k_tl
+  degrade_mrna: mRNA() -> 0 k_deg_m
+  degrade_prot: Protein(dna) -> 0 k_deg_p
+  repress: Gene(promoter~active) + Protein(dna) -> Gene(promoter~repressed!1).Protein(dna!1) k_rep
+  unrepress: Gene(promoter~repressed!1).Protein(dna!1) -> Gene(promoter~active) + Protein(dna) k_unrep
+end reaction rules
+end model
+"""
+    model_gen = cpp.parse_string(genome_bngl)
+    res_gen = cpp.simulate_nfnext(model_gen, [0.0, 5.0, 10.0], seed=42)
+    obs_gen = res_gen["observables"]
+
+    # Strict gene conservation (2 copies of gene partitioned between active and repressed)
+    for act, rep in zip(obs_gen["ActiveGene"], obs_gen["RepressedGene"]):
+        assert act + rep == 2.0
+
+    # Expression and negative feedback occurred
+    assert obs_gen["TotalmRNA"][-1] > 0.0
+    assert obs_gen["TotalProtein"][-1] > 0.0
+
+
 def test_release_nfnext_execution_native_nfsim_parity(tmp_path: Path):
     """Verify NFnext boundary qualification against native NFsim and analytical fixtures."""
     boundary_exe = ARCH_TESTS_DIR / "bng3_nfnext_execution_boundary"
