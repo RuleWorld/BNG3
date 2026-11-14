@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "issue": 162,
+  "title": "E06: Resume curated BioModels and cross-engine Atomizer qualification when authorized",
+  "source": {
+    "repository": "RuleWorld/BNG3",
+    "contract": "Complete curated BioModels source qualification across flat and atomized modes with fail-closed triage separating passed, unsupported, failed, timed-out, and invalid-source categories against independent simulation oracles."
+  },
+  "oracle": {
+    "identity": "Curated BioModels corpus (provenance/published-biomodels.json), libRoadRunner independent reference comparison, and scripts/ci/validate_published_biomodels.py fail-closed triage runner.",
+    "law": "Every supported curated BioModel preserves source simulation observables against independent reference runs; unsupported constructs yield explicit non-approximated diagnostics; defects and solver failures retain documented diagnoses."
+  },
+  "acceptance_checks": [
+    "release-biomodels",
+    "release-biomodels-triage",
+    "release-obligation-162"
+  ],
+  "inventory_rows": [
+    "pybionetgen.api-cli-atomizer",
+    "py.atomizer.AtomizeTool",
+    "py.atomizer.AtomizeTool.checkConfig",
+    "py.atomizer.AtomizeTool.run"
+  ],
+  "obligations": [
+    "issue:162:live-acceptance:release-biomodels",
+    "issue:162:live-acceptance:release-biomodels-triage",
+    "issue:162:live-acceptance:release-obligation-162"
+  ]
+}
