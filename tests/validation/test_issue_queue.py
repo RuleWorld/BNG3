@@ -410,3 +410,100 @@ def test_historical_versus_live_precedence_in_obligation_inventory():
     assert len(unmapped) == 1
     assert unmapped[0]["criterion"] == "`release-graph-observables`: observables check."
     assert unmapped[0]["scope_status"] == "UNMAPPED"
+
+
+@pytest.mark.parametrize("state", ["OPEN", "CLOSED"])
+@pytest.mark.parametrize(
+    "status", ["NOT_TESTED", "EVIDENCE_GAP", "UNSUPPORTED", "FAIL"]
+)
+def test_closed_acceptance_gaps_remain_actionable(state, status):
+    from tests.validation.ci_report import acceptance_markdown
+
+    criterion = "`release-nfnext-execution`: full native corpus comparison."
+    issue = dict(
+        number=148,
+        title="NFnext",
+        state=state,
+        body=f"## Acceptance criteria\n- [x] {criterion}\n",
+    )
+    assessment = dict(
+        obligations=[
+            dict(
+                id="issue:148:live-acceptance:release-nfnext-execution",
+                issue=148,
+                criterion=criterion,
+                scope=criterion,
+                scope_status="CURRENT",
+                status=status,
+                checks=[
+                    dict(id="release-nfnext-execution", status=status, executed=False)
+                ],
+                boundaries=[],
+                decisions=[],
+                unmapped_scope=[],
+            )
+        ],
+        evidence_audit=[],
+    )
+    queue = issue_queue.acceptance_dashboard(
+        issue_queue.build_queue([issue], [], REVISION), assessment, []
+    )
+    row = queue[0]
+    assert row["closed_acceptance_gap"] is (state == "CLOSED")
+    assert row["acceptance_gaps"] == ["issue:148:acceptance:1"]
+    assert row["closure_eligible"] is False
+    text = acceptance_markdown(
+        dict(
+            revision=REVISION, queue=queue, acceptance=assessment, campaign_selection=[]
+        )
+    )
+    if state == "CLOSED":
+        assert row["next_action"] == "reconcile-closed-issue-acceptance"
+        assert "Closed issues with unverified acceptance" in text
+        assert "#148" in text.split("## Evidence audit")[0]
+
+
+def test_closed_checklist_or_green_process_does_not_supply_missing_acceptance():
+    issue = dict(
+        number=149,
+        title="Consolidation",
+        state="CLOSED",
+        body="## Acceptance criteria\n- [x] `release-nf-default`: full corpus before promotion.\n",
+    )
+    queue = issue_queue.acceptance_dashboard(
+        issue_queue.build_queue([issue], [], REVISION),
+        dict(obligations=[], evidence_audit=[]),
+        [],
+    )
+    assert queue[0]["closed_acceptance_gap"] is True
+    assert queue[0]["acceptance_gaps"] == ["issue:149:acceptance:1"]
+
+
+def test_demonstrated_current_checks_do_not_authorize_automatic_closure():
+    issue = dict(
+        number=149,
+        title="Consolidation",
+        state="CLOSED",
+        body="## Acceptance criteria\n- [ ] `release-nf-default`: full corpus before promotion.\n",
+    )
+    assessment = dict(
+        obligations=[
+            dict(
+                id="issue:149:live-acceptance:release-nf-default",
+                issue=149,
+                criterion="`release-nf-default`: full corpus before promotion.",
+                scope_status="CURRENT",
+                status="DEMONSTRATED",
+                checks=[],
+                boundaries=[],
+                decisions=[],
+                unmapped_scope=[],
+            )
+        ]
+    )
+    row = issue_queue.acceptance_dashboard(
+        issue_queue.build_queue([issue], [], REVISION), assessment, []
+    )[0]
+    assert row["closed_acceptance_gap"] is False
+    assert row["acceptance_gaps"] == []
+    assert row["closure_eligible"] is False

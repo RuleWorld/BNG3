@@ -123,6 +123,8 @@ jobs:
         run: |
           python -m pytest -q \
             tests/validation/test_inventory.py \
+            tests/validation/test_issue_queue.py \
+            tests/validation/test_nfnext_boundary.py \
             tests/validation/test_campaign.py \
             tests/validation/test_campaign_mutations.py \
             tests/validation/test_reporting.py \
