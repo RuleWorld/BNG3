@@ -8,6 +8,7 @@ import random
 import ast
 import re
 import sys
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 from datetime import datetime
 from functools import wraps
@@ -58,6 +59,12 @@ def clone_ast(node: Any) -> Any:
             for attr in node._attributes:
                 if hasattr(node, attr):
                     setattr(new_node, attr, getattr(node, attr))
+        return new_node
+    if isinstance(node, ET.Element):
+        new_node = ET.Element(node.tag, node.attrib)
+        new_node.text = node.text
+        new_node.tail = node.tail
+        new_node.extend(clone_ast(child) for child in node)
         return new_node
     return node
 
