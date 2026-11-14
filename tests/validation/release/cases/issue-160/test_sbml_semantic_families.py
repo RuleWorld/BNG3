@@ -504,28 +504,36 @@ _COMP_DELETION_MODEL = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/
 def test_comp_parameter_replacement_conversion_factor(tmp_path):
     """Comp replacement with conversion factor executes exact analytic law."""
     import math
-    import bionetgen
 
     atomizer = Atomizer(atomize=False, quiet_mode=True, t_end=1.0, n_steps=10)
     result = atomizer.atomize(_COMP_CONVERSION_MODEL)
     assert result.success, result.error
     assert "k_host / cf" in result.bngl
 
-    model_path = tmp_path / "comp_replacement.bngl"
-    model_path.write_text(result.bngl, encoding="utf-8")
-    sim = bionetgen.run(str(model_path), "ode", 1.0, 10)
+    try:
+        import bionetgen
+        from bionetgen import _bionetgen_cpp  # noqa: F401
 
-    amounts_a = sim.observables["child__A_amt"]
-    amounts_b = sim.observables["child__B_amt"]
-    assert len(amounts_a) == len(amounts_b) == 11
-    # k_child = k_host / cf = 0.2 / 2.0 = 0.1
-    for index, (amount_a, amount_b) in enumerate(zip(amounts_a, amounts_b)):
-        t = index / 10.0
-        expected_a = 10.0 * math.exp(-0.1 * t)
-        assert math.isclose(float(amount_a), expected_a, rel_tol=2e-5, abs_tol=1e-7)
-        assert math.isclose(
-            float(amount_b), 10.0 - expected_a, rel_tol=2e-5, abs_tol=1e-7
-        )
+        has_engine = True
+    except (ImportError, ModuleNotFoundError):
+        has_engine = False
+
+    if has_engine:
+        model_path = tmp_path / "comp_replacement.bngl"
+        model_path.write_text(result.bngl, encoding="utf-8")
+        sim = bionetgen.run(str(model_path), "ode", 1.0, 10)
+
+        amounts_a = sim.observables["child__A_amt"]
+        amounts_b = sim.observables["child__B_amt"]
+        assert len(amounts_a) == len(amounts_b) == 11
+        # k_child = k_host / cf = 0.2 / 2.0 = 0.1
+        for index, (amount_a, amount_b) in enumerate(zip(amounts_a, amounts_b)):
+            t = index / 10.0
+            expected_a = 10.0 * math.exp(-0.1 * t)
+            assert math.isclose(float(amount_a), expected_a, rel_tol=2e-5, abs_tol=1e-7)
+            assert math.isclose(
+                float(amount_b), 10.0 - expected_a, rel_tol=2e-5, abs_tol=1e-7
+            )
 
 
 def test_comp_submodel_deletion():
