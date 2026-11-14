@@ -427,29 +427,34 @@ begin reaction rules
 end reaction rules
 end model
 """,
-        # MatchOnce modifier
+        # MoveConnected modifier
         """begin model
 begin molecule types
-  A()
+  A(b)
+  B(a)
 end molecule types
 begin seed species
-  A() 10
+  A(b) 10
+  B(a) 10
 end seed species
 begin reaction rules
-  A() -> 0 0.1 MatchOnce
+  A(b) + B(a) -> A(b!1).B(a!1) 0.1 MoveConnected
 end reaction rules
 end model
 """,
-        # TotalRate modifier
+        # Physical units
         """begin model
+begin parameters
+  k = 0.5 [s^-1]
+end parameters
 begin molecule types
-  A()
+  A(x~u~p)
 end molecule types
 begin seed species
-  A() 10
+  A(x~u) 10
 end seed species
 begin reaction rules
-  A() -> 0 0.1 TotalRate
+  A(x~u) -> A(x~p) k
 end reaction rules
 end model
 """,
@@ -475,6 +480,170 @@ end model
         with pytest.raises(RuntimeError) as exc_info:
             model.simulate(method="nfnext", t_end=1.0, n_steps=2)
         assert "NFnext execution unsupported" in str(exc_info.value)
+
+
+def test_release_nfnext_execution_totalrate_semantics():
+    """Verify TotalRate modifier fixes the total rule propensity independently of reactant count."""
+    bngl = """begin model
+begin parameters
+  k 2.0
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 20
+end seed species
+begin observables
+  Molecules TotalA A()
+end observables
+begin reaction rules
+  decay: A() -> 0 k TotalRate
+end reaction rules
+end model
+"""
+    model = cpp.parse_string(bngl)
+    t_sample = 0.5
+    # Under TotalRate k=2.0, total propensity is 2.0 as long as A > 0.
+    # Expected events in t=0.5 is k * t = 1.0 (mean remaining A is 20 - 1.0 = 19.0).
+    # Under elementary rate without TotalRate, propensity is k * A = 40.0 initially,
+    # and remaining A would be 20 * exp(-2.0 * 0.5) = 20 * exp(-1) = 7.36.
+    k_runs = 64
+    final_counts = []
+    for seed in range(k_runs):
+        out = cpp.simulate_nfnext(model, [0.0, t_sample], seed=seed)
+        final_counts.append(out["observables"]["TotalA"][-1])
+
+    mean_a = sum(final_counts) / len(final_counts)
+    expected_mean = 20.0 - 2.0 * t_sample  # 19.0
+    se = math.sqrt(2.0 * t_sample / k_runs)  # variance of Poisson(1.0) is 1.0
+    assert (
+        abs(mean_a - expected_mean) <= 4.0 * se
+    ), f"Observed mean {mean_a:.3f} outside 4*SE of TotalRate prediction {expected_mean:.3f}"
+    # Reject elementary non-TotalRate alternative (7.36)
+    alt_mean = 20.0 * math.exp(-2.0 * t_sample)
+    assert (
+        abs(mean_a - alt_mean) > 4.0 * se
+    ), f"Failed to discriminate against non-TotalRate alternative {alt_mean:.3f}"
+
+
+def test_release_nfnext_execution_matchonce_symmetry():
+    """Verify MatchOnce modifier suppresses duplicate symmetric embeddings on homodimers."""
+    bngl = """begin model
+begin parameters
+  k 1.0
+end parameters
+begin molecule types
+  A(b)
+end molecule types
+begin seed species
+  A(b!1).A(b!1) 1
+end seed species
+begin observables
+  Species BoundSp A(b!1).A(b!1)
+  Molecules FreeA A(b)
+end observables
+begin reaction rules
+  unbind: A(b!1).A(b!1) -> A(b) + A(b) k MatchOnce
+end reaction rules
+end model
+"""
+    model = cpp.parse_string(bngl)
+    t_end = 1.0
+    # Single homodimer with MatchOnce: propensity is k * 1 = 1.0.
+    # Survival probability at t=1.0 is exp(-1.0) = 0.3679.
+    # Without MatchOnce: 2 automorphisms give propensity 2 * k = 2.0,
+    # with survival probability exp(-2.0) = 0.1353.
+    k_runs = 200
+    survived = 0
+    for seed in range(k_runs):
+        out = cpp.simulate_nfnext(model, [0.0, t_end], seed=seed)
+        if out["observables"]["BoundSp"][-1] == 1.0:
+            survived += 1
+
+    p_matchonce = math.exp(-1.0)
+    p_nomatchonce = math.exp(-2.0)
+    obs_p = survived / k_runs
+    se = math.sqrt(p_matchonce * (1.0 - p_matchonce) / k_runs)
+    assert (
+        abs(obs_p - p_matchonce) <= 4.0 * se
+    ), f"Survival fraction {obs_p:.3f} outside 4*SE of MatchOnce prediction {p_matchonce:.3f}"
+    assert (
+        abs(obs_p - p_nomatchonce) > 4.0 * se
+    ), f"Failed to discriminate against non-MatchOnce alternative {p_nomatchonce:.3f}"
+
+
+def test_release_nfnext_execution_filters_include_exclude():
+    """Verify include_reactants and exclude_reactants strictly filter rule applicability."""
+    # Model with bound and free A.
+    # Rule 1 (include): only phosphorylates A if bound to B.
+    # Rule 2 (exclude): only dephosphorylates A if free (not bound to B).
+    bngl_inc = """begin model
+begin parameters
+  k_phos 0.8
+end parameters
+begin molecule types
+  A(b,x~u~p)
+  B(a)
+end molecule types
+begin seed species
+  A(b!1,x~u).B(a!1) 20
+  A(b,x~u) 20
+end seed species
+begin observables
+  Molecules Bound_u A(b!1,x~u).B(a!1)
+  Molecules Bound_p A(b!1,x~p).B(a!1)
+  Molecules Total_p A(x~p)
+  Molecules Total_u A(x~u)
+end observables
+begin reaction rules
+  phos_bound_only: A(x~u) -> A(x~p) k_phos include_reactants(1, A(b!+))
+end reaction rules
+end model
+"""
+    model_inc = cpp.parse_string(bngl_inc)
+    out_inc = cpp.simulate_nfnext(model_inc, [0.0, 1.0, 2.0], seed=42)
+    obs_inc = out_inc["observables"]
+    # Only bound A should have been phosphorylated:
+    # 1. Total phosphorylated A must exactly equal bound phosphorylated A (zero free A phosphorylated)
+    assert obs_inc["Bound_p"][-1] > 0.0
+    assert obs_inc["Total_p"][-1] == obs_inc["Bound_p"][-1]
+    assert obs_inc["Bound_u"][-1] + obs_inc["Bound_p"][-1] == 20.0
+    # 2. Total unphosphorylated A must be 20 (free A) + Bound_u
+    assert obs_inc["Total_u"][-1] == 20.0 + obs_inc["Bound_u"][-1]
+
+    # Negative control: exclude_reactants rule (only free A is phosphorylated)
+    bngl_exc = """begin model
+begin parameters
+  k_phos 0.8
+end parameters
+begin molecule types
+  A(b,x~u~p)
+  B(a)
+end molecule types
+begin seed species
+  A(b!1,x~u).B(a!1) 20
+  A(b,x~u) 20
+end seed species
+begin observables
+  Molecules Bound_u A(b!1,x~u).B(a!1)
+  Molecules Bound_p A(b!1,x~p).B(a!1)
+  Molecules Total_p A(x~p)
+  Molecules Total_u A(x~u)
+end observables
+begin reaction rules
+  phos_free_only: A(x~u) -> A(x~p) k_phos exclude_reactants(1, A(b!+))
+end reaction rules
+end model
+"""
+    model_exc = cpp.parse_string(bngl_exc)
+    out_exc = cpp.simulate_nfnext(model_exc, [0.0, 1.0, 2.0], seed=42)
+    obs_exc = out_exc["observables"]
+    # Only free A should be phosphorylated; bound A must remain strictly untouched
+    assert obs_exc["Bound_p"][-1] == 0.0
+    assert obs_exc["Bound_u"][-1] == 20.0
+    assert obs_exc["Total_p"][-1] > 0.0
+    assert obs_exc["Total_u"][-1] == 20.0 + (20.0 - obs_exc["Total_p"][-1])
 
 
 # ==============================================================================

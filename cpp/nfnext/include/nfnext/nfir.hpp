@@ -171,6 +171,7 @@ struct FilterIR {
     bool include{true};
     bool products{false};
     std::size_t pattern_index{0};
+    std::size_t reactant_node_offset{0};
     std::vector<PatternIR> patterns;
 };
 
