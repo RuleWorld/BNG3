@@ -101,8 +101,12 @@ def _eval_expr(
     node: Dict[str, Any],
     time: Any,
     params: Any,
+    observables: Any,
     functions: Dict[int, Any],
+    obs_id_to_idx: Dict[int, int],
+    obs_name_to_idx: Dict[str, int],
     dtype: Any,
+    locals_dict: Optional[Dict[str, Any]] = None,
 ) -> Any:
     """Recursively evaluate a resolved expression using JAX primitives."""
     if not isinstance(node, dict):
@@ -115,7 +119,17 @@ def _eval_expr(
     elif kind == "builtin_call":
         builtin = node.get("builtin")
         args = [
-            _eval_expr(arg, time, params, functions, dtype)
+            _eval_expr(
+                arg,
+                time,
+                params,
+                observables,
+                functions,
+                obs_id_to_idx,
+                obs_name_to_idx,
+                dtype,
+                locals_dict,
+            )
             for arg in node.get("arguments", [])
         ]
         if builtin == "time":
@@ -174,6 +188,32 @@ def _eval_expr(
             return jnp.tan(args[0])
         elif builtin == "tanh":
             return jnp.tanh(args[0])
+        elif builtin in ("michaelis_menten", "mm"):
+            if len(args) == 4:
+                kcat, Km, St, Et = args[0], args[1], args[2], args[3]
+                b = St - Km - Et
+                q = jnp.sqrt(b * b + 4.0 * St * Km)
+                S = jnp.where(b >= 0.0, 0.5 * (b + q), 2.0 * St * Km / (q - b))
+                return jnp.where(Km + S != 0.0, (kcat * Et * S) / (Km + S), 0.0)
+            elif len(args) >= 3:
+                Vmax, Km, S = args[0], args[1], args[2]
+                return jnp.where(Km + S != 0.0, (Vmax * S) / (Km + S), 0.0)
+            else:
+                raise ValueError("michaelis_menten requires at least 3 arguments")
+        elif builtin in ("hill", "Hill"):
+            if len(args) >= 4:
+                Vmax, Kh, n, S = args[0], args[1], args[2], args[3]
+                Sn = S**n
+                Khn = Kh**n
+                return jnp.where(Khn + Sn != 0.0, (Vmax * Sn) / (Khn + Sn), 0.0)
+            else:
+                raise ValueError("Hill function requires at least 4 arguments")
+        elif builtin in ("sat", "saturation"):
+            if len(args) >= 3:
+                Vmax, Km, S = args[0], args[1], args[2]
+                return jnp.where(Km + S != 0.0, (Vmax * S) / (Km + S), 0.0)
+            else:
+                raise ValueError("saturation requires at least 3 arguments")
         else:
             raise NotImplementedError(
                 f"JAX ODE does not support builtin function '{builtin}'"
@@ -181,16 +221,74 @@ def _eval_expr(
     elif kind == "parameter_ref":
         idx = node["symbol"]["index"]
         return params[idx]
+    elif kind == "observable_ref":
+        g_idx = None
+        if "symbol" in node and isinstance(node["symbol"], dict):
+            sym_idx = node["symbol"].get("index")
+            if sym_idx in obs_id_to_idx:
+                g_idx = obs_id_to_idx[sym_idx]
+        if g_idx is None and "name" in node:
+            g_idx = obs_name_to_idx.get(node["name"])
+        if g_idx is None:
+            raise NotImplementedError(
+                f"Observable '{node.get('name', node)}' not found in compiled groups"
+            )
+        return observables[g_idx]
+    elif kind == "local_ref":
+        name = node.get("name")
+        if locals_dict is not None and name in locals_dict:
+            return locals_dict[name]
+        raise NotImplementedError(f"Local reference '{name}' not found in local scope")
     elif kind == "function_ref":
         idx = node["symbol"]["index"]
         if idx in functions:
+            fn = functions[idx]
+            call_args = [
+                _eval_expr(
+                    arg,
+                    time,
+                    params,
+                    observables,
+                    functions,
+                    obs_id_to_idx,
+                    obs_name_to_idx,
+                    dtype,
+                    locals_dict,
+                )
+                for arg in node.get("arguments", [])
+            ]
+            fn_param_names = fn.get("arguments", [])
+            if call_args and fn_param_names:
+                new_locals = dict(locals_dict) if locals_dict else {}
+                for p_name, p_val in zip(fn_param_names, call_args):
+                    new_locals[p_name] = p_val
+            else:
+                new_locals = locals_dict
             return _eval_expr(
-                functions[idx]["expression"], time, params, functions, dtype
+                fn["expression"],
+                time,
+                params,
+                observables,
+                functions,
+                obs_id_to_idx,
+                obs_name_to_idx,
+                dtype,
+                new_locals,
             )
         raise NotImplementedError(f"Function index {idx} not found in model functions")
     elif kind == "unary":
         op = node.get("operator")
-        arg = _eval_expr(node["arguments"][0], time, params, functions, dtype)
+        arg = _eval_expr(
+            node["arguments"][0],
+            time,
+            params,
+            observables,
+            functions,
+            obs_id_to_idx,
+            obs_name_to_idx,
+            dtype,
+            locals_dict,
+        )
         if op == "plus":
             return +arg
         elif op == "negate":
@@ -201,8 +299,28 @@ def _eval_expr(
             raise NotImplementedError(f"JAX ODE does not support unary operator '{op}'")
     elif kind == "binary":
         op = node.get("operator")
-        left = _eval_expr(node["arguments"][0], time, params, functions, dtype)
-        right = _eval_expr(node["arguments"][1], time, params, functions, dtype)
+        left = _eval_expr(
+            node["arguments"][0],
+            time,
+            params,
+            observables,
+            functions,
+            obs_id_to_idx,
+            obs_name_to_idx,
+            dtype,
+            locals_dict,
+        )
+        right = _eval_expr(
+            node["arguments"][1],
+            time,
+            params,
+            observables,
+            functions,
+            obs_id_to_idx,
+            obs_name_to_idx,
+            dtype,
+            locals_dict,
+        )
         if op == "add":
             return left + right
         elif op == "subtract":
@@ -233,8 +351,6 @@ def _eval_expr(
             raise NotImplementedError(
                 f"JAX ODE does not support binary operator '{op}'"
             )
-    elif kind == "observable_ref":
-        raise NotImplementedError("JAX ODE does not support functional rate laws")
     else:
         raise NotImplementedError(f"JAX ODE does not support expression kind '{kind}'")
 
@@ -336,12 +452,12 @@ def _compile_mass_action_rhs(
     return rhs
 
 
-def _compile_dynamic_time_rhs(
+def _compile_dynamic_rhs(
     data: Dict[str, Any],
     custom_rate_constants: Optional[Any] = None,
     custom_parameters: Optional[Any] = None,
 ) -> Callable:
-    """Build a JIT-compiled RHS for reaction networks with dynamic time-dependent rates."""
+    """Build a JIT-compiled RHS for reaction networks with dynamic time- or observable-dependent rates."""
     initial_state_native = np.asarray(data["initial_state"], dtype=np.float64)
     initial_state = _as_jax_float(
         initial_state_native, "initial species amounts", jnp.asarray(0.0).dtype
@@ -419,33 +535,47 @@ def _compile_dynamic_time_rhs(
 
     functions_by_id = {f["id"]: f for f in snapshot.get("functions", []) if "id" in f}
     rules_by_name = {r["name"]: r for r in snapshot.get("rules", []) if "name" in r}
+    for r in snapshot.get("rules", []):
+        lbl = r.get("label", "")
+        if lbl:
+            rules_by_name[lbl.rstrip(":")] = r
+
+    group_names = list(data.get("group_names", []))
+    group_offsets = np.asarray(data.get("group_offsets", [0]), dtype=np.int64)
+    group_species = np.asarray(data.get("group_species", []), dtype=np.int32)
+    group_weights = np.asarray(data.get("group_weights", []), dtype=np.float64)
+    n_groups = len(group_names)
+
+    obs_matrix = np.zeros((n_groups, n_species), dtype=np.float64)
+    for g in range(n_groups):
+        start = int(group_offsets[g])
+        end = int(group_offsets[g + 1])
+        if end > start:
+            specs = group_species[start:end]
+            wts = group_weights[start:end]
+            np.add.at(obs_matrix[g], specs, wts)
+    obs_matrix_jax = _as_jax_float(
+        obs_matrix, "observable weights", initial_state.dtype
+    )
+
+    obs_name_to_idx = {name: i for i, name in enumerate(group_names)}
+    obs_id_to_idx = {}
+    for obs in snapshot.get("observables", []):
+        if "id" in obs and "name" in obs and obs["name"] in obs_name_to_idx:
+            obs_id_to_idx[obs["id"]] = obs_name_to_idx[obs["name"]]
 
     reaction_rules = data.get("reaction_rules", [])
     reaction_factors = data.get("reaction_factors", [1.0] * n_reactions)
+    functional = np.asarray(data.get("functional_rates", [0] * n_reactions), dtype=bool)
     time_dependent = np.asarray(
         data.get("time_dependent_rates", [0] * n_reactions), dtype=bool
     )
-
-    # Validate that none of the time-dependent rates depend on observables
-    for rxn_idx in range(n_reactions):
-        if time_dependent[rxn_idx]:
-            r_name = reaction_rules[rxn_idx] if rxn_idx < len(reaction_rules) else ""
-            if r_name.startswith("_reverse__"):
-                base_name = r_name[len("_reverse__") :]
-                rule = rules_by_name.get(base_name, {})
-                expr = rule.get("reverse", {}).get("rate", {}).get("expression")
-            else:
-                rule = rules_by_name.get(r_name, {})
-                expr = rule.get("forward", {}).get("rate", {}).get("expression")
-            if expr is not None and _expr_contains_observable(expr, functions_by_id):
-                raise NotImplementedError(
-                    "JAX ODE does not support functional rate laws"
-                )
+    is_dynamic = functional | time_dependent
 
     reactants_jax = jnp.asarray(padded_reactants)
     reactant_mask_jax = jnp.asarray(reactant_mask)
     absolute_flux_jax = jnp.asarray(absolute_flux)
-    clamped_mask = jnp.asarray(data["fixed" + "_species"], dtype=bool)
+    clamped_mask = jnp.asarray(data["fixed_species"], dtype=bool)
     change_species_jax = jnp.asarray(change_species, dtype=jnp.int32)
     change_reactions_jax = jnp.asarray(change_reactions, dtype=jnp.int32)
     change_stoichiometry_jax = jnp.asarray(
@@ -488,13 +618,25 @@ def _compile_dynamic_time_rhs(
         )
         mass_action_factors = jnp.prod(reactant_values, axis=1)
 
+        if n_groups > 0:
+            obs_values = jnp.dot(obs_matrix_jax, state)
+        else:
+            obs_values = jnp.zeros((0,), dtype=state.dtype)
+
         rate_list = []
         for i in range(n_reactions):
-            if (time_dependent[i] or custom_parameters is not None) and rxn_exprs[
+            if (is_dynamic[i] or custom_parameters is not None) and rxn_exprs[
                 i
             ] is not None:
                 rate_val = stat_factors_jax[i] * _eval_expr(
-                    rxn_exprs[i], time, params_jax, functions_by_id, state.dtype
+                    rxn_exprs[i],
+                    time,
+                    params_jax,
+                    obs_values,
+                    functions_by_id,
+                    obs_id_to_idx,
+                    obs_name_to_idx,
+                    state.dtype,
                 )
             else:
                 rate_val = rate_constants_jax[i]
@@ -525,12 +667,10 @@ def _compile_rhs_from_data(
     custom_rate_constants: Optional[Any] = None,
     custom_parameters: Optional[Any] = None,
 ) -> Callable:
-    functional = np.asarray(data["functional_rates"], dtype=bool)
-    time_dependent = np.asarray(data["time_dependent_rates"], dtype=bool)
-    if np.any(functional & ~time_dependent):
-        raise NotImplementedError("JAX ODE does not support functional rate laws")
-    if np.any(time_dependent) or custom_parameters is not None:
-        return _compile_dynamic_time_rhs(
+    functional = np.asarray(data.get("functional_rates", []), dtype=bool)
+    time_dependent = np.asarray(data.get("time_dependent_rates", []), dtype=bool)
+    if np.any(functional) or np.any(time_dependent) or custom_parameters is not None:
+        return _compile_dynamic_rhs(
             data,
             custom_rate_constants=custom_rate_constants,
             custom_parameters=custom_parameters,
@@ -545,8 +685,7 @@ def compile_rhs(
 ) -> Callable:
     """Compile a JAX RHS from BNG3's native ODE representation.
 
-    Supports static mass-action and dynamic time-dependent rate laws.
-    Observable-dependent functional rates remain unsupported.
+    Supports static mass-action, dynamic time-dependent, and observable-dependent functional rate laws.
     The configured JAX floating dtype is used (normally float32); coefficients
     and initial amounts outside its normal finite range are rejected.
     """

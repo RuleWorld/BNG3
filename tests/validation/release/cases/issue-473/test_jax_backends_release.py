@@ -34,6 +34,10 @@ def test_release_jax_ode():
     jdr.test_time_dependent_rhs_matches_analytic_law()
     jdr.test_time_dependent_simulation_matches_analytic_integral()
     jdr.test_time_dependent_automatic_differentiation()
+    tjo.test_jax_ode_functional_rates_supported()
+    jdr.test_observable_dependent_functional_rate_rhs()
+    jdr.test_observable_dependent_functional_rate_simulation()
+    jdr.test_observable_dependent_functional_rate_differentiation()
 
 
 def test_release_jax_ssa():
