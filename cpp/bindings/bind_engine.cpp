@@ -521,12 +521,17 @@ void bind_engine(py::module_& m) {
         std::vector<std::size_t> reactantSpecies;
         std::vector<std::size_t> productOffsets{0};
         std::vector<std::size_t> productSpecies;
+        std::vector<std::string> groupNames;
+        std::vector<std::size_t> groupOffsets{0};
+        std::vector<std::size_t> groupSpecies;
+        std::vector<double> groupWeights;
 
         {
             py::gil_scoped_release release;
             OdeIntegrator integrator(model, network);
             const auto& compiledReactions = integrator.getCompiledReactions();
             const auto& fixed = integrator.getFixedSpecies();
+            const auto& groups = integrator.getCompiledGroups();
             initialState.reserve(network.species.size());
             fixedSpecies.reserve(network.species.size());
             for (std::size_t i = 0; i < network.species.size(); ++i) {
@@ -554,6 +559,16 @@ void bind_engine(py::module_& m) {
                     reaction.productIndices.end());
                 productOffsets.push_back(productSpecies.size());
             }
+
+            groupNames.reserve(groups.size());
+            for (const auto& group : groups) {
+                groupNames.push_back(group.name);
+                for (const auto& [speciesIdx, weight] : group.entries) {
+                    groupSpecies.push_back(speciesIdx);
+                    groupWeights.push_back(weight);
+                }
+                groupOffsets.push_back(groupSpecies.size());
+            }
         }
 
         py::dict result;
@@ -569,6 +584,10 @@ void bind_engine(py::module_& m) {
         result["reactant_species"] = vector_to_array(reactantSpecies);
         result["product_offsets"] = vector_to_array(productOffsets);
         result["product_species"] = vector_to_array(productSpecies);
+        result["group_names"] = py::cast(groupNames);
+        result["group_offsets"] = vector_to_array(groupOffsets);
+        result["group_species"] = vector_to_array(groupSpecies);
+        result["group_weights"] = vector_to_array(groupWeights);
         return result;
     }, py::arg("model"), py::arg("network"),
        "Export the native compiled ODE reaction data used by the optional JAX ODE backend");

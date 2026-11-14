@@ -313,8 +313,8 @@ def jax_ode_flatten(model: Model, network: GeneratedNetwork) -> Dict[str, object
     """Export native compiled ODE data for the optional JAX ODE backend.
 
     The result contains the initial state, fixed-species flags, compiled rate
-    coefficients, reaction participants, and flags for TotalRate and
-    unsupported functional or time-dependent rates.
+    coefficients, reaction participants, flags for TotalRate and
+    functional or time-dependent rates, and compiled observable group projections.
     """
     ...
 
