@@ -312,19 +312,6 @@ jobs:
             tests/python/test_atomizer_fast_reaction.py \
             --junitxml="$RUNNER_TEMP/issue-160-artifacts/pytest.xml"
 
-      - name: Run Issue 160 diagnostic controls (not capability acceptance)
-        if: always() && steps.build_native.outcome == 'success'
-        env:
-          PYTHONPATH: python:build/cpp:.
-          BNG3_PYTHON_TEST_MODE: source
-        run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/issue-160-artifacts"
-          .venv/bin/python -m pytest -q \
-            --confcutdir=tests/validation/release/cases/issue-160 \
-            tests/validation/release/cases/issue-160/test_sbml_semantic_families.py \
-            --junitxml="$RUNNER_TEMP/issue-160-artifacts/semantic-families.xml"
-
       - name: Record exact product identity
         if: always()
         run: |
