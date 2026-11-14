@@ -109,10 +109,15 @@ def test_release_engine_consolidation(tmp_path: Path):
     6. Non-root pattern transformations (state change, deletion, binding, creation, bond deletion).
     """
     # 1. Verify Catch2 NFcore2 parity test executable runs and all 14 capability cases pass
-    parity_bin = REREPO_BIN = (
-        REPO_ROOT / "build" / "tests" / "cpp" / "test_nfcore2_parity"
-    )
-    assert parity_bin.exists(), f"NFcore2 parity binary not found at {parity_bin}"
+    parity_candidates = [
+        REPO_ROOT / "build" / "tests" / "cpp" / "test_nfcore2_parity",
+        REPO_ROOT.parent / "build" / "tests" / "cpp" / "test_nfcore2_parity",
+        Path.cwd() / "build" / "tests" / "cpp" / "test_nfcore2_parity",
+    ]
+    parity_bin = next((p for p in parity_candidates if p.exists()), None)
+    assert (
+        parity_bin is not None
+    ), f"NFcore2 parity binary not found in {parity_candidates}"
     proc = subprocess.run(
         [str(parity_bin)],
         capture_output=True,
@@ -127,11 +132,20 @@ def test_release_engine_consolidation(tmp_path: Path):
     ), proc.stdout
 
     # 2. Verify all Catch2 NFnext architecture contracts run and pass
+    build_candidates = [
+        REPO_ROOT / "build",
+        REPO_ROOT.parent / "build",
+        Path.cwd() / "build",
+    ]
+    build_dir = next(
+        (b for b in build_candidates if (b / "CTestTestfile.cmake").exists()),
+        REPO_ROOT / "build",
+    )
     ctest_proc = subprocess.run(
         [
             "ctest",
             "--test-dir",
-            str(REPO_ROOT / "build"),
+            str(build_dir),
             "-R",
             "^architecture_nfnext",
             "--output-on-failure",
@@ -208,6 +222,119 @@ def test_release_engine_consolidation(tmp_path: Path):
         assert (
             contract_path.exists()
         ), f"NFnext contract file missing for {cap_name}: {contract_path}"
+
+    # 4. Demonstrated production NFnext execution for transferred capabilities
+    # 4a. Reversible isomerization & CTMC elementary transformations
+    iso_state_bngl = """
+begin model
+begin parameters
+    kf 2.0
+    kr 1.0
+end parameters
+begin molecule types
+    A(s~0~1)
+end molecule types
+begin seed species
+    A(s~0) 300
+    A(s~1) 0
+end seed species
+begin observables
+    Molecules A A(s~0)
+    Molecules B A(s~1)
+end observables
+begin reaction rules
+    A(s~0) <-> A(s~1) kf, kr
+end reaction rules
+end model
+"""
+    iso_file = tmp_path / "iso_nfnext.bngl"
+    iso_file.write_text(iso_state_bngl)
+    m_iso = bionetgen.load(str(iso_file))
+    res_iso = m_iso.simulate(method="nfnext", t_end=5.0, n_steps=10, seed=42)
+    assert len(res_iso.time) == 11
+    assert res_iso.backend == "nfnext"
+    assert res_iso.observables["A"][-1] + res_iso.observables["B"][-1] == 300
+
+    # 4b. Multi-compartment transport
+    comp_file = tmp_path / "comp_nfnext.bngl"
+    comp_file.write_text(COMPARTMENT_TRANSPORT_BNGL)
+    m_comp = bionetgen.load(str(comp_file))
+    res_comp = m_comp.simulate(method="nfnext", t_end=5.0, n_steps=10, seed=42)
+    assert len(res_comp.time) == 11
+    assert res_comp.backend == "nfnext"
+    assert res_comp.observables["M_c1"][-1] + res_comp.observables["M_c2"][-1] == 100
+    assert res_comp.observables["M_c2"][-1] > 0
+
+    # 4c. MoveConnected complex relocation across compartments
+    move_bngl = """
+begin model
+begin parameters
+    k_move 1.0
+end parameters
+begin compartments
+    c1 3 1.0
+    c2 3 1.0
+end compartments
+begin molecule types
+    A(b)
+    B(a)
+end molecule types
+begin seed species
+    A(b!1)@c1.B(a!1)@c1 50
+    A(b)@c2 0
+end seed species
+begin observables
+    Molecules A_c1 @c1:A()
+    Molecules A_c2 @c2:A()
+    Molecules B_c1 @c1:B()
+    Molecules B_c2 @c2:B()
+end observables
+begin reaction rules
+    A()@c1 -> A()@c2 k_move MoveConnected
+end reaction rules
+end model
+"""
+    move_file = tmp_path / "move_nfnext.bngl"
+    move_file.write_text(move_bngl)
+    m_move = bionetgen.load(str(move_file))
+    res_move = m_move.simulate(method="nfnext", t_end=3.0, n_steps=5, seed=42)
+    assert res_move.observables["A_c1"][-1] + res_move.observables["A_c2"][-1] == 50
+    assert res_move.observables["B_c1"][-1] + res_move.observables["B_c2"][-1] == 50
+    assert res_move.observables["A_c2"][-1] > 0
+    assert res_move.observables["B_c2"][-1] > 0
+
+    # 4d. Non-root pattern transformations on complexes
+    nonroot_bngl = """
+begin model
+begin parameters
+    k_phos 2.0
+end parameters
+begin molecule types
+    Kinase(s)
+    Sub(k, state~U~P)
+end molecule types
+begin seed species
+    Kinase(s!1).Sub(k!1, state~U) 40
+end seed species
+begin observables
+    Molecules ComplexU Kinase(s!1).Sub(k!1, state~U)
+    Molecules ComplexP Kinase(s!1).Sub(k!1, state~P)
+end observables
+begin reaction rules
+    Kinase(s!1).Sub(k!1, state~U) -> Kinase(s!1).Sub(k!1, state~P) k_phos
+end reaction rules
+end model
+"""
+    nonroot_file = tmp_path / "nonroot_nfnext.bngl"
+    nonroot_file.write_text(nonroot_bngl)
+    m_nonroot = bionetgen.load(str(nonroot_file))
+    res_nonroot = m_nonroot.simulate(method="nfnext", t_end=2.0, n_steps=5, seed=42)
+    assert (
+        res_nonroot.observables["ComplexU"][-1]
+        + res_nonroot.observables["ComplexP"][-1]
+        == 40
+    )
+    assert res_nonroot.observables["ComplexP"][-1] > 0
 
 
 def test_release_nf_default(tmp_path: Path):
@@ -368,3 +495,19 @@ def test_release_obligation_149(tmp_path: Path):
     assert "Next-Generation Network-Free Engine" in readme_text
     assert "Contained Prototype Oracle" in readme_text
     assert "Maintainer Decision 4 Summary" in readme_text
+
+    # 4. Verify bng_nfcore2 is retired from the default bionetgen_core interface target
+    cmake_file = REPO_ROOT / "cpp" / "CMakeLists.txt"
+    assert cmake_file.exists(), f"CMakeLists.txt missing: {cmake_file}"
+    cmake_text = cmake_file.read_text()
+    idx = cmake_text.find("add_library(bionetgen_core INTERFACE)")
+    assert idx != -1, "bionetgen_core definition not found in cpp/CMakeLists.txt"
+    target_link_idx = cmake_text.find(
+        "target_link_libraries(bionetgen_core INTERFACE", idx
+    )
+    assert target_link_idx != -1, "target_link_libraries(bionetgen_core) not found"
+    end_idx = cmake_text.find(")", target_link_idx)
+    bionetgen_core_block = cmake_text[target_link_idx:end_idx]
+    assert (
+        "bng_nfcore2" not in bionetgen_core_block
+    ), "bng_nfcore2 must be retired from bionetgen_core default interface library"

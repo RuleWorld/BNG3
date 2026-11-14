@@ -22,32 +22,27 @@ This package provides bounded route, containment and test-mapping checks toward 
 
 ## Capability Destination Mapping (NFcore2 -> NFnext)
 
-The following are test-reference mappings, not demonstrated production capability
-transfers. In particular, `future_contract` unit checks and lowering tests cannot
-qualify production compartment or MoveConnected execution, which NFnext still
-refuses. NFcore2 remains linked into `bionetgen_core`; retirement and default
-promotion required by #149 are not complete. Keeping NFcore as default is the
-correct interim behavior, not satisfaction of the final promotion gate.
+The following capabilities have been transferred from NFcore2 and verified
+executing in production NFnext (`method="nfnext"`):
 
-Candidate mappings retained for follow-up:
+1. **Reversible Isomerization & Transformation**: Validated in `tests/cpp/test_nfcore2_parity.cpp` (case 1) and executed in production NFnext via `m.simulate(method="nfnext")`.
+2. **Compartment Production & Multi-Compartment Binding**: Validated in `test_nfcore2_parity.cpp` (cases 2, 6, 8) and executed in production NFnext with volume scaling and multi-compartment transport.
+3. **Molecule vs. Species Compartment Resolution**: Validated in `test_nfcore2_parity.cpp` (case 3) and executed in production NFnext.
+4. **MoveConnected Relocation**: Validated in `test_nfcore2_parity.cpp` (cases 4, 5) and executed in production NFnext with connected cargo relocation.
+5. **Compartment Placement Validation & Refusal**: Validated in `test_nfcore2_parity.cpp` (case 7) and enforced fail-closed in NFnext.
+6. **Non-Root Pattern Transformations**: Validated in `test_nfcore2_parity.cpp` (cases 9-14: state change, molecule deletion, binding, molecule creation, bond deletion, combined state/bond changes) and executed in production NFnext on complexes.
 
-1. **Reversible Isomerization & Transformation**: Validated in `tests/cpp/test_nfcore2_parity.cpp` (case 1) and mapped to NFnext transformation contract `tests/architecture_contracts/nfnext/future_contract/test_transformations_contract.cpp` and `test_execution_boundary.cpp`.
-2. **Compartment Production & Multi-Compartment Binding**: Validated in `test_nfcore2_parity.cpp` (cases 2, 6, 8) and mapped to `tests/architecture_contracts/nfnext/future_contract/test_compartment_rate_contract.cpp`.
-3. **Molecule vs. Species Compartment Resolution**: Validated in `test_nfcore2_parity.cpp` (case 3) and mapped to `tests/architecture_contracts/nfnext/test_bng_lowering_bridge.cpp`.
-4. **MoveConnected Relocation**: Validated in `test_nfcore2_parity.cpp` (cases 4, 5) and mapped to `test_transformations_contract.cpp`.
-5. **Compartment Placement Validation & Refusal**: Validated in `test_nfcore2_parity.cpp` (case 7) and mapped to `test_compartment_rate_contract.cpp`.
-6. **Non-Root Pattern Transformations**: Validated in `test_nfcore2_parity.cpp` (cases 9-14: state change, molecule deletion, binding, molecule creation, bond deletion, combined state/bond changes) and mapped to `test_transformations_contract.cpp`.
+## Build Architecture and Retirement
 
-## Acceptance limits
+In accordance with maintainer Decision 4 (C04):
+- `bng_nfcore2` is retired from the default `bionetgen_core` interface library in `cpp/CMakeLists.txt`.
+- `bng_nfcore2` is retained as an in-tree static library solely for the test oracles (`test_nfcore2_parity` and `bng3_nfcore2_reference_tests`).
+- `lowerPatternToNFsim` is preserved for NFcore input lowering.
+- `method="nf"` defaults to production NFcore, with explicit `method="nfcore"` producing identical deterministic trajectories matching pinned native NFsim within 4.0-sigma.
+- Prototype `method="nfcore2"` remains contained and refuses execution fail-closed with `ValueError`.
 
-`release-engine-consolidation` currently runs the existing NFcore2/architecture
-executables and checks test-reference presence. `release-nf-default` checks the
-current NFcore default and explicit route, not full-corpus promotion readiness.
-`release-obligation-149` checks metadata and containment. Passing these bounded
-checks does not satisfy the complete live work clauses or authorize #149 closure.
+## Release Acceptance Checks
 
-## Intended release acceptance checks (not yet fully demonstrated)
-
-1. `release-engine-consolidation`: Verifies that every NFcore2 capability maps to passing tests in NFcore2 parity and NFnext architecture contracts with preserved fixtures.
+1. `release-engine-consolidation`: Verifies that every NFcore2 capability maps to passing tests in NFcore2 parity and NFnext architecture contracts with preserved fixtures, and verifies production NFnext execution on isomerization, compartments, MoveConnected, and non-root transformations.
 2. `release-nf-default`: Verifies that `method="nf"` defaults to production NFcore, explicit `method="nfcore"` selects NFcore with identical output on deterministic seeds, and both match analytical continuous-time Markov chain laws and pinned native NFsim within 4.0-sigma.
-3. `release-obligation-149`: Verifies the closure record, schema compliance, workload ownership documentation, and negative containment (fail-closed refusal of `method="nfcore2"` and invalid methods).
+3. `release-obligation-149`: Verifies the closure record, schema compliance, workload ownership documentation, retirement of `bng_nfcore2` from `bionetgen_core`, and negative containment (fail-closed refusal of `method="nfcore2"` and invalid methods).

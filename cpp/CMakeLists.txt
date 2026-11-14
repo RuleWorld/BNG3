@@ -398,7 +398,6 @@ target_link_libraries(bionetgen_core INTERFACE
     bng_parser
     bng_ast
     bng_compile
-    bng_nfcore2
     bng_nfnext
     bng_core
     nauty
