@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "issue": 177,
+  "title": "G07: Independently qualify barrier and reservoir energy additions",
+  "source": {
+    "repository": "RuleWorld/BNG3",
+    "contract": "Barrier patterns and driving reservoirs in energy-extended BNGL with exact Arrhenius rate laws, detailed balance preservation, non-zero cycle affinity in nonequilibrium steady states, and fail-closed refusal guards."
+  },
+  "oracle": {
+    "identity": "Analytic Arrhenius rate laws, detailed balance detailed cancellation, Kolmogorov cycle criteria, King-Altman / Matrix Tree Theorem nonequilibrium stationary distributions, and fail-closed export guards",
+    "law": "Barrier cancellation in rate ratios kf/kr = exp(-(Delta G - W)/RT), cycle affinity A_cycle = sum(W_e), King-Altman spanning tree distributions for NESS, and explicit RuntimeError refusal when BNG_NFSIM_GENERAL_ENERGY is disabled or unsupported exporters are requested."
+  },
+  "acceptance_checks": [
+    "release-barrier-energy",
+    "release-reservoir-energy",
+    "release-capability-coverage-177"
+  ],
+  "inventory_rows": [
+    "energy.barriers",
+    "energy.reservoirs"
+  ],
+  "obligations": [
+    "issue:177:use-analytic-expectations-and-an-independent-reference-for-detai",
+    "issue:177:closure-record",
+    "issue:177:live-acceptance:release-barrier-energy",
+    "issue:177:live-acceptance:release-reservoir-energy",
+    "issue:177:live-acceptance:release-capability-coverage-177"
+  ]
+}

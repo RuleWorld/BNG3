@@ -10085,22 +10085,22 @@
       "behavior": "Barrier-pattern rate effects",
       "upstream": "BNG3 release decision / source extension",
       "bng3": "cpp/compile/CompiledModel.cpp",
-      "check": "tests/energy/",
+      "check": "tests/validation/release/cases/issue-177/test_barrier_energy.py::test_release_barrier_energy",
       "oracle": "analytic rate ratios and detailed balance",
-      "status": "missing",
+      "status": "implemented",
       "issue": 177,
-      "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
+      "evidence": "Qualified by release-barrier-energy against analytic Arrhenius rate laws and detailed-balance cycle cancellation."
     },
     {
       "id": "energy.reservoirs",
       "behavior": "Driven reservoir work",
       "upstream": "BNG3 release decision / source extension",
       "bng3": "cpp/compile/CompiledModel.cpp",
-      "check": "tests/energy/",
+      "check": "tests/validation/release/cases/issue-177/test_reservoir_energy.py::test_release_reservoir_energy",
       "oracle": "analytic cycle affinity and nonequilibrium stationary law",
-      "status": "missing",
+      "status": "implemented",
       "issue": 177,
-      "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
+      "evidence": "Qualified by release-reservoir-energy against analytic cycle affinity and King-Altman NESS stationary distributions."
     },
     {
       "id": "crn.api",

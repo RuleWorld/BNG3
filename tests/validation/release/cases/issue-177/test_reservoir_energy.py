@@ -523,3 +523,48 @@ def test_reservoir_mutations_fail():
     mutated_pi_rev_sym = math.exp(1.0)
     mutated_affinity_sym = math.log(mutated_pi_fwd_sym / mutated_pi_rev_sym)
     assert not math.isclose(mutated_affinity_sym, expected_affinity, rel_tol=1e-3)
+
+
+def test_release_reservoir_energy():
+    """Verify release-reservoir-energy acceptance criterion:
+    independent cycle affinity, nonequilibrium current and stationary distributions pass.
+    """
+    test_analytic_reservoir_transition_rates()
+    test_reservoir_cycle_affinity()
+    test_reservoir_nonequilibrium_steady_state_and_current()
+    test_reservoir_driven_protocol_monotonicity()
+    test_reservoir_gate_and_export_fail_closed()
+    test_reservoir_malformed_annotations_rejected()
+
+
+def test_release_capability_coverage_177():
+    """Verify all assigned capability inventory rows and obligations are declared and covered."""
+    import json
+    from pathlib import Path
+
+    case_dir = Path(__file__).resolve().parent
+    contract_path = case_dir / "contract.json"
+    assert contract_path.is_file(), f"Missing contract.json at {contract_path}"
+
+    with open(contract_path, encoding="utf-8") as f:
+        data = json.load(f)
+
+    assert data.get("schema_version") == 1
+    assert data.get("issue") == 177
+    assert data.get("acceptance_checks") == [
+        "release-barrier-energy",
+        "release-reservoir-energy",
+        "release-capability-coverage-177",
+    ]
+    assert data.get("inventory_rows") == [
+        "energy.barriers",
+        "energy.reservoirs",
+    ]
+    for ob in [
+        "issue:177:use-analytic-expectations-and-an-independent-reference-for-detai",
+        "issue:177:closure-record",
+        "issue:177:live-acceptance:release-barrier-energy",
+        "issue:177:live-acceptance:release-reservoir-energy",
+        "issue:177:live-acceptance:release-capability-coverage-177",
+    ]:
+        assert ob in data.get("obligations", [])
