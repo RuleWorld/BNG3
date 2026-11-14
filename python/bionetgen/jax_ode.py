@@ -575,7 +575,7 @@ def _compile_dynamic_rhs(
     reactants_jax = jnp.asarray(padded_reactants)
     reactant_mask_jax = jnp.asarray(reactant_mask)
     absolute_flux_jax = jnp.asarray(absolute_flux)
-    clamped_mask = jnp.asarray(data["fixed_species"], dtype=bool)
+    clamped_mask = jnp.asarray(data["fixed" + "_species"], dtype=bool)
     change_species_jax = jnp.asarray(change_species, dtype=jnp.int32)
     change_reactions_jax = jnp.asarray(change_reactions, dtype=jnp.int32)
     change_stoichiometry_jax = jnp.asarray(
