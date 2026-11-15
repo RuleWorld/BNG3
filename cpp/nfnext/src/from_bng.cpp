@@ -2001,6 +2001,18 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         double value = 0.0;
         if (obs.kind == bng::compile::ObservableKind::Molecules) {
             for (const auto& term : obs.terms) {
+                if (term.pattern.nodes.size() == 1 && term.pattern.bonds.empty() &&
+                    term.pattern.nodes.front().constraints.empty() &&
+                    term.pattern.molecularity.empty() && term.pattern.aliases.empty() &&
+                    term.pattern.connected_to.empty() &&
+                    model.molecule_types.at(term.pattern.nodes.front().molecule_type).is_population) {
+                    const auto count = population_counts.at(term.pattern.nodes.front().molecule_type);
+                    if (term.relation.empty()) value += static_cast<double>(count);
+                    else if (bng::compile::observablePatternCountMatches(
+                                 static_cast<std::size_t>(count), term.relation, term.quantity))
+                        value += 1.0;
+                    continue;
+                }
                 const auto count = matcher.enumerate(term.pattern, state).size();
                 if (term.relation.empty()) value += static_cast<double>(count);
                 else if (bng::compile::observablePatternCountMatches(count, term.relation, term.quantity))
@@ -2009,13 +2021,24 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         } else if (obs.kind == bng::compile::ObservableKind::Species) {
             std::unordered_map<std::uint32_t, std::size_t> complex_counts;
             for (const auto& term : obs.terms) {
+                if (term.pattern.nodes.size() == 1 && term.pattern.bonds.empty() &&
+                    term.pattern.nodes.front().constraints.empty() &&
+                    term.pattern.molecularity.empty() && term.pattern.aliases.empty() &&
+                    term.pattern.connected_to.empty() &&
+                    model.molecule_types.at(term.pattern.nodes.front().molecule_type).is_population) {
+                    const auto count = population_counts.at(term.pattern.nodes.front().molecule_type);
+                    if (bng::compile::observablePatternCountMatches(
+                            static_cast<std::size_t>(count), term.relation, term.quantity))
+                        value += 1.0;
+                    continue;
+                }
                 complex_counts.clear();
                 for (const auto& match : matcher.enumerate(term.pattern, state)) {
                     if (!match.particles().empty())
                         ++complex_counts[state.complexId(match.particle(0))];
                 }
-                for (const auto& [_, count] : complex_counts) {
-                    if (bng::compile::observablePatternCountMatches(count, term.relation, term.quantity))
+                for (const auto& [_, c] : complex_counts) {
+                    if (bng::compile::observablePatternCountMatches(c, term.relation, term.quantity))
                         value += 1.0;
                 }
             }
