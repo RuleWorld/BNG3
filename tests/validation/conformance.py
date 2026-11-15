@@ -451,11 +451,7 @@ def _model(name, source, args, directory, reference, env):
                     receipt=str(target / "command.json"),
                     aggregate=True,
                     child_ids=child_ids,
-                    **(
-                        {**common, "applicability": agg_app}
-                        if agg_app
-                        else common
-                    ),
+                    **({**common, "applicability": agg_app} if agg_app else common),
                 )
             )
             for check, cap in caps.items():

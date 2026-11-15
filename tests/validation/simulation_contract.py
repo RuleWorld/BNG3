@@ -230,14 +230,9 @@ def run_simulation(name, work, reference, args, env, network_rows, *, route="bng
                     receipt=str(directory / "command.json"),
                     aggregate=True,
                     child_ids=[
-                        f"{name}:simulation-{route}:{kind}"
-                        for kind in ("cdat", "gdat")
+                        f"{name}:simulation-{route}:{kind}" for kind in ("cdat", "gdat")
                     ],
-                    **(
-                        {**common, "applicability": sim_app}
-                        if sim_app
-                        else common
-                    ),
+                    **({**common, "applicability": sim_app} if sim_app else common),
                 )
             ]
             for kind in ("cdat", "gdat"):
@@ -250,11 +245,7 @@ def run_simulation(name, work, reference, args, env, network_rows, *, route="bng
                         detail=receipt["detail"]
                         or f"{label} simulation execution failed",
                         blocked_by=[name + ":simulation-" + route + ":" + label],
-                        **(
-                            {**common, "applicability": sim_app}
-                            if sim_app
-                            else common
-                        ),
+                        **({**common, "applicability": sim_app} if sim_app else common),
                     )
                 )
             return out_rows
@@ -324,11 +315,7 @@ def run_simulation(name, work, reference, args, env, network_rows, *, route="bng
                 status=agg_status,
                 aggregate=True,
                 detail="see named child contracts",
-                **(
-                    {**common, "applicability": agg_app}
-                    if agg_app
-                    else common
-                ),
+                **({**common, "applicability": agg_app} if agg_app else common),
             )
         )
         for row in checked:

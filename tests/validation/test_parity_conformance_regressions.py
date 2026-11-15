@@ -71,7 +71,9 @@ def test_reference_network_failure_emits_all_ten_leaf_contracts(tmp_path, monkey
     assert reporting.gate_failures(rows) == []
 
 
-def test_reference_simulation_failure_emits_cdat_and_gdat_contracts(tmp_path, monkeypatch):
+def test_reference_simulation_failure_emits_cdat_and_gdat_contracts(
+    tmp_path, monkeypatch
+):
     """When reference simulation fails due to oracle limitation (e.g. test_tfun uppercase TFUN),
 
     run_simulation must emit both cdat and gdat leaf contracts with status NOT_TESTED
@@ -87,9 +89,13 @@ def test_reference_simulation_failure_emits_cdat_and_gdat_contracts(tmp_path, mo
     (ref_dir / "test_tfun.net").write_text(net_content, encoding="utf-8")
     (subj_dir / "test_tfun.net").write_text(net_content, encoding="utf-8")
     (work / "input").mkdir(parents=True)
-    (work / "input" / "test_tfun.bngl").write_text("begin model\nend model\n", encoding="utf-8")
+    (work / "input" / "test_tfun.bngl").write_text(
+        "begin model\nend model\n", encoding="utf-8"
+    )
 
-    monkeypatch.setattr(simulation_contract.campaign, "verify_digest", lambda *args: None)
+    monkeypatch.setattr(
+        simulation_contract.campaign, "verify_digest", lambda *args: None
+    )
 
     def mock_run_sim(command, directory, timeout, **kwargs):
         if "BNG2.pl" in command:
@@ -122,9 +128,13 @@ def test_reference_simulation_failure_emits_cdat_and_gdat_contracts(tmp_path, mo
     assert "test_tfun:simulation-bngl:cdat" in row_ids
     assert "test_tfun:simulation-bngl:gdat" in row_ids
     assert row_ids["test_tfun:simulation-bngl:cdat"]["status"] == "NOT_TESTED"
-    assert row_ids["test_tfun:simulation-bngl:cdat"]["applicability"] == "not-applicable"
+    assert (
+        row_ids["test_tfun:simulation-bngl:cdat"]["applicability"] == "not-applicable"
+    )
     assert row_ids["test_tfun:simulation-bngl:gdat"]["status"] == "NOT_TESTED"
-    assert row_ids["test_tfun:simulation-bngl:gdat"]["applicability"] == "not-applicable"
+    assert (
+        row_ids["test_tfun:simulation-bngl:gdat"]["applicability"] == "not-applicable"
+    )
 
     # Verify no gate failures
     assert reporting.gate_failures(rows) == []
