@@ -1517,11 +1517,33 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             if (issue.severity == BngLoweringSeverity::Error) refuse(issue.message);
     }
     const auto& model = lowered.model;
+    const bool has_physical_units =
+        !source.parameters().empty() || !source.compartments().empty() || !source.seeds().empty();
+    if (has_physical_units) {
+        for (const auto& parameter : source.parameters())
+            if (parameter.declaredUnit.has_value() || parameter.inferredUnit.has_value() || !parameter.unitName.empty())
+                refuse("physical units require explicit NFnext unit semantics");
+        for (const auto& compartment : source.compartments())
+            if (compartment.declaredUnit.has_value() || !compartment.unitName.empty())
+                refuse("physical units require explicit NFnext unit semantics");
+        for (const auto& seed : source.seeds())
+            if (seed.declaredUnit.has_value() || !seed.unitName.empty())
+                refuse("physical units require explicit NFnext unit semantics");
+        for (const auto& rule : source.rules()) {
+            const auto check = [&](const bng::compile::CompiledRuleDirection& direction) {
+                if (direction.rateLaw && direction.rateLaw->unit.has_value())
+                    refuse("physical units require explicit NFnext unit semantics");
+            };
+            check(rule.forward());
+            if (rule.reverse()) check(*rule.reverse());
+        }
+
+    }
     if (!model.population_maps.empty()) refuse("un-lowered population maps require generate_hybrid_model");
     const bool has_energy_semantics =
         !source.energyFactors().empty() || !source.barrierFactors().empty() ||
         !model.energy_patterns.empty();
-    if (has_energy_semantics) refuse("energy-pattern and barrier rate modulation not yet implemented in NFnext execution");
+    if (has_energy_semantics) refuse("energy pattern and barrier rate modulation not yet implemented in NFnext execution");
     if (request.max_particles > std::numeric_limits<std::uint32_t>::max())
         refuse("particle budget exceeds native index capacity");
     GenericGraphState state(model);
