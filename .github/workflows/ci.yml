@@ -747,8 +747,8 @@ jobs:
         env:
           JAX_ENABLE_X64: "false"
 
-      - name: Test JAX float64 ODE
-        run: python -m pytest tests/python/test_jax_ode.py tests/python/test_jax_dynamic_rates.py -q
+      - name: Test JAX float64 ODE and vectorized SSA
+        run: python -m pytest tests/python/test_jax_ode.py tests/python/test_jax_ssa.py tests/python/test_jax_dynamic_rates.py -q
         env:
           JAX_ENABLE_X64: "true"
 

@@ -71,7 +71,7 @@ def simulate(
         t_end: Final simulation time (must be positive).
         base_seed: Base integer seed for the random number generator.
         n_steps: Number of uniform output time intervals.
-        max_steps: Optional maximum number of reaction events per trajectory (0 for unlimited).
+        max_steps: Non-negative integer limit on reaction events per trajectory (0 for unlimited).
 
     Returns:
         Dict matching the BatchSsaMetrics schema:
@@ -120,6 +120,13 @@ def simulate(
         raise TypeError("n_steps must be a positive integer") from exc
     if n_steps <= 0:
         raise ValueError("n_steps must be a positive integer")
+
+    try:
+        max_steps = operator.index(max_steps)
+    except TypeError as exc:
+        raise TypeError("max_steps must be a non-negative integer") from exc
+    if max_steps < 0:
+        raise ValueError("max_steps must be a non-negative integer")
 
     S = flat["num_species"]
     R = flat["num_reactions"]
@@ -182,6 +189,13 @@ def simulate(
 
     def simulate_one(rng_key):
         init_obs = j_initial_species.astype(float_dtype) @ j_obs_W
+        if R == 0:
+            # Do not trace an empty reaction selection inside lax.cond.
+            return (
+                j_initial_species,
+                jnp.uint32(0),
+                jnp.broadcast_to(init_obs, (n_steps + 1, G)),
+            )
         obs_history = jnp.zeros((n_steps + 1, G), dtype=float_dtype).at[0].set(init_obs)
 
         init_val = (
@@ -221,10 +235,11 @@ def simulate(
                 maxval=jnp.asarray(1.0, dtype=float_dtype),
             )
 
+            # An absorbing state has no next reaction at any finite time.
             tau = jnp.where(
                 a0 > 0.0,
                 -jnp.log(u1) / a0,
-                jnp.asarray(1e30, dtype=float_dtype),
+                jnp.asarray(math.inf, dtype=float_dtype),
             )
             t_event = t + tau
 
@@ -239,7 +254,7 @@ def simulate(
             def step_event():
                 cum = jnp.cumsum(props)
                 target = u2 * a0
-                r_idx = jnp.argmax(cum >= target)
+                r_idx = jnp.argmax(cum > target)
                 new_y = y + j_delta_V[r_idx]
                 return (t_event, new_y, key, events + 1, obs, next_idx)
 
