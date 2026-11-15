@@ -77,6 +77,7 @@ jobs:
             tests/validation/test_integrated_extensions.py \
             tests/validation/test_graph_identity.py \
             tests/validation/test_issue_142_release_record.py \
+            tests/validation/test_issue_147_release_record.py \
             tests/validation/test_issue_150_release_record.py \
             tests/validation/test_issue_473_475_release_records.py \
             tests/validation/test_s6_simulate_receipt_consumer.py \
@@ -694,6 +695,13 @@ jobs:
           name: release-hybrid-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}
           path: ${{ runner.temp }}/bng3-hybrid-release
 
+      - name: Download Issue 147 NFnext lowering report for issue queue
+        if: always() && needs.release-obligation-142.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: release-issue-147-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/bng3-issue-147-release
+
       - name: Audit generated consumer matrix receipts
         if: always()
         run: |
@@ -720,6 +728,7 @@ jobs:
           s6_args=()
           delay_args=()
           hybrid_args=()
+          issue147_args=()
           if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             head_args=(--collect-upstream-heads)
           fi
@@ -741,6 +750,11 @@ jobs:
           elif [[ -s "$RUNNER_TEMP/bng3-hybrid-release/release-hybrid-evidence/issue-150-release-report.json" ]]; then
             hybrid_args+=(--report "$RUNNER_TEMP/bng3-hybrid-release/release-hybrid-evidence/issue-150-release-report.json")
           fi
+          if [[ -s "$RUNNER_TEMP/bng3-issue-147-release/issue-147-release-report.json" ]]; then
+            issue147_args+=(--report "$RUNNER_TEMP/bng3-issue-147-release/issue-147-release-report.json")
+          elif [[ -s "$RUNNER_TEMP/bng3-issue-147-release/release-issue-147-evidence/issue-147-release-report.json" ]]; then
+            issue147_args+=(--report "$RUNNER_TEMP/bng3-issue-147-release/release-issue-147-evidence/issue-147-release-report.json")
+          fi
           python -m tests.validation.issue_queue \
             --issues-json "$RUNNER_TEMP/bng3-issues.json" \
             --report "$RUNNER_TEMP/bng3-integrated-validation/report.json" \
@@ -749,6 +763,7 @@ jobs:
             "${s6_args[@]}" \
             "${delay_args[@]}" \
             "${hybrid_args[@]}" \
+            "${issue147_args[@]}" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --output-dir "$RUNNER_TEMP/bng3-issue-queue" "${head_args[@]}"
           cat "$RUNNER_TEMP/bng3-issue-queue/issue-queue.md" >> "$GITHUB_STEP_SUMMARY"
@@ -1021,6 +1036,47 @@ jobs:
           path: |
             ${{ runner.temp }}/release-hybrid.xml
             ${{ runner.temp }}/release-hybrid-evidence/
+          if-no-files-found: error
+
+      - name: Build NFnext architectural test contracts
+        run: |
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DBUILD_TESTS=ON
+          cmake --build build --target \
+            bng3_nfnext_bng_lowering_bridge \
+            bng3_nfnext_canonicalization_contract \
+            bng3_nfnext_cache_contract \
+            bng3_nfnext_execution_boundary \
+            --parallel 2
+
+      - name: Run Issue 147 NFnext lowering release suite
+        shell: bash
+        run: |
+          set -euo pipefail
+          pytest tests/validation/release/cases/issue-147/test_nfir_lowering.py \
+            -q -ra --junitxml="$RUNNER_TEMP/release-issue-147.xml"
+
+      - name: Validate independent issue-147 NFnext lowering release acceptance
+        shell: bash
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${{ runner.temp }}/release-issue-147-evidence"
+          python scripts/ci/record_issue147_release.py \
+            --source-revision "$BNG3_SOURCE_REVISION" \
+            --output "${{ runner.temp }}/release-issue-147-evidence/issue-147-release-report.json" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Issue 147 NFnext lowering evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-issue-147-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/release-issue-147.xml
+            ${{ runner.temp }}/release-issue-147-evidence/
           if-no-files-found: error
 
       - name: Run all Tier-NF native ensembles (scheduled)

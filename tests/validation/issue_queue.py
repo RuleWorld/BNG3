@@ -1376,7 +1376,12 @@ def assess_obligations(obligations, reports, revision):
             break
         demonstrated.update(added)
         for issue_num in assessed_issues:
-            issue_obls = {o["id"] for o in assessed if o.get("issue") == issue_num}
+            issue_obls = {
+                o["id"]
+                for o in assessed
+                if o.get("issue") == issue_num
+                and o.get("scope_status", "CURRENT") != "STALE_SCOPE"
+            }
             if issue_obls and issue_obls <= demonstrated:
                 demonstrated.add(issue_num)
     for row in assessed:
