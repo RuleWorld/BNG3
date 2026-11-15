@@ -892,7 +892,8 @@ bool appendDeletionActions(
             break;
         }
     }
-    if (!deleteMolecules && hasOrphanRiskUnmappedReactant && !nodes.createdProducts.empty()) {
+    if (!hasDeleteMoleculesModifier(rule) && hasOrphanRiskUnmappedReactant &&
+        !nodes.createdProducts.empty()) {
         issue(result, BngLoweringSeverity::Error, entity,
               "simultaneous molecule replacement requires orphan-context semantics "
               "not yet representable in NFIR v5");
