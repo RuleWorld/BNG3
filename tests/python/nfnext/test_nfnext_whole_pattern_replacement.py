@@ -27,7 +27,7 @@ def test_nfnext_whole_pattern_replacement_and_mapping_rules_execute():
     even when each deleted reactant molecule belonged to a reactant pattern with no
     mapped/surviving molecules in that same pattern (explicit whole-pattern deletion).
     """
-    hpp = r'''begin model
+    hpp = r"""begin model
 begin parameters
   k_make 1
   k_map 100
@@ -51,7 +51,7 @@ begin reaction rules
   _MapRule0: A() -> A_pop() k_map
 end reaction rules
 end model
-'''
+"""
     m = cpp.parse_string(hpp)
     times = [0.0, 0.1, 0.5, 1.0]
     res = cpp.simulate_nfnext(m, times, seed=1, max_events=500000, max_particles=500000)
