@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 from pathlib import Path
 import subprocess
 import numpy as np
@@ -19,8 +20,12 @@ import bionetgen._bionetgen_cpp as cpp
 
 CASE_DIR = Path(__file__).resolve().parent
 REPO_ROOT = CASE_DIR.parents[4]
-BUILD_DIR = REPO_ROOT / "build"
-ARCH_TESTS_DIR = BUILD_DIR / "tests" / "architecture_contracts"
+BUILD_DIR = Path(os.environ.get("BNG3_BUILD_DIR", REPO_ROOT / "build"))
+ARCH_TESTS_DIR = Path(
+    os.environ.get(
+        "BNG3_ARCH_TESTS_DIR", BUILD_DIR / "tests" / "architecture_contracts"
+    )
+)
 
 # The 9 assigned capability inventory rows for Issue #147
 ASSIGNED_INVENTORY_ROWS = [
