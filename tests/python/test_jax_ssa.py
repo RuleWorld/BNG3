@@ -11,6 +11,120 @@ from bionetgen import _bionetgen_cpp as cpp
 from bionetgen import jax_ssa
 
 
+@pytest.mark.parametrize("seeds, state", [("A() 3\nB() 0", [3, 0]), ("", [])])
+def test_jax_ssa_no_reaction_network_is_constant(seeds, state):
+    pytest.importorskip("jax")
+    model = cpp.parse_string(f"""begin model
+begin molecule types
+A()
+B()
+end molecule types
+begin seed species
+{seeds}
+end seed species
+begin observables
+Molecules CountA A()
+Molecules CountB B()
+end observables
+end model""")
+    network = cpp.generate_network(model)
+    assert network.num_reactions == 0
+
+    result = jax_ssa.simulate(model, network, batch_size=4, t_end=2.0, n_steps=4)
+
+    np.testing.assert_array_equal(result["final_species"], np.tile(state, (4, 1)))
+    np.testing.assert_array_equal(result["event_counts"], np.zeros(4))
+    initial_a = 3 if state else 0
+    np.testing.assert_array_equal(
+        result["observable_means"]["CountA"], np.full(5, initial_a)
+    )
+    np.testing.assert_array_equal(result["observable_means"]["CountB"], np.zeros(5))
+    np.testing.assert_array_equal(result["observable_stds"]["CountA"], np.zeros(5))
+    assert result["total_events"] == 0
+
+
+def test_jax_ssa_inactive_network_cannot_fire_at_large_finite_times():
+    pytest.importorskip("jax")
+    model = cpp.parse_string("""begin model
+begin parameters
+k 0
+end parameters
+begin molecule types
+A()
+B()
+end molecule types
+begin seed species
+A() 3
+B() 0
+end seed species
+begin observables
+Molecules CountA A()
+Molecules CountB B()
+end observables
+begin reaction rules
+A() -> B() k
+end reaction rules
+end model""")
+    network = cpp.generate_network(model)
+    assert network.num_reactions == 1
+
+    result = jax_ssa.simulate(model, network, batch_size=4, t_end=2e30, n_steps=1)
+
+    np.testing.assert_array_equal(result["final_species"], [[3, 0]] * 4)
+    np.testing.assert_array_equal(result["event_counts"], np.zeros(4))
+    np.testing.assert_array_equal(result["observable_means"]["CountA"], [3, 3])
+    np.testing.assert_array_equal(result["observable_means"]["CountB"], [0, 0])
+
+
+@pytest.mark.parametrize(
+    "max_steps, error", [(-1, ValueError), (0.5, TypeError), (float("nan"), TypeError)]
+)
+def test_jax_ssa_rejects_invalid_max_steps(max_steps, error):
+    pytest.importorskip("jax")
+    model = cpp.parse_file("models/isomerization.bngl")
+    with pytest.raises(error, match="max_steps must be a non-negative integer"):
+        jax_ssa.simulate(model, batch_size=1, max_steps=max_steps)
+
+
+def test_jax_ssa_zero_uniform_draw_cannot_select_zero_rate_reaction(monkeypatch):
+    jax = pytest.importorskip("jax")
+    model = cpp.parse_string("""begin model
+begin molecule types
+A()
+B()
+C()
+end molecule types
+begin seed species
+A() 3
+B() 0
+C() 0
+end seed species
+begin reaction rules
+A() -> B() 0
+A() -> C() 1
+end reaction rules
+end model""")
+    network = cpp.generate_network(model)
+    flat = cpp.jax_ssa_flatten(model, network)
+    np.testing.assert_array_equal(flat["rate_constants"], [0, 1])
+
+    # Uniform draws include the lower endpoint. Force that rare boundary
+    # without replacing the compiled propensities or reaction selection.
+    def uniform_at_lower_bound(key, shape, dtype, minval, maxval):
+        return jax.numpy.full(shape, minval, dtype=dtype)
+
+    monkeypatch.setattr(jax.random, "uniform", uniform_at_lower_bound)
+    result = jax_ssa.simulate(
+        model, network, batch_size=2, t_end=100.0, n_steps=1, max_steps=1
+    )
+
+    b_index = network.species_names.index("B()")
+    c_index = network.species_names.index("C()")
+    np.testing.assert_array_equal(result["event_counts"], [1, 1])
+    np.testing.assert_array_equal(result["final_species"][:, b_index], [0, 0])
+    np.testing.assert_array_equal(result["final_species"][:, c_index], [1, 1])
+
+
 def test_jax_ssa_rejects_none_model():
     """When JAX is available, a missing model is invalid input."""
     pytest.importorskip("jax")
