@@ -735,7 +735,7 @@ jobs:
       - name: Verify installed package identity
         run: python scripts/ci/check_python_package_identity.py
         env:
-          BNG3_SOURCE_REVISION: ${{ github.sha }}
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
           BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Require optional dependencies and CPU device
