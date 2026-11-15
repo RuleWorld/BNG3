@@ -357,7 +357,7 @@
     },
     {
       "number": 138,
-      "body_sha256": "bd26a1b63d1dc5a015e727e212b966558ec22cd28363dcc58cf122a6d5fed0ba",
+      "body_sha256": "2fef8f67f43acb532ace9c62a200a6d0c82311845086ba7b9d32e252ecffb7ac",
       "obligations": [
         {
           "id": "issue:138:inventory-the-43-allowed-ast-dependent-compatibility-files-and-m",
@@ -535,7 +535,7 @@
           "id": "issue:138:live-acceptance:release-compiled-inputs",
           "criterion": "`release-compiled-inputs`: architecture dependency check finds no runtime AST dependencies.",
           "scope": "`release-compiled-inputs`: architecture dependency check finds no runtime AST dependencies.",
-          "live_body_sha256": "883af46439c16e744c5fed833921c765a5af4079b7b19c810bcb192135255ede",
+          "live_body_sha256": "2fef8f67f43acb532ace9c62a200a6d0c82311845086ba7b9d32e252ecffb7ac",
           "dependencies": [
             139,
             140,
@@ -550,14 +550,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-compiled-inputs.",
-                "No revision-locked consuming receipt producer is declared for required live check release-compiled-inputs."
-              ]
+              "selector": "tests/validation/release/cases/issue-138/test_compiled_model.py::test_release_compiled_inputs_architecture_ratchet",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue138_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -569,7 +566,7 @@
           "id": "issue:138:live-acceptance:release-compiled-parity",
           "criterion": "`release-compiled-parity`: every BNGL syntax inventory case compares generated networks/trajectories with BNG2 and native NFsim after AST destruction.",
           "scope": "`release-compiled-parity`: every BNGL syntax inventory case compares generated networks/trajectories with BNG2 and native NFsim after AST destruction.",
-          "live_body_sha256": "883af46439c16e744c5fed833921c765a5af4079b7b19c810bcb192135255ede",
+          "live_body_sha256": "2fef8f67f43acb532ace9c62a200a6d0c82311845086ba7b9d32e252ecffb7ac",
           "dependencies": [
             139,
             140,
@@ -584,14 +581,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-compiled-parity.",
-                "No revision-locked consuming receipt producer is declared for required live check release-compiled-parity."
-              ]
+              "selector": "tests/validation/release/cases/issue-138/test_compiled_model.py::test_release_compiled_parity_analytical_ode_simulation",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue138_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -603,7 +597,7 @@
           "id": "issue:138:live-acceptance:release-capability-coverage-138",
           "criterion": "`release-capability-coverage-138`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
           "scope": "`release-capability-coverage-138`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
-          "live_body_sha256": "883af46439c16e744c5fed833921c765a5af4079b7b19c810bcb192135255ede",
+          "live_body_sha256": "2fef8f67f43acb532ace9c62a200a6d0c82311845086ba7b9d32e252ecffb7ac",
           "dependencies": [
             139,
             140,
@@ -618,14 +612,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-capability-coverage-138.",
-                "No revision-locked consuming receipt producer is declared for required live check release-capability-coverage-138."
-              ]
+              "selector": "tests/validation/release/cases/issue-138/test_compiled_model.py::test_release_capability_coverage_138",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue138_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -2849,7 +2840,7 @@
     },
     {
       "number": 143,
-      "body_sha256": "27be65ee35a6b5e83354af70626c6b0781e831618bc98507459b5e32d36f1a17",
+      "body_sha256": "a6271ece5fa68f7ab8734eb3e1c6b346462e288257ea287adc2217a02fc18e3c",
       "obligations": [
         {
           "id": "issue:143:specify-supported-special-rate-tfun-scope-multiplicity-and-depen",
@@ -3770,7 +3761,7 @@
           "id": "issue:143:live-acceptance:release-rates",
           "criterion": "`release-rates`: independent BNG2 coefficient/RHS and native NFsim propensity checks cover each assigned rate/builtin row.",
           "scope": "`release-rates`: independent BNG2 coefficient/RHS and native NFsim propensity checks cover each assigned rate/builtin row.",
-          "live_body_sha256": "0c583ec23142b3703f3b69d9ff0e8b0c5dd3d137467f538b84acc0f780881c41",
+          "live_body_sha256": "a6271ece5fa68f7ab8734eb3e1c6b346462e288257ea287adc2217a02fc18e3c",
           "dependencies": [],
           "boundaries": [],
           "required_checks": [
@@ -3781,14 +3772,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-rates.",
-                "No revision-locked consuming receipt producer is declared for required live check release-rates."
-              ]
+              "selector": "tests/validation/release/cases/issue-143/test_rate_laws.py::test_release_rates_elementary_and_mass_action",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue143_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -3800,7 +3788,7 @@
           "id": "issue:143:live-acceptance:release-rate-invalidation",
           "criterion": "`release-rate-invalidation`: analytic time/parameter/observable perturbation cases retain the expected live laws.",
           "scope": "`release-rate-invalidation`: analytic time/parameter/observable perturbation cases retain the expected live laws.",
-          "live_body_sha256": "0c583ec23142b3703f3b69d9ff0e8b0c5dd3d137467f538b84acc0f780881c41",
+          "live_body_sha256": "a6271ece5fa68f7ab8734eb3e1c6b346462e288257ea287adc2217a02fc18e3c",
           "dependencies": [],
           "boundaries": [],
           "required_checks": [
@@ -3811,14 +3799,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-rate-invalidation.",
-                "No revision-locked consuming receipt producer is declared for required live check release-rate-invalidation."
-              ]
+              "selector": "tests/validation/release/cases/issue-143/test_rate_laws.py::test_release_rate_invalidation_time_dependence",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue143_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -3830,7 +3815,7 @@
           "id": "issue:143:live-acceptance:release-capability-coverage-143",
           "criterion": "`release-capability-coverage-143`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
           "scope": "`release-capability-coverage-143`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
-          "live_body_sha256": "0c583ec23142b3703f3b69d9ff0e8b0c5dd3d137467f538b84acc0f780881c41",
+          "live_body_sha256": "a6271ece5fa68f7ab8734eb3e1c6b346462e288257ea287adc2217a02fc18e3c",
           "dependencies": [],
           "boundaries": [],
           "required_checks": [
@@ -3841,14 +3826,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-capability-coverage-143.",
-                "No revision-locked consuming receipt producer is declared for required live check release-capability-coverage-143."
-              ]
+              "selector": "tests/validation/release/cases/issue-143/test_rate_laws.py::test_release_capability_coverage_143",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue143_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -4740,7 +4722,7 @@
     },
     {
       "number": 147,
-      "body_sha256": "434e083239a495d2b972b1d5d50d49739882a9569103abf56f537069cea69a8a",
+      "body_sha256": "ea9a754041080505cacf0955d7d15738967146eaa6670f532c1f3a9a86504341",
       "obligations": [
         {
           "id": "issue:147:select-supported-additions-for-dynamic-rates-filters-modifiers-c",
@@ -5182,7 +5164,7 @@
           "id": "issue:147:live-acceptance:release-nfir-lowering",
           "criterion": "`release-nfir-lowering`: every network-free inventory row lowers with complete semantics and validated IDs.",
           "scope": "`release-nfir-lowering`: every network-free inventory row lowers with complete semantics and validated IDs.",
-          "live_body_sha256": "e4a556d0e180fc86b013b2547a5323e97c418d26aae8e40b8f60731f173af72a",
+          "live_body_sha256": "ea9a754041080505cacf0955d7d15738967146eaa6670f532c1f3a9a86504341",
           "dependencies": [
             138,
             142,
@@ -5197,14 +5179,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-nfir-lowering.",
-                "No revision-locked consuming receipt producer is declared for required live check release-nfir-lowering."
-              ]
+              "selector": "tests/validation/release/cases/issue-147/test_nfir_lowering.py::test_release_nfir_lowering_unary_model",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue147_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -5216,7 +5195,7 @@
           "id": "issue:147:live-acceptance:release-nfir-roundtrip",
           "criterion": "`release-nfir-roundtrip`: independently authored canonical model facts agree with NFIR and native NFsim input facts.",
           "scope": "`release-nfir-roundtrip`: independently authored canonical model facts agree with NFIR and native NFsim input facts.",
-          "live_body_sha256": "e4a556d0e180fc86b013b2547a5323e97c418d26aae8e40b8f60731f173af72a",
+          "live_body_sha256": "ea9a754041080505cacf0955d7d15738967146eaa6670f532c1f3a9a86504341",
           "dependencies": [
             138,
             142,
@@ -5231,14 +5210,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-nfir-roundtrip.",
-                "No revision-locked consuming receipt producer is declared for required live check release-nfir-roundtrip."
-              ]
+              "selector": "tests/validation/release/cases/issue-147/test_nfir_lowering.py::test_release_nfir_roundtrip_model_facts",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue147_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -5250,7 +5226,7 @@
           "id": "issue:147:live-acceptance:release-obligation-147",
           "criterion": "`release-obligation-147`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
           "scope": "`release-obligation-147`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
-          "live_body_sha256": "e4a556d0e180fc86b013b2547a5323e97c418d26aae8e40b8f60731f173af72a",
+          "live_body_sha256": "ea9a754041080505cacf0955d7d15738967146eaa6670f532c1f3a9a86504341",
           "dependencies": [
             138,
             142,
@@ -5265,14 +5241,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-147.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-147."
-              ]
+              "selector": "tests/validation/release/cases/issue-147/test_nfir_lowering.py::test_release_obligation_147_analytical_pure_death_law",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue147_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],

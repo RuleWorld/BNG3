@@ -1388,6 +1388,8 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
             irEnergy.expression = factor.energyExpression;
             if (factor.evaluatedValue) {
                 irEnergy.energy = *factor.evaluatedValue;
+            } else if (const auto value = constantExpression(factor.expression, source)) {
+                irEnergy.energy = *value;
             } else {
                 issue(result, BngLoweringSeverity::Error, factor.label,
                       "dynamic energy pattern expressions with unresolvable static evaluation are not supported in NFIR lowering");
