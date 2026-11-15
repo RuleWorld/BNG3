@@ -315,6 +315,38 @@ def event_turns_the_fast_reaction_off() -> str:
     )
 
 
+def event_turns_fast_reaction_on() -> str:
+    """``S1 -> S2`` fast at ``k*S1``; an event sets k from 0 to 1 at 1.0 (SSTS 00987).
+
+    Before t = 1.0, k = 0, so S1 = 1, S2 = 0, S3 = 0.
+    At t = 1.0, k becomes 1. S1 instantly drops to 0, S2 becomes 1, and for t >= 1.0,
+    S2 decays into S3: S2(t) = exp(-(t - 1.0)), S3(t) = 1 - exp(-(t - 1.0)).
+    """
+
+    return _model(
+        1,
+        [_species("S1", 1), _species("S2", 0), _species("S3", 0)],
+        [("k", 0, False), ("k2", 1, True)],
+        [],
+        [
+            _reaction(
+                "fast",
+                [_reference("S1")],
+                [_reference("S2")],
+                _apply("times", _ci("k"), _ci("S1")),
+                fast=True,
+            ),
+            _reaction(
+                "slow",
+                [_reference("S2")],
+                [_reference("S3")],
+                _apply("times", _ci("k2"), _ci("S2")),
+            ),
+        ],
+        _time_event("E1", 1.0, [("k", _cn(1))]),
+    )
+
+
 def rate_constant_reads_another_species() -> str:
     """``S1 -> S2`` fast at ``k*S1*S2`` with ``k = S3 - 0.5`` and ``S3 = e^-t``.
 
@@ -405,6 +437,14 @@ def reference_positive_event(time: float):
     return {"S1": 0.0, "S2": s2, "S3": 1 - s2}
 
 
+def reference_turn_on_event(time: float):
+    event = 1.0
+    if time < event:
+        return {"S1": 1.0, "S2": 0.0, "S3": 0.0}
+    s2 = math.exp(-(time - event))
+    return {"S1": 0.0, "S2": s2, "S3": 1.0 - s2}
+
+
 def reference_reads_another_species(time: float):
     # T = S1 + S2 starts at 1.5.  While k > 0 (t < ln 2) S2 carries it and
     # dT/dt = 0.05 - 0.4*T; once k < 0, S1 carries it and dT/dt = 0.05.
@@ -445,6 +485,11 @@ CASES = {
     "event_turns_the_fast_reaction_off": (
         event_turns_the_fast_reaction_off,
         reference_positive_event,
+        1,
+    ),
+    "event_turns_fast_reaction_on": (
+        event_turns_fast_reaction_on,
+        reference_turn_on_event,
         1,
     ),
     "rate_constant_reads_another_species": (

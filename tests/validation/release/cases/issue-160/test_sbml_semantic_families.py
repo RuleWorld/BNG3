@@ -133,6 +133,81 @@ def test_fast_reaction_solvable_exact_lowering():
     )
 
 
+def test_event_switched_fast_reaction_solvable_exact_lowering():
+    """An event-switched fast reaction (SSTS 00987) lowers exactly to a switched steady state."""
+    xml = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1">
+  <model id="case00987">
+    <listOfCompartments>
+      <compartment id="c" size="1.0" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="A" compartment="c" initialAmount="1" hasOnlySubstanceUnits="true" constant="false"/>
+      <species id="B" compartment="c" initialAmount="0" hasOnlySubstanceUnits="true" constant="false"/>
+      <species id="C_spec" compartment="c" initialAmount="0" hasOnlySubstanceUnits="true" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k1" value="0" constant="false"/>
+    </listOfParameters>
+    <listOfReactions>
+      <reaction id="fast" reversible="true" fast="true">
+        <listOfReactants>
+          <speciesReference species="A" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="B" stoichiometry="1" constant="true"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci>k1</ci><ci>A</ci></apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+      <reaction id="slow" reversible="true" fast="false">
+        <listOfReactants>
+          <speciesReference species="B" stoichiometry="1" constant="true"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="C_spec" stoichiometry="1" constant="true"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci>k1</ci><ci>B</ci></apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+    </listOfReactions>
+    <listOfEvents>
+      <event id="_E0" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><gt/><csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol><cn>0.99</cn></apply>
+          </math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="k1">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn type="integer">1</cn></math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>"""
+    atomizer = Atomizer({"quietMode": True, "logLevel": "INFO", "t_end": 2.0, "n_steps": 10})
+    result = atomizer.atomize(xml)
+    assert result.success, result.error
+    loss_warnings = [
+        w for w in atomizer.model.import_warnings
+        if w.get("category") == "fastReaction" and w.get("severity") in LOSS_SEVERITIES
+    ]
+    assert not loss_warnings, f"Expected clean lowering without loss, got: {loss_warnings}"
+    info_warnings = [
+        w for w in atomizer.model.import_warnings
+        if w.get("category") == "fastReaction" and w.get("severity") == "info"
+    ]
+    assert any("reduces" in w.get("message", "") for w in info_warnings)
+
+
 def _unsupported_fast_source():
     """A valid L3V1 bimolecular fast subsystem requiring equilibrium solving."""
     xml = """<?xml version="1.0" encoding="UTF-8"?>
