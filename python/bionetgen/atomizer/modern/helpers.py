@@ -43,7 +43,7 @@ def clone_ast(node: Any) -> Any:
     if isinstance(node, list):
         return [clone_ast(n) for n in node]
     if type(node) is ast.Name:
-        return ast.Name(id=node.id, ctx=clone_ast(node.ctx))
+        return ast.copy_location(ast.Name(id=node.id, ctx=clone_ast(node.ctx)), node)
     if type(node) is ast.Load:
         return ast.Load()
     if type(node) is ast.Store:

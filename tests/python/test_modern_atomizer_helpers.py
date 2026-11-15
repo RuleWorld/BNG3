@@ -3,6 +3,51 @@
 from __future__ import annotations
 
 
+def test_clone_ast_preserves_name_source_spans():
+    import ast
+
+    from bionetgen.atomizer.modern.helpers import clone_ast
+
+    source = ast.parse("(\n    offset\n    + value * 2\n)", mode="eval")
+    cloned = clone_ast(source)
+
+    spans = [
+        (
+            node.id,
+            getattr(node, "lineno", None),
+            getattr(node, "col_offset", None),
+            getattr(node, "end_lineno", None),
+            getattr(node, "end_col_offset", None),
+        )
+        for node in ast.walk(cloned)
+        if isinstance(node, ast.Name)
+    ]
+    assert spans == [("offset", 2, 4, 2, 10), ("value", 3, 6, 3, 11)]
+
+
+def test_clone_ast_compiles_and_keeps_name_edits_independent():
+    import ast
+
+    from bionetgen.atomizer.modern.helpers import clone_ast
+
+    source = ast.parse("result = value * 2\n")
+    cloned = clone_ast(source)
+    namespace = {"value": 4}
+    exec(compile(cloned, "<cloned>", "exec"), namespace)
+    assert namespace["result"] == 8
+
+    cloned.body[0].targets[0].id = "changed"
+    cloned.body[0].value.left.id = "other"
+    edited_namespace = {"other": 5}
+    exec(compile(cloned, "<edited clone>", "exec"), edited_namespace)
+    assert edited_namespace["changed"] == 10
+
+    original_namespace = {"value": 4}
+    exec(compile(source, "<original>", "exec"), original_namespace)
+    assert original_namespace["result"] == 8
+    assert "changed" not in original_namespace
+
+
 def test_playground_helpers_counter_and_default_dict_contract():
     from bionetgen.atomizer.modern import Counter, DefaultDict
 
