@@ -616,6 +616,53 @@ def test_delay_release_receipt_is_recorded_and_consumed_in_parity_queue():
     )
 
 
+def test_hybrid_release_receipt_is_recorded_and_consumed_in_parity_queue():
+    workflow = _parse_workflow()
+    nfsim_parity = workflow["jobs"]["nfsim-parity"]
+    record_step = next(
+        step
+        for step in nfsim_parity["steps"]
+        if step.get("name")
+        == "Validate independent issue-150 hybrid release acceptance"
+    )
+    assert "scripts/ci/record_hybrid_release.py" in record_step["run"]
+    assert (
+        '--output "${{ runner.temp }}/release-hybrid-evidence/issue-150-release-report.json"'
+        in record_step["run"]
+    )
+
+    integrated = workflow["jobs"]["integrated-semantic-validation"]
+    download_step = next(
+        step
+        for step in integrated["steps"]
+        if step.get("name")
+        == "Download Issue 150 hybrid release report for issue queue"
+    )
+    assert download_step["uses"].startswith("actions/download-artifact@")
+    assert "release-hybrid-" in download_step["with"]["name"]
+    assert download_step["with"]["path"] == "${{ runner.temp }}/bng3-hybrid-release"
+
+    queue_step = next(
+        step
+        for step in integrated["steps"]
+        if step.get("name")
+        == "Build exact-revision issue and provenance evidence queue"
+    )
+    assert "bng3-hybrid-release" in queue_step["run"]
+    assert "issue-150-release-report.json" in queue_step["run"]
+    assert '"${hybrid_args[@]}"' in queue_step["run"]
+
+    contract_job = workflow["jobs"]["oracle-lock"]
+    ci_contracts = next(
+        step
+        for step in contract_job["steps"]
+        if step.get("name") == "Run CI contract tests"
+    )
+    assert (
+        "tests/validation/test_issue_150_release_record.py" in ci_contracts["run"]
+    )
+
+
 def test_jax_release_receipt_is_recorded_in_ci_workflow():
     ci_workflow = yaml.safe_load(
         (REPO / ".github/workflows/ci.yml").read_text(encoding="utf-8")

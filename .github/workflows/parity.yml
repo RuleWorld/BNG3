@@ -77,6 +77,7 @@ jobs:
             tests/validation/test_integrated_extensions.py \
             tests/validation/test_graph_identity.py \
             tests/validation/test_issue_142_release_record.py \
+            tests/validation/test_issue_150_release_record.py \
             tests/validation/test_issue_473_475_release_records.py \
             tests/validation/test_s6_simulate_receipt_consumer.py \
             tests/validation/test_nfsim_sweep_gate.py \
@@ -686,6 +687,13 @@ jobs:
           name: issue142-release-graph-observables-${{ github.run_id }}
           path: ${{ runner.temp }}/issue142/queue/observables
 
+      - name: Download Issue 150 hybrid release report for issue queue
+        if: always() && needs.release-obligation-142.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: release-hybrid-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/bng3-hybrid-release
+
       - name: Audit generated consumer matrix receipts
         if: always()
         run: |
@@ -711,6 +719,7 @@ jobs:
           issue142_args=()
           s6_args=()
           delay_args=()
+          hybrid_args=()
           if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             head_args=(--collect-upstream-heads)
           fi
@@ -727,6 +736,11 @@ jobs:
           if [[ -s "$RUNNER_TEMP/bng3-delay-release/report.json" ]]; then
             delay_args+=(--report "$RUNNER_TEMP/bng3-delay-release/report.json")
           fi
+          if [[ -s "$RUNNER_TEMP/bng3-hybrid-release/issue-150-release-report.json" ]]; then
+            hybrid_args+=(--report "$RUNNER_TEMP/bng3-hybrid-release/issue-150-release-report.json")
+          elif [[ -s "$RUNNER_TEMP/bng3-hybrid-release/release-hybrid-evidence/issue-150-release-report.json" ]]; then
+            hybrid_args+=(--report "$RUNNER_TEMP/bng3-hybrid-release/release-hybrid-evidence/issue-150-release-report.json")
+          fi
           python -m tests.validation.issue_queue \
             --issues-json "$RUNNER_TEMP/bng3-issues.json" \
             --report "$RUNNER_TEMP/bng3-integrated-validation/report.json" \
@@ -734,6 +748,7 @@ jobs:
             "${issue142_args[@]}" \
             "${s6_args[@]}" \
             "${delay_args[@]}" \
+            "${hybrid_args[@]}" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --output-dir "$RUNNER_TEMP/bng3-issue-queue" "${head_args[@]}"
           cat "$RUNNER_TEMP/bng3-issue-queue/issue-queue.md" >> "$GITHUB_STEP_SUMMARY"
@@ -984,6 +999,19 @@ jobs:
           pytest -c tests/validation/pytest.ini \
             tests/validation/test_hybrid_execution.py \
             -q -ra --junitxml="$RUNNER_TEMP/release-hybrid.xml"
+
+      - name: Validate independent issue-150 hybrid release acceptance
+        shell: bash
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          python scripts/ci/record_hybrid_release.py \
+            --source-revision "$BNG3_SOURCE_REVISION" \
+            --evidence-dir "${{ runner.temp }}/release-hybrid-evidence" \
+            --junit-xml "${{ runner.temp }}/release-hybrid.xml" \
+            --output "${{ runner.temp }}/release-hybrid-evidence/issue-150-release-report.json" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
 
       - name: Upload hybrid particle-population evidence
         if: always()

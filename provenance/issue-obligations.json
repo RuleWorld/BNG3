@@ -5781,7 +5781,7 @@
     },
     {
       "number": 150,
-      "body_sha256": "53d6d4de68582e2dc1161e0e65c7e6c72b24e594d280facd6ed1ce2cf76bf444",
+      "body_sha256": "d26905cc4840c5aba227f9ba8528f0d1d666fcc31128aa084468eb71801ae50e",
       "obligations": [
         {
           "id": "issue:150:distinguish-population-map-storage-and-hybrid-bngl-generation-fr",
@@ -5898,7 +5898,7 @@
           "id": "issue:150:live-acceptance:release-hybrid",
           "criterion": "`release-hybrid`: BNG2 hybrid output executed by native NFsim matches BNG3 hybrid distributions and observables.",
           "scope": "`release-hybrid`: BNG2 hybrid output executed by native NFsim matches BNG3 hybrid distributions and observables.",
-          "live_body_sha256": "aa1729c996942567f48eedefe402f6d38ef29bb7a6d76053006304780b3c202a",
+          "live_body_sha256": "d26905cc4840c5aba227f9ba8528f0d1d666fcc31128aa084468eb71801ae50e",
           "dependencies": [
             143,
             147
@@ -5912,14 +5912,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-hybrid.",
-                "No revision-locked consuming receipt producer is declared for required live check release-hybrid."
-              ]
+              "selector": "tests/validation/test_hybrid_execution.py::test_release_hybrid_bng2_native_nfsim_and_bng3_trajectories",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#Validate independent issue-150 hybrid release acceptance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -5931,7 +5928,7 @@
           "id": "issue:150:live-acceptance:release-hybrid-conservation",
           "criterion": "`release-hybrid-conservation`: independent analytic conversion/mass conservation and multiplicity laws hold in mixed particle/population cases.",
           "scope": "`release-hybrid-conservation`: independent analytic conversion/mass conservation and multiplicity laws hold in mixed particle/population cases.",
-          "live_body_sha256": "aa1729c996942567f48eedefe402f6d38ef29bb7a6d76053006304780b3c202a",
+          "live_body_sha256": "d26905cc4840c5aba227f9ba8528f0d1d666fcc31128aa084468eb71801ae50e",
           "dependencies": [
             143,
             147
@@ -5945,14 +5942,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-hybrid-conservation.",
-                "No revision-locked consuming receipt producer is declared for required live check release-hybrid-conservation."
-              ]
+              "selector": "tests/validation/test_hybrid_execution.py::test_release_hybrid_conservation_and_analytic_conversion_law",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#Validate independent issue-150 hybrid release acceptance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -5964,7 +5958,7 @@
           "id": "issue:150:live-acceptance:release-capability-coverage-150",
           "criterion": "`release-capability-coverage-150`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
           "scope": "`release-capability-coverage-150`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
-          "live_body_sha256": "aa1729c996942567f48eedefe402f6d38ef29bb7a6d76053006304780b3c202a",
+          "live_body_sha256": "d26905cc4840c5aba227f9ba8528f0d1d666fcc31128aa084468eb71801ae50e",
           "dependencies": [
             143,
             147
@@ -5978,14 +5972,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-capability-coverage-150.",
-                "No revision-locked consuming receipt producer is declared for required live check release-capability-coverage-150."
-              ]
+              "selector": "tests/validation/test_hybrid_execution.py::test_release_capability_coverage_150",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#Validate independent issue-150 hybrid release acceptance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
