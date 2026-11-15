@@ -658,9 +658,7 @@ def test_hybrid_release_receipt_is_recorded_and_consumed_in_parity_queue():
         for step in contract_job["steps"]
         if step.get("name") == "Run CI contract tests"
     )
-    assert (
-        "tests/validation/test_issue_150_release_record.py" in ci_contracts["run"]
-    )
+    assert "tests/validation/test_issue_150_release_record.py" in ci_contracts["run"]
 
 
 def test_jax_release_receipt_is_recorded_in_ci_workflow():

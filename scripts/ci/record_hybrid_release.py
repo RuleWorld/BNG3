@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -27,7 +26,9 @@ def _fail(message: str) -> None:
 
 
 def verify_manifest(root: Path = ROOT) -> dict[str, dict]:
-    manifest = json.loads((root / "provenance/issue-obligations.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (root / "provenance/issue-obligations.json").read_text(encoding="utf-8")
+    )
     issue = next((item for item in manifest["issues"] if item["number"] == 150), None)
     if issue is None:
         _fail("Issue 150 is missing from the obligations manifest")
@@ -77,9 +78,7 @@ def verify_junit_xml(path: Path) -> None:
     if failed_or_errored:
         _fail(f"JUnit XML contains failed cases: {failed_or_errored}")
     skipped = [
-        tc.attrib.get("name", "")
-        for tc in testcases
-        if tc.find("skipped") is not None
+        tc.attrib.get("name", "") for tc in testcases if tc.find("skipped") is not None
     ]
     if skipped:
         _fail(f"JUnit XML contains skipped cases: {skipped}")
@@ -237,7 +236,9 @@ def main(argv: list[str] | None = None) -> int:
         description="Record Issue 150 particle-population hybrid release acceptance."
     )
     parser.add_argument("--source-revision", help="Expected git commit SHA")
-    parser.add_argument("--evidence-dir", type=Path, help="Path to hybrid evidence directory")
+    parser.add_argument(
+        "--evidence-dir", type=Path, help="Path to hybrid evidence directory"
+    )
     parser.add_argument("--junit-xml", type=Path, help="Path to JUnit XML test report")
     parser.add_argument("--output", type=Path, required=True, help="Output JSON path")
     parser.add_argument("--summary-file", type=Path, help="GitHub step summary path")

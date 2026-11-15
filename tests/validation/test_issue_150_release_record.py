@@ -69,7 +69,9 @@ def test_hybrid_release_record_builds_valid_report(tmp_path):
     out_file = tmp_path / "hybrid_report.json"
     out_file.write_text(json.dumps(report), encoding="utf-8")
 
-    manifest = json.loads((ROOT / "provenance/issue-obligations.json").read_text(encoding="utf-8"))
+    manifest = json.loads(
+        (ROOT / "provenance/issue-obligations.json").read_text(encoding="utf-8")
+    )
     issue_150 = next(i for i in manifest["issues"] if i["number"] == 150)
     # Clear dependencies for isolated check assessment
     obs = [dict(ob, dependencies=[]) for ob in issue_150["obligations"]]
@@ -153,7 +155,9 @@ def test_hybrid_release_record_verifies_evidence_directory(tmp_path):
             "release-hybrid-conservation": {"passed": True},
         }
     }
-    (ev_dir / "capability-coverage-150.json").write_text(json.dumps(cov), encoding="utf-8")
+    (ev_dir / "capability-coverage-150.json").write_text(
+        json.dumps(cov), encoding="utf-8"
+    )
 
     res = record_hybrid_release.verify_evidence_directory(ev_dir)
     assert res["evidence_verified"] is True
