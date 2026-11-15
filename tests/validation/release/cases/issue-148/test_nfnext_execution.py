@@ -557,19 +557,21 @@ begin reaction rules
 end reaction rules
 end model
 """,
-        # Physical units
+        # Physical units (unsupported: bimolecular concentration rate without declared reactant volume unit)
         """begin model
 begin parameters
-  k = 0.5 [s^-1]
+  k 1e6 [M^-1*s^-1]
 end parameters
 begin molecule types
-  A(x~u~p)
+  A(b)
+  B(a)
 end molecule types
 begin seed species
-  A(x~u) 10
+  A(b) 10
+  B(a) 10
 end seed species
 begin reaction rules
-  A(x~u) -> A(x~p) k
+  A(b)+B(a)->A(b!1).B(a!1) k
 end reaction rules
 end model
 """,
