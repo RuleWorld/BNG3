@@ -2047,15 +2047,100 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
     };
 
     CounterRng rng(request.seed, 0);
+    auto isSimpleLumpedPopulationReactant = [&](const PatternIR& pattern, std::size_t nodeIndex) {
+        const auto& node = pattern.nodes.at(nodeIndex);
+        if (!model.molecule_types.at(node.molecule_type).is_population) return false;
+        if (!node.constraints.empty() || node.compartment.has_value()) return false;
+        for (const auto& bond : pattern.bonds)
+            if (bond.first == nodeIndex || bond.second == nodeIndex) return false;
+        for (const auto& pair : pattern.aliases)
+            if (pair.first == nodeIndex || pair.second == nodeIndex) return false;
+        for (const auto& pair : pattern.connected_to)
+            if (pair.first == nodeIndex || pair.second == nodeIndex) return false;
+        for (const auto& group : pattern.interchangeable)
+            if (std::find(group.begin(), group.end(), nodeIndex) != group.end()) return false;
+        // Molecularity constraints are allowed for lumped population reactants (e.g. DifferentComplex to particle reactants).
+        return true;
+    };
+
+    struct MixedLumpedInfo {
+        bool enabled{false};
+        std::vector<std::size_t> particleReactantNodes; // original reactant node indices
+        std::map<TypeId, std::uint64_t> popReactantCounts;
+        PatternIR particlePattern;
+    };
+    std::vector<MixedLumpedInfo> mixedLumped(model.expanded_rules.size());
+    for (std::size_t ri = 0; ri < model.expanded_rules.size(); ++ri) {
+        const auto& rule = model.expanded_rules[ri];
+        bool hasPop = false, hasParticle = false, allPopSimple = true;
+        for (std::size_t ni = 0; ni < rule.pattern.nodes.size(); ++ni) {
+            if (model.molecule_types.at(rule.pattern.nodes[ni].molecule_type).is_population) {
+                hasPop = true;
+                if (!isSimpleLumpedPopulationReactant(rule.pattern, ni)) allPopSimple = false;
+            } else {
+                hasParticle = true;
+            }
+        }
+        if (!hasPop || !hasParticle || !allPopSimple) continue;
+        if (rule.match_once) continue; // keep conservative for now
+        MixedLumpedInfo info;
+        info.enabled = true;
+        std::map<std::size_t, std::size_t> oldToNew;
+        for (std::size_t ni = 0; ni < rule.pattern.nodes.size(); ++ni) {
+            if (model.molecule_types.at(rule.pattern.nodes[ni].molecule_type).is_population) {
+                info.popReactantCounts[rule.pattern.nodes[ni].molecule_type] += 1;
+            } else {
+                oldToNew[ni] = info.particleReactantNodes.size();
+                info.particleReactantNodes.push_back(ni);
+                info.particlePattern.nodes.push_back(rule.pattern.nodes[ni]);
+            }
+        }
+        for (const auto& bond : rule.pattern.bonds) {
+            const bool fPop = model.molecule_types.at(rule.pattern.nodes[bond.first].molecule_type).is_population;
+            const bool sPop = model.molecule_types.at(rule.pattern.nodes[bond.second].molecule_type).is_population;
+            if (fPop || sPop) { info.enabled = false; break; }
+            auto b = bond;
+            b.first = oldToNew.at(bond.first);
+            b.second = oldToNew.at(bond.second);
+            info.particlePattern.bonds.push_back(b);
+        }
+        if (!info.enabled) continue;
+        for (const auto& c : rule.pattern.molecularity) {
+            const bool lPop = model.molecule_types.at(rule.pattern.nodes[c.left].molecule_type).is_population;
+            const bool rPop = model.molecule_types.at(rule.pattern.nodes[c.right].molecule_type).is_population;
+            if (lPop || rPop) continue;
+            auto cc = c;
+            cc.left = static_cast<std::uint16_t>(oldToNew.at(c.left));
+            cc.right = static_cast<std::uint16_t>(oldToNew.at(c.right));
+            info.particlePattern.molecularity.push_back(cc);
+        }
+        for (const auto& pair : rule.pattern.connected_to) {
+            const bool fPop = model.molecule_types.at(rule.pattern.nodes[pair.first].molecule_type).is_population;
+            const bool sPop = model.molecule_types.at(rule.pattern.nodes[pair.second].molecule_type).is_population;
+            if (fPop || sPop) { info.enabled = false; break; }
+            info.particlePattern.connected_to.push_back({oldToNew.at(pair.first), oldToNew.at(pair.second)});
+        }
+        if (!info.enabled) continue;
+        for (const auto& group : rule.pattern.interchangeable) {
+            bool anyPop = false;
+            std::vector<std::size_t> ng;
+            for (auto n : group) {
+                if (model.molecule_types.at(rule.pattern.nodes[n].molecule_type).is_population) anyPop = true;
+                else ng.push_back(oldToNew.at(n));
+            }
+            if (anyPop) { info.enabled = false; break; }
+            if (ng.size() > 1) info.particlePattern.interchangeable.push_back(std::move(ng));
+        }
+        mixedLumped[ri] = std::move(info);
+    }
+
     auto populationOnlyReactants = [&](const ExpandedRuleIR& rule) {
         return !rule.pattern.nodes.empty() &&
                std::all_of(rule.pattern.nodes.begin(), rule.pattern.nodes.end(), [&](const auto& node) {
                    return model.molecule_types.at(node.molecule_type).is_population;
                }) && rule.pattern.bonds.empty() && rule.filters.empty() && !rule.match_once && !rule.total_rate;
     };
-    auto populationReactantPropensity = [&](const ExpandedRuleIR& rule) {
-        std::map<TypeId, std::uint64_t> required;
-        for (const auto& node : rule.pattern.nodes) ++required[node.molecule_type];
+    auto populationCombinationFactor = [&](const std::map<TypeId, std::uint64_t>& required) {
         double comb = 1.0;
         for (const auto& [type, stoich] : required) {
             const std::uint64_t n = population_counts.at(type);
@@ -2069,6 +2154,11 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         }
         return comb;
     };
+    auto populationReactantPropensity = [&](const ExpandedRuleIR& rule) {
+        std::map<TypeId, std::uint64_t> required;
+        for (const auto& node : rule.pattern.nodes) ++required[node.molecule_type];
+        return populationCombinationFactor(required);
+    };
 
     const auto layout = RngLayout::exactSSA();
     double time = 0.0;
@@ -2076,6 +2166,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
     std::size_t selected_rule = 0;
     Embedding selected_match;
     bool selected_population_rule = false;
+    bool selected_mixed_lumped_rule = false;
     bool pending = false;
     for (const double sample : request.sample_times) {
         for (;;) {
@@ -2083,6 +2174,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                 std::vector<std::vector<Embedding>> matches;
                 std::vector<double> rulePropensities(model.expanded_rules.size(), 0.0);
                 std::vector<double> currentRates(model.expanded_rules.size(), 0.0);
+                std::vector<double> populationFactors(model.expanded_rules.size(), 1.0);
                 std::unordered_map<ObservableId, double> currentObservableValues;
                 double total = 0.0;
                 for (std::size_t index = 0; index < model.expanded_rules.size(); ++index) {
@@ -2106,7 +2198,78 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                     currentRates[index] = rate;
                     if (populationOnlyReactants(rule)) {
                         matches.emplace_back();
-                        const double prop = rate * populationReactantPropensity(rule);
+                        const double popFactor = populationReactantPropensity(rule);
+                        populationFactors[index] = popFactor;
+                        const double prop = rate * popFactor;
+                        rulePropensities[index] = prop;
+                        total += prop;
+                        continue;
+                    }
+                    if (mixedLumped[index].enabled) {
+                        const auto& info = mixedLumped[index];
+                        const double popFactor = populationCombinationFactor(info.popReactantCounts);
+                        populationFactors[index] = popFactor;
+                        if (popFactor <= 0.0) {
+                            matches.emplace_back();
+                            rulePropensities[index] = 0.0;
+                            continue;
+                        }
+                        auto rawMatches = matcher.enumerate(info.particlePattern, state);
+                        // Apply include/exclude reactant filters relative to particle reactant nodes.
+                        if (!rule.filters.empty()) {
+                            std::map<std::size_t, std::size_t> oldToNewParticle;
+                            for (std::size_t pi = 0; pi < info.particleReactantNodes.size(); ++pi)
+                                oldToNewParticle[info.particleReactantNodes[pi]] = pi;
+                            std::vector<Embedding> passedMatches;
+                            for (const auto& match : rawMatches) {
+                                bool matchPassed = true;
+                                for (const auto& filter : rule.filters) {
+                                    if (filter.products) continue;
+                                    // Map filter's reactant node offset back to original node index
+                                    // by finding which particle reactant node corresponds.
+                                    std::size_t origNode = filter.reactant_node_offset;
+                                    // If offset is not a direct particle node index in info, try identity.
+                                    auto itNode = oldToNewParticle.find(origNode);
+                                    if (itNode == oldToNewParticle.end()) continue;
+                                    const auto partId = match.particle(itNode->second);
+                                    const auto compId = state.complexId(partId);
+                                    bool anyMatched = false;
+                                    for (const auto& fPat : filter.patterns) {
+                                        const auto fMatches = matcher.enumerate(fPat, state);
+                                        for (const auto& fm : fMatches) {
+                                            if (!fm.particles().empty() && state.complexId(fm.particle(0)) == compId) {
+                                                anyMatched = true;
+                                                break;
+                                            }
+                                        }
+                                        if (anyMatched) break;
+                                    }
+                                    if (filter.include && !anyMatched) { matchPassed = false; break; }
+                                    if (!filter.include && anyMatched) { matchPassed = false; break; }
+                                }
+                                if (matchPassed) passedMatches.push_back(match);
+                            }
+                            rawMatches = std::move(passedMatches);
+                        }
+                        if (rule.match_once) {
+                            std::vector<Embedding> uniqueMatches;
+                            std::set<std::vector<std::uint32_t>> seenParticleSets;
+                            for (const auto& match : rawMatches) {
+                                std::vector<std::uint32_t> key;
+                                key.reserve(match.particles().size());
+                                for (const auto& p : match.particles()) key.push_back(p.index);
+                                std::sort(key.begin(), key.end());
+                                if (seenParticleSets.insert(key).second) uniqueMatches.push_back(match);
+                            }
+                            rawMatches = std::move(uniqueMatches);
+                        }
+                        matches.push_back(std::move(rawMatches));
+                        double prop = 0.0;
+                        if (rule.total_rate) {
+                            prop = matches.back().empty() ? 0.0 : rate * popFactor;
+                        } else {
+                            prop = rate * popFactor * static_cast<double>(matches.back().size());
+                        }
                         rulePropensities[index] = prop;
                         total += prop;
                         continue;
@@ -2185,9 +2348,38 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                             if (choice < 0.0) {
                                 selected_rule = index;
                                 selected_population_rule = true;
+                                selected_mixed_lumped_rule = false;
                                 found = true;
                                 break;
                             }
+                            continue;
+                        }
+                        if (mixedLumped[index].enabled) {
+                            if (rule.total_rate) {
+                                choice -= rulePropensities[index];
+                                if (choice < 0.0) {
+                                    selected_rule = index;
+                                    selected_population_rule = false;
+                                    selected_mixed_lumped_rule = true;
+                                    selected_match = matches[index].empty() ? Embedding{} : matches[index].front();
+                                    found = true;
+                                    break;
+                                }
+                                continue;
+                            }
+                            const double matchWeight = currentRates[index] * populationFactors[index];
+                            for (const auto& match : matches[index]) {
+                                choice -= matchWeight;
+                                if (choice < 0.0) {
+                                    selected_rule = index;
+                                    selected_match = match;
+                                    selected_population_rule = false;
+                                    selected_mixed_lumped_rule = true;
+                                    found = true;
+                                    break;
+                                }
+                            }
+                            if (found) break;
                             continue;
                         }
                         const double matchWeight = rule.total_rate
@@ -2199,6 +2391,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                                 selected_rule = index;
                                 selected_match = match;
                                 selected_population_rule = false;
+                                selected_mixed_lumped_rule = false;
                                 found = true;
                                 break;
                             }
@@ -2223,13 +2416,6 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                 for (const auto& [type, stoich] : required) {
                     population_counts.at(type) -= stoich;
                 }
-                // Apply product-creation part of transformation for population-only reactants.
-                // Population reactant nodes have no particle embeddings; skip destroy ops on them.
-                MatchEmbedding match_embedding;
-                const auto& xform = compiled_transformations[selected_rule];
-                // Build operations manually: skip Destroy/DestroyComplex on reactant nodes (population consumed via counts)
-                // and execute creates/bonds/state sets. We need access to internal ops - not exposed.
-                // Fallback: create products by interpreting actions directly.
                 std::map<PatternNodeId, CreatedMoleculeId> node_to_created;
                 std::map<PatternNodeId, TypeId> created_types;
                 std::map<PatternNodeId, std::vector<std::pair<std::uint32_t, std::int32_t>>> created_states;
@@ -2249,10 +2435,17 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                 }
                 std::map<CreatedMoleculeId, ParticleId> created_particles;
                 for (const auto& [node, cid] : node_to_created) {
+                    const TypeId type = created_types[node];
+                    if (model.molecule_types.at(type).is_population) {
+                        if (created_states.count(node)) refuse("stateful population products are not supported");
+                        if (created_compartments.count(node)) refuse("compartmentalized population products are not supported");
+                        population_counts.at(type) += 1;
+                        continue;
+                    }
                     CompartmentId comp = 0;
                     auto cit = created_compartments.find(node);
                     if (cit != created_compartments.end()) comp = cit->second;
-                    const auto pid = state.create(created_types[node], comp);
+                    const auto pid = state.create(type, comp);
                     created_particles[cid] = pid;
                     auto sit = created_states.find(node);
                     if (sit != created_states.end()) {
@@ -2264,23 +2457,214 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                     if (action.kind == ActionKind::Bind) {
                         const bool first_created = action.target_node >= rule.pattern.nodes.size();
                         const bool second_created = action.partner_node >= rule.pattern.nodes.size();
-                        if (first_created && second_created) {
-                            state.bind(created_particles.at(node_to_created.at(action.target_node)),
-                                       static_cast<std::uint16_t>(action.site),
-                                       created_particles.at(node_to_created.at(action.partner_node)),
-                                       static_cast<std::uint16_t>(action.partner_site));
-                        } else {
-                            // Mixed population-reactant/product binding not yet supported in this path
+                        if (!(first_created && second_created))
                             refuse("unsupported mixed population-reactant binding in lumped rule");
-                        }
-                    } else if (action.kind == ActionKind::Destroy || action.kind == ActionKind::DestroyComplex) {
-                        // population reactant consumption handled by counts
-                    } else if (action.kind == ActionKind::Create || action.kind == ActionKind::SetSiteState || action.kind == ActionKind::SetCompartment) {
-                        // handled above
+                        const auto c1 = node_to_created.at(action.target_node);
+                        const auto c2 = node_to_created.at(action.partner_node);
+                        if (!created_particles.count(c1) || !created_particles.count(c2))
+                            refuse("population-particle binding in lumped rule is not supported");
+                        state.bind(created_particles.at(c1), static_cast<std::uint16_t>(action.site),
+                                   created_particles.at(c2), static_cast<std::uint16_t>(action.partner_site));
+                    } else if (action.kind == ActionKind::Destroy || action.kind == ActionKind::DestroyComplex ||
+                               action.kind == ActionKind::Create || action.kind == ActionKind::SetSiteState ||
+                               action.kind == ActionKind::SetCompartment) {
                     } else {
                         refuse("unsupported action in population-only lumped rule");
                     }
                 }
+                if (state.liveCount() > request.max_particles) refuse("particle budget exhausted");
+                ++output.event_count;
+                pending = false;
+                continue;
+            }
+            if (selected_mixed_lumped_rule) {
+                const auto& info = mixedLumped[selected_rule];
+                for (const auto& [type, stoich] : info.popReactantCounts) {
+                    if (population_counts.at(type) < stoich) refuse("population underflow");
+                }
+                for (const auto& [type, stoich] : info.popReactantCounts) {
+                    population_counts.at(type) -= stoich;
+                }
+
+                MatchEmbedding full_embedding;
+                for (std::size_t pi = 0; pi < info.particleReactantNodes.size() && pi < selected_match.particles().size(); ++pi) {
+                    full_embedding.bindNode(info.particleReactantNodes[pi], selected_match.particle(pi));
+                }
+
+                std::map<PatternNodeId, CreatedMoleculeId> node_to_created;
+                std::map<PatternNodeId, TypeId> created_types;
+                std::map<PatternNodeId, std::vector<std::pair<std::uint32_t, std::int32_t>>> created_states;
+                std::map<PatternNodeId, CompartmentId> created_compartments;
+                CreatedMoleculeId next_created = 0;
+                for (const auto& action : rule.actions) {
+                    if (action.kind == ActionKind::Create) {
+                        if (!node_to_created.count(action.target_node)) {
+                            node_to_created[action.target_node] = next_created++;
+                            created_types[action.target_node] = action.molecule_type;
+                        }
+                    } else if (action.kind == ActionKind::SetSiteState && action.target_node >= rule.pattern.nodes.size()) {
+                        created_states[action.target_node].push_back({action.site, action.value});
+                    } else if (action.kind == ActionKind::SetCompartment && action.target_node >= rule.pattern.nodes.size()) {
+                        created_compartments[action.target_node] = static_cast<CompartmentId>(action.value);
+                    }
+                }
+                std::map<CreatedMoleculeId, ParticleId> created_particles;
+                for (const auto& [node, cid] : node_to_created) {
+                    const TypeId type = created_types[node];
+                    if (model.molecule_types.at(type).is_population) {
+                        if (created_states.count(node)) refuse("stateful population products are not supported");
+                        if (created_compartments.count(node)) refuse("compartmentalized population products are not supported");
+                        population_counts.at(type) += 1;
+                        continue;
+                    }
+                    CompartmentId comp = 0;
+                    auto cit = created_compartments.find(node);
+                    if (cit != created_compartments.end()) comp = cit->second;
+                    const auto pid = state.create(type, comp);
+                    created_particles[cid] = pid;
+                    auto sit = created_states.find(node);
+                    if (sit != created_states.end()) {
+                        for (const auto& [site, val] : sit->second)
+                            state.setSiteState(pid, static_cast<std::uint16_t>(site), val);
+                    }
+                }
+
+                auto isPopReactant = [&](PatternNodeId node) {
+                    return node < rule.pattern.nodes.size() &&
+                           model.molecule_types.at(rule.pattern.nodes[node].molecule_type).is_population;
+                };
+                auto resolveEndpoint = [&](PatternNodeId node, std::uint16_t site, ParticleId& pid, std::uint16_t& outSite) -> bool {
+                    if (node < rule.pattern.nodes.size()) {
+                        if (isPopReactant(node)) return false;
+                        try { pid = full_embedding.particle(node); } catch (...) { return false; }
+                        outSite = site;
+                        return state.alive(pid);
+                    }
+                    auto it = node_to_created.find(node);
+                    if (it == node_to_created.end()) return false;
+                    auto pit = created_particles.find(it->second);
+                    if (pit == created_particles.end()) return false; // population product
+                    pid = pit->second;
+                    outSite = site;
+                    return state.alive(pid);
+                };
+
+                for (const auto& action : rule.actions) {
+                    switch (action.kind) {
+                    case ActionKind::Create:
+                    case ActionKind::SetCompartment:
+                        break;
+                    case ActionKind::SetSiteState: {
+                        if (action.target_node < rule.pattern.nodes.size()) {
+                            if (isPopReactant(action.target_node)) refuse("state changes on population reactants are not supported");
+                            try {
+                                const auto pid = full_embedding.particle(action.target_node);
+                                if (state.alive(pid)) state.setSiteState(pid, action.site, action.value);
+                            } catch (...) { refuse("invalid embedding for SetSiteState"); }
+                        } else {
+                            auto it = node_to_created.find(action.target_node);
+                            if (it != node_to_created.end()) {
+                                auto pit = created_particles.find(it->second);
+                                if (pit != created_particles.end() && state.alive(pit->second))
+                                    state.setSiteState(pit->second, action.site, action.value);
+                            }
+                        }
+                        break;
+                    }
+                    case ActionKind::Unbind: {
+                        ParticleId a,b; std::uint16_t sa,sb;
+                        if (!resolveEndpoint(action.target_node, action.site, a, sa) ||
+                            !resolveEndpoint(action.partner_node, action.partner_site, b, sb)) {
+                            if (isPopReactant(action.target_node) || isPopReactant(action.partner_node))
+                                refuse("bonds involving lumped population reactants are not supported");
+                            refuse("invalid endpoints for Unbind");
+                        }
+                        if (state.bound(a, sa)) state.unbind(a, sa);
+                        break;
+                    }
+                    case ActionKind::Bind: {
+                        ParticleId a,b; std::uint16_t sa,sb;
+                        if (!resolveEndpoint(action.target_node, action.site, a, sa) ||
+                            !resolveEndpoint(action.partner_node, action.partner_site, b, sb)) {
+                            if (isPopReactant(action.target_node) || isPopReactant(action.partner_node))
+                                refuse("bonds involving lumped population reactants are not supported");
+                            refuse("invalid endpoints for Bind");
+                        }
+                        state.bind(a, sa, b, sb);
+                        break;
+                    }
+                    case ActionKind::Destroy: {
+                        if (isPopReactant(action.target_node)) break;
+                        try {
+                            const auto pid = full_embedding.particle(action.target_node);
+                            if (state.alive(pid)) state.destroy(pid);
+                        } catch (...) { refuse("invalid embedding for Destroy"); }
+                        break;
+                    }
+                    case ActionKind::DestroyComplex: {
+                        if (isPopReactant(action.target_node)) break; // lumped count consumed above
+                        try {
+                            const auto root = full_embedding.particle(action.target_node);
+                            if (state.alive(root)) {
+                                std::vector<ParticleId> members;
+                                for (const auto particle : state.liveParticles())
+                                    if (state.sameComplex(root, particle)) members.push_back(particle);
+                                for (const auto particle : members) if (state.alive(particle)) state.destroy(particle);
+                            }
+                        } catch (...) { refuse("invalid embedding for DestroyComplex"); }
+                        break;
+                    }
+                    case ActionKind::MovePosition:
+                        refuse("MovePosition not supported");
+                    }
+                }
+                for (const auto& action : rule.actions) {
+                    if (action.kind == ActionKind::SetCompartment && action.target_node < rule.pattern.nodes.size()) {
+                        if (isPopReactant(action.target_node)) refuse("compartment changes on population reactants are not supported");
+                        try {
+                            const auto pid = full_embedding.particle(action.target_node);
+                            if (state.alive(pid)) state.setCompartment(pid, static_cast<CompartmentId>(action.value));
+                        } catch (...) {}
+                    }
+                }
+
+                if (rule.move_connected) {
+                    std::vector<CompartmentId> beforeCompartments(info.particleReactantNodes.size(), 0);
+                    std::set<ParticleId> explicitParticles;
+                    for (std::size_t i = 0; i < info.particleReactantNodes.size(); ++i) {
+                        try {
+                            const auto p = full_embedding.particle(info.particleReactantNodes[i]);
+                            explicitParticles.insert(p);
+                            if (state.alive(p)) beforeCompartments[i] = state.compartment(p);
+                        } catch (...) {}
+                    }
+                    for (std::size_t i = 0; i < info.particleReactantNodes.size(); ++i) {
+                        ParticleId p{};
+                        try { p = full_embedding.particle(info.particleReactantNodes[i]); } catch (...) { continue; }
+                        if (!state.alive(p)) continue;
+                        const auto sourceComp = beforeCompartments[i];
+                        const auto targetComp = state.compartment(p);
+                        if (targetComp == sourceComp) continue;
+                        std::queue<ParticleId> q;
+                        std::set<ParticleId> visited;
+                        q.push(p); visited.insert(p);
+                        while (!q.empty()) {
+                            const auto curr = q.front(); q.pop();
+                            const auto& type = model.molecule_types.at(state.type(curr));
+                            for (std::size_t s = 0; s < type.sites.size(); ++s) {
+                                const auto site = static_cast<std::uint16_t>(s);
+                                if (!state.bound(curr, site)) continue;
+                                const auto partner = state.bond(curr, site).particle;
+                                if (!visited.insert(partner).second) continue;
+                                if (!explicitParticles.count(partner) && state.alive(partner) && state.compartment(partner) == sourceComp) {
+                                    state.setCompartment(partner, targetComp);
+                                    q.push(partner);
+                                }
+                            }
+                        }
+                    }
+                }
+
                 if (state.liveCount() > request.max_particles) refuse("particle budget exhausted");
                 ++output.event_count;
                 pending = false;
