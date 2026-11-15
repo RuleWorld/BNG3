@@ -2478,7 +2478,9 @@ def _rate_for_reaction(
     rate_rule_variables.update(
         standardize_name(variable) for variable in synthetic_rate_rule_variables
     )
-    rate_rule_variables.update(str(variable) for variable in synthetic_rate_rule_variables)
+    rate_rule_variables.update(
+        str(variable) for variable in synthetic_rate_rule_variables
+    )
     event_parameter_targets = {
         standardize_name(str(assignment.variable))
         for event in model.events
