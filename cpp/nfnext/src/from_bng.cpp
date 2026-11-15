@@ -866,19 +866,33 @@ bool appendDeletionActions(
 
     // A simultaneous unmatched deletion + creation is the legacy molecule-
     // replacement case. BioNetGen's mature network engine suppresses orphaned
-    // context for that case, while NFIR v5 only has explicit molecule/complex
-    // destruction. Refuse to guess until that cleanup contract is represented.
-    bool hasUnmappedReactant = false;
+    // context when a molecule is replaced inside a surviving complex without an
+    // explicit cleanup program. NFIR v5 has no such implicit cleanup.
+    //
+    // Allow the case where every unmapped reactant molecule belongs to a reactant
+    // pattern with no mapped/surviving molecules (the whole pattern is being
+    // removed or replaced explicitly). In that situation deletion is fully
+    // determined by explicit mutations/actions and there is no surviving context
+    // that could be orphaned.
+    bool hasOrphanRiskUnmappedReactant = false;
     for (std::size_t patternIndex = 0; patternIndex < direction.reactantPatterns.size(); ++patternIndex) {
         const auto& pattern = direction.reactantPatterns[patternIndex];
+        bool patternHasMapped = false;
+        bool patternHasUnmapped = false;
         for (std::size_t moleculeIndex = 0; moleculeIndex < pattern.molecules().size(); ++moleculeIndex) {
             const bng::compile::PatternMoleculeRef ref{
                 BngPatternSide::Reactant, patternIndex, moleculeIndex};
             const auto node = nodeFor(ref, reactants);
-            if (node && nodes.mappedReactants.count(*node) == 0) hasUnmappedReactant = true;
+            if (!node) continue;
+            if (nodes.mappedReactants.count(*node) != 0) patternHasMapped = true;
+            else patternHasUnmapped = true;
+        }
+        if (patternHasUnmapped && patternHasMapped) {
+            hasOrphanRiskUnmappedReactant = true;
+            break;
         }
     }
-    if (!deleteMolecules && hasUnmappedReactant && !nodes.createdProducts.empty()) {
+    if (!deleteMolecules && hasOrphanRiskUnmappedReactant && !nodes.createdProducts.empty()) {
         issue(result, BngLoweringSeverity::Error, entity,
               "simultaneous molecule replacement requires orphan-context semantics "
               "not yet representable in NFIR v5");
@@ -1894,10 +1908,15 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             }
         }
     }
+    struct ObservableTermDef {
+        PatternIR pattern;
+        std::string relation;
+        int quantity = 0;
+    };
     struct ObservableDef {
         std::string name;
         bng::compile::ObservableKind kind;
-        std::vector<PatternIR> terms;
+        std::vector<ObservableTermDef> terms;
     };
     std::vector<ObservableDef> observables;
     BngExecutionResult output;
@@ -1907,14 +1926,13 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             observable.kind != bng::compile::ObservableKind::Species)
             refuse("only Molecules and Species observables");
         if (observable.terms.empty()) refuse("empty observable terms");
-        std::vector<PatternIR> terms;
+        std::vector<ObservableTermDef> terms;
         for (const auto& term : observable.terms) {
-            if (!term.relation.empty()) refuse("observable relations not supported");
             BngLoweringResult validation;
             const auto pattern = flattenReactants({term.pattern}, validation, observable.name);
             if (!pattern || !validation.ok())
                 refuse("invalid observable pattern");
-            terms.push_back(pattern->pattern);
+            terms.push_back({pattern->pattern, term.relation, term.quantity});
         }
         if (std::find(output.columns.begin(), output.columns.end(), observable.name) !=
             output.columns.end()) refuse("duplicate output column names");
@@ -1968,18 +1986,25 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         const auto& obs = observables[it->second];
         double value = 0.0;
         if (obs.kind == bng::compile::ObservableKind::Molecules) {
-            for (const auto& term : obs.terms)
-                value += matcher.enumerate(term, state).size();
-        } else if (obs.kind == bng::compile::ObservableKind::Species) {
-            std::set<std::uint32_t> matched_complexes;
             for (const auto& term : obs.terms) {
-                for (const auto& match : matcher.enumerate(term, state)) {
-                    if (!match.particles().empty()) {
-                        matched_complexes.insert(state.complexId(match.particle(0)));
-                    }
+                const auto count = matcher.enumerate(term.pattern, state).size();
+                if (term.relation.empty()) value += static_cast<double>(count);
+                else if (bng::compile::observablePatternCountMatches(count, term.relation, term.quantity))
+                    value += 1.0;
+            }
+        } else if (obs.kind == bng::compile::ObservableKind::Species) {
+            std::unordered_map<std::uint32_t, std::size_t> complex_counts;
+            for (const auto& term : obs.terms) {
+                complex_counts.clear();
+                for (const auto& match : matcher.enumerate(term.pattern, state)) {
+                    if (!match.particles().empty())
+                        ++complex_counts[state.complexId(match.particle(0))];
+                }
+                for (const auto& [_, count] : complex_counts) {
+                    if (bng::compile::observablePatternCountMatches(count, term.relation, term.quantity))
+                        value += 1.0;
                 }
             }
-            value = static_cast<double>(matched_complexes.size());
         }
         return value;
     };
@@ -2175,18 +2200,27 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         for (const auto& obs : observables) {
             double value = 0.0;
             if (obs.kind == bng::compile::ObservableKind::Molecules) {
-                for (const auto& term : obs.terms)
-                    value += matcher.enumerate(term, state).size();
-            } else if (obs.kind == bng::compile::ObservableKind::Species) {
-                std::set<std::uint32_t> matched_complexes;
                 for (const auto& term : obs.terms) {
-                    for (const auto& match : matcher.enumerate(term, state)) {
-                        if (!match.particles().empty()) {
-                            matched_complexes.insert(state.complexId(match.particle(0)));
-                        }
+                    const auto count = matcher.enumerate(term.pattern, state).size();
+                    if (term.relation.empty()) value += static_cast<double>(count);
+                    else if (bng::compile::observablePatternCountMatches(count, term.relation, term.quantity))
+                        value += 1.0;
+                }
+            } else if (obs.kind == bng::compile::ObservableKind::Species) {
+                // Evaluate per-complex match counts so observable relations apply to
+                // the number of embeddings within each complex/species instance.
+                std::unordered_map<std::uint32_t, std::size_t> complex_counts;
+                for (const auto& term : obs.terms) {
+                    complex_counts.clear();
+                    for (const auto& match : matcher.enumerate(term.pattern, state)) {
+                        if (!match.particles().empty())
+                            ++complex_counts[state.complexId(match.particle(0))];
+                    }
+                    for (const auto& [_, count] : complex_counts) {
+                        if (bng::compile::observablePatternCountMatches(count, term.relation, term.quantity))
+                            value += 1.0;
                     }
                 }
-                value = static_cast<double>(matched_complexes.size());
             }
             row.push_back(value);
         }
