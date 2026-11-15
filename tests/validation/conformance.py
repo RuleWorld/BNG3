@@ -425,21 +425,52 @@ def _model(name, source, args, directory, reference, env):
             ],
             env=env,
         )
+        caps = {
+            "artifact-validity": ["export.net"],
+            "species-count": ["network.expansion"],
+            "species-identity": ["core.graph-identity", "network.compartments"],
+            "initial-amounts": ["interface.cli-actions", "export.net"],
+            "reaction-count": ["network.expansion"],
+            "reaction-stoichiometry": ["network.expansion"],
+            "reaction-multiplicity": ["network.rule-multiplicity"],
+            "reaction-rates": ["compiler.rate-laws"],
+            "observable-names": ["network.observables"],
+            "observable-weights": ["observables.counting-modes"],
+        }
         if receipt["status"] != "PASS":
+            is_ref_failure = label == "reference" and receipt["status"] == "FAIL"
+            agg_status = "NOT_TESTED" if is_ref_failure else receipt["status"]
+            agg_app = "not-applicable" if is_ref_failure else None
+            child_ids = [f"{name}:network:{check}" for check in caps]
             rows.append(
                 _result(
                     name + ":network",
                     "reference-network" if label == "reference" else "bounded-network",
-                    (
-                        "HARNESS_ERROR"
-                        if label == "reference" and receipt["status"] == "FAIL"
-                        else receipt["status"]
-                    ),
+                    agg_status,
                     receipt["detail"] or f"{label} execution failed; inspect logs",
                     receipt=str(target / "command.json"),
-                    **common,
+                    aggregate=True,
+                    child_ids=child_ids,
+                    **({**common, "applicability": agg_app} if agg_app else common),
                 )
             )
+            for check, cap in caps.items():
+                child_row = dict(
+                    id=name + ":network:" + check,
+                    stage="network." + check,
+                    model=name,
+                    reference="bionetgen",
+                    question="legacy-agreement",
+                    capabilities=cap,
+                    status="NOT_TESTED",
+                    detail=receipt["detail"] or f"{label} execution failed",
+                    blocked_by=[name + ":network"],
+                    evidence=[],
+                    receipts=[str(target / "command.json")],
+                )
+                if agg_app:
+                    child_row["applicability"] = agg_app
+                rows.append(child_row)
             return rows
     ref_net = work / "reference" / (source.stem + ".net")
     raw_test_net = work / "subject" / (source.stem + ".net")
@@ -453,15 +484,35 @@ def _model(name, source, args, directory, reference, env):
     ref = parse_net(ref_net)
     test = parse_net(test_net)
     if ref is None or test is None:
+        child_ids = [f"{name}:network:{check}" for check in caps]
         rows.append(
             _result(
                 name + ":network",
                 "bounded-network",
                 "HARNESS_ERROR",
                 "malformed .net output",
+                aggregate=True,
+                child_ids=child_ids,
                 **common,
             )
         )
+        for check, cap in caps.items():
+            rows.append(
+                dict(
+                    id=name + ":network:" + check,
+                    stage="network." + check,
+                    model=name,
+                    reference="bionetgen",
+                    question="legacy-agreement",
+                    capabilities=cap,
+                    status="HARNESS_ERROR",
+                    detail="malformed .net output",
+                    blocked_by=[name + ":network"],
+                    evidence=[],
+                    receipts=[],
+                )
+            )
+        return rows
     else:
         tfun_xml = (
             work / "reference" / f"{source.stem}.xml" if has_legacy_tfun else None

@@ -1411,9 +1411,10 @@ engine::GeneratedNetwork networkFromParsedData(
             idxStr, reactants, products, rateStr, 1.0, {}, std::nullopt,
             std::nullopt, false, absoluteFlux));
     }
-    // The structured reader emits one exact indexed group per SBML species.
-    // Flat-reader assignment groups are not generally exact expressions.
-    if (importStructuredObservables) addNetObservables(parseResult, model);
+    // Import indexed groups from SBML reader parse result into model observables.
+    if (importStructuredObservables || !parseResult.rawGroupLines.empty()) {
+        addNetObservables(parseResult, model);
+    }
     return loadedNetwork;
 }
 
