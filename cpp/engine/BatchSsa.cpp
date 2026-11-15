@@ -15,6 +15,46 @@ namespace bng::engine {
 
 namespace {
 
+// Centered online moments and pairwise merging avoid subtracting two large,
+// nearly equal raw moments when the ensemble has a small spread.
+struct RunningMoments {
+    std::size_t count = 0;
+    double mean = 0.0;
+    double centeredSumSquares = 0.0;
+
+    void add(double value) {
+        ++count;
+        const double delta = value - mean;
+        mean += delta / static_cast<double>(count);
+        centeredSumSquares += delta * (value - mean);
+    }
+
+    void merge(const RunningMoments& other) {
+        if (other.count == 0) return;
+        if (count == 0) {
+            *this = other;
+            return;
+        }
+        const std::size_t combinedCount = count + other.count;
+        const double delta = other.mean - mean;
+        const double otherWeight = static_cast<double>(other.count) / combinedCount;
+        centeredSumSquares += other.centeredSumSquares
+            + delta * delta * static_cast<double>(count) * otherWeight;
+        mean += delta * otherWeight;
+        count = combinedCount;
+    }
+
+    double average() const {
+        return count > 0 ? mean : std::numeric_limits<double>::quiet_NaN();
+    }
+
+    double standardDeviation() const {
+        return count > 0
+            ? std::sqrt(std::max(0.0, centeredSumSquares / count))
+            : 0.0;
+    }
+};
+
 int32_t checkedPopulation(double population) {
     if (!std::isfinite(population)
         || population < std::numeric_limits<int32_t>::min()
@@ -66,18 +106,14 @@ void fillDoubleFields(BatchSsaMetrics& m) {
         // We only have final-state species — build a single time-point vector.
         m.meanSpecies.assign(1, std::vector<double>(S, 0.0));
         m.stdSpecies.assign(1, std::vector<double>(S, 0.0));
-        double N = static_cast<double>(m.batchSize);
-        std::vector<double> sum(S, 0.0), sumSq(S, 0.0);
+        std::vector<RunningMoments> moments(S);
         for (std::size_t b = 0; b < m.batchSize; ++b)
             for (std::size_t s = 0; s < S; ++s) {
-                double v = static_cast<double>(m.finalSpecies[b * S + s]);
-                sum[s]   += v;
-                sumSq[s] += v * v;
+                moments[s].add(static_cast<double>(m.finalSpecies[b * S + s]));
             }
         for (std::size_t s = 0; s < S; ++s) {
-            double mean = sum[s] / N;
-            m.meanSpecies[0][s] = mean;
-            m.stdSpecies[0][s]  = std::sqrt(std::max(0.0, sumSq[s] / N - mean * mean));
+            m.meanSpecies[0][s] = moments[s].average();
+            m.stdSpecies[0][s] = moments[s].standardDeviation();
         }
     }
 }
@@ -264,8 +300,8 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateSingleWorker(const BatchSsaOptions
     metrics.finalSpecies.resize(options.batchSize * numSpecies, 0);
     metrics.finalObservables.resize(options.batchSize * numObs, 0.0f);
 
-    std::vector<std::vector<double>> sumObs(numPoints, std::vector<double>(numObs, 0.0));
-    std::vector<std::vector<double>> sumSqObs(numPoints, std::vector<double>(numObs, 0.0));
+    std::vector<std::vector<RunningMoments>> moments(
+        numPoints, std::vector<RunningMoments>(numObs));
 
     auto tStartSim = std::chrono::high_resolution_clock::now();
 
@@ -308,8 +344,7 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateSingleWorker(const BatchSsaOptions
         for (std::size_t step = 0; step < numPoints && step < res.observables.size(); ++step) {
             for (std::size_t g = 0; g < numObs && g < res.observables[step].size(); ++g) {
                 double val = res.observables[step][g];
-                sumObs[step][g] += val;
-                sumSqObs[step][g] += val * val;
+                moments[step][g].add(val);
                 if (step == numPoints - 1) {
                     metrics.finalObservables[b * numObs + g] = static_cast<float>(val);
                 }
@@ -335,13 +370,10 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateSingleWorker(const BatchSsaOptions
     // Compute means and standard deviations
     metrics.observableMeans.resize(numPoints, std::vector<float>(numObs, 0.0f));
     metrics.observableStdDevs.resize(numPoints, std::vector<float>(numObs, 0.0f));
-    double N = static_cast<double>(options.batchSize);
     for (std::size_t step = 0; step < numPoints; ++step) {
         for (std::size_t g = 0; g < numObs; ++g) {
-            double mean = sumObs[step][g] / N;
-            double variance = std::max(0.0, (sumSqObs[step][g] / N) - (mean * mean));
-            metrics.observableMeans[step][g] = static_cast<float>(mean);
-            metrics.observableStdDevs[step][g] = static_cast<float>(std::sqrt(variance));
+            metrics.observableMeans[step][g] = static_cast<float>(moments[step][g].average());
+            metrics.observableStdDevs[step][g] = static_cast<float>(moments[step][g].standardDeviation());
         }
     }
     detail::fillDoubleFields(metrics);
@@ -402,8 +434,7 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
 
     struct WorkerResult {
         uint64_t workerEvents = 0;
-        std::vector<std::vector<double>> sumObs;
-        std::vector<std::vector<double>> sumSqObs;
+        std::vector<std::vector<RunningMoments>> moments;
         std::vector<float> timePoints;
     };
 
@@ -422,8 +453,7 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
 
         futures.push_back(std::async(std::launch::async, [this, &options, startIdx, endIdx, numPoints, numObs, numSpecies, &metrics]() {
             WorkerResult wRes;
-            wRes.sumObs.resize(numPoints, std::vector<double>(numObs, 0.0));
-            wRes.sumSqObs.resize(numPoints, std::vector<double>(numObs, 0.0));
+            wRes.moments.resize(numPoints, std::vector<RunningMoments>(numObs));
             OdeIntegrator integrator(model_, network_);
 
             OdeOptions odeOpts;
@@ -459,8 +489,7 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
                 for (std::size_t step = 0; step < numPoints && step < res.observables.size(); ++step) {
                     for (std::size_t g = 0; g < numObs && g < res.observables[step].size(); ++g) {
                         double val = res.observables[step][g];
-                        wRes.sumObs[step][g] += val;
-                        wRes.sumSqObs[step][g] += val * val;
+                        wRes.moments[step][g].add(val);
                         if (step == numPoints - 1) {
                             metrics.finalObservables[b * numObs + g] = static_cast<float>(val);
                         }
@@ -472,8 +501,8 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
     }
 
     uint64_t totalEvents = 0;
-    std::vector<std::vector<double>> totalSumObs(numPoints, std::vector<double>(numObs, 0.0));
-    std::vector<std::vector<double>> totalSumSqObs(numPoints, std::vector<double>(numObs, 0.0));
+    std::vector<std::vector<RunningMoments>> moments(
+        numPoints, std::vector<RunningMoments>(numObs));
 
     for (auto& f : futures) {
         WorkerResult wRes = f.get();
@@ -483,8 +512,7 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
         }
         for (std::size_t step = 0; step < numPoints; ++step) {
             for (std::size_t g = 0; g < numObs; ++g) {
-                totalSumObs[step][g] += wRes.sumObs[step][g];
-                totalSumSqObs[step][g] += wRes.sumSqObs[step][g];
+                moments[step][g].merge(wRes.moments[step][g]);
             }
         }
     }
@@ -508,13 +536,10 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
 
     metrics.observableMeans.resize(numPoints, std::vector<float>(numObs, 0.0f));
     metrics.observableStdDevs.resize(numPoints, std::vector<float>(numObs, 0.0f));
-    double N = static_cast<double>(options.batchSize);
     for (std::size_t step = 0; step < numPoints; ++step) {
         for (std::size_t g = 0; g < numObs; ++g) {
-            double mean = totalSumObs[step][g] / N;
-            double variance = std::max(0.0, (totalSumSqObs[step][g] / N) - (mean * mean));
-            metrics.observableMeans[step][g] = static_cast<float>(mean);
-            metrics.observableStdDevs[step][g] = static_cast<float>(std::sqrt(variance));
+            metrics.observableMeans[step][g] = static_cast<float>(moments[step][g].average());
+            metrics.observableStdDevs[step][g] = static_cast<float>(moments[step][g].standardDeviation());
         }
     }
     detail::fillDoubleFields(metrics);
