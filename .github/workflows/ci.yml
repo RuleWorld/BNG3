@@ -717,6 +717,8 @@ jobs:
       JAX_PLATFORMS: cpu
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - uses: actions/setup-python@v5
         with:
@@ -733,7 +735,7 @@ jobs:
       - name: Verify installed package identity
         run: python scripts/ci/check_python_package_identity.py
         env:
-          BNG3_SOURCE_REVISION: ${{ github.sha }}
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
           BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
       - name: Require optional dependencies and CPU device
@@ -752,11 +754,19 @@ jobs:
 
       - name: Validate independent issue-473 JAX release acceptance
         run: >-
-          python -m pytest
-          --confcutdir=tests/validation/release/cases/issue-473
-          -q tests/validation/release/cases/issue-473/
+          python scripts/ci/record_jax_release.py
+          --output "$RUNNER_TEMP/bng3-jax-release/report.json"
+          --source-revision "${{ github.event.pull_request.head.sha || github.sha }}"
+          --summary-file "$GITHUB_STEP_SUMMARY"
         env:
           JAX_ENABLE_X64: "true"
+
+      - name: Upload issue-473 JAX release report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bng3-jax-release-${{ github.event_name }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/bng3-jax-release/report.json
 
   python-test:
     name: Python ${{ matrix.python-version }} (${{ matrix.os }})
