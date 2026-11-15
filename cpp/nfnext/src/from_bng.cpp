@@ -1842,6 +1842,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
     if (request.max_particles > std::numeric_limits<std::uint32_t>::max())
         refuse("particle budget exceeds native index capacity");
     GenericGraphState state(model);
+    std::vector<std::uint64_t> population_counts(model.molecule_types.size(), 0);
     for (const auto& seed : source.seeds()) {
         const auto amount = constantExpression(seed.amount, source);
         if (seed.constant || seed.declaredUnit ||
@@ -1865,6 +1866,17 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         if (!pattern || !validation.ok()) refuse("seeds require valid patterns");
 
         const auto& pat = pattern->pattern;
+        const bool is_pure_population_seed =
+            pat.nodes.size() == 1 && pat.bonds.empty() &&
+            model.molecule_types.at(pat.nodes.front().molecule_type).is_population &&
+            pat.nodes.front().constraints.empty();
+        if (is_pure_population_seed) {
+            const auto count = static_cast<std::uint64_t>(*amount);
+            const auto type_id = pat.nodes.front().molecule_type;
+            population_counts.at(type_id) += count;
+            continue;
+        }
+
         for (std::size_t nodeIdx = 0; nodeIdx < pat.nodes.size(); ++nodeIdx) {
             const auto& node = pat.nodes[nodeIdx];
             const auto& type = model.molecule_types.at(node.molecule_type);
