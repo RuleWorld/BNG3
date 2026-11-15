@@ -1714,6 +1714,7 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
         MoleculeTypeIR type;
         type.id = static_cast<TypeId>(molecule.id.value());
         type.name = molecule.name;
+        type.is_population = molecule.population;
         type.sites.reserve(molecule.components.size());
         for (const auto& component : molecule.components)
             type.sites.push_back(SiteSpec{component.name, component.stateNames});
