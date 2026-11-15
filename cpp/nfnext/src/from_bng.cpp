@@ -3,6 +3,7 @@
 #include "compile/CompiledModel.hpp"
 #include "compile/RuleUnitConversion.hpp"
 #include "compile/energy/BarrierTable.hpp"
+#include "compile/energy/DrivenEnergy.hpp"
 #include "nfnext/compiler.hpp"
 #include "nfnext/counter_rng.hpp"
 #include "nfnext/function_vm.hpp"
@@ -1179,6 +1180,8 @@ void addDirection(const bng::compile::CompiledRule& rule,
         direction.rateLaw->kind == bng::compile::RateLawKind::ArrheniusEnergy &&
         (!source.energyFactors().empty() || !source.barrierFactors().empty());
     const auto drivingWorkValue = rule.drivingWorkValue();
+    const bool hasStaticDrivingWork =
+        drivingWorkValue && std::isfinite(*drivingWorkValue);
     const bool expandableEnergyStateChange =
         energyModulatedArrhenius &&
         direction.mutations.size() == 1 &&
@@ -1186,7 +1189,7 @@ void addDirection(const bng::compile::CompiledRule& rule,
         direction.mutations.front().kind == BngMutationKind::ChangeState &&
         direction.mutations.front().newStateId.has_value() &&
         direction.mutations.front().source.side == BngPatternSide::Reactant &&
-        (!drivingWorkValue || std::abs(*drivingWorkValue) == 0.0);
+        (!drivingWorkValue || hasStaticDrivingWork);
     if (energyModulatedArrhenius && !expandableEnergyStateChange) {
         issue(result, BngLoweringSeverity::Error, entity,
               "energy-modulated Arrhenius rule form is not yet supported in NFnext lowering");
@@ -1474,8 +1477,16 @@ void addDirection(const bng::compile::CompiledRule& rule,
                 signedCenterEnergy(static_cast<std::size_t>(pi), c);
                 deltaG += c;
             }
+            const double work = drivingWorkValue ? *drivingWorkValue : 0.0;
+            // deltaG is computed for this direction's state change. For the
+            // reverse expansion, deltaG_dir = -deltaG_forward and the NFcore
+            // Arrhenius form with forward work W gives
+            // k_rev = exp(-(Ea+B + (phi-1)*(deltaG_forward-W)))
+            //       = exp(-(Ea+B + (1-phi)*deltaG_dir + (1-phi)*W)).
             const double phiEff = reverseDirection ? (1.0 - *phi) : *phi;
-            const double rate = std::exp(-(*ea + barrierContribution + phiEff * deltaG));
+            const double rate = std::exp(-(*ea + barrierContribution +
+                                           phiEff * deltaG +
+                                           (reverseDirection ? phiEff * work : -phiEff * work)));
             if (!std::isfinite(rate) || rate < 0.0) {
                 issue(result, BngLoweringSeverity::Error, entity, "expanded energy-modulated rate is invalid");
                 return;
