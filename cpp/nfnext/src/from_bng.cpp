@@ -2670,6 +2670,184 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                 pending = false;
                 continue;
             }
+            // Handle rules with simple lumped population molecule creates/destroys in normal path
+            // (e.g. particle->population map rules). applyTransformation operates on particle graph
+            // and would create population types as particles; convert to lumped counts instead.
+            bool hasSimplePopulationActionEffect = false;
+            for (const auto& action : rule.actions) {
+                if (action.kind == ActionKind::Create &&
+                    model.molecule_types.at(action.molecule_type).is_population) {
+                    hasSimplePopulationActionEffect = true;
+                    break;
+                }
+                if ((action.kind == ActionKind::Destroy || action.kind == ActionKind::DestroyComplex) &&
+                    action.target_node < rule.pattern.nodes.size() &&
+                    model.molecule_types.at(rule.pattern.nodes[action.target_node].molecule_type).is_population) {
+                    // simple standalone pop reactant consumed in a rule not classified as pop-only/mixed-lumped
+                    hasSimplePopulationActionEffect = true;
+                    break;
+                }
+            }
+            if (hasSimplePopulationActionEffect) {
+                // Manual action interpretation with lumped population handling.
+                std::map<PatternNodeId, CreatedMoleculeId> node_to_created;
+                std::map<PatternNodeId, TypeId> created_types;
+                std::map<PatternNodeId, std::vector<std::pair<std::uint32_t, std::int32_t>>> created_states;
+                std::map<PatternNodeId, CompartmentId> created_compartments;
+                CreatedMoleculeId next_created = 0;
+                for (const auto& action : rule.actions) {
+                    if (action.kind == ActionKind::Create) {
+                        if (!node_to_created.count(action.target_node)) {
+                            node_to_created[action.target_node] = next_created++;
+                            created_types[action.target_node] = action.molecule_type;
+                        }
+                    } else if (action.kind == ActionKind::SetSiteState && action.target_node >= rule.pattern.nodes.size()) {
+                        created_states[action.target_node].push_back({action.site, action.value});
+                    } else if (action.kind == ActionKind::SetCompartment && action.target_node >= rule.pattern.nodes.size()) {
+                        created_compartments[action.target_node] = static_cast<CompartmentId>(action.value);
+                    }
+                }
+                std::map<CreatedMoleculeId, ParticleId> created_particles;
+                for (const auto& [node, cid] : node_to_created) {
+                    const TypeId type = created_types[node];
+                    if (model.molecule_types.at(type).is_population) {
+                        if (created_states.count(node)) refuse("stateful population products are not supported");
+                        if (created_compartments.count(node)) refuse("compartmentalized population products are not supported");
+                        population_counts.at(type) += 1;
+                        continue;
+                    }
+                    CompartmentId comp = 0;
+                    auto cit = created_compartments.find(node);
+                    if (cit != created_compartments.end()) comp = cit->second;
+                    const auto pid = state.create(type, comp);
+                    created_particles[cid] = pid;
+                    auto sit = created_states.find(node);
+                    if (sit != created_states.end()) {
+                        for (const auto& [site, val] : sit->second)
+                            state.setSiteState(pid, static_cast<std::uint16_t>(site), val);
+                    }
+                }
+
+                MatchEmbedding match_embedding;
+                for (std::size_t node = 0; node < selected_match.particles().size(); ++node) {
+                    match_embedding.bindNode(node, selected_match.particle(node));
+                }
+
+                auto isPopReactantType = [&](PatternNodeId node) {
+                    return node < rule.pattern.nodes.size() &&
+                           model.molecule_types.at(rule.pattern.nodes[node].molecule_type).is_population;
+                };
+                auto resolveEndpoint = [&](PatternNodeId node, std::uint16_t site, ParticleId& pid, std::uint16_t& outSite) -> bool {
+                    if (node < rule.pattern.nodes.size()) {
+                        if (isPopReactantType(node)) return false;
+                        try { pid = match_embedding.particle(node); } catch (...) { return false; }
+                        outSite = site;
+                        return state.alive(pid);
+                    }
+                    auto it = node_to_created.find(node);
+                    if (it == node_to_created.end()) return false;
+                    auto pit = created_particles.find(it->second);
+                    if (pit == created_particles.end()) return false;
+                    pid = pit->second;
+                    outSite = site;
+                    return state.alive(pid);
+                };
+
+                for (const auto& action : rule.actions) {
+                    switch (action.kind) {
+                    case ActionKind::Create:
+                    case ActionKind::SetCompartment:
+                        break;
+                    case ActionKind::SetSiteState: {
+                        if (action.target_node < rule.pattern.nodes.size()) {
+                            if (isPopReactantType(action.target_node)) refuse("state changes on population reactants are not supported");
+                            try {
+                                const auto pid = match_embedding.particle(action.target_node);
+                                if (state.alive(pid)) state.setSiteState(pid, action.site, action.value);
+                            } catch (...) { refuse("invalid embedding for SetSiteState"); }
+                        } else {
+                            auto it = node_to_created.find(action.target_node);
+                            if (it != node_to_created.end()) {
+                                auto pit = created_particles.find(it->second);
+                                if (pit != created_particles.end() && state.alive(pit->second))
+                                    state.setSiteState(pit->second, action.site, action.value);
+                            }
+                        }
+                        break;
+                    }
+                    case ActionKind::Unbind: {
+                        ParticleId a,b; std::uint16_t sa,sb;
+                        if (!resolveEndpoint(action.target_node, action.site, a, sa) ||
+                            !resolveEndpoint(action.partner_node, action.partner_site, b, sb)) {
+                            refuse("invalid endpoints for Unbind in lumped-population rule");
+                        }
+                        if (state.bound(a, sa)) state.unbind(a, sa);
+                        break;
+                    }
+                    case ActionKind::Bind: {
+                        ParticleId a,b; std::uint16_t sa,sb;
+                        if (!resolveEndpoint(action.target_node, action.site, a, sa) ||
+                            !resolveEndpoint(action.partner_node, action.partner_site, b, sb)) {
+                            refuse("invalid endpoints for Bind in lumped-population rule");
+                        }
+                        state.bind(a, sa, b, sb);
+                        break;
+                    }
+                    case ActionKind::Destroy: {
+                        if (action.target_node < rule.pattern.nodes.size() &&
+                            model.molecule_types.at(rule.pattern.nodes[action.target_node].molecule_type).is_population) {
+                            const auto type = rule.pattern.nodes[action.target_node].molecule_type;
+                            if (population_counts.at(type) == 0) refuse("population underflow");
+                            population_counts.at(type) -= 1;
+                            break;
+                        }
+                        try {
+                            const auto pid = match_embedding.particle(action.target_node);
+                            if (state.alive(pid)) state.destroy(pid);
+                        } catch (...) { refuse("invalid embedding for Destroy"); }
+                        break;
+                    }
+                    case ActionKind::DestroyComplex: {
+                        if (action.target_node < rule.pattern.nodes.size() &&
+                            model.molecule_types.at(rule.pattern.nodes[action.target_node].molecule_type).is_population) {
+                            const auto type = rule.pattern.nodes[action.target_node].molecule_type;
+                            if (population_counts.at(type) == 0) refuse("population underflow");
+                            population_counts.at(type) -= 1;
+                            break;
+                        }
+                        try {
+                            const auto root = match_embedding.particle(action.target_node);
+                            if (state.alive(root)) {
+                                std::vector<ParticleId> members;
+                                for (const auto particle : state.liveParticles())
+                                    if (state.sameComplex(root, particle)) members.push_back(particle);
+                                for (const auto particle : members) if (state.alive(particle)) state.destroy(particle);
+                            }
+                        } catch (...) { refuse("invalid embedding for DestroyComplex"); }
+                        break;
+                    }
+                    case ActionKind::MovePosition:
+                        refuse("MovePosition not supported");
+                    }
+                }
+                for (const auto& action : rule.actions) {
+                    if (action.kind == ActionKind::SetCompartment && action.target_node < rule.pattern.nodes.size()) {
+                        if (isPopReactantType(action.target_node)) refuse("compartment changes on population reactants are not supported");
+                        try {
+                            const auto pid = match_embedding.particle(action.target_node);
+                            if (state.alive(pid)) state.setCompartment(pid, static_cast<CompartmentId>(action.value));
+                        } catch (...) {}
+                    }
+                }
+                // move_connected for this path not yet handled; refuse if requested
+                if (rule.move_connected) refuse("move_connected with lumped population actions not yet supported");
+
+                if (state.liveCount() > request.max_particles) refuse("particle budget exhausted");
+                ++output.event_count;
+                pending = false;
+                continue;
+            }
+
             std::vector<CompartmentId> beforeCompartments;
             std::set<ParticleId> explicitParticles;
             if (rule.move_connected) {
