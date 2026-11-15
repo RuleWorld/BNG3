@@ -2424,6 +2424,7 @@ def _rate_for_reaction(
     prepared_math: Optional[str] = None,
     replace_loc_params: bool = True,
     complete_flux: bool = False,
+    synthetic_rate_rule_variables: Optional[Set[str]] = None,
 ) -> str:
     def apply_conversion(rate: str) -> str:
         if conversion_factor is None:
@@ -2468,11 +2469,16 @@ def _rate_for_reaction(
         if rule.variable and getattr(rule, "type", "") in {"assignment", "rate"}
     }
     observable_converted_rules = observable_converted_rules or set()
+    synthetic_rate_rule_variables = synthetic_rate_rule_variables or set()
     rate_rule_variables = {
         standardize_name(rule.variable)
         for rule in model.rules
         if rule.variable and rule.type == "rate"
     }
+    rate_rule_variables.update(
+        standardize_name(variable) for variable in synthetic_rate_rule_variables
+    )
+    rate_rule_variables.update(str(variable) for variable in synthetic_rate_rule_variables)
     event_parameter_targets = {
         standardize_name(str(assignment.variable))
         for event in model.events
@@ -2930,6 +2936,7 @@ def process_reaction_rate(
     reactant_structures: Optional[Mapping[str, Species]] = None,
     conversion_factor: Optional[str] = None,
     replace_loc_params: bool = True,
+    synthetic_rate_rule_variables: Optional[Set[str]] = None,
 ) -> ProcessedRate:
     """Process one SBML rate using the source-shaped reversible pipeline."""
 
@@ -2949,6 +2956,7 @@ def process_reaction_rate(
             structures,
             prepared_math=prepared_math,
             replace_loc_params=replace_loc_params,
+            synthetic_rate_rule_variables=synthetic_rate_rule_variables,
         )
         return ProcessedRate(
             rate,
@@ -2979,6 +2987,7 @@ def process_reaction_rate(
             structures,
             prepared_math=prepared_math,
             replace_loc_params=replace_loc_params,
+            synthetic_rate_rule_variables=synthetic_rate_rule_variables,
         )
         return ProcessedRate(
             rate,
@@ -3000,6 +3009,7 @@ def process_reaction_rate(
         reactant_ids=forward_ids,
         prepared_math=split[0],
         replace_loc_params=replace_loc_params,
+        synthetic_rate_rule_variables=synthetic_rate_rule_variables,
     )
     reverse_rate = _rate_for_reaction(
         reaction,
@@ -3010,6 +3020,7 @@ def process_reaction_rate(
         reactant_ids=reverse_ids,
         prepared_math=split[1],
         replace_loc_params=replace_loc_params,
+        synthetic_rate_rule_variables=synthetic_rate_rule_variables,
     )
     if _has_denominator_issue(forward_rate, forward_ids) or _has_denominator_issue(
         reverse_rate, reverse_ids
@@ -3023,6 +3034,7 @@ def process_reaction_rate(
                 structures,
                 prepared_math=prepared_math,
                 replace_loc_params=replace_loc_params,
+                synthetic_rate_rule_variables=synthetic_rate_rule_variables,
             ),
             force_irreversible=True,
             is_split_rxn=True,
@@ -6826,6 +6838,7 @@ def write_reaction_rules(
     time_rate_functions: Optional[List[str]] = None,
     replace_loc_params: bool = True,
     species_compartment_prefix: bool = False,
+    synthetic_rate_rule_variables: Optional[Set[str]] = None,
 ) -> List[str]:
     # BNGL represents stoichiometry by repeating a species pattern. Very
     # large source stoichiometries cannot therefore be represented as a
@@ -6986,6 +6999,7 @@ def write_reaction_rules(
                 reactant_ids=[],
                 prepared_math=prepared_math,
                 replace_loc_params=replace_loc_params,
+                synthetic_rate_rule_variables=synthetic_rate_rule_variables,
             )
             net_terms: "OrderedDict[str, List[str]]" = OrderedDict()
             for sign, references in (
@@ -7250,6 +7264,7 @@ def write_reaction_rules(
                 reactant_ids=[],
                 prepared_math=prepared_math,
                 replace_loc_params=replace_loc_params,
+                synthetic_rate_rule_variables=synthetic_rate_rule_variables,
             )
             net_stoichiometry: "OrderedDict[str, float]" = OrderedDict()
             for reference in reaction.reactants:
@@ -7375,6 +7390,7 @@ def write_reaction_rules(
                     prepared_math=prepared_math,
                     replace_loc_params=replace_loc_params,
                     complete_flux=True,
+                    synthetic_rate_rule_variables=synthetic_rate_rule_variables,
                 )
         # A participant removed from the pattern because a rule controls its
         # value is still an operand of the kinetic law, so
@@ -7408,6 +7424,7 @@ def write_reaction_rules(
                 else _conversion_factor_for_reaction(reaction, model)
             ),
             replace_loc_params=replace_loc_params,
+            synthetic_rate_rule_variables=synthetic_rate_rule_variables,
         )
         rate = processed.rate_string
         reversed_numeric_flux = False
@@ -7597,6 +7614,7 @@ def _reaction_rules_section(
     time_rate_functions: Optional[List[str]] = None,
     replace_loc_params: bool = True,
     species_compartment_prefix: bool = False,
+    synthetic_rate_rule_variables: Optional[Set[str]] = None,
 ) -> str:
     """Render the shared reaction-rule implementation as a BNGL section."""
 
@@ -7610,6 +7628,7 @@ def _reaction_rules_section(
             time_rate_functions=time_rate_functions,
             replace_loc_params=replace_loc_params,
             species_compartment_prefix=species_compartment_prefix,
+            synthetic_rate_rule_variables=synthetic_rate_rule_variables,
         ),
     )
 
@@ -7621,6 +7640,7 @@ def write_reaction_rules_flat(
     time_rate_functions: Optional[List[str]] = None,
     replace_loc_params: bool = True,
     species_compartment_prefix: bool = False,
+    synthetic_rate_rule_variables: Optional[Set[str]] = None,
 ) -> str:
     """Render the Playground flat reaction-rule writer entry point.
 
@@ -7638,6 +7658,7 @@ def write_reaction_rules_flat(
         time_rate_functions=time_rate_functions,
         replace_loc_params=replace_loc_params,
         species_compartment_prefix=species_compartment_prefix,
+        synthetic_rate_rule_variables=synthetic_rate_rule_variables,
     )
 
 
@@ -7648,6 +7669,7 @@ def write_reaction_rules_atomized(
     time_rate_functions: Optional[List[str]] = None,
     replace_loc_params: bool = True,
     species_compartment_prefix: bool = False,
+    synthetic_rate_rule_variables: Optional[Set[str]] = None,
 ) -> str:
     """Render the Playground atomized reaction-rule writer entry point."""
 
@@ -7659,6 +7681,7 @@ def write_reaction_rules_atomized(
         time_rate_functions=time_rate_functions,
         replace_loc_params=replace_loc_params,
         species_compartment_prefix=species_compartment_prefix,
+        synthetic_rate_rule_variables=synthetic_rate_rule_variables,
     )
 
 
@@ -7669,6 +7692,7 @@ def write_reaction_rules_flat_v2(
     time_rate_functions: Optional[List[str]] = None,
     replace_loc_params: bool = True,
     species_compartment_prefix: bool = False,
+    synthetic_rate_rule_variables: Optional[Set[str]] = None,
 ) -> str:
     """Render the patched Playground flat writer used by BNGL generation."""
 
@@ -7680,6 +7704,7 @@ def write_reaction_rules_flat_v2(
         time_rate_functions=time_rate_functions,
         replace_loc_params=replace_loc_params,
         species_compartment_prefix=species_compartment_prefix,
+        synthetic_rate_rule_variables=synthetic_rate_rule_variables,
     )
 
 
@@ -8193,6 +8218,7 @@ def generate_bngl(
         time_rate_functions=time_rate_functions,
         replace_loc_params=replace_loc_params,
         species_compartment_prefix=True,
+        synthetic_rate_rule_variables=synthetic_state_variables,
     )
     sections.append(reaction_rule_section)
     # The generated kinetic laws are SBML extent fluxes.  Retain that source
