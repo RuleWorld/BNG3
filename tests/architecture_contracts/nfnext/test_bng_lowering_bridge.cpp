@@ -1469,17 +1469,13 @@ end reaction rules
     assert(ep.pattern.nodes[0].constraints.size() == 1);
     assert(ep.pattern.nodes[0].constraints[0].kind == nfnext::PatternIR::SiteConstraintKind::State);
 
-    // Negative control: execution refuses energy patterns fail-closed
+    // Energy patterns on an elementary-rate rule do not require energy
+    // modulation; execution is supported when otherwise valid.
     nfnext::BngExecutionRequest req;
     req.sample_times = {0.0, 1.0};
-    bool refused = false;
-    try {
-        nfnext::executeFromBioNetGen(semantic, req);
-    } catch (const std::exception& e) {
-        refused = true;
-        assert(std::string(e.what()).find("energy pattern") != std::string::npos);
-    }
-    assert(refused);
+    const auto exec = nfnext::executeFromBioNetGen(semantic, req);
+    assert(exec.columns.size() == 1);
+    assert(exec.rows.size() == 2);
 
     // Semantic differentiation: differing energy value yields different fingerprint
     const auto ast2 = bng::parser::parseModel(R"BNGL(

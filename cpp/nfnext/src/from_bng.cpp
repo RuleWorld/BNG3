@@ -361,6 +361,13 @@ std::optional<bng::compile::ResolvedExpression> expandZeroArgumentRateFunctions(
     return expanded;
 }
 
+double energyFactorValue(const bng::compile::CompiledEnergyFactor& ep,
+                         const bng::compile::CompiledModel& source) {
+    if (ep.evaluatedValue) return *ep.evaluatedValue;
+    if (const auto value = constantExpression(ep.expression, source)) return *value;
+    return 0.0;
+}
+
 std::optional<std::string> observableRateExpression(
     const bng::compile::ResolvedExpression& expression,
     const bng::compile::CompiledModel& model,
@@ -1170,9 +1177,22 @@ void addDirection(const bng::compile::CompiledRule& rule,
     const bool energyModulatedArrhenius =
         direction.rateLaw->kind == bng::compile::RateLawKind::ArrheniusEnergy &&
         (!source.energyFactors().empty() || !source.barrierFactors().empty());
-    const auto constant = energyModulatedArrhenius
-        ? std::optional<double>{}
-        : constantExpression(*expandedRate, source);
+    const bool expandableEnergyStateChange =
+        energyModulatedArrhenius &&
+        source.barrierFactors().empty() &&
+        direction.mutations.size() == 1 &&
+        direction.reactantPatterns.size() == 1 &&
+        direction.mutations.front().kind == BngMutationKind::ChangeState &&
+        direction.mutations.front().newStateId.has_value() &&
+        direction.mutations.front().source.side == BngPatternSide::Reactant;
+    if (energyModulatedArrhenius && !expandableEnergyStateChange) {
+        issue(result, BngLoweringSeverity::Error, entity,
+              "energy-modulated Arrhenius rule form is not yet supported in NFnext lowering");
+        return;
+    }
+    const auto constant = (!energyModulatedArrhenius)
+        ? constantExpression(*expandedRate, source)
+        : std::optional<double>{};
     if (constant) {
         if (!std::isfinite(*constant) || *constant < 0.0) {
             issue(result, BngLoweringSeverity::Error, entity,
@@ -1181,17 +1201,11 @@ void addDirection(const bng::compile::CompiledRule& rule,
         }
         lowered.rate = *constant;
         lowered.rate_law.kind = RateLawKind::Elementary;
-        // Runtime execution uses this resolved numeric rate; NFnext never
-        // reparses BNGL for an elementary rate.
         std::ostringstream rateText;
         rateText.precision(17);
         rateText << *constant;
         lowered.rate_law.expression = rateText.str();
-    } else {
-        // Dynamic rate: the rate depends on the current state of the system
-        // through observables, functions, or parameters. We support two cases:
-        // 1. Single-observable arithmetic expressions (standard dynamic rates)
-        // 2. Multi-observable or general function-dependent expressions
+    } else if (!energyModulatedArrhenius) {
         if (!direction.rateLaw->dependencies().function &&
             !direction.rateLaw->dependencies().observable &&
             !direction.rateLaw->dependencies().parameter) {
@@ -1207,7 +1221,7 @@ void addDirection(const bng::compile::CompiledRule& rule,
                   "dynamic rate expression could not be resolved to an NFIR arithmetic expression");
             return;
         }
-        lowered.rate = 0.0; // Dynamic rates are carried only by rate_law.
+        lowered.rate = 0.0;
         lowered.rate_law.kind = RateLawKind::Function;
         lowered.rate_law.expression = *expression;
     }
@@ -1250,6 +1264,198 @@ void addDirection(const bng::compile::CompiledRule& rule,
         }
     }
     lowered.volume_factor = volumeFactor;
+
+    if (expandableEnergyStateChange) {
+        const auto& mutation = direction.mutations.front();
+        if (mutation.source.patternIndex >= direction.reactantPatterns.size() ||
+            mutation.source.moleculeIndex >= lowered.pattern.nodes.size()) {
+            issue(result, BngLoweringSeverity::Error, entity, "invalid energy state-change mutation source");
+            return;
+        }
+        const auto& reactantMol = direction.reactantPatterns[mutation.source.patternIndex]
+                                      .molecules().at(mutation.source.moleculeIndex);
+        if (mutation.source.siteIndex >= reactantMol.sites.size() ||
+            !reactantMol.moleculeTypeId || !reactantMol.sites[mutation.source.siteIndex].componentType ||
+            reactantMol.sites[mutation.source.siteIndex].stateConstraintResolved.kind != bng::compile::StateConstraintKind::Exact ||
+            !reactantMol.sites[mutation.source.siteIndex].stateConstraintResolved.exact) {
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "energy-modulated state change requires a typed exact-state reactant site");
+            return;
+        }
+        const auto& rateExpr = direction.rateLaw->resolvedExpression();
+        if (rateExpr.arguments.size() != 2) {
+            issue(result, BngLoweringSeverity::Error, entity, "Arrhenius requires phi and activation energy");
+            return;
+        }
+        const auto phi = constantExpression(rateExpr.arguments[0], source);
+        const auto ea = constantExpression(rateExpr.arguments[1], source);
+        if (!phi || !ea) {
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "energy-modulated Arrhenius requires static phi and activation energy");
+            return;
+        }
+
+        const auto molTypeId = reactantMol.moleculeTypeId->value();
+        const auto centerSiteTypeId = reactantMol.sites[mutation.source.siteIndex].componentType->index;
+        const auto fromStateId = reactantMol.sites[mutation.source.siteIndex].stateConstraintResolved.exact->index;
+        const auto toStateId = mutation.newStateId->index;
+        const auto molName = source.moleculeType(*reactantMol.moleculeTypeId)->name;
+
+        struct Cond {
+            std::string compName;
+            std::uint32_t site{0};
+            std::vector<int> gated;
+        };
+        std::map<std::string, Cond> condMap;
+        std::vector<int> always;
+        std::vector<int> conditional;
+
+        auto signedCenterEnergy = [&](std::size_t patternIndex, double& contrib) -> bool {
+            const auto& ep = source.energyFactors()[patternIndex];
+            int centerCount = 0;
+            contrib = 0.0;
+            for (const auto& mol : ep.pattern.molecules()) {
+                if (!mol.moleculeTypeId || mol.moleculeTypeId->value() != molTypeId) continue;
+                for (const auto& site : mol.sites) {
+                    if (!site.componentType || site.componentType->index != centerSiteTypeId) continue;
+                    if (site.stateConstraintResolved.kind != bng::compile::StateConstraintKind::Exact ||
+                        !site.stateConstraintResolved.exact) continue;
+                    ++centerCount;
+                    const auto st = site.stateConstraintResolved.exact->index;
+                    if (st == toStateId) contrib += energyFactorValue(ep, source);
+                    else if (st == fromStateId) contrib -= energyFactorValue(ep, source);
+                }
+            }
+            return centerCount >= 1;
+        };
+
+        for (std::size_t pi = 0; pi < source.energyFactors().size(); ++pi) {
+            const auto& ep = source.energyFactors()[pi];
+            bool relevant = false;
+            for (const auto& mol : ep.pattern.molecules()) {
+                if (!mol.moleculeTypeId || mol.moleculeTypeId->value() != molTypeId) continue;
+                for (const auto& site : mol.sites) {
+                    if (site.componentType && site.componentType->index == centerSiteTypeId &&
+                        site.stateConstraintResolved.kind == bng::compile::StateConstraintKind::Exact)
+                        relevant = true;
+                }
+            }
+            if (!relevant) continue;
+
+            bool hasExtra = false;
+            int weighted = 0;
+            for (const auto& mol : ep.pattern.molecules()) {
+                if (mol.moleculeTypeId && mol.moleculeTypeId->value() == molTypeId) ++weighted;
+                if (!mol.moleculeTypeId || mol.moleculeTypeId->value() != molTypeId) {
+                    hasExtra = true;
+                    continue;
+                }
+                for (const auto& site : mol.sites) {
+                    if (site.componentType && site.componentType->index == centerSiteTypeId) continue;
+                    const bool isBound = site.bondKind == bng::compile::BondConstraintKind::Exact ||
+                        std::any_of(site.bondConstraints.begin(), site.bondConstraints.end(),
+                            [](const auto& b){ return b.kind == bng::compile::BondConstraintKind::Exact; });
+                    const bool hasState = site.stateConstraintResolved.kind == bng::compile::StateConstraintKind::Exact;
+                    if (isBound || hasState) { hasExtra = true; break; }
+                }
+                if (hasExtra) break;
+            }
+            if (weighted != 1) {
+                issue(result, BngLoweringSeverity::Error, entity,
+                      "energy-modulated state change requires one weighted reactant molecule per energy pattern");
+                return;
+            }
+            double ignored = 0.0;
+            if (!signedCenterEnergy(pi, ignored)) {
+                issue(result, BngLoweringSeverity::Error, entity,
+                      "energy-modulated state change requires a reaction-center state constraint in relevant energy patterns");
+                return;
+            }
+
+            if (hasExtra) {
+                conditional.push_back(static_cast<int>(pi));
+                for (const auto& mol : ep.pattern.molecules()) {
+                    if (!mol.moleculeTypeId || mol.moleculeTypeId->value() != molTypeId) continue;
+                    for (const auto& site : mol.sites) {
+                        if (site.componentType && site.componentType->index == centerSiteTypeId) continue;
+                        const bool isBound = site.bondKind == bng::compile::BondConstraintKind::Exact ||
+                            std::any_of(site.bondConstraints.begin(), site.bondConstraints.end(),
+                                [](const auto& b){ return b.kind == bng::compile::BondConstraintKind::Exact; });
+                        if (!isBound) continue;
+                        if (!site.componentType) continue;
+                        const auto cname = source.component(*site.componentType)->name;
+                        auto& cc = condMap[cname];
+                        cc.compName = cname;
+                        cc.site = static_cast<std::uint32_t>(site.componentType->index);
+                        cc.gated.push_back(static_cast<int>(pi));
+                    }
+                }
+            } else {
+                always.push_back(static_cast<int>(pi));
+            }
+        }
+
+        double baseEnergy = 0.0;
+        for (int pi : always) {
+            double c = 0.0;
+            signedCenterEnergy(static_cast<std::size_t>(pi), c);
+            baseEnergy += c;
+        }
+
+        std::vector<Cond> conditions;
+        conditions.reserve(condMap.size());
+        for (auto& kv : condMap) {
+            std::sort(kv.second.gated.begin(), kv.second.gated.end());
+            kv.second.gated.erase(std::unique(kv.second.gated.begin(), kv.second.gated.end()), kv.second.gated.end());
+            conditions.push_back(std::move(kv.second));
+        }
+        std::sort(conditions.begin(), conditions.end(), [](const auto& a, const auto& b){ return a.compName < b.compName; });
+        if (conditions.size() >= 20) {
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "energy-modulated state change expansion too large for NFnext");
+            return;
+        }
+
+        const std::size_t targetNode = mutation.source.moleculeIndex;
+        const int combos = 1 << static_cast<int>(conditions.size());
+        for (int combo = 0; combo < combos; ++combo) {
+            ExpandedRuleIR variant = lowered;
+            variant.id = static_cast<RuleId>(id * 1024u + static_cast<RuleId>(combo));
+            variant.name = entity + (reverseDirection ? "_rev_v" : "_v") + std::to_string(combo);
+            variant.rate_law.kind = RateLawKind::Elementary;
+            std::set<int> active(always.begin(), always.end());
+            if (targetNode >= variant.pattern.nodes.size()) continue;
+            for (std::size_t ci = 0; ci < conditions.size(); ++ci) {
+                const bool met = (combo >> ci) & 1;
+                if (met) {
+                    variant.pattern.nodes[targetNode].siteBound(conditions[ci].site);
+                    for (int pi : conditions[ci].gated) active.insert(pi);
+                } else {
+                    variant.pattern.nodes[targetNode].siteFree(conditions[ci].site);
+                }
+            }
+            double deltaG = baseEnergy;
+            for (int pi : active) {
+                if (std::find(always.begin(), always.end(), pi) != always.end()) continue;
+                double c = 0.0;
+                signedCenterEnergy(static_cast<std::size_t>(pi), c);
+                deltaG += c;
+            }
+            const double phiEff = reverseDirection ? (1.0 - *phi) : *phi;
+            const double rate = std::exp(-(*ea + phiEff * deltaG));
+            if (!std::isfinite(rate) || rate < 0.0) {
+                issue(result, BngLoweringSeverity::Error, entity, "expanded energy-modulated rate is invalid");
+                return;
+            }
+            variant.rate = rate;
+            std::ostringstream rateText;
+            rateText.precision(17);
+            rateText << rate;
+            variant.rate_law.expression = rateText.str();
+            result.model.expanded_rules.push_back(std::move(variant));
+        }
+        return;
+    }
 
     result.model.expanded_rules.push_back(std::move(lowered));
 }
@@ -1540,10 +1746,39 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
 
     }
     if (!model.population_maps.empty()) refuse("un-lowered population maps require generate_hybrid_model");
-    const bool has_energy_semantics =
-        !source.energyFactors().empty() || !source.barrierFactors().empty() ||
-        !model.energy_patterns.empty();
-    if (has_energy_semantics) refuse("energy pattern and barrier rate modulation not yet implemented in NFnext execution");
+    if (!source.barrierFactors().empty())
+        refuse("barrier rate modulation not yet implemented in NFnext execution");
+    bool has_energy_modulated_rate = false;
+    for (const auto& rule : source.rules()) {
+        auto check = [&](const bng::compile::CompiledRuleDirection& d) {
+            if (d.rateLaw && d.rateLaw->kind == bng::compile::RateLawKind::ArrheniusEnergy &&
+                !source.energyFactors().empty())
+                has_energy_modulated_rate = true;
+        };
+        check(rule.forward());
+        if (rule.reverse()) check(*rule.reverse());
+    }
+    if (has_energy_modulated_rate) {
+        bool all_expanded = !model.expanded_rules.empty();
+        for (const auto& er : model.expanded_rules) {
+            if (er.rate_law.kind != RateLawKind::Elementary) { all_expanded = false; break; }
+        }
+        for (const auto& rule : source.rules()) {
+            auto check = [&](const bng::compile::CompiledRuleDirection& d) {
+                if (!d.rateLaw) { all_expanded = false; return; }
+                if (d.rateLaw->kind == bng::compile::RateLawKind::ArrheniusEnergy) {
+                    if (d.mutations.size() != 1 || d.reactantPatterns.size() != 1 ||
+                        d.mutations.front().kind != BngMutationKind::ChangeState ||
+                        d.rateLaw->resolvedExpression().arguments.size() != 2)
+                        all_expanded = false;
+                }
+            };
+            check(rule.forward());
+            if (rule.reverse()) check(*rule.reverse());
+        }
+        if (!all_expanded)
+            refuse("energy-modulated Arrhenius rule form is not yet supported in NFnext lowering");
+    }
     if (request.max_particles > std::numeric_limits<std::uint32_t>::max())
         refuse("particle budget exceeds native index capacity");
     GenericGraphState state(model);
