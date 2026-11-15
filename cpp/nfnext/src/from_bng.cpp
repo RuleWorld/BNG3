@@ -885,7 +885,7 @@ bool appendDeletionActions(
             }
         }
     }
-    if (!deleteMolecules && hasUnmappedReactantOutsideWholeSpeciesDeletion &&
+    if (!hasDeleteMoleculesModifier(rule) && hasUnmappedReactantOutsideWholeSpeciesDeletion &&
         !nodes.createdProducts.empty()) {
         issue(result, BngLoweringSeverity::Error, entity,
               "simultaneous molecule replacement requires orphan-context semantics "
@@ -896,7 +896,7 @@ bool appendDeletionActions(
     // The compiler resolves default whole-pattern deletion once. Remove each
     // matched species as a unit so connected, unspecified context is included.
     // DeleteMolecules deliberately bypasses this path and stays molecule-scoped.
-    if (!deleteMolecules) {
+    if (!hasDeleteMoleculesModifier(rule)) {
         for (const auto patternIndex : direction.wholeSpeciesDeletions) {
             if (!appendWholeSpeciesDeletion(patternIndex)) return false;
         }
@@ -905,7 +905,7 @@ bool appendDeletionActions(
     // DeleteMolecules and partial rule rewrites remove only explicit unmatched
     // molecule occurrences, preserving any unmatched surrounding context.
     for (std::size_t patternIndex = 0; patternIndex < direction.reactantPatterns.size(); ++patternIndex) {
-        if (!deleteMolecules && isWholeSpeciesDeletion(direction, patternIndex)) continue;
+        if (!hasDeleteMoleculesModifier(rule) && isWholeSpeciesDeletion(direction, patternIndex)) continue;
         const auto& pattern = direction.reactantPatterns[patternIndex];
         for (std::size_t moleculeIndex = 0; moleculeIndex < pattern.molecules().size(); ++moleculeIndex) {
             const bng::compile::PatternMoleculeRef ref{
@@ -945,9 +945,9 @@ bool addActions(const bng::compile::CompiledRule& rule,
     if (!nodes) return false;
     if (!appendCreateActions(direction, *nodes, actions, result, entity)) return false;
 
-    const bool deleteMolecules = hasDeleteMoleculesModifier(rule);
+
     for (const auto& mutation : direction.mutations) {
-        if (mutation.kind == BngMutationKind::DeleteBond && !deleteMolecules &&
+        if (mutation.kind == BngMutationKind::DeleteBond && !hasDeleteMoleculesModifier(rule) &&
             (isWholeSpeciesDeletion(direction, mutation.source.patternIndex) ||
              isWholeSpeciesDeletion(direction, mutation.partner.patternIndex))) {
             // Keep the matched graph connected until DestroyComplex traverses it.
