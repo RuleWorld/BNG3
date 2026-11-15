@@ -6,11 +6,25 @@
 #include <chrono>
 #include <cmath>
 #include <future>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <thread>
 
 namespace bng::engine {
+
+namespace {
+
+int32_t checkedPopulation(double population) {
+    if (!std::isfinite(population)
+        || population < std::numeric_limits<int32_t>::min()
+        || population > std::numeric_limits<int32_t>::max()) {
+        throw std::runtime_error("Batch SSA: population is outside int32 range");
+    }
+    return static_cast<int32_t>(population);
+}
+
+} // namespace
 
 namespace detail {
 
@@ -102,7 +116,7 @@ FlattenedReactionNetwork FlattenedReactionNetwork::fromModelAndNetwork(
     flat.initialSpecies.resize(flat.numSpecies);
     for (std::size_t i = 0; i < flat.numSpecies; ++i) {
         double amt = network.species.get(i).getAmount();
-        flat.initialSpecies[i] = static_cast<int32_t>(std::max(0.0, std::round(amt)));
+        flat.initialSpecies[i] = checkedPopulation(std::max(0.0, std::round(amt)));
     }
 
     // A constant species carries the model's "this amount does not change"
@@ -155,7 +169,18 @@ FlattenedReactionNetwork FlattenedReactionNetwork::fromModelAndNetwork(
             );
         }
 
-        flat.rateConstants[r] = static_cast<float>(rxn.rateConstant);
+        if (rxn.rateConstant > std::numeric_limits<float>::max()) {
+            throw std::runtime_error(
+                "Batch SSA: rate constant for reaction " + std::to_string(r)
+                + " is outside float32 range");
+        }
+        const float storedRate = static_cast<float>(rxn.rateConstant);
+        if (rxn.rateConstant > 0.0 && storedRate == 0.0f) {
+            throw std::runtime_error(
+                "Batch SSA: rate constant for reaction " + std::to_string(r)
+                + " is outside float32 range");
+        }
+        flat.rateConstants[r] = storedRate;
 
         // Reactants (with offset for identical reactants: A + A -> offset 0 for 1st, 1 for 2nd)
         // The offset is the distinct-reactant-pair count canonical BioNetGen
@@ -275,7 +300,7 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateSingleWorker(const BatchSsaOptions
         if (!res.concentrations.empty()) {
             const auto& finalConc = res.concentrations.back();
             for (std::size_t s = 0; s < numSpecies && s < finalConc.size(); ++s) {
-                metrics.finalSpecies[b * numSpecies + s] = static_cast<int32_t>(std::round(finalConc[s]));
+                metrics.finalSpecies[b * numSpecies + s] = checkedPopulation(std::round(finalConc[s]));
             }
         }
 
@@ -427,7 +452,7 @@ BatchSsaMetrics CpuBatchSsaSimulator::simulateMultiCore(const BatchSsaOptions& o
                 if (!res.concentrations.empty()) {
                     const auto& finalConc = res.concentrations.back();
                     for (std::size_t s = 0; s < numSpecies && s < finalConc.size(); ++s) {
-                        metrics.finalSpecies[b * numSpecies + s] = static_cast<int32_t>(std::round(finalConc[s]));
+                        metrics.finalSpecies[b * numSpecies + s] = checkedPopulation(std::round(finalConc[s]));
                     }
                 }
 
