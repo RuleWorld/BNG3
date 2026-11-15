@@ -77,6 +77,7 @@ jobs:
             tests/validation/test_integrated_extensions.py \
             tests/validation/test_graph_identity.py \
             tests/validation/test_issue_142_release_record.py \
+            tests/validation/test_issue_473_475_release_records.py \
             tests/validation/test_s6_simulate_receipt_consumer.py \
             tests/validation/test_nfsim_sweep_gate.py \
             tests/validation/test_harness_paths.py::test_required_oracle_fails_in_strict_ci \
@@ -635,9 +636,10 @@ jobs:
         env:
           BNG3_PYTHON_TEST_MODE: installed
         run: >-
-          python -m pytest -q
-          --confcutdir=tests/validation/release/cases/issue-475
-          tests/validation/release/cases/issue-475/test_delayed_semantics_release.py
+          python scripts/ci/record_delay_release.py
+          --output "$RUNNER_TEMP/bng3-delay-release/report.json"
+          --source-revision "${{ github.event.pull_request.head.sha || github.sha }}"
+          --summary-file "$GITHUB_STEP_SUMMARY"
 
       - name: Run integrated cross-component cases
         id: integrated_cases
@@ -708,6 +710,7 @@ jobs:
           head_args=()
           issue142_args=()
           s6_args=()
+          delay_args=()
           if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             head_args=(--collect-upstream-heads)
           fi
@@ -721,12 +724,16 @@ jobs:
           if [[ -d "$RUNNER_TEMP/bng3-s6-receipts" ]]; then
             s6_args+=(--s6-simulate-receipt-dir "$RUNNER_TEMP/bng3-s6-receipts")
           fi
+          if [[ -s "$RUNNER_TEMP/bng3-delay-release/report.json" ]]; then
+            delay_args+=(--report "$RUNNER_TEMP/bng3-delay-release/report.json")
+          fi
           python -m tests.validation.issue_queue \
             --issues-json "$RUNNER_TEMP/bng3-issues.json" \
             --report "$RUNNER_TEMP/bng3-integrated-validation/report.json" \
             --report "$RUNNER_TEMP/bng3-integrated-validation/matrix-report.json" \
             "${issue142_args[@]}" \
             "${s6_args[@]}" \
+            "${delay_args[@]}" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --output-dir "$RUNNER_TEMP/bng3-issue-queue" "${head_args[@]}"
           cat "$RUNNER_TEMP/bng3-issue-queue/issue-queue.md" >> "$GITHUB_STEP_SUMMARY"

@@ -579,3 +579,62 @@ def test_s6_simulate_option_acceptance_runs_with_locked_bng2_and_retains_receipt
     assert upload["if"] == "always()"
     assert upload["uses"].startswith("actions/upload-artifact@")
     assert "bng3-s6-receipts/*.json" in upload["with"]["path"]
+
+
+def test_delay_release_receipt_is_recorded_and_consumed_in_parity_queue():
+    workflow = _parse_workflow()
+    integrated = workflow["jobs"]["integrated-semantic-validation"]
+    record_step = next(
+        step
+        for step in integrated["steps"]
+        if step.get("name")
+        == "Validate independent issue-475 delayed semantics release acceptance"
+    )
+    assert "scripts/ci/record_delay_release.py" in record_step["run"]
+    assert (
+        '--output "$RUNNER_TEMP/bng3-delay-release/report.json"' in record_step["run"]
+    )
+
+    queue_step = next(
+        step
+        for step in integrated["steps"]
+        if step.get("name")
+        == "Build exact-revision issue and provenance evidence queue"
+    )
+    assert '[[ -s "$RUNNER_TEMP/bng3-delay-release/report.json" ]]' in queue_step["run"]
+    assert '--report "$RUNNER_TEMP/bng3-delay-release/report.json"' in queue_step["run"]
+    assert '"${delay_args[@]}"' in queue_step["run"]
+
+    contract_job = workflow["jobs"]["oracle-lock"]
+    ci_contracts = next(
+        step
+        for step in contract_job["steps"]
+        if step.get("name") == "Run CI contract tests"
+    )
+    assert (
+        "tests/validation/test_issue_473_475_release_records.py" in ci_contracts["run"]
+    )
+
+
+def test_jax_release_receipt_is_recorded_in_ci_workflow():
+    ci_workflow = yaml.safe_load(
+        (REPO / ".github/workflows/ci.yml").read_text(encoding="utf-8")
+    )
+    jax_job = ci_workflow["jobs"]["python-jax"]
+    record_step = next(
+        step
+        for step in jax_job["steps"]
+        if step.get("name") == "Validate independent issue-473 JAX release acceptance"
+    )
+    assert "scripts/ci/record_jax_release.py" in record_step["run"]
+    assert '--output "$RUNNER_TEMP/bng3-jax-release/report.json"' in record_step["run"]
+
+    upload_step = next(
+        step
+        for step in jax_job["steps"]
+        if step.get("name") == "Upload issue-473 JAX release report"
+    )
+    assert upload_step["uses"].startswith("actions/upload-artifact@")
+    assert (
+        upload_step["with"]["path"] == "${{ runner.temp }}/bng3-jax-release/report.json"
+    )
