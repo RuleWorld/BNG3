@@ -2,6 +2,7 @@
 
 #include "compile/CompiledModel.hpp"
 #include "compile/RuleUnitConversion.hpp"
+#include "compile/energy/BarrierTable.hpp"
 #include "nfnext/compiler.hpp"
 #include "nfnext/counter_rng.hpp"
 #include "nfnext/function_vm.hpp"
@@ -1177,14 +1178,15 @@ void addDirection(const bng::compile::CompiledRule& rule,
     const bool energyModulatedArrhenius =
         direction.rateLaw->kind == bng::compile::RateLawKind::ArrheniusEnergy &&
         (!source.energyFactors().empty() || !source.barrierFactors().empty());
+    const auto drivingWorkValue = rule.drivingWorkValue();
     const bool expandableEnergyStateChange =
         energyModulatedArrhenius &&
-        source.barrierFactors().empty() &&
         direction.mutations.size() == 1 &&
         direction.reactantPatterns.size() == 1 &&
         direction.mutations.front().kind == BngMutationKind::ChangeState &&
         direction.mutations.front().newStateId.has_value() &&
-        direction.mutations.front().source.side == BngPatternSide::Reactant;
+        direction.mutations.front().source.side == BngPatternSide::Reactant &&
+        (!drivingWorkValue || std::abs(*drivingWorkValue) == 0.0);
     if (energyModulatedArrhenius && !expandableEnergyStateChange) {
         issue(result, BngLoweringSeverity::Error, entity,
               "energy-modulated Arrhenius rule form is not yet supported in NFnext lowering");
@@ -1402,6 +1404,37 @@ void addDirection(const bng::compile::CompiledRule& rule,
             baseEnergy += c;
         }
 
+        double barrierContribution = 0.0;
+        if (!source.barrierFactors().empty()) {
+            const auto* molTypeDecl = source.moleculeType(*reactantMol.moleculeTypeId);
+            const auto* compDecl = source.component(*reactantMol.sites[mutation.source.siteIndex].componentType);
+            const auto* fromStateDecl = source.stateName(*reactantMol.sites[mutation.source.siteIndex].stateConstraintResolved.exact);
+            const auto* toStateDecl = source.stateName(bng::compile::StateId{
+                *reactantMol.sites[mutation.source.siteIndex].componentType, mutation.newStateId->index});
+            if (!molTypeDecl || !compDecl || !fromStateDecl || !toStateDecl) {
+                issue(result, BngLoweringSeverity::Error, entity,
+                      "energy-modulated state change barrier center could not be resolved");
+                return;
+            }
+            const auto centerKey = bng::compile::energy::ReactionCenterKey::stateChange(
+                molTypeDecl->name, compDecl->name, *fromStateDecl, *toStateDecl);
+            for (const auto& barrier : source.barrierFactors()) {
+                if (!barrier.centerResolved) {
+                    issue(result, BngLoweringSeverity::Error, entity,
+                          "barrier pattern has no supported reaction center");
+                    return;
+                }
+                if (barrier.reactionCenter == centerKey) {
+                    if (!barrier.evaluatedValue) {
+                        issue(result, BngLoweringSeverity::Error, entity,
+                              "barrier pattern energy is not statically evaluable");
+                        return;
+                    }
+                    barrierContribution += *barrier.evaluatedValue;
+                }
+            }
+        }
+
         std::vector<Cond> conditions;
         conditions.reserve(condMap.size());
         for (auto& kv : condMap) {
@@ -1442,7 +1475,7 @@ void addDirection(const bng::compile::CompiledRule& rule,
                 deltaG += c;
             }
             const double phiEff = reverseDirection ? (1.0 - *phi) : *phi;
-            const double rate = std::exp(-(*ea + phiEff * deltaG));
+            const double rate = std::exp(-(*ea + barrierContribution + phiEff * deltaG));
             if (!std::isfinite(rate) || rate < 0.0) {
                 issue(result, BngLoweringSeverity::Error, entity, "expanded energy-modulated rate is invalid");
                 return;
@@ -1746,13 +1779,11 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
 
     }
     if (!model.population_maps.empty()) refuse("un-lowered population maps require generate_hybrid_model");
-    if (!source.barrierFactors().empty())
-        refuse("barrier rate modulation not yet implemented in NFnext execution");
     bool has_energy_modulated_rate = false;
     for (const auto& rule : source.rules()) {
         auto check = [&](const bng::compile::CompiledRuleDirection& d) {
             if (d.rateLaw && d.rateLaw->kind == bng::compile::RateLawKind::ArrheniusEnergy &&
-                !source.energyFactors().empty())
+                (!source.energyFactors().empty() || !source.barrierFactors().empty()))
                 has_energy_modulated_rate = true;
         };
         check(rule.forward());
@@ -1779,6 +1810,8 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         if (!all_expanded)
             refuse("energy-modulated Arrhenius rule form is not yet supported in NFnext lowering");
     }
+    if (!source.barrierFactors().empty() && !has_energy_modulated_rate)
+        refuse("barrier rate modulation not yet implemented in NFnext execution");
     if (request.max_particles > std::numeric_limits<std::uint32_t>::max())
         refuse("particle budget exceeds native index capacity");
     GenericGraphState state(model);
