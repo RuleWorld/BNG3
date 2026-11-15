@@ -316,6 +316,11 @@ std::optional<double> constantExpression(
             double value = 0.0; for (double arg : args) value += arg;
             return *expression.builtin == Builtin::Avg ? value / static_cast<double>(args.size()) : value;
         }
+        if (*expression.builtin == Builtin::Arrhenius && args.size() >= 2) {
+            // BNGL Arrhenius(phi, Ea): base rate exp(-Ea) in canonical RT==1
+            // convention when no deltaG/barrier/driving modulation applies.
+            return std::exp(-args[1]);
+        }
         return std::nullopt;
     }
     default:
@@ -1162,7 +1167,12 @@ void addDirection(const bng::compile::CompiledRule& rule,
               "rate references an invalid or recursive global function");
         return;
     }
-    const auto constant = constantExpression(*expandedRate, source);
+    const bool energyModulatedArrhenius =
+        direction.rateLaw->kind == bng::compile::RateLawKind::ArrheniusEnergy &&
+        (!source.energyFactors().empty() || !source.barrierFactors().empty());
+    const auto constant = energyModulatedArrhenius
+        ? std::optional<double>{}
+        : constantExpression(*expandedRate, source);
     if (constant) {
         if (!std::isfinite(*constant) || *constant < 0.0) {
             issue(result, BngLoweringSeverity::Error, entity,
@@ -1484,21 +1494,19 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             refuse("compartment dimensions must be 1, 2, or 3");
         }
     }
-    if (!source.barrierFactors().empty()) refuse("barrier factors");
     if (!source.populationMaps().empty())
         refuse("un-lowered population maps require generate_hybrid_model");
-    if (!source.metadata().unitDefaults.empty() ||
-        !source.metadata().unitDefinitions.empty() ||
-        !source.metadata().substanceUnits.empty() ||
-        !source.metadata().options.empty())
-        refuse("units, functions and options");
-    if (source.features().contains(bng::compile::Feature::Units))
-        refuse("physical units");
     for (const auto& rule : source.rules()) {
         const auto checkRate = [&](const bng::compile::CompiledRuleDirection& direction) {
-            if (!direction.rateLaw ||
-                direction.rateLaw->kind != bng::compile::RateLawKind::Expression)
-                refuse("only elementary expression rates");
+            if (!direction.rateLaw) refuse("missing rate law");
+            using Kind = bng::compile::RateLawKind;
+            switch (direction.rateLaw->kind) {
+            case Kind::Expression:
+            case Kind::ArrheniusEnergy:
+                break;
+            default:
+                refuse("unsupported NFnext rate law kind");
+            }
         };
         checkRate(rule.forward());
         if (rule.reverse()) checkRate(*rule.reverse());
@@ -1509,8 +1517,11 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             if (issue.severity == BngLoweringSeverity::Error) refuse(issue.message);
     }
     const auto& model = lowered.model;
-    if (!model.energy_patterns.empty()) refuse("energy patterns");
     if (!model.population_maps.empty()) refuse("un-lowered population maps require generate_hybrid_model");
+    const bool has_energy_semantics =
+        !source.energyFactors().empty() || !source.barrierFactors().empty() ||
+        !model.energy_patterns.empty();
+    if (has_energy_semantics) refuse("energy-pattern and barrier rate modulation not yet implemented in NFnext execution");
     if (request.max_particles > std::numeric_limits<std::uint32_t>::max())
         refuse("particle budget exceeds native index capacity");
     GenericGraphState state(model);
