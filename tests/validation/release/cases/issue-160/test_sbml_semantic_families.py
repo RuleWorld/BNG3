@@ -193,16 +193,22 @@ def test_event_switched_fast_reaction_solvable_exact_lowering():
     </listOfEvents>
   </model>
 </sbml>"""
-    atomizer = Atomizer({"quietMode": True, "logLevel": "INFO", "t_end": 2.0, "n_steps": 10})
+    atomizer = Atomizer(
+        {"quietMode": True, "logLevel": "INFO", "t_end": 2.0, "n_steps": 10}
+    )
     result = atomizer.atomize(xml)
     assert result.success, result.error
     loss_warnings = [
-        w for w in atomizer.model.import_warnings
+        w
+        for w in atomizer.model.import_warnings
         if w.get("category") == "fastReaction" and w.get("severity") in LOSS_SEVERITIES
     ]
-    assert not loss_warnings, f"Expected clean lowering without loss, got: {loss_warnings}"
+    assert (
+        not loss_warnings
+    ), f"Expected clean lowering without loss, got: {loss_warnings}"
     info_warnings = [
-        w for w in atomizer.model.import_warnings
+        w
+        for w in atomizer.model.import_warnings
         if w.get("category") == "fastReaction" and w.get("severity") == "info"
     ]
     assert any("reduces" in w.get("message", "") for w in info_warnings)
