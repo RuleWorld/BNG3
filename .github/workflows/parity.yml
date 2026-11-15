@@ -492,7 +492,7 @@ jobs:
 
   integrated-semantic-validation:
     name: Integrated semantic validation (Atomizer, BNG3, BNG2, PyBioNetGen, NFsim)
-    needs: [oracle-lock, release-obligation-142, nfsim-parity]
+    needs: [oracle-lock, release-obligation-142]
     runs-on: ubuntu-22.04
     timeout-minutes: 90
     env:
@@ -689,14 +689,14 @@ jobs:
           path: ${{ runner.temp }}/issue142/queue/observables
 
       - name: Download Issue 150 hybrid release report for issue queue
-        if: always() && needs.nfsim-parity.result == 'success'
+        if: always() && needs.release-obligation-142.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: release-hybrid-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}
           path: ${{ runner.temp }}/bng3-hybrid-release
 
       - name: Download Issue 147 NFnext lowering report for issue queue
-        if: always() && needs.nfsim-parity.result == 'success'
+        if: always() && needs.release-obligation-142.result == 'success'
         uses: actions/download-artifact@v4
         with:
           name: release-issue-147-${{ github.event.pull_request.head.sha || github.sha }}-${{ github.run_id }}
