@@ -1740,7 +1740,9 @@ def _reduce_with_pool(
             for identifier in (reactant_id, product_id)
             if _signed_stoichiometry(other, identifier) > 0
         }
-        plan = _completion_plan(active[0], reactant_id, product_id, analysis, sourced)
+        plan = _completion_plan(
+            active[0], reactant_id, product_id, analysis, sourced, model=model
+        )
     elif len(active) == 2:
         plan = _balance_plan(active, reactant_id, product_id, analysis)
     else:
@@ -2439,6 +2441,7 @@ def _completion_plan(
     product_id: str,
     analysis: _SymbolAnalysis,
     sourced: Sequence[str] = (),
+    model: Optional[SBMLModel] = None,
 ):
     """Return how a single-term fast rate fixes the amounts, or a refusal.
 
@@ -2453,6 +2456,40 @@ def _completion_plan(
         if value is None or species in sourced:
             return False
         return value > 0 if wanted == "+" else value < 0
+
+    def turns_on_from_zero(species_empty_initially: str, wanted: str) -> bool:
+        if _initial_coefficient(term, analysis) != 0.0:
+            return False
+        if species_empty_initially in sourced:
+            return False
+        if model is not None:
+            sp = model.species.get(species_empty_initially)
+            if sp is not None:
+                amount = _species_amount(model, sp)
+                if amount is None or amount != 0.0:
+                    return False
+        for factor in term.factors:
+            for name in _expression_names(factor):
+                key = standardize_name(name)
+                if key in analysis._assignment_rules or key in analysis._rate_rules:
+                    return False
+                if key not in analysis._event_values:
+                    return False
+                values = []
+                for text in analysis._event_values[key]:
+                    assigned = _constant_value(text, analysis._resolver)
+                    if assigned is None:
+                        return False
+                    values.append(assigned)
+                if not values:
+                    return False
+                if wanted == "+":
+                    if not all(v > 0 for v in values):
+                        return False
+                else:
+                    if not all(v < 0 for v in values):
+                        return False
+        return True
 
     powers = dict(term.species)
     depends_on_reactant = powers.get(reactant_id, 0) >= 1
@@ -2495,6 +2532,14 @@ def _completion_plan(
     if depends_on_reactant:
         if sign == "+" or (sign == "0+" and holds_from_the_start(reactant_id, "+")):
             return forward
+        if sign == "0+" and turns_on_from_zero(product_id, "+"):
+            return _SteadyStatePlan(
+                "switch",
+                "the species the fast reaction holds at zero follows the sign of "
+                f'its rate constant: "{product_id}" while it is zero and '
+                f'"{reactant_id}" while it is positive',
+                coefficient=_coefficient_text(term),
+            )
         return (
             "the fast reaction's rate depends only on the species it consumes, "
             "and its rate constant is not provably positive for the whole run, "
