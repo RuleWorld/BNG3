@@ -31,7 +31,7 @@ def _mean_observable(bngl: str, obs: str, t: float, seeds):
 
 def test_nfnext_physical_unimolecular_decay_matches_count_law_mean():
     # k = 0.5 s^-1 is unchanged by unimolecular physical-unit conversion.
-    bngl = r'''begin model
+    bngl = r"""begin model
   setOption("units", "strict")
   begin units
     timeunits second
@@ -56,7 +56,7 @@ def test_nfnext_physical_unimolecular_decay_matches_count_law_mean():
     decay: A()@cell -> 0 k
   end reaction rules
 end model
-'''
+"""
     t = 1.0
     seeds = range(64)
     obs_mean = _mean_observable(bngl, "A_count", t, seeds)
@@ -69,7 +69,7 @@ end model
 
 def test_nfnext_physical_zero_order_synthesis_matches_count_law_mean():
     # 1.660538863127e-7 M/s in 1 fL with N_A => 100 count/s.
-    bngl = r'''begin model
+    bngl = r"""begin model
   setOption("units", "strict")
   setOption("NumberPerQuantityUnit", 6.02214076e23)
   begin units
@@ -95,7 +95,7 @@ def test_nfnext_physical_zero_order_synthesis_matches_count_law_mean():
     synth: 0 -> A()@cell k_synth
   end reaction rules
 end model
-'''
+"""
     t = 0.5
     seeds = range(64)
     obs_mean = _mean_observable(bngl, "A_count", t, seeds)
