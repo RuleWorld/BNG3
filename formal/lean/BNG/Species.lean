@@ -163,6 +163,19 @@ theorem addSpeciesModuloIso_idempotent_of_iso (pool : List Mixture) (candidate :
     addSpeciesModuloIso pool candidate = pool := by
   simp [addSpeciesModuloIso, hiso]
 
+/-- Exact bounded identity: every pool member remains present after insertion
+attempt, and the candidate is represented modulo graph isomorphism. -/
+theorem addSpeciesModuloIso_contains_candidate_or_iso (pool : List Mixture) (candidate : Mixture) :
+    candidate ∈ addSpeciesModuloIso pool candidate ∨
+      ∃ existing ∈ pool, existing.isomorphicSpecies candidate = true := by
+  unfold addSpeciesModuloIso
+  by_cases h : pool.any (fun existing => existing.isomorphicSpecies candidate) = true
+  · right
+    rcases List.any_eq_true.mp h with ⟨existing, hex, hiso⟩
+    exact ⟨existing, hex, hiso⟩
+  · left
+    simp [h]
+
 /-- Exact bounded identity accumulation: a representative is added iff no
 graph-isomorphic representative already exists in the pool (for the named
 supported class oracle). -/
