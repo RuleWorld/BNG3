@@ -153,9 +153,8 @@ validated by the supported-class predicate. -/
 theorem isomorphicSpecies_witness (left right : Mixture)
     (h : left.isomorphicSpecies right = true) :
     ∃ m ∈ candidateSpeciesIsoMaps left right, m.validFor left right = true := by
-  simp [Mixture.isomorphicSpecies, Bool.and_eq_true] at h
-  have hany := h.2
-  rcases List.any_eq_true.mp hany with ⟨m, hm, hvalid⟩
+  simp [Mixture.isomorphicSpecies] at h
+  rcases h.2.2 with ⟨m, hm, hvalid⟩
   exact ⟨m, hm, hvalid⟩
 
 theorem addSpeciesModuloIso_preserves_existing (pool : List Mixture) (candidate : Mixture)
