@@ -1,6 +1,7 @@
-import copy, tempfile, shutil
+import copy
+import shutil
+import tempfile
 
-from bionetgen.main import BioNetGen
 from bionetgen.core.exc import BNGModelError
 from bionetgen.core.utils.logging import BNGLogger
 
@@ -18,11 +19,17 @@ from .blocks import (
     PopulationMapBlock,
 )
 
-# This allows access to the CLIs config setup
-app = BioNetGen()
-app.setup()
-conf = app.config["bionetgen"]
-def_bng_path = conf["bngpath"]
+
+def _default_bng_path():
+    try:
+        from bionetgen.core.defaults import BNGDefaults
+
+        return BNGDefaults().bng_path
+    except Exception:
+        return None
+
+
+def_bng_path = _default_bng_path()
 
 
 ###### CORE OBJECT AND PARSING FRONT-END ######
