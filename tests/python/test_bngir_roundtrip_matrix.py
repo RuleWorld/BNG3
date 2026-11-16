@@ -47,7 +47,7 @@ def _assert_roundtrip(src: str, *, native: bool = False):
 
 
 CASES = {
-    "states_and_bonds": r'''
+    "states_and_bonds": r"""
 begin model
 begin molecule types
     A(b,c~u~p)
@@ -66,8 +66,8 @@ begin reaction rules
     A(c~u) -> A(c~p) 0.5
 end reaction rules
 end model
-''',
-    "compartments_and_protocol": r'''
+""",
+    "compartments_and_protocol": r"""
 begin model
 begin compartments
     EC 3 1.0
@@ -89,8 +89,8 @@ end reaction rules
 end model
 generate_network({overwrite=>1})
 simulate({method=>"ode",t_end=>1,n_steps=>5})
-''',
-    "functions_and_dependent_rate": r'''
+""",
+    "functions_and_dependent_rate": r"""
 begin model
 begin parameters
     k 0.1
@@ -112,8 +112,8 @@ begin reaction rules
     A() -> B() f()
 end reaction rules
 end model
-''',
-    "delays_and_bidirectional": r'''
+""",
+    "delays_and_bidirectional": r"""
 begin model
 begin parameters
     tau 2
@@ -133,8 +133,8 @@ begin reaction rules
     A() -> B() 1 delay=tau NonConsuming
 end reaction rules
 end model
-''',
-    "modifiers_synthesis_totalrate": r'''
+""",
+    "modifiers_synthesis_totalrate": r"""
 begin model
 begin molecule types
     A()
@@ -153,7 +153,7 @@ begin reaction rules
     A() -> 0 1
 end reaction rules
 end model
-''',
+""",
 }
 
 # Native reconstruction is intentionally narrow; enable only for cases within
@@ -167,7 +167,7 @@ def test_bngir_roundtrip_matrix(name, src):
 
 
 def test_bngir_v01_population_map_roundtrip_with_rate():
-    src = r'''
+    src = r"""
 begin model
 begin molecule types
   A()
@@ -183,7 +183,7 @@ begin functions
   k_pop() = 1
 end functions
 end model
-'''
+"""
     model = _model(src)
     doc = json.loads(model.to_bngir(version="0.1"))
     assert doc["model"]["population_maps"][0].get("rate") == "k_pop()"

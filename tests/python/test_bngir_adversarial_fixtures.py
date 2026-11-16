@@ -32,7 +32,10 @@ def test_adversarial_valid_fixture_roundtrips_and_executes_native():
     assert abs(float(result.concentrations[0][0]) - 10.0) < 1e-9
     assert abs(float(result.concentrations[0][1]) - 0.0) < 1e-9
     assert abs(float(result.concentrations[-1][0]) - 10.0 * 0.8187307530779818) < 1e-6
-    assert abs(float(result.concentrations[-1][1]) - 10.0 * (1 - 0.8187307530779818)) < 1e-6
+    assert (
+        abs(float(result.concentrations[-1][1]) - 10.0 * (1 - 0.8187307530779818))
+        < 1e-6
+    )
 
 
 @pytest.mark.parametrize(
