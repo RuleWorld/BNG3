@@ -890,8 +890,7 @@ end model
 """
         return bionetgen.BioNetGenModel(bionetgen.model._cpp.parse_string(source))
 
-    with pytest.raises(bionetgen.EqualityUndecided):
-        bionetgen.semantic_equal(model("A()"), model("B()"))
+    assert bionetgen.semantic_equal(model("A()"), model("B()")) is False
 
 
 def test_semantic_equal_does_not_ignore_function_bodies():
