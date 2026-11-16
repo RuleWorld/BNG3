@@ -10348,10 +10348,12 @@ def generate_bngl(
         ):
             """Rescale concentration-species amounts on discrete volume change.
 
-            When a compartment's size changes by an event, a species whose SBML
-            symbol denotes a concentration keeps that concentration continuous
-            unless the event explicitly assigns the species. BNGL stores the
-            species amount, so the amount must be rescaled by V_new/V_old.
+            A concentration-valued species whose SBML value is defined by a rate
+            rule has continuous concentration across a volume-only event; BNGL
+            stores amounts, so the amount must be rescaled by V_new/V_old when
+            the compartment size changes at an event and the species is not
+            explicitly assigned. Reaction-driven species follow amount dynamics
+            and are not rescaled here.
             """
             resolved_compartment = next(
                 (
@@ -10404,6 +10406,7 @@ def generate_bngl(
             scale = float(new_volume) / float(old_volume)
             if abs(scale - 1.0) <= 1e-15:
                 return ()
+
             rescale_sets = []
             for sid, species in model.species.items():
                 if not species.compartment:
@@ -10416,33 +10419,21 @@ def generate_bngl(
                     continue
                 if standardize_name(sid) in assigned_species_ids:
                     continue
-                pattern = species_to_pattern.get(sid)
-                if not pattern:
-                    continue
-                # Determine pre-event concentration, then compute new amount.
-                conc_value = _resolve_event_time_value(sid, event_context, time)
-                if conc_value is None or not math.isfinite(conc_value):
-                    continue
-                # For concentration-valued species, _resolve_event_time_value
-                # returns the concentration trajectory value for rate-ruled
-                # concentration species when possible.
-                if any(
+                rate_ruled_species = any(
                     rule.type == "rate"
                     and rule.variable
                     and standardize_name(rule.variable) == standardize_name(sid)
                     for rule in model.rules
-                ):
-                    new_amount = float(new_volume) * float(conc_value)
-                else:
-                    # Non-rate-ruled concentration species: preserve current
-                    # concentration => amount scales with volume.
-                    current_amount = float(old_volume) * float(conc_value)
-                    # If conc_value came from initial/amount semantics, be
-                    # conservative: try amount scaling directly.
-                    if math.isfinite(current_amount):
-                        new_amount = current_amount * scale
-                    else:
-                        continue
+                )
+                if not rate_ruled_species:
+                    continue
+                pattern = species_to_pattern.get(sid)
+                if not pattern:
+                    continue
+                conc_value = _resolve_event_time_value(sid, event_context, time)
+                if conc_value is None or not math.isfinite(conc_value):
+                    continue
+                new_amount = float(new_volume) * float(conc_value)
                 if not math.isfinite(new_amount):
                     continue
                 rescale_sets.append(("conc", pattern, float(new_amount)))
