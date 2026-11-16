@@ -3760,6 +3760,33 @@ def exact_process_equal(
 
     def unlowered_contract(model_doc: Mapping[str, Any]) -> dict[str, Any]:
         rules = model_doc.get("rules", [])
+
+        def _rule_execution_signature(rule: Mapping[str, Any]) -> dict[str, Any]:
+            if not isinstance(rule, Mapping):
+                return {"raw": rule}
+            # v0.1 rules carry kinetics/execution modifiers at top level; v0.2
+            # carries delay/non-consuming/modifiers and may place driving work on
+            # the rule or direction. Include every field that can change process
+            # semantics outside the finite jump table.
+            signature: dict[str, Any] = {
+                "delay": rule.get("delay"),
+                "non_consuming": rule.get("non_consuming", False),
+                "modifiers": rule.get("modifiers", []),
+                "driving_work": rule.get("driving_work", ""),
+            }
+            for direction_name in ("forward", "reverse"):
+                direction = rule.get(direction_name)
+                if isinstance(direction, Mapping):
+                    if "driving_work" in direction:
+                        signature[f"{direction_name}.driving_work"] = direction.get(
+                            "driving_work"
+                        )
+                    if "non_consuming" in direction:
+                        signature[f"{direction_name}.non_consuming"] = direction.get(
+                            "non_consuming"
+                        )
+            return signature
+
         return {
             key: model_doc.get(key)
             for key in (
@@ -3773,17 +3800,37 @@ def exact_process_equal(
         } | {
             "parameters_for_delays": (
                 model_doc.get("parameters")
-                if any(rule.get("delay") is not None for rule in rules)
+                if any(
+                    (rule.get("delay") if isinstance(rule, Mapping) else None)
+                    is not None
+                    for rule in rules
+                )
                 else []
             ),
-            "rule_delays_and_modifiers": sorted(
-                json.dumps(
-                    {"delay": rule.get("delay"), "modifiers": rule.get("modifiers")},
-                    sort_keys=True,
-                    separators=(",", ":"),
-                )
+            "rule_execution_features": sorted(
+                json.dumps(_rule_execution_signature(rule), sort_keys=True, separators=(",", ":"))
                 for rule in rules
-                if rule.get("delay") is not None or rule.get("modifiers")
+                if isinstance(rule, Mapping)
+                and (
+                    rule.get("delay") is not None
+                    or rule.get("non_consuming", False)
+                    or rule.get("modifiers")
+                    or rule.get("driving_work")
+                    or (
+                        isinstance(rule.get("forward"), Mapping)
+                        and (
+                            rule["forward"].get("driving_work")
+                            or rule["forward"].get("non_consuming")
+                        )
+                    )
+                    or (
+                        isinstance(rule.get("reverse"), Mapping)
+                        and (
+                            rule["reverse"].get("driving_work")
+                            or rule["reverse"].get("non_consuming")
+                        )
+                    )
+                )
             ),
         }
 
