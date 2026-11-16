@@ -1,0 +1,114 @@
+import os
+import re
+
+from bionetgen.core.exc import BNGParseError
+from bionetgen.core.utils.logging import BNGLogger
+from bionetgen.network.blocks import (
+    NetworkGroupBlock,
+    NetworkParameterBlock,
+    NetworkReactionBlock,
+    NetworkSpeciesBlock,
+)
+
+logger = BNGLogger()
+
+
+class BNGNetworkParser:
+    def __init__(self, path) -> None:
+        self.path = path
+        self.network_name = os.path.splitext(os.path.basename(path))[0]
+        with open(self.path, "r") as f:
+            self.network_lines = f.readlines()
+
+    def parse_network(self, network_obj) -> None:
+        network_obj.network_name = self.network_name
+        pblock = [-1, -1]
+        sblock = [-1, -1]
+        rblock = [-1, -1]
+        gblock = [-1, -1]
+        for iline, line in enumerate(self.network_lines):
+            if line.strip() == "begin parameters":
+                pblock[0] = iline
+            if line.strip() == "end parameters":
+                pblock[1] = iline
+            if line.strip() == "begin species":
+                sblock[0] = iline
+            if line.strip() == "end species":
+                sblock[1] = iline
+            if line.strip() == "begin reactions":
+                rblock[0] = iline
+            if line.strip() == "end reactions":
+                rblock[1] = iline
+            if line.strip() == "begin groups":
+                gblock[0] = iline
+            if line.strip() == "end groups":
+                gblock[1] = iline
+
+        if pblock[0] >= 0 and pblock[1] > 0:
+            param_block = NetworkParameterBlock()
+            for iline in range(pblock[0] + 1, pblock[1]):
+                m = re.match(r"([^#]*)(#.*)?", self.network_lines[iline])
+                if m and m.group(1).strip() != "":
+                    splt = m.group(1).split()
+                    pid = splt[0]
+                    pname = splt[1]
+                    pvalue = splt[2]
+                    comment = m.group(2)
+                    param_block.add_parameter(pid, pname, pvalue, comment=comment)
+            network_obj.add_block(param_block)
+
+        if sblock[0] >= 0 and sblock[1] > 0:
+            spec_block = NetworkSpeciesBlock()
+            for iline in range(sblock[0] + 1, sblock[1]):
+                m = re.match(r"([^#]*)(#.*)?", self.network_lines[iline])
+                if m is None:
+                    continue
+                line_text = m.group(1) or ""
+                if line_text.strip() != "":
+                    splt = line_text.split()
+                    if len(splt) < 3:
+                        msg = (
+                            f"Malformed species line at {self.path}:{iline + 1}; "
+                            "expected '<id> <species> <count>', "
+                            f"got {line_text.strip()!r}"
+                        )
+                        logger.error(msg, loc=f"{__file__} : BNGNetworkParser.parse_network()")
+                        raise BNGParseError(self.path, message=f": {msg}")
+                    sid = splt[0]
+                    name = splt[1]
+                    count = splt[2]
+                    spec_block.add_species(sid, name, count)
+            network_obj.add_block(spec_block)
+
+        if rblock[0] >= 0 and rblock[1] > 0:
+            rxns_block = NetworkReactionBlock()
+            for iline in range(rblock[0] + 1, rblock[1]):
+                m = re.match(r"([^#]*)(#.*)?", self.network_lines[iline])
+                if m and m.group(1).strip() != "":
+                    splt = m.group(1).split()
+                    rid = splt[0]
+                    reactants = splt[1].split(",") if len(splt) > 1 else []
+                    products = splt[2].split(",") if len(splt) > 2 else []
+                    rate_constant = splt[3] if len(splt) > 3 else None
+                    comment = m.group(2)
+                    rxns_block.add_reaction(
+                        rid,
+                        reactants=reactants,
+                        products=products,
+                        rate_constant=rate_constant,
+                        comment=comment,
+                    )
+            network_obj.add_block(rxns_block)
+
+        if gblock[0] >= 0 and gblock[1] > 0:
+            grps_block = NetworkGroupBlock()
+            for iline in range(gblock[0] + 1, gblock[1]):
+                m = re.match(r"([^#]*)(#.*)?", self.network_lines[iline])
+                if m and m.group(1).strip() != "":
+                    splt = m.group(1).split()
+                    rid = splt[0]
+                    name = splt[1] if len(splt) > 1 else ""
+                    members = splt[2].split(",") if len(splt) > 2 else []
+                    comment = m.group(2)
+                    grps_block.add_group(rid, name, members, comment=comment)
+            network_obj.add_block(grps_block)

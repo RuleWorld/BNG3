@@ -209,13 +209,26 @@ def export(model, fmt, output):
 
 
 @main.command()
-def info():
+@click.option("-d", "--detail", is_flag=True, default=False, help="Show detailed information.")
+def info(detail):
     """Show BioNetGen installation and runtime information."""
     import bionetgen
 
     click.echo(f"BioNetGen version: {bionetgen.__version__}")
     click.echo(f"Python package: {Path(bionetgen.__file__).resolve().parent}")
     click.echo(f"Python: {sys.executable}")
+    if detail:
+        try:
+            from bionetgen.core.tools.info import BNGInfo
+
+            info_obj = BNGInfo(config=getattr(bionetgen, "defaults", None))
+            info_obj.gatherInfo()
+            info_obj.messageGeneration()
+            for line in getattr(info_obj, "info_message", "").splitlines():
+                if line.strip():
+                    click.echo(line)
+        except Exception:
+            pass
 
 
 @main.command()
@@ -228,14 +241,44 @@ def info():
     help="Input .gdat, .cdat, or .scan file.",
 )
 @click.option("--output", "-o", "output_path", default=None, type=click.Path())
-def plot(input_path, output_path):
+@click.option("--legend", is_flag=True, default=False, help="Show legend.")
+@click.option("--xmin", default=None, type=float, help="x-axis minimum.")
+@click.option("--xmax", default=None, type=float, help="x-axis maximum.")
+@click.option("--ymin", default=None, type=float, help="y-axis minimum.")
+@click.option("--ymax", default=None, type=float, help="y-axis maximum.")
+@click.option("--xlabel", default=None, type=str, help="x-axis label.")
+@click.option("--ylabel", default=None, type=str, help="y-axis label.")
+@click.option("--title", default=None, type=str, help="Plot title.")
+def plot(
+    input_path,
+    output_path,
+    legend,
+    xmin,
+    xmax,
+    ymin,
+    ymax,
+    xlabel,
+    ylabel,
+    title,
+):
     """Plot a BioNetGen data file."""
     from bionetgen.core.tools.plot import BNGPlotter
 
     output = Path(output_path) if output_path else Path(input_path).with_suffix(".png")
     output.parent.mkdir(parents=True, exist_ok=True)
     try:
-        BNGPlotter(input_path, str(output)).plot()
+        BNGPlotter(
+            input_path,
+            str(output),
+            legend=legend,
+            xmin=xmin,
+            xmax=xmax,
+            ymin=ymin,
+            ymax=ymax,
+            xlabel=xlabel,
+            ylabel=ylabel,
+            title=title,
+        ).plot()
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
     click.echo(f"Plot written to {output}")
@@ -244,7 +287,13 @@ def plot(input_path, output_path):
 @main.command()
 @click.option("--input", "-i", "input_path", default=None, type=click.Path(exists=True))
 @click.option("--output", "-o", "output_path", default=None, type=click.Path())
-@click.option("--open", "open_notebook", is_flag=True, help="Report the notebook path.")
+@click.option(
+    "--open",
+    "-op",
+    "open_notebook",
+    is_flag=True,
+    help="Report the notebook path.",
+)
 def notebook(input_path, output_path, open_notebook):
     """Create a Jupyter notebook from the bundled BioNetGen template."""
     assets = Path(__file__).resolve().parent / "assets"
