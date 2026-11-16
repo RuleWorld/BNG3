@@ -9,6 +9,15 @@ __all__ = [
     "BNGCLI",
     "BNGVisualize",
     "BNGGdiff",
+    "BNGSIM_AVAILABLE",
+    "BNGSIM_HAS_NFSIM",
+    "BNGSIM_VERSION",
+    "detect_input_format",
+    "run_bngl_with_bngsim",
+    "run_bngl_with_bngsim_backend_hook",
+    "run_nfsim",
+    "run_with_bngsim",
+    "execute_bngsim_backend_payload",
 ]
 
 
@@ -36,4 +45,21 @@ def __getattr__(name):
         from .gdiff import BNGGdiff
 
         return BNGGdiff
+    if name in {
+        "BNGSIM_AVAILABLE",
+        "BNGSIM_HAS_NFSIM",
+        "BNGSIM_VERSION",
+        "detect_input_format",
+        "run_bngl_with_bngsim",
+        "run_bngl_with_bngsim_backend_hook",
+        "run_nfsim",
+        "run_with_bngsim",
+    }:
+        from . import bngsim_bridge
+
+        return getattr(bngsim_bridge, name)
+    if name == "execute_bngsim_backend_payload":
+        from .bngsim_backend_helper import execute_backend_payload
+
+        return execute_backend_payload
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
