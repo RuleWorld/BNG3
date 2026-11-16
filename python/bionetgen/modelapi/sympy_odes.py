@@ -17,6 +17,11 @@ except ImportError:  # pragma: no cover - exercised when optional sympy missing
     standard_transformations = None  # type: ignore[assignment]
 
 
+def _require_sympy() -> None:
+    if sp is None:
+        raise ImportError("SymPy is required for ODE export; install sympy")
+
+
 @dataclass
 class SympyOdes:
     t: sp.Symbol
@@ -96,6 +101,7 @@ def export_sympy_odes(
 
     Returns a SympyOdes object containing SymPy symbols and expressions.
     """
+    _require_sympy()
     from bionetgen.modelapi.model import bngmodel
 
     if not isinstance(model_or_path, bngmodel):
@@ -152,6 +158,7 @@ def export_sympy_odes(
 
 def extract_odes_from_mexfile(mex_c_path: str) -> SympyOdes:
     """Parse a writeMexfile C output and return SymPy ODE expressions."""
+    _require_sympy()
     with open(mex_c_path, "r") as f:
         text = f.read()
 
