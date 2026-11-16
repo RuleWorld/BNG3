@@ -6,7 +6,6 @@ import pytest
 
 import bionetgen
 
-
 MODEL_WITH_ACTIONS = """
 begin model
 begin parameters
