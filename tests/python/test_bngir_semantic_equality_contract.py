@@ -417,3 +417,49 @@ end reaction rules
 end model
 """)
     assert bionetgen.semantic_equal(a, b) is False
+
+
+def test_semantic_equal_protocol_action_order_requires_witness():
+    a = M(r"""
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin reaction rules
+  A() -> 0 k
+end reaction rules
+end model
+setParameter("k",1)
+setParameter("k",2)
+""")
+    b = M(r"""
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin reaction rules
+  A() -> 0 k
+end reaction rules
+end model
+setParameter("k",2)
+setParameter("k",1)
+""")
+    with pytest.raises(EqualityUndecided) as excinfo:
+        bionetgen.semantic_equal(a, b)
+    assert excinfo.value.diagnostic["status"] == "undecided"
+    assert (
+        excinfo.value.diagnostic["left_actions"]
+        != excinfo.value.diagnostic["right_actions"]
+    )
