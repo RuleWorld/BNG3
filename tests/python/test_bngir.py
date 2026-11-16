@@ -121,7 +121,7 @@ def test_bngir_population_reconstruction_fails_closed():
         {"label": "pop", "pattern": "X()", "function": "lumped", "args": []}
     ]
 
-    with pytest.raises(ValueError, match="population_maps deserialization"):
+    with pytest.raises(ValueError, match="population map is missing rate"):
         bionetgen.from_bngir(document)
 
 

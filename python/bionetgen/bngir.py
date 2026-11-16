@@ -222,15 +222,37 @@ def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
         }
         for barrier in native.barrier_patterns
     ]
-    population_maps = [
-        {
-            "label": mapping.label,
-            "pattern": mapping.pattern,
-            "function": mapping.function,
-            "args": list(mapping.args),
-        }
-        for mapping in native.population_maps
-    ]
+    population_maps = []
+    if native.population_maps:
+        snapshot_population_rates = None
+        try:
+            from .model import _cpp
+
+            snapshot = _cpp._compiled_snapshot(native)
+            snapshot_population_rates = [
+                item.get("rate") for item in snapshot.get("population_maps", [])
+            ]
+            snapshot_model = snapshot
+        except Exception:
+            snapshot_population_rates = None
+            snapshot_model = None
+        for index, mapping in enumerate(native.population_maps):
+            item = {
+                "label": mapping.label,
+                "pattern": mapping.pattern,
+                "function": mapping.function,
+                "args": list(mapping.args),
+            }
+            rate = None
+            if snapshot_population_rates and index < len(snapshot_population_rates):
+                rate = snapshot_population_rates[index]
+            if isinstance(rate, Mapping) and snapshot_model is not None:
+                item["rate"] = _expression_v02(rate, snapshot_model)
+            elif hasattr(mapping, "rateText") and getattr(mapping, "rateText"):
+                item["rate"] = str(getattr(mapping, "rateText"))
+            elif hasattr(mapping, "rate") and isinstance(getattr(mapping, "rate"), str):
+                item["rate"] = getattr(mapping, "rate")
+            population_maps.append(item)
 
     features = {"required": [], "used": []}
     if compartments:
@@ -504,8 +526,6 @@ def _action_lines(action: Mapping[str, Any]) -> str:
 
 def _as_bngl_v01(root: Mapping[str, Any]) -> str:
     model = _require_mapping(root["model"], "model")
-    if model.get("population_maps"):
-        raise ValueError("BNGIR population_maps deserialization is not yet supported")
 
     lines: list[str] = []
     if model.get("version"):
@@ -609,6 +629,22 @@ def _as_bngl_v01(root: Mapping[str, Any]) -> str:
                 f"  {label}{reactants} {arrow} {products} {item['expression']}"
             )
         lines += ["end barrier patterns"]
+    population_maps = model.get("population_maps", [])
+    if population_maps:
+        lines += ["begin population maps"]
+        for item in population_maps:
+            if not item.get("rate"):
+                raise ValueError(
+                    "BNGIR v0.1 population map is missing rate; "
+                    "lossless population map deserialization requires an explicit rate"
+                )
+            label = f"{item['label']}: " if item.get("label") else ""
+            args = ",".join(item.get("args", []))
+            rate = item["rate"]
+            line = f"  {label}{item['pattern']} -> {item['function']}({args}) {rate}"
+            lines.append(line)
+        lines += ["end population maps"]
+
     rules = model.get("rules", [])
     if rules:
         lines += ["begin reaction rules"]
