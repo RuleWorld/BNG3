@@ -103,6 +103,12 @@ def test_adversarial_invalid_fixtures_rejected(name, expect_schema_failure):
         bionetgen.from_bngir(doc)
     with pytest.raises(Exception):
         bionetgen.from_bngir(doc, native=True)
+    # Rejection must happen before any partial model mutation/corruption.
+    control = _load("valid_decay.json")
+    jsonschema.validate(control, SCHEMA)
+    control_model = bionetgen.from_bngir(control)
+    control_native = bionetgen.from_bngir(control, native=True)
+    assert bionetgen.semantic_equal(control_model, control_native, version="0.2")
 
 
 def test_mutation_reversed_rule_detected():
