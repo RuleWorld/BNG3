@@ -180,6 +180,22 @@ theorem networkGenerationStep_preserves_existing (rules : List RuleDirection)
       exact ih (addProductsModuloIso pool (RuleDirection.networkProducts r pool))
         (addProductsModuloIso_preserves_existing _ _ _ hmem)
 
+theorem networkGenerationStep_length_ge (rules : List RuleDirection) (pool : List Mixture) :
+    pool.length ≤ (networkGenerationStep rules pool).length := by
+  unfold networkGenerationStep
+  suffices h : ∀ (rs : List RuleDirection) (p : List Mixture),
+      p.length ≤ (rs.foldl (fun current rule =>
+        addProductsModuloIso current (rule.networkProducts current)) p).length from
+    h rules pool
+  intro rs p
+  induction rs generalizing p with
+  | nil => simp
+  | cons r rs ih =>
+      simp [List.foldl]
+      exact Nat.le_trans
+        (addProductsModuloIso_length_ge (RuleDirection.networkProducts r p) p)
+        (ih _)
+
 /-- Exact bounded closure identity accumulation: no known species representative
 is dropped across closure iterations (named supported class / reference oracle). -/
 theorem boundedNetworkClosure_preserves_existing (fuel : Nat)
