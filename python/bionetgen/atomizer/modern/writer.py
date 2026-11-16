@@ -2424,6 +2424,7 @@ def _rate_for_reaction(
     prepared_math: Optional[str] = None,
     replace_loc_params: bool = True,
     complete_flux: bool = False,
+    synthetic_rate_rule_variables: Optional[Set[str]] = None,
 ) -> str:
     def apply_conversion(rate: str) -> str:
         if conversion_factor is None:
@@ -2468,11 +2469,18 @@ def _rate_for_reaction(
         if rule.variable and getattr(rule, "type", "") in {"assignment", "rate"}
     }
     observable_converted_rules = observable_converted_rules or set()
+    synthetic_rate_rule_variables = synthetic_rate_rule_variables or set()
     rate_rule_variables = {
         standardize_name(rule.variable)
         for rule in model.rules
         if rule.variable and rule.type == "rate"
     }
+    rate_rule_variables.update(
+        standardize_name(variable) for variable in synthetic_rate_rule_variables
+    )
+    rate_rule_variables.update(
+        str(variable) for variable in synthetic_rate_rule_variables
+    )
     event_parameter_targets = {
         standardize_name(str(assignment.variable))
         for event in model.events
@@ -2930,6 +2938,7 @@ def process_reaction_rate(
     reactant_structures: Optional[Mapping[str, Species]] = None,
     conversion_factor: Optional[str] = None,
     replace_loc_params: bool = True,
+    synthetic_rate_rule_variables: Optional[Set[str]] = None,
 ) -> ProcessedRate:
     """Process one SBML rate using the source-shaped reversible pipeline."""
 
@@ -2949,6 +2958,7 @@ def process_reaction_rate(
             structures,
             prepared_math=prepared_math,
             replace_loc_params=replace_loc_params,
+            synthetic_rate_rule_variables=synthetic_rate_rule_variables,
         )
         return ProcessedRate(
             rate,
@@ -2979,6 +2989,7 @@ def process_reaction_rate(
             structures,
             prepared_math=prepared_math,
             replace_loc_params=replace_loc_params,
+            synthetic_rate_rule_variables=synthetic_rate_rule_variables,
         )
         return ProcessedRate(
             rate,
@@ -3000,6 +3011,7 @@ def process_reaction_rate(
         reactant_ids=forward_ids,
         prepared_math=split[0],
         replace_loc_params=replace_loc_params,
+        synthetic_rate_rule_variables=synthetic_rate_rule_variables,
     )
     reverse_rate = _rate_for_reaction(
         reaction,
@@ -3010,6 +3022,7 @@ def process_reaction_rate(
         reactant_ids=reverse_ids,
         prepared_math=split[1],
         replace_loc_params=replace_loc_params,
+        synthetic_rate_rule_variables=synthetic_rate_rule_variables,
     )
     if _has_denominator_issue(forward_rate, forward_ids) or _has_denominator_issue(
         reverse_rate, reverse_ids
@@ -3023,6 +3036,7 @@ def process_reaction_rate(
                 structures,
                 prepared_math=prepared_math,
                 replace_loc_params=replace_loc_params,
+                synthetic_rate_rule_variables=synthetic_rate_rule_variables,
             ),
             force_irreversible=True,
             is_split_rxn=True,
@@ -6344,23 +6358,17 @@ def write_functions(
                     for event in model.events
                     for assignment in event.assignments
                 )
-                if (
-                    event_assigned_compartment
-                    and compartment_name not in rate_ruled_compartments
-                ):
-                    # A compartment whose size only changes at an event has no
-                    # continuous size derivative, so the concentration rate
-                    # law has no exact BNGL form.
-                    raise ValueError(
-                        "species concentration rate rule requires an explicit compartment derivative; "
-                        "an event-driven compartment size without a rate rule is unsupported"
-                    )
                 if compartment_name in rate_ruled_compartments:
                     body = (
                         f"({body}) * {compartment_name}_amt + "
                         f"_c_{name}() * {RATE_RULE_META_PREFIX}{compartment_name}()"
                     )
                 else:
+                    # A compartment whose size only changes at discrete events has
+                    # zero continuous derivative between events. Event actions
+                    # update the compartment size and rescale concentration-valued
+                    # species amounts at event boundaries as needed, so dN/dt =
+                    # V(t)*dC/dt is the correct continuous amount-rate form.
                     body = f"({body}) * __compartment_{compartment_name}__"
         lines.append(f"{RATE_RULE_META_PREFIX}{name}() = {body}")
         lines.append(
@@ -6826,6 +6834,7 @@ def write_reaction_rules(
     time_rate_functions: Optional[List[str]] = None,
     replace_loc_params: bool = True,
     species_compartment_prefix: bool = False,
+    synthetic_rate_rule_variables: Optional[Set[str]] = None,
 ) -> List[str]:
     # BNGL represents stoichiometry by repeating a species pattern. Very
     # large source stoichiometries cannot therefore be represented as a
@@ -6986,6 +6995,7 @@ def write_reaction_rules(
                 reactant_ids=[],
                 prepared_math=prepared_math,
                 replace_loc_params=replace_loc_params,
+                synthetic_rate_rule_variables=synthetic_rate_rule_variables,
             )
             net_terms: "OrderedDict[str, List[str]]" = OrderedDict()
             for sign, references in (
@@ -7250,6 +7260,7 @@ def write_reaction_rules(
                 reactant_ids=[],
                 prepared_math=prepared_math,
                 replace_loc_params=replace_loc_params,
+                synthetic_rate_rule_variables=synthetic_rate_rule_variables,
             )
             net_stoichiometry: "OrderedDict[str, float]" = OrderedDict()
             for reference in reaction.reactants:
@@ -7375,6 +7386,7 @@ def write_reaction_rules(
                     prepared_math=prepared_math,
                     replace_loc_params=replace_loc_params,
                     complete_flux=True,
+                    synthetic_rate_rule_variables=synthetic_rate_rule_variables,
                 )
         # A participant removed from the pattern because a rule controls its
         # value is still an operand of the kinetic law, so
@@ -7408,6 +7420,7 @@ def write_reaction_rules(
                 else _conversion_factor_for_reaction(reaction, model)
             ),
             replace_loc_params=replace_loc_params,
+            synthetic_rate_rule_variables=synthetic_rate_rule_variables,
         )
         rate = processed.rate_string
         reversed_numeric_flux = False
@@ -7597,6 +7610,7 @@ def _reaction_rules_section(
     time_rate_functions: Optional[List[str]] = None,
     replace_loc_params: bool = True,
     species_compartment_prefix: bool = False,
+    synthetic_rate_rule_variables: Optional[Set[str]] = None,
 ) -> str:
     """Render the shared reaction-rule implementation as a BNGL section."""
 
@@ -7610,6 +7624,7 @@ def _reaction_rules_section(
             time_rate_functions=time_rate_functions,
             replace_loc_params=replace_loc_params,
             species_compartment_prefix=species_compartment_prefix,
+            synthetic_rate_rule_variables=synthetic_rate_rule_variables,
         ),
     )
 
@@ -7621,6 +7636,7 @@ def write_reaction_rules_flat(
     time_rate_functions: Optional[List[str]] = None,
     replace_loc_params: bool = True,
     species_compartment_prefix: bool = False,
+    synthetic_rate_rule_variables: Optional[Set[str]] = None,
 ) -> str:
     """Render the Playground flat reaction-rule writer entry point.
 
@@ -7638,6 +7654,7 @@ def write_reaction_rules_flat(
         time_rate_functions=time_rate_functions,
         replace_loc_params=replace_loc_params,
         species_compartment_prefix=species_compartment_prefix,
+        synthetic_rate_rule_variables=synthetic_rate_rule_variables,
     )
 
 
@@ -7648,6 +7665,7 @@ def write_reaction_rules_atomized(
     time_rate_functions: Optional[List[str]] = None,
     replace_loc_params: bool = True,
     species_compartment_prefix: bool = False,
+    synthetic_rate_rule_variables: Optional[Set[str]] = None,
 ) -> str:
     """Render the Playground atomized reaction-rule writer entry point."""
 
@@ -7659,6 +7677,7 @@ def write_reaction_rules_atomized(
         time_rate_functions=time_rate_functions,
         replace_loc_params=replace_loc_params,
         species_compartment_prefix=species_compartment_prefix,
+        synthetic_rate_rule_variables=synthetic_rate_rule_variables,
     )
 
 
@@ -7669,6 +7688,7 @@ def write_reaction_rules_flat_v2(
     time_rate_functions: Optional[List[str]] = None,
     replace_loc_params: bool = True,
     species_compartment_prefix: bool = False,
+    synthetic_rate_rule_variables: Optional[Set[str]] = None,
 ) -> str:
     """Render the patched Playground flat writer used by BNGL generation."""
 
@@ -7680,6 +7700,7 @@ def write_reaction_rules_flat_v2(
         time_rate_functions=time_rate_functions,
         replace_loc_params=replace_loc_params,
         species_compartment_prefix=species_compartment_prefix,
+        synthetic_rate_rule_variables=synthetic_rate_rule_variables,
     )
 
 
@@ -8193,6 +8214,7 @@ def generate_bngl(
         time_rate_functions=time_rate_functions,
         replace_loc_params=replace_loc_params,
         species_compartment_prefix=True,
+        synthetic_rate_rule_variables=synthetic_state_variables,
     )
     sections.append(reaction_rule_section)
     # The generated kinetic laws are SBML extent fluxes.  Retain that source
@@ -10239,6 +10261,184 @@ def generate_bngl(
                 return None
             return float(initial_size), float(assigned_size)
 
+        def _resolve_event_time_value(
+            identifier: str, event_context: SBMLEvent, time: float
+        ) -> Optional[float]:
+            """Resolve a species/parameter value at a fixed event time when known."""
+            normalized = standardize_name(identifier)
+            # Direct assignment rules with constant/foldable expressions.
+            assignment_rules = [
+                rule
+                for rule in model.rules
+                if rule.type == "assignment"
+                and rule.variable
+                and standardize_name(rule.variable) == normalized
+            ]
+            if len(assignment_rules) == 1:
+                expr = extend_function(
+                    assignment_rules[0].math or "", {}, model.function_definitions
+                )
+                value = fold_numeric(
+                    expr,
+                    lambda symbol: (
+                        _resolve_event_time_value(symbol, event_context, time)
+                        if standardize_name(symbol) != normalized
+                        else None
+                    ),
+                )
+                if value is not None and math.isfinite(value):
+                    return float(value)
+            # Rate rules: support simple constant-derivative concentration/parameter
+            # trajectories independent of other dynamic event changes.
+            rate_rules = [
+                rule
+                for rule in model.rules
+                if rule.type == "rate"
+                and rule.variable
+                and standardize_name(rule.variable) == normalized
+            ]
+            if len(rate_rules) == 1:
+                expr = extend_function(
+                    rate_rules[0].math or "", {}, model.function_definitions
+                )
+                slope = fold_numeric(
+                    expr,
+                    lambda symbol: (
+                        resolve_event_parameter(symbol)
+                        if is_compile_time_constant(symbol)
+                        else None
+                    ),
+                )
+                if slope is not None and math.isfinite(slope):
+                    # Species concentration initial value vs parameter initial value.
+                    species = next(
+                        (
+                            s
+                            for sid, s in model.species.items()
+                            if standardize_name(sid) == normalized
+                        ),
+                        None,
+                    )
+                    if species is not None:
+                        initial = (
+                            float(species.initial_concentration)
+                            if not species.has_only_substance_units
+                            else float(species.initial_amount)
+                        )
+                    elif identifier in model.parameters:
+                        initial = float(model.parameters[identifier].value)
+                    else:
+                        initial = None
+                    if initial is not None and math.isfinite(initial):
+                        value = initial + float(slope) * float(time)
+                        if math.isfinite(value):
+                            return float(value)
+            # Fall back to initial/constant values.
+            value = resolve_initial_event_value(identifier)
+            if value is not None and math.isfinite(value):
+                return float(value)
+            return None
+
+        def resolve_compartment_volume_rescales(
+            compartment_id: str,
+            event_context: SBMLEvent,
+            time: float,
+            new_volume: float,
+            assigned_species_ids: set[str],
+        ):
+            """Rescale concentration-species amounts on discrete volume change.
+
+            A concentration-valued species whose SBML value is defined by a rate
+            rule has continuous concentration across a volume-only event; BNGL
+            stores amounts, so the amount must be rescaled by V_new/V_old when
+            the compartment size changes at an event and the species is not
+            explicitly assigned. Reaction-driven species follow amount dynamics
+            and are not rescaled here.
+            """
+            resolved_compartment = next(
+                (
+                    cid
+                    for cid in model.compartments
+                    if standardize_name(cid) == standardize_name(compartment_id)
+                ),
+                None,
+            )
+            if resolved_compartment is None:
+                return ()
+            compartment = model.compartments[resolved_compartment]
+            if compartment.spatial_dimensions == 0:
+                return ()
+            old_volume = None
+            # Find a species in this compartment to query pre-event volume.
+            for sid, species in model.species.items():
+                if (
+                    species.compartment
+                    and standardize_name(species.compartment)
+                    == standardize_name(resolved_compartment)
+                    and not species.has_only_substance_units
+                ):
+                    old_volume = resolve_species_concentration_volume(
+                        sid, event_context, time
+                    )
+                    if old_volume is not None:
+                        break
+            if old_volume is None:
+                # Fallback: constant compartment size not otherwise controlled.
+                if not any(
+                    rule.variable == resolved_compartment for rule in model.rules
+                ) and not any(
+                    a.variable == resolved_compartment
+                    for e in model.events
+                    if e is not event_context
+                    for a in e.assignments
+                ):
+                    try:
+                        old_volume = float(compartment.size)
+                    except (TypeError, ValueError):
+                        old_volume = None
+            if (
+                old_volume is None
+                or not math.isfinite(old_volume)
+                or old_volume == 0
+                or not math.isfinite(new_volume)
+            ):
+                return ()
+            scale = float(new_volume) / float(old_volume)
+            if abs(scale - 1.0) <= 1e-15:
+                return ()
+
+            rescale_sets = []
+            for sid, species in model.species.items():
+                if not species.compartment:
+                    continue
+                if standardize_name(species.compartment) != standardize_name(
+                    resolved_compartment
+                ):
+                    continue
+                if species.has_only_substance_units:
+                    continue
+                if standardize_name(sid) in assigned_species_ids:
+                    continue
+                rate_ruled_species = any(
+                    rule.type == "rate"
+                    and rule.variable
+                    and standardize_name(rule.variable) == standardize_name(sid)
+                    for rule in model.rules
+                )
+                if not rate_ruled_species:
+                    continue
+                pattern = species_to_pattern.get(sid)
+                if not pattern:
+                    continue
+                conc_value = _resolve_event_time_value(sid, event_context, time)
+                if conc_value is None or not math.isfinite(conc_value):
+                    continue
+                new_amount = float(new_volume) * float(conc_value)
+                if not math.isfinite(new_amount):
+                    continue
+                rescale_sets.append(("conc", pattern, float(new_amount)))
+            return tuple(rescale_sets)
+
         def resolve_square_linear_event_rate(
             identifier: str, event_context: SBMLEvent
         ) -> Optional[Tuple[float, float]]:
@@ -11888,6 +12088,7 @@ def generate_bngl(
                 )
             ),
             resolve_species_concentration_volume=(resolve_species_concentration_volume),
+            resolve_compartment_volume_rescales=resolve_compartment_volume_rescales,
             is_compile_time_constant=is_compile_time_constant,
             unapplied_algebraic_rule=(
                 any(rule.type == "algebraic" for rule in model.rules)

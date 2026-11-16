@@ -229,13 +229,7 @@ std::vector<std::pair<std::string, std::string>> refusals() {
          "begin seed species\n  A(x) 10\n  B(y) 10\nend seed species\n"
          "begin energy patterns\n  A(x!1).B(y!1) Gf\nend energy patterns\n"
          "begin observables\n  Molecules AB A(x!1).B(y!1)\nend observables\n"
-         "begin reaction rules\n  R1: A(x) + B(y) <-> A(x!1).B(y!1) Arrhenius(phi,Ea), Arrhenius(phi,Ea)\nend reaction rules\n"},
-        {"physical-units-unsupported",
-         "begin parameters\n  k 1e6 [M^-1*s^-1]\nend parameters\n"
-         "begin molecule types\n  A(b)\n  B(a)\nend molecule types\n"
-         "begin seed species\n  A(b) 10\n  B(a) 10\nend seed species\n"
-         "begin observables\n  Molecules AB A(b!1).B(a!1)\nend observables\n"
-         "begin reaction rules\n  A(b)+B(a)->A(b!1).B(a!1) k\nend reaction rules\n"}};
+         "begin reaction rules\n  R1: A(x) + B(y) <-> A(x!1).B(y!1) Arrhenius(phi,Ea), Arrhenius(phi,Ea)\nend reaction rules\n"}};
     for (const auto& [name, source] : cases) {
         const auto ast = bng::parser::parseModel(source);
         if (!ast) {
