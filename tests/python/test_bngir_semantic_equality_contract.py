@@ -489,3 +489,127 @@ end model
     diag = excinfo.value.diagnostic
     assert diag["status"] == "undecided"
     assert diag.get("left_actions") != diag.get("right_actions") or diag.get("left_wire_actions") != diag.get("right_wire_actions")
+
+
+def test_semantic_equal_eq_rename_initial_state_counterexample():
+    # EQ-rename differing pair: consistent renaming but changed initial state.
+    a = M(r"""
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A(s~u~p)
+end molecule types
+begin seed species
+  A(s~u) 1
+end seed species
+begin reaction rules
+  A(s~u) -> A(s~p) k
+end reaction rules
+end model
+""")
+    b = M(r"""
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  X(s~u~p)
+end molecule types
+begin seed species
+  X(s~u) 2
+end seed species
+begin reaction rules
+  X(s~u) -> X(s~p) k
+end reaction rules
+end model
+""")
+    assert bionetgen.semantic_equal(a, b) is False
+
+
+def test_semantic_equal_eq_split_counterexample_rate_sum_differs():
+    # EQ-split differing pair: split channels do not sum to the same hazard.
+    merged = M(r"""
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin reaction rules
+  A() -> B() k
+end reaction rules
+end model
+""")
+    split = M(r"""
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin reaction rules
+  R1: A() -> B() k/3
+  R2: A() -> B() k
+end reaction rules
+end model
+""")
+    assert bionetgen.semantic_equal(merged, split) is False
+
+
+def test_semantic_equal_eq_unknown_raises_undecided_never_false():
+    # EQ-unknown: symbolic identity without an available proof certificate must
+    # raise EqualityUndecided, never return False.
+    a = M(r"""
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin functions
+  f() = sin(time())*sin(time()) + cos(time())*cos(time())
+end functions
+begin reaction rules
+  A() -> B() k*f()
+end reaction rules
+end model
+""")
+    b = M(r"""
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin functions
+  f() = 1
+end functions
+begin reaction rules
+  A() -> B() k*f()
+end reaction rules
+end model
+""")
+    with pytest.raises(EqualityUndecided):
+        bionetgen.semantic_equal(a, b)
