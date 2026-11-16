@@ -84,6 +84,9 @@ class BNGParser:
         Uses BNG2.pl to generate the BNG-XML file and passes that
         to parse_xml method to fill up the model object appropriately
         """
+        import os
+        import tempfile
+
         # get file path
         model_file = self.bngfile.path
 
@@ -107,11 +110,46 @@ class BNGParser:
         elif model_file.endswith(".xml"):
             with open(model_file, "r") as f:
                 xml_str = f.read()
-                # < is not a valid XML character, we need to replace it
-                xmlstr = xml_str.replace('relation="<', 'relation="&lt;')
-                self.parse_xml(xml_str, model_obj)
+            # < is not a valid XML character, we need to replace it
+            xmlstr = xml_str.replace('relation="<', 'relation="&lt;')
+            self.parse_xml(xmlstr, model_obj)
             model_obj.reset_compilation_tags()
         else:
+            # Support inline BNGL/XML strings or content passed as a path-like string.
+            if isinstance(model_file, str) and not os.path.exists(model_file):
+                stripped = model_file.lstrip()
+                if stripped.startswith("<"):
+                    xmlstr = stripped.replace('relation="<', 'relation="&lt;')
+                    self.parse_xml(xmlstr, model_obj)
+                    model_obj.reset_compilation_tags()
+                    return
+                if "begin model" in model_file or "\n" in model_file:
+                    with tempfile.NamedTemporaryFile(
+                        "w+", suffix=".bngl", delete=False, encoding="utf-8"
+                    ) as tmp:
+                        tmp.write(model_file)
+                        tmp_path = tmp.name
+                    try:
+                        original_path = self.bngfile.path
+                        self.bngfile.path = tmp_path
+                        with TemporaryFile("w+") as xml_file:
+                            if self.bngfile.generate_xml(xml_file):
+                                xmlstr = xml_file.read()
+                                xmlstr = xmlstr.replace('relation="<', 'relation="&lt;')
+                                self.parse_xml(xmlstr, model_obj)
+                                model_obj.reset_compilation_tags()
+                            else:
+                                raise BNGModelError(
+                                    original_path,
+                                    message="XML file couldn't be generated",
+                                )
+                    finally:
+                        self.bngfile.path = original_path
+                        try:
+                            os.unlink(tmp_path)
+                        except OSError:
+                            pass
+                    return
             raise NotImplementedError(
                 "The extension of {} is not supported".format(model_file)
             )
