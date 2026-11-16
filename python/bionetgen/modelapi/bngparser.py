@@ -88,11 +88,11 @@ class BNGParser:
         import tempfile
 
         # get file path
-        model_file = self.bngfile.path
+        model_input = self.bngfile.path
 
         # this route runs BNG2.pl on the bngl and parses
         # the XML instead
-        if model_file.endswith(".bngl"):
+        if model_input.endswith(".bngl"):
             # TODO: Add verbosity option to the library
             # print("Attempting to generate XML")
             with TemporaryFile("w+") as xml_file:
@@ -107,8 +107,8 @@ class BNGParser:
                     raise BNGModelError(
                         self.bngfile.path, message="XML file couldn't be generated"
                     )
-        elif model_file.endswith(".xml"):
-            with open(model_file, "r") as f:
+        elif model_input.endswith(".xml"):
+            with open(model_input, "r") as f:
                 xml_str = f.read()
             # < is not a valid XML character, we need to replace it
             xmlstr = xml_str.replace('relation="<', 'relation="&lt;')
@@ -116,18 +116,18 @@ class BNGParser:
             model_obj.reset_compilation_tags()
         else:
             # Support inline BNGL/XML strings or content passed as a path-like string.
-            if isinstance(model_file, str) and not os.path.exists(model_file):
-                stripped = model_file.lstrip()
+            if isinstance(model_input, str) and not os.path.exists(model_input):
+                stripped = model_input.lstrip()
                 if stripped.startswith("<"):
                     xmlstr = stripped.replace('relation="<', 'relation="&lt;')
                     self.parse_xml(xmlstr, model_obj)
                     model_obj.reset_compilation_tags()
                     return
-                if "begin model" in model_file or "\n" in model_file:
+                if "begin model" in model_input or "\n" in model_input:
                     with tempfile.NamedTemporaryFile(
                         "w+", suffix=".bngl", delete=False, encoding="utf-8"
                     ) as tmp:
-                        tmp.write(model_file)
+                        tmp.write(model_input)
                         tmp_path = tmp.name
                     try:
                         original_path = self.bngfile.path
@@ -151,7 +151,7 @@ class BNGParser:
                             pass
                     return
             raise NotImplementedError(
-                "The extension of {} is not supported".format(model_file)
+                "The extension of {} is not supported".format(model_input)
             )
 
     def parse_actions(self, model_obj):
