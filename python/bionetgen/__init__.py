@@ -204,6 +204,20 @@ def __getattr__(name):
         )
 
         return locals()[name]
+    if name == "BNGSIM_AVAILABLE":
+        try:
+            from bionetgen.core.tools.bngsim_bridge import BNGSIM_AVAILABLE as value
+        except Exception:
+            value = False
+        globals()["BNGSIM_AVAILABLE"] = value
+        return value
+    if name == "BNGSIM_VERSION":
+        try:
+            from bionetgen.core.tools.bngsim_bridge import BNGSIM_VERSION as value
+        except Exception:
+            value = None
+        globals()["BNGSIM_VERSION"] = value
+        return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
