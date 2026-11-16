@@ -13,6 +13,7 @@ from .blocks import (
     MoleculeTypeBlock,
     ObservableBlock,
     ParameterBlock,
+    ProtocolBlock,
     RuleBlock,
     SpeciesBlock,
     EnergyPatternBlock,
@@ -101,6 +102,7 @@ class bngmodel:
             "energy_patterns",
             "population_maps",
             "rules",
+            "protocol",
             "actions",
         ]
         self.model_name = ""
@@ -171,7 +173,7 @@ class bngmodel:
                     self.active_blocks.remove(block)
             # print only the active blocks
             if block in self.active_blocks:
-                if block != "actions" and len(getattr(self, block)) > 0:
+                if block not in ("actions",) and len(getattr(self, block)) > 0:
                     model_lines.append(str(getattr(self, block)))
         model_lines.append("\nend model\n\n")
         if "actions" in self.active_blocks:
@@ -195,6 +197,9 @@ class bngmodel:
         bname = block.name.replace(" ", "_")
         if bname == "reaction_rules":
             bname = "rules"
+        if bname == "protocol":
+            self.add_protocol_block(block)
+            return
         try:
             block_adder = getattr(self, "add_{}_block".format(bname))
             block_adder(block)
@@ -211,6 +216,9 @@ class bngmodel:
         bname = block_name.replace(" ", "_")
         if bname == "reaction_rules":
             bname = "rules"
+        if bname == "protocol":
+            self.add_protocol_block()
+            return
         try:
             block_adder = getattr(self, "add_{}_block".format(bname))
             block_adder()
@@ -425,6 +433,28 @@ class bngmodel:
         else:
             self.population_maps = PopulationMapBlock()
 
+    def add_protocol_block(self, block=None):
+        """
+        Adds a protocol block to the model object.
+        """
+        if block is not None:
+            if not isinstance(block, ProtocolBlock):
+                self.logger.error(
+                    "The block is not a ProtocolBlock.",
+                    loc=f"{__file__} : bngmodel.add_protocol_block()",
+                )
+                raise BNGModelError(self, message="The block is not a ProtocolBlock.")
+            self.protocol = block
+            if "protocol" not in self.active_blocks:
+                self.active_blocks.append("protocol")
+            else:
+                self.logger.warning(
+                    "Network already has protocol block, replacing the old one",
+                    loc=f"{__file__} : bngmodel.add_protocol_block()",
+                )
+        else:
+            self.protocol = ProtocolBlock()
+
     def add_actions_block(self, block=None):
         """
         Adds an actions block to the model object.
@@ -535,9 +565,11 @@ class bngmodel:
             self.simulator = bng.sim_getter(model_file=self, sim_type=sim_type)
             return self.simulator
         else:
-            print('Sim type {} is not recognized, only libroadrunner \
+            print(
+                'Sim type {} is not recognized, only libroadrunner \
                    is supported currently by passing "libRR" to \
-                   sim_type keyword argument'.format(sim_type))
+                   sim_type keyword argument'.format(sim_type)
+            )
             return None
         # for now we return the underlying simulator
         return self.simulator.simulator
