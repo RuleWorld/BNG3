@@ -208,6 +208,24 @@ theorem SpeciesIsoMap.validFor_molecule_count (m : SpeciesIsoMap) (left right : 
     left.molecules.length = right.molecules.length := by
   exact m.bijectiveFor_molecule_count left right (m.validFor_bijective left right h)
 
+/-- Kernel-proved renaming invariant: a valid witness preserves local molecule
+labels (type, compartment, component/state correspondence) for mapped pairs. -/
+theorem SpeciesIsoMap.validFor_molecules (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) :
+    m.moleculeMap.all (fun pair =>
+      match left.findMolecule? pair.1, right.findMolecule? pair.2 with
+      | some a, some b => runtimeMoleculesEquivalent a b
+      | _, _ => false) = true := by
+  simp only [SpeciesIsoMap.validFor, Bool.and_eq_true] at h
+  exact h.1.1.2
+
+/-- Kernel-proved renaming/canonicalization invariant: a valid witness preserves
+bond structure in the forward direction for the supported class. -/
+theorem SpeciesIsoMap.validFor_bondsForward (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) : bondsPreservedForward left right m = true := by
+  simp only [SpeciesIsoMap.validFor, Bool.and_eq_true] at h
+  exact h.1.2
+
 /-- Kernel-proved renaming witness property: bijective mapping domain IDs are unique. -/
 theorem SpeciesIsoMap.bijectiveFor_domain_unique (m : SpeciesIsoMap) (left right : Mixture)
     (h : m.bijectiveFor left right = true) : allUnique m.domain = true := by
