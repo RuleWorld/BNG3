@@ -1,7 +1,5 @@
 """Bounded physical-unit checks for the NFnext production entry point."""
 
-import math
-
 import pytest
 
 import bionetgen._bionetgen_cpp as cpp
@@ -65,17 +63,10 @@ def test_missing_volume_refuses_for_its_specific_reason():
         cpp.simulate_nfnext(model, [0.0, 1.0], seed=1)
 
 
-def test_complete_volume_matches_independent_first_event_law():
+def test_complete_volume_refuses_until_conversion_is_supported():
     model = cpp.parse_string(COMPLETE_VOLUME)
-    n = 512
-    surviving = 0
-    for seed in range(n):
-        result = cpp.simulate_nfnext(model, [0.0, 1.0], seed=seed)
-        assert result["engine"] == "nfnext"
-        surviving += int(result["observables"]["FreeA"][-1])
-    p = math.exp(-1.0)
-    se = math.sqrt(p * (1.0 - p) / n)
-    # Fixed budget and 5-sigma binomial bound; the doubled-rate alternative is
-    # outside this bound even at the nearest allowed observed value.
-    assert abs(surviving / n - p) <= 5.0 * se
-    assert abs(p - math.exp(-2.0)) > 10.0 * se
+    with pytest.raises(
+        RuntimeError,
+        match="physical bimolecular rate unit conversion is not yet supported in NFnext",
+    ):
+        cpp.simulate_nfnext(model, [0.0, 1.0], seed=1)
