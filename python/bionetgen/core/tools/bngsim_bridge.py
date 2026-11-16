@@ -78,7 +78,9 @@ def _sniff_xml_format(file_path):
         with open(file_path, "r", errors="replace") as f:
             head = f.read(4096)
     except OSError as e:
-        raise BNGFormatError(file_path, f"Could not read file for format detection: {e}") from e
+        raise BNGFormatError(
+            file_path, f"Could not read file for format detection: {e}"
+        ) from e
     head_lower = head.lower()
     is_sbml = "<sbml" in head_lower or "www.sbml.org" in head_lower
     is_bng = (
@@ -125,7 +127,10 @@ def detect_input_format(file_path, explicit_format=None):
         return explicit_format
     if detected is None:
         if ext == ".xml":
-            raise BNGFormatError(file_path, "Could not determine whether this XML file is SBML or BioNetGen XML.")
+            raise BNGFormatError(
+                file_path,
+                "Could not determine whether this XML file is SBML or BioNetGen XML.",
+            )
         raise BNGFormatError(file_path, f"Unrecognized file extension '{ext}'.")
     return detected
 

@@ -130,7 +130,9 @@ class NetworkFunction(NetworkObj):
 
 
 class NetworkReaction(NetworkObj):
-    def __init__(self, rid, reactants=None, products=None, rate_constant=None, comment=None):
+    def __init__(
+        self, rid, reactants=None, products=None, rate_constant=None, comment=None
+    ):
         super().__init__()
         self.line_label = rid
         self.reactants = [] if reactants is None else reactants

@@ -1,6 +1,4 @@
 import logging
-import os
-from tempfile import TemporaryDirectory
 
 logger = logging.getLogger(__name__)
 

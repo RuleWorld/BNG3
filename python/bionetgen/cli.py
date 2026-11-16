@@ -54,13 +54,32 @@ def main():
     help="Population threshold for PSA.",
 )
 @click.option(
-    "--output", "-o", default=None, type=click.Path(), help="Output file or directory path."
+    "--output",
+    "-o",
+    default=None,
+    type=click.Path(),
+    help="Output file or directory path.",
 )
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output.")
-@click.option("-l", "--log", "log_file", default=None, type=click.Path(), help="Log file path.")
-@click.option("--traceback-depth", default=0, type=int, help="Traceback depth (legacy).")
-@click.option("--format", "format_hint", default=None, type=str, help="Input format hint (legacy).")
-@click.option("--no-bngsim", is_flag=True, default=False, help="Force legacy/non-BNGsim route where applicable.")
+@click.option(
+    "-l", "--log", "log_file", default=None, type=click.Path(), help="Log file path."
+)
+@click.option(
+    "--traceback-depth", default=0, type=int, help="Traceback depth (legacy)."
+)
+@click.option(
+    "--format",
+    "format_hint",
+    default=None,
+    type=str,
+    help="Input format hint (legacy).",
+)
+@click.option(
+    "--no-bngsim",
+    is_flag=True,
+    default=False,
+    help="Force legacy/non-BNGsim route where applicable.",
+)
 @click.option("--timeout", default=None, type=int, help="Timeout in seconds (legacy).")
 def run(
     model,
@@ -223,7 +242,9 @@ def export(model, fmt, output):
 
 
 @main.command()
-@click.option("-d", "--detail", is_flag=True, default=False, help="Show detailed information.")
+@click.option(
+    "-d", "--detail", is_flag=True, default=False, help="Show detailed information."
+)
 def info(detail):
     """Show BioNetGen installation and runtime information."""
     import bionetgen

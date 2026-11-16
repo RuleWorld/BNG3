@@ -30,7 +30,7 @@ class Network:
             )
 
     def __str__(self):
-        model_str = ""
+        rendered = ""
         for block in self.block_order:
             if hasattr(self, block):
                 if len(getattr(self, block)) > 0:
@@ -40,8 +40,8 @@ class Network:
                     self.active_blocks.remove(block)
             if block in self.active_blocks:
                 if block != "actions" and len(getattr(self, block)) > 0:
-                    model_str += str(getattr(self, block))
-        return model_str
+                    rendered += str(getattr(self, block))
+        return rendered
 
     def __repr__(self):
         return self.network_name
@@ -79,7 +79,9 @@ class Network:
         if block is not None:
             if not isinstance(block, NetworkParameterBlock):
                 err_msg = "The given block is not a NetworkParameterBlock"
-                logger.error(err_msg, loc=f"{__file__} : Network.add_parameters_block()")
+                logger.error(
+                    err_msg, loc=f"{__file__} : Network.add_parameters_block()"
+                )
                 raise BNGModelError(self, message=err_msg)
             self.parameters = block
             if "parameters" not in self.active_blocks:

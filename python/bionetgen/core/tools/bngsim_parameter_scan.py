@@ -342,14 +342,14 @@ def scan_values(request):
     return out
 
 
-def _make_network_gen_bngl(bngl_path, model_name, work_dir):
+def _make_network_gen_bngl(bngl_path, output_name, work_dir):
     """Write a temp BNGL whose actions stop at ``generate_network``.
 
     BNGL comments are stripped (harmless for network generation) and the
     trailing ``parameter_scan``/``bifurcate`` action is removed, leaving
     the model definition plus its ``generate_network`` (and any
     ``setParameter`` preamble). The copy keeps the model basename so
-    BNG2.pl emits ``<model_name>.net``.
+    BNG2.pl emits ``<output_name>.net``.
     """
     with open(bngl_path, "r", errors="replace") as fh:
         text = fh.read()
@@ -359,7 +359,7 @@ def _make_network_gen_bngl(bngl_path, model_name, work_dir):
         raise ValueError(
             f"expected exactly one parameter_scan/bifurcate action, found {n_sub}"
         )
-    gen_path = os.path.join(work_dir, f"{model_name}.bngl")
+    gen_path = os.path.join(work_dir, f"{output_name}.bngl")
     with open(gen_path, "w") as fh:
         fh.write(text)
     return gen_path
@@ -567,7 +567,7 @@ def _run_scan_loop(
 
 def _generate_network(
     bngl_path,
-    model_name,
+    output_name,
     bngpath,
     gen_dir,
     run_subprocess,
@@ -576,8 +576,8 @@ def _generate_network(
     timeout,
     app,
 ):
-    """Run BNG2.pl once to emit ``<model_name>.net``; return its path."""
-    gen_bngl = _make_network_gen_bngl(bngl_path, model_name, gen_dir)
+    """Run BNG2.pl once to emit ``<output_name>.net``; return its path."""
+    gen_bngl = _make_network_gen_bngl(bngl_path, output_name, gen_dir)
     run_subprocess(
         gen_bngl,
         gen_dir,
@@ -587,9 +587,9 @@ def _generate_network(
         timeout=timeout,
         app=app,
     )
-    net_path = os.path.join(gen_dir, f"{model_name}.net")
+    net_path = os.path.join(gen_dir, f"{output_name}.net")
     if not os.path.isfile(net_path):
-        raise FileNotFoundError(f"network generation produced no {model_name}.net")
+        raise FileNotFoundError(f"network generation produced no {output_name}.net")
     return net_path
 
 
@@ -607,7 +607,7 @@ def run_inprocess_scan(
     output_dir,
     bngpath,
     request,
-    model_name,
+    output_name,
     suppress=False,
     log_file=None,
     timeout=None,
@@ -623,7 +623,7 @@ def run_inprocess_scan(
             output_dir,
             bngpath,
             request,
-            model_name,
+            output_name,
             suppress=suppress,
             log_file=log_file,
             timeout=timeout,
@@ -634,7 +634,7 @@ def run_inprocess_scan(
         output_dir,
         bngpath,
         request,
-        model_name,
+        output_name,
         suppress=suppress,
         log_file=log_file,
         timeout=timeout,
@@ -647,7 +647,7 @@ def run_parameter_scan_with_bngsim(
     output_dir,
     bngpath,
     request,
-    model_name,
+    output_name,
     suppress=False,
     log_file=None,
     timeout=None,
@@ -672,7 +672,7 @@ def run_parameter_scan_with_bngsim(
     output_dir = os.path.abspath(output_dir)
     os.makedirs(output_dir, exist_ok=True)
 
-    basename = request.prefix or model_name
+    basename = request.prefix or output_name
     basename += "_" + (request.suffix or request.parameter)
     work_dir = os.path.join(output_dir, basename)
     scan_path = os.path.join(output_dir, basename + ".scan")
@@ -681,7 +681,7 @@ def run_parameter_scan_with_bngsim(
     try:
         net_path = _generate_network(
             bngl_path,
-            model_name,
+            output_name,
             bngpath,
             gen_dir,
             _run_bngl_subprocess,
@@ -725,7 +725,7 @@ def run_bifurcate_with_bngsim(
     output_dir,
     bngpath,
     request,
-    model_name,
+    output_name,
     suppress=False,
     log_file=None,
     timeout=None,
@@ -736,7 +736,7 @@ def run_bifurcate_with_bngsim(
     A ``bifurcate`` is two ``parameter_scan`` passes (``reset_conc`` forced
     to ``0``): a forward pass ``par_min→par_max`` then a backward pass
     ``par_max→par_min``, both carrying state across every point *and*
-    across the forward→backward boundary (one continuous ``Simulator``).
+    across the forward→backward transition (one continuous ``Simulator``).
     The two passes are merged per observable into
     ``<prefix>_bifurcation_<obs>.scan`` files; per-point ``.gdat``/``.cdat``
     artifacts are written under ``<prefix>_forward/`` and
@@ -754,7 +754,7 @@ def run_bifurcate_with_bngsim(
     output_dir = os.path.abspath(output_dir)
     os.makedirs(output_dir, exist_ok=True)
 
-    prefix = request.prefix or model_name
+    prefix = request.prefix or output_name
     if request.suffix:
         prefix += "_" + request.suffix
     fwd_base = prefix + "_forward"
@@ -764,7 +764,7 @@ def run_bifurcate_with_bngsim(
     try:
         net_path = _generate_network(
             bngl_path,
-            model_name,
+            output_name,
             bngpath,
             gen_dir,
             _run_bngl_subprocess,
@@ -777,7 +777,7 @@ def run_bifurcate_with_bngsim(
             _build_model_and_metadata(net_path, request)
         )
         # One Simulator drives both passes so concentrations carry across
-        # every point and across the forward→backward boundary.
+        # every point and across the forward→backward transition.
         sim = _new_simulator(model, request)
 
         fwd_values = scan_values(request)

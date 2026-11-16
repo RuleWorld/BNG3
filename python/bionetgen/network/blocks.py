@@ -37,7 +37,9 @@ class NetworkBlock:
 
     def __repr__(self) -> str:
         return "{} block with {} item(s): {}".format(
-            self.name, len(self.items), list([i.name for i in self.items.values() if hasattr(i, 'name')])
+            self.name,
+            len(self.items),
+            list([i.name for i in self.items.values() if hasattr(i, "name")]),
         )
 
     def __getitem__(self, key):
@@ -92,15 +94,23 @@ class NetworkBlock:
             name = len(self.items)
         self.items[name] = value
         set_attr = False
-        if isinstance(name, str) and name.isidentifier() and not keyword.iskeyword(name):
+        if (
+            isinstance(name, str)
+            and name.isidentifier()
+            and not keyword.iskeyword(name)
+        ):
             if not hasattr(self.__class__, name) and name not in [
-                "name", "items", "comment", "_changes", "_recompile",
+                "name",
+                "items",
+                "comment",
+                "_changes",
+                "_recompile",
             ]:
                 set_attr = True
         if set_attr:
             try:
                 setattr(self, name, value)
-            except Exception as exc:
+            except Exception:
                 logger.warning(
                     f"Unable to bind attribute {name!r} for the {self.name} block",
                     loc=f"{__file__} : NetworkBlock.add_item()",
@@ -139,7 +149,7 @@ class NetworkGroupBlock(NetworkBlock):
 
     def add_group(self, *args, **kwargs) -> None:
         g = NetworkGroup(*args, **kwargs)
-        key = g.name if hasattr(g, 'name') else args[1]
+        key = g.name if hasattr(g, "name") else args[1]
         self.add_item((key, g))
 
 
@@ -150,7 +160,7 @@ class NetworkSpeciesBlock(NetworkBlock):
 
     def add_species(self, *args, **kwargs) -> None:
         s = NetworkSpecies(*args, **kwargs)
-        key = getattr(s, 'line_label', None)
+        key = getattr(s, "line_label", None)
         if key is None and args:
             key = args[0]
         self.add_item((key, s))
@@ -173,7 +183,7 @@ class NetworkReactionBlock(NetworkBlock):
 
     def add_reaction(self, *args, **kwargs) -> None:
         r = NetworkReaction(*args, **kwargs)
-        key = getattr(r, 'line_label', None)
+        key = getattr(r, "line_label", None)
         if key is None and args:
             key = args[0]
         self.add_item((key, r))
@@ -186,7 +196,7 @@ class NetworkEnergyPatternBlock(NetworkBlock):
 
     def add_energy_pattern(self, *args, **kwargs) -> None:
         e = NetworkEnergyPattern(*args, **kwargs)
-        key = getattr(e, 'line_label', None)
+        key = getattr(e, "line_label", None)
         if key is None and args:
             key = args[0]
         self.add_item((key, e))
@@ -199,7 +209,7 @@ class NetworkPopulationMapBlock(NetworkBlock):
 
     def add_population_map(self, *args, **kwargs) -> None:
         p = NetworkPopulationMap(*args, **kwargs)
-        key = getattr(p, 'line_label', None)
+        key = getattr(p, "line_label", None)
         if key is None and args:
             key = args[0]
         self.add_item((key, p))

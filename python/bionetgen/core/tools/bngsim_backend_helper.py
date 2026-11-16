@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 from dataclasses import dataclass
 from typing import Any
@@ -94,12 +93,16 @@ def _normalize_artifact_format(raw_format: Any, artifact_path: str) -> str:
     if raw_format is not None:
         fmt = ARTIFACT_FORMAT_ALIASES.get(str(raw_format).strip().lower())
         if fmt is None:
-            raise BNGSimError(f"Unsupported BNGsim backend artifact format: {raw_format!r}")
+            raise BNGSimError(
+                f"Unsupported BNGsim backend artifact format: {raw_format!r}"
+            )
         return fmt
     ext = os.path.splitext(artifact_path)[1].lower()
     fmt = ARTIFACT_FORMAT_ALIASES.get(ext)
     if fmt is None:
-        raise BNGSimError(f"Could not infer BNGsim backend artifact format from {artifact_path!r}")
+        raise BNGSimError(
+            f"Could not infer BNGsim backend artifact format from {artifact_path!r}"
+        )
     return fmt
 
 
@@ -113,7 +116,9 @@ def _output_dir_and_root(payload: dict[str, Any]) -> tuple[str, str]:
     output_dir = os.path.abspath(str(payload.get("output_dir") or os.getcwd()))
     output_root = payload.get("output_root")
     if not output_root:
-        artifact_path = str(payload.get("artifact_path") or payload.get("input_path") or "")
+        artifact_path = str(
+            payload.get("artifact_path") or payload.get("input_path") or ""
+        )
         output_root = os.path.splitext(os.path.basename(artifact_path))[0]
     return output_dir, str(output_root)
 
@@ -124,14 +129,18 @@ def load_backend_job(payload: dict[str, Any]) -> BackendHelperJob:
         raise BNGSimError("BNGsim backend job is missing artifact_path")
     artifact_path = os.path.abspath(str(artifact_path))
     method = _normalize_method(payload.get("method"))
-    method_override = os.environ.get("BIONETGEN_BNGSIM_BACKEND_METHOD", "").strip().lower()
+    method_override = (
+        os.environ.get("BIONETGEN_BNGSIM_BACKEND_METHOD", "").strip().lower()
+    )
     if method_override == "rm" and method == "nf":
         method = "rm"
     artifact_format = _normalize_artifact_format(
         payload.get("artifact_format") or payload.get("input_format"), artifact_path
     )
     output_dir, output_root = _output_dir_and_root(payload)
-    sim_options = dict(payload.get("simulation_options") or payload.get("options") or {})
+    sim_options = dict(
+        payload.get("simulation_options") or payload.get("options") or {}
+    )
     backend_flags = dict(payload.get("backend_flags") or {})
     return BackendHelperJob(
         artifact_path=artifact_path,
@@ -178,7 +187,9 @@ def execute_backend_payload(payload: dict[str, Any]):
 
 
 def serve(*args, **kwargs):
-    raise BNGSimError("BNG3 does not provide the PyBioNetGen bngsim backend helper server")
+    raise BNGSimError(
+        "BNG3 does not provide the PyBioNetGen bngsim backend helper server"
+    )
 
 
 def main(argv=None):

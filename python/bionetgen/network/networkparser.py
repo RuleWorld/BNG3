@@ -72,7 +72,9 @@ class BNGNetworkParser:
                             "expected '<id> <species> <count>', "
                             f"got {line_text.strip()!r}"
                         )
-                        logger.error(msg, loc=f"{__file__} : BNGNetworkParser.parse_network()")
+                        logger.error(
+                            msg, loc=f"{__file__} : BNGNetworkParser.parse_network()"
+                        )
                         raise BNGParseError(self.path, message=f": {msg}")
                     sid = splt[0]
                     name = splt[1]

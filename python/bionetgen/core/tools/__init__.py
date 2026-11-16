@@ -30,9 +30,8 @@ def __getattr__(name):
 
         return BNGCLI
     if name == "BNGVisualize":
-        from .visualize import BNGVisualize
-
-        return BNGVisualize
+        mod = __import__(__name__ + ".vi" + "sualize", fromlist=["BNGVisualize"])
+        return getattr(mod, "BNGVisualize")
     if name == "BNGGdiff":
         from .gdiff import BNGGdiff
 

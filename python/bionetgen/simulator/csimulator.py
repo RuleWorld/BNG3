@@ -112,26 +112,32 @@ class CSimWrapper:
 
 
 class CSimulator(BNGSimulator):
-    def __init__(self, model_file, generate_network=False):
+    def __init__(self, model_input, generate_network=False):
         try:
             import bionetgen
             from bionetgen.main import get_conf
         except Exception as exc:
-            raise BNGCompileError(None, f"CSimulator unavailable in this environment: {exc}") from exc
+            raise BNGCompileError(
+                None, f"CSimulator unavailable in this environment: {exc}"
+            ) from exc
         conf = get_conf()
-        if isinstance(model_file, str):
-            self.model = bionetgen.bngmodel(model_file, generate_network=generate_network)
-        elif isinstance(model_file, bionetgen.bngmodel):
-            self.model = model_file
+        if isinstance(model_input, str):
+            self.model = bionetgen.bngmodel(
+                model_input, generate_network=generate_network
+            )
+        elif isinstance(model_input, bionetgen.bngmodel):
+            self.model = model_input
             cd = os.getcwd()
             import shutil
+
             tmpdirname = tempfile.mkdtemp(prefix="bngsim_")
             try:
                 os.chdir(tmpdirname)
                 self.model.actions.clear_actions()
-                self.model.write_model(f"{self.model.model_name}_cpy.bngl")
+                copy_label = getattr(self.model, "model_name", "model")
+                self.model.write_model(f"{copy_label}_cpy.bngl")
                 self.model = bionetgen.bngmodel(
-                    f"{self.model.model_name}_cpy.bngl", generate_network=generate_network
+                    f"{copy_label}_cpy.bngl", generate_network=generate_network
                 )
             finally:
                 os.chdir(cd)
@@ -141,7 +147,7 @@ class CSimulator(BNGSimulator):
                     pass
         else:
             raise BNGFormatError(
-                message=f"CSimulator model input must be a BNGL path or bngmodel instance, got {type(model_file).__name__}"
+                message=f"CSimulator model input must be a BNGL path or bngmodel instance, got {type(model_input).__name__}"
             )
         self.compiler = _new_ccompiler()
         cvode_include = conf.get("cvode_include") if hasattr(conf, "get") else None
@@ -154,7 +160,10 @@ class CSimulator(BNGSimulator):
         self.simulator = self.lib_file
 
     def compile_shared_lib(self):
-        raise BNGCompileError(self.model, "CSimulator compilation is not supported in BNG3's native environment")
+        raise BNGCompileError(
+            self.model,
+            "CSimulator compilation is not supported in BNG3's native environment",
+        )
 
     @property
     def simulator(self):
@@ -162,7 +171,11 @@ class CSimulator(BNGSimulator):
 
     @simulator.setter
     def simulator(self, lib_file):
-        raise BNGCompileError(self.model, "CSimulator is not supported in BNG3's native environment")
+        raise BNGCompileError(
+            self.model, "CSimulator is not supported in BNG3's native environment"
+        )
 
     def simulate(self, t_start=0, t_end=10, n_steps=10):
-        raise BNGSimError("CSimulator simulation is not supported in BNG3's native environment")
+        raise BNGSimError(
+            "CSimulator simulation is not supported in BNG3's native environment"
+        )
