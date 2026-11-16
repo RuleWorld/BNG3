@@ -82,7 +82,11 @@ def _sniff_xml_format(file_path):
             file_path, f"Could not read file for format detection: {e}"
         ) from e
     head_lower = head.lower()
-    is_sbml = "<sbml" in head_lower or "www.sbml.org" in head_lower
+    is_sbml = (
+        "<sbml" in head_lower
+        or "http://www.sbml.org/" in head_lower
+        or "https://www.sbml.org/" in head_lower
+    )
     is_bng = (
         "<listofmoleculetypes" in head_lower
         or "<listofspeciestypes" in head_lower
