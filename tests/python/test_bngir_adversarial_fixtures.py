@@ -148,3 +148,25 @@ def test_mutation_wrong_bond_detected():
         rejected = True
     # Either explicit rejection or proven structural/semantic difference is required.
     assert rejected or mutated != base
+
+
+def test_mutation_dropped_substance_units_detected():
+    base = _load("valid_substance_units.json")
+    mutated = _load("mutation_dropped_substance_units.json")
+    jsonschema.validate(base, SCHEMA)
+    jsonschema.validate(mutated, SCHEMA)
+    assert base["model"]["metadata"].get("substance_units") == "molecules"
+    assert mutated["model"]["metadata"].get("substance_units") == ""
+    m_base = bionetgen.from_bngir(base)
+    m_mut = bionetgen.from_bngir(mutated)
+    d_base = json.loads(bionetgen.to_bngir(m_base, version="0.2"))
+    d_mut = json.loads(bionetgen.to_bngir(m_mut, version="0.2"))
+    assert d_base["model"]["metadata"].get("substance_units") == "molecules"
+    assert d_mut["model"]["metadata"].get("substance_units") == ""
+    assert d_base != d_mut
+    try:
+        eq = bionetgen.semantic_equal(m_base, m_mut, version="0.2")
+        # If equality is decidable, dropped units must not be treated as equal.
+        assert eq is False
+    except bionetgen.EqualityUndecided:
+        pass
