@@ -593,6 +593,11 @@ class io:
         ...
 
     @staticmethod
+    def write_xml_string_structural(model: Model) -> str:
+        """Serialize model to structural BioNetGen XML for modelapi consumers."""
+        ...
+
+    @staticmethod
     def write_net(model: Model, network: GeneratedNetwork, path: str) -> None:
         """Write generated network to .net format."""
         ...
