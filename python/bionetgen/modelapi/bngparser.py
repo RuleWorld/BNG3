@@ -277,12 +277,10 @@ class BNGParser:
         """
         try:
             import xmltodict
-        except ImportError as exc:
-            raise BNGParseError(
-                getattr(self.bngfile, "path", "<unknown>"),
-                "xmltodict is required to parse BNG-XML/model API XML input",
-            ) from exc
-        xml_dict = xmltodict.parse(xml_str)
+
+            xml_dict = xmltodict.parse(xml_str)
+        except ImportError:
+            xml_dict = self._parse_xml_stdlib(xml_str)
         # catch non-BNG XML files
         if "sbml" not in xml_dict:
             if "model" not in xml_dict["sbml"]:
@@ -355,3 +353,39 @@ class BNGParser:
         # And that's the end of parsing
         # TODO: Add verbosity option to the library
         # print("Parsing complete")
+
+    @staticmethod
+    def _parse_xml_stdlib(xml_str):
+        import xml.etree.ElementTree as ET
+
+        def convert(node):
+            children = list(node)
+            value = {}
+            for key, attr_value in node.attrib.items():
+                value[f"@{key}"] = attr_value
+
+            if children:
+                grouped = {}
+                for child in children:
+                    child_value = convert(child)
+                    if child.tag in grouped:
+                        existing = grouped[child.tag]
+                        if not isinstance(existing, list):
+                            grouped[child.tag] = [existing]
+                        grouped[child.tag].append(child_value)
+                    else:
+                        grouped[child.tag] = child_value
+                value.update(grouped)
+
+            text = (node.text or "").strip()
+            if not children and text:
+                if value:
+                    value["#text"] = text
+                else:
+                    return text
+            elif children and text:
+                value["#text"] = text
+            return value if value else (text if text else None)
+
+        root = ET.fromstring(xml_str)
+        return {root.tag: convert(root)}
