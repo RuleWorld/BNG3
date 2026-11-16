@@ -6,7 +6,6 @@ import pytest
 
 import bionetgen._bionetgen_cpp as cpp
 
-
 MISSING_VOLUME = """begin model
 begin parameters
   k 1e6 [M^-1*s^-1]
