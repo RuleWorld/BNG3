@@ -55,6 +55,14 @@ def SpeciesIsoMap.idOn (ids : List MoleculeInstanceId) : SpeciesIsoMap :=
 def SpeciesIsoMap.inverse (m : SpeciesIsoMap) : SpeciesIsoMap :=
   { moleculeMap := m.moleculeMap.map (fun pair => (pair.2, pair.1)) }
 
+@[simp] theorem SpeciesIsoMap.domain_inverse (m : SpeciesIsoMap) :
+    m.inverse.domain = m.range := by
+  simp [SpeciesIsoMap.inverse, SpeciesIsoMap.domain, SpeciesIsoMap.range]
+
+@[simp] theorem SpeciesIsoMap.range_inverse (m : SpeciesIsoMap) :
+    m.inverse.range = m.domain := by
+  simp [SpeciesIsoMap.inverse, SpeciesIsoMap.domain, SpeciesIsoMap.range]
+
 /-- Map one concrete endpoint through a molecule-ID bijection. -/
 def SpeciesIsoMap.mapEndpoint? (mapping : SpeciesIsoMap) (e : ConcreteEndpoint) : Option ConcreteEndpoint :=
   (mapping.lookup? e.molecule).map (fun molecule =>
@@ -136,6 +144,15 @@ theorem SpeciesIsoMap.validFor_bijective (m : SpeciesIsoMap) (left right : Mixtu
     m.bijectiveFor left right = true := by
   simp [SpeciesIsoMap.validFor, Bool.and_eq_true] at h
   exact h.1.1.1
+
+/-- Renaming/canonicalization symmetry on the supported class: inverting a
+bijective molecule-id witness swaps the covered artifact-ID sets. -/
+theorem SpeciesIsoMap.inverse_bijectiveFor (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.bijectiveFor left right = true) :
+    m.inverse.bijectiveFor right left = true := by
+  simp [SpeciesIsoMap.bijectiveFor, Bool.and_eq_true] at h ⊢
+  rcases h with ⟨⟨⟨hdomU, hranU⟩, hdomSet⟩, hranSet⟩
+  exact ⟨⟨⟨by simpa using hranU, by simpa using hdomU⟩, by simpa using hranSet⟩, by simpa using hdomSet⟩
 
 /-- Oracle-positive identity implies equal molecule and bond counts for the
 explicit supported class artifacts. -/
