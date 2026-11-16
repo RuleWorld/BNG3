@@ -185,3 +185,46 @@ def test_main_pybionetgen_helper_exports():
         assert "cement" in str(exc).lower()
     else:
         assert app is not None
+
+
+def test_modelapi_protocol_block_api_and_parsing(tmp_path):
+    from bionetgen.modelapi.blocks import ProtocolBlock
+    from bionetgen.modelapi.model import bngmodel
+
+    m = bngmodel(MODEL_NO_ACTIONS, verbose=True)
+    m.add_protocol_block()
+    assert isinstance(m.protocol, ProtocolBlock)
+    m.protocol.add_action(
+        "simulate", {"method": '"ode"', "t_end": "10", "n_steps": "10"}
+    )
+    s = str(m)
+    assert "begin protocol" in s
+    assert "simulate" in s
+
+    text = """begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin observables
+  Molecules A_tot A()
+end observables
+begin reaction rules
+  A() -> 0 k
+end reaction rules
+begin protocol
+  simulate({method=>"ode",t_end=>10,n_steps=>10})
+end protocol
+end model
+"""
+    path = tmp_path / "proto.bngl"
+    path.write_text(text)
+    m2 = bngmodel(str(path))
+    assert isinstance(m2.protocol, ProtocolBlock)
+    assert len(m2.protocol) == 1
+    assert "simulate" in str(m2.protocol)

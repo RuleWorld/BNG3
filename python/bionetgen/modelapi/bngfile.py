@@ -60,6 +60,7 @@ class BNGFile:
         self.BNGPATH = BNGPATH
         self.bngexec = bngexec
         self.parsed_actions = []
+        self.parsed_protocol_actions = []
 
     def generate_xml(self, xml_file, model_file=None) -> bool:
         """
@@ -188,7 +189,22 @@ class BNGFile:
 
             stripped_lines = []
             self.parsed_actions = []
+            self.parsed_protocol_actions = []
+            in_protocol = False
             for line in mlines:
+                if re.match(r"\s*begin\s+protocol\b", line, flags=re.IGNORECASE):
+                    in_protocol = True
+                    continue
+                if re.match(r"\s*end\s+protocol\b", line, flags=re.IGNORECASE):
+                    in_protocol = False
+                    continue
+                if in_protocol:
+                    # protocol contains actions; collect them for modelapi protocol block
+                    if not self._not_action(line) or line.strip():
+                        cleaned = line.replace(" ", "")
+                        if cleaned:
+                            self.parsed_protocol_actions.append(cleaned)
+                    continue
                 if self._not_action(line):
                     stripped_lines.append(line)
                 else:
