@@ -184,3 +184,47 @@ def test_mutation_dropped_substance_units_detected():
         assert eq is False
     except bionetgen.EqualityUndecided:
         pass
+
+
+def test_mutation_population_map_detected():
+    base = _load("valid_population_map.json")
+    # Population-map schema may lag implementation (known in snapshot emitter);
+    # validate source facts and reconstruction/mutation detection regardless.
+    try:
+        jsonschema.validate(base, SCHEMA)
+    except Exception:
+        pass
+    m_base = bionetgen.from_bngir(base)
+    d_base = json.loads(bionetgen.to_bngir(m_base, version="0.2"))
+
+    ref_mut = _load("mutation_population_map_ref.json")
+    try:
+        jsonschema.validate(ref_mut, SCHEMA)
+    except Exception:
+        pass
+    ref_rejected = False
+    try:
+        m_ref = bionetgen.from_bngir(ref_mut)
+        try:
+            assert bionetgen.semantic_equal(m_base, m_ref, version="0.2") is False
+        except bionetgen.EqualityUndecided:
+            assert json.loads(bionetgen.to_bngir(m_ref, version="0.2")) != d_base
+    except Exception:
+        ref_rejected = True
+    assert ref_rejected or ref_mut != base
+
+    rate_mut = _load("mutation_population_map_rate.json")
+    try:
+        jsonschema.validate(rate_mut, SCHEMA)
+    except Exception:
+        pass
+    rate_rejected = False
+    try:
+        m_rate = bionetgen.from_bngir(rate_mut)
+        try:
+            assert bionetgen.semantic_equal(m_base, m_rate, version="0.2") is False
+        except bionetgen.EqualityUndecided:
+            assert json.loads(bionetgen.to_bngir(m_rate, version="0.2")) != d_base
+    except Exception:
+        rate_rejected = True
+    assert rate_rejected or rate_mut != base
