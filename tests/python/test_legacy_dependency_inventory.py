@@ -22,9 +22,10 @@ REPO = Path(__file__).resolve().parents[2]
 CHECK = REPO / "tools" / "check_legacy_dependency_inventory.py"
 INVENTORY = REPO / "provenance" / "architecture" / "legacy_dependency_inventory.json"
 
-RETIRED_PATHS = ("network",)
+RETIRED_PATHS = ()
 RETAINED_PATHS = (
     "modelapi",
+    "network",
     "simulator",
     "cement",
     "compat-adapter",
