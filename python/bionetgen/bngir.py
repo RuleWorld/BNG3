@@ -312,16 +312,40 @@ def _features_v02(snapshot: Mapping[str, Any]) -> dict[str, list[str]]:
         ("functions", "functions"),
         ("observables", "observables"),
         ("population_maps", "population_maps"),
+        ("population_types", "population_maps"),
         ("rules", "rules"),
         ("seeds", "seeds"),
     ):
         if snapshot.get(key):
             used.append(feature)
+    if any(rule.get("delay") is not None for rule in snapshot.get("rules", [])):
+        used.append("delayed_rules")
+    if any(
+        (rule.get("driving_work") or "").strip()
+        for rule in snapshot.get("rules", [])
+        if isinstance(rule.get("driving_work"), str)
+    ):
+        used.append("driven_reservoirs")
+    metadata = snapshot.get("metadata") or {}
+    has_units = (
+        metadata.get("unit_defaults")
+        or metadata.get("unit_definitions")
+        or metadata.get("substance_units")
+        or any(item.get("unit") for item in snapshot.get("parameters", []))
+        or any(item.get("unit") for item in snapshot.get("seeds", []))
+        or any(item.get("unit") for item in snapshot.get("compartments", []))
+        or any(item.get("declared_unit") for item in snapshot.get("parameters", []))
+        or any(item.get("inferred_unit") for item in snapshot.get("parameters", []))
+        or any(item.get("declared_unit") for item in snapshot.get("seeds", []))
+        or any(item.get("declared_unit") for item in snapshot.get("compartments", []))
+    )
+    if has_units:
+        used.append("units")
     if snapshot.get("actions"):
         used.append("protocol")
     return {
         "required": ["structured_patterns", "structured_expressions"],
-        "used": sorted(used + ["structured_patterns", "structured_expressions"]),
+        "used": sorted(set(used) | {"structured_patterns", "structured_expressions"}),
     }
 
 
