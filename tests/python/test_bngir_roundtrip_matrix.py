@@ -134,6 +134,29 @@ begin reaction rules
 end reaction rules
 end model
 """,
+    "compartment_parent_v01": r"""
+begin model
+begin parameters
+    k 1
+end parameters
+begin compartments
+    EC 3 1
+    PM 2 1 EC
+end compartments
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A()@PM 1
+end seed species
+begin observables
+    Molecules A_PM A()@PM
+end observables
+begin reaction rules
+    A()@PM -> A()@EC k
+end reaction rules
+end model
+""",
     "modifiers_synthesis_totalrate": r"""
 begin model
 begin molecule types
