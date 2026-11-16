@@ -259,6 +259,14 @@ theorem isomorphicSpecies_counts (left right : Mixture)
   · simpa using h.1.1
   · simpa using h.1.2
 
+/-- Kernel-proved extraction of a renaming/canonicalization witness from the
+supported-class graph-identity oracle decision. -/
+theorem isomorphicSpecies_witness (left right : Mixture)
+    (h : left.isomorphicSpecies right = true) :
+    ∃ m ∈ candidateSpeciesIsoMaps left right, m.validFor left right = true := by
+  simp [Mixture.isomorphicSpecies, Bool.and_eq_true] at h
+  exact h.2
+
 
 theorem addSpeciesModuloIso_preserves_existing (pool : List Mixture) (candidate : Mixture)
     (existing : Mixture) (hmem : existing ∈ pool) :
