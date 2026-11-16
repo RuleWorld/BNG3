@@ -343,9 +343,9 @@ def _features_v02(snapshot: Mapping[str, Any]) -> dict[str, list[str]]:
     if any(rule.get("delay") is not None for rule in snapshot.get("rules", [])):
         used.append("delayed_rules")
     if any(
-        (rule.get("driving_work") or "").strip()
+        rule.get("driving_work") not in (None, "", {})
         for rule in snapshot.get("rules", [])
-        if isinstance(rule.get("driving_work"), str)
+        if isinstance(rule, Mapping)
     ):
         used.append("driven_reservoirs")
     metadata = snapshot.get("metadata") or {}
@@ -398,11 +398,26 @@ def _payload_v02(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
         for act in raw_actions
     ]
     metadata = dict(snapshot.pop("metadata", {}))
+    model_snapshot = {"metadata": metadata, **snapshot}
+    # _cpp._compiled_snapshot may omit rule-level execution metadata that is
+    # losslessly available from the native model; enrich so v0.2 round trips
+    # preserve driving work and other explicitly serialized rule semantics.
+    native_rules = list(getattr(native, "reaction_rules", []))
+    for index, rule in enumerate(model_snapshot.get("rules", [])):
+        if not isinstance(rule, Mapping) or index >= len(native_rules):
+            continue
+        native_rule = native_rules[index]
+        if getattr(native_rule, "has_driving_work", False):
+            driving_work = getattr(native_rule, "driving_work", "")
+            if driving_work:
+                rule["driving_work"] = driving_work
+        if getattr(native_rule, "is_non_consuming", False):
+            rule["non_consuming"] = True
     result = {
         "format": FORMAT,
         "version": STRUCTURAL_VERSION,
-        "features": _features_v02({**snapshot, "actions": actions}),
-        "model": {"metadata": metadata, **snapshot},
+        "features": _features_v02({**model_snapshot, "actions": actions}),
+        "model": model_snapshot,
         "protocol": {"actions": actions},
     }
     # Writer/reader closure: every 0.2 document must pass the reader's own
@@ -1366,6 +1381,42 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
         if reverse is not None:
             reverse = _require_mapping(reverse, "rule.reverse")
             _validate_direction_v02(reverse, model, f"model.rules[{i}].reverse")
+        driving_work = rule.get("driving_work")
+        if driving_work is not None:
+            if isinstance(driving_work, str):
+                if not driving_work.strip():
+                    raise ValueError(
+                        f"BNGIR model.rules[{i}].driving_work must be a non-empty string"
+                    )
+            elif isinstance(driving_work, Mapping):
+                _validate_expression_v02(
+                    driving_work,
+                    model,
+                    local_names=set(),
+                    where=f"model.rules[{i}].driving_work",
+                )
+            else:
+                raise ValueError(
+                    f"BNGIR model.rules[{i}].driving_work must be a string or expression object"
+                )
+        driving_work = rule.get("driving_work")
+        if driving_work is not None:
+            if isinstance(driving_work, str):
+                if not driving_work.strip():
+                    raise ValueError(
+                        f"BNGIR model.rules[{i}].driving_work must be a non-empty string"
+                    )
+            elif isinstance(driving_work, Mapping):
+                _validate_expression_v02(
+                    driving_work,
+                    model,
+                    local_names=set(),
+                    where=f"model.rules[{i}].driving_work",
+                )
+            else:
+                raise ValueError(
+                    f"BNGIR model.rules[{i}].driving_work must be a string or expression object"
+                )
         # Include/exclude modifiers are rendered from direction.filters; a
         # modifier without its matching filter would be dropped silently.
         filters = list(forward.get("filters", []))
