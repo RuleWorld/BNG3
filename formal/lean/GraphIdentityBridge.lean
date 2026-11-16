@@ -113,6 +113,53 @@ def dimerStateMut : Mixture :=
     molecules := [molA_x_only 0 sU, molA_x_only 1 sU]
     bonds := [{ a := { molecule := ⟨0⟩, component := cAx }, b := { molecule := ⟨1⟩, component := cAx } }] }
 
+-- Linear chain permutation and adversarial mutations (molecule type / bond target).
+def molC_y (id : Nat) : RuntimeMolecule :=
+  { id := ⟨id⟩, moleculeType := mtB, compartment := none,
+    sites := [{ component := cBy, state := none }] }
+
+-- Represent a third distinct type label in oracle/native strings via a second
+-- B-labeled site pattern is not needed; use explicit A/B/C naming in bridge
+-- strings while Lean models molecule-type identity abstractly here.
+def molA_x_plain (id : Nat) : RuntimeMolecule :=
+  { id := ⟨id⟩, moleculeType := mtA, compartment := none,
+    sites := [{ component := cAx, state := some sU }] }
+
+def molB_xy (id : Nat) : RuntimeMolecule :=
+  { id := ⟨id⟩, moleculeType := mtB, compartment := none,
+    sites := [{ component := cBy, state := none }, { component := cBx, state := some sU }] }
+
+def chainBase : Mixture :=
+  { nextMoleculeId := ⟨3⟩
+    molecules := [molA_x_plain 0, molB_xy 1, molC_y 2]
+    bonds :=
+      [ { a := { molecule := ⟨0⟩, component := cAx }, b := { molecule := ⟨1⟩, component := cBy } }
+      , { a := { molecule := ⟨1⟩, component := cBx }, b := { molecule := ⟨2⟩, component := cBy } }
+      ] }
+
+def chainPermuted : Mixture :=
+  { nextMoleculeId := ⟨30⟩
+    molecules := [molC_y 22, molA_x_plain 20, molB_xy 21]
+    bonds :=
+      [ { a := { molecule := ⟨21⟩, component := cBx }, b := { molecule := ⟨22⟩, component := cBy } }
+      , { a := { molecule := ⟨20⟩, component := cAx }, b := { molecule := ⟨21⟩, component := cBy } }
+      ] }
+
+def chainBrokenEnd : Mixture :=
+  { nextMoleculeId := ⟨3⟩
+    molecules := [molA_x_plain 0, molB_xy 1, molC_y 2]
+    bonds :=
+      [ { a := { molecule := ⟨0⟩, component := cAx }, b := { molecule := ⟨1⟩, component := cBy } }
+      ] }
+
+def chainWrongType : Mixture :=
+  { nextMoleculeId := ⟨3⟩
+    molecules := [molB_xu 0, molB_xy 1, molC_y 2]
+    bonds :=
+      [ { a := { molecule := ⟨0⟩, component := cBx }, b := { molecule := ⟨1⟩, component := cBy } }
+      , { a := { molecule := ⟨1⟩, component := cBx }, b := { molecule := ⟨2⟩, component := cBy } }
+      ] }
+
 structure CaseResult where
   name : String
   iso : Bool
@@ -131,16 +178,23 @@ def mkCase (name : String) (left right : Mixture) : CaseResult :=
 -- Reflexive identity on concrete artifacts (renaming/canonical representative baseline).
 example : bondedBase.isomorphicSpecies bondedBase = true := by native_decide
 example : ringBase.isomorphicSpecies ringBase = true := by native_decide
+example : chainBase.isomorphicSpecies chainBase = true := by native_decide
 -- Symmetric positive witnesses on explicit permutation/renaming pairs.
 example : bondedRenamed.isomorphicSpecies bondedBase = true := by native_decide
 example : ringPermuted.isomorphicSpecies ringBase = true := by native_decide
+example : chainPermuted.isomorphicSpecies chainBase = true := by native_decide
+example : chainBase.isomorphicSpecies chainPermuted = true := by native_decide
 -- Adversarial negatives remain rejected in the opposite direction.
 example : bondedStateMut.isomorphicSpecies bondedBase = false := by native_decide
 example : ringOpenMut.isomorphicSpecies ringBase = false := by native_decide
+example : chainBrokenEnd.isomorphicSpecies chainBase = false := by native_decide
+example : chainWrongType.isomorphicSpecies chainBase = false := by native_decide
 -- Exact bounded identity accumulation (no duplicate iso representative).
 example : (addSpeciesModuloIso [bondedRenamed] bondedBase).length = 1 := by native_decide
 example : (addSpeciesModuloIso [ringPermuted] ringBase).length = 1 := by native_decide
+example : (addSpeciesModuloIso [chainPermuted] chainBase).length = 1 := by native_decide
 example : (addSpeciesModuloIso [bondedStateMut] bondedBase).length = 2 := by native_decide
+example : (addSpeciesModuloIso [chainBrokenEnd] chainBase).length = 2 := by native_decide
 -- Heterogeneous symmetric-dimer permutation (renaming/canonical identity under swap).
 example : dimerBase.isomorphicSpecies dimerStatePerm = true := by native_decide
 example : dimerStatePerm.isomorphicSpecies dimerBase = true := by native_decide
@@ -155,7 +209,10 @@ def results : List CaseResult :=
   , mkCase "ring_permutation_equal" ringBase ringPermuted
   , mkCase "ring_open_mutation_unequal" ringBase ringOpenMut
   , mkCase "dimer_state_permutation_equal" dimerBase dimerStatePerm
-  , mkCase "dimer_state_mutation_unequal" dimerBase dimerStateMut ]
+  , mkCase "dimer_state_mutation_unequal" dimerBase dimerStateMut
+  , mkCase "chain_permutation_equal" chainBase chainPermuted
+  , mkCase "chain_broken_end_unequal" chainBase chainBrokenEnd
+  , mkCase "chain_wrong_type_unequal" chainBase chainWrongType ]
 
 def emit (r : CaseResult) : String :=
   s!"case={r.name}\tiso={r.iso}\tleft_pool={r.leftPool}\tdedup_pool={r.dedupPool}"

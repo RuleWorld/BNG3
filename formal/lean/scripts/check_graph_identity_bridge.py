@@ -71,6 +71,24 @@ CASES = [
         "right": "A(x~u!1).A(x~u!1)",
         "expect_iso": False,
     },
+    {
+        "name": "chain_permutation_equal",
+        "left": "A(x~u!1).B(y!1,x~u!2).B(y!2)",
+        "right": "B(y!5,x~u!4).B(y!4).A(x~u!5)",
+        "expect_iso": True,
+    },
+    {
+        "name": "chain_broken_end_unequal",
+        "left": "A(x~u!1).B(y!1,x~u!2).B(y!2)",
+        "right": "A(x~u!1).B(y!1,x~u).B(y)",
+        "expect_iso": False,
+    },
+    {
+        "name": "chain_wrong_type_unequal",
+        "left": "A(x~u!1).B(y!1,x~u!2).B(y!2)",
+        "right": "B(x~u!1).B(y!1,x~u!2).B(y!2)",
+        "expect_iso": False,
+    },
 ]
 
 
