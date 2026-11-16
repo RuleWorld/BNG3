@@ -47,6 +47,17 @@ def runtimeMoleculesEquivalent (a b : RuntimeMolecule) : Bool :=
   a.compartment == b.compartment &&
   runtimeSitesEquivalent a.sites b.sites
 
+/-- Kernel-proved renaming/canonicalization symmetry: site-level component/state
+correspondence is symmetric for the supported class. -/
+theorem runtimeSitesEquivalent_symm (a b : List RuntimeSite)
+    (h : runtimeSitesEquivalent a b = true) : runtimeSitesEquivalent b a = true := by
+  simp [runtimeSitesEquivalent, Bool.and_eq_true] at h ⊢
+  rcases h with ⟨⟨hlen, hab⟩, hba⟩
+  refine ⟨⟨?_, ?_⟩, ?_⟩
+  · simpa using hlen.symm
+  · exact hba
+  · exact hab
+
 /-- Identity mapping on a molecule-ID list. -/
 def SpeciesIsoMap.idOn (ids : List MoleculeInstanceId) : SpeciesIsoMap :=
   { moleculeMap := ids.map (fun id => (id, id)) }
