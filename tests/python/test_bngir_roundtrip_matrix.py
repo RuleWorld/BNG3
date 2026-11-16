@@ -290,3 +290,41 @@ end model
         pass
     migrated = json.loads(restored.to_bngir(version="0.2"))
     assert len(migrated["model"]["population_maps"]) == 1
+
+
+def test_v01_unit_definitions_accept_id_or_name():
+    base = {
+        "format": "BNGIR",
+        "version": "0.1",
+        "features": {"required": [], "used": ["units"]},
+        "model": {
+            "name": "",
+            "version": "",
+            "substance_units": "",
+            "options": {},
+            "parameters": [],
+            "molecule_types": [],
+            "compartments": [],
+            "seeds": [],
+            "observables": [],
+            "functions": [],
+            "energy_patterns": [],
+            "barrier_patterns": [],
+            "population_maps": [],
+            "rules": [],
+            "unit_defaults": {"timeUnits": "s"},
+            "unit_definitions": [{"id": "Molar", "expression": "1e6"}],
+        },
+        "protocol": {"actions": []},
+    }
+    m = bionetgen.from_bngir(json.dumps(base))
+    doc = json.loads(m.to_bngir(version="0.1"))
+    defs = doc["model"].get("unit_definitions") or []
+    assert any(d.get("expression") == "1e6" for d in defs)
+    assert any((d.get("name") or d.get("id")) == "Molar" for d in defs)
+
+    base["model"]["unit_definitions"] = [{"name": "Liter", "expression": "1"}]
+    m = bionetgen.from_bngir(json.dumps(base))
+    doc = json.loads(m.to_bngir(version="0.1"))
+    defs = doc["model"].get("unit_definitions") or []
+    assert any((d.get("name") or d.get("id")) == "Liter" for d in defs)

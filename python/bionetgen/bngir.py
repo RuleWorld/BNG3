@@ -544,8 +544,11 @@ def _as_bngl_v01(root: Mapping[str, Any]) -> str:
         for role in sorted(unit_defaults):
             lines.append(f"  {role} = {unit_defaults[role]}")
         for defn in unit_definitions:
-            if isinstance(defn, Mapping) and "name" in defn and "expression" in defn:
-                lines.append(f"  unit {defn['name']} = {defn['expression']}")
+            if isinstance(defn, Mapping):
+                name = defn.get("name", defn.get("id"))
+                expression = defn.get("expression")
+                if isinstance(name, str) and name and isinstance(expression, str):
+                    lines.append(f"  unit {name} = {expression}")
         lines += ["end units"]
     parameters = model.get("parameters", [])
     if parameters:
