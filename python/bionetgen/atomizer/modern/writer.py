@@ -6358,23 +6358,17 @@ def write_functions(
                     for event in model.events
                     for assignment in event.assignments
                 )
-                if (
-                    event_assigned_compartment
-                    and compartment_name not in rate_ruled_compartments
-                ):
-                    # A compartment whose size only changes at an event has no
-                    # continuous size derivative, so the concentration rate
-                    # law has no exact BNGL form.
-                    raise ValueError(
-                        "species concentration rate rule requires an explicit compartment derivative; "
-                        "an event-driven compartment size without a rate rule is unsupported"
-                    )
                 if compartment_name in rate_ruled_compartments:
                     body = (
                         f"({body}) * {compartment_name}_amt + "
                         f"_c_{name}() * {RATE_RULE_META_PREFIX}{compartment_name}()"
                     )
                 else:
+                    # A compartment whose size only changes at discrete events has
+                    # zero continuous derivative between events. Event actions
+                    # update the compartment size and rescale concentration-valued
+                    # species amounts at event boundaries as needed, so dN/dt =
+                    # V(t)*dC/dt is the correct continuous amount-rate form.
                     body = f"({body}) * __compartment_{compartment_name}__"
         lines.append(f"{RATE_RULE_META_PREFIX}{name}() = {body}")
         lines.append(
@@ -10267,6 +10261,193 @@ def generate_bngl(
                 return None
             return float(initial_size), float(assigned_size)
 
+        def _resolve_event_time_value(
+            identifier: str, event_context: SBMLEvent, time: float
+        ) -> Optional[float]:
+            """Resolve a species/parameter value at a fixed event time when known."""
+            normalized = standardize_name(identifier)
+            # Direct assignment rules with constant/foldable expressions.
+            assignment_rules = [
+                rule
+                for rule in model.rules
+                if rule.type == "assignment"
+                and rule.variable
+                and standardize_name(rule.variable) == normalized
+            ]
+            if len(assignment_rules) == 1:
+                expr = extend_function(
+                    assignment_rules[0].math or "", {}, model.function_definitions
+                )
+                value = fold_numeric(
+                    expr,
+                    lambda symbol: (
+                        _resolve_event_time_value(symbol, event_context, time)
+                        if standardize_name(symbol) != normalized
+                        else None
+                    ),
+                )
+                if value is not None and math.isfinite(value):
+                    return float(value)
+            # Rate rules: support simple constant-derivative concentration/parameter
+            # trajectories independent of other dynamic event changes.
+            rate_rules = [
+                rule
+                for rule in model.rules
+                if rule.type == "rate"
+                and rule.variable
+                and standardize_name(rule.variable) == normalized
+            ]
+            if len(rate_rules) == 1:
+                expr = extend_function(
+                    rate_rules[0].math or "", {}, model.function_definitions
+                )
+                slope = fold_numeric(
+                    expr,
+                    lambda symbol: (
+                        resolve_event_parameter(symbol)
+                        if is_compile_time_constant(symbol)
+                        else None
+                    ),
+                )
+                if slope is not None and math.isfinite(slope):
+                    # Species concentration initial value vs parameter initial value.
+                    species = next(
+                        (
+                            s
+                            for sid, s in model.species.items()
+                            if standardize_name(sid) == normalized
+                        ),
+                        None,
+                    )
+                    if species is not None:
+                        initial = (
+                            float(species.initial_concentration)
+                            if not species.has_only_substance_units
+                            else float(species.initial_amount)
+                        )
+                    elif identifier in model.parameters:
+                        initial = float(model.parameters[identifier].value)
+                    else:
+                        initial = None
+                    if initial is not None and math.isfinite(initial):
+                        value = initial + float(slope) * float(time)
+                        if math.isfinite(value):
+                            return float(value)
+            # Fall back to initial/constant values.
+            value = resolve_initial_event_value(identifier)
+            if value is not None and math.isfinite(value):
+                return float(value)
+            return None
+
+        def resolve_compartment_volume_rescales(
+            compartment_id: str,
+            event_context: SBMLEvent,
+            time: float,
+            new_volume: float,
+            assigned_species_ids: set[str],
+        ):
+            """Rescale concentration-species amounts on discrete volume change.
+
+            When a compartment's size changes by an event, a species whose SBML
+            symbol denotes a concentration keeps that concentration continuous
+            unless the event explicitly assigns the species. BNGL stores the
+            species amount, so the amount must be rescaled by V_new/V_old.
+            """
+            resolved_compartment = next(
+                (
+                    cid
+                    for cid in model.compartments
+                    if standardize_name(cid) == standardize_name(compartment_id)
+                ),
+                None,
+            )
+            if resolved_compartment is None:
+                return ()
+            compartment = model.compartments[resolved_compartment]
+            if compartment.spatial_dimensions == 0:
+                return ()
+            old_volume = None
+            # Find a species in this compartment to query pre-event volume.
+            for sid, species in model.species.items():
+                if (
+                    species.compartment
+                    and standardize_name(species.compartment)
+                    == standardize_name(resolved_compartment)
+                    and not species.has_only_substance_units
+                ):
+                    old_volume = resolve_species_concentration_volume(
+                        sid, event_context, time
+                    )
+                    if old_volume is not None:
+                        break
+            if old_volume is None:
+                # Fallback: constant compartment size not otherwise controlled.
+                if not any(
+                    rule.variable == resolved_compartment for rule in model.rules
+                ) and not any(
+                    a.variable == resolved_compartment
+                    for e in model.events
+                    if e is not event_context
+                    for a in e.assignments
+                ):
+                    try:
+                        old_volume = float(compartment.size)
+                    except (TypeError, ValueError):
+                        old_volume = None
+            if (
+                old_volume is None
+                or not math.isfinite(old_volume)
+                or old_volume == 0
+                or not math.isfinite(new_volume)
+            ):
+                return ()
+            scale = float(new_volume) / float(old_volume)
+            if abs(scale - 1.0) <= 1e-15:
+                return ()
+            rescale_sets = []
+            for sid, species in model.species.items():
+                if not species.compartment:
+                    continue
+                if standardize_name(species.compartment) != standardize_name(
+                    resolved_compartment
+                ):
+                    continue
+                if species.has_only_substance_units:
+                    continue
+                if standardize_name(sid) in assigned_species_ids:
+                    continue
+                pattern = species_to_pattern.get(sid)
+                if not pattern:
+                    continue
+                # Determine pre-event concentration, then compute new amount.
+                conc_value = _resolve_event_time_value(sid, event_context, time)
+                if conc_value is None or not math.isfinite(conc_value):
+                    continue
+                # For concentration-valued species, _resolve_event_time_value
+                # returns the concentration trajectory value for rate-ruled
+                # concentration species when possible.
+                if any(
+                    rule.type == "rate"
+                    and rule.variable
+                    and standardize_name(rule.variable) == standardize_name(sid)
+                    for rule in model.rules
+                ):
+                    new_amount = float(new_volume) * float(conc_value)
+                else:
+                    # Non-rate-ruled concentration species: preserve current
+                    # concentration => amount scales with volume.
+                    current_amount = float(old_volume) * float(conc_value)
+                    # If conc_value came from initial/amount semantics, be
+                    # conservative: try amount scaling directly.
+                    if math.isfinite(current_amount):
+                        new_amount = current_amount * scale
+                    else:
+                        continue
+                if not math.isfinite(new_amount):
+                    continue
+                rescale_sets.append(("conc", pattern, float(new_amount)))
+            return tuple(rescale_sets)
+
         def resolve_square_linear_event_rate(
             identifier: str, event_context: SBMLEvent
         ) -> Optional[Tuple[float, float]]:
@@ -11916,6 +12097,7 @@ def generate_bngl(
                 )
             ),
             resolve_species_concentration_volume=(resolve_species_concentration_volume),
+            resolve_compartment_volume_rescales=resolve_compartment_volume_rescales,
             is_compile_time_constant=is_compile_time_constant,
             unapplied_algebraic_rule=(
                 any(rule.type == "algebraic" for rule in model.rules)
