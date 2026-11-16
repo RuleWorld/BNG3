@@ -3795,14 +3795,21 @@ def exact_process_equal(
             {"left_contract": left_unlowered, "right_contract": right_unlowered},
         )
 
-    left_actions = [
-        (a.name, tuple(sorted(a.args.items())) if hasattr(a, "args") else ())
-        for a in left_model._model.actions
-    ]
-    right_actions = [
-        (a.name, tuple(sorted(a.args.items())) if hasattr(a, "args") else ())
-        for a in right_model._model.actions
-    ]
+    def action_signature(action: Any) -> tuple[str, tuple[tuple[str, str], ...]]:
+        if hasattr(action, "arguments"):
+            arguments = action.arguments
+        elif hasattr(action, "args"):
+            arguments = action.args
+        else:
+            arguments = {}
+        if isinstance(arguments, Mapping):
+            items = tuple(sorted((str(k), str(v)) for k, v in arguments.items()))
+        else:
+            items = ()
+        return (str(action.name), items)
+
+    left_actions = [action_signature(a) for a in left_model._model.actions]
+    right_actions = [action_signature(a) for a in right_model._model.actions]
     if left_actions != right_actions:
         raise EqualityUndecided(
             "Protocol difference requires an exact intervention-semantics witness",
