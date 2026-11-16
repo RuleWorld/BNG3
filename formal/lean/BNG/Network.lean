@@ -118,6 +118,13 @@ theorem networkGenerationStep_nil (pool : List Mixture) :
     networkGenerationStep [] pool = pool := by
   simp [networkGenerationStep]
 
+/-- With no rules, bounded closure is an identity on the species pool. -/
+theorem boundedNetworkClosure_nil_rules (fuel : Nat) (pool : List Mixture) :
+    boundedNetworkClosure fuel [] pool = pool := by
+  cases fuel with
+  | zero => rfl
+  | succ n => simp [boundedNetworkClosure, networkGenerationStep_nil]
+
 
 theorem addProductsModuloIso_cons (p : Mixture) (ps pool : List Mixture) :
     addProductsModuloIso pool (p :: ps) =
