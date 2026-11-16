@@ -105,4 +105,17 @@ def CompiledModel.referenceNetwork (model : CompiledModel) (iterations : Nat)
   let directions := model.rules.flatMap CompiledRule.directions
   boundedNetworkClosure iterations directions seedSpecies
 
+
+theorem addProductsModuloIso_nil (pool : List Mixture) :
+    addProductsModuloIso pool [] = pool := by
+  simp [addProductsModuloIso]
+
+theorem boundedNetworkClosure_zero (rules : List RuleDirection) (pool : List Mixture) :
+    boundedNetworkClosure 0 rules pool = pool := by
+  rfl
+
+theorem networkGenerationStep_nil (pool : List Mixture) :
+    networkGenerationStep [] pool = pool := by
+  simp [networkGenerationStep]
+
 end BNG
