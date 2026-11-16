@@ -103,6 +103,26 @@ end model
         "expected_count": 3,
         "expected_species": ["A(x~u!1).B(y!1)", "A(x~u)", "B(y)"],
     },
+    {
+        "name": "dimerization_finite_closure",
+        "bngl": """begin model
+begin parameters
+k 1
+end parameters
+begin molecule types
+A(x~u)
+end molecule types
+begin seed species
+A(x~u) 1
+end seed species
+begin reaction rules
+A(x) + A(x) -> A(x!1).A(x!1) k
+end reaction rules
+end model
+""",
+        "expected_count": 2,
+        "expected_species": ["A(x~u)", "A(x~u!1).A(x~u!1)"],
+    },
 ]
 
 
@@ -175,6 +195,26 @@ end model
 """,
         "expected_count": 1,
         "must_not_match_species": ["A(x~u!1).B(y!1)", "A(x~u)", "B(y)"],
+    },
+    {
+        "name": "dimerization_noop_rule_negative",
+        "bngl": """begin model
+begin parameters
+k 1
+end parameters
+begin molecule types
+A(x~u)
+end molecule types
+begin seed species
+A(x~u) 1
+end seed species
+begin reaction rules
+A(x) + A(x) -> A(x) + A(x) k
+end reaction rules
+end model
+""",
+        "expected_count": 1,
+        "must_not_match_species": ["A(x~u)", "A(x~u!1).A(x~u!1)"],
     },
 ]
 
@@ -299,6 +339,8 @@ def main() -> int:
         "reversible_pool_contains_all_mod_iso": "1",
         "dissociation_finite_closure": "3",
         "dissociation_pool_contains_all_mod_iso": "1",
+        "dimerization_finite_closure": "2",
+        "dimerization_pool_contains_all_mod_iso": "1",
     }
     for k, v in expected_lean.items():
         if lean.get(k) != v:

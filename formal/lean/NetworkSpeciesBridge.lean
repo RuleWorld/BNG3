@@ -53,6 +53,11 @@ def productAB : Mixture :=
     molecules := [molA 0, molB 1]
     bonds := [{ a := { molecule := ⟨0⟩, component := cAx }, b := { molecule := ⟨1⟩, component := cBy } }] }
 
+def productAA : Mixture :=
+  { nextMoleculeId := ⟨2⟩
+    molecules := [molA 0, molA 1]
+    bonds := [{ a := { molecule := ⟨0⟩, component := cAx }, b := { molecule := ⟨1⟩, component := cAx } }] }
+
 -- Formal bounded closure for the no-rule seed-dedup case.
 def seedsDedupPool : List Mixture :=
   addSpeciesModuloIso (addSpeciesModuloIso [] seedA) seedB
@@ -86,6 +91,11 @@ def results : List CaseResult :=
       speciesCount := (if bindingClosedPool.any (fun s => s.isomorphicSpecies seedA)
         && bindingClosedPool.any (fun s => s.isomorphicSpecies seedB)
         && bindingClosedPool.any (fun s => s.isomorphicSpecies productAB) then 1 else 0) }
+  , { name := "dimerization_finite_closure",
+      speciesCount := (addSpeciesModuloIso [seedA] productAA).length }
+  , { name := "dimerization_pool_contains_all_mod_iso",
+      speciesCount := (let pool := addSpeciesModuloIso [seedA] productAA;
+        if pool.any (fun s => s.isomorphicSpecies seedA) && pool.any (fun s => s.isomorphicSpecies productAA) then 1 else 0) }
   ]
 
 def emit (r : CaseResult) : String :=
