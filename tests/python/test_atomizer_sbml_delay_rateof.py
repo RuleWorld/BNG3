@@ -380,3 +380,78 @@ def test_rate_of_a_reaction_local_parameter_is_zero():
     # The reaction flux is the zero rate of the local parameter, not the
     # global rate rule value 2.
     assert j0[0].rstrip().endswith("0 TotalRate"), j0[0]
+
+
+_DELAY_OPERANDS_IN_CSYMBOL_CHILDREN_MODEL = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="delay_csymbol_children">
+    <listOfCompartments>
+      <compartment id="C" spatialDimensions="3" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="A" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false"
+               boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="tau" value="1" constant="true"/>
+    </listOfParameters>
+    <listOfRules>
+      <rateRule variable="A">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply>
+            <csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/delay"><ci>A</ci><ci>tau</ci></csymbol>
+          </apply>
+        </math>
+      </rateRule>
+    </listOfRules>
+  </model>
+</sbml>
+"""
+
+
+_DELAY_MIXED_TEXT_AND_CHILD_MODEL = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="delay_mixed_text_child">
+    <listOfCompartments>
+      <compartment id="C" spatialDimensions="3" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="A" compartment="C" initialAmount="1" hasOnlySubstanceUnits="false"
+               boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfRules>
+      <rateRule variable="A">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply>
+            <csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/delay">A<ci>A</ci></csymbol>
+          </apply>
+        </math>
+      </rateRule>
+    </listOfRules>
+  </model>
+</sbml>
+"""
+
+
+def test_delay_operands_inside_csymbol_preserve_argument_boundaries():
+    """Malformed delay exports must not concatenate distinct operands."""
+
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(
+        _DELAY_OPERANDS_IN_CSYMBOL_CHILDREN_MODEL
+    )
+    assert result.success, result.error
+    assert "delay(_c_A(), tau)" in result.bngl
+    assert "delay(Atau)" not in result.bngl
+    assert "unresolved expression symbol: Atau" not in result.bngl
+
+
+def test_delay_mixed_text_and_child_operands_preserve_boundaries():
+    """A leading text operand and child operand must remain separate."""
+
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(
+        _DELAY_MIXED_TEXT_AND_CHILD_MODEL
+    )
+    assert result.success, result.error
+    assert "delay(_c_A(), _c_A())" in result.bngl
+    assert "delay(AA)" not in result.bngl
+    assert "unresolved expression symbol: AA" not in result.bngl
