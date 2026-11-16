@@ -54,6 +54,46 @@ UNDEFINED_AT_THE_INITIAL_POINT = """<?xml version="1.0" encoding="UTF-8"?>
 </sbml>
 """
 
+# Preserve the historical protected case/fixture ID.
+EVENT_DRIVEN_COMPARTMENT = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="event_driven_compartment">
+    <listOfCompartments>
+      <compartment id="c" spatialDimensions="3" size="1" constant="false"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="S" compartment="c" initialAmount="1" hasOnlySubstanceUnits="false"
+        boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfRules>
+      <rateRule variable="S">
+        <math xmlns="http://www.w3.org/1998/Math/MathML"><cn> 1 </cn></math>
+      </rateRule>
+    </listOfRules>
+    <listOfEvents>
+      <event id="E">
+        <trigger>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply>
+              <gt/>
+              <csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/time"/>
+              <cn> 0 </cn>
+            </apply>
+          </math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="c">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><times/><ci> c </ci><cn> 3 </cn></apply>
+            </math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>
+"""
+
 # A compartment whose size is driven by an assignment rule, with a rate rule
 # on a concentration-valued species: the Atomizer refuses this on purpose
 # because no explicit compartment derivative is available.
@@ -81,10 +121,6 @@ ASSIGNMENT_RULE_COMPARTMENT = """<?xml version="1.0" encoding="UTF-8"?>
   </model>
 </sbml>
 """
-# Preserve the historical protected ID; the refusal contract now uses an
-# assignment-rule-driven compartment (event-driven case is supported).
-# event_driven_compartment
-EVENT_DRIVEN_COMPARTMENT = ASSIGNMENT_RULE_COMPARTMENT
 
 CUSTOM_UNIT_SPECIES = """<?xml version="1.0" encoding="UTF-8"?>
 <sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
