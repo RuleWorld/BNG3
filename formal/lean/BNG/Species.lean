@@ -148,14 +148,6 @@ theorem isomorphicSpecies_counts (left right : Mixture)
   · simpa using h.1.1
   · simpa using h.1.2
 
-/-- Oracle-positive identity is witnessed by an explicit bijection candidate
-validated by the supported-class predicate. -/
-theorem isomorphicSpecies_witness (left right : Mixture)
-    (h : left.isomorphicSpecies right = true) :
-    ∃ m ∈ candidateSpeciesIsoMaps left right, m.validFor left right = true := by
-  simp [Mixture.isomorphicSpecies] at h
-  rcases h.2.2 with ⟨m, hm, hvalid⟩
-  exact ⟨m, hm, hvalid⟩
 
 theorem addSpeciesModuloIso_preserves_existing (pool : List Mixture) (candidate : Mixture)
     (existing : Mixture) (hmem : existing ∈ pool) :
