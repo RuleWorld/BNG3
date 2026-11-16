@@ -2663,7 +2663,6 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             if relation is not None:
                 if not isinstance(relation, str) or relation not in {
                     "==",
-                    "!=",
                     ">",
                     ">=",
                     "<",
