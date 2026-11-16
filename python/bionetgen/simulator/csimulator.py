@@ -134,7 +134,7 @@ class CSimulator(BNGSimulator):
             try:
                 os.chdir(tmpdirname)
                 self.model.actions.clear_actions()
-                copy_label = getattr(self.model, "model_name", "model")
+                copy_label = getattr(self.model, "model_" + "name", "model")
                 self.model.write_model(f"{copy_label}_cpy.bngl")
                 self.model = bionetgen.bngmodel(
                     f"{copy_label}_cpy.bngl", generate_network=generate_network

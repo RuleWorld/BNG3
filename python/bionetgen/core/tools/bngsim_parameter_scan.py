@@ -5,7 +5,7 @@ For a ``generate_network`` followed by a single ``parameter_scan`` (or
 ``bifurcate``), BNG2.pl generates the network once and this driver then
 owns the scan loop, driving BNGsim *in-process*: build the model once,
 vary the scanned parameter, and re-integrate. That avoids the N process
-/ socket / JSON boundary crossings the backend-hook route pays per scan
+/ socket / JSON edge crossings the backend-hook route pays per scan
 point.
 
 Correctness never depends on this path. :func:`detect_inprocess_scan`
