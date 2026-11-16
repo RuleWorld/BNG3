@@ -6,7 +6,9 @@ from bionetgen.cli import main
 
 @pytest.mark.parametrize("option", [["--log", "run.log"], ["--no-bngsim"]])
 @pytest.mark.parametrize("input_option", [[], ["--input"]])
-def test_unimplemented_run_controls_fail_before_execution(tmp_path, option, input_option):
+def test_unimplemented_run_controls_fail_before_execution(
+    tmp_path, option, input_option
+):
     model = tmp_path / "model.bngl"
     model.write_text("begin model\nend model\n", encoding="utf-8")
 
