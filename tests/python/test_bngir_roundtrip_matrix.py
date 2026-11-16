@@ -177,6 +177,41 @@ begin reaction rules
 end reaction rules
 end model
 """,
+    "multiple_actions": r"""
+begin model
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin observables
+  Molecules Atot A()
+end observables
+begin reaction rules
+  A() -> 0 1
+end reaction rules
+end model
+generate_network({overwrite=>1})
+writeXML()
+simulate({method=>"ode",t_end=>1,n_steps=>5})
+""",
+    "observable_species_molecules": r"""
+begin model
+begin molecule types
+  A(b)
+end molecule types
+begin seed species
+  A(b!1).A(b!1) 2
+  A(b) 1
+end seed species
+begin observables
+  Molecules A_mol A()
+  Species A_spec A()
+  Species Dimer A(b!1).A(b!1)
+end observables
+end model
+""",
     "modifiers_synthesis_totalrate": r"""
 begin model
 begin molecule types
