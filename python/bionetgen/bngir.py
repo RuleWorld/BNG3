@@ -1268,7 +1268,7 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
             relation = term.get("relation")
             if relation is None:
                 continue
-            if relation not in {"==", "!=", ">", ">=", "<", "<="}:
+            if relation not in {"==", ">", ">=", "<", "<="}:
                 raise ValueError(
                     f"BNGIR model.observables[{i}].terms[{j}] has unsupported "
                     f"count relation: {relation!r}"
@@ -2663,7 +2663,6 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
             if relation is not None:
                 if not isinstance(relation, str) or relation not in {
                     "==",
-                    "!=",
                     ">",
                     ">=",
                     "<",
@@ -3908,10 +3907,25 @@ def exact_process_equal(
 
     left_actions = [action_signature(a) for a in left_model._model.actions]
     right_actions = [action_signature(a) for a in right_model._model.actions]
-    if left_actions != right_actions:
+    left_wire_actions = (
+        (left_doc or {}).get("protocol", {}).get("actions", [])
+        if isinstance(left_doc, Mapping)
+        else []
+    )
+    right_wire_actions = (
+        (right_doc or {}).get("protocol", {}).get("actions", [])
+        if isinstance(right_doc, Mapping)
+        else []
+    )
+    if left_actions != right_actions or left_wire_actions != right_wire_actions:
         raise EqualityUndecided(
             "Protocol difference requires an exact intervention-semantics witness",
-            {"left_actions": left_actions, "right_actions": right_actions},
+            {
+                "left_actions": left_actions,
+                "right_actions": right_actions,
+                "left_wire_actions": left_wire_actions,
+                "right_wire_actions": right_wire_actions,
+            },
         )
 
     for m in (left_model, right_model):
