@@ -914,6 +914,11 @@ jobs:
           BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
           BNG3_PR_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
+      - name: Check NFnext physical bimolecular unit boundary
+        run: >-
+          python -m pytest --noconftest -q
+          tests/python/nfnext/test_nfnext_bimolecular_unit_boundary.py
+
       - name: Verify spawned API worker identity
         run: |
           pytest -c tests/validation/pytest.ini \
