@@ -141,13 +141,22 @@ def build_release_record(
         },
     ]
 
+    if skip_tests:
+        for row in results:
+            row["status"] = "NOT_TESTED"
+            row["supported_execution"] = False
+            row["evidence_kind"] = "not-tested"
+            row["detail"] = (
+                "Execution was skipped; no scientific acceptance evidence was collected."
+            )
+
     return {
         "schema_version": 1,
         "acceptance_check": "release-obligation-475",
         "case": "issue-475-delayed-semantics-release",
         "source": {
             "revision": revision,
-            "dirty": False,
+            "dirty": bool(dirty),
         },
         "references": {
             "analytic_dde": "exact method-of-steps decay/continuation solutions and prehistory preservation",
@@ -191,9 +200,7 @@ def main(argv: list[str] | None = None) -> int:
             "## Issue 475 delayed semantics release obligation record",
             "",
             f"- Source commit: `{record['source']['revision']}`",
-            "- release-delay-ode: PASS (method-of-steps exact solutions, multi-interval continuations, prehistory jump)",
-            "- release-delay-ssa: PASS (independent jump-process reference, distribution check, queue recovery)",
-            "- release-delay-formats: PASS (BNGIR v0.1/v0.2 wire format roundtrip, SBML L3V2 delay csymbol export/reimport, BNGsim capability refusal)",
+            *(f"- {row['id']}: {row['status']}" for row in record["results"]),
             "",
             f"Consolidated JSON report: `{args.output}`",
             "",

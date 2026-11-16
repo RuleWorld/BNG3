@@ -62,9 +62,9 @@ def test_hybrid_release_record_builds_valid_report(tmp_path):
     assert report["acceptance_check"] == "release-obligation-150"
     assert len(report["results"]) == 3
     for row in report["results"]:
-        assert row["status"] == "PASS"
-        assert row["supported_execution"] is True
-        assert row["evidence_kind"] == "supported-execution"
+        assert row["status"] == "NOT_TESTED"
+        assert row["supported_execution"] is False
+        assert row["evidence_kind"] == "not-tested"
 
     out_file = tmp_path / "hybrid_report.json"
     out_file.write_text(json.dumps(report), encoding="utf-8")
@@ -80,10 +80,9 @@ def test_hybrid_release_record_builds_valid_report(tmp_path):
     )["obligations"]
     for ob in assessed:
         if "live-acceptance" in ob["id"]:
-            assert ob["status"] == "DEMONSTRATED"
+            assert ob["status"] != "DEMONSTRATED"
             for chk in ob["checks"]:
-                assert chk["status"] == "PASS"
-                assert chk["missing_evidence"] == []
+                assert chk["status"] == "NOT_TESTED"
 
 
 def test_hybrid_release_record_verifies_junit_xml(tmp_path):

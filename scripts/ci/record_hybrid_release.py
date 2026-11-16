@@ -213,13 +213,22 @@ def build_release_record(
         },
     ]
 
+    if skip_tests:
+        for row in results:
+            row["status"] = "NOT_TESTED"
+            row["supported_execution"] = False
+            row["evidence_kind"] = "not-tested"
+            row["detail"] = (
+                "Execution was skipped; no scientific acceptance evidence was collected."
+            )
+
     return {
         "schema_version": 1,
         "acceptance_check": "release-obligation-150",
         "case": "issue-150-hybrid-execution-release",
         "source": {
             "revision": revision,
-            "dirty": False,
+            "dirty": bool(dirty),
         },
         "references": {
             "bng2": "pinned BNG2 generate_hybrid_model option contract and HPP transformation",
@@ -270,9 +279,7 @@ def main(argv: list[str] | None = None) -> int:
             "## Issue 150 particle-population hybrid release obligation record",
             "",
             f"- Main/source commit: `{report['source']['revision']}`",
-            "- release-hybrid: PASS (BNG2 hybrid output executed by native NFsim matches BNG3 hybrid distributions and observables)",
-            "- release-hybrid-conservation: PASS (independent analytic conversion/mass conservation and multiplicity laws hold in mixed particle/population cases)",
-            "- release-capability-coverage-150: PASS (all 8 assigned inventory cases execute against their row's named independent oracle and pass on main)",
+            *(f"- {row['id']}: {row['status']}" for row in report["results"]),
             f"- Pinned BNG2 oracle: `{report['references']['bng2']}`",
             f"- Pinned native NFsim oracle: `{report['references']['native_nfsim']}`",
             f"- Analytic CTMC oracle: `{report['references']['analytic_laws']}`",

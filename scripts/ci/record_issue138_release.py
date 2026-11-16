@@ -152,13 +152,22 @@ def build_release_record(
         },
     ]
 
+    if skip_tests:
+        for row in results:
+            row["status"] = "NOT_TESTED"
+            row["supported_execution"] = False
+            row["evidence_kind"] = "not-tested"
+            row["detail"] = (
+                "Execution was skipped; no scientific acceptance evidence was collected."
+            )
+
     return {
         "schema_version": 1,
         "acceptance_check": "release-obligation-138",
         "case": "issue-138-compiled-model-release",
         "source": {
             "revision": revision,
-            "dirty": False,
+            "dirty": bool(dirty),
         },
         "references": {
             "architecture_contract": "zero runtime AST dependencies in lowered execution engines",
@@ -203,9 +212,7 @@ def main(argv: list[str] | None = None) -> int:
             "## Issue 138 compiled model release obligation record",
             "",
             f"- Source commit: `{record['source']['revision']}`",
-            "- release-compiled-inputs: PASS (zero runtime AST dependencies in lowered execution engines)",
-            "- release-compiled-parity: PASS (BNGL syntax inventory cases compare with BNG2/native NFsim after AST destruction)",
-            "- release-capability-coverage-138: PASS (all 30 assigned BNGL syntax rows pass against independent oracles)",
+            *(f"- {row['id']}: {row['status']}" for row in record["results"]),
             f"- Architecture contract: `{record['references']['architecture_contract']}`",
             f"- Pinned BNG2 oracle: `{record['references']['bng2']}`",
             f"- Native NFsim oracle: `{record['references']['native_nfsim']}`",
