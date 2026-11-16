@@ -395,3 +395,32 @@ def test_mutation_dropped_delay_detected():
         assert eq is False
     except bionetgen.EqualityUndecided as exc:
         assert exc.diagnostic.get("status") == "undecided"
+
+
+def test_adversarial_valid_delay_nonconsuming_fixture_roundtrips():
+    doc = _load("valid_delay_nonconsuming.json")
+    jsonschema.validate(doc, SCHEMA)
+    restored = bionetgen.from_bngir(doc)
+    assert doc["model"]["rules"][0].get("non_consuming") is True
+    v2 = bionetgen.from_bngir(bionetgen.to_bngir(restored, version="0.2"))
+    try:
+        assert bionetgen.semantic_equal(restored, v2, version="0.2") is True
+    except bionetgen.EqualityUndecided:
+        rule = json.loads(bionetgen.to_bngir(v2, version="0.2"))["model"]["rules"][0]
+        assert rule.get("non_consuming") is True
+        assert rule.get("delay") == doc["model"]["rules"][0]["delay"]
+
+
+def test_mutation_dropped_nonconsuming_detected():
+    base = _load("valid_delay_nonconsuming.json")
+    mutated = _load("mutation_dropped_nonconsuming.json")
+    jsonschema.validate(base, SCHEMA)
+    jsonschema.validate(mutated, SCHEMA)
+    assert base != mutated
+    m_base = bionetgen.from_bngir(base)
+    m_mut = bionetgen.from_bngir(mutated)
+    try:
+        eq = bionetgen.semantic_equal(m_base, m_mut, version="0.2")
+        assert eq is False
+    except bionetgen.EqualityUndecided as exc:
+        assert exc.diagnostic.get("status") == "undecided"
