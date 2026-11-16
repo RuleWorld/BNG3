@@ -56,7 +56,7 @@ kernel-reduced proofs.
 
 1. **No restatements.**  Re-proving a library theorem with a different variable
    name proves nothing `lake build` did not already prove.  Every assertion pins
-   a concrete instance on `BNG.Examples.model` / `forward` / `runtimeMixture`,
+   a concrete instance on `BNG.model` / `forward` / `runtimeMixture`,
    or on a deliberately constructed non-trivial mixture.
 2. **No vacuous instances.**  An assertion whose expected value is `true` about
    a predicate that is trivially true everywhere catches nothing.  Wherever a
@@ -1049,3 +1049,93 @@ example : dimerMatchOnce.channelMultiplicity dimerMixture = 1 := by native_decid
 
 /-- Separate complexes remain separate MatchOnce events. -/
 example : matchOnceForward.channelMultiplicity doubledAMixture = 2 := by native_decide
+
+/-! ## #168 graph identity / canonicalization adversarial cases
+
+These fixtures exercise the brute-force typed graph-isomorphism oracle
+`Mixture.isomorphicSpecies` used as the finite-network/species identity
+reference in this formal model.  They distinguish runtime-ID renaming from
+semantic mutations of type, state, bond topology, and compartment. -/
+
+def id168A : RuntimeMolecule :=
+  { id := ⟨0⟩
+    moleculeType := mtA
+    compartment := none
+    sites := [{ component := cAx, state := some sU }] }
+
+def id168B : RuntimeMolecule :=
+  { id := ⟨1⟩
+    moleculeType := mtB
+    compartment := none
+    sites := [{ component := cBy, state := none }] }
+
+def id168A_p : RuntimeMolecule :=
+  { id168A with sites := [{ component := cAx, state := some sP }] }
+
+def id168B_altComp : RuntimeMolecule :=
+  { id168B with compartment := some ⟨1⟩ }
+
+def id168MixBase : Mixture :=
+  { nextMoleculeId := ⟨2⟩, molecules := [id168A, id168B], bonds := [] }
+
+/-- Permutation/renaming: different runtime IDs and reversed molecule order
+represent the same typed molecular species. -/
+def id168MixRenamed : Mixture :=
+  { nextMoleculeId := ⟨99⟩
+    molecules := [{ id168B with id := ⟨41⟩ }, { id168A with id := ⟨40⟩ }]
+    bonds := [] }
+
+example : id168MixBase.isomorphicSpecies id168MixRenamed = true := by native_decide
+example : id168MixRenamed.isomorphicSpecies id168MixBase = true := by native_decide
+
+/-- Adversarial non-equivalent: internal state differs (u vs p). -/
+def id168MixStateDiff : Mixture :=
+  { nextMoleculeId := ⟨2⟩, molecules := [id168A_p, id168B], bonds := [] }
+
+example : id168MixBase.isomorphicSpecies id168MixStateDiff = false := by native_decide
+
+/-- Adversarial non-equivalent: compartment annotation differs. -/
+def id168MixCompDiff : Mixture :=
+  { nextMoleculeId := ⟨2⟩, molecules := [id168A, id168B_altComp], bonds := [] }
+
+example : id168MixBase.isomorphicSpecies id168MixCompDiff = false := by native_decide
+
+/-- Adversarial non-equivalent: adding a bond changes graph topology. -/
+def id168MixBonded : Mixture :=
+  { nextMoleculeId := ⟨2⟩
+    molecules := [id168A, id168B]
+    bonds := [{ a := { molecule := ⟨0⟩, component := cAx }
+              , b := { molecule := ⟨1⟩, component := cBy } }] }
+
+example : id168MixBase.isomorphicSpecies id168MixBonded = false := by native_decide
+
+/-- Permutation/renaming of a bonded complex: swapped molecule IDs and endpoint
+order in the bond list do not change species identity. -/
+def id168MixBondedRenamed : Mixture :=
+  { nextMoleculeId := ⟨50⟩
+    molecules := [{ id168B with id := ⟨8⟩ }, { id168A with id := ⟨7⟩ }]
+    bonds := [{ a := { molecule := ⟨8⟩, component := cBy }
+              , b := { molecule := ⟨7⟩, component := cAx } }] }
+
+example : id168MixBonded.isomorphicSpecies id168MixBondedRenamed = true := by native_decide
+example : id168MixBondedRenamed.isomorphicSpecies id168MixBonded = true := by native_decide
+
+/-- Adversarial non-equivalent bonded graphs: same counts/types but different
+attachment site on the same molecule type instance. -/
+def id168MixBondedWrongSite : Mixture :=
+  { nextMoleculeId := ⟨2⟩
+    molecules :=
+      [ { id168A with sites := [{ component := cAx, state := some sU }] }
+      , { id168B with sites := [{ component := cBy, state := none }, { component := cAx, state := some sU }] } ]
+    bonds := [{ a := { molecule := ⟨0⟩, component := cAx }
+              , b := { molecule := ⟨1⟩, component := cAx } }] }
+
+example : id168MixBonded.isomorphicSpecies id168MixBondedWrongSite = false := by native_decide
+
+/-- Bounded network identity oracle: isomorphic seeds collapse, non-isomorphic
+do not. -/
+example : (addSpeciesModuloIso [id168MixBase] id168MixRenamed).length = 1 := by native_decide
+example : (addSpeciesModuloIso [id168MixBase] id168MixStateDiff).length = 2 := by native_decide
+example : (addSpeciesModuloIso [id168MixBase] id168MixBonded).length = 2 := by native_decide
+example : (boundedNetworkClosure 0 [] [id168MixBase, id168MixRenamed]).length = 2 := by native_decide
+example : (addSpeciesModuloIso (addSpeciesModuloIso [] id168MixBase) id168MixRenamed).length = 1 := by native_decide

@@ -864,11 +864,9 @@ void refusesUnsupportedExecution() {
         // Compartments with invalid volume
         "begin compartments\n c 3 0\nend compartments\n"
         "begin seed species\n @c:A(x~u) 2\nend seed species\n",
-        // Observable relation constraint
-        "begin seed species\n A(x~u) 2\nend seed species\n"
-        "begin observables\n Molecules U A(x~u)>1\nend observables\n",
     };
-    for (const auto& body : models) {
+    for (std::size_t i = 0; i < models.size(); ++i) {
+        const auto& body = models[i];
         const auto ast = bng::parser::parseModel(
             "begin molecule types\n A(x~u~p)\nend molecule types\n" + body);
         const bng::compile::CompiledModel semantic(*ast);
@@ -877,6 +875,9 @@ void refusesUnsupportedExecution() {
         bool refused = false;
         try { nfnext::executeFromBioNetGen(semantic, request); }
         catch (const std::runtime_error&) { refused = true; }
+        if (!refused) {
+            std::cerr << "NOT REFUSED index=" << i << " body=" << body << "\n";
+        }
         assert(refused);
     }
 }

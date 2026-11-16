@@ -26,6 +26,14 @@ public:
         const engine::GeneratedNetwork* network = nullptr
     );
 
+    // Structural export for Python/modelapi consumers that need BNG-XML shape
+    // but cannot consume delayed-semantics metadata via XML. Native execution
+    // remains in the parsed/compiled C++ model.
+    static std::string writeStructural(
+        const ast::Model& model,
+        const engine::GeneratedNetwork* network = nullptr
+    );
+
 private:
     static std::string escapeXml(const std::string& text);
     static std::string writeParameters(const ast::Model& model);

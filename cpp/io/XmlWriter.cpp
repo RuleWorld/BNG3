@@ -1498,6 +1498,39 @@ std::string XmlWriter::write(const ast::Model& model, const engine::GeneratedNet
     return xml.str();
 }
 
+std::string XmlWriter::writeStructural(const ast::Model& model, const engine::GeneratedNetwork* network) {
+    // Allow delayed semantics to pass for structural consumers (modelapi).
+    // Delay metadata is not represented in this XML form; execution must use
+    // the native parsed/compiled model paths.
+    compile::requireNoNativeEvents(model, "BNG-XML export");
+    std::ostringstream xml;
+
+    xml << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n";
+    xml << "<!-- Created by BioNetGen C++ -->\n";
+    xml << "<sbml xmlns=\"http://www.sbml.org/sbml/level3\" level=\"3\" version=\"1\">\n";
+    xml << "  <model id=\"" << escapeXml(model.getModelName()) << "\"";
+    const auto numberPerQuantity = model.getOptions().find("NumberPerQuantityUnit");
+    if (numberPerQuantity != model.getOptions().end()) {
+        xml << " NumberPerQuantityUnit=\"" << escapeXml(numberPerQuantity->second) << "\"";
+    }
+    xml << ">\n";
+
+    xml << writeParameters(model);
+    xml << writeMoleculeTypes(model);
+    xml << writeCompartments(model);
+    xml << writeSpecies(model, network);
+    xml << writeReactionRules(model);
+    xml << writeObservables(model);
+    xml << writeFunctions(model);
+    xml << writeEnergyPatterns(model);
+    xml << writeBarrierPatterns(model);
+
+    xml << "  </model>\n";
+    xml << "</sbml>\n";
+
+    return xml.str();
+}
+
 std::string XmlWriter::writeParameters(const ast::Model& model) {
     std::ostringstream xml;
     xml << "    <ListOfParameters>\n";

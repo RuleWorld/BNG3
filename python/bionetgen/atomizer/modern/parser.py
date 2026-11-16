@@ -1036,20 +1036,63 @@ def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> st
                 if kind:
                     function_name = kind
                 if kind in {"delay", "rateOf"}:
-                    operand = _mathml_text(operator_node)
-                    # Some libAntimony exports put the first operand in the
-                    # csymbol text. ``rateOf`` has one argument, so a child
-                    # already supplies it; ``delay`` has two arguments and
-                    # still needs the csymbol text when only one child is
-                    # present. Do not duplicate the rateOf operand.
-                    needs_operand = not args if kind == "rateOf" else len(args) < 2
-                    if (
-                        needs_operand
-                        and operand
-                        and operand.lower()
-                        not in {function_name.lower(), "delay", "rateof"}
-                    ):
-                        args.insert(0, operand)
+                    operand_text = _mathml_text(operator_node).strip()
+                    operand_is_name = operand_text.lower() not in {
+                        function_name.lower(),
+                        "delay",
+                        "rateof",
+                        "",
+                    }
+                    # Some exporters place delay/rateOf operands as child
+                    # elements inside the csymbol rather than as following
+                    # <apply> siblings. Recover them while preserving
+                    # argument boundaries.
+                    csymbol_child_args = [
+                        expr
+                        for child in list(operator_node)
+                        if (expr := _mathml_to_formula(child, True).strip())
+                    ]
+                    if not args and csymbol_child_args:
+                        # Child elements may carry all operands, or be
+                        # combined with a leading text operand in malformed
+                        # exports (e.g. text "A" plus <ci>A</ci> => delay(A,A)).
+                        leading_text = (operator_node.text or "").strip()
+                        if (
+                            kind == "delay"
+                            and leading_text
+                            and leading_text.lower() not in {"delay", "rateof", ""}
+                        ):
+                            # Preserve argument boundaries when the first delay
+                            # operand is stored as text before child operands.
+                            combined = [leading_text, *csymbol_child_args]
+                            if (
+                                "".join(combined).replace(" ", "")
+                                == operand_text.replace(" ", "")
+                                or len(combined) >= 2
+                            ):
+                                args = combined
+                            else:
+                                args = csymbol_child_args
+                        elif (
+                            kind == "delay"
+                            and operand_is_name
+                            and len(csymbol_child_args) == 1
+                            and operand_text == "".join(csymbol_child_args) * 2
+                        ):
+                            # Fallback: malformed duplicate concatenation.
+                            args = [csymbol_child_args[0], csymbol_child_args[0]]
+                        else:
+                            args = csymbol_child_args
+                    elif not args and operand_is_name:
+                        # Plain text operand stored in csymbol content.
+                        args = [operand_text]
+                    elif kind == "delay" and len(args) == 1 and operand_is_name:
+                        # libAntimony-style export: first operand in csymbol
+                        # text, delay duration as following apply sibling.
+                        if operand_text != args[0].strip():
+                            args.insert(0, operand_text)
+                    elif kind == "rateOf" and not args and operand_is_name:
+                        args = [operand_text]
             return (
                 f"{function_name}({', '.join(args)})"
                 if function_name
