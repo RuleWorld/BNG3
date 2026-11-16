@@ -115,11 +115,18 @@ def try_native(case: dict, expect_iso: bool) -> tuple[str, str | None]:
                 encoding="utf-8",
             )
 
+            model = None
+            # Prefer modern API object exposing generate_network/write_net.
             try:
-                model = bionetgen.bngmodel(str(model_path))
+                candidate = bionetgen.load(str(model_path))
+                if hasattr(candidate, "generate_network") or hasattr(candidate, "write_net"):
+                    model = candidate
             except Exception:
+                model = None
+            if model is None:
                 try:
-                    model = bionetgen.load(str(model_path))
+                    candidate = bionetgen.bngmodel(str(model_path))
+                    model = candidate
                 except Exception as exc:
                     return "SKIP", f"could not load model via bionetgen API: {exc}"
 
@@ -142,7 +149,18 @@ def try_native(case: dict, expect_iso: bool) -> tuple[str, str | None]:
                 return "SKIP", "no native generate_network API"
 
             net_text = None
-            for candidate in [Path(td) / "m.net", Path(str(model_path).replace(".bngl", ".net"))]:
+            net_candidates = [
+                Path(td) / "m.net",
+                Path(str(model_path).replace(".bngl", ".net")),
+                Path(td) / "out.net",
+            ]
+            # Prefer explicit artifact export when available.
+            if hasattr(model, "write_net"):
+                try:
+                    model.write_net(str(Path(td) / "out.net"))
+                except Exception:
+                    pass
+            for candidate in net_candidates:
                 try:
                     if candidate.exists():
                         net_text = candidate.read_text(encoding="utf-8")
