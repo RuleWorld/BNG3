@@ -336,3 +336,25 @@ def test_mutation_driving_work_detected():
             "right_contract"
         )
         assert contract is not None or "driving_work" in str(exc)
+
+
+def test_adversarial_valid_observable_relation_fixture_roundtrips():
+    doc = _load("valid_observable_relation_eq.json")
+    jsonschema.validate(doc, SCHEMA)
+    restored = bionetgen.from_bngir(doc)
+    v2 = bionetgen.from_bngir(bionetgen.to_bngir(restored, version="0.2"))
+    assert bionetgen.semantic_equal(restored, v2, version="0.2") is True
+
+
+def test_mutation_observable_relation_detected():
+    base = _load("valid_observable_relation_eq.json")
+    mutated = _load("mutation_observable_relation.json")
+    jsonschema.validate(base, SCHEMA)
+    jsonschema.validate(mutated, SCHEMA)
+    assert base != mutated
+    m_base = bionetgen.from_bngir(base)
+    m_mut = bionetgen.from_bngir(mutated)
+    try:
+        assert bionetgen.semantic_equal(m_base, m_mut, version="0.2") is False
+    except bionetgen.EqualityUndecided:
+        pass
