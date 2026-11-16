@@ -103,6 +103,12 @@ def run(
 ):
     """Run a BNGL model simulation."""
     sys.tracebacklimit = traceback_depth
+    if log_file is not None:
+        raise click.UsageError("--log is not supported by the BNG3 run command")
+    if no_bngsim:
+        raise click.UsageError(
+            "--no-bngsim subprocess routing is not supported by the BNG3 run command"
+        )
     if input_path is not None:
         if model is not None:
             raise click.UsageError("provide either MODEL or --input, not both")
