@@ -76,6 +76,11 @@ def results : List CaseResult :=
       speciesCount := (if bindingClosedPool.any (fun s => s.isomorphicSpecies seedA) && bindingClosedPool.any (fun s => s.isomorphicSpecies seedB) then 1 else 0) }
   , { name := "binding_pool_contains_product_mod_iso",
       speciesCount := (if bindingClosedPool.any (fun s => s.isomorphicSpecies productAB) then 1 else 0) }
+  , { name := "reversible_binding_finite_closure", speciesCount := bindingClosedPool.length }
+  , { name := "reversible_pool_contains_all_mod_iso",
+      speciesCount := (if bindingClosedPool.any (fun s => s.isomorphicSpecies seedA)
+        && bindingClosedPool.any (fun s => s.isomorphicSpecies seedB)
+        && bindingClosedPool.any (fun s => s.isomorphicSpecies productAB) then 1 else 0) }
   ]
 
 def emit (r : CaseResult) : String :=

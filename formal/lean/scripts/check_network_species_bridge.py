@@ -59,6 +59,29 @@ end model
         "expected_count": 3,
         "expected_species": ["A(x~u)", "B(y)", "A(x~u!1).B(y!1)"],
     },
+    {
+        "name": "reversible_binding_finite_closure",
+        "bngl": """begin model
+begin parameters
+kon 1
+koff 1
+end parameters
+begin molecule types
+A(x~u)
+B(y)
+end molecule types
+begin seed species
+A(x~u) 1
+B(y) 1
+end seed species
+begin reaction rules
+A(x) + B(y) <-> A(x!1).B(y!1) kon,koff
+end reaction rules
+end model
+""",
+        "expected_count": 3,
+        "expected_species": ["A(x~u)", "B(y)", "A(x~u!1).B(y!1)"],
+    },
 ]
 
 
@@ -85,6 +108,30 @@ end reaction rules
 end model
 """,
         "expected_count": 2,
+        "must_not_match_species": ["A(x~u)", "B(y)", "A(x~u!1).B(y!1)"],
+    },
+    {
+        "name": "reversible_binding_spurious_product_negative",
+        "bngl": """begin model
+begin parameters
+kon 1
+koff 1
+end parameters
+begin molecule types
+A(x~u)
+B(y)
+end molecule types
+begin seed species
+A(x~u) 1
+B(y) 1
+end seed species
+begin reaction rules
+A(x) + B(y) <-> A(x!1).B(y!1) kon,koff
+A(x) + A(x) -> A(x!1).A(x!1) kon
+end reaction rules
+end model
+""",
+        "expected_count": 4,
         "must_not_match_species": ["A(x~u)", "B(y)", "A(x~u!1).B(y!1)"],
     },
 ]
@@ -206,6 +253,8 @@ def main() -> int:
         "simple_binding_finite_closure": "3",
         "binding_pool_contains_seeds": "1",
         "binding_pool_contains_product_mod_iso": "1",
+        "reversible_binding_finite_closure": "3",
+        "reversible_pool_contains_all_mod_iso": "1",
     }
     for k, v in expected_lean.items():
         if lean.get(k) != v:
