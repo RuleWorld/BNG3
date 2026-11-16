@@ -328,3 +328,30 @@ def test_v01_unit_definitions_accept_id_or_name():
     doc = json.loads(m.to_bngir(version="0.1"))
     defs = doc["model"].get("unit_definitions") or []
     assert any((d.get("name") or d.get("id")) == "Liter" for d in defs)
+
+CASES["model_actions_roundtrip"] = r"""
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin observables
+  Molecules Atot A()
+end observables
+begin reaction rules
+  A() -> 0 k
+end reaction rules
+end model
+generate_network({overwrite=>1})
+setParameter("k",2)
+"""
+
+
+@pytest.mark.parametrize("name", ["model_actions_roundtrip"])
+def test_roundtrip_matrix_actions(name):
+    _assert_roundtrip(CASES[name], native=False)
