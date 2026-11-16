@@ -327,6 +327,16 @@ theorem addSpeciesModuloIso_length (pool : List Mixture) (candidate : Mixture) :
   · simp [h]
   · simp [h]
 
+theorem addSpeciesModuloIso_length_ge (pool : List Mixture) (candidate : Mixture) :
+    pool.length ≤ (addSpeciesModuloIso pool candidate).length := by
+  rw [addSpeciesModuloIso_length]
+  by_cases h : pool.any (fun existing => existing.isomorphicSpecies candidate) = true <;> simp [h]
+
+theorem addSpeciesModuloIso_length_le_succ (pool : List Mixture) (candidate : Mixture) :
+    (addSpeciesModuloIso pool candidate).length ≤ pool.length + 1 := by
+  rw [addSpeciesModuloIso_length]
+  by_cases h : pool.any (fun existing => existing.isomorphicSpecies candidate) = true <;> simp [h]
+
 
 
 theorem addSpeciesModuloIso_empty (candidate : Mixture) :

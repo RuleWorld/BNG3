@@ -141,6 +141,31 @@ theorem addProductsModuloIso_preserves_existing (products pool : List Mixture)
         · simp [h, hmem]
       exact ih (addSpeciesModuloIso pool p) hstep
 
+/-- Bounded accumulation bound: adding products modulo isomorphism cannot remove
+representatives and adds at most one representative per product candidate. -/
+theorem addProductsModuloIso_length_ge (products pool : List Mixture) :
+    pool.length ≤ (addProductsModuloIso pool products).length := by
+  induction products generalizing pool with
+  | nil => simp [addProductsModuloIso_nil]
+  | cons p ps ih =>
+      rw [addProductsModuloIso_cons]
+      exact Nat.le_trans (addSpeciesModuloIso_length_ge pool p) (ih _)
+
+theorem addProductsModuloIso_length_le (products pool : List Mixture) :
+    (addProductsModuloIso pool products).length ≤ pool.length + products.length := by
+  induction products generalizing pool with
+  | nil => simp [addProductsModuloIso_nil]
+  | cons p ps ih =>
+      rw [addProductsModuloIso_cons]
+      have h1 := ih (addSpeciesModuloIso pool p)
+      have h2 := addSpeciesModuloIso_length_le_succ pool p
+      calc
+        (addProductsModuloIso (addSpeciesModuloIso pool p) ps).length
+            ≤ (addSpeciesModuloIso pool p).length + ps.length := h1
+        _ ≤ (pool.length + 1) + ps.length := by
+              exact Nat.add_le_add_right h2 _
+        _ = pool.length + (p :: ps).length := by simp [Nat.add_left_comm, Nat.add_comm]
+
 /-- A bounded network step never drops an existing species representative
 (identity accumulation / monotone closure for the named supported class). -/
 theorem networkGenerationStep_preserves_existing (rules : List RuleDirection)
