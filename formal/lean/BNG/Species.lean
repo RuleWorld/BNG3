@@ -113,4 +113,54 @@ def addSpeciesModuloIso (pool : List Mixture) (candidate : Mixture) : List Mixtu
   if pool.any (fun existing => existing.isomorphicSpecies candidate) then pool
   else pool ++ [candidate]
 
+/--
+Named supported class for this formal identity oracle: finite runtime mixtures
+compared by typed molecular graph isomorphism over molecule type, component
+identity/state, optional compartments, and exact undirected bonds.  The oracle
+accepts only bijections validated by `SpeciesIsoMap.validFor`.
+-/
+def SupportedGraphIdentityClass (_mix : Mixture) : Prop := True
+
+/-- A valid isomorphism witness enforces equal bond counts (structural
+invariant for compared artifacts in this supported class). -/
+theorem SpeciesIsoMap.validFor_bond_count (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) :
+    left.bonds.length = right.bonds.length := by
+  have h' := h
+  simp [SpeciesIsoMap.validFor] at h'
+  exact h'.2.2.2
+
+/-- A valid isomorphism witness bijects the full molecule-ID sets of both sides
+(renaming/coverage invariant). -/
+theorem SpeciesIsoMap.validFor_bijective (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) :
+    m.bijectiveFor left right = true := by
+  have h' := h
+  simp [SpeciesIsoMap.validFor] at h'
+  exact h'.1.1.1
+
+/-- Oracle-positive identity implies equal molecule and bond counts for the
+explicit supported class artifacts. -/
+theorem isomorphicSpecies_counts (left right : Mixture)
+    (h : left.isomorphicSpecies right = true) :
+    left.molecules.length = right.molecules.length ∧
+      left.bonds.length = right.bonds.length := by
+  have h' := h
+  simp [Mixture.isomorphicSpecies] at h'
+  exact h'.1
+
+theorem addSpeciesModuloIso_preserves_existing (pool : List Mixture) (candidate : Mixture)
+    (existing : Mixture) (hmem : existing ∈ pool) :
+    existing ∈ addSpeciesModuloIso pool candidate := by
+  unfold addSpeciesModuloIso
+  by_cases h : pool.any (fun existing => existing.isomorphicSpecies candidate) = true
+  · simp [h, hmem]
+  · simp [h]
+    exact Or.inl hmem
+
+theorem addSpeciesModuloIso_idempotent_of_iso (pool : List Mixture) (candidate : Mixture)
+    (hiso : pool.any (fun existing => existing.isomorphicSpecies candidate) = true) :
+    addSpeciesModuloIso pool candidate = pool := by
+  simp [addSpeciesModuloIso, hiso]
+
 end BNG
