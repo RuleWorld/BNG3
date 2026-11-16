@@ -177,7 +177,7 @@ def test_main_pybionetgen_helper_exports():
     assert callable(getattr(main, "get_default_app", None))
     conf = main.get_conf()
     assert hasattr(conf, "get")
-    assert main.get_default_bng_path() == conf.get("bionetgen", {}).get("bngpath")
+    assert main.get_default_bng_path() == conf.get("bngpath")
     try:
         app = main.get_default_app()
     except ImportError as exc:
