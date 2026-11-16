@@ -282,12 +282,22 @@ class BNGParser:
         except ImportError:
             xml_dict = self._parse_xml_stdlib(xml_str)
         # catch non-BNG XML files
-        if "sbml" not in xml_dict:
-            if "model" not in xml_dict["sbml"]:
-                raise BNGParseError(
-                    self.bngfile.path,
-                    "Input model is invalid. Please ensure model is in proper BNGL or BNG-XML format",
-                )
+        root_key = next(iter(xml_dict.keys())) if xml_dict else None
+        if root_key not in ("sbml", "model") and not (
+            isinstance(xml_dict.get(root_key), dict) and "model" in xml_dict[root_key]
+        ):
+            raise BNGParseError(
+                self.bngfile.path,
+                "Input model is invalid. Please ensure model is in proper BNGL or BNG-XML format",
+            )
+        if root_key == "model":
+            xml_dict = {"sbml": {"model": xml_dict["model"]}}
+        root_key = "sbml" if "sbml" in xml_dict else next(iter(xml_dict.keys()))
+        if "model" not in xml_dict[root_key]:
+            raise BNGParseError(
+                self.bngfile.path,
+                "Input model is invalid. Please ensure model is in proper BNGL or BNG-XML format",
+            )
         model_obj.xml_dict = xml_dict
         first_key = list(xml_dict.keys())[0]
         xml_model = xml_dict[first_key]["model"]
@@ -358,23 +368,30 @@ class BNGParser:
     def _parse_xml_stdlib(xml_str):
         import xml.etree.ElementTree as ET
 
+        def local_name(tag):
+            if "}" in tag:
+                return tag.rsplit("}", 1)[1]
+            return tag
+
         def convert(node):
             children = list(node)
             value = {}
             for key, attr_value in node.attrib.items():
-                value[f"@{key}"] = attr_value
+                attr_name = local_name(key)
+                value[f"@{attr_name}"] = attr_value
 
             if children:
                 grouped = {}
                 for child in children:
+                    child_name = local_name(child.tag)
                     child_value = convert(child)
-                    if child.tag in grouped:
-                        existing = grouped[child.tag]
+                    if child_name in grouped:
+                        existing = grouped[child_name]
                         if not isinstance(existing, list):
-                            grouped[child.tag] = [existing]
-                        grouped[child.tag].append(child_value)
+                            grouped[child_name] = [existing]
+                        grouped[child_name].append(child_value)
                     else:
-                        grouped[child.tag] = child_value
+                        grouped[child_name] = child_value
                 value.update(grouped)
 
             text = (node.text or "").strip()
@@ -388,4 +405,4 @@ class BNGParser:
             return value if value else (text if text else None)
 
         root = ET.fromstring(xml_str)
-        return {root.tag: convert(root)}
+        return {local_name(root.tag): convert(root)}
