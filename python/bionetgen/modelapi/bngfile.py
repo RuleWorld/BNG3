@@ -87,7 +87,10 @@ class BNGFile:
                     content = cpp.io.write_xml_string(cpp_model)
                 except RuntimeError as e:
                     msg = str(e)
-                    if "delay" in msg.lower() and "not supported by bng-xml export" in msg.lower():
+                    if (
+                        "delay" in msg.lower()
+                        and "not supported by bng-xml export" in msg.lower()
+                    ):
                         content = cpp.io.write_xml_string_structural(cpp_model)
                     else:
                         raise
