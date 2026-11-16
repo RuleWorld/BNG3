@@ -240,6 +240,18 @@ theorem SpeciesIsoMap.validFor_molecules (m : SpeciesIsoMap) (left right : Mixtu
   simp only [SpeciesIsoMap.validFor, Bool.and_eq_true] at h
   exact h.1.1.2
 
+/-- A valid renaming witness maps only existing concrete molecule instances. -/
+theorem SpeciesIsoMap.validFor_molecule_lookups (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) :
+    m.moleculeMap.all (fun pair =>
+      (left.findMolecule? pair.1).isSome && (right.findMolecule? pair.2).isSome) = true := by
+  have hall := m.validFor_molecules left right h
+  rw [List.all_eq_true] at hall ⊢
+  intro pair hp
+  specialize hall pair hp
+  cases h1 : left.findMolecule? pair.1 <;> cases h2 : right.findMolecule? pair.2 <;>
+    simp [h1, h2] at hall ⊢
+
 /-- Kernel-proved renaming/canonicalization invariant: a valid witness preserves
 bond structure in the forward direction for the supported class. -/
 theorem SpeciesIsoMap.validFor_bondsForward (m : SpeciesIsoMap) (left right : Mixture)
