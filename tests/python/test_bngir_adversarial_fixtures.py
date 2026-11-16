@@ -85,6 +85,10 @@ def test_adversarial_valid_function_and_energy_fixtures_roundtrip():
         ("invalid_action_scope.json", True),
         ("invalid_observable_ref_index.json", False),
         ("invalid_energy_type_ref.json", False),
+        ("invalid_rule_product_type_ref.json", False),
+        ("invalid_seed_compartment_ref.json", False),
+        ("invalid_delay_parameter_ref.json", False),
+        ("invalid_energy_expression_ref.json", False),
     ],
 )
 def test_adversarial_invalid_fixtures_rejected(name, expect_schema_failure):
