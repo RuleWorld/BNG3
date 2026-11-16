@@ -1,0 +1,211 @@
+{
+  "features": {
+    "required": [
+      "structured_patterns",
+      "structured_expressions"
+    ],
+    "used": [
+      "population_maps",
+      "rules",
+      "seeds",
+      "structured_expressions",
+      "structured_patterns"
+    ]
+  },
+  "format": "BNGIR",
+  "model": {
+    "barrier_patterns": [],
+    "compartments": [],
+    "energy_patterns": [],
+    "functions": [],
+    "metadata": {
+      "name": "adv_valid_population_map",
+      "options": {},
+      "substance_units": "",
+      "version": ""
+    },
+    "molecule_types": [
+      {
+        "components": [],
+        "id": 0,
+        "name": "A",
+        "population": false
+      },
+      {
+        "components": [],
+        "id": 1,
+        "name": "B",
+        "population": false
+      },
+      {
+        "components": [
+          {
+            "index": 0,
+            "name": "k",
+            "states": []
+          }
+        ],
+        "id": 2,
+        "name": "P",
+        "population": false
+      }
+    ],
+    "observables": [],
+    "parameters": [],
+    "population_maps": [
+      {
+        "arguments": [
+          "k"
+        ],
+        "index": 0,
+        "label": "m1",
+        "pattern": {
+          "compartment_prefix": false,
+          "molecules": [
+            {
+              "occurrence": 0,
+              "sites": [],
+              "type": "A",
+              "type_id": 0
+            }
+          ]
+        },
+        "population": "P",
+        "population_id": 0,
+        "rate": {
+          "kind": "number",
+          "value": 2.0
+        }
+      }
+    ],
+    "population_types": [
+      {
+        "id": 0,
+        "name": "P"
+      }
+    ],
+    "rules": [
+      {
+        "bidirectional": false,
+        "component_mappings": [],
+        "forward": {
+          "filters": [],
+          "local_scopes": [],
+          "mutations": [
+            {
+              "kind": "delete_molecule",
+              "molecule": {
+                "molecule": 0,
+                "pattern": 0,
+                "side": "reactant"
+              }
+            },
+            {
+              "kind": "add_molecule",
+              "molecule": {
+                "molecule": 0,
+                "pattern": 0,
+                "side": "product"
+              }
+            }
+          ],
+          "products": [
+            {
+              "compartment_prefix": false,
+              "molecules": [
+                {
+                  "occurrence": 0,
+                  "sites": [],
+                  "type": "B",
+                  "type_id": 1
+                }
+              ]
+            }
+          ],
+          "rate": {
+            "expression": {
+              "kind": "number",
+              "value": 1.0
+            },
+            "kind": 0
+          },
+          "reactants": [
+            {
+              "compartment_prefix": false,
+              "molecules": [
+                {
+                  "occurrence": 0,
+                  "sites": [],
+                  "type": "A",
+                  "type_id": 0
+                }
+              ]
+            }
+          ],
+          "transformations_complete": true
+        },
+        "id": 0,
+        "label": "",
+        "modifiers": [],
+        "molecule_mappings": [],
+        "name": "R1"
+      }
+    ],
+    "seeds": [
+      {
+        "amount": {
+          "kind": "number",
+          "value": 100.0
+        },
+        "constant": false,
+        "id": 0,
+        "pattern": {
+          "compartment_prefix": false,
+          "molecules": [
+            {
+              "occurrence": 0,
+              "sites": [],
+              "type": "A",
+              "type_id": 0
+            }
+          ]
+        }
+      },
+      {
+        "amount": {
+          "kind": "number",
+          "value": 10.0
+        },
+        "constant": false,
+        "id": 1,
+        "pattern": {
+          "compartment_prefix": false,
+          "molecules": [
+            {
+              "occurrence": 0,
+              "sites": [
+                {
+                  "bond": {
+                    "kind": "unbound"
+                  },
+                  "component": "k",
+                  "component_index": 0,
+                  "occurrence": 0,
+                  "state": {
+                    "kind": "any"
+                  }
+                }
+              ],
+              "type": "P",
+              "type_id": 2
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "protocol": {
+    "actions": []
+  },
+  "version": "0.2"
+}

@@ -222,15 +222,37 @@ def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
         }
         for barrier in native.barrier_patterns
     ]
-    population_maps = [
-        {
-            "label": mapping.label,
-            "pattern": mapping.pattern,
-            "function": mapping.function,
-            "args": list(mapping.args),
-        }
-        for mapping in native.population_maps
-    ]
+    population_maps = []
+    if native.population_maps:
+        snapshot_population_rates = None
+        try:
+            from .model import _cpp
+
+            snapshot = _cpp._compiled_snapshot(native)
+            snapshot_population_rates = [
+                item.get("rate") for item in snapshot.get("population_maps", [])
+            ]
+            snapshot_model = snapshot
+        except Exception:
+            snapshot_population_rates = None
+            snapshot_model = None
+        for index, mapping in enumerate(native.population_maps):
+            item = {
+                "label": mapping.label,
+                "pattern": mapping.pattern,
+                "function": mapping.function,
+                "args": list(mapping.args),
+            }
+            rate = None
+            if snapshot_population_rates and index < len(snapshot_population_rates):
+                rate = snapshot_population_rates[index]
+            if isinstance(rate, Mapping) and snapshot_model is not None:
+                item["rate"] = _expression_v02(rate, snapshot_model)
+            elif hasattr(mapping, "rateText") and getattr(mapping, "rateText"):
+                item["rate"] = str(getattr(mapping, "rateText"))
+            elif hasattr(mapping, "rate") and isinstance(getattr(mapping, "rate"), str):
+                item["rate"] = getattr(mapping, "rate")
+            population_maps.append(item)
 
     features = {"required": [], "used": []}
     if compartments:
@@ -312,16 +334,40 @@ def _features_v02(snapshot: Mapping[str, Any]) -> dict[str, list[str]]:
         ("functions", "functions"),
         ("observables", "observables"),
         ("population_maps", "population_maps"),
+        ("population_types", "population_maps"),
         ("rules", "rules"),
         ("seeds", "seeds"),
     ):
         if snapshot.get(key):
             used.append(feature)
+    if any(rule.get("delay") is not None for rule in snapshot.get("rules", [])):
+        used.append("delayed_rules")
+    if any(
+        (rule.get("driving_work") or "").strip()
+        for rule in snapshot.get("rules", [])
+        if isinstance(rule.get("driving_work"), str)
+    ):
+        used.append("driven_reservoirs")
+    metadata = snapshot.get("metadata") or {}
+    has_units = (
+        metadata.get("unit_defaults")
+        or metadata.get("unit_definitions")
+        or metadata.get("substance_units")
+        or any(item.get("unit") for item in snapshot.get("parameters", []))
+        or any(item.get("unit") for item in snapshot.get("seeds", []))
+        or any(item.get("unit") for item in snapshot.get("compartments", []))
+        or any(item.get("declared_unit") for item in snapshot.get("parameters", []))
+        or any(item.get("inferred_unit") for item in snapshot.get("parameters", []))
+        or any(item.get("declared_unit") for item in snapshot.get("seeds", []))
+        or any(item.get("declared_unit") for item in snapshot.get("compartments", []))
+    )
+    if has_units:
+        used.append("units")
     if snapshot.get("actions"):
         used.append("protocol")
     return {
         "required": ["structured_patterns", "structured_expressions"],
-        "used": sorted(used + ["structured_patterns", "structured_expressions"]),
+        "used": sorted(set(used) | {"structured_patterns", "structured_expressions"}),
     }
 
 
@@ -480,8 +526,6 @@ def _action_lines(action: Mapping[str, Any]) -> str:
 
 def _as_bngl_v01(root: Mapping[str, Any]) -> str:
     model = _require_mapping(root["model"], "model")
-    if model.get("population_maps"):
-        raise ValueError("BNGIR population_maps deserialization is not yet supported")
 
     lines: list[str] = []
     if model.get("version"):
@@ -585,6 +629,22 @@ def _as_bngl_v01(root: Mapping[str, Any]) -> str:
                 f"  {label}{reactants} {arrow} {products} {item['expression']}"
             )
         lines += ["end barrier patterns"]
+    population_maps = model.get("population_maps", [])
+    if population_maps:
+        lines += ["begin population maps"]
+        for item in population_maps:
+            if not item.get("rate"):
+                raise ValueError(
+                    "BNGIR v0.1 population map is missing rate; "
+                    "lossless population map deserialization requires an explicit rate"
+                )
+            label = f"{item['label']}: " if item.get("label") else ""
+            args = ",".join(item.get("args", []))
+            rate = item["rate"]
+            line = f"  {label}{item['pattern']} -> {item['function']}({args}) {rate}"
+            lines.append(line)
+        lines += ["end population maps"]
+
     rules = model.get("rules", [])
     if rules:
         lines += ["begin reaction rules"]
@@ -807,9 +867,32 @@ def _validate_pattern_v02(
     pattern = _require_mapping(pattern, where)
     molecule_types = _section_id_map(model, "molecule_types")
     compartments = _section_id_map(model, "compartments")
+    compartment_names = {
+        str(item.get("name")): cid
+        for cid, item in compartments.items()
+        if isinstance(item.get("name"), str)
+    }
     molecules = pattern.get("molecules", [])
     if not isinstance(molecules, list):
         raise ValueError(f"BNGIR {where}.molecules must be an array")
+    pattern_compartment = pattern.get("compartment")
+    if pattern_compartment is not None:
+        if (
+            not isinstance(pattern_compartment, str)
+            or pattern_compartment not in compartment_names
+        ):
+            raise ValueError(
+                f"BNGIR {where} references unknown compartment: {pattern_compartment!r}"
+            )
+    pattern_compartment_id = pattern.get("compartment_id")
+    if pattern_compartment_id is not None and (
+        not _is_json_integer(pattern_compartment_id)
+        or pattern_compartment_id not in compartments
+    ):
+        raise ValueError(f"BNGIR {where} references unknown graph compartment id")
+    if pattern_compartment is not None and pattern_compartment_id is not None:
+        if compartment_names[pattern_compartment] != pattern_compartment_id:
+            raise ValueError(f"BNGIR {where} compartment name/id disagree")
     seen_occurrences: set[int] = set()
     for mi, raw_molecule in enumerate(molecules):
         molecule = _require_mapping(raw_molecule, f"{where}.molecules[{mi}]")
@@ -831,6 +914,15 @@ def _validate_pattern_v02(
             declaration = molecule_types[type_id]
             if molecule.get("type") != declaration.get("name"):
                 raise ValueError(f"BNGIR {where} molecule type name/id disagree")
+        molecule_compartment = molecule.get("compartment")
+        if molecule_compartment is not None:
+            if (
+                not isinstance(molecule_compartment, str)
+                or molecule_compartment not in compartment_names
+            ):
+                raise ValueError(
+                    f"BNGIR {where} references unknown compartment: {molecule_compartment!r}"
+                )
         compartment_id = molecule.get("compartment_id")
         if compartment_id is not None and (
             not _is_json_integer(compartment_id) or compartment_id not in compartments
@@ -838,6 +930,9 @@ def _validate_pattern_v02(
             raise ValueError(
                 f"BNGIR {where} references unknown compartment id: {compartment_id}"
             )
+        if molecule_compartment is not None and compartment_id is not None:
+            if compartment_names[molecule_compartment] != compartment_id:
+                raise ValueError(f"BNGIR {where} molecule compartment name/id disagree")
         components = declaration.get("components", []) if declaration else []
         for si, raw_site in enumerate(molecule.get("sites", [])):
             site = _require_mapping(raw_site, f"{where}.molecules[{mi}].sites[{si}]")
@@ -899,12 +994,6 @@ def _validate_pattern_v02(
                         raise ValueError(f"BNGIR {where} state value/index disagree")
             elif state_kind not in {"any", "exact", "set"}:
                 raise ValueError(f"BNGIR {where} has invalid state constraint")
-    pattern_compartment_id = pattern.get("compartment_id")
-    if pattern_compartment_id is not None and (
-        not _is_json_integer(pattern_compartment_id)
-        or pattern_compartment_id not in compartments
-    ):
-        raise ValueError(f"BNGIR {where} references unknown graph compartment id")
 
 
 def _validate_pattern_ref_v02(
@@ -3526,7 +3615,10 @@ class EqualityUndecided(Exception):
         self, message: str, diagnostic: Mapping[str, Any] | None = None
     ) -> None:
         super().__init__(message)
-        self.diagnostic = dict(diagnostic or {})
+        diag = dict(diagnostic or {})
+        diag.setdefault("status", "undecided")
+        diag.setdefault("message", message)
+        self.diagnostic = diag
 
 
 def _evaluate_model_expression_exact(
@@ -3924,17 +4016,7 @@ def exact_process_equal(
         obs_l = list(left_model._model.observables)
         obs_r = list(right_model._model.observables)
         if not _match_observables(obs_l, obs_r, {t: t for t in type_signatures_l}):
-            raise EqualityUndecided(
-                "Observable patterns differ and have no verified equivalence certificate",
-                {
-                    "left_observables": tuple(
-                        sorted((o.name, o.type, tuple(o.patterns)) for o in obs_l)
-                    ),
-                    "right_observables": tuple(
-                        sorted((o.name, o.type, tuple(o.patterns)) for o in obs_r)
-                    ),
-                },
-            )
+            return False
 
         return True
 

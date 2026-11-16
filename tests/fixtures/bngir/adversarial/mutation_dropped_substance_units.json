@@ -1,0 +1,150 @@
+{
+  "features": {
+    "required": [
+      "structured_patterns",
+      "structured_expressions"
+    ],
+    "used": [
+      "rules",
+      "seeds",
+      "structured_expressions",
+      "structured_patterns"
+    ]
+  },
+  "format": "BNGIR",
+  "model": {
+    "barrier_patterns": [],
+    "compartments": [],
+    "energy_patterns": [],
+    "functions": [],
+    "metadata": {
+      "name": "adv_valid_decay",
+      "options": {},
+      "substance_units": "",
+      "version": "2.2"
+    },
+    "molecule_types": [
+      {
+        "components": [],
+        "id": 0,
+        "name": "A",
+        "population": false
+      },
+      {
+        "components": [],
+        "id": 1,
+        "name": "B",
+        "population": false
+      }
+    ],
+    "observables": [],
+    "parameters": [
+      {
+        "constant_value": 0.1,
+        "expression": {
+          "kind": "number",
+          "value": 0.1
+        },
+        "id": 0,
+        "name": "k"
+      }
+    ],
+    "population_maps": [],
+    "population_types": [],
+    "rules": [
+      {
+        "bidirectional": false,
+        "component_mappings": [],
+        "forward": {
+          "filters": [],
+          "local_scopes": [],
+          "mutations": [
+            {
+              "kind": "delete_molecule",
+              "molecule": {
+                "molecule": 0,
+                "pattern": 0,
+                "side": "reactant"
+              }
+            },
+            {
+              "kind": "add_molecule",
+              "molecule": {
+                "molecule": 0,
+                "pattern": 0,
+                "side": "product"
+              }
+            }
+          ],
+          "products": [
+            {
+              "compartment_prefix": false,
+              "molecules": [
+                {
+                  "occurrence": 0,
+                  "sites": [],
+                  "type": "B",
+                  "type_id": 1
+                }
+              ]
+            }
+          ],
+          "rate": {
+            "expression": {
+              "kind": "parameter_ref",
+              "symbol": {
+                "index": 0,
+                "kind": "parameter"
+              }
+            },
+            "kind": 0
+          },
+          "reactants": [
+            {
+              "compartment_prefix": false,
+              "molecules": [
+                {
+                  "occurrence": 0,
+                  "sites": [],
+                  "type": "A",
+                  "type_id": 0
+                }
+              ]
+            }
+          ],
+          "transformations_complete": true
+        },
+        "id": 0,
+        "label": "",
+        "modifiers": [],
+        "molecule_mappings": [],
+        "name": "R1"
+      }
+    ],
+    "seeds": [
+      {
+        "amount": {
+          "kind": "number",
+          "value": 10.0
+        },
+        "constant": false,
+        "id": 0,
+        "pattern": {
+          "compartment_prefix": false,
+          "molecules": [
+            {
+              "occurrence": 0,
+              "sites": [],
+              "type": "A",
+              "type_id": 0
+            }
+          ]
+        }
+      }
+    ]
+  },
+  "protocol": {
+    "actions": []
+  },
+  "version": "0.2"
+}
