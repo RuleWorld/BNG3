@@ -201,6 +201,13 @@ theorem SpeciesIsoMap.bijectiveFor_molecule_count (m : SpeciesIsoMap) (left righ
   have hran : m.range.length = m.moleculeMap.length := by simp [SpeciesIsoMap.range]
   omega
 
+/-- A valid isomorphism witness implies equal molecule-instance counts (exact
+bounded renaming/coverage invariant for the supported class). -/
+theorem SpeciesIsoMap.validFor_molecule_count (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) :
+    left.molecules.length = right.molecules.length := by
+  exact m.bijectiveFor_molecule_count left right (m.validFor_bijective left right h)
+
 /-- Oracle-positive identity implies equal molecule and bond counts for the
 explicit supported class artifacts. -/
 theorem isomorphicSpecies_counts (left right : Mixture)
