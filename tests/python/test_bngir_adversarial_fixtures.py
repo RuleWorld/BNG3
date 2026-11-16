@@ -307,3 +307,54 @@ def test_mutation_compartment_volume_detected():
         assert eq is False
     except bionetgen.EqualityUndecided as exc:
         assert exc.diagnostic.get("status") == "undecided"
+
+
+def test_adversarial_valid_driving_work_fixture_roundtrips():
+    doc = _load("valid_driving_work.json")
+    jsonschema.validate(doc, SCHEMA)
+    restored = bionetgen.from_bngir(doc)
+    assert doc["model"]["rules"][0]["driving_work"] == "w"
+    assert "driven_reservoirs" in doc["features"]["used"]
+    v2 = bionetgen.from_bngir(bionetgen.to_bngir(restored, version="0.2"))
+    assert bionetgen.semantic_equal(restored, v2, version="0.2") is True
+
+
+def test_mutation_driving_work_detected():
+    base = _load("valid_driving_work.json")
+    mutated = _load("mutation_driving_work.json")
+    jsonschema.validate(base, SCHEMA)
+    jsonschema.validate(mutated, SCHEMA)
+    assert base != mutated
+    m_base = bionetgen.from_bngir(base)
+    m_mut = bionetgen.from_bngir(mutated)
+    try:
+        eq = bionetgen.semantic_equal(m_base, m_mut, version="0.2")
+        assert eq is False
+    except bionetgen.EqualityUndecided as exc:
+        assert exc.diagnostic.get("status") == "undecided"
+        contract = exc.diagnostic.get("left_contract") or exc.diagnostic.get(
+            "right_contract"
+        )
+        assert contract is not None or "driving_work" in str(exc)
+
+
+def test_adversarial_valid_observable_relation_fixture_roundtrips():
+    doc = _load("valid_observable_relation_eq.json")
+    jsonschema.validate(doc, SCHEMA)
+    restored = bionetgen.from_bngir(doc)
+    v2 = bionetgen.from_bngir(bionetgen.to_bngir(restored, version="0.2"))
+    assert bionetgen.semantic_equal(restored, v2, version="0.2") is True
+
+
+def test_mutation_observable_relation_detected():
+    base = _load("valid_observable_relation_eq.json")
+    mutated = _load("mutation_observable_relation.json")
+    jsonschema.validate(base, SCHEMA)
+    jsonschema.validate(mutated, SCHEMA)
+    assert base != mutated
+    m_base = bionetgen.from_bngir(base)
+    m_mut = bionetgen.from_bngir(mutated)
+    try:
+        assert bionetgen.semantic_equal(m_base, m_mut, version="0.2") is False
+    except bionetgen.EqualityUndecided:
+        pass
