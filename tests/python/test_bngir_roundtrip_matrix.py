@@ -157,6 +157,26 @@ begin reaction rules
 end reaction rules
 end model
 """,
+    "energy_patterns_bidirectional": r"""
+begin model
+begin parameters
+  k 1
+  G 1
+end parameters
+begin molecule types
+  A(x~u~p)
+end molecule types
+begin seed species
+  A(x~u) 1
+end seed species
+begin energy patterns
+  A(x~p) G
+end energy patterns
+begin reaction rules
+  A(x~u) <-> A(x~p) k,k
+end reaction rules
+end model
+""",
     "modifiers_synthesis_totalrate": r"""
 begin model
 begin molecule types
