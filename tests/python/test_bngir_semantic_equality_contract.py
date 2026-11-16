@@ -338,3 +338,82 @@ end model
         bionetgen.semantic_equal(a, b)
     assert excinfo.value.diagnostic.get("status") == "undecided"
     assert isinstance(excinfo.value.diagnostic.get("message"), str)
+
+
+def test_semantic_equal_unobserved_self_loop_noop():
+    # Unobserved self-loop firings do not change the ordinary state-process
+    # generator (EQ-noop equal case, no reaction-count observation).
+    a = M(r"""
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin reaction rules
+  A() -> B() k
+end reaction rules
+end model
+""")
+    b = M(r"""
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin reaction rules
+  A() -> B() k
+  A() -> A() k
+end reaction rules
+end model
+""")
+    assert bionetgen.semantic_equal(a, b) is True
+
+
+def test_semantic_equal_verified_initial_state_counterexample():
+    a = M(r"""
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin reaction rules
+  A() -> B() k
+end reaction rules
+end model
+""")
+    b = M(r"""
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 2
+end seed species
+begin reaction rules
+  A() -> B() k
+end reaction rules
+end model
+""")
+    assert bionetgen.semantic_equal(a, b) is False
