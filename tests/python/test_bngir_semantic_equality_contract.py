@@ -267,3 +267,74 @@ end model
 """)
     with pytest.raises(EqualityUndecided):
         bionetgen.semantic_equal(a, b)
+
+
+def test_semantic_equal_rule_reordering_eq_order_like():
+    a = M(r"""
+begin model
+begin parameters
+  k1 1
+  k2 2
+end parameters
+begin molecule types
+  A()
+  B()
+  C()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin reaction rules
+  A() -> B() k1
+  B() -> C() k2
+end reaction rules
+end model
+""")
+    b = M(r"""
+begin model
+begin parameters
+  k1 1
+  k2 2
+end parameters
+begin molecule types
+  A()
+  B()
+  C()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin reaction rules
+  B() -> C() k2
+  A() -> B() k1
+end reaction rules
+end model
+""")
+    assert bionetgen.semantic_equal(a, b) is True
+
+
+def test_semantic_equal_undecided_has_structured_diagnostic():
+    a = M(r"""
+begin model
+begin molecule types
+  A()
+end molecule types
+begin functions
+  reported(x)=x
+end functions
+end model
+""")
+    b = M(r"""
+begin model
+begin molecule types
+  A()
+end molecule types
+begin functions
+  reported(x)=2*x
+end functions
+end model
+""")
+    with pytest.raises(EqualityUndecided) as excinfo:
+        bionetgen.semantic_equal(a, b)
+    assert excinfo.value.diagnostic.get("status") == "undecided"
+    assert isinstance(excinfo.value.diagnostic.get("message"), str)
