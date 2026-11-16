@@ -58,7 +58,17 @@ class BNGParser:
         self.to_parse_actions = parse_actions
         self.bngfile = BNGFile(path, generate_network=generate_network, suppress=True)
         self.alist = ActionList()
-        self.alist.define_parser()
+        self._action_parser_ready = False
+
+    def _ensure_action_parser(self) -> bool:
+        if self._action_parser_ready:
+            return True
+        try:
+            self.alist.define_parser()
+        except ImportError:
+            return False
+        self._action_parser_ready = True
+        return True
 
     def parse_model(self, model_obj) -> None:
         """
@@ -112,6 +122,11 @@ class BNGParser:
         action objects and fill up the ActionsBlock with them.
         """
         if len(self.bngfile.parsed_actions) > 0:
+            if not self._ensure_action_parser():
+                raise BNGParseError(
+                    self.bngfile.path,
+                    "pyparsing is required to parse actions in model API input",
+                )
             ablock = ActionBlock()
             # we have actions in file, let's get them
             # import ipdb;ipdb.set_trace()
