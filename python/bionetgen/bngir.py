@@ -3984,17 +3984,7 @@ def exact_process_equal(
         obs_l = list(left_model._model.observables)
         obs_r = list(right_model._model.observables)
         if not _match_observables(obs_l, obs_r, {t: t for t in type_signatures_l}):
-            raise EqualityUndecided(
-                "Observable patterns differ and have no verified equivalence certificate",
-                {
-                    "left_observables": tuple(
-                        sorted((o.name, o.type, tuple(o.patterns)) for o in obs_l)
-                    ),
-                    "right_observables": tuple(
-                        sorted((o.name, o.type, tuple(o.patterns)) for o in obs_r)
-                    ),
-                },
-            )
+            return False
 
         return True
 
