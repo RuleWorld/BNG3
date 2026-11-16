@@ -208,6 +208,18 @@ theorem SpeciesIsoMap.validFor_molecule_count (m : SpeciesIsoMap) (left right : 
     left.molecules.length = right.molecules.length := by
   exact m.bijectiveFor_molecule_count left right (m.validFor_bijective left right h)
 
+/-- Kernel-proved renaming witness property: bijective mapping domain IDs are unique. -/
+theorem SpeciesIsoMap.bijectiveFor_domain_unique (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.bijectiveFor left right = true) : allUnique m.domain = true := by
+  simp [SpeciesIsoMap.bijectiveFor, Bool.and_eq_true] at h
+  exact h.1.1.1
+
+/-- Kernel-proved renaming witness property: bijective mapping range IDs are unique. -/
+theorem SpeciesIsoMap.bijectiveFor_range_unique (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.bijectiveFor left right = true) : allUnique m.range = true := by
+  simp [SpeciesIsoMap.bijectiveFor, Bool.and_eq_true] at h
+  exact h.1.1.2
+
 /-- Oracle-positive identity implies equal molecule and bond counts for the
 explicit supported class artifacts. -/
 theorem isomorphicSpecies_counts (left right : Mixture)
