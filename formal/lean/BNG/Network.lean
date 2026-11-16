@@ -214,4 +214,19 @@ theorem boundedNetworkClosure_preserves_existing (fuel : Nat)
         exact ih (networkGenerationStep rules pool)
           (networkGenerationStep_preserves_existing rules pool existing hmem)
 
+/-- Bounded closure never shrinks the species-pool representative count
+(monotone accumulation for the named supported class/reference oracle). -/
+theorem boundedNetworkClosure_length_ge (fuel : Nat)
+    (rules : List RuleDirection) (pool : List Mixture) :
+    pool.length ≤ (boundedNetworkClosure fuel rules pool).length := by
+  induction fuel generalizing pool with
+  | zero => simp [boundedNetworkClosure]
+  | succ n ih =>
+      unfold boundedNetworkClosure
+      by_cases hfix : (networkGenerationStep rules pool).length == pool.length
+      · simp [hfix]
+        exact networkGenerationStep_length_ge rules pool
+      · simp [hfix]
+        exact Nat.le_trans (networkGenerationStep_length_ge rules pool) (ih _)
+
 end BNG
