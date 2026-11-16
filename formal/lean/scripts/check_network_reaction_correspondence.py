@@ -251,6 +251,28 @@ end model
             {"reactants": ["A(x~u)"], "products": ["A(x~p)"], "rate": "k"},
         ],
     },
+    {
+        "name": "unimolecular_degradation_distinct",
+        "bngl": """begin model
+begin parameters
+k 1
+end parameters
+begin molecule types
+A(x)
+end molecule types
+begin seed species
+A(x) 1
+end seed species
+begin reaction rules
+A(x)->0 k
+end reaction rules
+end model
+""",
+        "expected_reaction_count": 1,
+        "expected_reactions": [
+            {"reactants": ["A(x)"], "products": [], "rate": "k"},
+        ],
+    },
 ]
 
 
@@ -352,6 +374,28 @@ end model
 """,
         "must_not_match_reactions": [
             {"reactants": ["A(x~u)"], "products": ["A(x~p)"], "rate": "k"},
+        ],
+    },
+    {
+        "name": "unimolecular_degradation_wrong_product_negative",
+        "bngl": """begin model
+begin parameters
+k 1
+end parameters
+begin molecule types
+A(x)
+B(y)
+end molecule types
+begin seed species
+A(x) 1
+end seed species
+begin reaction rules
+A(x)->B(y) k
+end reaction rules
+end model
+""",
+        "must_not_match_reactions": [
+            {"reactants": ["A(x)"], "products": [], "rate": "k"},
         ],
     },
 ]
