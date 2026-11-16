@@ -60,6 +60,18 @@ def test_adversarial_valid_states_bonds_compartment_fixture():
             pass
 
 
+def test_adversarial_valid_function_and_energy_fixtures_roundtrip():
+    for name in ("valid_function_rate.json", "valid_energy_pattern.json"):
+        doc = _load(name)
+        jsonschema.validate(doc, SCHEMA)
+        restored = bionetgen.from_bngir(doc)
+        v2 = bionetgen.from_bngir(bionetgen.to_bngir(restored, version="0.2"))
+        try:
+            assert bionetgen.semantic_equal(restored, v2, version="0.2")
+        except bionetgen.EqualityUndecided:
+            pass
+
+
 @pytest.mark.parametrize(
     "name,expect_schema_failure",
     [
@@ -71,6 +83,8 @@ def test_adversarial_valid_states_bonds_compartment_fixture():
         ("invalid_observable_type_ref.json", False),
         ("invalid_function_ref.json", False),
         ("invalid_action_scope.json", True),
+        ("invalid_observable_ref_index.json", False),
+        ("invalid_energy_type_ref.json", False),
     ],
 )
 def test_adversarial_invalid_fixtures_rejected(name, expect_schema_failure):
