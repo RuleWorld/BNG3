@@ -9,6 +9,7 @@
 #include "nfnext/function_vm.hpp"
 #include "nfnext/generic_matcher.hpp"
 #include "nfnext/transformation.hpp"
+#include "units/Unit.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -1270,6 +1271,101 @@ void addDirection(const bng::compile::CompiledRule& rule,
     }
     lowered.volume_factor = volumeFactor;
 
+    if (direction.rateLaw && direction.rateLaw->unit.has_value()) {
+        if (!constant || lowered.rate_law.kind != RateLawKind::Elementary) {
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "physical unit rate conversion requires a constant elementary rate in NFnext");
+            return;
+        }
+        bng::units::ConversionContext baseContext;
+        if (const auto option = source.metadata().options.find("NumberPerQuantityUnit");
+            option != source.metadata().options.end()) {
+            try {
+                std::size_t consumed = 0;
+                const double value = std::stod(option->second, &consumed);
+                if (consumed == option->second.size() && std::isfinite(value) && value > 0.0)
+                    baseContext.numberPerQuantityUnit = value;
+            } catch (...) {
+            }
+        }
+        const auto molecularity = direction.reactantPatterns.size();
+        bng::units::ConversionContext context = baseContext;
+        if (molecularity == 0) {
+            std::optional<bng::compile::CompartmentId> pCompId;
+            if (!direction.productPatterns.empty()) {
+                const auto& prod = direction.productPatterns.front();
+                pCompId = prod.compartmentId();
+                if (!pCompId && !prod.molecules().empty()) pCompId = prod.molecules().front().compartmentId;
+            }
+            if (!pCompId) {
+                issue(result, BngLoweringSeverity::Error, entity,
+                      "physical zero-order rate requires one declared product compartment");
+                return;
+            }
+            const auto* decl = source.compartment(*pCompId);
+            if (!decl || decl->volumeTimeDependent || !decl->declaredUnit.has_value() ||
+                !std::isfinite(decl->volume) || decl->volume <= 0.0) {
+                issue(result, BngLoweringSeverity::Error, entity,
+                      "physical zero-order rate requires a static declared product volume unit");
+                return;
+            }
+            context.compartmentVolume = decl->volume;
+            context.volumeUnit = decl->declaredUnit;
+            const auto conversion = bng::units::stochasticRateFactor(*direction.rateLaw->unit, 0, context);
+            if (!conversion || !conversion.factor.has_value() || !std::isfinite(*conversion.factor) ||
+                *conversion.factor < 0.0) {
+                issue(result, BngLoweringSeverity::Error, entity,
+                      "physical zero-order rate unit cannot be converted to a count rate");
+                return;
+            }
+            lowered.rate = *constant * *conversion.factor;
+            // Typed conversion includes volume and any required mole/item bridge.
+            lowered.volume_factor = 1.0;
+        } else if (molecularity == 1) {
+            const auto conversion = bng::units::stochasticRateFactor(*direction.rateLaw->unit, 1, context);
+            if (!conversion || !conversion.factor.has_value() || !std::isfinite(*conversion.factor) ||
+                *conversion.factor < 0.0) {
+                issue(result, BngLoweringSeverity::Error, entity,
+                      "physical unimolecular rate unit cannot be converted to a count rate");
+                return;
+            }
+            lowered.rate = *constant * *conversion.factor;
+            // geometric volume factor (usually 1) retained
+        } else if (molecularity == 2) {
+            const auto& rPat = direction.reactantPatterns.front();
+            auto rCompId = rPat.compartmentId();
+            if (!rCompId && !rPat.molecules().empty()) rCompId = rPat.molecules().front().compartmentId;
+            const auto* decl = rCompId ? source.compartment(*rCompId) : nullptr;
+            if (!decl || !decl->declaredUnit.has_value()) {
+                issue(result, BngLoweringSeverity::Error, entity,
+                      "physical bimolecular rate requires one declared reactant volume unit");
+                return;
+            }
+            // Leave numeric compartment size to NFnext's geometric 1/V scaling.
+            // stochasticRateFactor already incorporates the mole/item bridge and
+            // declared-volume basis needed for the count-rate coefficient.
+            context.compartmentVolume = 1.0;
+            context.volumeUnit = decl->declaredUnit;
+            const auto conversion = bng::units::stochasticRateFactor(*direction.rateLaw->unit, 2, context);
+            if (!conversion || !conversion.factor.has_value() || !std::isfinite(*conversion.factor) ||
+                *conversion.factor < 0.0) {
+                issue(result, BngLoweringSeverity::Error, entity,
+                      "physical bimolecular rate unit cannot be converted to a count rate");
+                return;
+            }
+            lowered.rate = *constant * (*conversion.factor);
+            // geometric reactant volume factor retained
+        } else {
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "physical rate conversion for molecularity > 2 is not yet supported in NFnext");
+            return;
+        }
+        std::ostringstream rateText;
+        rateText.precision(17);
+        rateText << lowered.rate;
+        lowered.rate_law.expression = rateText.str();
+    }
+
     if (expandableEnergyStateChange) {
         const auto& mutation = direction.mutations.front();
         if (mutation.source.patternIndex >= direction.reactantPatterns.size() ||
@@ -1767,14 +1863,9 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             if (issue.severity == BngLoweringSeverity::Error) refuse(issue.message);
     }
     const auto& model = lowered.model;
-    for (const auto& rule : source.rules()) {
-        const auto check = [&](const bng::compile::CompiledRuleDirection& direction) {
-            if (direction.rateLaw && direction.rateLaw->unit.has_value())
-                refuse("physical unit rate conversion is not yet supported in NFnext execution");
-        };
-        check(rule.forward());
-        if (rule.reverse()) check(*rule.reverse());
-    }
+    // Physical rate units are converted during lowering for supported
+    // constant elementary forms; execution refuses only if conversion failed.
+
     if (!model.population_maps.empty()) refuse("un-lowered population maps require generate_hybrid_model");
     bool has_energy_modulated_rate = false;
     for (const auto& rule : source.rules()) {
