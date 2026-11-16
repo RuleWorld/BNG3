@@ -9,6 +9,7 @@ native network generation deduplicates/retains the corresponding seed species.
 This is a narrow bridge: it does not claim full semantic equality or production
 correspondence beyond these explicit graph-identity cases.
 """
+
 from __future__ import annotations
 
 import argparse
@@ -119,7 +120,9 @@ def try_native(case: dict, expect_iso: bool) -> tuple[str, str | None]:
             # Prefer modern API object exposing generate_network/write_net.
             try:
                 candidate = bionetgen.load(str(model_path))
-                if hasattr(candidate, "generate_network") or hasattr(candidate, "write_net"):
+                if hasattr(candidate, "generate_network") or hasattr(
+                    candidate, "write_net"
+                ):
                     model = candidate
             except Exception:
                 model = None
@@ -211,24 +214,39 @@ def main() -> int:
         oracle_dedup = len(oracle_partition([case["left"], case["right"]]))
         expected_dedup = 1 if expect_iso else 2
 
-        print(f"[{name}] expect_iso={expect_iso} lean_iso={lean_iso} lean_dedup={lean_dedup} oracle_iso={oracle_iso} oracle_dedup={oracle_dedup}")
+        print(
+            f"[{name}] expect_iso={expect_iso} lean_iso={lean_iso} lean_dedup={lean_dedup} oracle_iso={oracle_iso} oracle_dedup={oracle_dedup}"
+        )
         if lean_iso != expect_iso:
             failures.append(f"{name}: Lean iso {lean_iso} != expected {expect_iso}")
         if lean_dedup != expected_dedup:
-            failures.append(f"{name}: Lean dedup {lean_dedup} != expected {expected_dedup}")
+            failures.append(
+                f"{name}: Lean dedup {lean_dedup} != expected {expected_dedup}"
+            )
         if oracle_iso != expect_iso:
-            failures.append(f"{name}: independent oracle iso {oracle_iso} != expected {expect_iso}")
+            failures.append(
+                f"{name}: independent oracle iso {oracle_iso} != expected {expect_iso}"
+            )
         if oracle_dedup != expected_dedup:
-            failures.append(f"{name}: independent oracle dedup {oracle_dedup} != expected {expected_dedup}")
+            failures.append(
+                f"{name}: independent oracle dedup {oracle_dedup} != expected {expected_dedup}"
+            )
         if lean_iso != oracle_iso:
-            failures.append(f"{name}: Lean/oracle iso disagreement ({lean_iso} vs {oracle_iso})")
+            failures.append(
+                f"{name}: Lean/oracle iso disagreement ({lean_iso} vs {oracle_iso})"
+            )
 
         native_status, native_detail = try_native(case, expect_iso)
-        print(f"[{name}] native={native_status}" + (f" detail={native_detail}" if native_detail else ""))
+        print(
+            f"[{name}] native={native_status}"
+            + (f" detail={native_detail}" if native_detail else "")
+        )
         if native_status == "FAIL":
             failures.append(f"{name}: native {native_detail}")
         if args.require_native and native_status != "PASS":
-            failures.append(f"{name}: native required but got {native_status} ({native_detail})")
+            failures.append(
+                f"{name}: native required but got {native_status} ({native_detail})"
+            )
 
     if failures:
         print("\nBRIDGE FAILURES:")
