@@ -124,4 +124,53 @@ theorem addProductsModuloIso_cons (p : Mixture) (ps pool : List Mixture) :
       addProductsModuloIso (addSpeciesModuloIso pool p) ps := by
   simp [addProductsModuloIso, List.foldl]
 
+/-- Exact bounded identity accumulation over a product list: every previously
+known species representative remains in the pool. -/
+theorem addProductsModuloIso_preserves_existing (products pool : List Mixture)
+    (existing : Mixture) (hmem : existing ∈ pool) :
+    existing ∈ addProductsModuloIso pool products := by
+  induction products generalizing pool with
+  | nil =>
+      simpa [addProductsModuloIso_nil] using hmem
+  | cons p ps ih =>
+      rw [addProductsModuloIso_cons]
+      have hstep : existing ∈ addSpeciesModuloIso pool p := by
+        unfold addSpeciesModuloIso
+        by_cases h : pool.any (fun e => e.isomorphicSpecies p) = true
+        · simp [h, hmem]
+        · simp [h, hmem]
+      exact ih (addSpeciesModuloIso pool p) hstep
+
+/-- A bounded network step never drops an existing species representative
+(identity accumulation / monotone closure for the named supported class). -/
+theorem networkGenerationStep_preserves_existing (rules : List RuleDirection)
+    (pool : List Mixture) (existing : Mixture) (hmem : existing ∈ pool) :
+    existing ∈ networkGenerationStep rules pool := by
+  unfold networkGenerationStep
+  induction rules generalizing pool with
+  | nil =>
+      simpa using hmem
+  | cons r rs ih =>
+      simp [List.foldl]
+      exact ih (addProductsModuloIso pool (RuleDirection.networkProducts r pool))
+        (addProductsModuloIso_preserves_existing _ _ _ hmem)
+
+/-- Exact bounded closure identity accumulation: no known species representative
+is dropped across closure iterations (named supported class / reference oracle). -/
+theorem boundedNetworkClosure_preserves_existing (fuel : Nat)
+    (rules : List RuleDirection) (pool : List Mixture) (existing : Mixture)
+    (hmem : existing ∈ pool) :
+    existing ∈ boundedNetworkClosure fuel rules pool := by
+  induction fuel generalizing pool with
+  | zero =>
+      simpa [boundedNetworkClosure] using hmem
+  | succ n ih =>
+      unfold boundedNetworkClosure
+      by_cases hfix : (networkGenerationStep rules pool).length == pool.length
+      · simp [hfix]
+        exact networkGenerationStep_preserves_existing rules pool existing hmem
+      · simp [hfix]
+        exact ih (networkGenerationStep rules pool)
+          (networkGenerationStep_preserves_existing rules pool existing hmem)
+
 end BNG
