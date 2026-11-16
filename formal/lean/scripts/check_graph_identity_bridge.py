@@ -90,11 +90,14 @@ def oracle_partition(seeds: list[str]) -> list[str]:
 
 
 def try_native(case: dict, expect_iso: bool) -> tuple[str, str | None]:
-    """Best-effort validation against native BNG3 network generation artifacts.
+    """Best-effort validation against native BNG3 stable NET artifacts.
 
-    Returns PASS on agreement, FAIL on a comparable disagreement, or SKIP when the
-    native toolchain/API is unavailable or cannot produce a comparable artifact in
-    this environment.
+    Checks (when comparable): seed species count after network generation and
+    whether NET species canonical labels identify the two seeds as the same
+    production species artifact iff the case expects graph identity.
+    Returns PASS on agreement, FAIL on a comparable disagreement, or SKIP when
+    the native toolchain/API is unavailable or cannot produce a comparable
+    artifact in this environment.
     """
     try:
         import bionetgen  # type: ignore
@@ -174,20 +177,34 @@ def try_native(case: dict, expect_iso: bool) -> tuple[str, str | None]:
                 return "SKIP", "could not read native NET species artifact"
 
             in_block = False
-            count = 0
+            labels: list[str] = []
             for line in net_text.splitlines():
-                s = line.strip()
-                if s.startswith("begin species"):
+                sline = line.strip()
+                if sline.startswith("begin species"):
                     in_block = True
                     continue
-                if in_block and s.startswith("end species"):
+                if in_block and sline.startswith("end species"):
                     break
-                if in_block and s and not s.startswith("#"):
-                    count += 1
-
+                if in_block and sline and not sline.startswith("#"):
+                    parts = sline.split()
+                    if len(parts) >= 2:
+                        labels.append(parts[1])
+            count = len(labels)
             expected = 1 if expect_iso else 2
             if count != expected:
                 return "FAIL", f"native species count {count} != expected {expected}"
+            if len(labels) >= 2:
+                same_label = labels[0] == labels[1]
+                if same_label != expect_iso:
+                    return (
+                        "FAIL",
+                        f"native NET canonical label equality {same_label} != expected {expect_iso}",
+                    )
+            elif expect_iso and len(labels) != 1:
+                return (
+                    "FAIL",
+                    f"native species labels {labels} != single merged species",
+                )
             return "PASS", None
     except Exception as exc:  # pragma: no cover - environment dependent
         return "SKIP", f"native check not comparable in this environment: {exc}"

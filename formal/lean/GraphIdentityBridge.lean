@@ -104,6 +104,24 @@ def mkCase (name : String) (left right : Mixture) : CaseResult :=
   let pool := [left]
   { name := name, iso := iso, leftPool := pool.length, dedupPool := (addSpeciesModuloIso pool right).length }
 
+
+/-! ## Kernel-checked properties for the named supported class fixtures -/
+
+-- Reflexive identity on concrete artifacts (renaming/canonical representative baseline).
+example : bondedBase.isomorphicSpecies bondedBase = true := by native_decide
+example : ringBase.isomorphicSpecies ringBase = true := by native_decide
+-- Symmetric positive witnesses on explicit permutation/renaming pairs.
+example : bondedRenamed.isomorphicSpecies bondedBase = true := by native_decide
+example : ringPermuted.isomorphicSpecies ringBase = true := by native_decide
+-- Adversarial negatives remain rejected in the opposite direction.
+example : bondedStateMut.isomorphicSpecies bondedBase = false := by native_decide
+example : ringOpenMut.isomorphicSpecies ringBase = false := by native_decide
+-- Exact bounded identity accumulation (no duplicate iso representative).
+example : (addSpeciesModuloIso [bondedRenamed] bondedBase).length = 1 := by native_decide
+example : (addSpeciesModuloIso [ringPermuted] ringBase).length = 1 := by native_decide
+example : (addSpeciesModuloIso [bondedStateMut] bondedBase).length = 2 := by native_decide
+
+
 def results : List CaseResult :=
   [ mkCase "bonded_renamed_equal" bondedBase bondedRenamed
   , mkCase "bonded_state_mutation_unequal" bondedBase bondedStateMut
