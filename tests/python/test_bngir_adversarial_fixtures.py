@@ -233,6 +233,7 @@ def test_mutation_population_map_detected():
         rate_rejected = True
     assert rate_rejected or rate_mut != base
 
+
 def test_mutation_action_argument_detected():
     base = _load("valid_action_arg.json")
     mutated = _load("mutation_action_arg.json")
