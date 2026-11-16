@@ -71,6 +71,10 @@ jobs:
         working-directory: formal/lean
         run: python3 scripts/check_network_species_bridge.py
 
+      - name: Check propensity counting bridge
+        working-directory: formal/lean
+        run: python3 scripts/check_propensity_counting_bridge.py
+
       - name: Harness mutation self-test
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         working-directory: formal/lean
