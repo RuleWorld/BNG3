@@ -36,6 +36,11 @@ void bind_io(py::module_& m) {
     }, py::arg("model"),
        "Serialize model to BioNetGen XML string");
 
+    io.def("write_xml_string_structural", [](const Model& model) -> std::string {
+        return XmlWriter::writeStructural(model);
+    }, py::arg("model"),
+       "Serialize model to structural BioNetGen XML for modelapi consumers; delay metadata may be omitted from XML");
+
     io.def("write_net", [](Model& model, const GeneratedNetwork& network,
                            const std::string& path) {
         NetWriter::write(path, model, network);
