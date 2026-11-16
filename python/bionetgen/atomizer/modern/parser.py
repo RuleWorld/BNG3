@@ -1037,9 +1037,12 @@ def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> st
                     function_name = kind
                 if kind in {"delay", "rateOf"}:
                     operand_text = _mathml_text(operator_node).strip()
-                    operand_is_name = (
-                        operand_text.lower() not in {function_name.lower(), "delay", "rateof", ""}
-                    )
+                    operand_is_name = operand_text.lower() not in {
+                        function_name.lower(),
+                        "delay",
+                        "rateof",
+                        "",
+                    }
                     # Some exporters place delay/rateOf operands as child
                     # elements inside the csymbol rather than as following
                     # <apply> siblings. Recover them while preserving
@@ -1062,7 +1065,11 @@ def _mathml_to_formula(element: Optional[Any], parenthesize: bool = False) -> st
                             # Preserve argument boundaries when the first delay
                             # operand is stored as text before child operands.
                             combined = [leading_text, *csymbol_child_args]
-                            if "".join(combined).replace(" ", "") == operand_text.replace(" ", "") or len(combined) >= 2:
+                            if (
+                                "".join(combined).replace(" ", "")
+                                == operand_text.replace(" ", "")
+                                or len(combined) >= 2
+                            ):
                                 args = combined
                             else:
                                 args = csymbol_child_args
