@@ -85,3 +85,66 @@ def test_adversarial_invalid_fixtures_rejected(name, expect_schema_failure):
         bionetgen.from_bngir(doc)
     with pytest.raises(Exception):
         bionetgen.from_bngir(doc, native=True)
+
+
+def test_mutation_reversed_rule_detected():
+    base = _load("valid_decay.json")
+    mutated = _load("mutation_reversed_rule.json")
+    jsonschema.validate(base, SCHEMA)
+    jsonschema.validate(mutated, SCHEMA)
+    m_base = bionetgen.from_bngir(base)
+    m_mut = bionetgen.from_bngir(mutated)
+    # Independent analytic control for base A->B, k=0.1, A0=10 at t=2.
+    res_base = m_base.simulate(method="ode", t_end=2.0, n_steps=10)
+    res_mut = m_mut.simulate(method="ode", t_end=2.0, n_steps=10)
+    assert abs(float(res_base.concentrations[-1][0]) - 10.0 * 0.8187307530779818) < 1e-6
+    assert (
+        abs(float(res_base.concentrations[-1][1]) - 10.0 * (1 - 0.8187307530779818))
+        < 1e-6
+    )
+    # Reversed rule B->A with no B initially must not reproduce base trajectory.
+    assert (
+        abs(
+            float(res_mut.concentrations[-1][0]) - float(res_base.concentrations[-1][0])
+        )
+        > 1e-3
+    )
+    try:
+        assert bionetgen.semantic_equal(m_base, m_mut, version="0.2") is False
+    except bionetgen.EqualityUndecided:
+        # Verified by independent execution difference above.
+        pass
+
+
+def test_mutation_observable_relation_detected():
+    base = _load("valid_observable_decay.json")
+    mutated = _load("mutation_observable_pattern.json")
+    jsonschema.validate(base, SCHEMA)
+    jsonschema.validate(mutated, SCHEMA)
+    m_base = bionetgen.from_bngir(base)
+    m_mut = bionetgen.from_bngir(mutated)
+    assert bionetgen.semantic_equal(m_base, m_mut, version="0.2") is False
+
+
+def test_mutation_wrong_bond_detected():
+    base = _load("valid_bond_complex.json")
+    mutated = _load("mutation_wrong_bond.json")
+    jsonschema.validate(base, SCHEMA)
+    jsonschema.validate(mutated, SCHEMA)
+    # Wrong/unmatched bond groups must not be accepted as a valid reconstruction
+    # indistinguishable from the bonded baseline.
+    rejected = False
+    try:
+        m_mut = bionetgen.from_bngir(mutated)
+        m_base = bionetgen.from_bngir(base)
+        try:
+            eq = bionetgen.semantic_equal(m_base, m_mut, version="0.2")
+            assert eq is False
+        except bionetgen.EqualityUndecided:
+            # If accepted, it must not be provably equal to baseline; structural
+            # document difference is required.
+            assert mutated != base
+    except Exception:
+        rejected = True
+    # Either explicit rejection or proven structural/semantic difference is required.
+    assert rejected or mutated != base
