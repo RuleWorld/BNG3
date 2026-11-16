@@ -191,6 +191,27 @@ theorem SpeciesIsoMap.validFor_covers (m : SpeciesIsoMap) (left right : Mixture)
       sameMoleculeIdSet m.range (right.molecules.map (fun x => x.id)) = true :=
   m.bijectiveFor_covers left right (m.validFor_bijective left right h)
 
+theorem SpeciesIsoMap.bijectiveFor_map_length (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.bijectiveFor left right = true) :
+    m.moleculeMap.length = left.molecules.length ∧ m.moleculeMap.length = right.molecules.length := by
+  have hc := m.bijectiveFor_covers left right h
+  rcases hc with ⟨hL, hR⟩
+  simp [sameMoleculeIdSet, Bool.and_eq_true] at hL hR
+  have hLd : m.domain.length = (left.molecules.map (fun x => x.id)).length := by
+    rcases hL with ⟨⟨⟨⟨_, _⟩, hlen⟩, _⟩, _⟩
+    simpa using hlen
+  have hRd : m.range.length = (right.molecules.map (fun x => x.id)).length := by
+    rcases hR with ⟨⟨⟨⟨_, _⟩, hlen⟩, _⟩, _⟩
+    simpa using hlen
+  constructor
+  · simpa [SpeciesIsoMap.domain] using hLd
+  · simpa [SpeciesIsoMap.range] using hRd
+
+theorem SpeciesIsoMap.validFor_map_length (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) :
+    m.moleculeMap.length = left.molecules.length ∧ m.moleculeMap.length = right.molecules.length :=
+  m.bijectiveFor_map_length left right (m.validFor_bijective left right h)
+
 /-- Renaming/canonicalization symmetry on the supported class: inverting a
 bijective molecule-id witness swaps the covered artifact-ID sets. -/
 theorem SpeciesIsoMap.inverse_bijectiveFor (m : SpeciesIsoMap) (left right : Mixture)
