@@ -30,7 +30,7 @@ def main():
     "--method",
     "-m",
     default=None,
-    type=click.Choice(["ode", "ssa", "nf", "pla", "psa"]),
+    type=click.Choice(["ode", "ssa", "nf", "pla", "psa", "cvode", "rm"]),
     help="Simulation method.",
 )
 @click.option(
@@ -54,9 +54,14 @@ def main():
     help="Population threshold for PSA.",
 )
 @click.option(
-    "--output", "-o", default=None, type=click.Path(), help="Output file path."
+    "--output", "-o", default=None, type=click.Path(), help="Output file or directory path."
 )
 @click.option("--verbose", "-v", is_flag=True, help="Verbose output.")
+@click.option("-l", "--log", "log_file", default=None, type=click.Path(), help="Log file path.")
+@click.option("--traceback-depth", default=0, type=int, help="Traceback depth (legacy).")
+@click.option("--format", "format_hint", default=None, type=str, help="Input format hint (legacy).")
+@click.option("--no-bngsim", is_flag=True, default=False, help="Force legacy/non-BNGsim route where applicable.")
+@click.option("--timeout", default=None, type=int, help="Timeout in seconds (legacy).")
 def run(
     model,
     input_path,
@@ -71,8 +76,14 @@ def run(
     psa_poplevel,
     output,
     verbose,
+    log_file,
+    traceback_depth,
+    format_hint,
+    no_bngsim,
+    timeout,
 ):
     """Run a BNGL model simulation."""
+    sys.tracebacklimit = traceback_depth
     if input_path is not None:
         if model is not None:
             raise click.UsageError("provide either MODEL or --input, not both")
@@ -92,10 +103,13 @@ def run(
                 seed=seed,
                 pla_config=pla_config,
                 psa_poplevel=psa_poplevel,
+                timeout=timeout,
+                format=format_hint,
             )
         except Exception as exc:
             raise click.ClickException(str(exc)) from exc
-        click.echo(f"Results written to {result.path}")
+        result_path = getattr(result, "path", output or ".")
+        click.echo(f"Results written to {result_path}")
         return
 
     if model is None:
