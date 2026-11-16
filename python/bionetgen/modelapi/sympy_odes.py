@@ -8,8 +8,13 @@ import tempfile
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, cast
 
-import sympy as sp
-from sympy.parsing.sympy_parser import parse_expr, standard_transformations
+try:
+    import sympy as sp
+    from sympy.parsing.sympy_parser import parse_expr, standard_transformations
+except ImportError:  # pragma: no cover - exercised when optional sympy missing
+    sp = None  # type: ignore[assignment]
+    parse_expr = None  # type: ignore[assignment]
+    standard_transformations = None  # type: ignore[assignment]
 
 
 @dataclass

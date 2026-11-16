@@ -197,13 +197,31 @@ def __getattr__(name):
 
         return BNGResult
     if name in {"SympyOdes", "export_sympy_odes", "extract_odes_from_mexfile"}:
-        from bionetgen.modelapi.sympy_odes import (
-            SympyOdes,
-            export_sympy_odes,
-            extract_odes_from_mexfile,
-        )
+        try:
+            from bionetgen.modelapi.sympy_odes import (
+                SympyOdes,
+                export_sympy_odes,
+                extract_odes_from_mexfile,
+            )
 
-        return locals()[name]
+            value = locals()[name]
+        except ImportError:
+
+            def _missing_sympy(*args, **kwargs):
+                raise ImportError(
+                    "SymPy is required for SympyOdes/export_sympy_odes; "
+                    "install the optional 'sympy' dependency"
+                )
+
+            class SympyOdes:  # type: ignore[no-redef]
+                pass
+
+            if name == "SympyOdes":
+                value = SympyOdes
+            else:
+                value = _missing_sympy
+        globals()[name] = value
+        return value
     if name == "BNGSIM_AVAILABLE":
         try:
             from bionetgen.core.tools.bngsim_bridge import BNGSIM_AVAILABLE as value
