@@ -704,6 +704,7 @@ bool appendCreateActions(
             ActionIR setComp;
             setComp.kind = ActionKind::SetCompartment;
             setComp.target_node = create.target_node;
+            setComp.molecule_type = create.molecule_type;
             setComp.value = static_cast<std::int32_t>(compId->value());
             actions.push_back(std::move(setComp));
         }
@@ -1039,6 +1040,7 @@ bool addActions(const bng::compile::CompiledRule& rule,
                 ActionIR setComp;
                 setComp.kind = ActionKind::SetCompartment;
                 setComp.target_node = *node;
+                setComp.molecule_type = static_cast<TypeId>(reactMol.moleculeTypeId->value());
                 setComp.value = static_cast<std::int32_t>(prodComp->value());
                 actions.push_back(std::move(setComp));
             }
