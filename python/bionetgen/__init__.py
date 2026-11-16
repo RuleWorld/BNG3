@@ -265,6 +265,9 @@ __all__ = [
     "semantic_equal",
     "EqualityUndecided",
     "__version__",
+    "defaults",
+    "BNGSIM_AVAILABLE",
+    "BNGSIM_VERSION",
 ]
 
 if not _USE_LEGACY:
