@@ -705,6 +705,7 @@ bool appendCreateActions(
             ActionIR setComp;
             setComp.kind = ActionKind::SetCompartment;
             setComp.target_node = create.target_node;
+            setComp.molecule_type = create.molecule_type;
             setComp.value = static_cast<std::int32_t>(compId->value());
             actions.push_back(std::move(setComp));
         }
@@ -868,18 +869,24 @@ bool appendDeletionActions(
     // A simultaneous unmatched deletion + creation is the legacy molecule-
     // replacement case. BioNetGen's mature network engine suppresses orphaned
     // context for that case, while NFIR v5 only has explicit molecule/complex
-    // destruction. Refuse to guess until that cleanup contract is represented.
-    bool hasUnmappedReactant = false;
+    // destruction. Whole-species deletions are represented explicitly as
+    // DestroyComplex actions below, so only unmatched reactant molecules in
+    // patterns that are not removed as whole species require this refusal.
+    bool hasUnmappedReactantOutsideWholeSpeciesDeletion = false;
     for (std::size_t patternIndex = 0; patternIndex < direction.reactantPatterns.size(); ++patternIndex) {
+        if (isWholeSpeciesDeletion(direction, patternIndex)) continue;
         const auto& pattern = direction.reactantPatterns[patternIndex];
         for (std::size_t moleculeIndex = 0; moleculeIndex < pattern.molecules().size(); ++moleculeIndex) {
             const bng::compile::PatternMoleculeRef ref{
                 BngPatternSide::Reactant, patternIndex, moleculeIndex};
             const auto node = nodeFor(ref, reactants);
-            if (node && nodes.mappedReactants.count(*node) == 0) hasUnmappedReactant = true;
+            if (node && nodes.mappedReactants.count(*node) == 0) {
+                hasUnmappedReactantOutsideWholeSpeciesDeletion = true;
+            }
         }
     }
-    if (!deleteMolecules && hasUnmappedReactant && !nodes.createdProducts.empty()) {
+    if (!hasDeleteMoleculesModifier(rule) && hasUnmappedReactantOutsideWholeSpeciesDeletion &&
+        !nodes.createdProducts.empty()) {
         issue(result, BngLoweringSeverity::Error, entity,
               "simultaneous molecule replacement requires orphan-context semantics "
               "not yet representable in NFIR v5");
@@ -889,7 +896,7 @@ bool appendDeletionActions(
     // The compiler resolves default whole-pattern deletion once. Remove each
     // matched species as a unit so connected, unspecified context is included.
     // DeleteMolecules deliberately bypasses this path and stays molecule-scoped.
-    if (!deleteMolecules) {
+    if (!hasDeleteMoleculesModifier(rule)) {
         for (const auto patternIndex : direction.wholeSpeciesDeletions) {
             if (!appendWholeSpeciesDeletion(patternIndex)) return false;
         }
@@ -898,7 +905,7 @@ bool appendDeletionActions(
     // DeleteMolecules and partial rule rewrites remove only explicit unmatched
     // molecule occurrences, preserving any unmatched surrounding context.
     for (std::size_t patternIndex = 0; patternIndex < direction.reactantPatterns.size(); ++patternIndex) {
-        if (!deleteMolecules && isWholeSpeciesDeletion(direction, patternIndex)) continue;
+        if (!hasDeleteMoleculesModifier(rule) && isWholeSpeciesDeletion(direction, patternIndex)) continue;
         const auto& pattern = direction.reactantPatterns[patternIndex];
         for (std::size_t moleculeIndex = 0; moleculeIndex < pattern.molecules().size(); ++moleculeIndex) {
             const bng::compile::PatternMoleculeRef ref{
@@ -938,9 +945,9 @@ bool addActions(const bng::compile::CompiledRule& rule,
     if (!nodes) return false;
     if (!appendCreateActions(direction, *nodes, actions, result, entity)) return false;
 
-    const bool deleteMolecules = hasDeleteMoleculesModifier(rule);
+
     for (const auto& mutation : direction.mutations) {
-        if (mutation.kind == BngMutationKind::DeleteBond && !deleteMolecules &&
+        if (mutation.kind == BngMutationKind::DeleteBond && !hasDeleteMoleculesModifier(rule) &&
             (isWholeSpeciesDeletion(direction, mutation.source.patternIndex) ||
              isWholeSpeciesDeletion(direction, mutation.partner.patternIndex))) {
             // Keep the matched graph connected until DestroyComplex traverses it.
@@ -1021,10 +1028,11 @@ bool addActions(const bng::compile::CompiledRule& rule,
         const auto reactComp = reactMol.compartmentId ? reactMol.compartmentId : reactPattern.compartmentId();
         if (prodComp.has_value() && prodComp != reactComp) {
             const auto node = nodeFor(reactantRef, pattern);
-            if (node) {
+            if (node && reactMol.moleculeTypeId) {
                 ActionIR setComp;
                 setComp.kind = ActionKind::SetCompartment;
                 setComp.target_node = *node;
+                setComp.molecule_type = static_cast<TypeId>(reactMol.moleculeTypeId->value());
                 setComp.value = static_cast<std::int32_t>(prodComp->value());
                 actions.push_back(std::move(setComp));
             }
