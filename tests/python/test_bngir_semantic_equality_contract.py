@@ -463,3 +463,29 @@ setParameter("k",1)
         excinfo.value.diagnostic["left_actions"]
         != excinfo.value.diagnostic["right_actions"]
     )
+
+
+def test_semantic_equal_protocol_simulate_argument_difference():
+    base = r"""
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin reaction rules
+  A() -> 0 k
+end reaction rules
+end model
+"""
+    a = M(base + '\nsimulate({method=>"ode",t_end=>1,n_steps=>10})\n')
+    b = M(base + '\nsimulate({method=>"ode",t_end=>2,n_steps=>10})\n')
+    with pytest.raises(EqualityUndecided) as excinfo:
+        bionetgen.semantic_equal(a, b)
+    diag = excinfo.value.diagnostic
+    assert diag["status"] == "undecided"
+    assert diag.get("left_actions") != diag.get("right_actions") or diag.get("left_wire_actions") != diag.get("right_wire_actions")
