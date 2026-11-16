@@ -74,6 +74,12 @@ def SpeciesIsoMap.inverse (m : SpeciesIsoMap) : SpeciesIsoMap :=
     m.inverse.range = m.domain := by
   simp [SpeciesIsoMap.inverse, SpeciesIsoMap.domain, SpeciesIsoMap.range]
 
+@[simp] theorem SpeciesIsoMap.inverse_inverse (m : SpeciesIsoMap) :
+    m.inverse.inverse = m := by
+  cases m with
+  | mk pairs =>
+      simp [SpeciesIsoMap.inverse, List.map_map, Function.comp_def]
+
 @[simp] theorem SpeciesIsoMap.domain_idOn (ids : List MoleculeInstanceId) :
     (SpeciesIsoMap.idOn ids).domain = ids := by
   unfold SpeciesIsoMap.idOn SpeciesIsoMap.domain
@@ -169,6 +175,21 @@ theorem SpeciesIsoMap.validFor_bijective (m : SpeciesIsoMap) (left right : Mixtu
     m.bijectiveFor left right = true := by
   simp [SpeciesIsoMap.validFor, Bool.and_eq_true] at h
   exact h.1.1.1
+
+/-- Kernel-proved renaming/coverage invariant: bijective witnesses cover the
+full artifact molecule-ID sets by extensional set equality. -/
+theorem SpeciesIsoMap.bijectiveFor_covers (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.bijectiveFor left right = true) :
+    sameMoleculeIdSet m.domain (left.molecules.map (fun x => x.id)) = true ∧
+      sameMoleculeIdSet m.range (right.molecules.map (fun x => x.id)) = true := by
+  simp [SpeciesIsoMap.bijectiveFor, Bool.and_eq_true] at h
+  exact ⟨h.1.2, h.2⟩
+
+theorem SpeciesIsoMap.validFor_covers (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) :
+    sameMoleculeIdSet m.domain (left.molecules.map (fun x => x.id)) = true ∧
+      sameMoleculeIdSet m.range (right.molecules.map (fun x => x.id)) = true :=
+  m.bijectiveFor_covers left right (m.validFor_bijective left right h)
 
 /-- Renaming/canonicalization symmetry on the supported class: inverting a
 bijective molecule-id witness swaps the covered artifact-ID sets. -/
