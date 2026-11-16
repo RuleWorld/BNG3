@@ -3586,7 +3586,10 @@ class EqualityUndecided(Exception):
         self, message: str, diagnostic: Mapping[str, Any] | None = None
     ) -> None:
         super().__init__(message)
-        self.diagnostic = dict(diagnostic or {})
+        diag = dict(diagnostic or {})
+        diag.setdefault("status", "undecided")
+        diag.setdefault("message", message)
+        self.diagnostic = diag
 
 
 def _evaluate_model_expression_exact(
