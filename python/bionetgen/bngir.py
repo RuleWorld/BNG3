@@ -1268,7 +1268,7 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
             relation = term.get("relation")
             if relation is None:
                 continue
-            if relation not in {"==", "!=", ">", ">=", "<", "<="}:
+            if relation not in {"==", ">", ">=", "<", "<="}:
                 raise ValueError(
                     f"BNGIR model.observables[{i}].terms[{j}] has unsupported "
                     f"count relation: {relation!r}"
