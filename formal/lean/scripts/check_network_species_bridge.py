@@ -62,6 +62,34 @@ end model
 ]
 
 
+# Adversarial production negative mutations: native artifacts must differ from the
+# correct bounded closure when the generating rule semantics are mutated.
+NEGATIVE_CASES = [
+    {
+        "name": "simple_binding_noop_rule_negative",
+        "bngl": """begin model
+begin parameters
+k 1
+end parameters
+begin molecule types
+A(x~u)
+B(y)
+end molecule types
+begin seed species
+A(x~u) 1
+B(y) 1
+end seed species
+begin reaction rules
+A(x) + B(y) -> A(x) + B(y) k
+end reaction rules
+end model
+""",
+        "expected_count": 2,
+        "must_not_match_species": ["A(x~u)", "B(y)", "A(x~u!1).B(y!1)"],
+    },
+]
+
+
 def run_lean(formal_dir: Path) -> dict[str, str]:
     proc = subprocess.run(
         ["lake", "env", "lean", "--run", "NetworkSpeciesBridge.lean"],
@@ -201,6 +229,25 @@ def main() -> int:
         if not same_species_set(labels, case["expected_species"]):
             failures.append(
                 f"{case['name']}: native species set {labels} not isomorphic to expected {case['expected_species']}"
+            )
+
+    for case in NEGATIVE_CASES:
+        status, result = native_net_species(case["bngl"])
+        print(f"[native-negative:{case['name']}] status={status} detail={result}")
+        if status == "SKIP":
+            if args.require_native:
+                failures.append(
+                    f"{case['name']}: native required but skipped ({result})"
+                )
+            continue
+        labels = result
+        if len(labels) != case["expected_count"]:
+            failures.append(
+                f"{case['name']}: native species count {len(labels)} != {case['expected_count']}"
+            )
+        if same_species_set(labels, case["must_not_match_species"]):
+            failures.append(
+                f"{case['name']}: mutated production species set {labels} incorrectly matched forbidden closure {case['must_not_match_species']}"
             )
 
     if failures:
