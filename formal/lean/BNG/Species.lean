@@ -188,4 +188,10 @@ theorem addSpeciesModuloIso_length (pool : List Mixture) (candidate : Mixture) :
   · simp [h]
   · simp [h]
 
+
+
+theorem addSpeciesModuloIso_empty (candidate : Mixture) :
+    addSpeciesModuloIso [] candidate = [candidate] := by
+  simp [addSpeciesModuloIso]
+
 end BNG
