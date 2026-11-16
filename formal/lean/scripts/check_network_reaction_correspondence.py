@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import argparse
 import re
-import subprocess
 import sys
 import tempfile
 from pathlib import Path
@@ -103,7 +102,6 @@ def generate_net(bngl: str) -> str:
                 model.generate_network()
         else:
             raise RuntimeError("no generate_network API")
-        net_path = Path(td) / "m.net"
         if hasattr(model, "write_net"):
             try:
                 model.write_net(str(Path(td) / "out.net"))
