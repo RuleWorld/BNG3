@@ -265,3 +265,18 @@ def test_mutation_seed_amount_detected():
         assert bionetgen.semantic_equal(m_base, m_mut, version="0.2") is False
     except bionetgen.EqualityUndecided:
         pass
+
+def test_mutation_parameter_rate_detected():
+    base = _load("valid_decay.json")
+    mutated = _load("mutation_parameter_rate.json")
+    jsonschema.validate(base, SCHEMA)
+    jsonschema.validate(mutated, SCHEMA)
+    m_base = bionetgen.from_bngir(base)
+    m_mut = bionetgen.from_bngir(mutated)
+    res_base = m_base.simulate(method="ode", t_end=2.0, n_steps=10)
+    res_mut = m_mut.simulate(method="ode", t_end=2.0, n_steps=10)
+    assert abs(float(res_base.concentrations[-1][0]) - float(res_mut.concentrations[-1][0])) > 1e-3
+    try:
+        assert bionetgen.semantic_equal(m_base, m_mut, version="0.2") is False
+    except bionetgen.EqualityUndecided:
+        pass
