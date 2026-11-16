@@ -232,3 +232,20 @@ def test_mutation_population_map_detected():
     except Exception:
         rate_rejected = True
     assert rate_rejected or rate_mut != base
+
+def test_mutation_action_argument_detected():
+    base = _load("valid_action_arg.json")
+    mutated = _load("mutation_action_arg.json")
+    jsonschema.validate(base, SCHEMA)
+    jsonschema.validate(mutated, SCHEMA)
+    assert base != mutated
+    m_base = bionetgen.from_bngir(base)
+    m_mut = bionetgen.from_bngir(mutated)
+    d_base = json.loads(bionetgen.to_bngir(m_base, version="0.2"))
+    d_mut = json.loads(bionetgen.to_bngir(m_mut, version="0.2"))
+    assert d_base["protocol"]["actions"] != d_mut["protocol"]["actions"]
+    try:
+        eq = bionetgen.semantic_equal(m_base, m_mut, version="0.2")
+        assert eq is False
+    except bionetgen.EqualityUndecided as exc:
+        assert exc.diagnostic.get("left_actions") != exc.diagnostic.get("right_actions")
