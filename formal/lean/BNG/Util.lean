@@ -30,4 +30,10 @@ def allUnique {α : Type} [BEq α] : List α → Bool
 def allContained {α : Type} [BEq α] (xs ys : List α) : Bool :=
   xs.all (fun x => ys.contains x)
 
+/-- Kernel-proved identity: every list is contained in itself under lawful
+boolean equality (supports supported-class renaming/identity reasoning). -/
+theorem allContained_self {α : Type} [BEq α] [LawfulBEq α] (xs : List α) :
+    allContained xs xs = true := by
+  simp [allContained, List.all_eq_true]
+
 end BNG
