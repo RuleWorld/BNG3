@@ -17,8 +17,7 @@ def M(src: str):
 
 
 def test_semantic_equal_consistent_molecule_type_renaming():
-    a = M(
-        r"""
+    a = M(r"""
 begin model
 begin parameters
   k 1
@@ -37,10 +36,8 @@ begin reaction rules
   A(s~u) -> A(s~p) k
 end reaction rules
 end model
-"""
-    )
-    b = M(
-        r"""
+""")
+    b = M(r"""
 begin model
 begin parameters
   k 1
@@ -59,14 +56,12 @@ begin reaction rules
   X(s~u) -> X(s~p) k
 end reaction rules
 end model
-"""
-    )
+""")
     assert bionetgen.semantic_equal(a, b) is True
 
 
 def test_semantic_equal_rate_preserving_split_merge():
-    merged = M(
-        r"""
+    merged = M(r"""
 begin model
 begin parameters
   k 1
@@ -82,10 +77,8 @@ begin reaction rules
   A() -> B() k
 end reaction rules
 end model
-"""
-    )
-    split = M(
-        r"""
+""")
+    split = M(r"""
 begin model
 begin parameters
   k 1
@@ -102,11 +95,9 @@ begin reaction rules
   R2: A() -> B() 2*k/3
 end reaction rules
 end model
-"""
-    )
+""")
     assert bionetgen.semantic_equal(merged, split) is True
-    bad_split = M(
-        r"""
+    bad_split = M(r"""
 begin model
 begin parameters
   k 1
@@ -123,14 +114,12 @@ begin reaction rules
   R2: A() -> B() k
 end reaction rules
 end model
-"""
-    )
+""")
     assert bionetgen.semantic_equal(merged, bad_split) is False
 
 
 def test_semantic_equal_initial_state_semantics():
-    a = M(
-        r"""
+    a = M(r"""
 begin model
 begin molecule types
   A()
@@ -143,10 +132,8 @@ begin reaction rules
   A() -> B() 1
 end reaction rules
 end model
-"""
-    )
-    b = M(
-        r"""
+""")
+    b = M(r"""
 begin model
 begin molecule types
   A()
@@ -159,14 +146,12 @@ begin reaction rules
   A() -> B() 1
 end reaction rules
 end model
-"""
-    )
+""")
     assert bionetgen.semantic_equal(a, b) is False
 
 
 def test_semantic_equal_observable_semantics_distinguished():
-    a = M(
-        r"""
+    a = M(r"""
 begin model
 begin molecule types
   A()
@@ -182,10 +167,8 @@ begin reaction rules
   A() -> B() 1
 end reaction rules
 end model
-"""
-    )
-    b = M(
-        r"""
+""")
+    b = M(r"""
 begin model
 begin molecule types
   A()
@@ -201,14 +184,12 @@ begin reaction rules
   A() -> B() 1
 end reaction rules
 end model
-"""
-    )
+""")
     assert bionetgen.semantic_equal(a, b) is False
 
 
 def test_semantic_equal_non_equivalent_rule_direction_counterexample():
-    a = M(
-        r"""
+    a = M(r"""
 begin model
 begin molecule types
   A()
@@ -222,10 +203,8 @@ begin reaction rules
   A() -> B() 1
 end reaction rules
 end model
-"""
-    )
-    b = M(
-        r"""
+""")
+    b = M(r"""
 begin model
 begin molecule types
   A()
@@ -239,16 +218,14 @@ begin reaction rules
   B() -> A() 1
 end reaction rules
 end model
-"""
-    )
+""")
     assert bionetgen.semantic_equal(a, b) is False
 
 
 def test_semantic_equal_requires_explicit_undecided_for_unsupported_case():
     # Unsupported/uncertified symbolic cases must not be guessed as equal or
     # unequal by numerical or trajectory similarity.
-    a = M(
-        r"""
+    a = M(r"""
 begin model
 begin parameters
   k1 1
@@ -267,10 +244,8 @@ begin reaction rules
   A() -> B() f()
 end reaction rules
 end model
-"""
-    )
-    b = M(
-        r"""
+""")
+    b = M(r"""
 begin model
 begin parameters
   k1 1
@@ -289,7 +264,6 @@ begin reaction rules
   A() -> B() f()
 end reaction rules
 end model
-"""
-    )
+""")
     with pytest.raises(EqualityUndecided):
         bionetgen.semantic_equal(a, b)
