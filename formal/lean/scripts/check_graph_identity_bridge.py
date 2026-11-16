@@ -59,6 +59,18 @@ CASES = [
         "right": "A(a,b!2).A(a!2,b!3).A(a!3,b!1)",
         "expect_iso": False,
     },
+    {
+        "name": "dimer_state_permutation_equal",
+        "left": "A(x~u!1).A(x~p!1)",
+        "right": "A(x~p!1).A(x~u!1)",
+        "expect_iso": True,
+    },
+    {
+        "name": "dimer_state_mutation_unequal",
+        "left": "A(x~u!1).A(x~p!1)",
+        "right": "A(x~u!1).A(x~u!1)",
+        "expect_iso": False,
+    },
 ]
 
 

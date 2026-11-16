@@ -92,6 +92,27 @@ def ringOpenMut : Mixture :=
       , { a := { molecule := ⟨1⟩, component := cAb }, b := { molecule := ⟨2⟩, component := cAb } }
       ] }
 
+-- Symmetric dimer with heterogeneous states: permutation/renaming of identical
+-- molecule instances must preserve identity, while state-pattern mutation must not.
+def molA_x_only (id : Nat) (state : St) : RuntimeMolecule :=
+  { id := ⟨id⟩, moleculeType := mtA, compartment := none,
+    sites := [{ component := cAx, state := some state }] }
+
+def dimerBase : Mixture :=
+  { nextMoleculeId := ⟨2⟩
+    molecules := [molA_x_only 0 sU, molA_x_only 1 sP]
+    bonds := [{ a := { molecule := ⟨0⟩, component := cAx }, b := { molecule := ⟨1⟩, component := cAx } }] }
+
+def dimerStatePerm : Mixture :=
+  { nextMoleculeId := ⟨20⟩
+    molecules := [molA_x_only 10 sP, molA_x_only 11 sU]
+    bonds := [{ a := { molecule := ⟨11⟩, component := cAx }, b := { molecule := ⟨10⟩, component := cAx } }] }
+
+def dimerStateMut : Mixture :=
+  { nextMoleculeId := ⟨2⟩
+    molecules := [molA_x_only 0 sU, molA_x_only 1 sU]
+    bonds := [{ a := { molecule := ⟨0⟩, component := cAx }, b := { molecule := ⟨1⟩, component := cAx } }] }
+
 structure CaseResult where
   name : String
   iso : Bool
@@ -120,6 +141,10 @@ example : ringOpenMut.isomorphicSpecies ringBase = false := by native_decide
 example : (addSpeciesModuloIso [bondedRenamed] bondedBase).length = 1 := by native_decide
 example : (addSpeciesModuloIso [ringPermuted] ringBase).length = 1 := by native_decide
 example : (addSpeciesModuloIso [bondedStateMut] bondedBase).length = 2 := by native_decide
+-- Heterogeneous symmetric-dimer permutation (renaming/canonical identity under swap).
+example : dimerBase.isomorphicSpecies dimerStatePerm = true := by native_decide
+example : dimerStatePerm.isomorphicSpecies dimerBase = true := by native_decide
+example : dimerBase.isomorphicSpecies dimerStateMut = false := by native_decide
 
 
 def results : List CaseResult :=
@@ -128,7 +153,9 @@ def results : List CaseResult :=
   , mkCase "bonded_topology_mutation_unequal" bondedBase bondedTopologyMut
   , mkCase "bonded_attachment_mutation_unequal" bondedBase bondedAttachmentMut
   , mkCase "ring_permutation_equal" ringBase ringPermuted
-  , mkCase "ring_open_mutation_unequal" ringBase ringOpenMut ]
+  , mkCase "ring_open_mutation_unequal" ringBase ringOpenMut
+  , mkCase "dimer_state_permutation_equal" dimerBase dimerStatePerm
+  , mkCase "dimer_state_mutation_unequal" dimerBase dimerStateMut ]
 
 def emit (r : CaseResult) : String :=
   s!"case={r.name}\tiso={r.iso}\tleft_pool={r.leftPool}\tdedup_pool={r.dedupPool}"
