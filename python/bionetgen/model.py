@@ -1613,6 +1613,14 @@ class BioNetGenModel:
         self._require_export_supported("BNGL export")
         _cpp.io.write_bngl(self._model, path)
 
+    def save(self, path: str) -> None:
+        """Save the model to a BNGL file (compatibility alias)."""
+        self.write_bngl(path)
+
+    def write_model(self, path: str) -> None:
+        """Write the model to a BNGL file (PyBioNetGen-style alias)."""
+        self.write_bngl(path)
+
     def to_bngl(self) -> str:
         """Serialize the model to an in-memory BNGL string."""
         self._require_export_supported("BNGL export")
