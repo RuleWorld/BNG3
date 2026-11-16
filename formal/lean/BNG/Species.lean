@@ -17,7 +17,7 @@ fast canonicalizer should agree with on generated fixtures.
 /-- A candidate bijection between molecule-instance IDs. -/
 structure SpeciesIsoMap where
   moleculeMap : List (MoleculeInstanceId × MoleculeInstanceId) := []
-  deriving Repr
+  deriving Repr, DecidableEq, BEq
 
 /-- Lookup a mapped molecule. -/
 def SpeciesIsoMap.lookup? (m : SpeciesIsoMap) (id : MoleculeInstanceId) : Option MoleculeInstanceId :=
@@ -47,6 +47,14 @@ def runtimeMoleculesEquivalent (a b : RuntimeMolecule) : Bool :=
   a.compartment == b.compartment &&
   runtimeSitesEquivalent a.sites b.sites
 
+/-- Identity mapping on a molecule-ID list. -/
+def SpeciesIsoMap.idOn (ids : List MoleculeInstanceId) : SpeciesIsoMap :=
+  { moleculeMap := ids.map (fun id => (id, id)) }
+
+/-- Invert a candidate bijection by swapping domain and range entries. -/
+def SpeciesIsoMap.inverse (m : SpeciesIsoMap) : SpeciesIsoMap :=
+  { moleculeMap := m.moleculeMap.map (fun pair => (pair.2, pair.1)) }
+
 /-- Map one concrete endpoint through a molecule-ID bijection. -/
 def SpeciesIsoMap.mapEndpoint? (mapping : SpeciesIsoMap) (e : ConcreteEndpoint) : Option ConcreteEndpoint :=
   (mapping.lookup? e.molecule).map (fun molecule =>
@@ -74,6 +82,8 @@ def SpeciesIsoMap.validFor (mapping : SpeciesIsoMap) (left right : Mixture) : Bo
     | _, _ => false) &&
   bondsPreservedForward left right mapping &&
   left.bonds.length == right.bonds.length
+
+
 
 /-- Brute-force every raw molecule bijection candidate. -/
 def candidateSpeciesIsoMaps (left right : Mixture) : List SpeciesIsoMap :=
