@@ -238,6 +238,16 @@ theorem SpeciesIsoMap.bijectiveFor_range_unique (m : SpeciesIsoMap) (left right 
   simp [SpeciesIsoMap.bijectiveFor, Bool.and_eq_true] at h
   exact h.1.1.2
 
+/-- A valid isomorphism witness has a unique-ID domain (supported-class renaming). -/
+theorem SpeciesIsoMap.validFor_domain_unique (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) : allUnique m.domain = true :=
+  m.bijectiveFor_domain_unique left right (m.validFor_bijective left right h)
+
+/-- A valid isomorphism witness has a unique-ID range (supported-class renaming). -/
+theorem SpeciesIsoMap.validFor_range_unique (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) : allUnique m.range = true :=
+  m.bijectiveFor_range_unique left right (m.validFor_bijective left right h)
+
 /-- Oracle-positive identity implies equal molecule and bond counts for the
 explicit supported class artifacts. -/
 theorem isomorphicSpecies_counts (left right : Mixture)
