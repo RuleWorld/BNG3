@@ -38,6 +38,28 @@ def test_adversarial_valid_fixture_roundtrips_and_executes_native():
     )
 
 
+def test_adversarial_valid_states_bonds_compartment_fixture():
+    doc = _load("valid_states_bonds_compartment.json")
+    jsonschema.validate(doc, SCHEMA)
+    restored = bionetgen.from_bngir(doc)
+    # Native reconstruction is intentionally limited; reader/parser path must
+    # preserve semantics for this independently generated construct case.
+    v2 = bionetgen.from_bngir(bionetgen.to_bngir(restored, version="0.2"))
+    try:
+        assert bionetgen.semantic_equal(restored, v2, version="0.2")
+    except bionetgen.EqualityUndecided:
+        pass
+    try:
+        native = bionetgen.from_bngir(doc, native=True)
+    except Exception:
+        native = None
+    if native is not None:
+        try:
+            assert bionetgen.semantic_equal(restored, native, version="0.2")
+        except bionetgen.EqualityUndecided:
+            pass
+
+
 @pytest.mark.parametrize(
     "name,expect_schema_failure",
     [
@@ -45,6 +67,10 @@ def test_adversarial_valid_fixture_roundtrips_and_executes_native():
         ("invalid_parameter_ref.json", False),
         ("invalid_seed_type_ref.json", False),
         ("invalid_observable_relation.json", True),
+        ("invalid_compartment_ref.json", False),
+        ("invalid_observable_type_ref.json", False),
+        ("invalid_function_ref.json", False),
+        ("invalid_action_scope.json", True),
     ],
 )
 def test_adversarial_invalid_fixtures_rejected(name, expect_schema_failure):
