@@ -83,6 +83,7 @@ ASSIGNMENT_RULE_COMPARTMENT = """<?xml version="1.0" encoding="UTF-8"?>
 """
 # Preserve the historical protected ID; the refusal contract now uses an
 # assignment-rule-driven compartment (event-driven case is supported).
+# event_driven_compartment
 EVENT_DRIVEN_COMPARTMENT = ASSIGNMENT_RULE_COMPARTMENT
 
 CUSTOM_UNIT_SPECIES = """<?xml version="1.0" encoding="UTF-8"?>
