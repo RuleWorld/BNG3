@@ -1,9 +1,7 @@
 import re
-
-from bionetgen.main import BioNetGen
-from bionetgen.core.exc import BNGParseError, BNGModelError
 from tempfile import TemporaryFile
 
+from bionetgen.core.exc import BNGParseError, BNGModelError
 from .bngfile import BNGFile
 from .xmlparsers import ParameterBlockXML, CompartmentBlockXML, ObservableBlockXML
 from .xmlparsers import SpeciesBlockXML, MoleculeTypeBlockXML, FunctionBlockXML
@@ -11,11 +9,17 @@ from .xmlparsers import RuleBlockXML, EnergyPatternBlockXML, PopulationMapBlockX
 from .blocks import ActionBlock
 from bionetgen.core.utils.utils import ActionList
 
-# This allows access to the CLIs config setup
-app = BioNetGen()
-app.setup()
-conf = app.config["bionetgen"]
-def_bng_path = conf["bngpath"]
+
+def _default_bng_path():
+    try:
+        from bionetgen.core.defaults import BNGDefaults
+
+        return BNGDefaults().bng_path
+    except Exception:
+        return None
+
+
+def_bng_path = _default_bng_path()
 
 
 class BNGParser:

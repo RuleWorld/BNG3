@@ -115,12 +115,15 @@ class CSimulator(BNGSimulator):
     def __init__(self, model_input, generate_network=False):
         try:
             import bionetgen
-            from bionetgen.main import get_conf
+            from bionetgen.core.defaults import BNGDefaults
         except Exception as exc:
             raise BNGCompileError(
                 None, f"CSimulator unavailable in this environment: {exc}"
             ) from exc
-        conf = get_conf()
+        try:
+            conf = BNGDefaults().config.get("bionetgen", {})
+        except Exception:
+            conf = {}
         if isinstance(model_input, str):
             self.model = bionetgen.bngmodel(
                 model_input, generate_network=generate_network

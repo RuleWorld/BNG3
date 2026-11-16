@@ -33,7 +33,7 @@
       "status": "retained"
     },
     {
-      "blocker": null,
+      "blocker": "PyBioNetGen-compatible .net/network API surface is retained in python/bionetgen/network for public API compatibility (#171) and cannot be retired until equivalent installed-package behavior is demonstrated and any redundant Python semantic paths are unified without removing supported entry points or explicit unsupported diagnostics (#172).",
       "dependents": {
         "product": [],
         "tests": []
@@ -44,11 +44,10 @@
         "bionetgen.network"
       ],
       "qualified_checks": [
-        "tests/cpp/test_sbml_reader.cpp (native bng::io::NetReader supersedes the retired reader)",
-        "tests/validation/test_compare_net.py",
-        "tests/validation/test_parity_net.py"
+        "tests/python/test_pybionetgen_api_compat.py",
+        "tests/python/test_compatibility_contract.py"
       ],
-      "status": "retired"
+      "status": "retained"
     },
     {
       "blocker": "bionetgen.sim_getter is a public compatibility export whose libRoadRunner adapter has no native BNG3 equivalent; its behaviour is already covered by qualified checks, so the adapter is retained deliberately instead of being migrated.",
@@ -80,7 +79,7 @@
           "bionetgen.modelapi.bngfile",
           "bionetgen.modelapi.bngparser",
           "bionetgen.modelapi.model",
-          "bionetgen.modelapi.runner"
+          "bionetgen.simulator.csimulator"
         ],
         "tests": [
           "tests.python.test_bionetgen",
