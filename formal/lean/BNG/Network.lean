@@ -125,6 +125,14 @@ theorem boundedNetworkClosure_nil_rules (fuel : Nat) (pool : List Mixture) :
   | zero => rfl
   | succ n => simp [boundedNetworkClosure, networkGenerationStep_nil]
 
+/-- If a step produces no additional representative (fixed-point by count),
+bounded closure returns that step result immediately. -/
+theorem boundedNetworkClosure_succ_of_fixpoint (fuel : Nat)
+    (rules : List RuleDirection) (pool : List Mixture)
+    (hfix : ((networkGenerationStep rules pool).length == pool.length) = true) :
+    boundedNetworkClosure (fuel + 1) rules pool = networkGenerationStep rules pool := by
+  simp [boundedNetworkClosure, hfix]
+
 
 theorem addProductsModuloIso_cons (p : Mixture) (ps pool : List Mixture) :
     addProductsModuloIso pool (p :: ps) =
