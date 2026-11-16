@@ -54,8 +54,7 @@ UNDEFINED_AT_THE_INITIAL_POINT = """<?xml version="1.0" encoding="UTF-8"?>
 </sbml>
 """
 
-# A compartment whose size an event changes, with a rate rule on a
-# concentration-valued species: the Atomizer refuses this on purpose.
+# Preserve the historical protected case/fixture ID.
 EVENT_DRIVEN_COMPARTMENT = """<?xml version="1.0" encoding="UTF-8"?>
 <sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
   <model id="event_driven_compartment">
@@ -91,6 +90,34 @@ EVENT_DRIVEN_COMPARTMENT = """<?xml version="1.0" encoding="UTF-8"?>
         </listOfEventAssignments>
       </event>
     </listOfEvents>
+  </model>
+</sbml>
+"""
+
+# A compartment whose size is driven by an assignment rule, with a rate rule
+# on a concentration-valued species: the Atomizer refuses this on purpose
+# because no explicit compartment derivative is available.
+ASSIGNMENT_RULE_COMPARTMENT = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="assignment_rule_compartment">
+    <listOfCompartments>
+      <compartment id="c" spatialDimensions="3" size="1" constant="false"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="S" compartment="c" initialAmount="1" hasOnlySubstanceUnits="false"
+        boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="p" value="2" constant="true"/>
+    </listOfParameters>
+    <listOfRules>
+      <assignmentRule variable="c">
+        <math xmlns="http://www.w3.org/1998/Math/MathML"><ci> p </ci></math>
+      </assignmentRule>
+      <rateRule variable="S">
+        <math xmlns="http://www.w3.org/1998/Math/MathML"><cn> 1 </cn></math>
+      </rateRule>
+    </listOfRules>
   </model>
 </sbml>
 """
@@ -867,7 +894,9 @@ def test_the_gate_records_the_atomizers_refusal_as_a_gap():
     inventory = _inventory()
     from bionetgen.atomizer.modern import Atomizer
 
-    result = Atomizer(atomize=False, quiet_mode=True).atomize(EVENT_DRIVEN_COMPARTMENT)
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(
+        ASSIGNMENT_RULE_COMPARTMENT
+    )
     assert result.success is False
     message = str(result.error)
     assert "compartment derivative" in message, message

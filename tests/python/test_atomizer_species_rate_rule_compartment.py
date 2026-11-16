@@ -228,8 +228,17 @@ def test_simultaneous_species_and_compartment_assignment_reproduces_reference(
     assert_matches_reference(samples, REFERENCE_01506)
 
 
-def test_event_driven_compartment_without_a_rate_rule_is_refused():
-    """A compartment that only changes at an event has no size derivative."""
+def test_event_driven_compartment_without_a_rate_rule_rescales_amount(tmp_path):
+    """An event-driven compartment size has no continuous derivative.
+
+    SBML Level 3 Version 2 Core Sec. 4.6 ties a concentration-valued species
+    amount to compartment size, and Sec. 4.9.4 makes a rate rule set the rate of
+    change of the named symbol. When the compartment size changes only by
+    discrete event assignments, dV/dt is zero between events, so the continuous
+    amount-rate form is dN/dt = V(t) * dC/dt while V(t) follows the
+    event-updated compartment size. A volume-only event must preserve the
+    species concentration and rescale its amount at the event boundary.
+    """
 
     from bionetgen.atomizer.modern import Atomizer
 
@@ -240,12 +249,50 @@ def test_event_driven_compartment_without_a_rate_rule_is_refused():
         "",
     )
     converted = Atomizer(atomize=False, quiet_mode=True).atomize(xml)
-    assert not converted.success
-    assert (
-        "species concentration rate rule requires an explicit compartment derivative"
-        in converted.error
-    )
-    assert "event-driven compartment size without a rate rule" in converted.error
+    assert converted.success, converted.error
+    bngl = converted.bngl
+
+    assert "__rate_rule__S1() = (0.4) * __compartment_C1__" in bngl
+    assert "__rate_rule__C1()" not in bngl
+    assert 'setParameter("__compartment_C1__", "0.2")' in bngl
+    assert "M___rate_rule_state__C1" not in bngl
+    assert 'setConcentration("@C1:M_S1()", "0.036")' in bngl
+
+    # Analytic trajectory (independent derivation): C(t)=0.4*t (continuous),
+    # V=0.5 for t<0.45 and V=0.2 for t>=0.45, N(t)=V(t)*C(t) with
+    # concentration preserved across the volume-only event.
+    grid = [0.0, 0.1, 0.2, 0.3, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0]
+    samples = run_actions(sample_on_reference_grid(bngl, grid), tmp_path)
+    expected = [
+        (0.0, 0.5, 0.0, 0.0),
+        (0.1, 0.5, 0.02, 0.04),
+        (0.2, 0.5, 0.04, 0.08),
+        (0.3, 0.5, 0.06, 0.12),
+        (0.4, 0.5, 0.08, 0.16),
+        (0.45, 0.2, 0.036, 0.18),
+        (0.5, 0.2, 0.04, 0.2),
+        (0.6, 0.2, 0.048, 0.24),
+        (0.7, 0.2, 0.056, 0.28),
+        (0.8, 0.2, 0.064, 0.32),
+        (0.9, 0.2, 0.072, 0.36),
+        (1.0, 0.2, 0.08, 0.4),
+    ]
+    for time, compartment, amount, concentration in expected:
+        row = samples[round(time, 9)]
+        for name, value in (
+            ("C1_amt", compartment),
+            ("S1_amt", amount),
+            ("x", concentration),
+        ):
+            if name == "C1_amt" and name not in row:
+                # Event-driven compartment parameter models may not expose a
+                # compartment amount observable; concentration/amount checks
+                # above still validate the SBML volume-change semantics.
+                continue
+            tolerance = ABSOLUTE_TOLERANCE + RELATIVE_TOLERANCE * abs(value)
+            assert (
+                abs(row[name] - value) <= tolerance
+            ), f"{name} at t={time}: {row[name]!r} != {value!r}"
 
 
 @pytest.mark.parametrize("volume", [0.5, 1.75])
