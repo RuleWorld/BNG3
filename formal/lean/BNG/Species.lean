@@ -162,4 +162,16 @@ theorem addSpeciesModuloIso_idempotent_of_iso (pool : List Mixture) (candidate :
     addSpeciesModuloIso pool candidate = pool := by
   simp [addSpeciesModuloIso, hiso]
 
+/-- Exact bounded identity accumulation: a representative is added iff no
+graph-isomorphic representative already exists in the pool (for the named
+supported class oracle). -/
+theorem addSpeciesModuloIso_length (pool : List Mixture) (candidate : Mixture) :
+    (addSpeciesModuloIso pool candidate).length =
+      if pool.any (fun existing => existing.isomorphicSpecies candidate) then pool.length
+      else pool.length + 1 := by
+  unfold addSpeciesModuloIso
+  by_cases h : pool.any (fun existing => existing.isomorphicSpecies candidate) = true
+  · simp [h]
+  · simp [h]
+
 end BNG
