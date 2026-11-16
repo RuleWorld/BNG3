@@ -19,13 +19,12 @@ def run(
     """
     PyBioNetGen-compatible runner API.
 
-    Returns a :class:`bionetgen.core.tools.result.BNGResult`.
+    For action-workflow runs, returns a :class:`bionetgen.core.tools.result.BNGResult`.
+    When a single-simulation override is requested (``method``, ``t_span`` or
+    ``n_points``), returns the modern in-memory simulation result for direct
+    analysis.
     """
-    from bionetgen.compat.runner import run as compat_run
-
-    # Preserve PyBioNetGen's argument surface. BNG3 implements the runner via
-    # the compatibility backend; unsupported legacy combinations raise explicit
-    # errors from the compat layer.
+    # Preserve PyBioNetGen's argument surface.
     if format is not None and str(format).lower() != "bngl":
         from bionetgen.core.exc import BNGFormatError
 
@@ -37,7 +36,27 @@ def run(
     if simulator not in {"auto", "native", "subprocess", "bngsim"}:
         raise ValueError("simulator must be 'auto', 'native', 'subprocess' or 'bngsim'")
 
-    # Explicit method/t_span/n_points are handled by compat runner as overrides.
+    wants_single_sim = simulator == "bngsim" or any(
+        value is not None for value in (method, t_span, n_points)
+    )
+    if wants_single_sim:
+        from bionetgen.model import load
+
+        if t_span is None:
+            t_start, t_end = 0.0, 100.0
+        else:
+            t_start, t_end = t_span
+        return load(inp).simulate(
+            method=method or "ode",
+            t_start=float(t_start),
+            t_end=float(t_end),
+            n_steps=int(n_points if n_points is not None else 100),
+            backend="bngsim" if simulator == "bngsim" else "native",
+            verbose=not suppress,
+        )
+
+    from bionetgen.compat.runner import run as compat_run
+
     return compat_run(
         inp,
         out=out,
