@@ -118,4 +118,10 @@ theorem networkGenerationStep_nil (pool : List Mixture) :
     networkGenerationStep [] pool = pool := by
   simp [networkGenerationStep]
 
+
+theorem addProductsModuloIso_cons (p : Mixture) (ps pool : List Mixture) :
+    addProductsModuloIso pool (p :: ps) =
+      addProductsModuloIso (addSpeciesModuloIso pool p) ps := by
+  simp [addProductsModuloIso, List.foldl]
+
 end BNG

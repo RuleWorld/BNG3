@@ -82,6 +82,27 @@ end model
         "expected_count": 3,
         "expected_species": ["A(x~u)", "B(y)", "A(x~u!1).B(y!1)"],
     },
+    {
+        "name": "dissociation_finite_closure",
+        "bngl": """begin model
+begin parameters
+k 1
+end parameters
+begin molecule types
+A(x~u)
+B(y)
+end molecule types
+begin seed species
+A(x~u!1).B(y!1) 1
+end seed species
+begin reaction rules
+A(x!1).B(y!1) -> A(x) + B(y) k
+end reaction rules
+end model
+""",
+        "expected_count": 3,
+        "expected_species": ["A(x~u!1).B(y!1)", "A(x~u)", "B(y)"],
+    },
 ]
 
 
@@ -133,6 +154,27 @@ end model
 """,
         "expected_count": 4,
         "must_not_match_species": ["A(x~u)", "B(y)", "A(x~u!1).B(y!1)"],
+    },
+    {
+        "name": "dissociation_noop_rule_negative",
+        "bngl": """begin model
+begin parameters
+k 1
+end parameters
+begin molecule types
+A(x~u)
+B(y)
+end molecule types
+begin seed species
+A(x~u!1).B(y!1) 1
+end seed species
+begin reaction rules
+A(x!1).B(y!1) -> A(x!1).B(y!1) k
+end reaction rules
+end model
+""",
+        "expected_count": 1,
+        "must_not_match_species": ["A(x~u!1).B(y!1)", "A(x~u)", "B(y)"],
     },
 ]
 
@@ -255,6 +297,8 @@ def main() -> int:
         "binding_pool_contains_product_mod_iso": "1",
         "reversible_binding_finite_closure": "3",
         "reversible_pool_contains_all_mod_iso": "1",
+        "dissociation_finite_closure": "3",
+        "dissociation_pool_contains_all_mod_iso": "1",
     }
     for k, v in expected_lean.items():
         if lean.get(k) != v:

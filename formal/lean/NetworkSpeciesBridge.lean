@@ -81,6 +81,11 @@ def results : List CaseResult :=
       speciesCount := (if bindingClosedPool.any (fun s => s.isomorphicSpecies seedA)
         && bindingClosedPool.any (fun s => s.isomorphicSpecies seedB)
         && bindingClosedPool.any (fun s => s.isomorphicSpecies productAB) then 1 else 0) }
+  , { name := "dissociation_finite_closure", speciesCount := bindingClosedPool.length }
+  , { name := "dissociation_pool_contains_all_mod_iso",
+      speciesCount := (if bindingClosedPool.any (fun s => s.isomorphicSpecies seedA)
+        && bindingClosedPool.any (fun s => s.isomorphicSpecies seedB)
+        && bindingClosedPool.any (fun s => s.isomorphicSpecies productAB) then 1 else 0) }
   ]
 
 def emit (r : CaseResult) : String :=
