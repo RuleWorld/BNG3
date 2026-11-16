@@ -364,3 +364,34 @@ def test_mutation_observable_relation_detected():
         assert bionetgen.semantic_equal(m_base, m_mut, version="0.2") is False
     except bionetgen.EqualityUndecided:
         pass
+
+
+def test_adversarial_valid_delay_fixture_roundtrips():
+    doc = _load("valid_delay.json")
+    jsonschema.validate(doc, SCHEMA)
+    restored = bionetgen.from_bngir(doc)
+    assert "delayed_rules" in doc["features"]["used"]
+    v2 = bionetgen.from_bngir(bionetgen.to_bngir(restored, version="0.2"))
+    try:
+        assert bionetgen.semantic_equal(restored, v2, version="0.2") is True
+    except bionetgen.EqualityUndecided:
+        # Delay semantics may require dedicated certificates; roundtrip must
+        # still preserve the wire-level delay contract.
+        assert json.loads(bionetgen.to_bngir(v2, version="0.2"))["model"]["rules"][0][
+            "delay"
+        ] == doc["model"]["rules"][0]["delay"]
+
+
+def test_mutation_dropped_delay_detected():
+    base = _load("valid_delay.json")
+    mutated = _load("mutation_dropped_delay.json")
+    jsonschema.validate(base, SCHEMA)
+    jsonschema.validate(mutated, SCHEMA)
+    assert base != mutated
+    m_base = bionetgen.from_bngir(base)
+    m_mut = bionetgen.from_bngir(mutated)
+    try:
+        eq = bionetgen.semantic_equal(m_base, m_mut, version="0.2")
+        assert eq is False
+    except bionetgen.EqualityUndecided as exc:
+        assert exc.diagnostic.get("status") == "undecided"
