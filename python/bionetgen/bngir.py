@@ -3859,7 +3859,11 @@ def exact_process_equal(
                 else []
             ),
             "rule_execution_features": sorted(
-                json.dumps(_rule_execution_signature(rule), sort_keys=True, separators=(",", ":"))
+                json.dumps(
+                    _rule_execution_signature(rule),
+                    sort_keys=True,
+                    separators=(",", ":"),
+                )
                 for rule in rules
                 if isinstance(rule, Mapping)
                 and (
