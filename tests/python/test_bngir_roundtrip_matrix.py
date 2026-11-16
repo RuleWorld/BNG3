@@ -134,6 +134,24 @@ begin reaction rules
 end reaction rules
 end model
 """,
+    "consuming_delay": r"""
+begin model
+begin parameters
+    k 1
+    tau 2
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 5
+end seed species
+begin reaction rules
+    A() -> B() k delay=tau
+end reaction rules
+end model
+""",
     "compartment_parent_v01": r"""
 begin model
 begin parameters
