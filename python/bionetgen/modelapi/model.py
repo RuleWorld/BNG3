@@ -83,7 +83,7 @@ class bngmodel:
     def __init__(
         self, bngl_model, BNGPATH=def_bng_path, generate_network=False, suppress=True
     ):
-        self.logger = BNGLogger(app=app)
+        self.logger = BNGLogger()
         self.active_blocks = []
         # We want blocks to be printed in the same order every time
         self._block_order = [
