@@ -52,3 +52,28 @@ def test_allowed_dirty_checkout_is_reported(recorder, monkeypatch):
     monkeypatch.setattr(recorder.subprocess, "run", run)
     report = recorder.build_release_record(skip_tests=True, allow_dirty=True)
     assert report["source"]["dirty"] is True
+
+
+@pytest.mark.parametrize(
+    "recorder",
+    [
+        record_delay_release,
+        record_hybrid_release,
+        record_issue138_release,
+        record_issue143_release,
+        record_issue147_release,
+        record_jax_release,
+    ],
+)
+def test_untracked_source_is_reported_dirty(recorder, monkeypatch):
+    original_run = recorder.subprocess.run
+
+    def run(cmd, **kwargs):
+        result = original_run(cmd, **kwargs)
+        if "status" in cmd:
+            result.stdout = "" if "--untracked-files=no" in cmd else "?? source.py\n"
+        return result
+
+    monkeypatch.setattr(recorder.subprocess, "run", run)
+    report = recorder.build_release_record(skip_tests=True, allow_dirty=True)
+    assert report["source"]["dirty"] is True

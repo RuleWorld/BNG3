@@ -155,7 +155,7 @@ def build_release_record(
     revision = expected_revision or head
 
     dirty = subprocess.run(
-        ["git", "-C", str(root), "status", "--porcelain", "--untracked-files=no"],
+        ["git", "-C", str(root), "status", "--porcelain"],
         check=True,
         capture_output=True,
         text=True,
