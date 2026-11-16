@@ -7,7 +7,6 @@ import re
 import sys
 from pathlib import Path
 
-
 EXPECTED = {
     "coverage-species-bond-blind": {
         "SpeciesIsoMap.validFor_bond_count": "Type mismatch",
