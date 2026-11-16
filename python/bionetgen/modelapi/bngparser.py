@@ -1,4 +1,4 @@
-import xmltodict, re
+import re
 
 from bionetgen.main import BioNetGen
 from bionetgen.core.exc import BNGParseError, BNGModelError
@@ -256,6 +256,13 @@ class BNGParser:
         will use XML parser objects to generate each block to attach to the
         model object
         """
+        try:
+            import xmltodict
+        except ImportError as exc:
+            raise BNGParseError(
+                getattr(self.bngfile, "path", "<unknown>"),
+                "xmltodict is required to parse BNG-XML/model API XML input",
+            ) from exc
         xml_dict = xmltodict.parse(xml_str)
         # catch non-BNG XML files
         if "sbml" not in xml_dict:
