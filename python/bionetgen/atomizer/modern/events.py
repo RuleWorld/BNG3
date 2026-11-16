@@ -627,6 +627,13 @@ class EventTranslationContext:
     # Return the BNGL parameter name for an event-mutable global SBML
     # parameter, when its event assignment can be represented natively.
     resolve_native_parameter: Callable[[str], Optional[str]] = lambda _identifier: None
+    # Return additional scheduled sets when a compartment volume changes by
+    # event assignment. Used to rescale concentration-valued species amounts so
+    # that concentrations remain continuous across a discrete volume change,
+    # except for species explicitly assigned in the same event.
+    resolve_compartment_volume_rescales: Callable[
+        [str, SBMLEvent, float, float, set[str]], Sequence[Tuple[str, str, float]]
+    ] = lambda _compartment, _event, _time, _new_volume, _assigned: ()
 
     @property
     def resolveSpeciesPattern(self):
@@ -8833,6 +8840,7 @@ def synthesize_event_actions(
 
         sets: List[Tuple[str, str, float]] = []
         event_values: List[Tuple[str, float]] = []
+        assigned_species_ids: set[str] = set()
         failure: Optional[str] = None
         for assignment in event.assignments:
             variable, expression = _event_assignment(assignment)
@@ -8942,6 +8950,7 @@ def synthesize_event_actions(
                         context, variable, event, execution_time, value, pattern
                     )
                 )
+                assigned_species_ids.add(standardize_name(variable))
             elif context.is_compartment(variable):
                 state_pattern = context.resolve_compartment_state_pattern(variable)
                 if state_pattern:
@@ -8950,14 +8959,30 @@ def synthesize_event_actions(
                     sets.append(("amount", state_pattern, value))
                 else:
                     sets.append(("volume", standardize_name(variable), value))
+                    sets.extend(
+                        context.resolve_compartment_volume_rescales(
+                            variable,
+                            event,
+                            execution_time,
+                            value,
+                            assigned_species_ids,
+                        )
+                    )
             elif context.is_param(variable):
                 sets.append(("param", standardize_name(variable), value))
-                sets.extend(
-                    ("volume", standardize_name(compartment), value)
-                    for compartment in context.resolve_event_volume_assignment_targets(
-                        variable, event
+                for compartment in context.resolve_event_volume_assignment_targets(
+                    variable, event
+                ):
+                    sets.append(("volume", standardize_name(compartment), value))
+                    sets.extend(
+                        context.resolve_compartment_volume_rescales(
+                            compartment,
+                            event,
+                            execution_time,
+                            value,
+                            assigned_species_ids,
+                        )
                     )
-                )
             else:
                 failure = (
                     f' assignment target "{variable}" is neither a known species '

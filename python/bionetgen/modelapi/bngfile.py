@@ -90,7 +90,17 @@ class BNGFile:
                     cpp_model.set_model_name(
                         os.path.splitext(os.path.basename(model_file))[0]
                     )
-                content = cpp.io.write_xml_string(cpp_model)
+                try:
+                    content = cpp.io.write_xml_string(cpp_model)
+                except RuntimeError as e:
+                    msg = str(e)
+                    if (
+                        "delay" in msg.lower()
+                        and "not supported by bng-xml export" in msg.lower()
+                    ):
+                        content = cpp.io.write_xml_string_structural(cpp_model)
+                    else:
+                        raise
                 try:
                     xml_file.seek(0)
                     xml_file.truncate(0)

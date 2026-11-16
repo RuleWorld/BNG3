@@ -312,6 +312,12 @@ NATIVE_DECIDE_ALLOWLIST = {
     # One entry, pre-existing before this validator learned to count.  The
     # statement is substantive; only the proof method is trusted.
     "BNG/Examples.lean": "nfnextBridgeContract_holds -- substantive statement, trusted proof method",
+    # Executable regression fixtures for the #168 graph-identity bridge: anonymous
+    # examples/named fixtures in this runner use native_decide on concrete finite
+    # mixtures (compiler-checked, kernel-opaque per-declaration axioms) to pin
+    # reflexive/permutation/adversarial identity and bounded dedup decisions that
+    # are independently cross-checked by the production-artifact bridge script.
+    "GraphIdentityBridge.lean": "anonymous fixture examples: trusted compiled evaluation for concrete graph-identity bridge cases",
 }
 
 # A reason is not decoration.  Without this, `"BNG/Foo.lean": ""` silently

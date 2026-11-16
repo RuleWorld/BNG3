@@ -660,6 +660,26 @@
         "non_consuming": {
           "type": "boolean"
         },
+        "driving_work": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/expression"
+            }
+          ]
+        },
+        "driving_work": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/expression"
+            }
+          ]
+        },
         "modifiers": {
           "type": "array",
           "items": {

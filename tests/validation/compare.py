@@ -20,7 +20,11 @@ from fractions import Fraction
 from functools import lru_cache
 from pathlib import Path
 
-import numpy as np
+try:
+    import numpy as np
+except ModuleNotFoundError:  # pragma: no cover - optional in lightweight environments
+    np = None  # type: ignore[assignment]
+
 
 _WS = re.compile(r"\s+")
 

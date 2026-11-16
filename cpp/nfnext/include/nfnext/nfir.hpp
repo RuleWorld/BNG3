@@ -21,6 +21,7 @@ struct MoleculeTypeIR {
     TypeId id{0};
     std::string name;
     std::vector<SiteSpec> sites;
+    bool is_population{false};
 };
 
 enum class RateLawKind : std::uint8_t {

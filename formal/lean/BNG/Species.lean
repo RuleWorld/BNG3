@@ -17,7 +17,7 @@ fast canonicalizer should agree with on generated fixtures.
 /-- A candidate bijection between molecule-instance IDs. -/
 structure SpeciesIsoMap where
   moleculeMap : List (MoleculeInstanceId × MoleculeInstanceId) := []
-  deriving Repr
+  deriving Repr, DecidableEq, BEq
 
 /-- Lookup a mapped molecule. -/
 def SpeciesIsoMap.lookup? (m : SpeciesIsoMap) (id : MoleculeInstanceId) : Option MoleculeInstanceId :=
@@ -47,6 +47,53 @@ def runtimeMoleculesEquivalent (a b : RuntimeMolecule) : Bool :=
   a.compartment == b.compartment &&
   runtimeSitesEquivalent a.sites b.sites
 
+/-- Kernel-proved renaming/canonicalization symmetry: site-level component/state
+correspondence is symmetric for the supported class. -/
+theorem runtimeSitesEquivalent_symm (a b : List RuntimeSite)
+    (h : runtimeSitesEquivalent a b = true) : runtimeSitesEquivalent b a = true := by
+  simp [runtimeSitesEquivalent, Bool.and_eq_true] at h ⊢
+  rcases h with ⟨⟨hlen, hab⟩, hba⟩
+  refine ⟨⟨?_, ?_⟩, ?_⟩
+  · simpa using hlen.symm
+  · exact hba
+  · exact hab
+
+/-- Identity mapping on a molecule-ID list. -/
+def SpeciesIsoMap.idOn (ids : List MoleculeInstanceId) : SpeciesIsoMap :=
+  { moleculeMap := ids.map (fun id => (id, id)) }
+
+/-- Invert a candidate bijection by swapping domain and range entries. -/
+def SpeciesIsoMap.inverse (m : SpeciesIsoMap) : SpeciesIsoMap :=
+  { moleculeMap := m.moleculeMap.map (fun pair => (pair.2, pair.1)) }
+
+@[simp] theorem SpeciesIsoMap.domain_inverse (m : SpeciesIsoMap) :
+    m.inverse.domain = m.range := by
+  simp [SpeciesIsoMap.inverse, SpeciesIsoMap.domain, SpeciesIsoMap.range]
+
+@[simp] theorem SpeciesIsoMap.range_inverse (m : SpeciesIsoMap) :
+    m.inverse.range = m.domain := by
+  simp [SpeciesIsoMap.inverse, SpeciesIsoMap.domain, SpeciesIsoMap.range]
+
+@[simp] theorem SpeciesIsoMap.inverse_inverse (m : SpeciesIsoMap) :
+    m.inverse.inverse = m := by
+  cases m with
+  | mk pairs =>
+      simp [SpeciesIsoMap.inverse, List.map_map, Function.comp_def]
+
+@[simp] theorem SpeciesIsoMap.domain_idOn (ids : List MoleculeInstanceId) :
+    (SpeciesIsoMap.idOn ids).domain = ids := by
+  unfold SpeciesIsoMap.idOn SpeciesIsoMap.domain
+  induction ids with
+  | nil => rfl
+  | cons x xs ih => simp [ih]
+
+@[simp] theorem SpeciesIsoMap.range_idOn (ids : List MoleculeInstanceId) :
+    (SpeciesIsoMap.idOn ids).range = ids := by
+  unfold SpeciesIsoMap.idOn SpeciesIsoMap.range
+  induction ids with
+  | nil => rfl
+  | cons x xs ih => simp [ih]
+
 /-- Map one concrete endpoint through a molecule-ID bijection. -/
 def SpeciesIsoMap.mapEndpoint? (mapping : SpeciesIsoMap) (e : ConcreteEndpoint) : Option ConcreteEndpoint :=
   (mapping.lookup? e.molecule).map (fun molecule =>
@@ -75,6 +122,8 @@ def SpeciesIsoMap.validFor (mapping : SpeciesIsoMap) (left right : Mixture) : Bo
   bondsPreservedForward left right mapping &&
   left.bonds.length == right.bonds.length
 
+
+
 /-- Brute-force every raw molecule bijection candidate. -/
 def candidateSpeciesIsoMaps (left right : Mixture) : List SpeciesIsoMap :=
   let rec build : List RuntimeMolecule → List SpeciesIsoMap
@@ -102,5 +151,267 @@ def Mixture.singleComplex (mix : Mixture) : Bool :=
 def addSpeciesModuloIso (pool : List Mixture) (candidate : Mixture) : List Mixture :=
   if pool.any (fun existing => existing.isomorphicSpecies candidate) then pool
   else pool ++ [candidate]
+
+/--
+Named supported class for this formal identity oracle: finite runtime mixtures
+compared by typed molecular graph isomorphism over molecule type, component
+identity/state, optional compartments, and exact undirected bonds.  The oracle
+accepts only bijections validated by `SpeciesIsoMap.validFor`.
+-/
+def SupportedGraphIdentityClass (_mix : Mixture) : Prop := True
+
+/-- A valid isomorphism witness enforces equal bond counts (structural
+invariant for compared artifacts in this supported class). -/
+theorem SpeciesIsoMap.validFor_bond_count (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) :
+    left.bonds.length = right.bonds.length := by
+  simp [SpeciesIsoMap.validFor, Bool.and_eq_true] at h
+  simpa using h.2
+
+/-- A valid isomorphism witness bijects the full molecule-ID sets of both sides
+(renaming/coverage invariant). -/
+theorem SpeciesIsoMap.validFor_bijective (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) :
+    m.bijectiveFor left right = true := by
+  simp [SpeciesIsoMap.validFor, Bool.and_eq_true] at h
+  exact h.1.1.1
+
+/-- Kernel-proved renaming/coverage invariant: bijective witnesses cover the
+full artifact molecule-ID sets by extensional set equality. -/
+theorem SpeciesIsoMap.bijectiveFor_covers (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.bijectiveFor left right = true) :
+    sameMoleculeIdSet m.domain (left.molecules.map (fun x => x.id)) = true ∧
+      sameMoleculeIdSet m.range (right.molecules.map (fun x => x.id)) = true := by
+  simp [SpeciesIsoMap.bijectiveFor, Bool.and_eq_true] at h
+  exact ⟨h.1.2, h.2⟩
+
+theorem SpeciesIsoMap.validFor_covers (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) :
+    sameMoleculeIdSet m.domain (left.molecules.map (fun x => x.id)) = true ∧
+      sameMoleculeIdSet m.range (right.molecules.map (fun x => x.id)) = true :=
+  m.bijectiveFor_covers left right (m.validFor_bijective left right h)
+
+theorem SpeciesIsoMap.bijectiveFor_map_length (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.bijectiveFor left right = true) :
+    m.moleculeMap.length = left.molecules.length ∧ m.moleculeMap.length = right.molecules.length := by
+  have hc := m.bijectiveFor_covers left right h
+  rcases hc with ⟨hL, hR⟩
+  simp [sameMoleculeIdSet, Bool.and_eq_true] at hL hR
+  have hLd : m.domain.length = (left.molecules.map (fun x => x.id)).length := by
+    rcases hL with ⟨⟨⟨⟨_, _⟩, hlen⟩, _⟩, _⟩
+    simpa using hlen
+  have hRd : m.range.length = (right.molecules.map (fun x => x.id)).length := by
+    rcases hR with ⟨⟨⟨⟨_, _⟩, hlen⟩, _⟩, _⟩
+    simpa using hlen
+  constructor
+  · simpa [SpeciesIsoMap.domain] using hLd
+  · simpa [SpeciesIsoMap.range] using hRd
+
+theorem SpeciesIsoMap.validFor_map_length (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) :
+    m.moleculeMap.length = left.molecules.length ∧ m.moleculeMap.length = right.molecules.length :=
+  m.bijectiveFor_map_length left right (m.validFor_bijective left right h)
+
+/-- Renaming/canonicalization symmetry on the supported class: inverting a
+bijective molecule-id witness swaps the covered artifact-ID sets. -/
+theorem SpeciesIsoMap.inverse_bijectiveFor (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.bijectiveFor left right = true) :
+    m.inverse.bijectiveFor right left = true := by
+  simp [SpeciesIsoMap.bijectiveFor, Bool.and_eq_true] at h ⊢
+  rcases h with ⟨⟨⟨hdomU, hranU⟩, hdomSet⟩, hranSet⟩
+  exact ⟨⟨⟨by simpa using hranU, by simpa using hdomU⟩, by simpa using hranSet⟩, by simpa using hdomSet⟩
+
+/-- Kernel-proved renaming/coverage invariant: a bijective witness implies equal
+molecule-instance counts for the supported class artifacts. -/
+theorem SpeciesIsoMap.bijectiveFor_molecule_count (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.bijectiveFor left right = true) :
+    left.molecules.length = right.molecules.length := by
+  have hb := h
+  simp [SpeciesIsoMap.bijectiveFor, Bool.and_eq_true] at hb
+  rcases hb with ⟨⟨⟨_, _⟩, hL⟩, hR⟩
+  -- extract length equality from sameMoleculeIdSet (a && b && c && d && e form)
+  simp [sameMoleculeIdSet, Bool.and_eq_true] at hL hR
+  -- hL: (((allUnique domain && allUnique leftIds) && domain.length == leftIds.length) && allContained domain leftIds) && allContained leftIds domain
+  -- easier: get beq on lengths
+  have hLlen : m.domain.length = left.molecules.length := by
+    rcases hL with ⟨⟨⟨⟨_, _⟩, hlen⟩, _⟩, _⟩
+    simpa [List.length_map] using hlen
+  have hRlen : m.range.length = right.molecules.length := by
+    rcases hR with ⟨⟨⟨⟨_, _⟩, hlen⟩, _⟩, _⟩
+    simpa [List.length_map] using hlen
+  have hdom : m.domain.length = m.moleculeMap.length := by simp [SpeciesIsoMap.domain]
+  have hran : m.range.length = m.moleculeMap.length := by simp [SpeciesIsoMap.range]
+  omega
+
+/-- A valid isomorphism witness implies equal molecule-instance counts (exact
+bounded renaming/coverage invariant for the supported class). -/
+theorem SpeciesIsoMap.validFor_molecule_count (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) :
+    left.molecules.length = right.molecules.length := by
+  exact m.bijectiveFor_molecule_count left right (m.validFor_bijective left right h)
+
+/-- Kernel-proved renaming invariant: a valid witness preserves local molecule
+labels (type, compartment, component/state correspondence) for mapped pairs. -/
+theorem SpeciesIsoMap.validFor_molecules (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) :
+    m.moleculeMap.all (fun pair =>
+      match left.findMolecule? pair.1, right.findMolecule? pair.2 with
+      | some a, some b => runtimeMoleculesEquivalent a b
+      | _, _ => false) = true := by
+  simp only [SpeciesIsoMap.validFor, Bool.and_eq_true] at h
+  exact h.1.1.2
+
+/-- A valid renaming witness maps only existing concrete molecule instances. -/
+theorem SpeciesIsoMap.validFor_molecule_lookups (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) :
+    m.moleculeMap.all (fun pair =>
+      (left.findMolecule? pair.1).isSome && (right.findMolecule? pair.2).isSome) = true := by
+  have hall := m.validFor_molecules left right h
+  rw [List.all_eq_true] at hall ⊢
+  intro pair hp
+  specialize hall pair hp
+  cases h1 : left.findMolecule? pair.1 <;> cases h2 : right.findMolecule? pair.2 <;>
+    simp [h1, h2] at hall ⊢
+
+/-- Kernel-proved renaming/canonicalization invariant: a valid witness preserves
+bond structure in the forward direction for the supported class. -/
+theorem SpeciesIsoMap.validFor_bondsForward (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) : bondsPreservedForward left right m = true := by
+  simp only [SpeciesIsoMap.validFor, Bool.and_eq_true] at h
+  exact h.1.2
+
+/-- Forward bond preservation implies every bond endpoint is mapped by the
+renaming witness (coverage of bonded structure in the supported class). -/
+theorem bondsPreservedForward_endpoints_mapped (m : SpeciesIsoMap) (left right : Mixture)
+    (h : bondsPreservedForward left right m = true) :
+    left.bonds.all (fun edge =>
+      (m.mapEndpoint? edge.a).isSome && (m.mapEndpoint? edge.b).isSome) = true := by
+  simp [bondsPreservedForward, List.all_eq_true] at h ⊢
+  intro edge he
+  specialize h edge he
+  cases ha : m.mapEndpoint? edge.a <;> cases hb : m.mapEndpoint? edge.b <;> simp [ha, hb] at h ⊢
+
+theorem SpeciesIsoMap.validFor_bond_endpoints_mapped (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) :
+    left.bonds.all (fun edge =>
+      (m.mapEndpoint? edge.a).isSome && (m.mapEndpoint? edge.b).isSome) = true :=
+  bondsPreservedForward_endpoints_mapped m left right (m.validFor_bondsForward left right h)
+
+/-- Kernel-proved renaming witness property: bijective mapping domain IDs are unique. -/
+theorem SpeciesIsoMap.bijectiveFor_domain_unique (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.bijectiveFor left right = true) : allUnique m.domain = true := by
+  simp [SpeciesIsoMap.bijectiveFor, Bool.and_eq_true] at h
+  exact h.1.1.1
+
+/-- Kernel-proved renaming witness property: bijective mapping range IDs are unique. -/
+theorem SpeciesIsoMap.bijectiveFor_range_unique (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.bijectiveFor left right = true) : allUnique m.range = true := by
+  simp [SpeciesIsoMap.bijectiveFor, Bool.and_eq_true] at h
+  exact h.1.1.2
+
+/-- A valid isomorphism witness has a unique-ID domain (supported-class renaming). -/
+theorem SpeciesIsoMap.validFor_domain_unique (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) : allUnique m.domain = true :=
+  m.bijectiveFor_domain_unique left right (m.validFor_bijective left right h)
+
+/-- A valid isomorphism witness has a unique-ID range (supported-class renaming). -/
+theorem SpeciesIsoMap.validFor_range_unique (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) : allUnique m.range = true :=
+  m.bijectiveFor_range_unique left right (m.validFor_bijective left right h)
+
+/-- Oracle-positive identity implies equal molecule and bond counts for the
+explicit supported class artifacts. -/
+theorem isomorphicSpecies_counts (left right : Mixture)
+    (h : left.isomorphicSpecies right = true) :
+    left.molecules.length = right.molecules.length ∧
+      left.bonds.length = right.bonds.length := by
+  simp [Mixture.isomorphicSpecies, Bool.and_eq_true] at h
+  refine ⟨?_, ?_⟩
+  · simpa using h.1.1
+  · simpa using h.1.2
+
+/-- Kernel-proved extraction of a renaming/canonicalization witness from the
+supported-class graph-identity oracle decision. -/
+theorem isomorphicSpecies_witness (left right : Mixture)
+    (h : left.isomorphicSpecies right = true) :
+    ∃ m ∈ candidateSpeciesIsoMaps left right, m.validFor left right = true := by
+  simp [Mixture.isomorphicSpecies, Bool.and_eq_true] at h
+  exact h.2
+
+/-- Oracle-positive identity yields a bijective renaming witness (supported-class
+canonicalization/coverage property). -/
+theorem isomorphicSpecies_bijective_witness (left right : Mixture)
+    (h : left.isomorphicSpecies right = true) :
+    ∃ m ∈ candidateSpeciesIsoMaps left right, m.bijectiveFor left right = true := by
+  rcases isomorphicSpecies_witness left right h with ⟨m, hm, hv⟩
+  exact ⟨m, hm, m.validFor_bijective left right hv⟩
+
+/-- Oracle-positive identity implies preserved molecule labels and forward bond
+structure via some supported-class renaming witness. -/
+theorem isomorphicSpecies_structure_witness (left right : Mixture)
+    (h : left.isomorphicSpecies right = true) :
+    ∃ m ∈ candidateSpeciesIsoMaps left right,
+      (m.moleculeMap.all (fun pair =>
+        match left.findMolecule? pair.1, right.findMolecule? pair.2 with
+        | some a, some b => runtimeMoleculesEquivalent a b
+        | _, _ => false) = true) ∧ bondsPreservedForward left right m = true := by
+  rcases isomorphicSpecies_witness left right h with ⟨m, hm, hv⟩
+  exact ⟨m, hm, m.validFor_molecules left right hv, m.validFor_bondsForward left right hv⟩
+
+
+theorem addSpeciesModuloIso_preserves_existing (pool : List Mixture) (candidate : Mixture)
+    (existing : Mixture) (hmem : existing ∈ pool) :
+    existing ∈ addSpeciesModuloIso pool candidate := by
+  unfold addSpeciesModuloIso
+  by_cases h : pool.any (fun existing => existing.isomorphicSpecies candidate) = true
+  · simp [h, hmem]
+  · simp [h]
+    exact Or.inl hmem
+
+theorem addSpeciesModuloIso_idempotent_of_iso (pool : List Mixture) (candidate : Mixture)
+    (hiso : pool.any (fun existing => existing.isomorphicSpecies candidate) = true) :
+    addSpeciesModuloIso pool candidate = pool := by
+  simp [addSpeciesModuloIso, hiso]
+
+/-- Exact bounded identity: every pool member remains present after insertion
+attempt, and the candidate is represented modulo graph isomorphism. -/
+theorem addSpeciesModuloIso_contains_candidate_or_iso (pool : List Mixture) (candidate : Mixture) :
+    candidate ∈ addSpeciesModuloIso pool candidate ∨
+      ∃ existing ∈ pool, existing.isomorphicSpecies candidate = true := by
+  unfold addSpeciesModuloIso
+  by_cases h : pool.any (fun existing => existing.isomorphicSpecies candidate) = true
+  · right
+    rcases List.any_eq_true.mp h with ⟨existing, hex, hiso⟩
+    exact ⟨existing, hex, hiso⟩
+  · left
+    simp [h]
+
+/-- Exact bounded identity accumulation: a representative is added iff no
+graph-isomorphic representative already exists in the pool (for the named
+supported class oracle). -/
+theorem addSpeciesModuloIso_length (pool : List Mixture) (candidate : Mixture) :
+    (addSpeciesModuloIso pool candidate).length =
+      if pool.any (fun existing => existing.isomorphicSpecies candidate) then pool.length
+      else pool.length + 1 := by
+  unfold addSpeciesModuloIso
+  by_cases h : pool.any (fun existing => existing.isomorphicSpecies candidate) = true
+  · simp [h]
+  · simp [h]
+
+theorem addSpeciesModuloIso_length_ge (pool : List Mixture) (candidate : Mixture) :
+    pool.length ≤ (addSpeciesModuloIso pool candidate).length := by
+  rw [addSpeciesModuloIso_length]
+  by_cases h : pool.any (fun existing => existing.isomorphicSpecies candidate) = true <;> simp [h]
+
+theorem addSpeciesModuloIso_length_le_succ (pool : List Mixture) (candidate : Mixture) :
+    (addSpeciesModuloIso pool candidate).length ≤ pool.length + 1 := by
+  rw [addSpeciesModuloIso_length]
+  by_cases h : pool.any (fun existing => existing.isomorphicSpecies candidate) = true <;> simp [h]
+
+
+
+theorem addSpeciesModuloIso_empty (candidate : Mixture) :
+    addSpeciesModuloIso [] candidate = [candidate] := by
+  simp [addSpeciesModuloIso]
 
 end BNG

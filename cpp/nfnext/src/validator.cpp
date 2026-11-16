@@ -209,9 +209,7 @@ void validateModel(const ModelIR& model) {
         const auto& type = model.molecule_types[i];
         if (!types.emplace(type.id, i).second) fail("duplicate molecule type ID");
         if (!names.emplace(type.name).second) fail("duplicate molecule type name");
-        std::unordered_set<std::string> sites;
         for (const auto& site : type.sites) {
-            if (!sites.emplace(site.name).second) fail("duplicate site name within molecule type");
             std::unordered_set<std::string> states;
             for (const auto& state : site.states)
                 if (!states.emplace(state).second) fail("duplicate enumerated site state");

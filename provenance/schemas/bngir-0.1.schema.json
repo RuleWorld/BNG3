@@ -4,72 +4,473 @@
   "title": "BNGIR JSON v0.1",
   "type": "object",
   "additionalProperties": false,
-  "required": ["format", "version", "features", "model", "protocol"],
+  "required": [
+    "format",
+    "version",
+    "features",
+    "model",
+    "protocol"
+  ],
   "properties": {
-    "format": {"const": "BNGIR"},
-    "version": {"const": "0.1"},
-    "features": {"$ref": "#/$defs/features"},
-    "model": {"$ref": "#/$defs/model"},
-    "protocol": {"$ref": "#/$defs/protocol"},
-    "provenance": {"type": "object"}
+    "format": {
+      "const": "BNGIR"
+    },
+    "version": {
+      "const": "0.1"
+    },
+    "features": {
+      "$ref": "#/$defs/features"
+    },
+    "model": {
+      "$ref": "#/$defs/model"
+    },
+    "protocol": {
+      "$ref": "#/$defs/protocol"
+    },
+    "provenance": {
+      "type": "object"
+    }
   },
   "$defs": {
     "features": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["required", "used"],
+      "required": [
+        "required",
+        "used"
+      ],
       "properties": {
-        "required": {"type": "array", "items": {"type": "string"}},
-        "used": {"type": "array", "items": {"type": "string"}}
+        "required": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "used": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "action": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["scope", "name", "arguments"],
+      "required": [
+        "scope",
+        "name",
+        "arguments"
+      ],
       "properties": {
-        "scope": {"enum": ["model", "simulation_protocol"]},
-        "name": {"type": "string"},
-        "arguments": {"type": "object", "additionalProperties": {"type": "string"}}
+        "scope": {
+          "enum": [
+            "model",
+            "simulation_protocol"
+          ]
+        },
+        "name": {
+          "type": "string"
+        },
+        "arguments": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        }
       }
     },
     "component": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "allowed_states"],
+      "required": [
+        "name",
+        "allowed_states"
+      ],
       "properties": {
-        "name": {"type": "string"},
-        "allowed_states": {"type": "array", "items": {"type": "string"}}
+        "name": {
+          "type": "string"
+        },
+        "allowed_states": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
       }
     },
     "model": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "version", "substance_units", "options", "parameters", "molecule_types", "compartments", "seeds", "observables", "functions", "energy_patterns", "population_maps", "rules"],
+      "required": [
+        "name",
+        "version",
+        "substance_units",
+        "options",
+        "parameters",
+        "molecule_types",
+        "compartments",
+        "seeds",
+        "observables",
+        "functions",
+        "energy_patterns",
+        "population_maps",
+        "rules"
+      ],
       "properties": {
-        "name": {"type": "string"},
-        "version": {"type": "string"},
-        "substance_units": {"type": "string"},
-        "options": {"type": "object", "additionalProperties": {"type": "string"}},
-        "parameters": {"type": "array", "items": {"type": "object", "required": ["name", "expression"], "additionalProperties": false, "properties": {"name": {"type": "string"}, "expression": {"type": "string"}, "unit": {"type": "string"}}}},
-        "molecule_types": {"type": "array", "items": {"type": "object", "required": ["name", "population", "components"], "additionalProperties": false, "properties": {"name": {"type": "string"}, "population": {"type": "boolean"}, "components": {"type": "array", "items": {"$ref": "#/$defs/component"}}}}},
-        "compartments": {"type": "array", "items": {"type": "object", "required": ["name", "volume", "dimension", "parent"], "additionalProperties": false, "properties": {"name": {"type": "string"}, "volume": {"type": "number"}, "dimension": {"type": "integer"}, "parent": {"type": "string"}, "unit": {"type": "string"}}}},
-        "seeds": {"type": "array", "items": {"type": "object", "required": ["pattern", "amount", "constant", "compartment"], "additionalProperties": false, "properties": {"pattern": {"type": "string"}, "amount": {"type": "string"}, "constant": {"type": "boolean"}, "compartment": {"type": "string"}, "unit": {"type": "string"}}}},
-        "observables": {"type": "array", "items": {"type": "object", "required": ["name", "type", "patterns"], "additionalProperties": false, "properties": {"name": {"type": "string"}, "type": {"type": "string"}, "patterns": {"type": "array", "items": {"type": "string"}}}}},
-        "functions": {"type": "array", "items": {"type": "object", "required": ["name", "args", "expression"], "additionalProperties": false, "properties": {"name": {"type": "string"}, "args": {"type": "array", "items": {"type": "string"}}, "expression": {"type": "string"}}}},
-        "energy_patterns": {"type": "array", "items": {"type": "object", "required": ["label", "pattern", "expression"], "additionalProperties": false, "properties": {"label": {"type": "string"}, "pattern": {"type": "string"}, "expression": {"type": "string"}}}},
-        "barrier_patterns": {"type": "array", "items": {"type": "object", "required": ["label", "reactants", "products", "bidirectional", "expression"], "additionalProperties": false, "properties": {"label": {"type": "string"}, "reactants": {"type": "array", "items": {"type": "string"}}, "products": {"type": "array", "items": {"type": "string"}}, "bidirectional": {"type": "boolean"}, "expression": {"type": "string"}}}},
-        "population_maps": {"type": "array", "items": {"type": "object", "required": ["label", "pattern", "function", "args"], "additionalProperties": false, "properties": {"label": {"type": "string"}, "pattern": {"type": "string"}, "function": {"type": "string"}, "args": {"type": "array", "items": {"type": "string"}}}}},
-        "rules": {"type": "array", "items": {"type": "object", "required": ["name", "label", "reactants", "products", "rates", "modifiers", "bidirectional"], "additionalProperties": false, "properties": {"name": {"type": "string"}, "label": {"type": "string"}, "reactants": {"type": "array", "items": {"type": "string"}}, "products": {"type": "array", "items": {"type": "string"}}, "rates": {"type": "array", "items": {"type": "string"}}, "modifiers": {"type": "array", "items": {"type": "string"}}, "bidirectional": {"type": "boolean"}, "driving_work": {"type": "string"}, "delay": {"type": "string"}, "non_consuming": {"type": "boolean"}}}},
-        "unit_defaults": {"type": "object", "additionalProperties": {"type": "string"}},
-        "unit_definitions": {"type": "array"}
+        "name": {
+          "type": "string"
+        },
+        "version": {
+          "type": "string"
+        },
+        "substance_units": {
+          "type": "string"
+        },
+        "options": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "parameters": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "expression"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "expression": {
+                "type": "string"
+              },
+              "unit": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "molecule_types": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "population",
+              "components"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "population": {
+                "type": "boolean"
+              },
+              "components": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/$defs/component"
+                }
+              }
+            }
+          }
+        },
+        "compartments": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "volume",
+              "dimension",
+              "parent"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "volume": {
+                "type": "number"
+              },
+              "dimension": {
+                "type": "integer"
+              },
+              "parent": {
+                "type": "string"
+              },
+              "unit": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "seeds": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "pattern",
+              "amount",
+              "constant",
+              "compartment"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "pattern": {
+                "type": "string"
+              },
+              "amount": {
+                "type": "string"
+              },
+              "constant": {
+                "type": "boolean"
+              },
+              "compartment": {
+                "type": "string"
+              },
+              "unit": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "observables": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "type",
+              "patterns"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "type": {
+                "type": "string"
+              },
+              "patterns": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "functions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "args",
+              "expression"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "expression": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "energy_patterns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "label",
+              "pattern",
+              "expression"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "pattern": {
+                "type": "string"
+              },
+              "expression": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "barrier_patterns": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "label",
+              "reactants",
+              "products",
+              "bidirectional",
+              "expression"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "reactants": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "products": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "bidirectional": {
+                "type": "boolean"
+              },
+              "expression": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "population_maps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "label",
+              "pattern",
+              "function",
+              "args"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "label": {
+                "type": "string"
+              },
+              "pattern": {
+                "type": "string"
+              },
+              "function": {
+                "type": "string"
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "rate": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "name",
+              "label",
+              "reactants",
+              "products",
+              "rates",
+              "modifiers",
+              "bidirectional"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              },
+              "reactants": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "products": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "rates": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "modifiers": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "bidirectional": {
+                "type": "boolean"
+              },
+              "driving_work": {
+                "type": "string"
+              },
+              "delay": {
+                "type": "string"
+              },
+              "non_consuming": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "unit_defaults": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "unit_definitions": {
+          "type": "array"
+        }
       }
     },
     "protocol": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["actions"],
-      "properties": {"actions": {"type": "array", "items": {"$ref": "#/$defs/action"}}}
+      "required": [
+        "actions"
+      ],
+      "properties": {
+        "actions": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/action"
+          }
+        }
+      }
     }
   }
 }

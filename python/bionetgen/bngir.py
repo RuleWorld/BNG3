@@ -222,15 +222,37 @@ def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
         }
         for barrier in native.barrier_patterns
     ]
-    population_maps = [
-        {
-            "label": mapping.label,
-            "pattern": mapping.pattern,
-            "function": mapping.function,
-            "args": list(mapping.args),
-        }
-        for mapping in native.population_maps
-    ]
+    population_maps = []
+    if native.population_maps:
+        snapshot_population_rates = None
+        try:
+            from .model import _cpp
+
+            snapshot = _cpp._compiled_snapshot(native)
+            snapshot_population_rates = [
+                item.get("rate") for item in snapshot.get("population_maps", [])
+            ]
+            snapshot_model = snapshot
+        except Exception:
+            snapshot_population_rates = None
+            snapshot_model = None
+        for index, mapping in enumerate(native.population_maps):
+            item = {
+                "label": mapping.label,
+                "pattern": mapping.pattern,
+                "function": mapping.function,
+                "args": list(mapping.args),
+            }
+            rate = None
+            if snapshot_population_rates and index < len(snapshot_population_rates):
+                rate = snapshot_population_rates[index]
+            if isinstance(rate, Mapping) and snapshot_model is not None:
+                item["rate"] = _expression_v02(rate, snapshot_model)
+            elif hasattr(mapping, "rateText") and getattr(mapping, "rateText"):
+                item["rate"] = str(getattr(mapping, "rateText"))
+            elif hasattr(mapping, "rate") and isinstance(getattr(mapping, "rate"), str):
+                item["rate"] = getattr(mapping, "rate")
+            population_maps.append(item)
 
     features = {"required": [], "used": []}
     if compartments:
@@ -312,16 +334,40 @@ def _features_v02(snapshot: Mapping[str, Any]) -> dict[str, list[str]]:
         ("functions", "functions"),
         ("observables", "observables"),
         ("population_maps", "population_maps"),
+        ("population_types", "population_maps"),
         ("rules", "rules"),
         ("seeds", "seeds"),
     ):
         if snapshot.get(key):
             used.append(feature)
+    if any(rule.get("delay") is not None for rule in snapshot.get("rules", [])):
+        used.append("delayed_rules")
+    if any(
+        rule.get("driving_work") not in (None, "", {})
+        for rule in snapshot.get("rules", [])
+        if isinstance(rule, Mapping)
+    ):
+        used.append("driven_reservoirs")
+    metadata = snapshot.get("metadata") or {}
+    has_units = (
+        metadata.get("unit_defaults")
+        or metadata.get("unit_definitions")
+        or metadata.get("substance_units")
+        or any(item.get("unit") for item in snapshot.get("parameters", []))
+        or any(item.get("unit") for item in snapshot.get("seeds", []))
+        or any(item.get("unit") for item in snapshot.get("compartments", []))
+        or any(item.get("declared_unit") for item in snapshot.get("parameters", []))
+        or any(item.get("inferred_unit") for item in snapshot.get("parameters", []))
+        or any(item.get("declared_unit") for item in snapshot.get("seeds", []))
+        or any(item.get("declared_unit") for item in snapshot.get("compartments", []))
+    )
+    if has_units:
+        used.append("units")
     if snapshot.get("actions"):
         used.append("protocol")
     return {
         "required": ["structured_patterns", "structured_expressions"],
-        "used": sorted(used + ["structured_patterns", "structured_expressions"]),
+        "used": sorted(set(used) | {"structured_patterns", "structured_expressions"}),
     }
 
 
@@ -352,11 +398,26 @@ def _payload_v02(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
         for act in raw_actions
     ]
     metadata = dict(snapshot.pop("metadata", {}))
+    model_snapshot = {"metadata": metadata, **snapshot}
+    # _cpp._compiled_snapshot may omit rule-level execution metadata that is
+    # losslessly available from the native model; enrich so v0.2 round trips
+    # preserve driving work and other explicitly serialized rule semantics.
+    native_rules = list(getattr(native, "reaction_rules", []))
+    for index, rule in enumerate(model_snapshot.get("rules", [])):
+        if not isinstance(rule, Mapping) or index >= len(native_rules):
+            continue
+        native_rule = native_rules[index]
+        if getattr(native_rule, "has_driving_work", False):
+            driving_work = getattr(native_rule, "driving_work", "")
+            if driving_work:
+                rule["driving_work"] = driving_work
+        if getattr(native_rule, "is_non_consuming", False):
+            rule["non_consuming"] = True
     result = {
         "format": FORMAT,
         "version": STRUCTURAL_VERSION,
-        "features": _features_v02({**snapshot, "actions": actions}),
-        "model": {"metadata": metadata, **snapshot},
+        "features": _features_v02({**model_snapshot, "actions": actions}),
+        "model": model_snapshot,
         "protocol": {"actions": actions},
     }
     # Writer/reader closure: every 0.2 document must pass the reader's own
@@ -480,8 +541,6 @@ def _action_lines(action: Mapping[str, Any]) -> str:
 
 def _as_bngl_v01(root: Mapping[str, Any]) -> str:
     model = _require_mapping(root["model"], "model")
-    if model.get("population_maps"):
-        raise ValueError("BNGIR population_maps deserialization is not yet supported")
 
     lines: list[str] = []
     if model.get("version"):
@@ -500,8 +559,11 @@ def _as_bngl_v01(root: Mapping[str, Any]) -> str:
         for role in sorted(unit_defaults):
             lines.append(f"  {role} = {unit_defaults[role]}")
         for defn in unit_definitions:
-            if isinstance(defn, Mapping) and "name" in defn and "expression" in defn:
-                lines.append(f"  unit {defn['name']} = {defn['expression']}")
+            if isinstance(defn, Mapping):
+                name = defn.get("name", defn.get("id"))
+                expression = defn.get("expression")
+                if isinstance(name, str) and name and isinstance(expression, str):
+                    lines.append(f"  unit {name} = {expression}")
         lines += ["end units"]
     parameters = model.get("parameters", [])
     if parameters:
@@ -585,6 +647,22 @@ def _as_bngl_v01(root: Mapping[str, Any]) -> str:
                 f"  {label}{reactants} {arrow} {products} {item['expression']}"
             )
         lines += ["end barrier patterns"]
+    population_maps = model.get("population_maps", [])
+    if population_maps:
+        lines += ["begin population maps"]
+        for item in population_maps:
+            if not item.get("rate"):
+                raise ValueError(
+                    "BNGIR v0.1 population map is missing rate; "
+                    "lossless population map deserialization requires an explicit rate"
+                )
+            label = f"{item['label']}: " if item.get("label") else ""
+            args = ",".join(item.get("args", []))
+            rate = item["rate"]
+            line = f"  {label}{item['pattern']} -> {item['function']}({args}) {rate}"
+            lines.append(line)
+        lines += ["end population maps"]
+
     rules = model.get("rules", [])
     if rules:
         lines += ["begin reaction rules"]
@@ -807,9 +885,32 @@ def _validate_pattern_v02(
     pattern = _require_mapping(pattern, where)
     molecule_types = _section_id_map(model, "molecule_types")
     compartments = _section_id_map(model, "compartments")
+    compartment_names = {
+        str(item.get("name")): cid
+        for cid, item in compartments.items()
+        if isinstance(item.get("name"), str)
+    }
     molecules = pattern.get("molecules", [])
     if not isinstance(molecules, list):
         raise ValueError(f"BNGIR {where}.molecules must be an array")
+    pattern_compartment = pattern.get("compartment")
+    if pattern_compartment is not None:
+        if (
+            not isinstance(pattern_compartment, str)
+            or pattern_compartment not in compartment_names
+        ):
+            raise ValueError(
+                f"BNGIR {where} references unknown compartment: {pattern_compartment!r}"
+            )
+    pattern_compartment_id = pattern.get("compartment_id")
+    if pattern_compartment_id is not None and (
+        not _is_json_integer(pattern_compartment_id)
+        or pattern_compartment_id not in compartments
+    ):
+        raise ValueError(f"BNGIR {where} references unknown graph compartment id")
+    if pattern_compartment is not None and pattern_compartment_id is not None:
+        if compartment_names[pattern_compartment] != pattern_compartment_id:
+            raise ValueError(f"BNGIR {where} compartment name/id disagree")
     seen_occurrences: set[int] = set()
     for mi, raw_molecule in enumerate(molecules):
         molecule = _require_mapping(raw_molecule, f"{where}.molecules[{mi}]")
@@ -831,6 +932,15 @@ def _validate_pattern_v02(
             declaration = molecule_types[type_id]
             if molecule.get("type") != declaration.get("name"):
                 raise ValueError(f"BNGIR {where} molecule type name/id disagree")
+        molecule_compartment = molecule.get("compartment")
+        if molecule_compartment is not None:
+            if (
+                not isinstance(molecule_compartment, str)
+                or molecule_compartment not in compartment_names
+            ):
+                raise ValueError(
+                    f"BNGIR {where} references unknown compartment: {molecule_compartment!r}"
+                )
         compartment_id = molecule.get("compartment_id")
         if compartment_id is not None and (
             not _is_json_integer(compartment_id) or compartment_id not in compartments
@@ -838,6 +948,9 @@ def _validate_pattern_v02(
             raise ValueError(
                 f"BNGIR {where} references unknown compartment id: {compartment_id}"
             )
+        if molecule_compartment is not None and compartment_id is not None:
+            if compartment_names[molecule_compartment] != compartment_id:
+                raise ValueError(f"BNGIR {where} molecule compartment name/id disagree")
         components = declaration.get("components", []) if declaration else []
         for si, raw_site in enumerate(molecule.get("sites", [])):
             site = _require_mapping(raw_site, f"{where}.molecules[{mi}].sites[{si}]")
@@ -899,12 +1012,6 @@ def _validate_pattern_v02(
                         raise ValueError(f"BNGIR {where} state value/index disagree")
             elif state_kind not in {"any", "exact", "set"}:
                 raise ValueError(f"BNGIR {where} has invalid state constraint")
-    pattern_compartment_id = pattern.get("compartment_id")
-    if pattern_compartment_id is not None and (
-        not _is_json_integer(pattern_compartment_id)
-        or pattern_compartment_id not in compartments
-    ):
-        raise ValueError(f"BNGIR {where} references unknown graph compartment id")
 
 
 def _validate_pattern_ref_v02(
@@ -1274,6 +1381,42 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
         if reverse is not None:
             reverse = _require_mapping(reverse, "rule.reverse")
             _validate_direction_v02(reverse, model, f"model.rules[{i}].reverse")
+        driving_work = rule.get("driving_work")
+        if driving_work is not None:
+            if isinstance(driving_work, str):
+                if not driving_work.strip():
+                    raise ValueError(
+                        f"BNGIR model.rules[{i}].driving_work must be a non-empty string"
+                    )
+            elif isinstance(driving_work, Mapping):
+                _validate_expression_v02(
+                    driving_work,
+                    model,
+                    local_names=set(),
+                    where=f"model.rules[{i}].driving_work",
+                )
+            else:
+                raise ValueError(
+                    f"BNGIR model.rules[{i}].driving_work must be a string or expression object"
+                )
+        driving_work = rule.get("driving_work")
+        if driving_work is not None:
+            if isinstance(driving_work, str):
+                if not driving_work.strip():
+                    raise ValueError(
+                        f"BNGIR model.rules[{i}].driving_work must be a non-empty string"
+                    )
+            elif isinstance(driving_work, Mapping):
+                _validate_expression_v02(
+                    driving_work,
+                    model,
+                    local_names=set(),
+                    where=f"model.rules[{i}].driving_work",
+                )
+            else:
+                raise ValueError(
+                    f"BNGIR model.rules[{i}].driving_work must be a string or expression object"
+                )
         # Include/exclude modifiers are rendered from direction.filters; a
         # modifier without its matching filter would be dropped silently.
         filters = list(forward.get("filters", []))
@@ -3526,7 +3669,10 @@ class EqualityUndecided(Exception):
         self, message: str, diagnostic: Mapping[str, Any] | None = None
     ) -> None:
         super().__init__(message)
-        self.diagnostic = dict(diagnostic or {})
+        diag = dict(diagnostic or {})
+        diag.setdefault("status", "undecided")
+        diag.setdefault("message", message)
+        self.diagnostic = diag
 
 
 def _evaluate_model_expression_exact(
@@ -3665,6 +3811,33 @@ def exact_process_equal(
 
     def unlowered_contract(model_doc: Mapping[str, Any]) -> dict[str, Any]:
         rules = model_doc.get("rules", [])
+
+        def _rule_execution_signature(rule: Mapping[str, Any]) -> dict[str, Any]:
+            if not isinstance(rule, Mapping):
+                return {"raw": rule}
+            # v0.1 rules carry kinetics/execution modifiers at top level; v0.2
+            # carries delay/non-consuming/modifiers and may place driving work on
+            # the rule or direction. Include every field that can change process
+            # semantics outside the finite jump table.
+            signature: dict[str, Any] = {
+                "delay": rule.get("delay"),
+                "non_consuming": rule.get("non_consuming", False),
+                "modifiers": rule.get("modifiers", []),
+                "driving_work": rule.get("driving_work", ""),
+            }
+            for direction_name in ("forward", "reverse"):
+                direction = rule.get(direction_name)
+                if isinstance(direction, Mapping):
+                    if "driving_work" in direction:
+                        signature[f"{direction_name}.driving_work"] = direction.get(
+                            "driving_work"
+                        )
+                    if "non_consuming" in direction:
+                        signature[f"{direction_name}.non_consuming"] = direction.get(
+                            "non_consuming"
+                        )
+            return signature
+
         return {
             key: model_doc.get(key)
             for key in (
@@ -3678,17 +3851,41 @@ def exact_process_equal(
         } | {
             "parameters_for_delays": (
                 model_doc.get("parameters")
-                if any(rule.get("delay") is not None for rule in rules)
+                if any(
+                    (rule.get("delay") if isinstance(rule, Mapping) else None)
+                    is not None
+                    for rule in rules
+                )
                 else []
             ),
-            "rule_delays_and_modifiers": sorted(
+            "rule_execution_features": sorted(
                 json.dumps(
-                    {"delay": rule.get("delay"), "modifiers": rule.get("modifiers")},
+                    _rule_execution_signature(rule),
                     sort_keys=True,
                     separators=(",", ":"),
                 )
                 for rule in rules
-                if rule.get("delay") is not None or rule.get("modifiers")
+                if isinstance(rule, Mapping)
+                and (
+                    rule.get("delay") is not None
+                    or rule.get("non_consuming", False)
+                    or rule.get("modifiers")
+                    or rule.get("driving_work")
+                    or (
+                        isinstance(rule.get("forward"), Mapping)
+                        and (
+                            rule["forward"].get("driving_work")
+                            or rule["forward"].get("non_consuming")
+                        )
+                    )
+                    or (
+                        isinstance(rule.get("reverse"), Mapping)
+                        and (
+                            rule["reverse"].get("driving_work")
+                            or rule["reverse"].get("non_consuming")
+                        )
+                    )
+                )
             ),
         }
 
@@ -3700,14 +3897,21 @@ def exact_process_equal(
             {"left_contract": left_unlowered, "right_contract": right_unlowered},
         )
 
-    left_actions = [
-        (a.name, tuple(sorted(a.args.items())) if hasattr(a, "args") else ())
-        for a in left_model._model.actions
-    ]
-    right_actions = [
-        (a.name, tuple(sorted(a.args.items())) if hasattr(a, "args") else ())
-        for a in right_model._model.actions
-    ]
+    def action_signature(action: Any) -> tuple[str, tuple[tuple[str, str], ...]]:
+        if hasattr(action, "arguments"):
+            arguments = action.arguments
+        elif hasattr(action, "args"):
+            arguments = action.args
+        else:
+            arguments = {}
+        if isinstance(arguments, Mapping):
+            items = tuple(sorted((str(k), str(v)) for k, v in arguments.items()))
+        else:
+            items = ()
+        return (str(action.name), items)
+
+    left_actions = [action_signature(a) for a in left_model._model.actions]
+    right_actions = [action_signature(a) for a in right_model._model.actions]
     if left_actions != right_actions:
         raise EqualityUndecided(
             "Protocol difference requires an exact intervention-semantics witness",
@@ -3924,17 +4128,7 @@ def exact_process_equal(
         obs_l = list(left_model._model.observables)
         obs_r = list(right_model._model.observables)
         if not _match_observables(obs_l, obs_r, {t: t for t in type_signatures_l}):
-            raise EqualityUndecided(
-                "Observable patterns differ and have no verified equivalence certificate",
-                {
-                    "left_observables": tuple(
-                        sorted((o.name, o.type, tuple(o.patterns)) for o in obs_l)
-                    ),
-                    "right_observables": tuple(
-                        sorted((o.name, o.type, tuple(o.patterns)) for o in obs_r)
-                    ),
-                },
-            )
+            return False
 
         return True
 

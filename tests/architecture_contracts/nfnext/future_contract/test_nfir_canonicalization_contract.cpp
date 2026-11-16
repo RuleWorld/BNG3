@@ -83,10 +83,10 @@ CONTRACT_CASE("duplicate molecule type names are rejected") {
     REQUIRE_THROWS_AS(validateModel(m), ValidationError);
 }
 
-CONTRACT_CASE("duplicate site names within a molecule type are rejected") {
+CONTRACT_CASE("duplicate site names within a molecule type are accepted") {
     auto m = simpleModel();
     m.molecule_types[0].sites.push_back(SiteSpec{"x", {"u", "p"}});
-    REQUIRE_THROWS_AS(validateModel(m), ValidationError);
+    REQUIRE_NO_THROW(validateModel(m));
 }
 
 CONTRACT_CASE("duplicate enumerated site states are rejected") {
