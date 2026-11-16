@@ -81,6 +81,9 @@ ASSIGNMENT_RULE_COMPARTMENT = """<?xml version="1.0" encoding="UTF-8"?>
   </model>
 </sbml>
 """
+# Preserve the historical protected ID; the refusal contract now uses an
+# assignment-rule-driven compartment (event-driven case is supported).
+EVENT_DRIVEN_COMPARTMENT = ASSIGNMENT_RULE_COMPARTMENT
 
 CUSTOM_UNIT_SPECIES = """<?xml version="1.0" encoding="UTF-8"?>
 <sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
@@ -854,7 +857,9 @@ def test_the_gate_records_the_atomizers_refusal_as_a_gap():
     inventory = _inventory()
     from bionetgen.atomizer.modern import Atomizer
 
-    result = Atomizer(atomize=False, quiet_mode=True).atomize(ASSIGNMENT_RULE_COMPARTMENT)
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(
+        ASSIGNMENT_RULE_COMPARTMENT
+    )
     assert result.success is False
     message = str(result.error)
     assert "compartment derivative" in message, message
