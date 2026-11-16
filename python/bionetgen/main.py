@@ -50,6 +50,37 @@ CONF = bng.defaults
 VERSION_BANNER = bng.defaults.banner if bng.defaults else ""
 
 
+def get_conf():
+    """Return the current BioNetGen configuration mapping."""
+    app = globals().get("app")
+    if app is not None and hasattr(app, "config"):
+        return app.config
+    defaults = bng.defaults
+    if defaults is None:
+        return {}
+    return getattr(defaults, "config", {})
+
+
+def get_default_bng_path():
+    """Return the default BioNetGen path if configured."""
+    conf = get_conf()
+    if hasattr(conf, "get"):
+        bng_section = conf.get("bionetgen", {})
+        if isinstance(bng_section, dict):
+            return bng_section.get("bngpath")
+        try:
+            return conf.get("bionetgen", "bngpath")
+        except Exception:
+            pass
+    defaults = bng.defaults
+    return getattr(defaults, "bng_path", None) if defaults is not None else None
+
+
+def get_default_app(argv=None):
+    """Construct a default Cement app instance for PyBioNetGen compatibility."""
+    return BioNetGen(argv=argv) if argv is not None else BioNetGen()
+
+
 # require version argparse action
 import argparse, sys
 from packaging import version as packaging_version

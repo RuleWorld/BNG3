@@ -76,6 +76,7 @@
                     "tests.python.test_bng_models",
                     "tests.python.test_bng_visualization",
                     "tests.python.test_compatibility_contract",
+                    "tests.python.test_pybionetgen_differential_behaviors",
                     "tests.validation.integrated_worker",
                 ],
             },

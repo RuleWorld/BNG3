@@ -167,3 +167,21 @@ def test_bngmodel_inline_load_edit_save_no_actions():
     text = str(model)
     assert "2" in text
     assert "begin model" in text
+
+
+def test_main_pybionetgen_helper_exports():
+    import bionetgen.main as main
+
+    assert callable(getattr(main, "get_conf", None))
+    assert callable(getattr(main, "get_default_bng_path", None))
+    assert callable(getattr(main, "get_default_app", None))
+    conf = main.get_conf()
+    assert hasattr(conf, "get")
+    assert main.get_default_bng_path() == conf.get("bionetgen", {}).get("bngpath")
+    try:
+        app = main.get_default_app()
+    except ImportError as exc:
+        # PyBioNetGen CLI helpers require cement; absence is an explicit optional dependency.
+        assert "cement" in str(exc).lower()
+    else:
+        assert app is not None
