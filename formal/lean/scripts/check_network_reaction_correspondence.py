@@ -231,6 +231,28 @@ end model
             },
         ],
     },
+    {
+        "name": "unimolecular_state_change_distinct",
+        "bngl": """begin model
+begin parameters
+k 1
+end parameters
+begin molecule types
+A(x~u~p)
+end molecule types
+begin seed species
+A(x~u) 1
+end seed species
+begin reaction rules
+A(x~u)->A(x~p) k
+end reaction rules
+end model
+""",
+        "expected_reaction_count": 1,
+        "expected_reactions": [
+            {"reactants": ["A(x~u)"], "products": ["A(x~p)"], "rate": "k"},
+        ],
+    },
 ]
 
 
@@ -311,6 +333,27 @@ end model
                 "products": ["A(x)", "B(y)"],
                 "rate": "koff",
             },
+        ],
+    },
+    {
+        "name": "unimolecular_state_change_wrong_product_negative",
+        "bngl": """begin model
+begin parameters
+k 1
+end parameters
+begin molecule types
+A(x~u~p)
+end molecule types
+begin seed species
+A(x~u) 1
+end seed species
+begin reaction rules
+A(x~u)->A(x~u) k
+end reaction rules
+end model
+""",
+        "must_not_match_reactions": [
+            {"reactants": ["A(x~u)"], "products": ["A(x~p)"], "rate": "k"},
         ],
     },
 ]
