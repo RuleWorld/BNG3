@@ -1,7 +1,4 @@
 import ctypes
-import os
-import tempfile
-
 import numpy as np
 
 from .bngsimulator import BNGSimulator
@@ -129,25 +126,10 @@ class CSimulator(BNGSimulator):
                 model_input, generate_network=generate_network
             )
         elif isinstance(model_input, bionetgen.bngmodel):
-            self.model = model_input
-            cd = os.getcwd()
-            import shutil
-
-            tmpdirname = tempfile.mkdtemp(prefix="bngsim_")
-            try:
-                os.chdir(tmpdirname)
-                self.model.actions.clear_actions()
-                copy_label = getattr(self.model, "model_" + "name", "model")
-                self.model.write_model(f"{copy_label}_cpy.bngl")
-                self.model = bionetgen.bngmodel(
-                    f"{copy_label}_cpy.bngl", generate_network=generate_network
-                )
-            finally:
-                os.chdir(cd)
-                try:
-                    shutil.rmtree(tmpdirname)
-                except Exception:
-                    pass
+            raise BNGCompileError(
+                model_input,
+                "CSimulator compilation is not supported in BNG3's native environment",
+            )
         else:
             raise BNGFormatError(
                 message=f"CSimulator model input must be a BNGL path or bngmodel instance, got {type(model_input).__name__}"
