@@ -74,6 +74,20 @@ def SpeciesIsoMap.inverse (m : SpeciesIsoMap) : SpeciesIsoMap :=
     m.inverse.range = m.domain := by
   simp [SpeciesIsoMap.inverse, SpeciesIsoMap.domain, SpeciesIsoMap.range]
 
+@[simp] theorem SpeciesIsoMap.domain_idOn (ids : List MoleculeInstanceId) :
+    (SpeciesIsoMap.idOn ids).domain = ids := by
+  unfold SpeciesIsoMap.idOn SpeciesIsoMap.domain
+  induction ids with
+  | nil => rfl
+  | cons x xs ih => simp [ih]
+
+@[simp] theorem SpeciesIsoMap.range_idOn (ids : List MoleculeInstanceId) :
+    (SpeciesIsoMap.idOn ids).range = ids := by
+  unfold SpeciesIsoMap.idOn SpeciesIsoMap.range
+  induction ids with
+  | nil => rfl
+  | cons x xs ih => simp [ih]
+
 /-- Map one concrete endpoint through a molecule-ID bijection. -/
 def SpeciesIsoMap.mapEndpoint? (mapping : SpeciesIsoMap) (e : ConcreteEndpoint) : Option ConcreteEndpoint :=
   (mapping.lookup? e.molecule).map (fun molecule =>
