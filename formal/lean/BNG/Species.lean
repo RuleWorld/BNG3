@@ -259,6 +259,23 @@ theorem SpeciesIsoMap.validFor_bondsForward (m : SpeciesIsoMap) (left right : Mi
   simp only [SpeciesIsoMap.validFor, Bool.and_eq_true] at h
   exact h.1.2
 
+/-- Forward bond preservation implies every bond endpoint is mapped by the
+renaming witness (coverage of bonded structure in the supported class). -/
+theorem bondsPreservedForward_endpoints_mapped (m : SpeciesIsoMap) (left right : Mixture)
+    (h : bondsPreservedForward left right m = true) :
+    left.bonds.all (fun edge =>
+      (m.mapEndpoint? edge.a).isSome && (m.mapEndpoint? edge.b).isSome) = true := by
+  simp [bondsPreservedForward, List.all_eq_true] at h ⊢
+  intro edge he
+  specialize h edge he
+  cases ha : m.mapEndpoint? edge.a <;> cases hb : m.mapEndpoint? edge.b <;> simp [ha, hb] at h ⊢
+
+theorem SpeciesIsoMap.validFor_bond_endpoints_mapped (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.validFor left right = true) :
+    left.bonds.all (fun edge =>
+      (m.mapEndpoint? edge.a).isSome && (m.mapEndpoint? edge.b).isSome) = true :=
+  bondsPreservedForward_endpoints_mapped m left right (m.validFor_bondsForward left right h)
+
 /-- Kernel-proved renaming witness property: bijective mapping domain IDs are unique. -/
 theorem SpeciesIsoMap.bijectiveFor_domain_unique (m : SpeciesIsoMap) (left right : Mixture)
     (h : m.bijectiveFor left right = true) : allUnique m.domain = true := by
