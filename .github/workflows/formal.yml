@@ -75,6 +75,10 @@ jobs:
         working-directory: formal/lean
         run: python3 scripts/check_propensity_counting_bridge.py
 
+      - name: Check network reaction correspondence bridge
+        working-directory: formal/lean
+        run: PYTHONPATH=../.. python3 scripts/check_network_reaction_correspondence.py
+
       - name: Harness mutation self-test
         if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
         working-directory: formal/lean
