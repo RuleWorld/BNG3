@@ -179,6 +179,28 @@ theorem SpeciesIsoMap.inverse_bijectiveFor (m : SpeciesIsoMap) (left right : Mix
   rcases h with ⟨⟨⟨hdomU, hranU⟩, hdomSet⟩, hranSet⟩
   exact ⟨⟨⟨by simpa using hranU, by simpa using hdomU⟩, by simpa using hranSet⟩, by simpa using hdomSet⟩
 
+/-- Kernel-proved renaming/coverage invariant: a bijective witness implies equal
+molecule-instance counts for the supported class artifacts. -/
+theorem SpeciesIsoMap.bijectiveFor_molecule_count (m : SpeciesIsoMap) (left right : Mixture)
+    (h : m.bijectiveFor left right = true) :
+    left.molecules.length = right.molecules.length := by
+  have hb := h
+  simp [SpeciesIsoMap.bijectiveFor, Bool.and_eq_true] at hb
+  rcases hb with ⟨⟨⟨_, _⟩, hL⟩, hR⟩
+  -- extract length equality from sameMoleculeIdSet (a && b && c && d && e form)
+  simp [sameMoleculeIdSet, Bool.and_eq_true] at hL hR
+  -- hL: (((allUnique domain && allUnique leftIds) && domain.length == leftIds.length) && allContained domain leftIds) && allContained leftIds domain
+  -- easier: get beq on lengths
+  have hLlen : m.domain.length = left.molecules.length := by
+    rcases hL with ⟨⟨⟨⟨_, _⟩, hlen⟩, _⟩, _⟩
+    simpa [List.length_map] using hlen
+  have hRlen : m.range.length = right.molecules.length := by
+    rcases hR with ⟨⟨⟨⟨_, _⟩, hlen⟩, _⟩, _⟩
+    simpa [List.length_map] using hlen
+  have hdom : m.domain.length = m.moleculeMap.length := by simp [SpeciesIsoMap.domain]
+  have hran : m.range.length = m.moleculeMap.length := by simp [SpeciesIsoMap.range]
+  omega
+
 /-- Oracle-positive identity implies equal molecule and bond counts for the
 explicit supported class artifacts. -/
 theorem isomorphicSpecies_counts (left right : Mixture)
