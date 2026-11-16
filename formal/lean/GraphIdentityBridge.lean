@@ -160,6 +160,23 @@ def chainWrongType : Mixture :=
       , { a := { molecule := ⟨1⟩, component := cBx }, b := { molecule := ⟨2⟩, component := cBy } }
       ] }
 
+-- Heterogeneous-site bond permutation and adversarial endpoint mutation.
+def molA_a (id : Nat) : RuntimeMolecule :=
+  { id := ⟨id⟩, moleculeType := mtA, compartment := none,
+    sites := [{ component := cAa, state := none }] }
+
+def heteroSiteBase : Mixture :=
+  { nextMoleculeId := ⟨2⟩, molecules := [molA_a 0, molB_xu 1],
+    bonds := [{ a := { molecule := ⟨0⟩, component := cAa }, b := { molecule := ⟨1⟩, component := cBx } }] }
+
+def heteroSitePermuted : Mixture :=
+  { nextMoleculeId := ⟨20⟩, molecules := [molB_xu 10, molA_a 11],
+    bonds := [{ a := { molecule := ⟨10⟩, component := cBx }, b := { molecule := ⟨11⟩, component := cAa } }] }
+
+def heteroSiteEndpointMut : Mixture :=
+  { nextMoleculeId := ⟨2⟩, molecules := [molA_a 0, molB_y 1],
+    bonds := [{ a := { molecule := ⟨0⟩, component := cAa }, b := { molecule := ⟨1⟩, component := cBy } }] }
+
 structure CaseResult where
   name : String
   iso : Bool
@@ -179,22 +196,28 @@ def mkCase (name : String) (left right : Mixture) : CaseResult :=
 example : bondedBase.isomorphicSpecies bondedBase = true := by native_decide
 example : ringBase.isomorphicSpecies ringBase = true := by native_decide
 example : chainBase.isomorphicSpecies chainBase = true := by native_decide
+example : heteroSiteBase.isomorphicSpecies heteroSiteBase = true := by native_decide
 -- Symmetric positive witnesses on explicit permutation/renaming pairs.
 example : bondedRenamed.isomorphicSpecies bondedBase = true := by native_decide
 example : ringPermuted.isomorphicSpecies ringBase = true := by native_decide
 example : chainPermuted.isomorphicSpecies chainBase = true := by native_decide
 example : chainBase.isomorphicSpecies chainPermuted = true := by native_decide
+example : heteroSitePermuted.isomorphicSpecies heteroSiteBase = true := by native_decide
+example : heteroSiteBase.isomorphicSpecies heteroSitePermuted = true := by native_decide
 -- Adversarial negatives remain rejected in the opposite direction.
 example : bondedStateMut.isomorphicSpecies bondedBase = false := by native_decide
 example : ringOpenMut.isomorphicSpecies ringBase = false := by native_decide
 example : chainBrokenEnd.isomorphicSpecies chainBase = false := by native_decide
 example : chainWrongType.isomorphicSpecies chainBase = false := by native_decide
+example : heteroSiteEndpointMut.isomorphicSpecies heteroSiteBase = false := by native_decide
 -- Exact bounded identity accumulation (no duplicate iso representative).
 example : (addSpeciesModuloIso [bondedRenamed] bondedBase).length = 1 := by native_decide
 example : (addSpeciesModuloIso [ringPermuted] ringBase).length = 1 := by native_decide
 example : (addSpeciesModuloIso [chainPermuted] chainBase).length = 1 := by native_decide
+example : (addSpeciesModuloIso [heteroSitePermuted] heteroSiteBase).length = 1 := by native_decide
 example : (addSpeciesModuloIso [bondedStateMut] bondedBase).length = 2 := by native_decide
 example : (addSpeciesModuloIso [chainBrokenEnd] chainBase).length = 2 := by native_decide
+example : (addSpeciesModuloIso [heteroSiteEndpointMut] heteroSiteBase).length = 2 := by native_decide
 -- Heterogeneous symmetric-dimer permutation (renaming/canonical identity under swap).
 example : dimerBase.isomorphicSpecies dimerStatePerm = true := by native_decide
 example : dimerStatePerm.isomorphicSpecies dimerBase = true := by native_decide
@@ -212,7 +235,9 @@ def results : List CaseResult :=
   , mkCase "dimer_state_mutation_unequal" dimerBase dimerStateMut
   , mkCase "chain_permutation_equal" chainBase chainPermuted
   , mkCase "chain_broken_end_unequal" chainBase chainBrokenEnd
-  , mkCase "chain_wrong_type_unequal" chainBase chainWrongType ]
+  , mkCase "chain_wrong_type_unequal" chainBase chainWrongType
+  , mkCase "hetero_site_permutation_equal" heteroSiteBase heteroSitePermuted
+  , mkCase "hetero_site_endpoint_mutation_unequal" heteroSiteBase heteroSiteEndpointMut ]
 
 def emit (r : CaseResult) : String :=
   s!"case={r.name}\tiso={r.iso}\tleft_pool={r.leftPool}\tdedup_pool={r.dedupPool}"

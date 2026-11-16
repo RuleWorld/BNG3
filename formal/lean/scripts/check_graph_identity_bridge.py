@@ -89,6 +89,18 @@ CASES = [
         "right": "B(x~u!1).B(y!1,x~u!2).B(y!2)",
         "expect_iso": False,
     },
+    {
+        "name": "hetero_site_permutation_equal",
+        "left": "A(a!1).B(x~u!1)",
+        "right": "B(x~u!9).A(a!9)",
+        "expect_iso": True,
+    },
+    {
+        "name": "hetero_site_endpoint_mutation_unequal",
+        "left": "A(a!1).B(x~u!1)",
+        "right": "A(a!1).B(y!1)",
+        "expect_iso": False,
+    },
 ]
 
 
