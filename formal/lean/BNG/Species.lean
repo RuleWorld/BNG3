@@ -267,6 +267,26 @@ theorem isomorphicSpecies_witness (left right : Mixture)
   simp [Mixture.isomorphicSpecies, Bool.and_eq_true] at h
   exact h.2
 
+/-- Oracle-positive identity yields a bijective renaming witness (supported-class
+canonicalization/coverage property). -/
+theorem isomorphicSpecies_bijective_witness (left right : Mixture)
+    (h : left.isomorphicSpecies right = true) :
+    ∃ m ∈ candidateSpeciesIsoMaps left right, m.bijectiveFor left right = true := by
+  rcases isomorphicSpecies_witness left right h with ⟨m, hm, hv⟩
+  exact ⟨m, hm, m.validFor_bijective left right hv⟩
+
+/-- Oracle-positive identity implies preserved molecule labels and forward bond
+structure via some supported-class renaming witness. -/
+theorem isomorphicSpecies_structure_witness (left right : Mixture)
+    (h : left.isomorphicSpecies right = true) :
+    ∃ m ∈ candidateSpeciesIsoMaps left right,
+      (m.moleculeMap.all (fun pair =>
+        match left.findMolecule? pair.1, right.findMolecule? pair.2 with
+        | some a, some b => runtimeMoleculesEquivalent a b
+        | _, _ => false) = true) ∧ bondsPreservedForward left right m = true := by
+  rcases isomorphicSpecies_witness left right h with ⟨m, hm, hv⟩
+  exact ⟨m, hm, m.validFor_molecules left right hv, m.validFor_bondsForward left right hv⟩
+
 
 theorem addSpeciesModuloIso_preserves_existing (pool : List Mixture) (candidate : Mixture)
     (existing : Mixture) (hmem : existing ∈ pool) :
