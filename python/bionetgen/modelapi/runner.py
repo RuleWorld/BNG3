@@ -38,6 +38,18 @@ def run(
         value is not None for value in (method, t_span, n_points)
     )
     if wants_single_sim:
+        if simulator == "subprocess":
+            raise NotImplementedError(
+                "simulator='subprocess' with simulation overrides is not supported"
+            )
+        if out is not None:
+            raise NotImplementedError(
+                "out is not supported with in-memory simulation overrides"
+            )
+        if timeout is not None:
+            raise NotImplementedError(
+                "timeout is not supported with in-memory simulation overrides"
+            )
         from bionetgen.model import load
 
         if t_span is None:
