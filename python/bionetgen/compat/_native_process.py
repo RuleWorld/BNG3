@@ -1,4 +1,4 @@
-"""One bounded process boundary for native action execution."""
+"""Shared bounded process execution for native actions."""
 
 import json
 from numbers import Integral, Real
