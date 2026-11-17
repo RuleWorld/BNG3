@@ -442,7 +442,8 @@ struct FlattenedPattern {
 
 bool appendPattern(const BngPattern& source, PatternIR& destination,
                    BngLoweringResult& result, const std::string& entity,
-                   std::size_t& firstNode) {
+                   std::size_t& firstNode,
+                   bool unspecifiedBondIsUnbound = false) {
     if (!source.isResolved()) {
         issue(result, BngLoweringSeverity::Error, entity,
               "pattern is not fully symbol-resolved");
@@ -494,6 +495,14 @@ bool appendPattern(const BngPattern& source, PatternIR& destination,
             for (const auto& bond : bonds) {
                 switch (bond.kind) {
                 case bng::compile::BondConstraintKind::Unspecified:
+                    // BNG2 treats a listed site with no bond notation as
+                    // unbound (the observable A(b) counts only free A), and
+                    // PatternLowering defaults Unspecified to UNBOUND. Scope
+                    // that correction to observables here so other lowered
+                    // pattern kinds keep their established constraints.
+                    if (unspecifiedBondIsUnbound)
+                        destination.node(node).siteFree(siteIndex);
+                    break;
                 case bng::compile::BondConstraintKind::Any:
                     break;
                 case bng::compile::BondConstraintKind::Unbound:
@@ -532,7 +541,7 @@ bool appendPattern(const BngPattern& source, PatternIR& destination,
 
 std::optional<FlattenedPattern> flattenReactants(
     const std::vector<BngPattern>& patterns, BngLoweringResult& result,
-    const std::string& entity) {
+    const std::string& entity, bool unspecifiedBondIsUnbound = false) {
     const auto maxNodeIndex = static_cast<std::size_t>(
         std::numeric_limits<std::uint16_t>::max());
     const auto maxNodeCount = maxNodeIndex + 1;
@@ -553,7 +562,9 @@ std::optional<FlattenedPattern> flattenReactants(
     for (const auto& pattern : patterns) {
         std::size_t first = 0;
         flattened.patternOffsets.push_back(flattened.pattern.nodes.size());
-        if (!appendPattern(pattern, flattened.pattern, result, entity, first)) return std::nullopt;
+        if (!appendPattern(pattern, flattened.pattern, result, entity, first,
+                           unspecifiedBondIsUnbound))
+            return std::nullopt;
         representatives.push_back(first);
     }
     // A '+' between reactant patterns denotes distinct reactant complexes.
@@ -1358,12 +1369,23 @@ void addDirection(const bng::compile::CompiledRule& rule,
                       "physical bimolecular rate requires one declared reactant volume unit");
                 return;
             }
-            // Complete volume/rate conversion for physical bimolecular reactions is
-            // not yet validated in NFnext; refuse explicitly rather than executing
-            // with an incorrect propensity.
-            issue(result, BngLoweringSeverity::Error, entity,
-                  "physical bimolecular rate unit conversion is not yet supported in NFnext");
-            return;
+            // The physical rate k [M^-1 s^-1] must become a count-rate
+            // coefficient k / (N_A * V). stochasticRateFactor with a unit
+            // compartment volume supplies the mole/item bridge and the
+            // declared-volume basis (1 / (N_A * 1 volume unit)); the geometric
+            // reactant compartment factor computed above supplies 1 / V.
+            // Both are required: dropping either leaves the propensity wrong.
+            context.compartmentVolume = 1.0;
+            context.volumeUnit = decl->declaredUnit;
+            const auto conversion = bng::units::stochasticRateFactor(
+                *direction.rateLaw->unit, 2, context);
+            if (!conversion || !conversion.factor.has_value() ||
+                !std::isfinite(*conversion.factor) || *conversion.factor < 0.0) {
+                issue(result, BngLoweringSeverity::Error, entity,
+                      "physical bimolecular rate unit cannot be converted to a count rate");
+                return;
+            }
+            lowered.rate = *constant * (*conversion.factor);
         } else {
             issue(result, BngLoweringSeverity::Error, entity,
                   "physical rate conversion for molecularity > 2 is not yet supported in NFnext");
@@ -2014,7 +2036,8 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         std::vector<ObservableTermDef> terms;
         for (const auto& term : observable.terms) {
             BngLoweringResult validation;
-            const auto pattern = flattenReactants({term.pattern}, validation, observable.name);
+            const auto pattern = flattenReactants({term.pattern}, validation,
+                                                  observable.name, true);
             if (!pattern || !validation.ok())
                 refuse("invalid observable pattern");
             terms.push_back({pattern->pattern, term.relation, term.quantity});
