@@ -25,6 +25,7 @@
 #include "io/NetWriter.hpp"
 #include "compile/CompiledModel.hpp"
 #include "compile/TotalRate.hpp"
+#include "ast/ModelFunctionEvaluator.hpp"
 #include "SbmlUnitWriter.hpp"
 
 namespace bng::io {
@@ -444,7 +445,31 @@ std::string SbmlWriter::writeParameters(
 
     sbml << "    <listOfParameters>\n";
 
-    // Model parameters (constant=true)
+    std::unordered_set<std::string> eventParameters;
+    for (const auto& event : model.getEvents()) {
+        for (const auto& assignment : event.assignments) {
+            eventParameters.insert(assignment.target);
+        }
+    }
+    if (!eventParameters.empty()) {
+        const ast::ModelFunctionEvaluator evaluator(model);
+        for (const auto& param : model.getParameters().all()) {
+            if (eventParameters.count(param.getName()) != 0) continue;
+            const auto dependencies = evaluator.expandFunctions(
+                param.getExpression()).getDependencies();
+            if (std::any_of(dependencies.begin(), dependencies.end(),
+                            [&](const auto& name) {
+                                return eventParameters.count(name) != 0;
+                            })) {
+                throw std::runtime_error(
+                    "SBML export cannot preserve the event-dependent parameter '" +
+                    param.getName() + "' as a constant");
+            }
+        }
+    }
+
+    // An event can update a model parameter, so that parameter cannot be
+    // declared constant in the consuming SBML document.
     for (const auto& param : model.getParameters().all()) {
         const auto idIt = symbolIds.parameters.find(param.getName());
         const auto id = idIt == symbolIds.parameters.end()
@@ -452,7 +477,9 @@ std::string SbmlWriter::writeParameters(
         sbml << "      <parameter id=\"" << id
              << "\" name=\"" << escapeXml(param.getName())
              << "\" value=\"" << param.getValue()
-             << "\" constant=\"true\""
+             << "\" constant=\""
+             << (eventParameters.count(param.getName()) == 0 ? "true" : "false")
+             << "\""
              << sbml_units::attribute(compiled, param.getUnitName()) << "/>\n";
     }
 
@@ -684,9 +711,9 @@ std::string SbmlWriter::writeEvents(
     const auto& events = model.getEvents();
     if (events.empty()) return {};
 
-    // An event assignment targets observable state, which the exported
-    // document spells as the single network species the observable covers.
-    const auto speciesForTarget = [&](const std::string& target) -> std::string {
+    // Match the native event runtime: an observable names its single network
+    // species; a model parameter keeps its allocated SBML parameter ID.
+    const auto symbolForTarget = [&](const std::string& target) -> std::string {
         for (const auto& group : groups) {
             if (group.name != target) continue;
             if (group.entries.size() != 1 || group.entries.front().second != 1.0) {
@@ -695,6 +722,10 @@ std::string SbmlWriter::writeEvents(
                     "aggregate observable '" + target + "'");
             }
             return "S" + std::to_string(group.entries.front().first + 1);
+        }
+        if (model.getParameters().contains(target) &&
+            !model.getParameters().isTimeDependent(target)) {
+            return symbolIds.parameters.at(target);
         }
         throw std::runtime_error(
             "SBML export cannot preserve an event assignment to the unknown "
@@ -756,7 +787,7 @@ std::string SbmlWriter::writeEvents(
             sbml << "        <listOfEventAssignments>\n";
             for (const auto& assignment : event.assignments) {
                 sbml << "          <eventAssignment variable=\""
-                     << escapeXml(speciesForTarget(assignment.target)) << "\">\n";
+                     << escapeXml(symbolForTarget(assignment.target)) << "\">\n";
                 sbml << "            <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
                 sbml << exprToMathML(assignment.value, "              ", symbolIds, true);
                 sbml << "            </math>\n";
