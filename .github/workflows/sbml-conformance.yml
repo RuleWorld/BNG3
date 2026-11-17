@@ -357,6 +357,52 @@ jobs:
             --source-revision "$BNG3_SOURCE_REVISION" \
             --output "$RUNNER_TEMP/ssts-artifacts/issue159-release-receipt.json"
 
+      - name: Execute Issue 159 Core fixtures and selectors
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true)
+        shell: bash
+        env:
+          BNG3_EXACT_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          # The four suite-absent Core rows qualify only through real native
+          # execution of their analytic fixtures, not XML presence. Produce an
+          # explicit per-fixture result artifact, then consume it together with
+          # the full report and receipt in the release-ssts-coverage selector.
+          python -m pytest -q --noconftest \
+            tests/validation/release/cases/issue-159/test_core_analytic_fixtures.py \
+            --junitxml="$RUNNER_TEMP/ssts-artifacts/core-fixtures.xml"
+          python - <<'PY'
+          import json
+          import os
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+
+          directory = Path(os.environ['RUNNER_TEMP']) / 'ssts-artifacts'
+          tree = ET.parse(directory / 'core-fixtures.xml')
+          fixtures = {}
+          for case in tree.iter('testcase'):
+              name = case.get('name', '')
+              if '[' not in name:
+                  continue
+              fixture = name.split('[', 1)[1].rstrip(']')
+              passed = (
+                  case.find('failure') is None
+                  and case.find('error') is None
+                  and case.find('skipped') is None
+              )
+              fixtures[fixture] = fixtures.get(fixture, True) and passed
+          (directory / 'core-fixtures-report.json').write_text(
+              json.dumps({'fixtures': fixtures}, indent=2) + '\n'
+          )
+          print('Core fixture execution results:', fixtures)
+          PY
+          BNG3_SSTS_FULL_REPORT="$RUNNER_TEMP/ssts-artifacts/report.json" \
+          BNG3_ISSUE159_RECEIPT="$RUNNER_TEMP/ssts-artifacts/issue159-release-receipt.json" \
+          BNG3_CORE_FIXTURES_REPORT="$RUNNER_TEMP/ssts-artifacts/core-fixtures-report.json" \
+          BNG3_EXACT_REVISION="$BNG3_EXACT_REVISION" \
+            python -m pytest -q --noconftest \
+              tests/validation/release/cases/issue-159/test_ssts_full_execution.py
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:

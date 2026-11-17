@@ -23,6 +23,18 @@ def _load(path, label):
     return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
+_REPORT_CACHE = {}
+
+
+def report_cache():
+    """Load the full report once; None when no report was provided."""
+    if "report" not in _REPORT_CACHE:
+        _REPORT_CACHE["report"] = (
+            _load(_SUITE_REPORT, "BNG3_SSTS_FULL_REPORT") if _SUITE_REPORT else None
+        )
+    return _REPORT_CACHE["report"]
+
+
 def test_release_ssts_exact_full_run():
     """release-ssts: exact-revision full suite with zero blocking outcomes."""
     report = _load(_SUITE_REPORT, "BNG3_SSTS_FULL_REPORT")
@@ -57,12 +69,17 @@ def test_release_obligation_159_receipt():
 
 
 def test_release_ssts_coverage():
-    """release-ssts-coverage: every Core row has an independent case.
+    """release-ssts-coverage: every Core row has an executing independent case.
 
     The committed mapping pairs 100 Core rows with pinned SSTS cases; the four
-    rows absent from the official suite use the analytic fixtures. A mapped
-    case with a failed/timeout/invalid-source verdict does not count.
+    rows absent from the official suite use the analytic fixtures. Assignment
+    to the fixture list, XML presence, a clean process, or an ``unsupported``
+    verdict cannot qualify a row: each mapped case must have actually executed
+    and passed, and each suite-absent row must be backed by a real fixture
+    execution report, not just the fixture file.
     """
+    if not _SUITE_REPORT and not os.environ.get("BNG3_CORE_FIXTURES_REPORT"):
+        pytest.skip("no full SSTS report or Core fixture execution report provided")
     root = Path(__file__).resolve().parents[5]
     contract = json.loads(
         (root / "tests/validation/release/cases/issue-159/contract.json").read_text()
@@ -77,16 +94,40 @@ def test_release_ssts_coverage():
         "sbml.core.Reaction.compartment": "reaction-compartment",
         "sbml.core.LocalParameter.units": "localparameter-units",
     }
+    fixture_report_path = os.environ.get("BNG3_CORE_FIXTURES_REPORT")
+    fixture_results = {}
+    if fixture_report_path:
+        fixture_report = json.loads(
+            Path(fixture_report_path).read_text(encoding="utf-8")
+        )
+        fixture_results = fixture_report.get("fixtures", {})
     for row in core_rows:
         if row in fixtures:
-            assert (_FIXTURES / f"{fixture_names[row]}.xml").is_file()
+            fixture = fixture_names[row]
+            assert (
+                _FIXTURES / f"{fixture}.xml"
+            ).is_file(), f"{row}: missing analytic fixture source {fixture}.xml"
+            # File presence is not execution evidence. The producer must supply
+            # an affirmative per-fixture result from an actual native run.
+            assert fixture_report_path, (
+                f"{row}: BNG3_CORE_FIXTURES_REPORT not provided; fixture XML "
+                "presence cannot qualify a suite-absent Core row"
+            )
+            assert fixture_results.get(fixture) is True, (
+                f"{row}: fixture {fixture} has no affirmative passing execution "
+                f"in BNG3_CORE_FIXTURES_REPORT"
+            )
         else:
-            assert mapping.get(row), f"Core row {row} has no independent case"
-    if not _SUITE_REPORT:
-        pytest.skip("BNG3_SSTS_FULL_REPORT not provided")
-    report = _load(_SUITE_REPORT, "BNG3_SSTS_FULL_REPORT")
-    records = {(r["category"], r["id"]): r for r in report["records"]}
-    for row in core_rows:
-        for case_id in mapping.get(row, []):
-            record = records[("semantic", case_id)]
-            assert record["status"] not in {"failed", "timeout", "invalid-source"}
+            cases = mapping.get(row) or []
+            assert cases, f"Core row {row} has no independent case"
+            if not _SUITE_REPORT:
+                continue
+            report = report_cache()
+            assert report is not None
+            records = {(r["category"], r["id"]): r for r in report["records"]}
+            for case_id in cases:
+                record = records[("semantic", case_id)]
+                assert record["status"] == "passed", (
+                    f"{row}: mapped case {case_id} status={record['status']}; "
+                    "unsupported/not-tested cannot qualify row coverage"
+                )

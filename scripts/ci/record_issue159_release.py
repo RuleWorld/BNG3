@@ -68,15 +68,27 @@ def build_release_report(
     # The committed manifest was authored at an earlier revision and has a
     # documented set of improvements/regressions; its currency is a separate
     # obligation. Record the comparison as a diagnostic rather than failing a
-    # suite that has zero failed/timeout/invalid-source cases.
+    # suite that has zero failed/timeout/invalid-source cases. The comparator
+    # writes its difference report to stderr, so both streams must be captured:
+    # a nonzero exit or any difference line means the manifest did NOT match and
+    # the receipt must never say so.
+    diff_lines = [
+        line
+        for stream in (compare.stdout, compare.stderr)
+        for line in (stream or "").splitlines()
+        if line.startswith("  ") and "expected " in line
+    ]
+    matched = compare.returncode == 0 and not diff_lines
     manifest_comparison = {
         "exit_code": compare.returncode,
-        "difference_count": sum(
-            1
-            for line in compare.stdout.splitlines()
-            if line.startswith("  ") and "expected " in line
+        "difference_count": len(diff_lines),
+        "matched": matched,
+        "regression_count": sum(
+            1 for line in diff_lines if "observed unsupported" in line
         ),
-        "tail": compare.stdout[-1000:],
+        "stdout_tail": (compare.stdout or "")[-1000:],
+        "stderr_tail": (compare.stderr or "")[-1000:],
+        "tail": (compare.stderr or compare.stdout or "")[-1000:],
     }
 
     source = {"revision": expected_revision, "dirty": False}
@@ -111,7 +123,17 @@ def build_release_report(
                 "evidence_kind": "supported-execution",
                 "supported_execution": True,
                 "detail": "full non-partial official SSTS run at exact revision, "
-                "zero failed/timeout/invalid-source, manifest matched",
+                "zero failed/timeout/invalid-source, manifest "
+                + (
+                    "matched"
+                    if matched
+                    else (
+                        f"NOT matched: comparator exited {compare.returncode} "
+                        f"with {len(diff_lines)} difference(s) "
+                        f"({manifest_comparison['regression_count']} regression(s)); "
+                        "diagnostic only, see manifest_comparison.stderr_tail"
+                    )
+                ),
                 "receipt": checks["release-ssts"],
             },
             {
