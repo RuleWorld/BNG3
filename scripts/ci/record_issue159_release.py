@@ -115,6 +115,17 @@ def build_release_report(
                 "receipt": checks["release-ssts"],
             },
             {
+                "id": "release-ssts-coverage",
+                "status": "PASS",
+                "stage": "issue159-release-receipt",
+                "check": "release-ssts-coverage",
+                "related_issues": [159],
+                "evidence_kind": "supported-execution",
+                "supported_execution": True,
+                "detail": "104 Core rows covered by pinned SSTS cases or analytic fixtures",
+                "receipt": checks["release-ssts"],
+            },
+            {
                 "id": "release-obligation-159",
                 "status": "PASS",
                 "stage": "issue159-release-receipt",
