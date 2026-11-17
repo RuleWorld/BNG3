@@ -29,6 +29,8 @@ on:
       - 'tests/test_ssts_isolation.py'
       - 'tests/test_ssts_report_comparison.py'
       - 'tests/validation/test_conformance_ci_wiring.py'
+      - 'tests/validation/release/cases/issue-159/test_core_analytic_fixtures.py'
+      - 'tests/validation/release/cases/issue-159/test_ssts_full_execution.py'
       - 'tests/test_ssts_stage_reporting.py'
       - 'tests/python/test_native_events.py'
       - 'tests/python/test_species_rate_rule_amounts.py'
