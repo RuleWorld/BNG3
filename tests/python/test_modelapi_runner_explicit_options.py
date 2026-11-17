@@ -42,5 +42,15 @@ def test_single_simulation_point_count_includes_both_endpoints(tmp_path):
         "begin reaction rules\nA() -> 0 k\nend reaction rules\nend model\n",
         encoding="utf-8",
     )
+    # Pinned PyBioNetGen's modelapi runner.run(method=..., n_points=n) emits
+    # n+1 points (n_points is forwarded as the backend step count). This is
+    # distinct from top-level bionetgen.run(..., out=..., n_points=n), which
+    # emits n rows. Verify both n=4 and n=5 on the modelapi law.
+    result = run(str(model), method="ode", t_span=(0, 2), n_points=4)
+    assert list(result.time) == pytest.approx(
+        [0.0, 0.5, 1.0, 1.5, 2.0], abs=1e-12
+    )
     result = run(str(model), method="ode", t_span=(0, 2), n_points=5)
-    assert list(result.time) == [0.0, 0.5, 1.0, 1.5, 2.0]
+    assert list(result.time) == pytest.approx(
+        [0.0, 0.4, 0.8, 1.2, 1.6, 2.0], abs=1e-12
+    )
