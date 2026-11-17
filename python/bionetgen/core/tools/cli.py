@@ -1,4 +1,6 @@
 import os, subprocess
+from pathlib import Path
+import sys
 from bionetgen.core.exc import BNGRunError
 from bionetgen.core.utils.logging import BNGLogger
 
@@ -144,6 +146,9 @@ class BNGCLI:
             self.logger.debug(
                 "Executing via C++ backend", loc=f"{__file__} : BNGCLI.run()"
             )
+            if self.log_file is not None or self.timeout is not None:
+                self._run_native_process(inp_run_path, _cpp)
+                return
             model = _cpp.parse_file(inp_run_path)
             _cpp.execute(model, inp_run_path, verbose=not self.suppress)
 
@@ -257,3 +262,61 @@ class BNGCLI:
             else:
                 stderr_str = None
             raise BNGRunError(command, stdout=stdout_str, stderr=stderr_str)
+
+    def _write_native_log(self, text, input_path):
+        if self.log_file is None:
+            return
+        requested = os.fspath(self.log_file)
+        destination = Path(requested).absolute()
+        if destination.is_dir() or requested.endswith(
+            tuple(separator for separator in (os.sep, os.altsep) if separator)
+        ):
+            destination /= Path(input_path).stem + ".log"
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_text(text, encoding="utf-8")
+
+    def _run_native_process(self, input_path, native):
+        import bionetgen
+        from bionetgen.core.tools.result import BNGResult
+
+        worker = (
+            Path(__file__).resolve().parents[2] / "compat" / "_native_cli_worker.py"
+        )
+        command = [
+            sys.executable,
+            str(worker),
+            str(input_path),
+            str(Path(bionetgen.__file__).resolve()),
+            str(Path(native.__file__).resolve()),
+            "1" if self.log_file is not None or not self.suppress else "0",
+        ]
+        self.result = None
+        try:
+            completed = subprocess.run(
+                command,
+                cwd=self.output,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=self.timeout,
+            )
+        except subprocess.TimeoutExpired as exc:
+            partial = exc.stdout or ""
+            if isinstance(partial, bytes):
+                partial = partial.decode("utf-8", errors="replace")
+            self._write_native_log(partial, input_path)
+            raise
+        self._write_native_log(completed.stdout, input_path)
+        if not self.suppress:
+            print(completed.stdout, end="")
+        if completed.returncode:
+            raise BNGRunError(
+                command,
+                message="BNG3 native action execution failed",
+                stdout=completed.stdout,
+            )
+        self.result = BNGResult(self.output)
+        self.result.process_return = completed.returncode
+        self.result.output = completed.stdout.splitlines()
