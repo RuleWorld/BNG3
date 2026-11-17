@@ -945,6 +945,11 @@ jobs:
           python -m pytest --noconftest -q
           tests/python/nfnext/test_nfnext_filters_observable.py
 
+      - name: Check NFnext reversible conversion against independent two-state law
+        run: >-
+          python -m pytest --noconftest -q
+          tests/python/nfnext/test_nfnext_reversible_conversion.py
+
       - name: Verify spawned API worker identity
         run: |
           pytest -c tests/validation/pytest.ini \
