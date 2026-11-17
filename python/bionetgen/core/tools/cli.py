@@ -107,6 +107,15 @@ class BNGCLI:
             os.makedirs(self.output, exist_ok=True)
 
     def run(self):
+        try:
+            return self._run_impl()
+        finally:
+            if self.old_bngpath is None:
+                os.environ.pop("BNGPATH", None)
+            else:
+                os.environ["BNGPATH"] = self.old_bngpath
+
+    def _run_impl(self):
         self.logger.debug("Running", loc=f"{__file__} : BNGCLI.run()")
 
         # C++ fast path.  Import availability is the only fallback boundary;
@@ -234,21 +243,9 @@ class BNGCLI:
             self.result = BNGResult(self.output)
             self.result.process_return = rc
             self.result.output = out
-            # set BNGPATH back
-            if self.old_bngpath is not None:
-                os.environ["BNGPATH"] = self.old_bngpath
-            else:
-                if "BNGPATH" in os.environ:
-                    del os.environ["BNGPATH"]
         else:
             self.logger.error("Command failed to run", loc=f"{__file__} : BNGCLI.run()")
             self.result = None
-            # set BNGPATH back
-            if self.old_bngpath is not None:
-                os.environ["BNGPATH"] = self.old_bngpath
-            else:
-                if "BNGPATH" in os.environ:
-                    del os.environ["BNGPATH"]
             if hasattr(out, "stdout"):
                 if out.stdout is not None:
                     stdout_str = out.stdout.decode("utf-8")
