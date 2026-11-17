@@ -3906,9 +3906,13 @@ def _validate_case(
                 },
             )
         record["simulation_comparison"] = comparison
-        if not _apply_noncomparable_verdict(
-            record, comparison, _random_event_execution_verdict(parsed)
-        ) and not comparison.get("passed", False) and not comparison.get("skipped", False):
+        if (
+            not _apply_noncomparable_verdict(
+                record, comparison, _random_event_execution_verdict(parsed)
+            )
+            and not comparison.get("passed", False)
+            and not comparison.get("skipped", False)
+        ):
             record["status"] = "failed"
             record["error"] = comparison.get("error", "numerical comparison failed")
         record["core_passed"] = record["status"] == "passed"
