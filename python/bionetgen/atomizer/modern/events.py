@@ -480,6 +480,12 @@ class EventTranslationContext:
     # Inline pure SBML function definitions before folding fixed-time events.
     expand_functions: Callable[[str], str] = lambda expression: expression
     is_compartment: Callable[[str], bool] = lambda _identifier: False
+    # Resolve a static compartment id to its constant volume literal.  A
+    # compartment whose size can change during the run returns None, so the
+    # native static-denominator guard refuses instead of freezing that size.
+    resolve_static_compartment_volume: Callable[[str], Optional[float]] = (
+        lambda _identifier: None
+    )
     # Initial values can determine a trigger's t=0 rising edge even when the
     # referenced symbol changes later. This callback is used only for that
     # edge and immediate assignment values, never for later schedule times.
@@ -3049,6 +3055,9 @@ def _native_continuous_expression(
                 if target.amount_factor != 1.0:
                     rendered = f"({rendered} / {_format_number(target.amount_factor)})"
                 return ast.copy_location(ast.parse(rendered, mode="eval").body, node)
+            volume = context.resolve_static_compartment_volume(node.id)
+            if volume is not None:
+                return ast.copy_location(ast.Constant(value=volume), node)
             if context.is_compile_time_constant(node.id):
                 return ast.copy_location(
                     ast.Name(id=standardize_name(node.id), ctx=ast.Load()), node
@@ -3134,6 +3143,9 @@ def _native_piecewise_value_expression(
                 if target.amount_factor != 1.0:
                     rendered = f"({rendered} / {_format_number(target.amount_factor)})"
                 return ast.copy_location(ast.parse(rendered, mode="eval").body, node)
+            volume = context.resolve_static_compartment_volume(node.id)
+            if volume is not None:
+                return ast.copy_location(ast.Constant(value=volume), node)
             if context.is_compile_time_constant(node.id):
                 return ast.copy_location(
                     ast.Name(id=standardize_name(node.id), ctx=ast.Load()), node

@@ -2613,6 +2613,7 @@ def _rate_for_reaction(
     # The reaction-compartment factor is redundant only for an elementary
     # amount law.  Preserve it on complete SBML fluxes, where it converts the
     # concentration-valued state expression back to an amount/time flux.
+    original_math = math
     if not nonlinear:
         math = compartment_stripped_math
 
@@ -2805,6 +2806,13 @@ def _rate_for_reaction(
             )
 
     stripped = _strip_mass_action_factors(converted, reactants)
+    if preserved_compartment_flux:
+        # No mass-action constant could carry this law's volume correction, so
+        # keep the source compartment factor in the complete flux instead of
+        # emitting a concentration rate with its amount/time scale missing.
+        stripped = _strip_mass_action_factors(
+            convert_math_expression(original_math), reactants
+        )
     return apply_conversion(
         bngl_function(
             stripped,
@@ -8366,6 +8374,31 @@ def generate_bngl(
             compartment = model.compartments.get(identifier)
             return bool(compartment is not None and identifier not in mutable_event_ids)
 
+        def resolve_static_compartment_volume(identifier: str) -> Optional[float]:
+            """Fold a constant compartment size, never a changing one.
+
+            Native event values are emitted as BNGL expressions.  A compartment
+            symbol left in that expression is not a scalar and the native
+            runtime rejects it as an unresolved denominator.  Inlining the
+            size of a compartment that is fixed for the whole run keeps that
+            expression static, exactly as the concentration-to-amount factor
+            already is.  A size governed by a rule or an event returns None so
+            the dynamic dependency is never frozen into a literal.
+            """
+
+            compartment = model.compartments.get(identifier)
+            if compartment is None or not compartment.constant:
+                return None
+            if (
+                identifier in changing_compartments
+                or identifier in rate_ruled_compartment_ids
+            ):
+                return None
+            size = _numeric_value(compartment.size)
+            if size is None or not math.isfinite(size) or float(size) <= 0.0:
+                return None
+            return float(size)
+
         def resolve_constant_symbol(identifier: str) -> Optional[float]:
             """Resolve a symbol, refusing a value that changes during the run.
 
@@ -12079,6 +12112,7 @@ def generate_bngl(
                 or identifier in event_species_reference_targets
             ),
             is_compartment=lambda identifier: identifier in model.compartments,
+            resolve_static_compartment_volume=resolve_static_compartment_volume,
             resolve_compartment_state_pattern=resolve_compartment_state_pattern,
             resolve_rate_rule_state_pattern=(
                 lambda identifier: (
