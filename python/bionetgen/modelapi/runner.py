@@ -50,16 +50,23 @@ def run(
             raise NotImplementedError(
                 "timeout is not supported with in-memory simulation overrides"
             )
-        from bionetgen.compat.runner import _normalize_time_options
+        from bionetgen.compat.runner import _normalize_time_options, _positive_steps
         from bionetgen.model import load
 
         t_start, t_end, steps = _normalize_time_options(
             t_span=(0.0, 100.0) if t_span is None else t_span,
             t_start=None,
             t_end=None,
-            n_points=n_points,
+            n_points=None,
             n_steps=None,
         )
+        if n_points is not None:
+            # Pinned PyBioNetGen's modelapi runner.run(method=...,
+            # n_points=n) emits n+1 points (it forwards n_points as the
+            # backend's step count). The top-level bionetgen.run(..., out=)
+            # path instead emits n rows; the two entry points are normalized
+            # separately so both pinned contracts hold.
+            steps = _positive_steps("n_points", n_points, 2)
         return load(inp).simulate(
             method=method or "ode",
             t_start=float(t_start),

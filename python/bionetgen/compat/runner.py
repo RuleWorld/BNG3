@@ -126,6 +126,9 @@ def _normalize_time_options(*, t_span, t_start, t_end, n_points, n_steps):
     if n_points is not None and n_steps is not None:
         raise TypeError("n_points and n_steps cannot both be specified")
     if n_points is not None:
+        # Top-level bionetgen.run(..., out=..., n_points=n) emits n rows
+        # including both endpoints (verified against pinned PyBioNetGen),
+        # so the in-process simulation needs n-1 steps.
         steps = _positive_steps("n_points", n_points, 2) - 1
     elif n_steps is not None:
         steps = _positive_steps("n_steps", n_steps, 1)
