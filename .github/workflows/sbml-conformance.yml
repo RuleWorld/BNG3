@@ -348,6 +348,15 @@ jobs:
           (directory / 'sha256.json').write_text(json.dumps(digests, indent=2) + '\n')
           PY
 
+      - name: Record Issue 159 release receipt from full suite
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true)
+        run: |
+          python scripts/ci/record_issue159_release.py \
+            --suite-report "$RUNNER_TEMP/ssts-artifacts/report.json" \
+            --expectations provenance/sbml-campaign/expectations.json \
+            --source-revision "$BNG3_SOURCE_REVISION" \
+            --output "$RUNNER_TEMP/ssts-artifacts/issue159-release-receipt.json"
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:

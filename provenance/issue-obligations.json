@@ -9818,7 +9818,7 @@
     },
     {
       "number": 159,
-      "body_sha256": "35f7c561067b09cb03db9d9ef610b570232556ffc32b2322e35a27623e738502",
+      "body_sha256": "d6d7ec14e8a1a0af97017982e0f2c0d7be3b8c76e1ad00e777bc00f5b4e3e087",
       "obligations": [
         {
           "id": "issue:159:run-the-existing-locked-suite-runner-on-an-identified-final-bng3",
@@ -9967,7 +9967,7 @@
           "id": "issue:159:live-acceptance:release-ssts",
           "criterion": "`release-ssts`: all required valid Core cases pass against official expected outputs with recorded suite/toolchain pins.",
           "scope": "`release-ssts`: all required valid Core cases pass against official expected outputs with recorded suite/toolchain pins.",
-          "live_body_sha256": "e5e2187dae25826d690d144c2d2c3654ec0ce2b979d5f6b2e5f29ab6cdcb7d60",
+          "live_body_sha256": "d6d7ec14e8a1a0af97017982e0f2c0d7be3b8c76e1ad00e777bc00f5b4e3e087",
           "dependencies": [
             157,
             160
@@ -9981,14 +9981,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-ssts.",
-                "No revision-locked consuming receipt producer is declared for required live check release-ssts."
-              ]
+              "selector": "tests/validation/release/cases/issue-159/test_ssts_full_execution.py::test_release_ssts_exact_full_run",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/sbml-conformance.yml#conformance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -10033,7 +10030,7 @@
           "id": "issue:159:live-acceptance:release-obligation-159",
           "criterion": "`release-obligation-159`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
           "scope": "`release-obligation-159`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
-          "live_body_sha256": "e5e2187dae25826d690d144c2d2c3654ec0ce2b979d5f6b2e5f29ab6cdcb7d60",
+          "live_body_sha256": "d6d7ec14e8a1a0af97017982e0f2c0d7be3b8c76e1ad00e777bc00f5b4e3e087",
           "dependencies": [
             157,
             160
@@ -10047,14 +10044,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-159.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-159."
-              ]
+              "selector": "tests/validation/release/cases/issue-159/test_ssts_full_execution.py::test_release_obligation_159_receipt",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/sbml-conformance.yml#conformance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
