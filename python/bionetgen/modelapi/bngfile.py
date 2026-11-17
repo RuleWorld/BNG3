@@ -1,17 +1,23 @@
 import glob
-import os, re
+import os
+import re
 import shutil
 import tempfile
 
-from bionetgen.main import BioNetGen
 from bionetgen.core.exc import BNGFileError
 from bionetgen.core.utils.utils import find_BNG_path, run_command, ActionList
 
-# This allows access to the CLIs config setup
-app = BioNetGen()
-app.setup()
-conf = app.config["bionetgen"]
-def_bng_path = conf["bngpath"]
+
+def _default_bng_path():
+    try:
+        from bionetgen.core.defaults import BNGDefaults
+
+        return BNGDefaults().bng_path
+    except Exception:
+        return None
+
+
+def_bng_path = _default_bng_path()
 
 
 class BNGFile:
@@ -54,6 +60,7 @@ class BNGFile:
         self.BNGPATH = BNGPATH
         self.bngexec = bngexec
         self.parsed_actions = []
+        self.parsed_protocol_actions = []
 
     def generate_xml(self, xml_file, model_file=None) -> bool:
         """
@@ -192,7 +199,22 @@ class BNGFile:
 
             stripped_lines = []
             self.parsed_actions = []
+            self.parsed_protocol_actions = []
+            in_protocol = False
             for line in mlines:
+                if re.match(r"\s*begin\s+protocol\b", line, flags=re.IGNORECASE):
+                    in_protocol = True
+                    continue
+                if re.match(r"\s*end\s+protocol\b", line, flags=re.IGNORECASE):
+                    in_protocol = False
+                    continue
+                if in_protocol:
+                    # protocol contains actions; collect them for modelapi protocol block
+                    if not self._not_action(line) or line.strip():
+                        cleaned = line.replace(" ", "")
+                        if cleaned:
+                            self.parsed_protocol_actions.append(cleaned)
+                    continue
                 if self._not_action(line):
                     stripped_lines.append(line)
                 else:

@@ -98,6 +98,24 @@ class BNGResult:
     def __iter__(self):
         return self.gdats.__iter__()
 
+    @property
+    def gdat(self):
+        if len(self.gdats) == 1:
+            return next(iter(self.gdats.values()))
+        return self.gdats
+
+    @property
+    def cdat(self):
+        if len(self.cdats) == 1:
+            return next(iter(self.cdats.values()))
+        return self.cdats
+
+    @property
+    def scan(self):
+        if len(self.scans) == 1:
+            return next(iter(self.scans.values()))
+        return self.scans
+
     def load(self, fpath):
         self.logger.debug(f"Loading file {fpath}", loc=f"{__file__} : BNGResult.load()")
         path, fname = os.path.split(fpath)

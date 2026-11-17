@@ -570,8 +570,12 @@ print(json.dumps(settings, sort_keys=True))
     expected = dict(bionetgen.defaults.config["bionetgen"])
     expected["notebook"] = dict(expected["notebook"])
     for key in ("path", "template"):
-        actual["notebook"][key] = os.path.normcase(actual["notebook"][key])
-        expected["notebook"][key] = os.path.normcase(expected["notebook"][key])
+        actual["notebook"][key] = os.path.normcase(
+            os.path.realpath(actual["notebook"][key])
+        )
+        expected["notebook"][key] = os.path.normcase(
+            os.path.realpath(expected["notebook"][key])
+        )
     assert actual == expected
 
 
