@@ -613,6 +613,75 @@ end reaction rules
     assert(distinctMatcher.enumerate(distinctRule.pattern, distinctState).size() == 1);
 }
 
+void symmetricBindingUsesUnorderedEmbeddings() {
+    // A symmetric product is invariant under exchanging the two A reactants,
+    // so BNG2's 0.5*k factor must collapse ordered embeddings to C(n,2).
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin parameters
+  k 0.05
+end parameters
+begin molecule types
+  A(b)
+end molecule types
+begin seed species
+  A(b) 10
+end seed species
+begin observables
+  Molecules A_count A(b)
+end observables
+begin reaction rules
+  dimerize: A(b) + A(b) -> A(b!1).A(b!1) k
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(lowered.ok());
+    const auto& rule = lowered.model.expanded_rules.front();
+    assert(rule.pattern.nodes.size() == 2);
+    assert(rule.pattern.interchangeable.size() == 1);
+    assert((rule.pattern.interchangeable.front() == std::vector<std::size_t>{0, 1}));
+    const auto aType = moleculeTypeId(lowered.model, "A");
+    nfnext::GenericGraphState state(lowered.model);
+    for (int i = 0; i < 10; ++i) state.create(aType);
+    nfnext::GenericMatcher matcher(lowered.model);
+    assert(matcher.enumerate(rule.pattern, state).size() == 45);
+
+    // An asymmetric product distinguishes the two reactants, so ordered
+    // embeddings (two product channels) must be retained: BNG2's net rate is
+    // k, not 0.5*k.
+    const auto asymAst = bng::parser::parseModel(R"BNGL(
+begin parameters
+  k 0.05
+end parameters
+begin molecule types
+  A(x~u~p)
+end molecule types
+begin seed species
+  A(x~u) 10
+end seed species
+begin observables
+  Molecules U A(x~u)
+end observables
+begin reaction rules
+  convert: A(x~u) + A(x~u) -> A(x~p) + A(x~u) k
+end reaction rules
+)BNGL");
+    assert(asymAst);
+    const bng::compile::CompiledModel asymSemantic(*asymAst);
+    assert(asymSemantic.valid());
+    const auto asymLowered = nfnext::lowerFromBioNetGen(asymSemantic);
+    assert(asymLowered.ok());
+    const auto& asymRule = asymLowered.model.expanded_rules.front();
+    assert(asymRule.pattern.interchangeable.empty());
+    const auto asymA = moleculeTypeId(asymLowered.model, "A");
+    nfnext::GenericGraphState asymState(asymLowered.model);
+    for (int i = 0; i < 10; ++i) asymState.create(asymA);
+    nfnext::GenericMatcher asymMatcher(asymLowered.model);
+    assert(asymMatcher.enumerate(asymRule.pattern, asymState).size() == 90);
+}
+
 void identicalComplexReactantsHaveUnorderedEmbeddings() {
     const auto ast = bng::parser::parseModel(R"BNGL(
 begin parameters
@@ -1898,6 +1967,7 @@ end reaction rules
     acceptsMultipleObservableArithmeticRate();
     refusesTimeDependentNestedGlobalFunctionRate();
     identicalReactantsHaveUnorderedEmbeddings();
+    symmetricBindingUsesUnorderedEmbeddings();
     identicalComplexReactantsHaveUnorderedEmbeddings();
     rejectsUnrepresentablePackedSiteIndex();
     rejectsMolecularityNodeIndexOverflow();
