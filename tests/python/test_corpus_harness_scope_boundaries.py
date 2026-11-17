@@ -40,6 +40,9 @@ UNDEFINED_AT_THE_INITIAL_POINT = """<?xml version="1.0" encoding="UTF-8"?>
       <species id="S" compartment="c" initialAmount="0" hasOnlySubstanceUnits="true"
         boundaryCondition="false" constant="false"/>
     </listOfSpecies>
+    <listOfParameters>
+      <parameter id="obs" value="0" constant="false"/>
+    </listOfParameters>
     <listOfRules>
       <rateRule variable="S">
         <math xmlns="http://www.w3.org/1998/Math/MathML"><cn> 1 </cn></math>
