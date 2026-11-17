@@ -1003,14 +1003,22 @@ class SBMLValidationUnavailable(RuntimeError):
     """The harness cannot validate a source without its required validator."""
 
 
-def _validate_xml(text: str, label: str) -> dict[str, Any]:
+def _validate_xml(
+    text: str, label: str, source_path: Path | None = None
+) -> dict[str, Any]:
     try:
         import libsbml
     except ImportError as exc:
         raise SBMLValidationUnavailable(
             f"{label}: libSBML is required for SBML validation"
         ) from exc
-    document = libsbml.readSBMLFromString(text)
+    # Parse from the source file when one is available: a document read from a
+    # string has no base URI, so comp/external model definitions resolve as
+    # semantic errors even though the referenced file sits beside the source.
+    if source_path is not None and source_path.is_file():
+        document = libsbml.readSBMLFromFile(str(source_path))
+    else:
+        document = libsbml.readSBMLFromString(text)
     errors = int(document.getNumErrors())
     if errors:
         messages = [
@@ -3662,7 +3670,7 @@ def _validate_case(
                         reference_path.read_bytes()
                     )
         with _case_phase_scope("source-xml-validation"):
-            record["source_xml"] = _validate_xml(sbml, "source SBML")
+            record["source_xml"] = _validate_xml(sbml, "source SBML", source_path)
         source_xml_valid = True
         with _case_phase_scope("source-parse"):
             parsed = SBMLParser().parse(sbml, source_path=source_path)
