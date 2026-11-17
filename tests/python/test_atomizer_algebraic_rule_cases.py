@@ -51,7 +51,8 @@ def _load_validator(name: str):
 # persistent event with a delay.  The event's trigger is true while
 # ``3.5 < k2 < 4``; with ``k1' = 1`` and ``k1(0) = 1`` that window opens at
 # ``t = 2.5`` and the delayed execution happens at ``t = 3.6``.
-_01575_MODEL = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+_01575_MODEL = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
          level="3" version="2">
   <model id="case01575" name="case01575">
     <listOfParameters>
@@ -118,8 +119,10 @@ _01575_RESULTS = """Time,k1,k2
 """
 
 # ``semantic/00761``: an algebraic rule over two species and an event whose
-# trigger reads a reaction product.
-_00761_MODEL = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+# trigger reads a reaction product. The time unit definition is retained from
+# the official case at SBML Test Suite cf38585fac5de8e0e90112febb62851ee2181816.
+_00761_MODEL = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
          level="3" version="2">
   <model id="case00761" name="case00761" timeUnits="time">
     <listOfFunctionDefinitions>
@@ -142,6 +145,13 @@ _00761_MODEL = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
         </math>
       </functionDefinition>
     </listOfFunctionDefinitions>
+    <listOfUnitDefinitions>
+      <unitDefinition id="time">
+        <listOfUnits>
+          <unit kind="second" exponent="1" scale="0" multiplier="1"/>
+        </listOfUnits>
+      </unitDefinition>
+    </listOfUnitDefinitions>
     <listOfCompartments>
       <compartment id="C" name="C" spatialDimensions="3" size="1" constant="true"/>
     </listOfCompartments>
