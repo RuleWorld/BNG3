@@ -815,3 +815,46 @@ end model
     CHECK(xml.find("<assignmentRule variable=\"Bfree\">") != std::string::npos);
     CHECK(xml.find("<ci> S2 </ci>") != std::string::npos);
 }
+
+TEST_CASE("SBML Core preserves event-assigned parameter IDs and mutability",
+          "[sbml][events]") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin model
+begin parameters
+  S1 0.75
+  r 0.25
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin observables
+  Species A_total A()
+end observables
+begin reaction rules
+  decay: A() -> 0 S1
+end reaction rules
+begin bng3_events version 1
+  event "switch"
+    trigger: A_total < 0.75
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: S1 = 1
+  end event
+end bng3_events
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+    bng::engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    const auto xml = bng::io::SbmlWriter::write(*model, &network);
+    CHECK(xml.find("<parameter id=\"param_S1\" name=\"S1\" value=\"0.75\" constant=\"false\"") !=
+          std::string::npos);
+    CHECK(xml.find("<parameter id=\"r\" name=\"r\" value=\"0.25\" constant=\"true\"") !=
+          std::string::npos);
+    CHECK(xml.find("<eventAssignment variable=\"param_S1\">") != std::string::npos);
+    CHECK(xml.find("<ci> param_S1 </ci>") != std::string::npos);
+}
