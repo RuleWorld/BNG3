@@ -139,6 +139,10 @@ def run(
 
     if model is None:
         raise click.UsageError("MODEL or --input is required")
+    if timeout is not None:
+        raise click.UsageError("--timeout is not supported for positional MODEL runs")
+    if format_hint is not None:
+        raise click.UsageError("--format is not supported for positional MODEL runs")
 
     from bionetgen import load
 
