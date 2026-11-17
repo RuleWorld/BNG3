@@ -139,6 +139,35 @@ end model
     CHECK(multi.find("<listOfParameters>") == std::string::npos);
 }
 
+TEST_CASE("SBML Core declares the implicit compartment alongside named compartments") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin model
+  begin compartments
+    cell 3 2
+  end compartments
+  begin molecule types
+    A()
+    U()
+  end molecule types
+  begin seed species
+    @cell:A() 8
+    U() 3
+  end seed species
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+    bool exportNetwork = false;
+    SECTION("seed species") {}
+    SECTION("generated species") { exportNetwork = true; }
+    bng::engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    const auto xml = bng::io::SbmlWriter::write(*model, exportNetwork ? &network : nullptr);
+    const auto implicit = startTag(xml, "<compartment id=\"default\"");
+    REQUIRE_FALSE(implicit.empty());
+    CHECK(attributeValue(implicit, "size") == "1");
+    CHECK(xml.find("compartment=\"default\"") != std::string::npos);
+}
+
 TEST_CASE("SBML-Multi rejects unit-aware reaction rates it cannot convert") {
     const auto model = bng::parser::parseModel(R"BNGL(
 begin model
@@ -873,4 +902,56 @@ end model
     CHECK(xml.find("<rateRule ") == std::string::npos);
     CHECK(xml.find("<reaction id=\"R1\"") != std::string::npos);
     CHECK(xml.find("<ci> k </ci>") != std::string::npos);
+}
+
+TEST_CASE("SBML Core preserves event-assigned parameter IDs and mutability",
+          "[sbml][events]") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin model
+begin parameters
+  S1 0.75
+  r 0.25
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin observables
+  Species A_total A()
+end observables
+begin reaction rules
+  decay: A() -> 0 S1
+end reaction rules
+begin bng3_events version 1
+  event "switch"
+    trigger: A_total < 0.75
+    initial_value: false
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: S1 = 1
+  end event
+end bng3_events
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+    bng::engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    const auto xml = bng::io::SbmlWriter::write(*model, &network);
+    CHECK(xml.find("<parameter id=\"param_S1\" name=\"S1\" value=\"0.75\" constant=\"false\"") !=
+          std::string::npos);
+    CHECK(xml.find("<parameter id=\"r\" name=\"r\" value=\"0.25\" constant=\"true\"") !=
+          std::string::npos);
+    CHECK(xml.find("<eventAssignment variable=\"param_S1\">") != std::string::npos);
+    CHECK(xml.find("<ci> param_S1 </ci>") != std::string::npos);
+
+    // The native runtime re-evaluates dependent BNGL parameters after the
+    // event. Export must not freeze one at its initial numeric value.
+    model->getParameters().add(bng::ast::Parameter(
+        "dependent", bng::ast::Expression::identifier("S1")));
+    model->getParameters().evaluate("dependent");
+    CHECK_THROWS_WITH(
+        bng::io::SbmlWriter::write(*model, &network),
+        Catch::Matchers::ContainsSubstring("event-dependent parameter 'dependent'"));
 }

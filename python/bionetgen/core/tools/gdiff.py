@@ -1,6 +1,16 @@
-import xmltodict, copy, os, json
+import copy
+import json
+import os
 
 from bionetgen.core.utils.logging import BNGLogger
+
+
+def _require_xmltodict():
+    try:
+        import xmltodict  # type: ignore
+    except ImportError as exc:
+        raise ImportError("xmltodict is required for graph diff operations") from exc
+    return xmltodict
 
 
 class BNGGdiff:
@@ -78,6 +88,7 @@ class BNGGdiff:
             loc=f"{__file__} : BNGGdiff.__init__()",
         )
 
+        xmltodict = _require_xmltodict()
         with open(self.input, "r") as f:
             self.gdict_1 = xmltodict.parse(f.read())
         with open(self.input2, "r") as f:
@@ -688,5 +699,5 @@ class BNGGdiff:
         for graph_name in graphs.keys():
             # now write gml as graphml
             with open(graph_name, "w") as f:
-                xmltodict.unparse(graphs[graph_name], output=f, pretty=True)
+                _require_xmltodict().unparse(graphs[graph_name], output=f, pretty=True)
         return graphs

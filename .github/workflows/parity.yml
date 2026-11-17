@@ -920,6 +920,21 @@ jobs:
           python -m pytest --noconftest -q
           tests/python/nfnext/test_nfnext_bimolecular_unit_boundary.py
 
+      - name: Check NFnext dynamic observable-dependent rate against independent exact SSA
+        run: >-
+          python -m pytest --noconftest -q
+          tests/python/nfnext/test_nfnext_dynamic_rate_observable.py
+
+      - name: Check NFnext identical-reactant combinatorial factor
+        run: >-
+          python -m pytest --noconftest -q
+          tests/python/nfnext/test_nfnext_symmetric_reactants.py
+
+      - name: Check NFnext compartment transport against independent binomial law
+        run: >-
+          python -m pytest --noconftest -q
+          tests/python/nfnext/test_nfnext_compartment_transport.py
+
       - name: Verify spawned API worker identity
         run: |
           pytest -c tests/validation/pytest.ini \

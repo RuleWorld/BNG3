@@ -46,7 +46,28 @@ __all__ = ["bngmodel", "SympyOdes", "export_sympy_odes", "extract_odes_from_mexf
 
 def __getattr__(name):
     if name in {"SympyOdes", "export_sympy_odes", "extract_odes_from_mexfile"}:
-        from .sympy_odes import SympyOdes, export_sympy_odes, extract_odes_from_mexfile
+        try:
+            from .sympy_odes import (
+                SympyOdes,
+                export_sympy_odes,
+                extract_odes_from_mexfile,
+            )
 
-        return locals()[name]
-    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+            value = locals()[name]
+        except ImportError:
+
+            def _missing_sympy(*args, **kwargs):
+                raise ImportError(
+                    "SymPy is required for SympyOdes/export_sympy_odes; "
+                    "install the optional 'sympy' dependency"
+                )
+
+            class SympyOdes:  # type: ignore[no-redef]
+                pass
+
+            if name == "SympyOdes":
+                value = SympyOdes
+            else:
+                value = _missing_sympy
+        globals()[name] = value
+        return value

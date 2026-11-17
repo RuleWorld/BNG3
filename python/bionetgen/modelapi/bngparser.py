@@ -1,21 +1,25 @@
-import xmltodict, re
-
-from bionetgen.main import BioNetGen
-from bionetgen.core.exc import BNGParseError, BNGModelError
+import re
 from tempfile import TemporaryFile
 
+from bionetgen.core.exc import BNGParseError, BNGModelError
 from .bngfile import BNGFile
 from .xmlparsers import ParameterBlockXML, CompartmentBlockXML, ObservableBlockXML
 from .xmlparsers import SpeciesBlockXML, MoleculeTypeBlockXML, FunctionBlockXML
 from .xmlparsers import RuleBlockXML, EnergyPatternBlockXML, PopulationMapBlockXML
-from .blocks import ActionBlock
+from .blocks import ActionBlock, ProtocolBlock
 from bionetgen.core.utils.utils import ActionList
 
-# This allows access to the CLIs config setup
-app = BioNetGen()
-app.setup()
-conf = app.config["bionetgen"]
-def_bng_path = conf["bngpath"]
+
+def _default_bng_path():
+    try:
+        from bionetgen.core.defaults import BNGDefaults
+
+        return BNGDefaults().bng_path
+    except Exception:
+        return None
+
+
+def_bng_path = _default_bng_path()
 
 
 class BNGParser:
@@ -54,7 +58,17 @@ class BNGParser:
         self.to_parse_actions = parse_actions
         self.bngfile = BNGFile(path, generate_network=generate_network, suppress=True)
         self.alist = ActionList()
-        self.alist.define_parser()
+        self._action_parser_ready = False
+
+    def _ensure_action_parser(self) -> bool:
+        if self._action_parser_ready:
+            return True
+        try:
+            self.alist.define_parser()
+        except ImportError:
+            return False
+        self._action_parser_ready = True
+        return True
 
     def parse_model(self, model_obj) -> None:
         """
@@ -70,12 +84,15 @@ class BNGParser:
         Uses BNG2.pl to generate the BNG-XML file and passes that
         to parse_xml method to fill up the model object appropriately
         """
+        import os
+        import tempfile
+
         # get file path
-        model_file = self.bngfile.path
+        model_input = self.bngfile.path
 
         # this route runs BNG2.pl on the bngl and parses
         # the XML instead
-        if model_file.endswith(".bngl"):
+        if model_input.endswith(".bngl"):
             # TODO: Add verbosity option to the library
             # print("Attempting to generate XML")
             with TemporaryFile("w+") as xml_file:
@@ -90,163 +107,189 @@ class BNGParser:
                     raise BNGModelError(
                         self.bngfile.path, message="XML file couldn't be generated"
                     )
-        elif model_file.endswith(".xml"):
-            with open(model_file, "r") as f:
+        elif model_input.endswith(".xml"):
+            with open(model_input, "r") as f:
                 xml_str = f.read()
-                # < is not a valid XML character, we need to replace it
-                xmlstr = xml_str.replace('relation="<', 'relation="&lt;')
-                self.parse_xml(xml_str, model_obj)
+            # < is not a valid XML character, we need to replace it
+            xmlstr = xml_str.replace('relation="<', 'relation="&lt;')
+            self.parse_xml(xmlstr, model_obj)
             model_obj.reset_compilation_tags()
         else:
+            # Support inline BNGL/XML strings or content passed as a path-like string.
+            if isinstance(model_input, str) and not os.path.exists(model_input):
+                stripped = model_input.lstrip()
+                if stripped.startswith("<"):
+                    xmlstr = stripped.replace('relation="<', 'relation="&lt;')
+                    self.parse_xml(xmlstr, model_obj)
+                    model_obj.reset_compilation_tags()
+                    return
+                if "begin model" in model_input or "\n" in model_input:
+                    with tempfile.NamedTemporaryFile(
+                        "w+", suffix=".bngl", delete=False, encoding="utf-8"
+                    ) as tmp:
+                        tmp.write(model_input)
+                        tmp_path = tmp.name
+                    try:
+                        original_path = self.bngfile.path
+                        self.bngfile.path = tmp_path
+                        with TemporaryFile("w+") as xml_file:
+                            if self.bngfile.generate_xml(xml_file):
+                                xmlstr = xml_file.read()
+                                xmlstr = xmlstr.replace('relation="<', 'relation="&lt;')
+                                self.parse_xml(xmlstr, model_obj)
+                                model_obj.reset_compilation_tags()
+                            else:
+                                raise BNGModelError(
+                                    original_path,
+                                    message="XML file couldn't be generated",
+                                )
+                    finally:
+                        self.bngfile.path = original_path
+                        try:
+                            os.unlink(tmp_path)
+                        except OSError:
+                            pass
+                    return
             raise NotImplementedError(
-                "The extension of {} is not supported".format(model_file)
+                "The extension of {} is not supported".format(model_input)
             )
+
+    def _parse_action_strings(self, action_strings, block):
+        if not self._ensure_action_parser():
+            raise BNGParseError(
+                self.bngfile.path,
+                "pyparsing is required to parse actions in model API input",
+            )
+        for action in action_strings:
+            # some cleanup, first we remove comments
+            action = re.sub(r"\#.*", "", action)
+            # now we remove whitespaces
+            action = re.sub(r"\s", "", action)
+            # if we don't have anything left, move on
+            if len(action) == 0:
+                continue
+            # use pyparsing for parsing the action into a list
+            try:
+                action_list = self.alist.action_parser.parseString(action)
+            except Exception:
+                raise BNGParseError(
+                    self.bngfile.path, f"Failed to parse action {action}"
+                )
+            # we could have ";" in the action, so we need to remove it
+            if len(action_list) > 0 and action_list[-1] == ";":
+                _ = action_list.pop(-1)
+            # first value is always the action type, remove
+            atype = action_list.pop(0)
+            # all actions have "()", remove
+            action_list = action_list[1:-1]
+            # be done if we don't have anything left
+            if len(action_list) == 0:
+                block.add_action(atype, {})
+                continue
+            # argument parsing
+            if atype in self.alist.no_setter_syntax:
+                if len(action_list) == 1:
+                    block.add_action(atype, {action_list[0]: None})
+                    continue
+                elif len(action_list) == 3 and action_list[1] == ",":
+                    block.add_action(
+                        atype, {action_list[0]: None, action_list[2]: None}
+                    )
+                    continue
+            elif atype in self.alist.square_braces:
+                if len(action_list) > 0 and action_list[0] == "[":
+                    action_list = action_list[1:-1]
+                arg_dict = {}
+                for arg in action_list:
+                    arg_dict[arg] = None
+                block.add_action(atype, arg_dict)
+                continue
+            elif atype in self.alist.normal_types:
+                if len(action_list) > 0 and action_list[0] == "{":
+                    action_list = action_list[1:-1]
+                arg_dict = {}
+                if len(action_list) == 0:
+                    block.add_action(atype, arg_dict)
+                    continue
+                while len(action_list) > 0:
+                    arg_name = action_list.pop(0)
+                    connector = action_list.pop(0)
+                    if connector != "=>":
+                        raise BNGParseError(
+                            self.bngfile.path, f"Action {action} is malformed"
+                        )
+                    if arg_name in self.alist.irregular_args:
+                        arg_type = self.alist.irregular_args[arg_name]
+                        if arg_type == "dict":
+                            start_curly = action_list.pop(0)
+                            if start_curly != "{":
+                                raise BNGParseError(
+                                    self.bngfile.path,
+                                    f"Action {action} is malformed",
+                                )
+                            value_str = "{"
+                            end_curly = None
+                            while end_curly is None:
+                                dict_key = action_list.pop(0)
+                                if dict_key == "}":
+                                    end_curly = dict_key
+                                else:
+                                    if len(value_str) > 1:
+                                        value_str += ","
+                                    dict_conn = action_list.pop(0)
+                                    dict_val = action_list.pop(0)
+                                    if dict_conn != "=>":
+                                        raise BNGParseError(
+                                            self.bngfile.path,
+                                            f"Action {action} is malformed",
+                                        )
+                                    value_str += dict_key + dict_conn + dict_val
+                            value_str += "}"
+                            arg_value = value_str
+                        elif arg_type == "list":
+                            start_curly = action_list.pop(0)
+                            if start_curly != "[":
+                                raise BNGParseError(
+                                    self.bngfile.path,
+                                    f"Action {action} is malformed",
+                                )
+                            value_str = "["
+                            end_curly = None
+                            while end_curly is None:
+                                argument_element = action_list.pop(0)
+                                if argument_element == "]":
+                                    end_curly = argument_element
+                                else:
+                                    if len(value_str) > 1:
+                                        value_str += ","
+                                    value_str += argument_element
+                            value_str += "]"
+                            arg_value = value_str
+                        else:
+                            arg_value = action_list.pop(0)
+                    else:
+                        arg_value = action_list.pop(0)
+                    arg_dict[arg_name] = arg_value
+                block.add_action(atype, arg_dict)
+                continue
+            else:
+                raise BNGParseError(
+                    self.bngfile.path, f"Action type {atype} is not recognized."
+                )
 
     def parse_actions(self, model_obj):
         """
         Uses ActionList object to parse actions and turn them into
         action objects and fill up the ActionsBlock with them.
         """
+        parsed_protocol = getattr(self.bngfile, "parsed_protocol_actions", [])
+        if len(parsed_protocol) > 0:
+            pblock = ProtocolBlock()
+            self._parse_action_strings(parsed_protocol, pblock)
+            model_obj.add_block(pblock)
         if len(self.bngfile.parsed_actions) > 0:
             ablock = ActionBlock()
-            # we have actions in file, let's get them
-            # import ipdb;ipdb.set_trace()
-            left = []
-            for action in self.bngfile.parsed_actions:
-                # some cleanup, first we remove comments
-                action = re.sub(r"\#.*", "", action)
-                # now we remove whitespaces
-                action = re.sub(r"\s", "", action)
-                # if we don't have anything left, move on
-                if len(action) == 0:
-                    continue
-                # use pyparsing for parsing the action into a list
-                try:
-                    action_list = self.alist.action_parser.parseString(action)
-                except Exception:
-                    raise BNGParseError(
-                        self.bngfile.path, f"Failed to parse action {action}"
-                    )
-                # we could have ";" in the action, so we need to remove it
-                if action_list[-1] == ";":
-                    _ = action_list.pop(-1)
-                # we we move onto actually making the action object
-                # first value is always the action type, remove
-                atype = action_list.pop(0)
-                # all actions have "()", remove
-                action_list = action_list[1:-1]
-                # be done if we don't have anything left
-                if len(action_list) == 0:
-                    # we don't have any arguments
-                    ablock.add_action(atype, {})
-                    continue
-                # we have arguments now onto argument parsing
-                # we check the action type and process accordingly
-                if atype in self.alist.no_setter_syntax:
-                    # these are actions like setParameter("test", 10), setModelName("name")
-                    if len(action_list) == 1:
-                        # this is of the form action("argument")
-                        ablock.add_action(atype, {action_list[0]: None})
-                        continue
-                    elif len(action_list) == 3:
-                        # TODO: Error checking here!
-                        if action_list[1] == ",":
-                            # this is of the form action(argument, value)
-                            ablock.add_action(
-                                atype, {action_list[0]: None, action_list[2]: None}
-                            )
-                            continue
-                elif atype in self.alist.square_braces:
-                    # these are actions like saveParameters(["a","b"])
-                    # TODO: Error checking here!
-                    if action_list[0] == "[":
-                        # remove square braces
-                        action_list = action_list[1:-1]
-                    arg_dict = {}
-                    for arg in action_list:
-                        arg_dict[arg] = None
-                    ablock.add_action(atype, arg_dict)
-                    continue
-                elif atype in self.alist.normal_types:
-                    # finally a normal action, we have {} and => syntax
-                    # TODO: Error checking here!
-                    if action_list[0] == "{":
-                        # remove curly braces
-                        action_list = action_list[1:-1]
-                    arg_dict = {}
-                    if len(action_list) == 0:
-                        ablock.add_action(atype, arg_dict)
-                        continue
-                    while len(action_list) > 0:
-                        arg_name = action_list.pop(0)
-                        connector = action_list.pop(0)
-                        if connector != "=>":
-                            raise BNGParseError(
-                                self.bngfile.path, f"Action {action} is malformed"
-                            )
-                        if arg_name in self.alist.irregular_args:
-                            arg_type = self.alist.irregular_args[arg_name]
-                            if arg_type == "dict":
-                                # process dict
-                                start_curly = action_list.pop(0)
-                                # make sure we are actually reading a dict
-                                if start_curly != "{":
-                                    raise BNGParseError(
-                                        self.bngfile.path,
-                                        f"Action {action} is malformed",
-                                    )
-                                value_str = "{"
-                                end_curly = None
-                                while end_curly is None:
-                                    # we are looping over A, =>, B and want to
-                                    # generate { A=>B, C=>D, etc }
-                                    dict_key = action_list.pop(0)
-                                    if dict_key == "}":
-                                        # we are done
-                                        end_curly = dict_key
-                                    else:
-                                        if len(value_str) > 1:
-                                            value_str += ","
-                                        dict_conn = action_list.pop(0)
-                                        dict_val = action_list.pop(0)
-                                        if dict_conn != "=>":
-                                            raise BNGParseError(
-                                                self.bngfile.path,
-                                                f"Action {action} is malformed",
-                                            )
-                                        value_str += dict_key + dict_conn + dict_val
-                                value_str += "}"
-                                arg_value = value_str
-                            elif arg_type == "list":
-                                # process list
-                                start_curly = action_list.pop(0)
-                                # make sure we are actually reading a dict
-                                if start_curly != "[":
-                                    raise BNGParseError(
-                                        self.bngfile.path,
-                                        f"Action {action} is malformed",
-                                    )
-                                value_str = "["
-                                end_curly = None
-                                while end_curly is None:
-                                    argument_element = action_list.pop(0)
-                                    if argument_element == "]":
-                                        end_curly = argument_element
-                                    else:
-                                        if len(value_str) > 1:
-                                            value_str += ","
-                                        value_str += argument_element
-                                value_str += "]"
-                                arg_value = value_str
-                        else:
-                            arg_value = action_list.pop(0)
-                        arg_dict[arg_name] = arg_value
-                    ablock.add_action(atype, arg_dict)
-                    continue
-                else:
-                    raise BNGParseError(
-                        self.bngfile.path, f"Action type {atype} is not recognized."
-                    )
+            self._parse_action_strings(self.bngfile.parsed_actions, ablock)
             model_obj.add_block(ablock)
 
     def parse_xml(self, xml_str, model_obj) -> None:
@@ -256,14 +299,29 @@ class BNGParser:
         will use XML parser objects to generate each block to attach to the
         model object
         """
-        xml_dict = xmltodict.parse(xml_str)
+        try:
+            import xmltodict
+
+            xml_dict = xmltodict.parse(xml_str)
+        except ImportError:
+            xml_dict = self._parse_xml_stdlib(xml_str)
         # catch non-BNG XML files
-        if "sbml" not in xml_dict:
-            if "model" not in xml_dict["sbml"]:
-                raise BNGParseError(
-                    self.bngfile.path,
-                    "Input model is invalid. Please ensure model is in proper BNGL or BNG-XML format",
-                )
+        root_key = next(iter(xml_dict.keys())) if xml_dict else None
+        if root_key not in ("sbml", "model") and not (
+            isinstance(xml_dict.get(root_key), dict) and "model" in xml_dict[root_key]
+        ):
+            raise BNGParseError(
+                self.bngfile.path,
+                "Input model is invalid. Please ensure model is in proper BNGL or BNG-XML format",
+            )
+        if root_key == "model":
+            xml_dict = {"sbml": {"model": xml_dict["model"]}}
+        root_key = "sbml" if "sbml" in xml_dict else next(iter(xml_dict.keys()))
+        if "model" not in xml_dict[root_key]:
+            raise BNGParseError(
+                self.bngfile.path,
+                "Input model is invalid. Please ensure model is in proper BNGL or BNG-XML format",
+            )
         model_obj.xml_dict = xml_dict
         first_key = list(xml_dict.keys())[0]
         xml_model = xml_dict[first_key]["model"]
@@ -329,3 +387,46 @@ class BNGParser:
         # And that's the end of parsing
         # TODO: Add verbosity option to the library
         # print("Parsing complete")
+
+    @staticmethod
+    def _parse_xml_stdlib(xml_str):
+        import xml.etree.ElementTree as ET
+
+        def local_name(tag):
+            if "}" in tag:
+                return tag.rsplit("}", 1)[1]
+            return tag
+
+        def convert(node):
+            children = list(node)
+            value = {}
+            for key, attr_value in node.attrib.items():
+                attr_name = local_name(key)
+                value[f"@{attr_name}"] = attr_value
+
+            if children:
+                grouped = {}
+                for child in children:
+                    child_name = local_name(child.tag)
+                    child_value = convert(child)
+                    if child_name in grouped:
+                        existing = grouped[child_name]
+                        if not isinstance(existing, list):
+                            grouped[child_name] = [existing]
+                        grouped[child_name].append(child_value)
+                    else:
+                        grouped[child_name] = child_value
+                value.update(grouped)
+
+            text = (node.text or "").strip()
+            if not children and text:
+                if value:
+                    value["#text"] = text
+                else:
+                    return text
+            elif children and text:
+                value["#text"] = text
+            return value if value else (text if text else None)
+
+        root = ET.fromstring(xml_str)
+        return {local_name(root.tag): convert(root)}
