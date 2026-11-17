@@ -35,7 +35,14 @@ def _json_number(value):
 
 
 def execute_native(
-    input_path, output, *, suppress=False, timeout=None, log_file=None, options=None
+    input_path,
+    output,
+    *,
+    suppress=False,
+    timeout=None,
+    log_file=None,
+    options=None,
+    result_file=None,
 ):
     import bionetgen
     from bionetgen.model import _cpp
@@ -53,6 +60,10 @@ def execute_native(
     ]
     if options is not None:
         command.append(json.dumps(options, default=_json_number, allow_nan=False))
+    if result_file is not None:
+        if options is None:
+            raise ValueError("single-simulation execution requires options")
+        command.append(str(result_file))
     try:
         completed = subprocess.run(
             command,
@@ -79,7 +90,45 @@ def execute_native(
             message="BNG3 native action execution failed",
             stdout=completed.stdout,
         )
+    if result_file is not None:
+        return _read_sim_result(result_file)
     result = BNGResult(str(output))
     result.process_return = completed.returncode
     result.output = completed.stdout.splitlines()
     return result
+
+
+def _write_sim_result(path, result):
+    """Transport SimResult arrays without pickle or numeric conversion."""
+    import numpy as np
+
+    metadata = {
+        field: getattr(result, field)
+        for field in ("backend", "construction_path", "direct_unavailable_reason")
+    }
+    arrays = {"time": result.time}
+    for field in ("observables", "functions"):
+        values = getattr(result, field)
+        metadata[field] = list(values)
+        arrays.update(
+            {f"{field}_{i}": value for i, value in enumerate(values.values())}
+        )
+    if result.concentrations is not None:
+        arrays["concentrations"] = result.concentrations
+    np.savez(path, metadata=np.asarray(json.dumps(metadata)), **arrays)
+
+
+def _read_sim_result(path):
+    import numpy as np
+
+    from bionetgen.result import SimResult
+
+    with np.load(path, allow_pickle=False) as arrays:
+        raw = json.loads(str(arrays["metadata"]))
+        for field in ("observables", "functions"):
+            raw[field] = {
+                name: arrays[f"{field}_{i}"] for i, name in enumerate(raw[field])
+            }
+        raw["time"] = arrays["time"]
+        raw["concentrations"] = arrays.get("concentrations")
+    return SimResult(raw)
