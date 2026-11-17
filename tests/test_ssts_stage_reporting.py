@@ -2,6 +2,7 @@
 
 import numpy as np
 import pytest
+import sys
 
 from scripts.ci import validate_sbml_test_suite as runner
 
@@ -79,6 +80,15 @@ def test_sbml_validation_checks_species_compartment_references(campaign, compart
         if campaign == "ssts"
         else validate_published_biomodels._validate_xml
     )
+    try:
+        import libsbml  # noqa: F401
+    except ImportError:
+        # The lightweight harness CI intentionally omits this oracle. Verify
+        # the unavailable-dependency path there; the installed SSTS lane runs
+        # the reference controls below with real libSBML.
+        with pytest.raises(RuntimeError, match="libSBML is required"):
+            validate("<sbml/>", "unavailable-validator-control")
+        return
     xml = f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
       level="3" version="2"><model id="reference_control">
       <listOfCompartments>
@@ -96,3 +106,17 @@ def test_sbml_validation_checks_species_compartment_references(campaign, compart
     else:
         # Omitted unit declarations produce consistency warnings, not errors.
         assert validate(xml, "valid-reference-control")["passed"] is True
+
+
+@pytest.mark.parametrize("campaign", ["ssts", "biomodels"])
+def test_sbml_validation_cannot_pass_without_its_validator(campaign, monkeypatch):
+    from scripts.ci import validate_published_biomodels
+
+    validate = (
+        runner._validate_xml
+        if campaign == "ssts"
+        else validate_published_biomodels._validate_xml
+    )
+    monkeypatch.setitem(sys.modules, "libsbml", None)
+    with pytest.raises(RuntimeError, match="libSBML is required"):
+        validate("<not-even-an-sbml-model/>", "missing-validator-control")

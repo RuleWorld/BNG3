@@ -1002,9 +1002,8 @@ def _runtime_provenance(cpp: Any) -> dict[str, Any]:
 def _validate_xml(text: str, label: str) -> dict[str, Any]:
     try:
         import libsbml
-    except ImportError:
-        ET.fromstring(text)
-        return {"passed": True, "validator": "xml.etree"}
+    except ImportError as exc:
+        raise RuntimeError(f"{label}: libSBML is required for SBML validation") from exc
     document = libsbml.readSBMLFromString(text)
     errors = int(document.getNumErrors())
     if errors:
