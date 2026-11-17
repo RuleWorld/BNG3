@@ -47,6 +47,25 @@ def _assert_roundtrip(src: str, *, native: bool = False):
 
 
 CASES = {
+    # Source bond numbers are not part of the canonical species identity.
+    # This case verifies the round trip preserves the initial law for a
+    # renumbered dimer seed (initial molecule count 2 x the dimer amount).
+    "bond_renumbered_seed": r"""
+begin model
+begin molecule types
+    A(b)
+end molecule types
+begin seed species
+    A(b!7).A(b!7) 10
+end seed species
+begin observables
+    Molecules total A()
+end observables
+begin reaction rules
+    A(b!1).A(b!1) -> 0 1
+end reaction rules
+end model
+""",
     "states_and_bonds": r"""
 begin model
 begin molecule types
