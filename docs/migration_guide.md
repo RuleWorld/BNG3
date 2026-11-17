@@ -214,6 +214,13 @@ one BNG3 simulation; time-grid-only overrides preserve declared direct
 simulation actions subject to the limits above. These BNG3 contracts are tested
 locally, but have not been differentially checked against the pinned runner.
 
+For single-simulation overrides, modelapi.runner.run also accepts an explicit
+subprocess selection or a timeout. It returns the same SimResult fields,
+including concentrations, exported functions, array dtypes, and backend
+metadata, through the native worker. Its n_points value retains the pinned
+modelapi step-count convention (n_points + 1 output rows). An explicit out
+with these overrides remains unsupported.
+
 Other API boundaries:
 
 - PyBioNetGen's BNGsim helper, bridge, and parameter-scan modules do not have

@@ -38,17 +38,9 @@ def run(
         value is not None for value in (method, t_span, n_points)
     )
     if wants_single_sim:
-        if simulator == "subprocess":
-            raise NotImplementedError(
-                "simulator='subprocess' with simulation overrides is not supported"
-            )
         if out is not None:
             raise NotImplementedError(
                 "out is not supported with in-memory simulation overrides"
-            )
-        if timeout is not None:
-            raise NotImplementedError(
-                "timeout is not supported with in-memory simulation overrides"
             )
         from bionetgen.compat.runner import _normalize_time_options, _positive_steps
         from bionetgen.model import load
@@ -67,6 +59,29 @@ def run(
             # path instead emits n rows; the two entry points are normalized
             # separately so both pinned contracts hold.
             steps = _positive_steps("n_points", n_points, 2)
+        if simulator == "subprocess" or timeout is not None:
+            from pathlib import Path
+            from tempfile import TemporaryDirectory
+
+            from bionetgen.compat._native_process import execute_native
+
+            source = Path(inp).expanduser().resolve()
+            if not source.is_file():
+                raise FileNotFoundError(source)
+            with TemporaryDirectory(prefix="bng3-simulation-") as directory:
+                return execute_native(
+                    source,
+                    directory,
+                    suppress=suppress,
+                    timeout=timeout,
+                    options={
+                        "method": method or "ode",
+                        "t_span": [t_start, t_end],
+                        "n_points": 100 if steps is None else steps,
+                        "simulator": "bngsim" if simulator == "bngsim" else "native",
+                    },
+                    result_file=Path(directory) / "simulation.npz",
+                )
         return load(inp).simulate(
             method=method or "ode",
             t_start=float(t_start),

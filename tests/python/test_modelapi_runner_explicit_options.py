@@ -9,15 +9,32 @@ from bionetgen.modelapi.runner import run
     [
         ({"simulator": "subprocess"}, "subprocess"),
         ({"out": "results"}, "out"),
-        ({"timeout": 1}, "timeout"),
+        ({"timeout": 30}, "timeout"),
     ],
 )
 def test_single_simulation_does_not_ignore_explicit_controls(
-    options, message, monkeypatch
+    options, message, monkeypatch, tmp_path
 ):
-    monkeypatch.setattr("bionetgen.model.load", lambda _: MagicMock())
-    with pytest.raises(NotImplementedError, match=message):
-        run("model.bngl", method="ode", **options)
+    if message == "out":
+        monkeypatch.setattr("bionetgen.model.load", lambda _: MagicMock())
+        with pytest.raises(NotImplementedError, match=message):
+            run("model.bngl", method="ode", **options)
+        return
+
+    model = tmp_path / "decay.bngl"
+    model.write_text(
+        "begin model\nbegin parameters\nk 0.5\nend parameters\n"
+        "begin molecule types\nA()\nend molecule types\n"
+        "begin seed species\nA() 10\nend seed species\n"
+        "begin observables\nMolecules A_total A()\nend observables\n"
+        "begin reaction rules\nA() -> 0 k\nend reaction rules\nend model\n",
+        encoding="utf-8",
+    )
+    result = run(
+        model, method="ode", t_span=(0, 1), n_points=2, suppress=True, **options
+    )
+    assert list(result.time) == [0, 0.5, 1]
+    assert result.backend == "native"
 
 
 @pytest.mark.parametrize("n_points", [0, 1, True, 2.5])
