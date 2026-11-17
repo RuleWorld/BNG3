@@ -1012,33 +1012,41 @@ def _validate_xml(
         raise SBMLValidationUnavailable(
             f"{label}: libSBML is required for SBML validation"
         ) from exc
-    # Parse from the source file when one is available: a document read from a
-    # string has no base URI, so comp/external model definitions resolve as
-    # semantic errors even though the referenced file sits beside the source.
-    if source_path is not None and source_path.is_file():
-        document = libsbml.readSBMLFromFile(str(source_path))
-    else:
-        document = libsbml.readSBMLFromString(text)
-    errors = int(document.getNumErrors())
-    if errors:
-        messages = [
-            document.getError(index).getMessage() for index in range(min(errors, 5))
+
+    def validate(doc):
+        errors = int(doc.getNumErrors())
+        messages = [doc.getError(index).getMessage() for index in range(min(errors, 5))]
+        if errors:
+            raise RuntimeError(f"{label} has {errors} libSBML error(s): {messages}")
+        consistency_errors = int(doc.checkInternalConsistency())
+        if consistency_errors:
+            raise RuntimeError(
+                f"{label} has {consistency_errors} libSBML consistency error(s)"
+            )
+        # Internal consistency checks XML structure, not model references such
+        # as a species' compartment. Full validation also reports warnings
+        # (notably unspecified units), which must not be promoted to errors.
+        doc.checkConsistency()
+        return [
+            doc.getError(i)
+            for i in range(doc.getNumErrors())
+            if doc.getError(i).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
         ]
-        raise RuntimeError(f"{label} has {errors} libSBML error(s): {messages}")
-    consistency_errors = int(document.checkInternalConsistency())
-    if consistency_errors:
-        raise RuntimeError(
-            f"{label} has {consistency_errors} libSBML consistency error(s)"
-        )
-    # Internal consistency checks XML structure, not model references such as
-    # a species' compartment. Full validation also reports warnings (notably
-    # unspecified units), which must not be promoted to semantic errors.
-    document.checkConsistency()
-    semantic_errors = [
-        document.getError(index)
-        for index in range(document.getNumErrors())
-        if document.getError(index).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
-    ]
+
+    document = libsbml.readSBMLFromString(text)
+    semantic_errors = validate(document)
+    # A string-parsed document has no base URI, so comp external model
+    # definitions can fail to resolve even when the referenced file sits beside
+    # the source. Only in that specific case reparse from the file: file parsing
+    # applies stricter XML-declaration checks that would reject otherwise
+    # valid source text (e.g. a declaration without an encoding attribute).
+    if (
+        any(error.getErrorId() == 1090101 for error in semantic_errors)
+        and source_path is not None
+        and source_path.is_file()
+    ):
+        document = libsbml.readSBMLFromFile(str(source_path))
+        semantic_errors = validate(document)
     if semantic_errors:
         messages = [
             f"{error.getErrorId()}: {error.getMessage()}"
@@ -1047,7 +1055,7 @@ def _validate_xml(
         raise RuntimeError(
             f"{label} has {len(semantic_errors)} libSBML semantic error(s): {messages}"
         )
-    return {"passed": True, "validator": "libsbml", "errors": errors}
+    return {"passed": True, "validator": "libsbml", "errors": 0}
 
 
 def _max_finite_abs(values: np.ndarray) -> float:
