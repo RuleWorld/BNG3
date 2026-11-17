@@ -17,6 +17,9 @@ EXPECTED_CHECKS = (
     "release-events-roots",
     "release-events-entrypoints",
     "release-capability-coverage-157",
+    "release-event-queue",
+    "release-event-stochastic",
+    "release-capability-coverage-158",
 )
 TEST_DIR = ROOT / "tests/validation/release/cases/issue-157"
 
@@ -67,6 +70,18 @@ def build_release_record(expected_revision: str | None, allow_dirty: bool) -> di
         ),
         (
             "release-capability-coverage-157",
+            "all assigned inventory cases execute against their row's named independent oracle and pass on main",
+        ),
+        (
+            "release-event-queue",
+            "official SSTS event cases and independent analytic traces verify every queue rule",
+        ),
+        (
+            "release-event-stochastic",
+            "independently derived competing-event distributions pass fixed predeclared statistical tests",
+        ),
+        (
+            "release-capability-coverage-158",
             "all assigned inventory cases execute against their row's named independent oracle and pass on main",
         ),
     ):

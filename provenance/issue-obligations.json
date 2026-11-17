@@ -9738,6 +9738,87 @@
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
           "unmapped_scope": []
+        },
+        {
+          "id": "issue:157:live-acceptance:release-event-queue",
+          "criterion": "`release-event-queue`: official SSTS event cases and independent analytic traces verify every queue rule.",
+          "scope": "`release-event-queue`: official SSTS event cases and independent analytic traces verify every queue rule.",
+          "live_body_sha256": "21ffb731c4bf2b8c8a6860b61280b11f92cfc925307560dadb862ee56c0846d7",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "release-event-queue",
+              "evidence_kind": "supported-execution",
+              "expectation": "official SSTS event cases and independent analytic traces verify every queue rule.",
+              "identity_requirements": [
+                "source.revision"
+              ],
+              "selector": "tests/python/test_sbml_official_reference.py::test_a_persistent_competing_event_is_not_a_random_order_case",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue157_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:157:live-acceptance:release-event-stochastic",
+          "criterion": "`release-event-stochastic`: independently derived competing-event distributions pass fixed predeclared statistical tests.",
+          "scope": "`release-event-stochastic`: independently derived competing-event distributions pass fixed predeclared statistical tests.",
+          "live_body_sha256": "21ffb731c4bf2b8c8a6860b61280b11f92cfc925307560dadb862ee56c0846d7",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "release-event-stochastic",
+              "evidence_kind": "supported-execution",
+              "expectation": "independently derived competing-event distributions pass fixed predeclared statistical tests.",
+              "identity_requirements": [
+                "source.revision"
+              ],
+              "selector": "tests/validation/release/cases/issue-157/test_00966_oracle.py::test_exact_binomial_acceptance_rejects_deterministic_tie_order",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue157_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:157:live-acceptance:release-capability-coverage-158",
+          "criterion": "`release-capability-coverage-158`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
+          "scope": "`release-capability-coverage-158`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
+          "live_body_sha256": "21ffb731c4bf2b8c8a6860b61280b11f92cfc925307560dadb862ee56c0846d7",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "release-capability-coverage-158",
+              "evidence_kind": "supported-execution",
+              "expectation": "all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
+              "identity_requirements": [
+                "source.revision"
+              ],
+              "selector": "tests/validation/release/cases/issue-157/test_dynamic_threshold.py::test_native_event_runtime_retests_floor_trigger_after_discrete_updates",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue157_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
+          "decisions": [],
+          "unmapped_scope": []
         }
       ]
     },
