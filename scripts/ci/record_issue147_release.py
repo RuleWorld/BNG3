@@ -99,7 +99,7 @@ def build_release_record(
     revision = expected_revision or head
 
     dirty = subprocess.run(
-        ["git", "-C", str(root), "status", "--porcelain", "--untracked-files=no"],
+        ["git", "-C", str(root), "status", "--porcelain"],
         check=True,
         capture_output=True,
         text=True,
@@ -152,13 +152,22 @@ def build_release_record(
         },
     ]
 
+    if skip_tests:
+        for row in results:
+            row["status"] = "NOT_TESTED"
+            row["supported_execution"] = False
+            row["evidence_kind"] = "not-tested"
+            row["detail"] = (
+                "Execution was skipped; no scientific acceptance evidence was collected."
+            )
+
     return {
         "schema_version": 1,
         "acceptance_check": "release-obligation-147",
         "case": "issue-147-nfnext-lowering-release",
         "source": {
             "revision": revision,
-            "dirty": False,
+            "dirty": bool(dirty),
         },
         "references": {
             "bngl_semantics": "canonical BNGL rule and pattern semantics (features, components, sites, states, bonds)",
@@ -203,9 +212,7 @@ def main(argv: list[str] | None = None) -> int:
             "## Issue 147 NFnext lowering release obligation record",
             "",
             f"- Source commit: `{record['source']['revision']}`",
-            "- release-nfir-lowering: PASS (every network-free inventory row lowers with complete semantics, validated IDs, canonical form)",
-            "- release-nfir-roundtrip: PASS (independently authored canonical model facts agree with NFIR and native NFsim input facts)",
-            "- release-obligation-147: PASS (21 slice checks across 7 families, analytical pure-death law, negative control, 9 inventory rows)",
+            *(f"- {row['id']}: {row['status']}" for row in record["results"]),
             f"- BNGL semantics oracle: `{record['references']['bngl_semantics']}`",
             f"- Native NFsim oracle: `{record['references']['native_nfsim']}`",
             f"- Analytic laws oracle: `{record['references']['analytic_laws']}`",

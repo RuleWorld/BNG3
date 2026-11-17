@@ -87,7 +87,7 @@ def build_release_record(
     revision = expected_revision or head
 
     dirty = subprocess.run(
-        ["git", "-C", str(root), "status", "--porcelain", "--untracked-files=no"],
+        ["git", "-C", str(root), "status", "--porcelain"],
         check=True,
         capture_output=True,
         text=True,
@@ -140,13 +140,22 @@ def build_release_record(
         },
     ]
 
+    if skip_tests:
+        for row in results:
+            row["status"] = "NOT_TESTED"
+            row["supported_execution"] = False
+            row["evidence_kind"] = "not-tested"
+            row["detail"] = (
+                "Execution was skipped; no scientific acceptance evidence was collected."
+            )
+
     return {
         "schema_version": 1,
         "acceptance_check": "release-obligation-473",
         "case": "issue-473-jax-backends-release",
         "source": {
             "revision": revision,
-            "dirty": False,
+            "dirty": bool(dirty),
         },
         "references": {
             "analytic_ode": "analytic mass-action RHS, automatic differentiation, and functional rates",
@@ -190,9 +199,7 @@ def main(argv: list[str] | None = None) -> int:
             "## Issue 473 JAX release obligation record",
             "",
             f"- Source commit: `{record['source']['revision']}`",
-            "- release-jax-ode: PASS (analytic mass-action RHS, autodiff, functional rates, continuation protocols)",
-            "- release-jax-ssa: PASS (vectorized batching, survival/equilibrium distributions, native moment parity)",
-            "- release-jax-install: PASS (optional dependency campaign execution and unavailable diagnostics)",
+            *(f"- {row['id']}: {row['status']}" for row in record["results"]),
             "",
             f"Consolidated JSON report: `{args.output}`",
             "",
