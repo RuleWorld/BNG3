@@ -940,6 +940,11 @@ jobs:
           python -m pytest --noconftest -q
           tests/python/nfnext/test_nfnext_totalrate_observable.py
 
+      - name: Check NFnext reactant filters against independent binomial law
+        run: >-
+          python -m pytest --noconftest -q
+          tests/python/nfnext/test_nfnext_filters_observable.py
+
       - name: Verify spawned API worker identity
         run: |
           pytest -c tests/validation/pytest.ini \
