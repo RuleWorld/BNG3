@@ -999,13 +999,26 @@ def _runtime_provenance(cpp: Any) -> dict[str, Any]:
     }
 
 
-def _validate_xml(text: str, label: str) -> dict[str, Any]:
+class SBMLValidationUnavailable(RuntimeError):
+    """The harness cannot validate a source without its required validator."""
+
+
+def _validate_xml(
+    text: str, label: str, source_path: Path | None = None
+) -> dict[str, Any]:
     try:
         import libsbml
-    except ImportError:
-        ET.fromstring(text)
-        return {"passed": True, "validator": "xml.etree"}
-    document = libsbml.readSBMLFromString(text)
+    except ImportError as exc:
+        raise SBMLValidationUnavailable(
+            f"{label}: libSBML is required for SBML validation"
+        ) from exc
+    # Parse from the source file when one is available: a document read from a
+    # string has no base URI, so comp/external model definitions resolve as
+    # semantic errors even though the referenced file sits beside the source.
+    if source_path is not None and source_path.is_file():
+        document = libsbml.readSBMLFromFile(str(source_path))
+    else:
+        document = libsbml.readSBMLFromString(text)
     errors = int(document.getNumErrors())
     if errors:
         messages = [
@@ -1016,6 +1029,23 @@ def _validate_xml(text: str, label: str) -> dict[str, Any]:
     if consistency_errors:
         raise RuntimeError(
             f"{label} has {consistency_errors} libSBML consistency error(s)"
+        )
+    # Internal consistency checks XML structure, not model references such as
+    # a species' compartment. Full validation also reports warnings (notably
+    # unspecified units), which must not be promoted to semantic errors.
+    document.checkConsistency()
+    semantic_errors = [
+        document.getError(index)
+        for index in range(document.getNumErrors())
+        if document.getError(index).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
+    ]
+    if semantic_errors:
+        messages = [
+            f"{error.getErrorId()}: {error.getMessage()}"
+            for error in semantic_errors[:5]
+        ]
+        raise RuntimeError(
+            f"{label} has {len(semantic_errors)} libSBML semantic error(s): {messages}"
         )
     return {"passed": True, "validator": "libsbml", "errors": errors}
 
@@ -3556,14 +3586,6 @@ def _validate_case(
     stochastic_runs: int = STOCHASTIC_DEFAULT_RUNS,
     stochastic_seed_base: int = STOCHASTIC_SEED_BASE,
 ) -> dict[str, Any]:
-    from bionetgen.atomizer.modern import (
-        Atomizer,
-        SBMLParser,
-        source_metadata_payload,
-        source_metadata_summary,
-    )
-    from bionetgen.atomizer.modern.types import standardize_name
-
     source_path = Path(case["path"])
     if artifacts_dir is not None:
         work_dir = artifacts_dir / case["category"] / case["id"]
@@ -3617,6 +3639,28 @@ def _validate_case(
             }
     source_xml_valid = False
     try:
+        try:
+            from bionetgen.atomizer.modern import (
+                Atomizer,
+                SBMLParser,
+                source_metadata_payload,
+                source_metadata_summary,
+            )
+            from bionetgen.atomizer.modern.types import standardize_name
+        except ImportError as exc:
+            # A validation harness missing a required dependency is a harness
+            # limitation, not a source verdict or a support claim. Prefer the
+            # validator diagnostic when it is also unavailable, so the missing
+            # validator remains the reported cause.
+            try:
+                import libsbml  # noqa: F401
+            except ImportError:
+                raise SBMLValidationUnavailable(
+                    "libSBML is required for SBML validation"
+                ) from exc
+            raise SBMLValidationUnavailable(
+                "bionetgen is required for SBML conversion"
+            ) from exc
         sbml = source_path.read_text(encoding="utf-8-sig")
         if artifacts_dir is not None:
             (work_dir / "source.xml").write_text(sbml, encoding="utf-8")
@@ -3626,7 +3670,7 @@ def _validate_case(
                         reference_path.read_bytes()
                     )
         with _case_phase_scope("source-xml-validation"):
-            record["source_xml"] = _validate_xml(sbml, "source SBML")
+            record["source_xml"] = _validate_xml(sbml, "source SBML", source_path)
         source_xml_valid = True
         with _case_phase_scope("source-parse"):
             parsed = SBMLParser().parse(sbml, source_path=source_path)
@@ -3855,11 +3899,19 @@ def _validate_case(
         # An invalid SBML source is a property of the source, not of the
         # converter, so it is reported as its own verdict rather than as a
         # converter failure.
-        record["status"] = "invalid-source" if not source_xml_valid else classification
+        if isinstance(exc, SBMLValidationUnavailable):
+            record["status"] = "failed"
+            record["harness_error"] = message
+        else:
+            record["status"] = (
+                "invalid-source" if not source_xml_valid else classification
+            )
         record["core_passed"] = False
         record["error"] = message
         if record["official_conformance"]["status"] == "pending":
-            if not source_xml_valid:
+            if isinstance(exc, SBMLValidationUnavailable):
+                official_status = "failed"
+            elif not source_xml_valid:
                 official_status = "invalid-source"
             else:
                 official_status = classification

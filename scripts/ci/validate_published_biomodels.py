@@ -705,13 +705,23 @@ def _verified_no_sbml_archive_outcome(
     }
 
 
-def _validate_xml(text: str, label: str) -> dict[str, Any]:
+class SBMLValidationUnavailable(RuntimeError):
+    """The harness cannot validate a source without its required validator."""
+
+
+def _validate_xml(
+    text: str, label: str, source_path: Path | None = None
+) -> dict[str, Any]:
     try:
         import libsbml
-    except ImportError:
-        ET.fromstring(text)
-        return {"passed": True, "validator": "xml.etree"}
-    document = libsbml.readSBMLFromString(text)
+    except ImportError as exc:
+        raise SBMLValidationUnavailable(
+            f"{label}: libSBML is required for SBML validation"
+        ) from exc
+    if source_path is not None and source_path.is_file():
+        document = libsbml.readSBMLFromFile(str(source_path))
+    else:
+        document = libsbml.readSBMLFromString(text)
     errors = int(document.getNumErrors())
     if errors:
         messages = [
@@ -722,6 +732,23 @@ def _validate_xml(text: str, label: str) -> dict[str, Any]:
     if consistency_errors:
         raise RuntimeError(
             f"{label} has {consistency_errors} libSBML consistency error(s)"
+        )
+    # Internal consistency checks XML structure, not model references such as
+    # a species' compartment. Full validation also reports warnings (notably
+    # unspecified units), which must not be promoted to semantic errors.
+    document.checkConsistency()
+    semantic_errors = [
+        document.getError(index)
+        for index in range(document.getNumErrors())
+        if document.getError(index).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
+    ]
+    if semantic_errors:
+        messages = [
+            f"{error.getErrorId()}: {error.getMessage()}"
+            for error in semantic_errors[:5]
+        ]
+        raise RuntimeError(
+            f"{label} has {len(semantic_errors)} libSBML semantic error(s): {messages}"
         )
     return {"passed": True, "validator": "libsbml", "errors": errors}
 
@@ -2291,16 +2318,28 @@ def _validate_mode(
     artifacts_dir: Path | None = None,
     partial_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    from bionetgen.atomizer.modern import (
-        Atomizer,
-        SBMLParser,
-        source_metadata_payload,
-        source_metadata_summary,
-    )
-    from bionetgen.atomizer.modern.types import standardize_name
-
     mode = "atomized" if mode_atomize else "flat"
     result: dict[str, Any] = partial_result if partial_result is not None else {}
+    try:
+        from bionetgen.atomizer.modern import (
+            Atomizer,
+            SBMLParser,
+            source_metadata_payload,
+            source_metadata_summary,
+        )
+        from bionetgen.atomizer.modern.types import standardize_name
+    except ImportError as exc:
+        try:
+            import libsbml  # noqa: F401
+        except ImportError:
+            message = "libSBML is required for SBML validation"
+        else:
+            message = f"bionetgen is required for SBML conversion: {exc}"
+        result["status"] = "failed"
+        result["harness_error"] = message
+        result["error"] = message
+        result["core_passed"] = False
+        return result
     checkpoint_path = (
         artifacts_dir / f"mode.{mode}.progress.json"
         if artifacts_dir is not None
@@ -2318,7 +2357,14 @@ def _validate_mode(
     )
     try:
         with _mode_stage(result, "source-xml-validation"):
-            result["source_xml"] = _validate_xml(sbml, "source SBML")
+            result["source_xml"] = _validate_xml(sbml, "source SBML", source_path)
+    except SBMLValidationUnavailable as exc:
+        result["source_xml"] = {"passed": False, "harness_error": str(exc)}
+        result["status"] = "failed"
+        result["harness_error"] = str(exc)
+        result["error"] = str(exc)
+        result["core_passed"] = False
+        return finish()
     except RuntimeError as exc:
         # A small number of archived BioModels files contain malformed or
         # stale package XML.  Preserve the exact libSBML diagnosis, but do

@@ -1,6 +1,8 @@
 """Keep conversion, round-trip and numerical evidence independently visible."""
 
 import numpy as np
+import pytest
+import sys
 
 from scripts.ci import validate_sbml_test_suite as runner
 
@@ -66,3 +68,101 @@ def test_mismatch_samples_distinguish_nonfinite_classes():
         {"index": 1, "time": 1.0, "bng3": "+inf", "libroadrunner": "-inf"},
         {"index": 2, "time": 2.0, "bng3": "-inf", "libroadrunner": 2.0},
     ]
+
+
+@pytest.mark.parametrize("campaign", ["ssts", "biomodels"])
+@pytest.mark.parametrize("compartment", ["cell", "missing"])
+def test_sbml_validation_checks_species_compartment_references(campaign, compartment):
+    from scripts.ci import validate_published_biomodels
+
+    validate = (
+        runner._validate_xml
+        if campaign == "ssts"
+        else validate_published_biomodels._validate_xml
+    )
+    try:
+        import libsbml  # noqa: F401
+    except ImportError:
+        # The lightweight harness CI intentionally omits this oracle. Verify
+        # the unavailable-dependency path there; the installed SSTS lane runs
+        # the reference controls below with real libSBML.
+        with pytest.raises(RuntimeError, match="libSBML is required"):
+            validate("<sbml/>", "unavailable-validator-control")
+        return
+    xml = f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+      level="3" version="2"><model id="reference_control">
+      <listOfCompartments>
+        <compartment id="cell" size="2" constant="true"/>
+      </listOfCompartments>
+      <listOfSpecies>
+        <species id="X" compartment="{compartment}" initialAmount="3"
+          hasOnlySubstanceUnits="true" constant="false" boundaryCondition="false"/>
+      </listOfSpecies>
+    </model></sbml>"""
+    if compartment == "missing":
+        # SBML L3V2 validation rule 20601: a species' compartment must exist.
+        with pytest.raises(RuntimeError, match="20601"):
+            validate(xml, "dangling-compartment-control")
+    else:
+        # Omitted unit declarations produce consistency warnings, not errors.
+        assert validate(xml, "valid-reference-control")["passed"] is True
+
+
+@pytest.mark.parametrize("campaign", ["ssts", "biomodels"])
+def test_sbml_validation_cannot_pass_without_its_validator(campaign, monkeypatch):
+    from scripts.ci import validate_published_biomodels
+
+    validate = (
+        runner._validate_xml
+        if campaign == "ssts"
+        else validate_published_biomodels._validate_xml
+    )
+    monkeypatch.setitem(sys.modules, "libsbml", None)
+    with pytest.raises(RuntimeError, match="libSBML is required"):
+        validate("<not-even-an-sbml-model/>", "missing-validator-control")
+
+
+@pytest.mark.parametrize("campaign", ["ssts", "biomodels"])
+def test_missing_sbml_validator_is_a_harness_failure(campaign, monkeypatch, tmp_path):
+    from scripts.ci import validate_published_biomodels
+
+    monkeypatch.setitem(sys.modules, "libsbml", None)
+    source = tmp_path / "source.xml"
+    source.write_text(
+        '<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" '
+        'level="3" version="2"><model id="valid_empty_model"/></sbml>'
+    )
+    options = dict(
+        work_dir=tmp_path,
+        simulation_t_end=1.0,
+        simulation_n_steps=10,
+        simulation_rtol=1e-6,
+        simulation_atol=1e-8,
+    )
+    if campaign == "ssts":
+        # Reference acquisition is independent of the missing XML validator.
+        monkeypatch.setattr(runner, "_read_reference_case", lambda _case: None)
+        result = runner._validate_case(
+            {
+                "category": "semantic",
+                "id": "control",
+                "version": "l3v2",
+                "path": source,
+            },
+            cpp=None,
+            **options,
+        )
+        assert result["official_conformance"]["status"] == "failed"
+    else:
+        result = validate_published_biomodels._validate_mode(
+            source.read_text(),
+            model_id="control",
+            mode_atomize=False,
+            cpp=None,
+            model_type=None,
+            ode_smoke=False,
+            **options,
+        )
+    assert result["status"] == "failed"
+    assert "libSBML is required" in result["harness_error"]
+    assert result["core_passed"] is False
