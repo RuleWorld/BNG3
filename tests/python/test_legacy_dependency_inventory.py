@@ -22,9 +22,10 @@ REPO = Path(__file__).resolve().parents[2]
 CHECK = REPO / "tools" / "check_legacy_dependency_inventory.py"
 INVENTORY = REPO / "provenance" / "architecture" / "legacy_dependency_inventory.json"
 
-RETIRED_PATHS = ("network",)
+RETIRED_PATHS = ()
 RETAINED_PATHS = (
     "modelapi",
+    "network",
     "simulator",
     "cement",
     "compat-adapter",
@@ -126,10 +127,41 @@ def test_the_legacy_network_rule_kernel_is_only_used_by_the_compile_owned_plan()
     assert entry["dependents"]["product"] == ["cpp/engine/NetworkRulePlan.cpp"]
 
 
-def test_the_retired_legacy_network_path_fails_with_an_explicit_diagnostic():
-    # The retired reader must not disappear silently: importing it has to name
-    # the missing module rather than fail somewhere inside the package.
-    with pytest.raises(ModuleNotFoundError) as error:
-        __import__("bionetgen.network.network")
+def test_the_retired_legacy_network_path_fails_with_an_explicit_diagnostic(tmp_path):
+    # Preserve this historical case identity while checking the declared
+    # lifecycle: retirement requires a diagnostic; retained compatibility
+    # requires a working reader, not just an importable name.
+    entry = _entry("network")
+    if entry["status"] == "retired":
+        with pytest.raises(ModuleNotFoundError) as error:
+            __import__("bionetgen.network.network")
+        assert "bionetgen.network" in str(error.value)
+        return
 
-    assert "bionetgen.network" in str(error.value)
+    assert entry["status"] in {"retained", "migration-target"}
+    module = __import__("bionetgen.network.network", fromlist=["Network"])
+    source = tmp_path / "decay.net"
+    source.write_text(
+        "# Independently specified elementary count network\n"
+        "begin parameters\n  1 k 0.5\nend parameters\n"
+        "begin species\n  1 A() 10\nend species\n"
+        "begin reactions\n  1 1 0 k\nend reactions\n"
+        "begin groups\n  1 A_tot 1\nend groups\n",
+        encoding="utf-8",
+    )
+    network = module.Network(str(source))
+    assert network.parameters.items["k"].value == "0.5"
+    species = next(iter(network.species.items.values()))
+    assert (species.name, species.count) == ("A()", "10")
+    reaction = next(iter(network.reactions.items.values()))
+    assert (reaction.reactants, reaction.products, reaction.rate_constant) == (
+        ["1"],
+        ["0"],
+        "k",
+    )
+    assert network.groups.items["A_tot"].members == ["1"]
+    output = tmp_path / "rewritten.net"
+    network.write_model(str(output))
+    restored = module.Network(str(output))
+    assert next(iter(restored.species.items.values())).count == "10"
+    assert restored.groups.items["A_tot"].members == ["1"]

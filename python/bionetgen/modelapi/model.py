@@ -1,6 +1,7 @@
-import copy, tempfile, shutil
+import copy
+import shutil
+import tempfile
 
-from bionetgen.main import BioNetGen
 from bionetgen.core.exc import BNGModelError
 from bionetgen.core.utils.logging import BNGLogger
 
@@ -12,17 +13,24 @@ from .blocks import (
     MoleculeTypeBlock,
     ObservableBlock,
     ParameterBlock,
+    ProtocolBlock,
     RuleBlock,
     SpeciesBlock,
     EnergyPatternBlock,
     PopulationMapBlock,
 )
 
-# This allows access to the CLIs config setup
-app = BioNetGen()
-app.setup()
-conf = app.config["bionetgen"]
-def_bng_path = conf["bngpath"]
+
+def _default_bng_path():
+    try:
+        from bionetgen.core.defaults import BNGDefaults
+
+        return BNGDefaults().bng_path
+    except Exception:
+        return None
+
+
+def_bng_path = _default_bng_path()
 
 
 ###### CORE OBJECT AND PARSING FRONT-END ######
@@ -74,9 +82,14 @@ class bngmodel:
     """
 
     def __init__(
-        self, bngl_model, BNGPATH=def_bng_path, generate_network=False, suppress=True
+        self,
+        bngl_model,
+        BNGPATH=def_bng_path,
+        generate_network=False,
+        suppress=True,
+        verbose=False,
     ):
-        self.logger = BNGLogger(app=app)
+        self.logger = BNGLogger()
         self.active_blocks = []
         # We want blocks to be printed in the same order every time
         self._block_order = [
@@ -89,12 +102,17 @@ class bngmodel:
             "energy_patterns",
             "population_maps",
             "rules",
+            "protocol",
             "actions",
         ]
         self.model_name = ""
         self.model_path = bngl_model
+        self.verbose = verbose
         self.bngparser = BNGParser(
-            bngl_model, generate_network=generate_network, suppress=True
+            bngl_model,
+            BNGPATH=BNGPATH,
+            generate_network=generate_network,
+            suppress=suppress,
         )
         self.bngparser.parse_model(self)
         for block in self._block_order:
@@ -155,7 +173,7 @@ class bngmodel:
                     self.active_blocks.remove(block)
             # print only the active blocks
             if block in self.active_blocks:
-                if block != "actions" and len(getattr(self, block)) > 0:
+                if block not in ("actions",) and len(getattr(self, block)) > 0:
                     model_lines.append(str(getattr(self, block)))
         model_lines.append("\nend model\n\n")
         if "actions" in self.active_blocks:
@@ -179,6 +197,9 @@ class bngmodel:
         bname = block.name.replace(" ", "_")
         if bname == "reaction_rules":
             bname = "rules"
+        if bname == "protocol":
+            self.add_protocol_block(block)
+            return
         try:
             block_adder = getattr(self, "add_{}_block".format(bname))
             block_adder(block)
@@ -195,6 +216,9 @@ class bngmodel:
         bname = block_name.replace(" ", "_")
         if bname == "reaction_rules":
             bname = "rules"
+        if bname == "protocol":
+            self.add_protocol_block()
+            return
         try:
             block_adder = getattr(self, "add_{}_block".format(bname))
             block_adder()
@@ -408,6 +432,28 @@ class bngmodel:
                 )
         else:
             self.population_maps = PopulationMapBlock()
+
+    def add_protocol_block(self, block=None):
+        """
+        Adds a protocol block to the model object.
+        """
+        if block is not None:
+            if not isinstance(block, ProtocolBlock):
+                self.logger.error(
+                    "The block is not a ProtocolBlock.",
+                    loc=f"{__file__} : bngmodel.add_protocol_block()",
+                )
+                raise BNGModelError(self, message="The block is not a ProtocolBlock.")
+            self.protocol = block
+            if "protocol" not in self.active_blocks:
+                self.active_blocks.append("protocol")
+            else:
+                self.logger.warning(
+                    "Network already has protocol block, replacing the old one",
+                    loc=f"{__file__} : bngmodel.add_protocol_block()",
+                )
+        else:
+            self.protocol = ProtocolBlock()
 
     def add_actions_block(self, block=None):
         """

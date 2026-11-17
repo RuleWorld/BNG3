@@ -13,7 +13,10 @@
           "tests.python.test_bng_parsing",
           "tests.python.test_bngfile_compat",
           "tests.python.test_get_rule_mod",
+          "tests.python.test_modelapi_runner_explicit_options",
           "tests.python.test_pybionetgen_api_compat",
+          "tests.python.test_pybionetgen_differential_behaviors",
+          "tests.python.test_pybionetgen_runner_result_compat",
           "tests.python.test_regression",
           "tests.python.test_runner",
           "tests.python.test_sympy_odes",
@@ -33,10 +36,12 @@
       "status": "retained"
     },
     {
-      "blocker": null,
+      "blocker": "PyBioNetGen-compatible .net/network API surface is retained in python/bionetgen/network for public API compatibility (#171) and cannot be retired until equivalent installed-package behavior is demonstrated and any redundant Python semantic paths are unified without removing supported entry points or explicit unsupported diagnostics (#172).",
       "dependents": {
         "product": [],
-        "tests": []
+        "tests": [
+          "tests.python.test_pybionetgen_differential_behaviors"
+        ]
       },
       "key": "network",
       "kind": "python",
@@ -44,11 +49,10 @@
         "bionetgen.network"
       ],
       "qualified_checks": [
-        "tests/cpp/test_sbml_reader.cpp (native bng::io::NetReader supersedes the retired reader)",
-        "tests/validation/test_compare_net.py",
-        "tests/validation/test_parity_net.py"
+        "tests/python/test_pybionetgen_api_compat.py",
+        "tests/python/test_compatibility_contract.py"
       ],
-      "status": "retired"
+      "status": "retained"
     },
     {
       "blocker": "bionetgen.sim_getter is a public compatibility export whose libRoadRunner adapter has no native BNG3 equivalent; its behaviour is already covered by qualified checks, so the adapter is retained deliberately instead of being migrated.",
@@ -56,7 +60,9 @@
         "product": [
           "bionetgen"
         ],
-        "tests": []
+        "tests": [
+          "tests.python.test_csimulator_input_preservation"
+        ]
       },
       "key": "simulator",
       "kind": "python",
@@ -80,7 +86,7 @@
           "bionetgen.modelapi.bngfile",
           "bionetgen.modelapi.bngparser",
           "bionetgen.modelapi.model",
-          "bionetgen.modelapi.runner"
+          "bionetgen.simulator.csimulator"
         ],
         "tests": [
           "tests.python.test_bionetgen",
@@ -89,6 +95,7 @@
           "tests.python.test_bng_models",
           "tests.python.test_bng_visualization",
           "tests.python.test_compatibility_contract",
+          "tests.python.test_pybionetgen_differential_behaviors",
           "tests.validation.integrated_worker"
         ]
       },

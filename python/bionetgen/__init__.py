@@ -197,13 +197,45 @@ def __getattr__(name):
 
         return BNGResult
     if name in {"SympyOdes", "export_sympy_odes", "extract_odes_from_mexfile"}:
-        from bionetgen.modelapi.sympy_odes import (
-            SympyOdes,
-            export_sympy_odes,
-            extract_odes_from_mexfile,
-        )
+        try:
+            from bionetgen.modelapi.sympy_odes import (
+                SympyOdes,
+                export_sympy_odes,
+                extract_odes_from_mexfile,
+            )
 
-        return locals()[name]
+            value = locals()[name]
+        except ImportError:
+
+            def _missing_sympy(*args, **kwargs):
+                raise ImportError(
+                    "SymPy is required for SympyOdes/export_sympy_odes; "
+                    "install the optional 'sympy' dependency"
+                )
+
+            class SympyOdes:  # type: ignore[no-redef]
+                pass
+
+            if name == "SympyOdes":
+                value = SympyOdes
+            else:
+                value = _missing_sympy
+        globals()[name] = value
+        return value
+    if name == "BNGSIM_AVAILABLE":
+        try:
+            from bionetgen.core.tools.bngsim_bridge import BNGSIM_AVAILABLE as value
+        except Exception:
+            value = False
+        globals()["BNGSIM_AVAILABLE"] = value
+        return value
+    if name == "BNGSIM_VERSION":
+        try:
+            from bionetgen.core.tools.bngsim_bridge import BNGSIM_VERSION as value
+        except Exception:
+            value = None
+        globals()["BNGSIM_VERSION"] = value
+        return value
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
@@ -233,6 +265,9 @@ __all__ = [
     "semantic_equal",
     "EqualityUndecided",
     "__version__",
+    "defaults",
+    "BNGSIM_AVAILABLE",
+    "BNGSIM_VERSION",
 ]
 
 if not _USE_LEGACY:

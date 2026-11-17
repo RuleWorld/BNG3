@@ -8,8 +8,18 @@ import tempfile
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple, cast
 
-import sympy as sp
-from sympy.parsing.sympy_parser import parse_expr, standard_transformations
+try:
+    import sympy as sp
+    from sympy.parsing.sympy_parser import parse_expr, standard_transformations
+except ImportError:  # pragma: no cover - exercised when optional sympy missing
+    sp = None  # type: ignore[assignment]
+    parse_expr = None  # type: ignore[assignment]
+    standard_transformations = None  # type: ignore[assignment]
+
+
+def _require_sympy() -> None:
+    if sp is None:
+        raise ImportError("SymPy is required for ODE export; install sympy")
 
 
 @dataclass
@@ -91,6 +101,7 @@ def export_sympy_odes(
 
     Returns a SympyOdes object containing SymPy symbols and expressions.
     """
+    _require_sympy()
     from bionetgen.modelapi.model import bngmodel
 
     if not isinstance(model_or_path, bngmodel):
@@ -147,6 +158,7 @@ def export_sympy_odes(
 
 def extract_odes_from_mexfile(mex_c_path: str) -> SympyOdes:
     """Parse a writeMexfile C output and return SymPy ODE expressions."""
+    _require_sympy()
     with open(mex_c_path, "r") as f:
         text = f.read()
 
