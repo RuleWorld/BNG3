@@ -167,12 +167,13 @@ def test_package_root_accepts_explicit_none_legacy_output_positional(
 
 
 def test_package_root_rejects_legacy_positional_timeout_explicitly(tmp_path):
+    """Retain the historical case ID; an expired positional timeout is enforced."""
     output = tmp_path / "positional-timeout-results"
 
-    with pytest.raises(NotImplementedError, match="timeout"):
-        bionetgen.run(MODEL, output, True, 1)
+    with pytest.raises(subprocess.TimeoutExpired):
+        bionetgen.run(MODEL, output, True, 0.000001)
 
-    assert not output.exists()
+    assert not list(output.glob("*.gdat"))
 
 
 def test_package_root_rejects_duplicate_legacy_positional_keyword(tmp_path):
@@ -957,7 +958,7 @@ def test_compatibility_runner_rejects_simulator_backend_override(tmp_path):
     model_path = _write_method_matrix_model(tmp_path / "bngsim-selector.bngl")
     output = tmp_path / "bngsim-output"
 
-    with pytest.raises(NotImplementedError, match="only simulator='auto' is supported"):
+    with pytest.raises(NotImplementedError, match="simulator='bngsim'.*not supported"):
         bionetgen.run(model_path, out=output, simulator="bngsim")
 
     assert not output.exists()
@@ -984,17 +985,19 @@ def test_compatibility_timeout_is_rejected_before_execution(
     run = compatibility_run if entry_point == "compat" else bionetgen.run
 
     def unexpected_execution(*args, **kwargs):
-        pytest.fail("unsupported timeout reached model execution")
+        pytest.fail("timed native execution ran in the parent process")
 
     monkeypatch.setattr(bionetgen, "load", unexpected_execution)
     monkeypatch.setattr(bionetgen._bionetgen_cpp, "parse_file", unexpected_execution)
     output = tmp_path / "results" if output_directory else None
 
-    with pytest.raises(NotImplementedError, match="timeout"):
-        run(MODEL, out=output, timeout=1, **override)
+    # This historical ID originally asserted a refusal. Preserve its full
+    # entry-point/override matrix while requiring an actual bounded process.
+    with pytest.raises(subprocess.TimeoutExpired):
+        run(MODEL, out=output, timeout=0.000001, **override)
 
     if output is not None:
-        assert not output.exists()
+        assert not list(output.glob("*.gdat"))
 
 
 def test_module_entry_point_exposes_cli_help(tmp_path):

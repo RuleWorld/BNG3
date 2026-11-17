@@ -144,6 +144,18 @@ class BNGCLI:
             self.logger.debug(
                 "Executing via C++ backend", loc=f"{__file__} : BNGCLI.run()"
             )
+            if self.log_file is not None or self.timeout is not None:
+                from bionetgen.compat._native_process import execute_native
+
+                self.result = None
+                self.result = execute_native(
+                    inp_run_path,
+                    self.output,
+                    suppress=self.suppress,
+                    timeout=self.timeout,
+                    log_file=self.log_file,
+                )
+                return
             model = _cpp.parse_file(inp_run_path)
             _cpp.execute(model, inp_run_path, verbose=not self.suppress)
 

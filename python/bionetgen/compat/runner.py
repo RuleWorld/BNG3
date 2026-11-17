@@ -275,26 +275,22 @@ def run(
 ):
     """Run a BNGL file into a PyBioNetGen-style result directory.
 
-    This first compatibility slice intentionally preserves the input model's
-    declared actions. Unsupported legacy options fail explicitly rather than
-    silently selecting a different simulator or output contract.
+    Declared actions are preserved unless a method override selects one
+    simulation. Process isolation and timeouts use the same native executor
+    and normalized options as direct execution.
     """
     if kwargs:
         names = ", ".join(sorted(kwargs))
         raise TypeError(f"unsupported compatibility runner option(s): {names}")
-    if simulator != "auto":
+    if simulator not in {"auto", "native", "subprocess"}:
         raise NotImplementedError(
-            "only simulator='auto' is supported by the BNG3 compatibility runner"
+            f"simulator={simulator!r} is not supported by the BNG3 compatibility runner; "
+            "use 'auto', 'native', or 'subprocess'"
         )
     if format not in (None, "bngl"):
         raise NotImplementedError(
             "only BNGL input is supported by the BNG3 compatibility runner"
         )
-    if timeout is not None:
-        raise NotImplementedError(
-            "timeout is not supported by the in-process BNG3 compatibility runner"
-        )
-
     inp_path = Path(inp).expanduser().resolve()
     if not inp_path.is_file():
         raise FileNotFoundError(inp_path)
@@ -337,6 +333,30 @@ def run(
         )
 
     def execute(output: Path) -> BNGResult:
+        if timeout is not None or simulator == "subprocess":
+            if inp_path.suffix.lower() != ".bngl":
+                raise NotImplementedError(
+                    "native process execution requires BNGL input"
+                )
+            from bionetgen.compat._native_process import execute_native
+
+            output.mkdir(parents=True, exist_ok=True)
+            copied = output / inp_path.name
+            if copied.resolve() != inp_path.resolve():
+                shutil.copy2(inp_path, copied)
+            return execute_native(
+                copied,
+                output,
+                suppress=suppress,
+                timeout=timeout,
+                options={
+                    "method": selected_method,
+                    "t_start": start,
+                    "t_end": end,
+                    "n_steps": steps,
+                    **solver_options,
+                },
+            )
         if selected_method is not None:
             return _run_modern_override(
                 inp_path,
