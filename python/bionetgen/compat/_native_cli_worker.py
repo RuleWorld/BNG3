@@ -28,6 +28,8 @@ def main():
 
             result = load(source).simulate(**options)
             _write_sim_result(payload[1], result)
+            if verbose == "1":
+                print(f"Simulation complete: {len(result.time)} time points")
         else:
             from bionetgen.compat.runner import run
 
