@@ -116,3 +116,16 @@ def test_exported_parameter_event_changes_the_rate_in_its_consumer(
     written_oracle.integrator.setValue("absolute_tolerance", 1e-12)
     actual = written_oracle.simulate(0, 2, 21, selections=selections)
     np.testing.assert_allclose(actual, expected, rtol=2e-6, atol=1e-8)
+
+
+def test_export_does_not_freeze_parameters_depending_on_an_event_target(tmp_path):
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(SOURCE)
+    assert result.success, result.error
+    # A BNGL dependent parameter changes when k is set by the native event.
+    # Until the writer emits its dependency as a rule, it must refuse export.
+    bngl = result.bngl.replace("r 0.25", "r k / 3")
+    assert bngl != result.bngl
+    model = cpp.parse_string(bngl)
+    network = cpp.generate_network(model, max_iter=5)
+    with pytest.raises(RuntimeError, match="event-dependent parameter 'r'"):
+        cpp.io.write_sbml(model, network, str(tmp_path / "dependent.xml"))

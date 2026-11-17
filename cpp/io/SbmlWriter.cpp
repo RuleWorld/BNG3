@@ -25,6 +25,7 @@
 #include "io/NetWriter.hpp"
 #include "compile/CompiledModel.hpp"
 #include "compile/TotalRate.hpp"
+#include "ast/ModelFunctionEvaluator.hpp"
 #include "SbmlUnitWriter.hpp"
 
 namespace bng::io {
@@ -435,6 +436,22 @@ std::string SbmlWriter::writeParameters(
     for (const auto& event : model.getEvents()) {
         for (const auto& assignment : event.assignments) {
             eventParameters.insert(assignment.target);
+        }
+    }
+    if (!eventParameters.empty()) {
+        const ast::ModelFunctionEvaluator evaluator(model);
+        for (const auto& param : model.getParameters().all()) {
+            if (eventParameters.count(param.getName()) != 0) continue;
+            const auto dependencies = evaluator.expandFunctions(
+                param.getExpression()).getDependencies();
+            if (std::any_of(dependencies.begin(), dependencies.end(),
+                            [&](const auto& name) {
+                                return eventParameters.count(name) != 0;
+                            })) {
+                throw std::runtime_error(
+                    "SBML export cannot preserve the event-dependent parameter '" +
+                    param.getName() + "' as a constant");
+            }
         }
     }
 

@@ -857,4 +857,13 @@ end model
           std::string::npos);
     CHECK(xml.find("<eventAssignment variable=\"param_S1\">") != std::string::npos);
     CHECK(xml.find("<ci> param_S1 </ci>") != std::string::npos);
+
+    // The native runtime re-evaluates dependent BNGL parameters after the
+    // event. Export must not freeze one at its initial numeric value.
+    model->getParameters().add(bng::ast::Parameter(
+        "dependent", bng::ast::Expression::identifier("S1")));
+    model->getParameters().evaluate("dependent");
+    CHECK_THROWS_WITH(
+        bng::io::SbmlWriter::write(*model, &network),
+        Catch::Matchers::ContainsSubstring("event-dependent parameter 'dependent'"));
 }
