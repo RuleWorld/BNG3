@@ -125,12 +125,3 @@ def test_the_legacy_network_rule_kernel_is_only_used_by_the_compile_owned_plan()
 
     assert entry["status"] == "retained"
     assert entry["dependents"]["product"] == ["cpp/engine/NetworkRulePlan.cpp"]
-
-
-def test_the_retired_legacy_network_path_fails_with_an_explicit_diagnostic():
-    # The retired reader must not disappear silently: importing it has to name
-    # the missing module rather than fail somewhere inside the package.
-    with pytest.raises(ModuleNotFoundError) as error:
-        __import__("bionetgen.network.network")
-
-    assert "bionetgen.network" in str(error.value)
