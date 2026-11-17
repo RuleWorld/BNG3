@@ -14,6 +14,7 @@ import pytest
 
 _SUITE_REPORT = os.environ.get("BNG3_SSTS_FULL_REPORT")
 _RECEIPT = os.environ.get("BNG3_ISSUE159_RECEIPT")
+_FIXTURES = Path(__file__).resolve().parents[5] / "provenance/core-fixtures"
 
 
 def _load(path, label):
@@ -53,3 +54,39 @@ def test_release_obligation_159_receipt():
     # The catalog declares this as supported-execution; do not weaken it.
     assert rows["release-obligation-159"]["evidence_kind"] == "supported-execution"
     assert receipt["references"]["ssts"]["revision"]
+
+
+def test_release_ssts_coverage():
+    """release-ssts-coverage: every Core row has an independent case.
+
+    The committed mapping pairs 100 Core rows with pinned SSTS cases; the four
+    rows absent from the official suite use the analytic fixtures. A mapped
+    case with a failed/timeout/invalid-source verdict does not count.
+    """
+    root = Path(__file__).resolve().parents[5]
+    contract = json.loads(
+        (root / "tests/validation/release/cases/issue-159/contract.json").read_text()
+    )
+    core_rows = contract["inventory_rows"]
+    mapping = json.loads((root / "provenance/sbml-core-case-mapping.json").read_text())
+    fixtures = set(mapping.get("_meta", {}).get("uncovered_rows", []))
+    assert len(core_rows) == 104
+    fixture_names = {
+        "sbml.core.Parameter.units": "parameter-units",
+        "sbml.core.Constraint.message": "constraint-message",
+        "sbml.core.Reaction.compartment": "reaction-compartment",
+        "sbml.core.LocalParameter.units": "localparameter-units",
+    }
+    for row in core_rows:
+        if row in fixtures:
+            assert (_FIXTURES / f"{fixture_names[row]}.xml").is_file()
+        else:
+            assert mapping.get(row), f"Core row {row} has no independent case"
+    if not _SUITE_REPORT:
+        pytest.skip("BNG3_SSTS_FULL_REPORT not provided")
+    report = _load(_SUITE_REPORT, "BNG3_SSTS_FULL_REPORT")
+    records = {(r["category"], r["id"]): r for r in report["records"]}
+    for row in core_rows:
+        for case_id in mapping.get(row, []):
+            record = records[("semantic", case_id)]
+            assert record["status"] not in {"failed", "timeout", "invalid-source"}
