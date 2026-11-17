@@ -845,6 +845,38 @@ end model
     CHECK(xml.find("<ci> S2 </ci>") != std::string::npos);
 }
 
+TEST_CASE("SBML Core observable ID does not collide with a compartment ID",
+          "[sbml][observables]") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin model
+begin compartments
+  comp2 3 1
+end compartments
+begin molecule types
+  A(b)
+end molecule types
+begin seed species
+  @comp2:A(b) 2
+end seed species
+begin observables
+  Molecules comp2 @comp2:A(b)
+end observables
+begin reaction rules
+  decay: @comp2:A(b) -> 0 0.5
+end reaction rules
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+    bng::engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    const auto xml = bng::io::SbmlWriter::write(*model, &network);
+    CHECK(xml.find("<compartment id=\"comp2\"") != std::string::npos);
+    // The observable's assignment-rule variable must be distinct from the
+    // compartment ID (SBML 10301: one model-wide identifier namespace).
+    CHECK(xml.find("<assignmentRule variable=\"comp2\">") == std::string::npos);
+    CHECK(xml.find("<assignmentRule variable=\"obs_comp2\">") != std::string::npos);
+}
+
 TEST_CASE("SBML Core replaces a synthetic rate-rule reaction with its rule",
           "[sbml][rules]") {
     const auto model = bng::parser::parseModel(R"BNGL(

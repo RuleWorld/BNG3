@@ -986,6 +986,12 @@ std::vector<SbmlWriter::ObservableGroup> SbmlWriter::computeObservableGroups(
         // SBML reserves the time symbol; it is represented as a csymbol in
         // MathML and cannot also be an assignment-rule variable.
         usedIds.insert("time");
+        // Compartments share SBML's single model-wide identifier namespace
+        // with the variables targeted by assignment rules; an observable
+        // whose BNGL name matches a compartment needs a distinct rule ID.
+        for (const auto& compartment : model.getCompartments()) {
+            usedIds.insert(makeValidSBMLId(compartment.getName()));
+        }
         for (const auto& parameter : model.getParameters().all()) {
             usedIds.insert(makeValidSBMLId(parameter.getName()));
         }
