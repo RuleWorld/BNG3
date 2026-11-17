@@ -50,17 +50,21 @@ def run(
             raise NotImplementedError(
                 "timeout is not supported with in-memory simulation overrides"
             )
+        from bionetgen.compat.runner import _normalize_time_options
         from bionetgen.model import load
 
-        if t_span is None:
-            t_start, t_end = 0.0, 100.0
-        else:
-            t_start, t_end = t_span
+        t_start, t_end, steps = _normalize_time_options(
+            t_span=(0.0, 100.0) if t_span is None else t_span,
+            t_start=None,
+            t_end=None,
+            n_points=n_points,
+            n_steps=None,
+        )
         return load(inp).simulate(
             method=method or "ode",
             t_start=float(t_start),
             t_end=float(t_end),
-            n_steps=int(n_points if n_points is not None else 100),
+            n_steps=100 if steps is None else steps,
             backend="bngsim" if simulator == "bngsim" else "native",
             verbose=not suppress,
         )
