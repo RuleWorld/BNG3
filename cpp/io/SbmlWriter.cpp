@@ -9,6 +9,7 @@
 #include <cmath>
 #include <functional>
 #include <map>
+#include <optional>
 #include <set>
 #include <stdexcept>
 #include <string_view>
@@ -129,6 +130,46 @@ bool modelUsesDistrib(const ast::Model& model) {
         }
     }
     return false;
+}
+
+struct ExportedRateRule {
+    std::size_t state;
+    const ast::Function* function;
+};
+
+// Use the same recognition for the native SBML rule and for omitting its
+// synthetic reaction. A naming prefix alone does not establish a rate rule.
+std::optional<ExportedRateRule> exportedRateRule(
+    const ast::Model& model, const ast::Rxn& rxn) {
+    static constexpr std::string_view prefix = "__rate_rule_";
+    const auto& origin = rxn.getOriginRuleName();
+    std::string target;
+    if (origin.rfind(prefix, 0) == 0 &&
+        origin.rfind("__rate_rule__", 0) != 0) {
+        target = origin.substr(prefix.size());
+    } else {
+        const auto& rateLaw = rxn.getRateLaw();
+        static constexpr std::string_view functionPrefix = "__rate_rule__";
+        if (rateLaw.rfind(functionPrefix, 0) != 0) return std::nullopt;
+        target = rateLaw.substr(functionPrefix.size());
+        const auto close = target.find('(');
+        if (close != std::string::npos) target.resize(close);
+    }
+    if (target.empty() ||
+        (rxn.getProducts().empty() && rxn.getReactants().empty())) {
+        return std::nullopt;
+    }
+    const auto functionName = std::string("__rate_rule__") + target;
+    const auto function = std::find_if(
+        model.getFunctions().begin(), model.getFunctions().end(),
+        [&](const auto& candidate) {
+            return candidate.getName() == functionName &&
+                   candidate.getArgs().empty();
+        });
+    if (function == model.getFunctions().end()) return std::nullopt;
+    const auto state = rxn.getProducts().empty()
+        ? rxn.getReactants().front() : rxn.getProducts().front();
+    return ExportedRateRule{state, &*function};
 }
 
 // The origin rule name of a network reaction is the name of the reaction
@@ -662,37 +703,13 @@ std::string SbmlWriter::writeAssignmentRules(
     // reaction propensity, which they reject even though the differential
     // equation itself is well-defined.
     if (network != nullptr) {
-        static constexpr std::string_view prefix = "__rate_rule_";
         for (const auto& rxn : network->reactions.all()) {
-            const auto& origin = rxn.getOriginRuleName();
-            std::string target;
-            if (origin.rfind(prefix, 0) == 0 &&
-                origin.rfind("__rate_rule__", 0) != 0) {
-                target = origin.substr(prefix.size());
-            } else {
-                const auto& rateLaw = rxn.getRateLaw();
-                static constexpr std::string_view functionPrefix = "__rate_rule__";
-                if (rateLaw.rfind(functionPrefix, 0) != 0) continue;
-                target = rateLaw.substr(functionPrefix.size());
-                const auto close = target.find('(');
-                if (close != std::string::npos) target.resize(close);
-            }
-            if (target.empty()) {
-                continue;
-            }
-            const auto functionName = std::string("__rate_rule__") + target;
-            const auto function = std::find_if(
-                model.getFunctions().begin(), model.getFunctions().end(),
-                [&](const auto& candidate) {
-                    return candidate.getName() == functionName &&
-                           candidate.getArgs().empty();
-                });
-            if (function == model.getFunctions().end()) continue;
-            const auto& state = rxn.getProducts().empty()
-                ? rxn.getReactants().front() : rxn.getProducts().front();
+            const auto rule = exportedRateRule(model, rxn);
+            if (!rule) continue;
+            const auto state = rule->state;
             sbml << "      <rateRule variable=\"S" << (state + 1) << "\">\n";
             sbml << "        <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
-            sbml << exprToMathML(function->getExpression(), "          ", symbolIds);
+            sbml << exprToMathML(rule->function->getExpression(), "          ", symbolIds);
             sbml << "        </math>\n";
             sbml << "      </rateRule>\n";
         }
@@ -809,14 +826,19 @@ std::string SbmlWriter::writeReactions(
     double startTime) {
     std::ostringstream sbml;
     sbml << std::setprecision(17);
-    if (network.reactions.all().empty()) {
+    const auto& reactions = network.reactions.all();
+    if (std::all_of(reactions.begin(), reactions.end(), [&](const auto& rxn) {
+            return exportedRateRule(model, rxn).has_value();
+        })) {
         return {};
     }
     sbml << "    <listOfReactions>\n";
 
-    const auto& reactions = network.reactions.all();
     for (std::size_t r = 0; r < reactions.size(); ++r) {
         const auto& rxn = reactions[r];
+        // SBML forbids reaction participants governed by a rateRule (20610),
+        // even when the reaction flux is zero. The rule already owns this state.
+        if (exportedRateRule(model, rxn)) continue;
         const double delay = rxn.getDelayExpression()
             ? engine::delayedTime(*rxn.getDelayExpression(), model) : 0.0;
         const bool delayed = delay > 0.0;
@@ -831,10 +853,6 @@ std::string SbmlWriter::writeReactions(
         if (splitConsuming && !hasReactants && !hasProducts) continue;
         std::string reactionId = "R" + std::to_string(r + 1);
         if (splitConsuming) reactionId += completion ? "_complete" : "_init";
-        const bool syntheticRateRule =
-            (rxn.getOriginRuleName().rfind("__rate_rule_", 0) == 0 &&
-             rxn.getOriginRuleName().rfind("__rate_rule__", 0) != 0) ||
-            rxn.getRateLaw().rfind("__rate_rule__", 0) == 0;
 
         sbml << "      <reaction id=\"" << reactionId << "\" reversible=\"false\">\n";
 
@@ -917,9 +935,7 @@ std::string SbmlWriter::writeReactions(
         }
         sbml << "        <kineticLaw>\n";
         sbml << "          <math xmlns=\"http://www.w3.org/1998/Math/MathML\">\n";
-        if (syntheticRateRule) {
-            sbml << "            <cn> 0 </cn>\n";
-        } else if (delayed && (completion || rxn.isNonConsuming())) {
+        if (delayed && (completion || rxn.isNonConsuming())) {
             const std::string propensity = rateLawToMathML(
                 rxn, model, network, "            ", symbolIds);
             sbml << "            <piecewise>\n"

@@ -3826,10 +3826,25 @@ def _validate_case(
             raise RuntimeError(
                 f"native species count {native['species_count']} != {network.num_species}"
             )
-        if native["reaction_count"] != network.num_reactions:
+        # Compare the native reader against the SBML that was actually
+        # written, not the pre-export translated network. Rate-rule states are
+        # lowered to synthetic network reactions but exported as native
+        # rateRule elements with no reaction participant (SBML rule 20610),
+        # so the source-network count is not the written-document count.
+        written_reaction_count = len(reimport_model.reactions)
+        if native["reaction_count"] != written_reaction_count:
             raise RuntimeError(
-                f"native reaction count {native['reaction_count']} != {network.num_reactions}"
+                f"native reaction count {native['reaction_count']} != "
+                f"written SBML reaction count {written_reaction_count}"
             )
+        if not any(rule.type == "rate" for rule in parsed.rules):
+            # Without rate rules the writer must preserve every network
+            # reaction; retain the original roundtrip-fidelity invariant.
+            if native["reaction_count"] != network.num_reactions:
+                raise RuntimeError(
+                    f"native reaction count {native['reaction_count']} != "
+                    f"network reaction count {network.num_reactions}"
+                )
         record["roundtrip_passed"] = True
 
         warnings = record["source_model"]["warnings"]
