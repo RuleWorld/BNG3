@@ -21,10 +21,13 @@ BioNetGen 3 replaces the subprocess-based PyBioNetGen/BNG2 workflow with an in-p
 | Build models | Hand-written BNGL only | `ModelBuilder` API |
 | Import SBML | Atomizer CLI | `bionetgen.from_sbml("model.xml")` |
 
-The in-process compatibility file runner has no execution deadline. A non-`None`
-`timeout` passed to `bionetgen.run(path, out=...)` raises `NotImplementedError`
-before execution or output creation, including when method or time overrides
-are supplied. `timeout=None` retains the normal file-runner behavior.
+The compatibility file runner supports `simulator="auto"`, `"native"`, and
+`"subprocess"`. A non-`None` `timeout`, or an explicit subprocess selection,
+runs the same native parser and executor in a separate process. The deadline
+includes worker startup and native execution; expiry raises
+`subprocess.TimeoutExpired`. Declared actions, method/time overrides, and
+output-point normalization use the same common runner in both routes.
+`timeout=None` with the default simulator keeps direct execution.
 
 ## Python and CLI Run Contracts
 
@@ -39,10 +42,10 @@ so it can preserve legacy positional output-directory calls. An explicit
 `BNGResult`; use `out=` when a directory's string name could be mistaken for a
 method. After a positional output path, remaining positionals retain the
 PyBioNetGen order: `suppress`,
-`timeout`, `simulator`, `format`, `method`, `t_span`, and `n_points`. A
-non-`None` timeout is explicitly rejected because the in-process runner has no
-execution deadline. Invalid keyword methods raise `ValueError`, and duplicate
-positional/keyword values raise `TypeError`.
+`timeout`, `simulator`, `format`, `method`, `t_span`, and `n_points`.
+Timeouts use the bounded native worker described above. Invalid keyword
+methods raise `ValueError`, and duplicate positional/keyword values raise
+`TypeError`.
 
 ```python
 # Modern single-simulation result, defaulting to ODE, 0..100, 100 steps.
@@ -203,8 +206,10 @@ source-semantic parity.
 The pinned PyBioNetGen `run` accepts `simulator`, `format`, `method`, `t_span`,
 and `n_points`. Its `simulator="bngsim"` and `simulator="subprocess"` choices
 select distinct upstream routes. BNG3's `bionetgen.run(path, out=...)` is a
-separate compatibility entry point: it supports `simulator="auto"` and BNGL
-input only, and rejects a non-`None` `timeout`. An explicit `method` requests
+separate compatibility entry point: it supports `simulator="auto"`,
+`"native"`, and `"subprocess"` with BNGL input. Non-`None` timeouts are enforced
+through a native worker; the PyBioNetGen Python `bngsim` route remains
+unimplemented. An explicit `method` requests
 one BNG3 simulation; time-grid-only overrides preserve declared direct
 simulation actions subject to the limits above. These BNG3 contracts are tested
 locally, but have not been differentially checked against the pinned runner.
