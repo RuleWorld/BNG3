@@ -59,6 +59,14 @@ def run(
             # path instead emits n rows; the two entry points are normalized
             # separately so both pinned contracts hold.
             steps = _positive_steps("n_points", n_points, 2)
+        simulation_options = {
+            "method": method or "ode",
+            "t_start": float(t_start),
+            "t_end": float(t_end),
+            "n_steps": 100 if steps is None else steps,
+            "backend": "bngsim" if simulator == "bngsim" else "native",
+            "verbose": not suppress,
+        }
         if simulator == "subprocess" or timeout is not None:
             from pathlib import Path
             from tempfile import TemporaryDirectory
@@ -74,22 +82,10 @@ def run(
                     directory,
                     suppress=suppress,
                     timeout=timeout,
-                    options={
-                        "method": method or "ode",
-                        "t_span": [t_start, t_end],
-                        "n_points": 100 if steps is None else steps,
-                        "simulator": "bngsim" if simulator == "bngsim" else "native",
-                    },
+                    options=simulation_options,
                     result_file=Path(directory) / "simulation.npz",
                 )
-        return load(inp).simulate(
-            method=method or "ode",
-            t_start=float(t_start),
-            t_end=float(t_end),
-            n_steps=100 if steps is None else steps,
-            backend="bngsim" if simulator == "bngsim" else "native",
-            verbose=not suppress,
-        )
+        return load(inp).simulate(**simulation_options)
 
     from bionetgen.compat.runner import run as compat_run
 

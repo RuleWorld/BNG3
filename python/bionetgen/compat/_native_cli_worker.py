@@ -24,9 +24,9 @@ def main():
             raise ValueError("native compatibility options must be one JSON object")
         if len(payload) == 2:
             from bionetgen.compat._native_process import _write_sim_result
-            from bionetgen.modelapi.runner import run
+            from bionetgen.model import load
 
-            result = run(source, suppress=verbose != "1", **options)
+            result = load(source).simulate(**options)
             _write_sim_result(payload[1], result)
         else:
             from bionetgen.compat.runner import run
