@@ -815,3 +815,62 @@ end model
     CHECK(xml.find("<assignmentRule variable=\"Bfree\">") != std::string::npos);
     CHECK(xml.find("<ci> S2 </ci>") != std::string::npos);
 }
+
+TEST_CASE("SBML Core replaces a synthetic rate-rule reaction with its rule",
+          "[sbml][rules]") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin model
+setOption("BNG3AbsoluteFluxRules", "__rate_rule_X")
+begin molecule types
+  X()
+end molecule types
+begin seed species
+  X() 2
+end seed species
+begin observables
+  Species X_amt X()
+end observables
+begin functions
+  __rate_rule__X() = -X_amt
+end functions
+begin reaction rules
+  __rate_rule_X: 0 -> X() __rate_rule__X() TotalRate
+end reaction rules
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+    bng::engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    REQUIRE(network.reactions.size() == 1);
+    const auto xml = bng::io::SbmlWriter::write(*model, &network);
+    CHECK(xml.find("<rateRule variable=\"S1\">") != std::string::npos);
+    CHECK(xml.find("<listOfReactions>") == std::string::npos);
+    CHECK(xml.find("<reaction ") == std::string::npos);
+}
+
+TEST_CASE("SBML Core does not mistake a rule-name prefix for rate-rule lowering",
+          "[sbml][rules]") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  X()
+end molecule types
+begin seed species
+  X() 2
+end seed species
+begin reaction rules
+  __rate_rule_ordinary: X() -> 0 k
+end reaction rules
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+    bng::engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    const auto xml = bng::io::SbmlWriter::write(*model, &network);
+    CHECK(xml.find("<rateRule ") == std::string::npos);
+    CHECK(xml.find("<reaction id=\"R1\"") != std::string::npos);
+    CHECK(xml.find("<ci> k </ci>") != std::string::npos);
+}
