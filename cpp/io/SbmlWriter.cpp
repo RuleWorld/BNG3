@@ -310,6 +310,23 @@ SbmlWriter::SymbolIds SbmlWriter::computeSymbolIds(
         const auto id = allocate(event.id, "event_");
         result.events.emplace(event.id, id);
     }
+    if (network) {
+        // Reaction ids live in the same model-wide SBML namespace as the
+        // symbols above. Reserve a collision-free id per network reaction
+        // before the writer emits them as R<n>/R<n>_init/R<n>_complete.
+        for (std::size_t r = 0; r < network->reactions.size(); ++r) {
+            const std::string base = "R" + std::to_string(r + 1);
+            std::string id = base;
+            std::size_t suffix = 2;
+            while (used.count(id) != 0) {
+                id = "rxn_" + base + "_" + std::to_string(suffix++);
+            }
+            used.insert(id);
+            used.insert(id + "_init");
+            used.insert(id + "_complete");
+            result.reactions.emplace(r, id);
+        }
+    }
     return result;
 }
 
@@ -851,7 +868,9 @@ std::string SbmlWriter::writeReactions(
         // needs only its completion reaction; a delayed sink needs only its
         // initiation reaction.
         if (splitConsuming && !hasReactants && !hasProducts) continue;
-        std::string reactionId = "R" + std::to_string(r + 1);
+        const auto allocated = symbolIds.reactions.find(r);
+        std::string reactionId = allocated != symbolIds.reactions.end()
+            ? allocated->second : "R" + std::to_string(r + 1);
         if (splitConsuming) reactionId += completion ? "_complete" : "_init";
 
         sbml << "      <reaction id=\"" << reactionId << "\" reversible=\"false\">\n";
