@@ -940,6 +940,11 @@ jobs:
           python -m pytest --noconftest -q
           tests/python/nfnext/test_nfnext_totalrate_observable.py
 
+      - name: Check NFnext immigration-death against analytic mean and independent SSA
+        run: >-
+          python -m pytest --noconftest -q
+          tests/python/nfnext/test_nfnext_immigration_death.py
+
       - name: Check NFnext reactant filters against independent binomial law
         run: >-
           python -m pytest --noconftest -q
