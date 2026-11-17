@@ -1754,6 +1754,29 @@ def _random_event_execution_verdict(parsed: Any) -> dict[str, Any] | None:
     return None
 
 
+def _apply_noncomparable_verdict(
+    record: dict[str, Any],
+    comparison: dict[str, Any],
+    random_execution: dict[str, Any] | None,
+) -> bool:
+    """Skip a point-wise comparison when the official reference is a random draw.
+
+    Equally-prioritised competing events with non-persistent triggers are
+    executed in a random order (SBML L3V2 Core 4.12.3), so no deterministic
+    point-wise engine comparison applies. Retain the numeric diagnostics, but
+    keep the case classified as unsupported, never passed and never failed.
+    """
+    if random_execution is None or comparison.get("passed", False):
+        # A passing point-wise comparison is still valid evidence; the
+        # random-order caveat only matters when the comparison disagrees.
+        return False
+    comparison["skipped"] = True
+    comparison["skip_reason"] = random_execution["reason"]
+    record["status"] = "unsupported"
+    record["unsupported_reason"] = random_execution["reason"]
+    return True
+
+
 def _compare_case_to_reference(
     case: dict[str, Any],
     cpp_model: Any,
@@ -3885,7 +3908,13 @@ def _validate_case(
                 },
             )
         record["simulation_comparison"] = comparison
-        if not comparison.get("passed", False) and not comparison.get("skipped", False):
+        if (
+            not _apply_noncomparable_verdict(
+                record, comparison, _random_event_execution_verdict(parsed)
+            )
+            and not comparison.get("passed", False)
+            and not comparison.get("skipped", False)
+        ):
             record["status"] = "failed"
             record["error"] = comparison.get("error", "numerical comparison failed")
         record["core_passed"] = record["status"] == "passed"
