@@ -385,6 +385,16 @@ def generated_cases():
     bad_identity["model"]["seeds"][0]["pattern"]["molecules"][0]["type"] = "B"
     mutations.append(("seed-type-name-id-disagreement", bad_identity))
 
+    # A schema-valid but unpaired exact bond group must be refused: a seed
+    # whose second molecule references a bond group no other molecule closes
+    # cannot reconstruct a native complex. Abstracts wrong-bond corruption of
+    # initial laws (see #156 seed-identity equality diagnostics).
+    wrong_bond = copy.deepcopy(bonded)
+    wrong_bond["model"]["seeds"][0]["pattern"]["molecules"][1]["sites"][0]["bond"][
+        "group"
+    ] = 99
+    mutations.append(("unpaired-exact-bond-group", wrong_bond))
+
     duplicate_id = copy.deepcopy(baseline)
     duplicate_id["model"]["molecule_types"][1]["id"] = 0
     mutations.append(("duplicate-molecule-type-id", duplicate_id))

@@ -69,6 +69,10 @@ private:
         // arity.  A function with arguments has no SBML counterpart in this
         // writer, so a name that also spells an SBML operator is ambiguous.
         std::unordered_map<std::string, std::size_t> parameterizedFunctions;
+        // The SBML id allocated to each network reaction. Generated R<n> ids
+        // share SBML's single model-wide namespace with parameters, so a
+        // source parameter named R<n> must not leave a colliding reaction id.
+        std::unordered_map<std::size_t, std::string> reactions;
         // The SBML id allocated to each native event.
         std::unordered_map<std::string, std::string> events;
         // The network species an observable equals, when the observable

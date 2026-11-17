@@ -71,3 +71,4 @@ def __getattr__(name):
                 value = _missing_sympy
         globals()[name] = value
         return value
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
