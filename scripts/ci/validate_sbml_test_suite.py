@@ -1766,7 +1766,9 @@ def _apply_noncomparable_verdict(
     point-wise engine comparison applies. Retain the numeric diagnostics, but
     keep the case classified as unsupported, never passed and never failed.
     """
-    if random_execution is None:
+    if random_execution is None or comparison.get("passed", False):
+        # A passing point-wise comparison is still valid evidence; the
+        # random-order caveat only matters when the comparison disagrees.
         return False
     comparison["skipped"] = True
     comparison["skip_reason"] = random_execution["reason"]
