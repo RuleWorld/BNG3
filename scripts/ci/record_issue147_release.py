@@ -8,10 +8,13 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+import tempfile
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from tests.validation.campaign import read_junit  # noqa: E402
 
 EXPECTED_CHECKS = (
     "release-nfir-lowering",
@@ -61,23 +64,27 @@ def verify_manifest(root: Path = ROOT) -> dict[str, dict]:
     return checks
 
 
-def run_tests(root: Path = ROOT) -> None:
+def run_tests(root: Path = ROOT) -> list[dict]:
     test_path = root / "tests/validation/release/cases/issue-147/test_nfir_lowering.py"
     if not test_path.is_file():
         _fail(f"missing test file: {test_path}")
-    cmd = [
-        sys.executable,
-        "-m",
-        "pytest",
-        "-q",
-        "--confcutdir=tests/validation/release/cases/issue-147",
-        str(test_path),
-    ]
-    result = subprocess.run(cmd, cwd=str(root), capture_output=True, text=True)
-    if result.returncode != 0:
-        _fail(
-            f"Issue 147 release tests failed (code {result.returncode}):\n{result.stdout}\n{result.stderr}"
-        )
+    with tempfile.TemporaryDirectory(prefix="bng3-issue147-") as directory:
+        junit = Path(directory) / "bounded.xml"
+        cmd = [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "--confcutdir=tests/validation/release/cases/issue-147",
+            f"--junitxml={junit}",
+            str(test_path),
+        ]
+        result = subprocess.run(cmd, cwd=str(root), capture_output=True, text=True)
+        if result.returncode != 0:
+            _fail(
+                f"Issue 147 bounded tests failed (code {result.returncode}):\n{result.stdout}\n{result.stderr}"
+            )
+        return read_junit(junit, "issue-147-bounded")
 
 
 def build_release_record(
@@ -110,56 +117,32 @@ def build_release_record(
 
     manifest_checks = verify_manifest(root)
 
-    if not skip_tests:
-        run_tests(root)
+    bounded_results = [] if skip_tests else run_tests(root)
 
+    # Selected wrapper cases are bounded diagnostics, not evidence that all
+    # required families and downstream consumers have been qualified.
+    detail = (
+        "Execution was skipped; no scientific acceptance evidence was collected."
+        if skip_tests
+        else "Full issue acceptance lacks per-family and downstream consumer "
+        "evidence; selected bounded test results are reported separately."
+    )
     results = [
         {
-            "id": "release-nfir-lowering",
-            "status": "PASS",
-            "evidence_kind": "supported-execution",
-            "supported_execution": True,
+            "id": check_id,
+            "status": "NOT_TESTED",
+            "evidence_kind": "not-tested",
+            "supported_execution": False,
             "related_issues": [147],
-            "stage": "nfir-lowering",
-            "detail": (
-                "every network-free inventory row lowers with complete semantics, "
-                "validated IDs, canonical form, and stable cache contract."
-            ),
-        },
-        {
-            "id": "release-nfir-roundtrip",
-            "status": "PASS",
-            "evidence_kind": "supported-execution",
-            "supported_execution": True,
-            "related_issues": [147],
-            "stage": "nfir-roundtrip",
-            "detail": (
-                "independently authored canonical model facts agree with NFIR and "
-                "native NFsim input facts without fact loss or mutation."
-            ),
-        },
-        {
-            "id": "release-obligation-147",
-            "status": "PASS",
-            "evidence_kind": "supported-execution",
-            "supported_execution": True,
-            "related_issues": [147],
-            "stage": "nfnext-lowering-obligations",
-            "detail": (
-                "all 21 slice checks across 7 families, analytical pure-death law, "
-                "negative control discrimination, and 9 inventory rows pass on main."
-            ),
-        },
+            "stage": stage,
+            "detail": detail,
+        }
+        for check_id, stage in (
+            ("release-nfir-lowering", "nfir-lowering"),
+            ("release-nfir-roundtrip", "nfir-roundtrip"),
+            ("release-obligation-147", "nfnext-lowering-obligations"),
+        )
     ]
-
-    if skip_tests:
-        for row in results:
-            row["status"] = "NOT_TESTED"
-            row["supported_execution"] = False
-            row["evidence_kind"] = "not-tested"
-            row["detail"] = (
-                "Execution was skipped; no scientific acceptance evidence was collected."
-            )
 
     return {
         "schema_version": 1,
@@ -169,11 +152,12 @@ def build_release_record(
             "revision": revision,
             "dirty": bool(dirty),
         },
-        "references": {
-            "bngl_semantics": "canonical BNGL rule and pattern semantics (features, components, sites, states, bonds)",
-            "native_nfsim": "pinned native NFsim input fact roundtrip and XML representation agreement",
-            "analytic_laws": "exact pure-death binomial marginals and refusal boundary controls",
-        },
+        "references": {},
+        "bounded_results": bounded_results,
+        "bounded_results_scope": (
+            "pytest testcase outcomes only; package/build/oracle/consumer identities "
+            "and full issue coverage are not established by these rows"
+        ),
         "results": results,
         "manifest_check_ids": sorted(manifest_checks.keys()),
     }
@@ -213,9 +197,6 @@ def main(argv: list[str] | None = None) -> int:
             "",
             f"- Source commit: `{record['source']['revision']}`",
             *(f"- {row['id']}: {row['status']}" for row in record["results"]),
-            f"- BNGL semantics oracle: `{record['references']['bngl_semantics']}`",
-            f"- Native NFsim oracle: `{record['references']['native_nfsim']}`",
-            f"- Analytic laws oracle: `{record['references']['analytic_laws']}`",
             "",
             f"Consolidated JSON report: `{args.output}`",
             "",
