@@ -166,3 +166,38 @@ def test_missing_sbml_validator_is_a_harness_failure(campaign, monkeypatch, tmp_
     assert result["status"] == "failed"
     assert "libSBML is required" in result["harness_error"]
     assert result["core_passed"] is False
+
+
+def test_random_event_execution_suppresses_pointwise_failure():
+    """A case whose official reference is a random draw stays unsupported.
+
+    regression: semantic/00966 has equally-prioritised competing events whose
+    triggers are non-persistent. SBML L3V2 Core 4.12.3 leaves their order to a
+    random draw, so the harness declared the official comparison unsupported
+    but still let the libRoadRunner pointwise comparison mark the case failed.
+    """
+    reason = "events Qinc, Rinc share one trigger and one priority; random order"
+    record = {"status": "passed"}
+    comparison = {
+        "passed": False,
+        "error": "observable mismatch",
+        "observables": {"S": {"mismatch_samples": [{"time": 0.1}]}},
+    }
+    applied = runner._apply_noncomparable_verdict(
+        record, comparison, {"status": "unsupported", "reason": reason}
+    )
+    assert applied is True
+    assert record["status"] == "unsupported"
+    assert record["unsupported_reason"] == reason
+    assert comparison["skipped"] is True
+    assert comparison["skip_reason"] == reason
+    # Numeric diagnostics are retained, not erased.
+    assert comparison["observables"]["S"]["mismatch_samples"]
+
+
+def test_random_event_verdict_does_not_mask_ordinary_failure():
+    record = {"status": "passed"}
+    comparison = {"passed": False, "error": "ordinary mismatch"}
+    assert runner._apply_noncomparable_verdict(record, comparison, None) is False
+    assert record == {"status": "passed"}
+    assert "skipped" not in comparison
