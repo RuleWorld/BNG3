@@ -1017,6 +1017,23 @@ def _validate_xml(text: str, label: str) -> dict[str, Any]:
         raise RuntimeError(
             f"{label} has {consistency_errors} libSBML consistency error(s)"
         )
+    # Internal consistency checks XML structure, not model references such as
+    # a species' compartment. Full validation also reports warnings (notably
+    # unspecified units), which must not be promoted to semantic errors.
+    document.checkConsistency()
+    semantic_errors = [
+        document.getError(index)
+        for index in range(document.getNumErrors())
+        if document.getError(index).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
+    ]
+    if semantic_errors:
+        messages = [
+            f"{error.getErrorId()}: {error.getMessage()}"
+            for error in semantic_errors[:5]
+        ]
+        raise RuntimeError(
+            f"{label} has {len(semantic_errors)} libSBML semantic error(s): {messages}"
+        )
     return {"passed": True, "validator": "libsbml", "errors": errors}
 
 

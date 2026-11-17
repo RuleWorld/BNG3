@@ -1,6 +1,7 @@
 """Keep conversion, round-trip and numerical evidence independently visible."""
 
 import numpy as np
+import pytest
 
 from scripts.ci import validate_sbml_test_suite as runner
 
@@ -66,3 +67,32 @@ def test_mismatch_samples_distinguish_nonfinite_classes():
         {"index": 1, "time": 1.0, "bng3": "+inf", "libroadrunner": "-inf"},
         {"index": 2, "time": 2.0, "bng3": "-inf", "libroadrunner": 2.0},
     ]
+
+
+@pytest.mark.parametrize("campaign", ["ssts", "biomodels"])
+@pytest.mark.parametrize("compartment", ["cell", "missing"])
+def test_sbml_validation_checks_species_compartment_references(campaign, compartment):
+    from scripts.ci import validate_published_biomodels
+
+    validate = (
+        runner._validate_xml
+        if campaign == "ssts"
+        else validate_published_biomodels._validate_xml
+    )
+    xml = f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
+      level="3" version="2"><model id="reference_control">
+      <listOfCompartments>
+        <compartment id="cell" size="2" constant="true"/>
+      </listOfCompartments>
+      <listOfSpecies>
+        <species id="X" compartment="{compartment}" initialAmount="3"
+          hasOnlySubstanceUnits="true" constant="false" boundaryCondition="false"/>
+      </listOfSpecies>
+    </model></sbml>"""
+    if compartment == "missing":
+        # SBML L3V2 validation rule 20601: a species' compartment must exist.
+        with pytest.raises(RuntimeError, match="20601"):
+            validate(xml, "dangling-compartment-control")
+    else:
+        # Omitted unit declarations produce consistency warnings, not errors.
+        assert validate(xml, "valid-reference-control")["passed"] is True
