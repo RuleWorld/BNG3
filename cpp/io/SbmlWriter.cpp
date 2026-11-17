@@ -987,8 +987,8 @@ std::vector<SbmlWriter::ObservableGroup> SbmlWriter::computeObservableGroups(
         // MathML and cannot also be an assignment-rule variable.
         usedIds.insert("time");
         // Compartments share SBML's single model-wide identifier namespace
-        // with assignment-rule variables; an observable whose BNGL name
-        // matches a compartment must get a distinct rule ID.
+        // with the variables targeted by assignment rules; an observable
+        // whose BNGL name matches a compartment needs a distinct rule ID.
         for (const auto& compartment : model.getCompartments()) {
             usedIds.insert(makeValidSBMLId(compartment.getName()));
         }
