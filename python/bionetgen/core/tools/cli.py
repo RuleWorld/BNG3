@@ -107,6 +107,15 @@ class BNGCLI:
             os.makedirs(self.output, exist_ok=True)
 
     def run(self):
+        try:
+            return self._run_impl()
+        finally:
+            if self.old_bngpath is None:
+                os.environ.pop("BNGPATH", None)
+            else:
+                os.environ["BNGPATH"] = self.old_bngpath
+
+    def _run_impl(self):
         self.logger.debug("Running", loc=f"{__file__} : BNGCLI.run()")
 
         # C++ fast path.  Import availability is the only fallback boundary;
@@ -135,6 +144,18 @@ class BNGCLI:
             self.logger.debug(
                 "Executing via C++ backend", loc=f"{__file__} : BNGCLI.run()"
             )
+            if self.log_file is not None or self.timeout is not None:
+                from bionetgen.compat._native_process import execute_native
+
+                self.result = None
+                self.result = execute_native(
+                    inp_run_path,
+                    self.output,
+                    suppress=self.suppress,
+                    timeout=self.timeout,
+                    log_file=self.log_file,
+                )
+                return
             model = _cpp.parse_file(inp_run_path)
             _cpp.execute(model, inp_run_path, verbose=not self.suppress)
 
@@ -234,21 +255,9 @@ class BNGCLI:
             self.result = BNGResult(self.output)
             self.result.process_return = rc
             self.result.output = out
-            # set BNGPATH back
-            if self.old_bngpath is not None:
-                os.environ["BNGPATH"] = self.old_bngpath
-            else:
-                if "BNGPATH" in os.environ:
-                    del os.environ["BNGPATH"]
         else:
             self.logger.error("Command failed to run", loc=f"{__file__} : BNGCLI.run()")
             self.result = None
-            # set BNGPATH back
-            if self.old_bngpath is not None:
-                os.environ["BNGPATH"] = self.old_bngpath
-            else:
-                if "BNGPATH" in os.environ:
-                    del os.environ["BNGPATH"]
             if hasattr(out, "stdout"):
                 if out.stdout is not None:
                     stdout_str = out.stdout.decode("utf-8")
