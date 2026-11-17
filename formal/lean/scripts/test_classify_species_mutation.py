@@ -78,7 +78,9 @@ class SpeciesRejectionTest(unittest.TestCase):
         lines = output.splitlines()
         lines.remove("  ⊢ candidate ∈ pool")
         lines.insert(-1, "  ⊢ candidate ∈ pool")
-        self.assertFalse(matches("coverage-network-duplicate-species", source, "\n".join(lines)))
+        self.assertFalse(
+            matches("coverage-network-duplicate-species", source, "\n".join(lines))
+        )
 
     def test_invalid_controls_rejected(self):
         for name in EXPECTED:
