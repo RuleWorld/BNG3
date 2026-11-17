@@ -65,3 +65,26 @@ def test_reaction_ids_do_not_reuse_parameter_ids(tmp_path):
         model.getReaction(i).getId() for i in range(model.getNumReactions())
     }
     assert not (parameter_ids & reaction_ids), (parameter_ids, reaction_ids)
+
+
+def test_reserved_split_reaction_suffix_is_not_reused(tmp_path):
+    # A delayed consuming reaction appends _init/_complete to its id. A source
+    # parameter carrying one of those spellings must force a different base.
+    source = SOURCE.replace("  R2 2", "  R2 2\n  R1_init 3")
+    model = BioNetGenModel(cpp.parse_string(source))
+    network = model.generate_network()
+    path = tmp_path / "suffix.xml"
+    cpp.io.write_sbml(model._model, network, str(path))
+    document = libsbml.readSBMLFromFile(str(path))
+    document.checkConsistency()
+    errors = [
+        document.getError(i).getMessage()
+        for i in range(document.getNumErrors())
+        if document.getError(i).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
+    ]
+    assert not errors, errors
+    ids = {
+        document.getModel().getReaction(i).getId()
+        for i in range(document.getModel().getNumReactions())
+    }
+    assert "R1" not in ids, ids

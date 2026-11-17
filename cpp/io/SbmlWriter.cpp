@@ -318,7 +318,10 @@ SbmlWriter::SymbolIds SbmlWriter::computeSymbolIds(
             const std::string base = "R" + std::to_string(r + 1);
             std::string id = base;
             std::size_t suffix = 2;
-            while (used.count(id) != 0) {
+            // Delayed consuming reactions emit <id>_init and <id>_complete,
+            // so reserve the whole id family before accepting a base name.
+            while (used.count(id) != 0 || used.count(id + "_init") != 0 ||
+                   used.count(id + "_complete") != 0) {
                 id = "rxn_" + base + "_" + std::to_string(suffix++);
             }
             used.insert(id);
