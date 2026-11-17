@@ -2313,16 +2313,28 @@ def _validate_mode(
     artifacts_dir: Path | None = None,
     partial_result: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    from bionetgen.atomizer.modern import (
-        Atomizer,
-        SBMLParser,
-        source_metadata_payload,
-        source_metadata_summary,
-    )
-    from bionetgen.atomizer.modern.types import standardize_name
-
     mode = "atomized" if mode_atomize else "flat"
     result: dict[str, Any] = partial_result if partial_result is not None else {}
+    try:
+        from bionetgen.atomizer.modern import (
+            Atomizer,
+            SBMLParser,
+            source_metadata_payload,
+            source_metadata_summary,
+        )
+        from bionetgen.atomizer.modern.types import standardize_name
+    except ImportError as exc:
+        try:
+            import libsbml  # noqa: F401
+        except ImportError:
+            message = "libSBML is required for SBML validation"
+        else:
+            message = f"bionetgen is required for SBML conversion: {exc}"
+        result["status"] = "failed"
+        result["harness_error"] = message
+        result["error"] = message
+        result["core_passed"] = False
+        return result
     checkpoint_path = (
         artifacts_dir / f"mode.{mode}.progress.json"
         if artifacts_dir is not None

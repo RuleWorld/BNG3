@@ -3578,14 +3578,6 @@ def _validate_case(
     stochastic_runs: int = STOCHASTIC_DEFAULT_RUNS,
     stochastic_seed_base: int = STOCHASTIC_SEED_BASE,
 ) -> dict[str, Any]:
-    from bionetgen.atomizer.modern import (
-        Atomizer,
-        SBMLParser,
-        source_metadata_payload,
-        source_metadata_summary,
-    )
-    from bionetgen.atomizer.modern.types import standardize_name
-
     source_path = Path(case["path"])
     if artifacts_dir is not None:
         work_dir = artifacts_dir / case["category"] / case["id"]
@@ -3639,6 +3631,28 @@ def _validate_case(
             }
     source_xml_valid = False
     try:
+        try:
+            from bionetgen.atomizer.modern import (
+                Atomizer,
+                SBMLParser,
+                source_metadata_payload,
+                source_metadata_summary,
+            )
+            from bionetgen.atomizer.modern.types import standardize_name
+        except ImportError as exc:
+            # A validation harness missing a required dependency is a harness
+            # limitation, not a source verdict or a support claim. Prefer the
+            # validator diagnostic when it is also unavailable, so the missing
+            # validator remains the reported cause.
+            try:
+                import libsbml  # noqa: F401
+            except ImportError:
+                raise SBMLValidationUnavailable(
+                    "libSBML is required for SBML validation"
+                ) from exc
+            raise SBMLValidationUnavailable(
+                "bionetgen is required for SBML conversion"
+            ) from exc
         sbml = source_path.read_text(encoding="utf-8-sig")
         if artifacts_dir is not None:
             (work_dir / "source.xml").write_text(sbml, encoding="utf-8")
