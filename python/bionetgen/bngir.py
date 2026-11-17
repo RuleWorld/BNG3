@@ -3716,6 +3716,63 @@ def _evaluate_model_expression_exact(
     return visit(root)
 
 
+def _canonical_seed_identity(model: Any, seed: Any) -> str | None:
+    """Return the network identity of a seed using native graph canonicalization.
+
+    Seed patterns keep the bond numbers written in the source, while generated
+    species are named with BNG2-canonical bond numbers. String-matching the two
+    silently drops seeds whose bonds were renumbered, which can manufacture a
+    false equivalence certificate. Round-tripping a single seed through the
+    native parser and network generator yields the same canonical identity that
+    the full network reports, without reimplementing canonicalization in Python.
+    """
+    from .model import BioNetGenModel, _cpp
+
+    lines: list[str] = ["begin model"]
+    compartments = list(model._model.compartments)
+    if compartments:
+        lines.append("begin compartments")
+        for compartment in compartments:
+            lines.append(
+                f"  {compartment.name} {compartment.dimension} {compartment.volume}"
+            )
+        lines.append("end compartments")
+    lines.append("begin molecule types")
+    for molecule_type in model._model.molecule_types:
+        components = []
+        for component in molecule_type.components:
+            states = list(component.allowed_states)
+            components.append(
+                component.name + (("~" + "~".join(states)) if states else "")
+            )
+        name = molecule_type.name
+        definition = (
+            f"  {name}({','.join(components)})" if components else f"  {name}()"
+        )
+        if molecule_type.is_population:
+            definition += " population"
+        lines.append(definition)
+    lines.append("end molecule types")
+
+    pattern = seed.pattern
+    if seed.compartment and "@" not in pattern:
+        pattern = f"@{seed.compartment}:{pattern}"
+    if pattern.startswith("$"):
+        pattern = pattern[1:]
+    lines.append("begin seed species")
+    lines.append(f"  {pattern} 1")
+    lines.append("end seed species")
+    lines.append("end model")
+    source = "\n".join(lines) + "\n"
+    try:
+        canonical = list(
+            BioNetGenModel(_cpp.parse_string(source)).generate_network().species_names
+        )
+    except Exception:
+        return None
+    return canonical[0] if len(canonical) == 1 else None
+
+
 def _extract_jump_hazards(
     model: Any,
 ) -> tuple[
@@ -3735,14 +3792,19 @@ def _extract_jump_hazards(
         amount_val = _evaluate_model_expression_exact(
             seed.amount.to_string(), param_dict
         )
-        pat = seed.pattern
-        if seed.compartment and "@" not in pat:
-            pat = f"@{seed.compartment}:{pat}"
-        if pat.startswith("$"):
-            pat = pat[1:]
-        for sp in species_names:
-            if sp == pat or sp.split("@")[-1] == pat.split("@")[-1]:
-                init_counts[sp] = amount_val
+        identity = _canonical_seed_identity(model, seed)
+        if identity is None or identity not in init_counts:
+            # Never leave an unmatched seed at zero: that would certify two
+            # different initial laws as equal. Decline instead.
+            raise EqualityUndecided(
+                "A seed species has no canonical identity in the generated network",
+                {
+                    "seed_pattern": seed.pattern,
+                    "seed_compartment": seed.compartment,
+                    "canonical_identity": identity,
+                },
+            )
+        init_counts[identity] += amount_val
 
     jump_hazards: dict[tuple[tuple[str, ...], tuple[str, ...]], Fraction] = {}
     rxn_participants = net.reaction_participants
