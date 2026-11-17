@@ -999,11 +999,17 @@ def _runtime_provenance(cpp: Any) -> dict[str, Any]:
     }
 
 
+class SBMLValidationUnavailable(RuntimeError):
+    """The harness cannot validate a source without its required validator."""
+
+
 def _validate_xml(text: str, label: str) -> dict[str, Any]:
     try:
         import libsbml
     except ImportError as exc:
-        raise RuntimeError(f"{label}: libSBML is required for SBML validation") from exc
+        raise SBMLValidationUnavailable(
+            f"{label}: libSBML is required for SBML validation"
+        ) from exc
     document = libsbml.readSBMLFromString(text)
     errors = int(document.getNumErrors())
     if errors:
@@ -3856,11 +3862,19 @@ def _validate_case(
         # An invalid SBML source is a property of the source, not of the
         # converter, so it is reported as its own verdict rather than as a
         # converter failure.
-        record["status"] = "invalid-source" if not source_xml_valid else classification
+        if isinstance(exc, SBMLValidationUnavailable):
+            record["status"] = "failed"
+            record["harness_error"] = message
+        else:
+            record["status"] = (
+                "invalid-source" if not source_xml_valid else classification
+            )
         record["core_passed"] = False
         record["error"] = message
         if record["official_conformance"]["status"] == "pending":
-            if not source_xml_valid:
+            if isinstance(exc, SBMLValidationUnavailable):
+                official_status = "failed"
+            elif not source_xml_valid:
                 official_status = "invalid-source"
             else:
                 official_status = classification

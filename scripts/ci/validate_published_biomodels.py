@@ -705,11 +705,17 @@ def _verified_no_sbml_archive_outcome(
     }
 
 
+class SBMLValidationUnavailable(RuntimeError):
+    """The harness cannot validate a source without its required validator."""
+
+
 def _validate_xml(text: str, label: str) -> dict[str, Any]:
     try:
         import libsbml
     except ImportError as exc:
-        raise RuntimeError(f"{label}: libSBML is required for SBML validation") from exc
+        raise SBMLValidationUnavailable(
+            f"{label}: libSBML is required for SBML validation"
+        ) from exc
     document = libsbml.readSBMLFromString(text)
     errors = int(document.getNumErrors())
     if errors:
@@ -2335,6 +2341,13 @@ def _validate_mode(
     try:
         with _mode_stage(result, "source-xml-validation"):
             result["source_xml"] = _validate_xml(sbml, "source SBML")
+    except SBMLValidationUnavailable as exc:
+        result["source_xml"] = {"passed": False, "harness_error": str(exc)}
+        result["status"] = "failed"
+        result["harness_error"] = str(exc)
+        result["error"] = str(exc)
+        result["core_passed"] = False
+        return finish()
     except RuntimeError as exc:
         # A small number of archived BioModels files contain malformed or
         # stale package XML.  Preserve the exact libSBML diagnosis, but do

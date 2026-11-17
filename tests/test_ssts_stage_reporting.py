@@ -120,3 +120,49 @@ def test_sbml_validation_cannot_pass_without_its_validator(campaign, monkeypatch
     monkeypatch.setitem(sys.modules, "libsbml", None)
     with pytest.raises(RuntimeError, match="libSBML is required"):
         validate("<not-even-an-sbml-model/>", "missing-validator-control")
+
+
+@pytest.mark.parametrize("campaign", ["ssts", "biomodels"])
+def test_missing_sbml_validator_is_a_harness_failure(campaign, monkeypatch, tmp_path):
+    from scripts.ci import validate_published_biomodels
+
+    monkeypatch.setitem(sys.modules, "libsbml", None)
+    source = tmp_path / "source.xml"
+    source.write_text(
+        '<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" '
+        'level="3" version="2"><model id="valid_empty_model"/></sbml>'
+    )
+    options = dict(
+        work_dir=tmp_path,
+        simulation_t_end=1.0,
+        simulation_n_steps=10,
+        simulation_rtol=1e-6,
+        simulation_atol=1e-8,
+    )
+    if campaign == "ssts":
+        # Reference acquisition is independent of the missing XML validator.
+        monkeypatch.setattr(runner, "_read_reference_case", lambda _case: None)
+        result = runner._validate_case(
+            {
+                "category": "semantic",
+                "id": "control",
+                "version": "l3v2",
+                "path": source,
+            },
+            cpp=None,
+            **options,
+        )
+        assert result["official_conformance"]["status"] == "failed"
+    else:
+        result = validate_published_biomodels._validate_mode(
+            source.read_text(),
+            model_id="control",
+            mode_atomize=False,
+            cpp=None,
+            model_type=None,
+            ode_smoke=False,
+            **options,
+        )
+    assert result["status"] == "failed"
+    assert "libSBML is required" in result["harness_error"]
+    assert result["core_passed"] is False
