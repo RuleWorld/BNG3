@@ -72,15 +72,17 @@ def main():
     "format_hint",
     default=None,
     type=str,
-    help="Input format hint (legacy).",
+    help="Input format (bngl).",
 )
 @click.option(
     "--no-bngsim",
     is_flag=True,
     default=False,
-    help="Force legacy/non-BNGsim route where applicable.",
+    help="Run in a separate process using the native backend.",
 )
-@click.option("--timeout", default=None, type=int, help="Timeout in seconds (legacy).")
+@click.option(
+    "--timeout", default=None, type=int, help="Wall-clock deadline in seconds."
+)
 def run(
     model,
     input_path,
@@ -103,12 +105,15 @@ def run(
 ):
     """Run a BNGL model simulation."""
     sys.tracebacklimit = traceback_depth
-    if log_file is not None:
-        raise click.UsageError("--log is not supported by the BNG3 run command")
-    if no_bngsim:
-        raise click.UsageError(
-            "--no-bngsim subprocess routing is not supported by the BNG3 run command"
-        )
+    if format_hint is not None:
+        if format_hint.lower() != "bngl":
+            raise click.UsageError(
+                "run accepts --format bngl; convert other formats first"
+            )
+        format_hint = "bngl"
+        selected_input = input_path or model
+        if selected_input and Path(selected_input).suffix.lower() != ".bngl":
+            raise click.UsageError("--format bngl requires a .bngl input file")
     if input_path is not None:
         if model is not None:
             raise click.UsageError("provide either MODEL or --input, not both")
@@ -130,6 +135,8 @@ def run(
                 psa_poplevel=psa_poplevel,
                 timeout=timeout,
                 format=format_hint,
+                log_file=log_file,
+                simulator="subprocess" if no_bngsim else "auto",
             )
         except Exception as exc:
             raise click.ClickException(str(exc)) from exc
@@ -139,28 +146,42 @@ def run(
 
     if model is None:
         raise click.UsageError("MODEL or --input is required")
-    if timeout is not None:
-        raise click.UsageError("--timeout is not supported for positional MODEL runs")
-    if format_hint is not None:
-        raise click.UsageError("--format is not supported for positional MODEL runs")
-
     from bionetgen import load
 
     path = str(Path(model).resolve())
     try:
-        result = load(path).simulate(
-            method=method or "ode",
-            t_start=0.0 if t_start is None else t_start,
-            t_end=100.0 if t_end is None else t_end,
-            n_steps=100 if n_steps is None else n_steps,
-            rtol=1e-8 if rtol is None else rtol,
-            atol=1e-12 if atol is None else atol,
-            seed=0 if seed is None else seed,
-            pla_config="" if pla_config is None else pla_config,
-            psa_poplevel=100.0 if psa_poplevel is None else psa_poplevel,
-            verbose=verbose,
-        )
-    except (TypeError, ValueError) as exc:
+        options = {
+            "method": method or "ode",
+            "t_start": 0.0 if t_start is None else t_start,
+            "t_end": 100.0 if t_end is None else t_end,
+            "n_steps": 100 if n_steps is None else n_steps,
+            "rtol": 1e-8 if rtol is None else rtol,
+            "atol": 1e-12 if atol is None else atol,
+            "seed": 0 if seed is None else seed,
+            "pla_config": "" if pla_config is None else pla_config,
+            "psa_poplevel": 100.0 if psa_poplevel is None else psa_poplevel,
+            "verbose": verbose or log_file is not None,
+        }
+        if no_bngsim:
+            options["backend"] = "native"
+        if log_file is not None or timeout is not None or no_bngsim:
+            from tempfile import TemporaryDirectory
+
+            from bionetgen.compat._native_process import execute_native
+
+            with TemporaryDirectory(prefix="bng3-cli-") as directory:
+                result = execute_native(
+                    path,
+                    directory,
+                    suppress=not verbose,
+                    timeout=timeout,
+                    log_file=log_file,
+                    options=options,
+                    result_file=Path(directory) / "simulation.npz",
+                )
+        else:
+            result = load(path).simulate(**options)
+    except Exception as exc:
         raise click.ClickException(str(exc).replace("t_start", "t-start")) from exc
 
     if output:

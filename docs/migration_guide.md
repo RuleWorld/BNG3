@@ -221,6 +221,14 @@ metadata, through the native worker. Its n_points value retains the pinned
 modelapi step-count convention (n_points + 1 output rows). An explicit out
 with these overrides remains unsupported.
 
+The run command accepts --log, --timeout, and --no-bngsim for both positional
+models and --input workflows. These controls use the same native worker;
+--no-bngsim selects native execution in a separate process. A positional model
+still requests one simulation and writes a single output file, while --input
+preserves declared actions and writes a result directory. --format bngl is
+accepted; other input formats require conversion first. Logs retain worker
+output and error diagnostics, including partial output on a timeout.
+
 Other API boundaries:
 
 - PyBioNetGen's BNGsim helper, bridge, and parameter-scan modules do not have
