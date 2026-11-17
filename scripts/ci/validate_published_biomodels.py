@@ -2553,11 +2553,20 @@ def _validate_mode(
                 "native SBML reader species count differs from writer network: "
                 f"{native['species_count']} != {network.num_species}"
             )
-        if native["reaction_count"] != network.num_reactions:
+        # Native rate rules replace synthetic network reactions during export.
+        # Check the reader against the written document, as in the SSTS harness.
+        written_reaction_count = len(roundtrip_model.reactions)
+        if native["reaction_count"] != written_reaction_count:
             raise RuntimeError(
-                "native SBML reader reaction count differs from writer network: "
-                f"{native['reaction_count']} != {network.num_reactions}"
+                "native SBML reader reaction count differs from written SBML: "
+                f"{native['reaction_count']} != {written_reaction_count}"
             )
+        if not any(rule.type == "rate" for rule in source_model.rules):
+            if native["reaction_count"] != network.num_reactions:
+                raise RuntimeError(
+                    "native SBML reader reaction count differs from writer network: "
+                    f"{native['reaction_count']} != {network.num_reactions}"
+                )
 
     comparison: dict[str, Any] | None = None
     initial_runtime_error: RuntimeError | None = None
