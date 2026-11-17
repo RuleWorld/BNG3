@@ -925,6 +925,11 @@ jobs:
           python -m pytest --noconftest -q
           tests/python/nfnext/test_nfnext_dynamic_rate_observable.py
 
+      - name: Check NFnext identical-reactant combinatorial factor
+        run: >-
+          python -m pytest --noconftest -q
+          tests/python/nfnext/test_nfnext_symmetric_reactants.py
+
       - name: Verify spawned API worker identity
         run: |
           pytest -c tests/validation/pytest.ini \

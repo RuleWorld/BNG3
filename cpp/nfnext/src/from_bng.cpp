@@ -12,6 +12,7 @@
 #include "units/Unit.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <functional>
 #include <limits>
@@ -1063,6 +1064,63 @@ bool addActions(const bng::compile::CompiledRule& rule,
     return appendDeletionActions(rule, direction, pattern, *nodes, actions, result, entity);
 }
 
+// Swap-insensitive key for one action. Bind/Unbind are undirected, so their
+// endpoints are ordered by (node, site); that lets a bond action remain
+// identical when interchangeable reactant nodes are exchanged. `swaps` holds
+// the node pairs exchanged when two duplicate reactant patterns are swapped.
+std::vector<int> actionSymmetryKey(
+    const ActionIR& action,
+    const std::vector<std::pair<std::size_t, std::size_t>>& swaps) {
+    const auto node = [&](std::uint32_t n) -> std::uint32_t {
+        for (const auto& [a, b] : swaps) {
+            if (n == a) return static_cast<std::uint32_t>(b);
+            if (n == b) return static_cast<std::uint32_t>(a);
+        }
+        return n;
+    };
+    std::vector<int> key{static_cast<int>(action.kind),
+                         static_cast<int>(action.molecule_type)};
+    if (action.kind == ActionKind::Bind || action.kind == ActionKind::Unbind) {
+        std::array<std::pair<std::uint32_t, std::uint16_t>, 2> endpoints{{
+            {node(action.target_node), action.site},
+            {node(action.partner_node), action.partner_site},
+        }};
+        if (endpoints[1] < endpoints[0]) std::swap(endpoints[0], endpoints[1]);
+        for (const auto& endpoint : endpoints) {
+            key.push_back(static_cast<int>(endpoint.first));
+            key.push_back(static_cast<int>(endpoint.second));
+        }
+    } else {
+        key.push_back(static_cast<int>(node(action.target_node)));
+        key.push_back(static_cast<int>(action.site));
+        key.push_back(static_cast<int>(action.value));
+        key.push_back(static_cast<int>(action.aux));
+        key.push_back(static_cast<int>(node(action.partner_node)));
+        key.push_back(static_cast<int>(action.partner_site));
+    }
+    return key;
+}
+
+// True when exchanging whole duplicate reactant patterns leaves the
+// transformation program unchanged (as a multiset of actions). Only then may
+// the matcher collapse ordered embeddings into unordered combinations.
+bool actionsInvariantUnderSwaps(
+    const std::vector<ActionIR>& actions,
+    const std::vector<std::pair<std::size_t, std::size_t>>& swaps) {
+    if (swaps.empty()) return true;
+    std::vector<std::vector<int>> before;
+    std::vector<std::vector<int>> after;
+    before.reserve(actions.size());
+    after.reserve(actions.size());
+    for (const auto& action : actions) {
+        before.push_back(actionSymmetryKey(action, {}));
+        after.push_back(actionSymmetryKey(action, swaps));
+    }
+    std::sort(before.begin(), before.end());
+    std::sort(after.begin(), after.end());
+    return before == after;
+}
+
 void addDirection(const bng::compile::CompiledRule& rule,
                   const bng::compile::CompiledRuleDirection& direction,
                   RuleId id, const std::string& suffix, bool reverseDirection,
@@ -1140,14 +1198,24 @@ void addDirection(const bng::compile::CompiledRule& rule,
     }
 
     auto loweredPattern = flattened->pattern;
-    // Whole-species deletions have no identity-sensitive action. Mark exact
-    // duplicate reactant patterns interchangeable by corresponding molecule
-    // position so the matcher counts unordered combinations instead of every
-    // ordering. The whole pattern is compared first, so distinct state or bond
-    // constraints never share a symmetry group.
+    // Actions must be lowered before deciding reactant interchangeability:
+    // a symmetric transformation leaves the action program invariant under
+    // the exchange, and only then may ordered embeddings be collapsed.
+    std::vector<ActionIR> loweredActions;
+    if (!addActions(rule, direction, *flattened, reverseDirection,
+                    loweredActions, result, entity)) return;
+
+    // Whole-species deletions have no identity-sensitive action. Other rules
+    // qualify when exchanging the duplicate reactants leaves the action
+    // program unchanged (e.g. a symmetric A+A -> A.A binding, but not
+    // A+A -> A(p)+A(u)). The whole pattern is compared first, so distinct
+    // state or bond constraints never share a symmetry group. BNG2 applies
+    // the same 1/n! combinatorial factor to identical reactants.
+    const bool wholeDeletionSymmetry =
+        !hasDeleteMoleculesModifier(rule) &&
+        direction.wholeSpeciesDeletions.size() == direction.reactantPatterns.size();
     if (!hasDeleteMoleculesModifier(rule) && direction.filters.empty() &&
-        direction.localScopes.empty() &&
-        direction.wholeSpeciesDeletions.size() == direction.reactantPatterns.size()) {
+        direction.localScopes.empty()) {
         std::vector<bool> grouped(direction.reactantPatterns.size(), false);
         for (std::size_t first = 0; first < direction.reactantPatterns.size(); ++first) {
             if (grouped[first]) continue;
@@ -1173,6 +1241,23 @@ void addDirection(const bng::compile::CompiledRule& rule,
                 grouped[other] = true;
             }
             if (duplicates.size() < 2) continue;
+            if (!wholeDeletionSymmetry) {
+                bool allExchangesSymmetric = true;
+                for (std::size_t dupIdx = 1; dupIdx < duplicates.size(); ++dupIdx) {
+                    std::vector<std::pair<std::size_t, std::size_t>> swaps;
+                    swaps.reserve(moleculeCount);
+                    for (std::size_t m = 0; m < moleculeCount; ++m) {
+                        swaps.emplace_back(
+                            flattened->patternOffsets[duplicates[0]] + duplicateMappings[0][m],
+                            flattened->patternOffsets[duplicates[dupIdx]] + duplicateMappings[dupIdx][m]);
+                    }
+                    if (!actionsInvariantUnderSwaps(loweredActions, swaps)) {
+                        allExchangesSymmetric = false;
+                        break;
+                    }
+                }
+                if (!allExchangesSymmetric) continue;
+            }
             for (std::size_t molecule = 0; molecule < moleculeCount; ++molecule) {
                 std::vector<std::size_t> interchangeable;
                 interchangeable.reserve(duplicates.size());
@@ -1191,9 +1276,8 @@ void addDirection(const bng::compile::CompiledRule& rule,
     lowered.id = id;
     lowered.name = entity;
     lowered.pattern = std::move(loweredPattern);
+    lowered.actions = std::move(loweredActions);
     addPredicates(lowered.pattern, lowered.predicates);
-    if (!addActions(rule, direction, *flattened, reverseDirection,
-                    lowered.actions, result, entity)) return;
 
     const auto partiallyExpandedRate = source.expandFunctions(
         direction.rateLaw->resolvedExpression());
