@@ -122,6 +122,13 @@ _01575_RESULTS = """Time,k1,k2
 _00761_MODEL = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core"
          level="3" version="2">
   <model id="case00761" name="case00761" timeUnits="time">
+    <listOfUnitDefinitions>
+      <unitDefinition id="time">
+        <listOfUnits>
+          <unit kind="second" exponent="1" scale="0" multiplier="1"/>
+        </listOfUnits>
+      </unitDefinition>
+    </listOfUnitDefinitions>
     <listOfFunctionDefinitions>
       <functionDefinition id="greaterthan" name="greaterthan">
         <math xmlns="http://www.w3.org/1998/Math/MathML">
