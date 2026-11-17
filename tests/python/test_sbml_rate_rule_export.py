@@ -85,3 +85,64 @@ def test_rate_rule_export_is_valid_and_preserves_source_execution(
     consumer.integrator.setValue("absolute_tolerance", 1e-12)
     actual = consumer.simulate(0, 2, 21, selections=["time", "X", "Y", "Z"])
     np.testing.assert_allclose(actual, expected, rtol=2e-6, atol=1e-8)
+
+
+@pytest.mark.parametrize("atomized", [False, True], ids=["flat", "atomized"])
+@pytest.mark.parametrize(
+    "ordinary_reaction", [False, True], ids=["rate-rule-only", "mixed"]
+)
+def test_biomodels_atomizer_rate_rule_readback_compares_written_reactions(
+    tmp_path, atomized, ordinary_reaction
+):
+    """The BioModels consumer must accept native rules without duplicate fluxes."""
+    from bionetgen import BioNetGenModel
+    from scripts.ci.validate_published_biomodels import _validate_mode
+
+    record = _validate_mode(
+        _source(ordinary_reaction),
+        "rate_rule_readback",
+        atomized,
+        cpp,
+        BioNetGenModel,
+        tmp_path,
+        False,
+        2.0,
+        20,
+        1e-9,
+        1e-12,
+    )
+
+    assert record["core_passed"]
+    assert record["native_reader"]["reaction_count"] == int(ordinary_reaction)
+    assert record["simulation_comparison"]["passed"]
+    assert record["source_simulation_comparison"]["passed"]
+
+
+def test_biomodels_atomizer_readback_rejects_a_dropped_native_reaction(
+    tmp_path, monkeypatch
+):
+    from bionetgen import BioNetGenModel
+    from scripts.ci.validate_published_biomodels import _validate_mode
+
+    read_sbml = cpp.io.read_sbml
+
+    def drop_reaction(*args, **kwargs):
+        native = dict(read_sbml(*args, **kwargs))
+        native["reaction_count"] = 0
+        return native
+
+    monkeypatch.setattr(cpp.io, "read_sbml", drop_reaction)
+    with pytest.raises(RuntimeError, match="differs from written SBML"):
+        _validate_mode(
+            _source(True),
+            "native_reaction_loss",
+            False,
+            cpp,
+            BioNetGenModel,
+            tmp_path,
+            False,
+            2.0,
+            20,
+            1e-9,
+            1e-12,
+        )
