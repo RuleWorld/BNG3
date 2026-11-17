@@ -1358,20 +1358,12 @@ void addDirection(const bng::compile::CompiledRule& rule,
                       "physical bimolecular rate requires one declared reactant volume unit");
                 return;
             }
-            // Leave numeric compartment size to NFnext's geometric 1/V scaling.
-            // stochasticRateFactor already incorporates the mole/item bridge and
-            // declared-volume basis needed for the count-rate coefficient.
-            context.compartmentVolume = 1.0;
-            context.volumeUnit = decl->declaredUnit;
-            const auto conversion = bng::units::stochasticRateFactor(*direction.rateLaw->unit, 2, context);
-            if (!conversion || !conversion.factor.has_value() || !std::isfinite(*conversion.factor) ||
-                *conversion.factor < 0.0) {
-                issue(result, BngLoweringSeverity::Error, entity,
-                      "physical bimolecular rate unit cannot be converted to a count rate");
-                return;
-            }
-            lowered.rate = *constant * (*conversion.factor);
-            // geometric reactant volume factor retained
+            // Complete volume/rate conversion for physical bimolecular reactions is
+            // not yet validated in NFnext; refuse explicitly rather than executing
+            // with an incorrect propensity.
+            issue(result, BngLoweringSeverity::Error, entity,
+                  "physical bimolecular rate unit conversion is not yet supported in NFnext");
+            return;
         } else {
             issue(result, BngLoweringSeverity::Error, entity,
                   "physical rate conversion for molecularity > 2 is not yet supported in NFnext");

@@ -101,9 +101,9 @@ def test_delay_release_record_builds_valid_report(tmp_path):
     assert report["acceptance_check"] == "release-obligation-475"
     assert len(report["results"]) == 3
     for row in report["results"]:
-        assert row["status"] == "PASS"
-        assert row["supported_execution"] is True
-        assert row["evidence_kind"] == "supported-execution"
+        assert row["status"] == "NOT_TESTED"
+        assert row["supported_execution"] is False
+        assert row["evidence_kind"] == "not-tested"
 
     out_file = tmp_path / "delay_report.json"
     out_file.write_text(json.dumps(report))
@@ -115,8 +115,7 @@ def test_delay_release_record_builds_valid_report(tmp_path):
     )["obligations"]
     for ob in assessed:
         for chk in ob["checks"]:
-            assert chk["status"] == "PASS"
-            assert chk["missing_evidence"] == []
+            assert chk["status"] == "NOT_TESTED"
 
 
 def test_jax_release_record_builds_valid_report(tmp_path):
@@ -127,9 +126,9 @@ def test_jax_release_record_builds_valid_report(tmp_path):
     assert report["acceptance_check"] == "release-obligation-473"
     assert len(report["results"]) == 3
     for row in report["results"]:
-        assert row["status"] == "PASS"
-        assert row["supported_execution"] is True
-        assert row["evidence_kind"] == "supported-execution"
+        assert row["status"] == "NOT_TESTED"
+        assert row["supported_execution"] is False
+        assert row["evidence_kind"] == "not-tested"
 
     out_file = tmp_path / "jax_report.json"
     out_file.write_text(json.dumps(report))
@@ -141,8 +140,7 @@ def test_jax_release_record_builds_valid_report(tmp_path):
     )["obligations"]
     for ob in assessed:
         for chk in ob["checks"]:
-            assert chk["status"] == "PASS"
-            assert chk["missing_evidence"] == []
+            assert chk["status"] == "NOT_TESTED"
 
 
 def test_delay_record_cli(tmp_path):

@@ -99,7 +99,7 @@ def build_release_record(
     revision = expected_revision or head
 
     dirty = subprocess.run(
-        ["git", "-C", str(root), "status", "--porcelain", "--untracked-files=no"],
+        ["git", "-C", str(root), "status", "--porcelain"],
         check=True,
         capture_output=True,
         text=True,
@@ -152,13 +152,22 @@ def build_release_record(
         },
     ]
 
+    if skip_tests:
+        for row in results:
+            row["status"] = "NOT_TESTED"
+            row["supported_execution"] = False
+            row["evidence_kind"] = "not-tested"
+            row["detail"] = (
+                "Execution was skipped; no scientific acceptance evidence was collected."
+            )
+
     return {
         "schema_version": 1,
         "acceptance_check": "release-obligation-143",
         "case": "issue-143-rate-laws-release",
         "source": {
             "revision": revision,
-            "dirty": False,
+            "dirty": bool(dirty),
         },
         "references": {
             "analytic_hazard": "analytic piecewise hazard law A(t) = A_0 * exp(-int k(s) ds)",
@@ -203,9 +212,7 @@ def main(argv: list[str] | None = None) -> int:
             "## Issue 143 shared rate-law release obligation record",
             "",
             f"- Source commit: `{record['source']['revision']}`",
-            "- release-rates: PASS (independent BNG2 coefficient/RHS and native NFsim propensity checks cover assigned rate/builtin rows)",
-            "- release-rate-invalidation: PASS (analytic time/parameter/observable perturbation cases retain expected live laws)",
-            "- release-capability-coverage-143: PASS (all 68 assigned rate-law inventory cases execute against independent oracles)",
+            *(f"- {row['id']}: {row['status']}" for row in record["results"]),
             f"- Analytic hazard oracle: `{record['references']['analytic_hazard']}`",
             f"- Pinned BNG2 oracle: `{record['references']['bng2']}`",
             f"- Native NFsim oracle: `{record['references']['native_nfsim']}`",

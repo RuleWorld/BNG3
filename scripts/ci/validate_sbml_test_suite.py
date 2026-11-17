@@ -1026,6 +1026,40 @@ def _max_finite_abs(values: np.ndarray) -> float:
     return float(np.max(np.abs(finite))) if finite.size else 0.0
 
 
+def _mismatch_samples(
+    times: np.ndarray, left: np.ndarray, right: np.ndarray, tolerance: float
+) -> list[dict[str, Any]]:
+    """Retain a bounded set of paired failed samples for diagnosis."""
+
+    def value(number: float) -> float | str:
+        if np.isnan(number):
+            return "nan"
+        if np.isposinf(number):
+            return "+inf"
+        if np.isneginf(number):
+            return "-inf"
+        return float(number)
+
+    samples = []
+    for index, (time, bng, rr) in enumerate(zip(times, left, right)):
+        if np.isfinite(bng) and np.isfinite(rr):
+            mismatch = abs(bng - rr) > tolerance
+        else:
+            mismatch = not (bng == rr or (np.isnan(bng) and np.isnan(rr)))
+        if mismatch:
+            samples.append(
+                {
+                    "index": index,
+                    "time": float(time),
+                    "bng3": value(bng),
+                    "libroadrunner": value(rr),
+                }
+            )
+            if len(samples) == 16:
+                break
+    return samples
+
+
 def _compare_observable_samples(
     left: np.ndarray, right: np.ndarray, tolerance: float
 ) -> dict[str, Any]:
@@ -1214,6 +1248,9 @@ def _simulate_and_compare(
         comparison = _compare_observable_samples(left, right, tolerance)
         if not comparison["passed"]:
             failed.append(name)
+            comparison["mismatch_samples"] = _mismatch_samples(
+                bng_time, left, right, tolerance
+            )
         comparison.pop("scale")
         comparisons[name] = comparison
     if failed:

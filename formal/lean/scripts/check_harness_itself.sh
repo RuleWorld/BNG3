@@ -205,6 +205,16 @@ expect_reject() {
           expected_build_marker="failed: The left-hand side"
           ;;
       esac
+      # Species theorems may reject these semantic mutations before Coverage.
+      # Accept only the named proof failures, never generic build errors.
+      if [[ "$name" == coverage-species-bond-blind || "$name" == coverage-network-duplicate-species ]] &&
+          python3 "$HERE/scripts/classify_species_mutation.py" "$name" \
+            "$tree/formal/lean/BNG/Species.lean" "$build_out"; then
+        echo "PASS  $name  (Species identity proofs rejected the mutation)"
+        pass=$((pass + 1))
+        rm -rf "$tree"
+        return
+      fi
       if [ -n "$source_name" ] &&
           grep -Fq "error: BNG/$source_name:" "$build_out" &&
           [ -n "$expected_build_marker" ] &&
@@ -397,6 +407,16 @@ expect_malformed_lean_rejected() {
 
 echo "=== harness self-test: every case mutates a scratch copy, never this tree ==="
 echo
+
+if want harness-species-build-classifier; then
+  if python3 "$HERE/scripts/test_classify_species_mutation.py"; then
+    echo "PASS  harness-species-build-classifier  (invalid build failures rejected)"
+    pass=$((pass + 1))
+  else
+    echo "FAIL  harness-species-build-classifier  (classifier controls failed)"
+    fail=$((fail + 1))
+  fi
+fi
 
 # ---------------------------------------------------------------------------
 # static_validate.py
