@@ -325,7 +325,7 @@ std::string SbmlWriter::write(const ast::Model& model, const engine::GeneratedNe
     sbml << sbml_units::writeUnitDefinitions(compiled, options.level);
 
     // Compartments
-    sbml << writeCompartments(model, compiled, options.level);
+    sbml << writeCompartments(model, network, compiled, options.level);
 
     // Species
     sbml << writeSpecies(model, network, compiled, options.level);
@@ -367,19 +367,32 @@ std::string SbmlWriter::writeSourceMetadata(const std::string& payload) {
 }
 
 std::string SbmlWriter::writeCompartments(
-    const ast::Model& model, const compile::CompiledModel& compiled, int level) {
+    const ast::Model& model, const engine::GeneratedNetwork* network,
+    const compile::CompiledModel& compiled, int level) {
     std::ostringstream sbml;
     sbml << std::setprecision(17);
 
-    if (model.getCompartments().empty()) {
-        // Perl convention: default compartment named "default" with volume 1
-        sbml << "    <listOfCompartments>\n";
-        sbml << "      <compartment id=\"default\" spatialDimensions=\"3\" size=\"1\" constant=\"true\"/>\n";
-        sbml << "    </listOfCompartments>\n";
-        return sbml.str();
+    bool needsDefault = model.getCompartments().empty();
+    if (network) {
+        for (std::size_t i = 0; i < network->species.size(); ++i) {
+            needsDefault = needsDefault || network->species.get(i).getCompartment().empty();
+        }
+    } else {
+        for (const auto& seed : model.getSeedSpecies()) {
+            needsDefault = needsDefault || seed.getCompartment().empty();
+        }
     }
 
     sbml << "    <listOfCompartments>\n";
+    bool defaultDeclared = false;
+    for (const auto& comp : model.getCompartments()) {
+        defaultDeclared = defaultDeclared || makeValidSBMLId(comp.getName()) == "default";
+    }
+    // writeSpecies assigns unlocated species to this unit-volume compartment,
+    // including generated species that are absent from the seed list.
+    if (needsDefault && !defaultDeclared) {
+        sbml << "      <compartment id=\"default\" spatialDimensions=\"3\" size=\"1\" constant=\"true\"/>\n";
+    }
     for (const auto& comp : model.getCompartments()) {
         sbml << "      <compartment id=\"" << makeValidSBMLId(comp.getName())
              << "\" name=\"" << escapeXml(comp.getName())

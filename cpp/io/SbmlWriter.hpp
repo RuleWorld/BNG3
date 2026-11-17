@@ -95,7 +95,8 @@ private:
 
     static std::string writeSourceMetadata(const std::string& payload);
     static std::string writeCompartments(
-        const ast::Model& model, const compile::CompiledModel& compiled, int level);
+        const ast::Model& model, const engine::GeneratedNetwork* network,
+        const compile::CompiledModel& compiled, int level);
     static std::string writeParameters(
         const ast::Model& model,
         const std::vector<ObservableGroup>& groups,

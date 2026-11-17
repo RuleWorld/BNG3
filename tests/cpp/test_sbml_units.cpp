@@ -139,6 +139,35 @@ end model
     CHECK(multi.find("<listOfParameters>") == std::string::npos);
 }
 
+TEST_CASE("SBML Core declares the implicit compartment alongside named compartments") {
+    const auto model = bng::parser::parseModel(R"BNGL(
+begin model
+  begin compartments
+    cell 3 2
+  end compartments
+  begin molecule types
+    A()
+    U()
+  end molecule types
+  begin seed species
+    @cell:A() 8
+    U() 3
+  end seed species
+end model
+)BNGL");
+    REQUIRE(model != nullptr);
+    bool exportNetwork = false;
+    SECTION("seed species") {}
+    SECTION("generated species") { exportNetwork = true; }
+    bng::engine::NetworkGenerator generator(*model);
+    const auto network = generator.generateNative();
+    const auto xml = bng::io::SbmlWriter::write(*model, exportNetwork ? &network : nullptr);
+    const auto implicit = startTag(xml, "<compartment id=\"default\"");
+    REQUIRE_FALSE(implicit.empty());
+    CHECK(attributeValue(implicit, "size") == "1");
+    CHECK(xml.find("compartment=\"default\"") != std::string::npos);
+}
+
 TEST_CASE("SBML-Multi rejects unit-aware reaction rates it cannot convert") {
     const auto model = bng::parser::parseModel(R"BNGL(
 begin model
