@@ -32,7 +32,7 @@ The production NFnext execution loop carries:
 ## 2. Independent Oracles
 
 - **Pure-Death CTMC Analytical Law**: Unconverted particle counts follow $\text{Binomial}(N_0, \exp(-k \cdot t))$. Ensembles of 64 runs must match the analytical mean within $4.0 \cdot \text{SE}$ and discriminate against mutated rate laws by $> 4.0 \cdot \text{SE}$.
-- **Pinned Native NFsim**: Direct XML conversion and execution using the locked native NFsim binary (`9b00d42f`), compared via two-sample Kolmogorov-Smirnov test and two-sample Hoeffding mean bounds.
+- **Pinned Native NFsim**: Direct XML conversion and execution using the native NFsim binary built from the source lock, compared via two-sample Kolmogorov-Smirnov test and two-sample Hoeffding mean bounds.
 - **Algebraic Mass Conservation**: Invariant checks confirm exact molecule conservation ($\sum A = A_0$) across binding and unbinding transformations.
 
 ---

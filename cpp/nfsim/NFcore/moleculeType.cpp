@@ -2216,6 +2216,9 @@ void MoleculeType::prepareMembershipCandidates(Molecule *m)
 
 void MoleculeType::prepareForSimulation()
 {
+	connectedReactionIndices.clear();
+	connectedReactionIndicesBuilt.clear();
+	connectedReactionIndicesSize = reactions.size();
 	/* The dependency index is only consumed by the opt-in membership filter/diff
 	 * paths.  Historically it was built for every MoleculeType unconditionally,
 	 * including default NFsim runs and types below the filter's own activation

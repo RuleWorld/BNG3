@@ -2806,8 +2806,7 @@ namespace NFcore
 			/* Whether a reactant pattern joins molecules with '.' but no bond,
 			 * as in A().B(). */
 			bool hasDisjointReactantPattern() const;
-			/* Whether the rule has reactants but no recorded templates, so the
-			 * connectivity matrix cannot reason about it. */
+			/* Whether a rule lacks the templates needed to infer connectivity. */
 			bool lacksConnectivityTemplates() const;
 			/* Whether the rule moves a whole complex to another compartment. */
 			bool hasMoveConnectedTransform() const;

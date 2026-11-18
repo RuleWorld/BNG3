@@ -357,8 +357,8 @@ bool ReactionClass::hasMoveConnectedTransform() const {
 }
 
 bool ReactionClass::lacksConnectivityTemplates() const {
-	// Energy-pattern reactions are built without recording their templates.
-	return n_reactants > 0 && allReactantTemplates.empty();
+	// Compiled and energy rules may omit the connectivity template maps.
+	return n_reactants == 0 ? allProductTemplates.empty() : allReactantTemplates.empty();
 }
 
 bool ReactionClass::isReactionConnected(ReactionClass * rxn) {
@@ -1111,6 +1111,7 @@ string ReactionClass::fire(double random_A_number, bool track) {
 }
 
 void ReactionClass::identifyConnectedReactions() {
+	connectedReactions.clear();
 	ReactionClass * rxn;
 	/* Read the system's reaction list in place (this runs once per reaction). */
 	const vector <ReactionClass *> &allReactions = system->getAllReactionsRef();

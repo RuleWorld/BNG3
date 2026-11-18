@@ -886,7 +886,10 @@ void System::prepareForSimulation()
 	else
 		this->selector = new DirectSelector(allReactions, this);
 
-  	// Infer connected reactions if asked to do so from command line
+	for (auto *reaction : allReactions)
+		reaction->setConnectivityFlag(connectivityFlag);
+
+	// Infer connected reactions if asked to do so from command line
   	// Arvind Rasi Subramaniam
   	if (connectivityFlag) {
 		// resize connected reactions map and intialize to false

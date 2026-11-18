@@ -6529,7 +6529,7 @@ int readTemplatePatternT(
 			// through bonds the rule does not mention.  A product pattern is
 			// never matched against molecules, so it needs no complex bookkeeping
 			// and earns no warning.  Switching bookkeeping on here would also
-			// come too late: see modelNeedsComplexBookkeepingForPatterns().
+			// come too late: see modelNeedsComplexBookkeeping().
 
 			//Add the connected-to connections
 			int tm1=0; int tm2=0;
