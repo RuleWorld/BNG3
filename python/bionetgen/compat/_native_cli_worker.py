@@ -20,18 +20,27 @@ def main():
         raise RuntimeError("native CLI worker imported a different native extension")
     if payload:
         options = json.loads(payload[0])
-        if not isinstance(options, dict) or len(payload) != 1:
+        if not isinstance(options, dict) or len(payload) not in (1, 2):
             raise ValueError("native compatibility options must be one JSON object")
-        from bionetgen.compat.runner import run
+        if len(payload) == 2:
+            from bionetgen.compat._native_process import _write_sim_result
+            from bionetgen.model import load
 
-        run(
-            source,
-            out=Path(source).parent,
-            suppress=verbose != "1",
-            timeout=None,
-            simulator="native",
-            **options,
-        )
+            result = load(source).simulate(**options)
+            _write_sim_result(payload[1], result)
+            if verbose == "1":
+                print(f"Simulation complete: {len(result.time)} time points")
+        else:
+            from bionetgen.compat.runner import run
+
+            run(
+                source,
+                out=Path(source).parent,
+                suppress=verbose != "1",
+                timeout=None,
+                simulator="native",
+                **options,
+            )
     else:
         model = _cpp.parse_file(source)
         _cpp.execute(model, source, verbose=verbose == "1")

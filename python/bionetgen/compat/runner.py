@@ -271,6 +271,7 @@ def run(
     seed=None,
     pla_config=None,
     psa_poplevel=None,
+    log_file=None,
     **kwargs,
 ):
     """Run a BNGL file into a PyBioNetGen-style result directory.
@@ -333,7 +334,7 @@ def run(
         )
 
     def execute(output: Path) -> BNGResult:
-        if timeout is not None or simulator == "subprocess":
+        if log_file is not None or timeout is not None or simulator == "subprocess":
             if inp_path.suffix.lower() != ".bngl":
                 raise NotImplementedError(
                     "native process execution requires BNGL input"
@@ -349,6 +350,7 @@ def run(
                 output,
                 suppress=suppress,
                 timeout=timeout,
+                log_file=log_file,
                 options={
                     "method": selected_method,
                     "t_start": start,
