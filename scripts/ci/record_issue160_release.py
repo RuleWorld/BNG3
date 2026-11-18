@@ -19,13 +19,24 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+# Suite-absent Core rows and their analytic-fixture identifiers.
+FIXTURE_NAMES = {
+    "sbml.core.Parameter.units": "parameter-units",
+    "sbml.core.Constraint.message": "constraint-message",
+    "sbml.core.Reaction.compartment": "reaction-compartment",
+    "sbml.core.LocalParameter.units": "localparameter-units",
+}
+
 
 def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def build_receipt(
-    suite_report: Path, mapping_path: Path, expected_revision: str
+    suite_report: Path,
+    mapping_path: Path,
+    expected_revision: str,
+    core_fixtures_report: Path | None = None,
 ) -> dict:
     catalog = json.loads((ROOT / "provenance/issue-obligations.json").read_text())
     entry = next(i for i in catalog["issues"] if i["number"] == 160)
@@ -62,24 +73,48 @@ def build_receipt(
             }
         },
     }
+    # release-capability-coverage-160 requires every assigned case to execute
+    # and pass. A refusal of valid required input, a missing case, a skipped
+    # comparison or a stale/negative fixture result must fail closed; a nonzero
+    # verdict can never be reported as supported execution.
+    fixture_results = {}
+    if core_fixtures_report is not None:
+        fixture_results = (
+            json.loads(core_fixtures_report.read_text(encoding="utf-8")).get("fixtures")
+            or {}
+        )
+
+    diagnostics: list[str] = []
     results = []
     for check in capability_checks:
         row_id = check["id"][len("release-capability[") : -1]
         if row_id in fixture_rows:
-            detail = "analytic fixture (independent A(t)=100-t law)"
+            fixture = FIXTURE_NAMES.get(row_id)
+            if fixture is None or fixture_results.get(fixture) is not True:
+                diagnostics.append(
+                    f"{row_id}: no affirmative execution result for fixture "
+                    f"{fixture!r} (observed {fixture_results.get(fixture)!r})"
+                )
+            detail = "analytic fixture (independent A(t)=100-t law), execution verified"
         else:
             cases = mapping.get(row_id) or []
             if not cases:
-                raise ValueError(f"no mapped case for {row_id}")
+                diagnostics.append(f"{row_id}: no mapped case")
+                continue
             for case_id in cases:
                 record = records.get(("semantic", case_id))
                 if record is None:
-                    raise ValueError(f"mapped case {case_id} missing from report")
-                if record["status"] in {"failed", "timeout", "invalid-source"}:
-                    raise ValueError(
-                        f"{row_id}: case {case_id} verdict {record['status']}"
+                    diagnostics.append(
+                        f"{row_id}: mapped case {case_id} missing from report"
                     )
-            detail = f"{len(cases)} mapped official case(s), no blocking verdict"
+                    continue
+                status = record.get("status")
+                if status != "passed":
+                    diagnostics.append(
+                        f"{row_id}: case {case_id} verdict {status}; missing, "
+                        "refused, unsupported, timeout or harness error cannot pass"
+                    )
+            detail = f"{len(cases)} mapped official case(s), all verdicts passed"
         results.append(
             {
                 "id": check["id"],
@@ -92,6 +127,11 @@ def build_receipt(
                 "detail": detail,
                 "receipt": identities,
             }
+        )
+    if diagnostics:
+        raise ValueError(
+            "release-capability-coverage-160 not demonstrated ("
+            f"{len(diagnostics)} unresolved item(s)): " + "; ".join(diagnostics[:12])
         )
     release_ids = (
         "release-sbml-core-comp",
@@ -134,11 +174,22 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         default=ROOT / "provenance/sbml-capability-case-mapping.json",
     )
+    parser.add_argument(
+        "--core-fixtures-report",
+        type=Path,
+        default=None,
+        help="JSON with an affirmative 'fixtures' result for each analytic fixture",
+    )
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args(argv)
     try:
-        receipt = build_receipt(args.suite_report, args.mapping, args.source_revision)
+        receipt = build_receipt(
+            args.suite_report,
+            args.mapping,
+            args.source_revision,
+            core_fixtures_report=args.core_fixtures_report,
+        )
     except (ValueError, OSError, KeyError) as exc:
         print(f"issue-160 receipt failed: {exc}", file=sys.stderr)
         return 1
