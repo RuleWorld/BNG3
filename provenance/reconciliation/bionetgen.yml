@@ -40,10 +40,12 @@
         "tests/python/test_legacy_network_graph_labels.py::test_legacy_network_graph_trims_only_synthetic_empty_side_zeros",
         "tests/python/test_legacy_pattern_xml.py::test_legacy_xml_accepts_whitespace_and_no_whitespace_matchonce",
         "tests/python/test_legacy_pattern_xml.py::test_legacy_xml_escapes_pattern_quantifier_relations",
-        "tests/python/test_legacy_symmetry_factor.py::test_legacy_symmetry_factor_preserves_reactant_pattern_boundaries"
+        "tests/python/test_legacy_symmetry_factor.py::test_legacy_symmetry_factor_preserves_reactant_pattern_boundaries",
+        "tests/validation/test_tfun_rate_law.py::test_composite_tfun_factors_survive_network_generation",
+        "tests/validation/test_tfun_rate_law.py::test_composite_tfun_rate_survives_net_reload_simulation"
       ],
       "reviewer": "Codex technical reconciliation; maintainer review pending",
-      "rationale": "The linked retained-Perl tests exercise console streams, generated C logical operators, function cycle rejection, visualization labels, MatchOnce spacing, XML relations, and reactant-pattern symmetry. The source commit also changes Network3 allocation and output error handling, TFUN loading and compound expressions, and MATLAB QueryNames write errors. Those behaviors still need individual disposition and execution evidence for the maintained routes."
+      "rationale": "The linked retained-Perl tests exercise console streams, generated C logical operators, function cycle rejection, visualization labels, MatchOnce spacing, XML relations, and reactant-pattern symmetry. The source commit also changes Network3 allocation and output error handling, and MATLAB QueryNames write errors. Those behaviors still need individual disposition and execution evidence for the maintained routes. The TFUN tests compare source arithmetic before and after NET reload and execute the analytic constant-function case (bngl.tfun-file, builtin.TFUN). Cases with multiple TFUN calls and the remaining file grammar need separate coverage."
     },
     {
       "source_revision": "39ec47764ac6ad97a2bd4ca16e7762bd55d2ca57",
@@ -104,18 +106,23 @@
       "capability": "Escape a greater-than relation in the hybrid validation XML reference",
       "classification": "incorporated-identically",
       "bng3_reference": "tests/validation/Validate/DAT_validate/hybrid_test_hpp.xml",
-      "tests": [],
+      "tests": [
+        "tests/python/test_legacy_pattern_xml.py::test_legacy_xml_escapes_pattern_quantifier_relations"
+      ],
       "reviewer": "Codex technical reconciliation; maintainer review pending",
-      "rationale": "The affected reference relation is XML-escaped in the matching BNG3 fixture."
+      "rationale": "The affected reference relation is XML-escaped in the matching BNG3 fixture. The retained Perl writer test executes the source quantifier case and reads the emitted XML (bngl.species-observables)."
     },
     {
       "source_revision": "d132702da784237aa10576c7373f691ffdc05071",
       "capability": "Add native isolated parallel batch execution",
-      "classification": "not-applicable",
-      "bng3_reference": "legacy/perl/Perl2/BNGAction.pm; python/bionetgen/",
-      "tests": [],
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/main.cpp; cpp/cli/BatchRunner.cpp",
+      "tests": [
+        "tests/cpp/test_batch_runner.cpp::bng_cpp parallel mode isolates model outputs",
+        "tests/cpp/test_batch_runner.cpp::bng_cpp parallel mode propagates child failures"
+      ],
       "reviewer": "Codex technical reconciliation; maintainer review pending",
-      "rationale": "BNG3 already has its own parameter-scan worker isolation and platform-specific serial fallback; importing the BNG2 batch runner would duplicate a source-specific implementation."
+      "rationale": "The native bng_cpp batch runner is present. Its CTest cases verify isolated model output and propagation of a failing child while the successful child retains its output. These cases exercise --parallel and --parallel-dir. The --jobs alias needs a specific check and the batch options need explicit inventory links."
     },
     {
       "source_revision": "16c910d272d5e254a041a33ba0b1349e4241ec75",
@@ -279,10 +286,11 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "legacy/perl/Perl2/RateLaw.pm",
       "tests": [
-        "tests/validation/test_reconciliation_bng2.py::test_retained_perl_network_matches_upstream_fix"
+        "tests/validation/test_reconciliation_bng2.py::test_retained_perl_network_matches_upstream_fix",
+        "tests/validation/test_reconciliation_bng2.py::test_native_arrhenius_normalization_separates_net_rounding"
       ],
       "reviewer": "Codex technical reconciliation; maintainer review pending",
-      "rationale": "The retained Perl check compares the complete generated network for the pinned energy_example1 model after staging network generation and removing the version metadata check from both inputs. It covers the shared normalization variable on this route (bngl.arrhenius). The corresponding pytest case is shared-arrhenius-normalization.",
+      "rationale": "The retained Perl check compares the complete generated network for the pinned energy_example1 model after staging network generation and removing the version metadata check from both inputs. It covers the shared normalization variable on this route (bngl.arrhenius). The corresponding pytest case is shared-arrhenius-normalization. The native check compares all unscaled network rates and verifies both serialized compartment conversion coefficients against the source formula at each writer’s declared precision.",
       "issue": "#340"
     }
   ]
