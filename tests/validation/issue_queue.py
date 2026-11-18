@@ -1850,6 +1850,11 @@ def main(argv=None):
         type=Path,
         default=ROOT / "provenance/issue-obligations.json",
     )
+    parser.add_argument(
+        "--dependency-issues-json",
+        type=Path,
+        help="Review dependency scope from a separate live issue snapshot without adding those issues to the closure queue.",
+    )
     parser.add_argument("--max-families", type=int, default=3)
     parser.add_argument("--report", action="append", type=Path, default=[])
     parser.add_argument("--issue138-release-record", type=Path)
@@ -1880,6 +1885,23 @@ def main(argv=None):
             raise ValueError("requested revision differs from checked-out candidate")
         issues_bytes = args.issues_json.read_bytes()
         issues = json.loads(issues_bytes)
+        dependency_bytes = None
+        dependency_issues = []
+        if args.dependency_issues_json:
+            dependency_bytes = args.dependency_issues_json.read_bytes()
+            dependency_issues = json.loads(dependency_bytes)
+            if not isinstance(dependency_issues, list) or any(
+                not isinstance(issue, dict) or not isinstance(issue.get("number"), int)
+                for issue in dependency_issues
+            ):
+                raise ValueError("dependency snapshot must contain issue records")
+            dependency_numbers = {issue["number"] for issue in dependency_issues}
+            if len(dependency_numbers) != len(dependency_issues):
+                raise ValueError("dependency snapshot contains duplicate issue numbers")
+            if dependency_numbers & {issue["number"] for issue in issues}:
+                raise ValueError(
+                    "dependency snapshot overlaps the primary issue snapshot"
+                )
         reports = [json.loads(path.read_text()) for path in args.report]
         receipt_reports = []
         if args.issue138_release_record:
@@ -2026,7 +2048,7 @@ def main(argv=None):
             lock = json.loads((ROOT / "provenance/upstreams.lock.yml").read_text())
             heads = collect_heads(lock, args.output_dir / "upstream-commands")
         catalog = json.loads(args.obligations_json.read_text())
-        obligations = obligation_inventory(issues, catalog)
+        obligations = obligation_inventory([*issues, *dependency_issues], catalog)
         assessment = assess_obligations(obligations, reports, args.revision)
         conflicts = {
             a["id"] for a in assessment["evidence_audit"] if a["status"] == "CONFLICT"
@@ -2070,6 +2092,13 @@ def main(argv=None):
             provenance=provenance_debt(heads),
         )
         (args.output_dir / "issues-input.json").write_bytes(issues_bytes)
+        if dependency_bytes is not None:
+            report["dependency_snapshot_sha256"] = hashlib.sha256(
+                dependency_bytes
+            ).hexdigest()
+            (args.output_dir / "dependency-issues-input.json").write_bytes(
+                dependency_bytes
+            )
         if heads is not None:
             (args.output_dir / "upstream-heads.json").write_text(
                 json.dumps(heads, indent=2) + "\n"
