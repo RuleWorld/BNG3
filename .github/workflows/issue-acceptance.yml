@@ -424,6 +424,25 @@ jobs:
             --bng-cpp "$GITHUB_WORKSPACE/build/cpp/bng_cpp" \
             --work-dir "$RUNNER_TEMP/semantic-00966-artifacts/campaign"
 
+      - name: Record Issue 157 event acceptance from executed checks
+        id: issue157_receipt
+        if: always() && steps.acceptance.outcome == 'success'
+        env:
+          PYTHONPATH: python:build/cpp
+        run: |
+          set -euo pipefail
+          # The recorder must see both the row-specific pytest execution and the
+          # real 16-seed randomized-event oracle campaign produced above. A
+          # directory exit code or an unexecuted fixture list cannot qualify a row.
+          .venv/bin/python -m pytest -q \
+            tests/validation/release/cases/issue-157/test_dynamic_threshold.py \
+            tests/validation/release/cases/issue-157/test_00966_oracle.py \
+            --junitxml="$RUNNER_TEMP/semantic-00966-artifacts/campaign/issue157-pytest.xml"
+          .venv/bin/python scripts/ci/record_issue157_release.py \
+            --source-revision "$GITHUB_SHA" \
+            --stochastic-run "$RUNNER_TEMP/semantic-00966-artifacts/campaign/run.json" \
+            --output "$RUNNER_TEMP/semantic-00966-artifacts/campaign/issue157-release-receipt.json"
+
       - name: Record product build identity
         if: always()
         run: |
