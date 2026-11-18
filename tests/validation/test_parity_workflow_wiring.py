@@ -728,3 +728,23 @@ def test_jax_release_receipt_is_recorded_in_ci_workflow():
     assert (
         upload_step["with"]["path"] == "${{ runner.temp }}/bng3-jax-release/report.json"
     )
+
+
+def test_upstream_history_job_checks_all_pins_and_retains_the_report():
+    job = _parse_workflow()["jobs"]["upstream-reconciliation-history"]
+    steps = job["steps"]
+    checkout = next(
+        step for step in steps if "checkout_oracle.py" in step.get("run", "")
+    )
+    command = next(
+        step["run"]
+        for step in steps
+        if "validate_reconciliation_tests.py" in step.get("run", "")
+    )
+    upload = next(step for step in steps if "upload-artifact" in step.get("uses", ""))
+    for source in ("bionetgen", "nfsim", "pybionetgen"):
+        assert source in checkout["run"]
+        assert f'--{source} "$RUNNER_TEMP/reconciliation/{source}"' in command
+    assert "--history-report" in command
+    assert upload["if"] == "always()"
+    assert upload["with"]["path"] == "${{ runner.temp }}/reconciliation-history.json"
