@@ -42,7 +42,7 @@ cd /tmp/bng3-c-stochastic-00003/analysis/c-stochastic-00003
 python3 independent_diagnostic.py --report /private/tmp/ssts-baseline-98b310af/report.json --replicates 1000 --json c-diagnostic.json
 ```
 3. Engine seed sweep (same model, base_seed in 1e6..8e6): observed violation counts 5, 1, 9, 15, 6, 0, 11, 0; F 1.71, 1.08, 2.85, 2.59, 3.33, 0.77, 2.04, 0.85.
-4. Predeclared source-law confirmation receipt `c-diagnostic.json` sha256 `248145dcf065d6cf63e8bbf937d1707e71aac6226e7dc017c95062a696d4bc02`: P(F>=F_obs)=0.415 [0.385,0.446], P(count>=5)=0.473 [0.442,0.504], null mean F=1.713. Corrected power control `wrong_law_control.json` (mu=1.05 vs true reference): F~594, 50/50 violations, P(F>=F_obs)=1.0. Plan addendum documents the wrong-law-control correction.
+4. Predeclared source-law confirmation receipt `c-diagnostic.json` sha256 `248145dcf065d6cf63e8bbf937d1707e71aac6226e7dc017c95062a696d4bc02`: P(F>=F_obs)=0.415 [0.385,0.446], P(count>=5)=0.473 [0.442,0.504], null mean F=1.713. Corrected power control `wrong_law_control.json` (mu=1.05 scored against the true reference): F~594, 50/50 violations, true-law p-value ~0 (rejected); `P_wrong(F>=F_obs)=1.0` is the complementary power statement under the wrong-law distribution, not the acceptance null. The primary tail null is the true birth–death law. Plan addendum documents the correction and the direction/null labeling.
 
 ## Disposition summary
 
