@@ -381,7 +381,7 @@ jobs:
         run: |
           .venv/bin/python -m pytest -c tests/validation/pytest.ini \
             tests/validation/test_reconciliation_bng2.py \
-            -q -o junit_family=xunit1 \
+            --bng-cpp build/cpp/bng_cpp -q -o junit_family=xunit1 \
             --junitxml="$RUNNER_TEMP/reconciliation-bng2.xml"
 
       - name: Retain reconciliation BNG2 evidence

@@ -64,3 +64,40 @@ def test_retained_perl_network_matches_upstream_fix(name, tmp_path, record_prope
 
     diff = compare.compare_net(networks["pinned BNG2"], networks["retained Perl"])
     assert diff.ok, diff.summary()
+
+
+@pytest.mark.parametrize(
+    ("product", "species_count", "reaction_count"),
+    [("A(x).B(y)", 1, 0), ("A(x) + B(y)", 3, 1)],
+    ids=["invalid-dotted-product", "valid-split-product"],
+)
+def test_native_bridge_bond_break_respects_product_patterns(
+    bng_cpp, tmp_path, product, species_count, reaction_count
+):
+    """Pinned native BNG2 rejects a bridge break specified as one product."""
+    from tests.validation import runner
+
+    model = tmp_path / "bridge.bngl"
+    model.write_text(
+        f"""begin model
+begin molecule types
+    A(x)
+    B(y)
+end molecule types
+begin seed species
+    A(x!1).B(y!1) 1
+end seed species
+begin reaction rules
+    A(x!1).B(y!1) -> {product} 1
+end reaction rules
+end model
+generate_network({{overwrite=>1}})
+""",
+        encoding="utf-8",
+    )
+    net, _, error = runner.run_cli_path(bng_cpp, model, tmp_path / "native")
+    assert net is not None, error
+    graph = compare.parse_net(net)
+    assert graph is not None
+    assert graph.n_species == species_count
+    assert graph.n_reactions == reaction_count

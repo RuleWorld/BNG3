@@ -22,10 +22,11 @@
       "bng3_reference": "cpp/core/PatternGraph.cpp; cpp/ast/ReactionRule.cpp; cpp/main.cpp",
       "tests": [
         "tests/cpp/test_node_operator.cpp::PatternGraph canonicalization defines the empty graph",
-        "tests/cpp/CMakeLists.txt::bng_cpp_action_errors"
+        "tests/cpp/CMakeLists.txt::bng_cpp_action_errors",
+        "tests/validation/test_reconciliation_bng2.py::test_native_bridge_bond_break_respects_product_patterns"
       ],
       "reviewer": "Codex technical reconciliation; maintainer review pending",
-      "rationale": "The source claims map to three behaviors. Current CTest directly covers empty-graph canonicalization and nonzero action-error reporting. No dedicated regression for rejecting an invalid bridge-bond dissociation product was identified; these two tests do not establish that third behavior. Maintainer review remains pending."
+      "rationale": "The source claims map to three behaviors. Current CTest directly covers empty-graph canonicalization and nonzero action-error reporting. The native NET check exercises bridge-bond dissociation through the compiled action route. It tests the pinned C++ rule that a dotted product must remain one graph, and the explicit plus-separated dissociation control (bngl.unbinding)."
     },
     {
       "source_revision": "dca95a6aa80e249f1adf981037b61bf020f7b5ad",
