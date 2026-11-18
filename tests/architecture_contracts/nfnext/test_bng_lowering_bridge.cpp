@@ -1636,6 +1636,63 @@ end reaction rules
            nfnext::canonicalizeModel(lowered2.model).canonicalBytes());
 }
 
+void lowersDynamicPopulationMapRates() {
+    // A dynamic population-map rate is representable as an expression even
+    // though it has no static value. NFIR lowering must preserve it for
+    // representation consumers while execution stays fail-closed.
+    const auto parseDynamic = [](const std::string& rate) {
+        return bng::parser::parseModel(
+            "begin parameters\n k 0.5\nend parameters\n"
+            "begin molecule types\n A(x~p)\nend molecule types\n"
+            "begin observables\n Molecules U A(x~p)\nend observables\n"
+            "begin seed species\n A(x~p) 10\nend seed species\n"
+            "begin reaction rules\n R1: A(x~p) -> A(x~p) k\nend reaction rules\n"
+            "begin population maps\n A(x~p) -> PopA() " + rate + "\nend population maps\n");
+    };
+    const auto ast = parseDynamic("k * U()");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(lowered.ok());
+    assert(lowered.model.population_maps.size() == 1);
+    const auto& pop = lowered.model.population_maps[0];
+    assert(pop.rate == 0.0);
+    assert(pop.rate_expression.find("U()") != std::string::npos);
+    bool warned = false;
+    for (const auto& entry : lowered.issues) {
+        assert(entry.severity != nfnext::BngLoweringSeverity::Error);
+        if (entry.severity == nfnext::BngLoweringSeverity::Warning &&
+            entry.message.find("dynamic population map rate") != std::string::npos) {
+            warned = true;
+        }
+    }
+    assert(warned);
+
+    // Execution still refuses every population map: representation is not
+    // an execution-support claim.
+    nfnext::BngExecutionRequest req;
+    req.sample_times = {0.0, 1.0};
+    bool refused = false;
+    try {
+        nfnext::executeFromBioNetGen(semantic, req);
+    } catch (const std::exception& e) {
+        refused = true;
+        assert(std::string(e.what()).find("population map") != std::string::npos);
+    }
+    assert(refused);
+
+    // The dynamic expression participates in canonical identity: a different
+    // rate law is a different represented model, not the same static zero.
+    const auto ast2 = parseDynamic("k * U() + 1");
+    const bng::compile::CompiledModel semantic2(*ast2);
+    const auto lowered2 = nfnext::lowerFromBioNetGen(semantic2);
+    assert(lowered2.ok());
+    assert(lowered.model.fingerprint() != lowered2.model.fingerprint());
+    assert(nfnext::canonicalizeModel(lowered.model).canonicalBytes() !=
+           nfnext::canonicalizeModel(lowered2.model).canonicalBytes());
+}
+
 void lowersModifierFlags() {
     const auto ast = bng::parser::parseModel(R"BNGL(
 begin molecule types
@@ -1980,6 +2037,7 @@ end reaction rules
     lowersCompartmentDeclarations();
     lowersEnergyPatterns();
     lowersPopulationMaps();
+    lowersDynamicPopulationMapRates();
     lowersModifierFlags();
     lowersFilterPatterns();
     cacheRoundTripsNewModelFields();
