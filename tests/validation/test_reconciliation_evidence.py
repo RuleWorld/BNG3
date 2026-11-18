@@ -350,3 +350,24 @@ my %other = ("other" => 1);
     assert report["upstream_builtins"] == ["TFUN", "exp"]
     assert report["missing_rows"] == ["builtin.TFUN"]
     assert report["unexpected_rows"] == ["builtin.old"]
+
+
+def test_source_location_audit_reports_stale_symbols(tmp_path):
+    from scripts.validate_reconciliation_tests import audit_source_locations
+
+    (tmp_path / "Actions.pm").write_text("sub realAction { }\n", encoding="utf-8")
+    (tmp_path / "api.py").write_text(
+        "class Runner:\n    def __init__(self):\n        self.result = None\n",
+        encoding="utf-8",
+    )
+    rows = [
+        {"id": "action.ok", "upstream": "bionetgen:Actions.pm:4 (realAction)"},
+        {"id": "action.stale", "upstream": "bionetgen:Actions.pm:oldAction"},
+        {"id": "py.ok", "upstream": "pybionetgen:api.py:3 (Runner.result)"},
+        {"id": "py.stale", "upstream": "pybionetgen:api.py:3 (Runner.old)"},
+    ]
+    report = audit_source_locations(
+        rows, {"bionetgen": tmp_path, "pybionetgen": tmp_path}
+    )
+    assert report["resolved_rows"] == ["action.ok", "py.ok"]
+    assert sorted(report["unresolved_rows"]) == ["action.stale", "py.stale"]

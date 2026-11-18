@@ -370,6 +370,81 @@ def audit_bng2_builtins(
     }
 
 
+def audit_source_locations(
+    rows: Iterable[dict[str, str]], sources: dict[str, Path]
+) -> dict[str, Any]:
+    """Resolve matrix source symbol anchors against the pinned source files."""
+    resolved = []
+    unresolved = {}
+    non_symbol_rows = []
+    symbols_by_file: dict[Path, set[str]] = {}
+    for row in rows:
+        location = row["upstream"].split(":", 2)
+        if len(location) != 3 or location[0] not in sources or location[0] == "nfsim":
+            continue
+        upstream, relative, anchor = location
+        match = re.fullmatch(r"\d+ \(([^)]+)\)", anchor)
+        symbol = match[1] if match else anchor
+        if not re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", symbol):
+            non_symbol_rows.append(row["id"])
+            continue
+        checkout = sources[upstream].resolve()
+        path = (checkout / relative).resolve()
+        if not path.is_relative_to(checkout) or not path.is_file():
+            unresolved[row["id"]] = row["upstream"]
+            continue
+        if path not in symbols_by_file:
+            text = path.read_text(encoding="utf-8")
+            symbols_by_file[path] = (
+                _python_source_symbols(text)
+                if upstream == "pybionetgen"
+                else set(re.findall(r"^\s*sub\s+([A-Za-z_]\w*)", text, re.MULTILINE))
+            )
+        if symbol in symbols_by_file[path]:
+            resolved.append(row["id"])
+        else:
+            unresolved[row["id"]] = row["upstream"]
+    return {
+        "resolved_rows": sorted(resolved),
+        "unresolved_rows": unresolved,
+        "non_symbol_rows": sorted(non_symbol_rows),
+    }
+
+
+def _python_source_symbols(source: str) -> set[str]:
+    symbols = set()
+    for node in ast.parse(source).body:
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            symbols.add(node.name)
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            symbols.update(
+                child.id
+                for child in ast.walk(node)
+                if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store)
+            )
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for child in node.body:
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                symbols.add(f"{node.name}.{child.name}")
+            elif isinstance(child, (ast.Assign, ast.AnnAssign)):
+                symbols.update(
+                    f"{node.name}.{target.id}"
+                    for target in ast.walk(child)
+                    if isinstance(target, ast.Name)
+                    and isinstance(target.ctx, ast.Store)
+                )
+        symbols.update(
+            f"{node.name}.{child.attr}"
+            for child in ast.walk(node)
+            if isinstance(child, ast.Attribute)
+            and isinstance(child.ctx, ast.Store)
+            and isinstance(child.value, ast.Name)
+            and child.value.id == "self"
+        )
+    return symbols
+
+
 def audit_upstream_history(
     checkout: Path, ledger: dict[str, Any], accepted_revision: str
 ) -> dict[str, Any]:
@@ -547,6 +622,18 @@ def main() -> int:
                 print(
                     f"{surface}: row without a matching source option or built-in: {row}"
                 )
+        source_symbols = audit_source_locations(
+            matrix["rows"],
+            {
+                name: sources[name]
+                for name, result in history.items()
+                if not result["errors"]
+            },
+        )
+        if source_symbols["unresolved_rows"]:
+            print(
+                f"source symbol audit: {len(source_symbols['unresolved_rows'])} unresolved rows"
+            )
         args.history_report.parent.mkdir(parents=True, exist_ok=True)
         args.history_report.write_text(
             json.dumps(
@@ -558,6 +645,7 @@ def main() -> int:
                     ).strip(),
                     "sources": history,
                     "source_inventory_audit": inventory,
+                    "source_symbol_audit": source_symbols,
                     "errors": errors,
                 },
                 indent=2,
