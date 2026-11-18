@@ -853,3 +853,63 @@ def test_single_issue_closure_consumes_dependency_status(tmp_path, dependency_st
     ] == [180]
     assert (output / "dependency-issues-input.json").is_file()
     assert bool(table["closed_acceptance_gaps"]) == (dependency_status != "PASS")
+
+
+def _issue156_receipt_fixture(tmp_path, revision=REVISION):
+    checks, reports = {}, {}
+    for check in issue_queue.ISSUE_156_CHECKS:
+        payload = {
+            "schema_version": 1,
+            "acceptance_check": check,
+            "source_revision": revision,
+            "source_dirty": False,
+            "result": {"check": check},
+        }
+        raw = (json.dumps(payload, sort_keys=True, indent=2) + "\n").encode()
+        (tmp_path / f"{check}.json").write_bytes(raw)
+        reports[check] = json.loads(raw)
+        checks[check] = {
+            "status": "PASS",
+            "report_sha256": hashlib.sha256(raw).hexdigest(),
+        }
+    receipt = {
+        "schema_version": 1,
+        "acceptance_check": "release-obligation-156",
+        "source_revision": revision,
+        "source_dirty": False,
+        "checks": checks,
+    }
+    return receipt, reports
+
+
+def test_issue156_receipt_consumer_emits_named_and_qualification_leaves(tmp_path):
+    receipt, reports = _issue156_receipt_fixture(tmp_path)
+    adapted = issue_queue.issue156_receipt_reports(receipt, reports, REVISION)
+    assert len(adapted) == 3
+    ids = {row["id"] for report in adapted for row in report["results"]}
+    assert set(issue_queue.ISSUE_156_CHECKS) <= ids
+    assert "qualification:issue:156:closure-record" in ids
+    for check in issue_queue.ISSUE_156_CHECKS:
+        row, adapted_report = next(
+            (row, adapted_report)
+            for adapted_report in adapted
+            for row in adapted_report["results"]
+            if row["id"] == check
+        )
+        assert row["status"] == "PASS"
+        assert row["evidence_kind"] == "supported-execution"
+        assert row["supported_execution"] is True
+        assert adapted_report["source"]["revision"] == REVISION
+
+
+def test_issue156_receipt_consumer_rejects_tampered_and_stale_evidence(tmp_path):
+    receipt, reports = _issue156_receipt_fixture(tmp_path)
+    tampered = dict(reports)
+    tampered["release-bngir-schema"] = {
+        **reports["release-bngir-schema"],
+        "result": {"check": "tampered"},
+    }
+    with pytest.raises(ValueError, match="report hash"):
+        issue_queue.issue156_receipt_reports(receipt, tampered, REVISION)
+    with pytest.raises(ValueError, match="stale"):
+        issue_queue.issue156_receipt_reports(receipt, reports, "b" * 40)
