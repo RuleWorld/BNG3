@@ -17,6 +17,7 @@ CASE_DIR = Path(__file__).resolve().parent
 
 import tests.python.test_jax_dynamic_rates as jdr  # noqa: E402
 import tests.python.test_jax_ode as tjo  # noqa: E402
+import tests.python.test_jax_protocol_intervention as tjpi  # noqa: E402
 import tests.python.test_jax_ssa as tjs  # noqa: E402
 import tests.python.test_jax_ssa_immigration_death as tjid  # noqa: E402
 
@@ -46,6 +47,12 @@ def test_release_jax_ode():
     jdr.test_observable_dependent_michaelis_menten()
     jdr.test_observable_dependent_hill_kinetics()
     jdr.test_observable_dependent_coupled_feedback()
+    # Installed CPU protocol/rate/continuation family (parameter intervention,
+    # analytic piecewise law and gradient, both supported dtypes via the job env).
+    tjpi.test_jax_ode_time_dependent_parameter_intervention_continuation()
+    tjpi.test_jax_ode_time_dependent_intervention_gradient()
+    tjpi.test_jax_ode_functional_rate_intervention_continuation_and_gradient()
+    tjpi.test_jax_ode_intervention_error_behavior()
 
 
 def test_release_jax_ssa():
