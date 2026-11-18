@@ -57,6 +57,7 @@ jobs:
           python -m pytest \
             tests/test_ci_contract.py \
             tests/validation/test_parity_workflow_wiring.py \
+            tests/validation/test_reconciliation_evidence.py \
             tests/validation/test_integrated_wiring.py \
             tests/validation/test_integrated.py \
             tests/validation/test_integrated_traces.py \
@@ -86,6 +87,41 @@ jobs:
             tests/validation/test_harness_paths.py::test_required_oracle_fails_in_strict_ci \
             tests/validation/test_harness_paths.py::test_api_fixture_fails_in_strict_ci_and_skips_locally \
             -q -ra
+
+  upstream-reconciliation-history:
+    name: Verify pinned upstream history and fixtures
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Check out the locked upstream sources
+        run: |
+          for source in bionetgen nfsim pybionetgen; do
+            python scripts/ci/checkout_oracle.py --name "$source" \
+              --destination "$RUNNER_TEMP/reconciliation/$source"
+          done
+
+      - name: Compare the ledgers with upstream history and fixture bytes
+        run: |
+          python scripts/validate_reconciliation_tests.py \
+            --bionetgen "$RUNNER_TEMP/reconciliation/bionetgen" \
+            --nfsim "$RUNNER_TEMP/reconciliation/nfsim" \
+            --pybionetgen "$RUNNER_TEMP/reconciliation/pybionetgen" \
+            --history-report "$RUNNER_TEMP/reconciliation-history.json"
+
+      - name: Retain the upstream history report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-reconciliation-history
+          path: ${{ runner.temp }}/reconciliation-history.json
 
   bng2-parity:
     name: BNG3 numerical, expression and export parity

@@ -171,3 +171,97 @@ def test_inventory_reports_empty_claim_evidence_without_promoting_it():
             "test_references": 1,
         }
     }
+
+
+def _git(checkout, *args):
+    from subprocess import check_output
+
+    return check_output(["git", "-C", str(checkout), *args], text=True).strip()
+
+
+@pytest.fixture
+def pinned_history(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    _git(source, "init", "-q")
+    _git(source, "config", "user.name", "Reconciliation test")
+    _git(source, "config", "user.email", "reconciliation@example.invalid")
+    _git(source, "commit", "--allow-empty", "-qm", "represented revision")
+    represented = _git(source, "rev-parse", "HEAD")
+    fixture = source / "fixture.txt"
+    fixture.write_text("reference data\n", encoding="utf-8")
+    _git(source, "add", "fixture.txt")
+    _git(source, "commit", "-qm", "add canonical fixture")
+    cutoff = _git(source, "rev-parse", "HEAD")
+    return source, represented, cutoff
+
+
+def test_upstream_history_detects_an_omitted_ledger_commit(pinned_history):
+    from scripts.validate_reconciliation_tests import audit_upstream_history
+
+    source, represented, cutoff = pinned_history
+    ledger = {
+        "represented_revision": represented,
+        "cutoff_revision": cutoff,
+        "entries": [],
+    }
+    report = audit_upstream_history(source, ledger, cutoff)
+    assert report["missing_commits"] == [cutoff]
+    assert report["errors"] == []
+    ledger["entries"] = [{"source_revision": cutoff}]
+    assert audit_upstream_history(source, ledger, cutoff)["missing_commits"] == []
+
+
+def test_upstream_history_rejects_dirty_and_wrong_pins(pinned_history):
+    from scripts.validate_reconciliation_tests import audit_upstream_history
+
+    source, represented, cutoff = pinned_history
+    ledger = {
+        "represented_revision": represented,
+        "cutoff_revision": cutoff,
+        "entries": [{"source_revision": cutoff}],
+    }
+    report = audit_upstream_history(source, ledger, represented)
+    assert "ledger cutoff does not match the accepted revision" in report["errors"]
+    assert "checkout HEAD does not match the accepted revision" in report["errors"]
+    (source / "fixture.txt").write_text("altered data\n", encoding="utf-8")
+    report = audit_upstream_history(source, ledger, cutoff)
+    assert "checkout has local changes" in report["errors"]
+
+
+def test_upstream_history_detects_out_of_range_ledger_commit(pinned_history):
+    from scripts.validate_reconciliation_tests import audit_upstream_history
+
+    source, represented, cutoff = pinned_history
+    ledger = {
+        "represented_revision": represented,
+        "cutoff_revision": cutoff,
+        "entries": [{"source_revision": cutoff}, {"source_revision": represented}],
+    }
+    report = audit_upstream_history(source, ledger, cutoff)
+    assert report["unexpected_commits"] == [represented]
+
+
+def test_upstream_history_reads_fixture_bytes_despite_git_index_flags(pinned_history):
+    import hashlib
+
+    from scripts.validate_reconciliation_tests import audit_upstream_history
+
+    source, represented, cutoff = pinned_history
+    _git(source, "mv", "fixture.txt", "fixture.bngl")
+    _git(source, "commit", "-qm", "rename canonical fixture")
+    pin = _git(source, "rev-parse", "HEAD")
+    ledger = {
+        "represented_revision": represented,
+        "cutoff_revision": pin,
+        "entries": [{"source_revision": cutoff}, {"source_revision": pin}],
+    }
+    report = audit_upstream_history(source, ledger, pin)
+    digest = hashlib.sha256(b"reference data\n").hexdigest()
+    assert report["fixture_sha256"] == {"fixture.bngl": digest}
+    _git(source, "update-index", "--assume-unchanged", "fixture.bngl")
+    (source / "fixture.bngl").write_bytes(b"substitute data\n")
+    assert _git(source, "status", "--porcelain") == ""
+    assert "fixture differs from the accepted revision: fixture.bngl" in (
+        audit_upstream_history(source, ledger, pin)["errors"]
+    )

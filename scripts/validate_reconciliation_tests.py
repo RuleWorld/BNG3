@@ -9,8 +9,11 @@ so renames cannot silently leave stale provenance behind.
 
 from __future__ import annotations
 
+import argparse
 import ast
+import hashlib
 import json
+import subprocess
 import sys
 from pathlib import Path, PureWindowsPath
 from typing import Any
@@ -258,7 +261,111 @@ def validate_test_references(
     return errors
 
 
+def audit_upstream_history(
+    checkout: Path, ledger: dict[str, Any], accepted_revision: str
+) -> dict[str, Any]:
+    """Compare ledger commit coverage with the full pinned Git ancestry range."""
+
+    def git_bytes(*args: str) -> bytes:
+        return subprocess.run(
+            ["git", "--no-replace-objects", "-C", str(checkout), *args],
+            capture_output=True,
+            check=True,
+        ).stdout
+
+    def git(*args: str) -> str:
+        return git_bytes(*args).decode().strip()
+
+    represented_revision = ledger["represented_revision"]
+    errors: list[str] = []
+    fixture_hashes: dict[str, str] = {}
+    report = {
+        "accepted_revision": accepted_revision,
+        "represented_revision": represented_revision,
+        "checkout_revision": None,
+        "commits": [],
+        "missing_commits": [],
+        "unexpected_commits": [],
+        "fixture_sha256": fixture_hashes,
+        "errors": errors,
+    }
+    if ledger["cutoff_revision"] != accepted_revision:
+        errors.append("ledger cutoff does not match the accepted revision")
+    try:
+        if Path(git("rev-parse", "--show-toplevel")).resolve() != checkout.resolve():
+            errors.append("path is not the root of the upstream checkout")
+            return report
+        report["checkout_revision"] = git("rev-parse", "HEAD")
+        if report["checkout_revision"] != accepted_revision:
+            errors.append("checkout HEAD does not match the accepted revision")
+        if git("status", "--porcelain=v1", "--untracked-files=all"):
+            errors.append("checkout has local changes")
+        if git("rev-parse", "--is-shallow-repository") != "false":
+            errors.append("checkout has shallow history")
+            return report
+        git("merge-base", "--is-ancestor", represented_revision, accepted_revision)
+        commits = set(
+            git("rev-list", f"{represented_revision}..{accepted_revision}").splitlines()
+        )
+        ledger_commits = {entry["source_revision"] for entry in ledger["entries"]}
+        report["commits"] = sorted(commits)
+        report["missing_commits"] = sorted(commits - ledger_commits)
+        report["unexpected_commits"] = sorted(ledger_commits - commits)
+        fixtures = (
+            git_bytes(
+                "diff",
+                "--name-only",
+                "--no-renames",
+                "--diff-filter=AM",
+                "-z",
+                represented_revision,
+                accepted_revision,
+                "--",
+                "*.bngl",
+                "*.net",
+                "*.xml",
+            )
+            .decode()
+            .split("\0")
+        )
+        for relative in filter(None, fixtures):
+            path = checkout.resolve() / relative
+            if path.resolve() != path or not path.is_file():
+                errors.append(f"fixture is not a regular checkout file: {relative}")
+                continue
+            data = path.read_bytes()
+            if data != git_bytes("cat-file", "blob", f"{accepted_revision}:{relative}"):
+                errors.append(f"fixture differs from the accepted revision: {relative}")
+                continue
+            fixture_hashes[relative] = hashlib.sha256(data).hexdigest()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        detail = (
+            exc.stderr.decode(errors="replace").strip()
+            if isinstance(exc, subprocess.CalledProcessError)
+            else str(exc)
+        )
+        errors.append(
+            f"cannot establish upstream history: {exc}"
+            + (f": {detail}" if detail else "")
+        )
+    return report
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--bionetgen", type=Path)
+    parser.add_argument("--nfsim", type=Path)
+    parser.add_argument("--pybionetgen", type=Path)
+    parser.add_argument("--history-report", type=Path)
+    args = parser.parse_args()
+    sources = {
+        name: getattr(args, name) for name in ("bionetgen", "nfsim", "pybionetgen")
+    }
+    verify_history = any(sources.values()) or args.history_report is not None
+    if verify_history and not (all(sources.values()) and args.history_report):
+        parser.error(
+            "history audit requires all three source paths and --history-report"
+        )
     try:
         ledgers = load_ledgers()
     except ValueError as exc:
@@ -273,11 +380,56 @@ def main() -> int:
             f"{counts['claims_without_test_refs']} without; "
             f"{counts['test_references']} references checked"
         )
+    if verify_history:
+        lock = json.loads(
+            (REPO / "provenance" / "upstreams.lock.yml").read_text(encoding="utf-8")
+        )
+        history = {}
+        for _, ledger in ledgers:
+            source = ledger["source"]
+            if source not in sources or source in history:
+                errors.append(f"unexpected or duplicate source ledger: {source}")
+                continue
+            audit = audit_upstream_history(
+                sources[source], ledger, lock["sources"][source]["revision"]
+            )
+            history[source] = audit
+            errors.extend(f"{source}: {error}" for error in audit["errors"])
+            errors.extend(
+                f"{source}: missing ledger commit {sha}"
+                for sha in audit["missing_commits"]
+            )
+            errors.extend(
+                f"{source}: out-of-range ledger commit {sha}"
+                for sha in audit["unexpected_commits"]
+            )
+        errors.extend(
+            f"missing ledger for {name}"
+            for name in sorted(sources.keys() - history.keys())
+        )
+        args.history_report.parent.mkdir(parents=True, exist_ok=True)
+        args.history_report.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "audit": "upstream-history-and-fixtures",
+                    "bng3_revision": subprocess.check_output(
+                        ["git", "-C", str(REPO), "rev-parse", "HEAD"], text=True
+                    ).strip(),
+                    "sources": history,
+                    "errors": errors,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     for error in errors:
         print(f"ERROR: {error}", file=sys.stderr)
     if errors:
         print(
-            f"reconciliation test-reference validation failed ({len(errors)} error(s))",
+            f"reconciliation validation failed ({len(errors)} error(s))",
             file=sys.stderr,
         )
         return 1
