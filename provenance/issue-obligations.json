@@ -1,5 +1,11 @@
 {
   "schema_version": 1,
+  "approved_dependency_scope": {
+    "issues": [140, 143],
+    "decision": "docs/DECISIONS.md#18",
+    "decision_marker": "Dependencies #140 and #143 for downstream release qualification",
+    "reason": "Maintainer decision item 18 records that the reviewed scope for these dependency issues is authoritative for downstream exact-revision closure dry runs despite later live-body edits. This resolves stale dependency status only; dependent issues must still pass all of their own acceptance checks."
+  },
   "issues": [
     {
       "number": 137,
