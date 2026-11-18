@@ -294,6 +294,11 @@ SbmlWriter::SymbolIds SbmlWriter::computeSymbolIds(
         }
     }
     for (const auto& group : groups) {
+        // Observable-derived parameters share SBML's single model-wide
+        // identifier namespace with generated reactions. Reserve the id so
+        // reaction allocation below cannot emit R<n> with the same spelling
+        // (libSBML 10301, e.g. a source species named R5 in BIOMD0000000174).
+        used.insert(group.sbmlId);
         result.observables.emplace(group.name, group.sbmlId);
         result.observables.emplace(makeValidSBMLId(group.name), group.sbmlId);
         if (group.entries.size() == 1 && group.entries.front().second == 1.0) {
