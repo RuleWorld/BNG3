@@ -105,13 +105,8 @@ end model
     ]
     assert not errors, errors
     m = document.getModel()
-    observable_ids = {
-        m.getRule(i).getVariable()
-        for i in range(m.getNumRules())
-    }
-    reaction_ids = {
-        m.getReaction(i).getId() for i in range(m.getNumReactions())
-    }
+    observable_ids = {m.getRule(i).getVariable() for i in range(m.getNumRules())}
+    reaction_ids = {m.getReaction(i).getId() for i in range(m.getNumReactions())}
     assert not (observable_ids & reaction_ids), (observable_ids, reaction_ids)
 
 
