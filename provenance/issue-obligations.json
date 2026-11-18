@@ -265,14 +265,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-inventory.",
-                "No revision-locked consuming receipt producer is declared for required live check release-inventory."
-              ]
+              "selector": "tests/validation/release/cases/issue-137/test_capability_inventory.py::test_release_inventory",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue137_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -301,14 +298,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-inventory-links.",
-                "No revision-locked consuming receipt producer is declared for required live check release-inventory-links."
-              ]
+              "selector": "tests/validation/release/cases/issue-137/test_capability_inventory.py::test_release_inventory_links",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue137_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -337,14 +331,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-capability-coverage-137.",
-                "No revision-locked consuming receipt producer is declared for required live check release-capability-coverage-137."
-              ]
+              "selector": "tests/validation/release/cases/issue-137/test_capability_inventory.py::test_release_capability_coverage_137",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue137_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -4722,7 +4713,7 @@
     },
     {
       "number": 147,
-      "body_sha256": "ea9a754041080505cacf0955d7d15738967146eaa6670f532c1f3a9a86504341",
+      "body_sha256": "e4a556d0e180fc86b013b2547a5323e97c418d26aae8e40b8f60731f173af72a",
       "obligations": [
         {
           "id": "issue:147:select-supported-additions-for-dynamic-rates-filters-modifiers-c",
@@ -5164,7 +5155,7 @@
           "id": "issue:147:live-acceptance:release-nfir-lowering",
           "criterion": "`release-nfir-lowering`: every network-free inventory row lowers with complete semantics and validated IDs.",
           "scope": "`release-nfir-lowering`: every network-free inventory row lowers with complete semantics and validated IDs.",
-          "live_body_sha256": "ea9a754041080505cacf0955d7d15738967146eaa6670f532c1f3a9a86504341",
+          "live_body_sha256": "e4a556d0e180fc86b013b2547a5323e97c418d26aae8e40b8f60731f173af72a",
           "dependencies": [
             138,
             142,
@@ -5195,7 +5186,7 @@
           "id": "issue:147:live-acceptance:release-nfir-roundtrip",
           "criterion": "`release-nfir-roundtrip`: independently authored canonical model facts agree with NFIR and native NFsim input facts.",
           "scope": "`release-nfir-roundtrip`: independently authored canonical model facts agree with NFIR and native NFsim input facts.",
-          "live_body_sha256": "ea9a754041080505cacf0955d7d15738967146eaa6670f532c1f3a9a86504341",
+          "live_body_sha256": "e4a556d0e180fc86b013b2547a5323e97c418d26aae8e40b8f60731f173af72a",
           "dependencies": [
             138,
             142,
@@ -5226,7 +5217,7 @@
           "id": "issue:147:live-acceptance:release-obligation-147",
           "criterion": "`release-obligation-147`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
           "scope": "`release-obligation-147`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
-          "live_body_sha256": "ea9a754041080505cacf0955d7d15738967146eaa6670f532c1f3a9a86504341",
+          "live_body_sha256": "e4a556d0e180fc86b013b2547a5323e97c418d26aae8e40b8f60731f173af72a",
           "dependencies": [
             138,
             142,
@@ -5257,7 +5248,7 @@
     },
     {
       "number": 148,
-      "body_sha256": "4617d4866d92e230d47f5bdc874d59e76bdb468b3654b6ecf8e16bec8fd4cda2",
+      "body_sha256": "50db182650abed618454ff9db0f59c11812a64c4c478a8aa89c6764dcf2b9211",
       "obligations": [
         {
           "id": "issue:148:carry-and-initialize-the-supported-seeds-observables-parameter-f",
@@ -5427,7 +5418,7 @@
           "id": "issue:148:live-acceptance:release-nfnext-execution",
           "criterion": "`release-nfnext-execution`: full network-free corpus matches pinned native NFsim propensities/observables and exact draws or distributions.",
           "scope": "`release-nfnext-execution`: full network-free corpus matches pinned native NFsim propensities/observables and exact draws or distributions.",
-          "live_body_sha256": "50db182650abed61ebbff12b358d666e8e2b9c2ba087606d9473ebd701f238de",
+          "live_body_sha256": "50db182650abed618454ff9db0f59c11812a64c4c478a8aa89c6764dcf2b9211",
           "dependencies": [
             147,
             150
@@ -5441,14 +5432,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-nfnext-execution.",
-                "No revision-locked consuming receipt producer is declared for required live check release-nfnext-execution."
-              ]
+              "selector": "tests/validation/release/cases/issue-148/test_nfnext_execution.py::test_release_nfnext_execution_pure_death_analytical_ensembles",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue148_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -5460,7 +5448,7 @@
           "id": "issue:148:live-acceptance:release-nfnext-routes",
           "criterion": "`release-nfnext-routes`: each trajectory stays on one engine and exercises the production CompiledModel entry point.",
           "scope": "`release-nfnext-routes`: each trajectory stays on one engine and exercises the production CompiledModel entry point.",
-          "live_body_sha256": "50db182650abed61ebbff12b358d666e8e2b9c2ba087606d9473ebd701f238de",
+          "live_body_sha256": "50db182650abed618454ff9db0f59c11812a64c4c478a8aa89c6764dcf2b9211",
           "dependencies": [
             147,
             150
@@ -5474,14 +5462,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-nfnext-routes.",
-                "No revision-locked consuming receipt producer is declared for required live check release-nfnext-routes."
-              ]
+              "selector": "tests/validation/release/cases/issue-148/test_nfnext_execution.py::test_release_nfnext_routes_production_entrypoint",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue148_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -5493,7 +5478,7 @@
           "id": "issue:148:live-acceptance:release-capability-coverage-148",
           "criterion": "`release-capability-coverage-148`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
           "scope": "`release-capability-coverage-148`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
-          "live_body_sha256": "50db182650abed61ebbff12b358d666e8e2b9c2ba087606d9473ebd701f238de",
+          "live_body_sha256": "50db182650abed618454ff9db0f59c11812a64c4c478a8aa89c6764dcf2b9211",
           "dependencies": [
             147,
             150
@@ -5507,14 +5492,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-capability-coverage-148.",
-                "No revision-locked consuming receipt producer is declared for required live check release-capability-coverage-148."
-              ]
+              "selector": "tests/validation/release/cases/issue-148/test_nfnext_execution.py::test_release_capability_coverage_148",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue148_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -5526,7 +5508,7 @@
     },
     {
       "number": 149,
-      "body_sha256": "f225e39fe3fe28407e0b89a9b691a539334b9351ad47b9ba6f3064fa42a064e3",
+      "body_sha256": "3a3029adf1f12626eebcb468e64c3c3a9f0f9bfe5a8a8aaecab53a23ae9bf300",
       "obligations": [
         {
           "id": "issue:149:document-which-engine-owns-each-supported-workload-and-whether-n",
@@ -5649,7 +5631,7 @@
           "id": "issue:149:live-acceptance:release-engine-consolidation",
           "criterion": "`release-engine-consolidation`: every NFcore2 capability maps to passing NFnext tests with preserved fixtures/history.",
           "scope": "`release-engine-consolidation`: every NFcore2 capability maps to passing NFnext tests with preserved fixtures/history.",
-          "live_body_sha256": "3a3029adf1f12626b2fcfe1d79f5a6205510bc79c398689ca6fb6b85bcfcdff5",
+          "live_body_sha256": "3a3029adf1f12626eebcb468e64c3c3a9f0f9bfe5a8a8aaecab53a23ae9bf300",
           "dependencies": [
             147,
             148,
@@ -5665,14 +5647,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-engine-consolidation.",
-                "No revision-locked consuming receipt producer is declared for required live check release-engine-consolidation."
-              ]
+              "selector": "tests/validation/release/cases/issue-149/test_nfcore_consolidation.py::test_release_engine_consolidation",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue149_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -5684,7 +5663,7 @@
           "id": "issue:149:live-acceptance:release-nf-default",
           "criterion": "`release-nf-default`: complete pinned native NFsim and NFcore comparison passes before default promotion; explicit NFcore selection still passes.",
           "scope": "`release-nf-default`: complete pinned native NFsim and NFcore comparison passes before default promotion; explicit NFcore selection still passes.",
-          "live_body_sha256": "3a3029adf1f12626b2fcfe1d79f5a6205510bc79c398689ca6fb6b85bcfcdff5",
+          "live_body_sha256": "3a3029adf1f12626eebcb468e64c3c3a9f0f9bfe5a8a8aaecab53a23ae9bf300",
           "dependencies": [
             147,
             148,
@@ -5700,14 +5679,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-nf-default.",
-                "No revision-locked consuming receipt producer is declared for required live check release-nf-default."
-              ]
+              "selector": "tests/validation/release/cases/issue-149/test_nfcore_consolidation.py::test_release_nf_default",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue149_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -5719,7 +5695,7 @@
           "id": "issue:149:live-acceptance:release-obligation-149",
           "criterion": "`release-obligation-149`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
           "scope": "`release-obligation-149`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
-          "live_body_sha256": "3a3029adf1f12626b2fcfe1d79f5a6205510bc79c398689ca6fb6b85bcfcdff5",
+          "live_body_sha256": "3a3029adf1f12626eebcb468e64c3c3a9f0f9bfe5a8a8aaecab53a23ae9bf300",
           "dependencies": [
             147,
             148,
@@ -5735,14 +5711,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-149.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-149."
-              ]
+              "selector": "tests/validation/release/cases/issue-149/test_nfcore_consolidation.py::test_release_obligation_149",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue149_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -6842,7 +6815,7 @@
     },
     {
       "number": 152,
-      "body_sha256": "d027f92e47947fbbe36fb98a2ffec7307c575dee4ebebd54d6471026660ab509",
+      "body_sha256": "c043041cf0e8767981da4fc0fb790f4a8eb2ba68735ea78ceba1069eb07fc367",
       "obligations": [
         {
           "id": "issue:152:review-source-behavior-after-the-recorded-cutoffs-classify-each",
@@ -7088,7 +7061,7 @@
           "id": "issue:152:live-acceptance:release-energy-protocols",
           "criterion": "`release-energy-protocols`: source-linked corpus executes with matching native NFsim behavior for canonical constructs.",
           "scope": "`release-energy-protocols`: source-linked corpus executes with matching native NFsim behavior for canonical constructs.",
-          "live_body_sha256": "c043041cf0e87679057da95bc03ee65b5a2ce71a3886b4db5f49b19343cf6d29",
+          "live_body_sha256": "c043041cf0e8767981da4fc0fb790f4a8eb2ba68735ea78ceba1069eb07fc367",
           "dependencies": [
             143,
             177,
@@ -7103,14 +7076,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-energy-protocols.",
-                "No revision-locked consuming receipt producer is declared for required live check release-energy-protocols."
-              ]
+              "selector": "tests/validation/release/cases/issue-152/test_energy_protocols.py::test_release_energy_protocols",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue152_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -7122,7 +7092,7 @@
           "id": "issue:152:live-acceptance:release-extension-protocols",
           "criterion": "`release-extension-protocols`: analytic cycle affinity and driven-protocol expectations pass for BNG3 additions.",
           "scope": "`release-extension-protocols`: analytic cycle affinity and driven-protocol expectations pass for BNG3 additions.",
-          "live_body_sha256": "c043041cf0e87679057da95bc03ee65b5a2ce71a3886b4db5f49b19343cf6d29",
+          "live_body_sha256": "c043041cf0e8767981da4fc0fb790f4a8eb2ba68735ea78ceba1069eb07fc367",
           "dependencies": [
             143,
             177,
@@ -7137,14 +7107,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-extension-protocols.",
-                "No revision-locked consuming receipt producer is declared for required live check release-extension-protocols."
-              ]
+              "selector": "tests/validation/release/cases/issue-152/test_energy_protocols.py::test_release_extension_protocols",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue152_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -7156,7 +7123,7 @@
           "id": "issue:152:live-acceptance:release-obligation-152",
           "criterion": "`release-obligation-152`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
           "scope": "`release-obligation-152`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
-          "live_body_sha256": "c043041cf0e87679057da95bc03ee65b5a2ce71a3886b4db5f49b19343cf6d29",
+          "live_body_sha256": "c043041cf0e8767981da4fc0fb790f4a8eb2ba68735ea78ceba1069eb07fc367",
           "dependencies": [
             143,
             177,
@@ -7171,14 +7138,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-152.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-152."
-              ]
+              "selector": "tests/validation/release/cases/issue-152/test_energy_protocols.py::test_release_obligation_152",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue152_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],

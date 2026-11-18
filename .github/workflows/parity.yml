@@ -747,18 +747,61 @@ jobs:
             --output "$RUNNER_TEMP/issue138-release-record.json" \
             --summary-file "$GITHUB_STEP_SUMMARY"
 
+      - name: Execute Issue 137 capability inventory release case
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/ci/record_issue137_release.py \
+            --source-revision "${{ github.event.pull_request.head.sha || github.sha }}" \
+            --output "$RUNNER_TEMP/issue137-release-record.json" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+
+      - name: Execute Issue 148 NFnext execution release case
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/ci/record_issue148_release.py \
+            --source-revision "${{ github.event.pull_request.head.sha || github.sha }}" \
+            --output "$RUNNER_TEMP/issue148-release-record.json" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+
+      - name: Execute Issue 149 NFcore consolidation release case
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/ci/record_issue149_release.py \
+            --source-revision "${{ github.event.pull_request.head.sha || github.sha }}" \
+            --output "$RUNNER_TEMP/issue149-release-record.json" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+
+      - name: Execute Issue 152 energy protocols release case
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/ci/record_issue152_release.py \
+            --source-revision "${{ github.event.pull_request.head.sha || github.sha }}" \
+            --output "$RUNNER_TEMP/issue152-release-record.json" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+
       - name: Build exact-revision issue and provenance evidence queue
         if: always()
         run: |
           head_args=()
+          issue137_args=()
           issue138_args=()
           issue142_args=()
           s6_args=()
           delay_args=()
           hybrid_args=()
           issue147_args=()
+          issue148_args=()
+          issue149_args=()
+          issue152_args=()
           if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             head_args=(--collect-upstream-heads)
+          fi
+          if [[ -s "$RUNNER_TEMP/issue137-release-record.json" ]]; then
+            issue137_args+=(--issue137-release-record "$RUNNER_TEMP/issue137-release-record.json")
           fi
           if [[ -s "$RUNNER_TEMP/issue138-release-record.json" ]]; then
             issue138_args+=(--issue138-release-record "$RUNNER_TEMP/issue138-release-record.json")
@@ -782,20 +825,33 @@ jobs:
             hybrid_args+=(--report "$RUNNER_TEMP/bng3-hybrid-release/release-hybrid-evidence/issue-150-release-report.json")
           fi
           if [[ -s "$RUNNER_TEMP/bng3-issue-147-release/issue-147-release-report.json" ]]; then
-            issue147_args+=(--report "$RUNNER_TEMP/bng3-issue-147-release/issue-147-release-report.json")
+            issue147_args+=(--issue147-release-record "$RUNNER_TEMP/bng3-issue-147-release/issue-147-release-report.json")
           elif [[ -s "$RUNNER_TEMP/bng3-issue-147-release/release-issue-147-evidence/issue-147-release-report.json" ]]; then
-            issue147_args+=(--report "$RUNNER_TEMP/bng3-issue-147-release/release-issue-147-evidence/issue-147-release-report.json")
+            issue147_args+=(--issue147-release-record "$RUNNER_TEMP/bng3-issue-147-release/release-issue-147-evidence/issue-147-release-report.json")
+          fi
+          if [[ -s "$RUNNER_TEMP/issue148-release-record.json" ]]; then
+            issue148_args+=(--issue148-release-record "$RUNNER_TEMP/issue148-release-record.json")
+          fi
+          if [[ -s "$RUNNER_TEMP/issue149-release-record.json" ]]; then
+            issue149_args+=(--issue149-release-record "$RUNNER_TEMP/issue149-release-record.json")
+          fi
+          if [[ -s "$RUNNER_TEMP/issue152-release-record.json" ]]; then
+            issue152_args+=(--issue152-release-record "$RUNNER_TEMP/issue152-release-record.json")
           fi
           python -m tests.validation.issue_queue \
             --issues-json "$RUNNER_TEMP/bng3-issues.json" \
             --report "$RUNNER_TEMP/bng3-integrated-validation/report.json" \
             --report "$RUNNER_TEMP/bng3-integrated-validation/matrix-report.json" \
+            "${issue137_args[@]}" \
             "${issue138_args[@]}" \
             "${issue142_args[@]}" \
             "${s6_args[@]}" \
             "${delay_args[@]}" \
             "${hybrid_args[@]}" \
             "${issue147_args[@]}" \
+            "${issue148_args[@]}" \
+            "${issue149_args[@]}" \
+            "${issue152_args[@]}" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --output-dir "$RUNNER_TEMP/bng3-issue-queue" "${head_args[@]}"
           cat "$RUNNER_TEMP/bng3-issue-queue/issue-queue.md" >> "$GITHUB_STEP_SUMMARY"

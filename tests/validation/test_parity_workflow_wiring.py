@@ -706,6 +706,26 @@ def test_issue147_release_receipt_is_recorded_and_consumed_in_parity_queue():
     assert "tests/validation/test_issue_147_release_record.py" in ci_contracts["run"]
 
 
+def test_issue137_148_149_152_release_receipts_are_recorded_and_consumed_in_parity_queue():
+    workflow = _parse_workflow()
+    integrated = workflow["jobs"]["integrated-semantic-validation"]
+    step_names = [s.get("name") for s in integrated["steps"]]
+    assert "Execute Issue 137 capability inventory release case" in step_names
+    assert "Execute Issue 148 NFnext execution release case" in step_names
+    assert "Execute Issue 149 NFcore consolidation release case" in step_names
+    assert "Execute Issue 152 energy protocols release case" in step_names
+
+    queue_step = next(
+        step
+        for step in integrated["steps"]
+        if step.get("name")
+        == "Build exact-revision issue and provenance evidence queue"
+    )
+    for issue_id in ("137", "148", "149", "152"):
+        assert f"issue{issue_id}-release-record.json" in queue_step["run"]
+        assert f'"${{issue{issue_id}_args[@]}}"' in queue_step["run"]
+
+
 def test_jax_release_receipt_is_recorded_in_ci_workflow():
     ci_workflow = yaml.safe_load(
         (REPO / ".github/workflows/ci.yml").read_text(encoding="utf-8")

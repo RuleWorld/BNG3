@@ -288,6 +288,181 @@ def test_issue138_release_record_consumer(tmp_path):
             issue_queue.issue138_release_record(path, REVISION)
 
 
+def test_issue137_release_record_consumer(tmp_path):
+    record_file = tmp_path / "issue137-release-record.json"
+    expected = {
+        "release-inventory",
+        "release-inventory-links",
+        "release-capability-coverage-137",
+    }
+    record_file.write_text(
+        json.dumps(
+            {
+                "acceptance_check": "release-obligation-137",
+                "source": {"revision": REVISION, "dirty": False},
+                "manifest_check_ids": sorted(expected),
+                "results": [
+                    {
+                        "id": check,
+                        "status": "PASS",
+                        "stage": "capability-inventory",
+                        "evidence_kind": "supported-execution",
+                        "supported_execution": True,
+                    }
+                    for check in sorted(expected)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    report = issue_queue.issue137_release_record(
+        record_file, REVISION, artifact_run_id="999"
+    )
+    assert report["source"] == {"revision": REVISION, "dirty": False}
+    assert expected.issubset({r["id"] for r in report["results"]})
+    assert all(r["status"] == "PASS" for r in report["results"])
+
+
+def test_issue147_release_record_consumer(tmp_path):
+    record_file = tmp_path / "issue147-release-record.json"
+    expected = {
+        "release-nfir-lowering",
+        "release-nfir-roundtrip",
+        "release-obligation-147",
+    }
+    record_file.write_text(
+        json.dumps(
+            {
+                "acceptance_check": "release-obligation-147",
+                "source": {"revision": REVISION, "dirty": False},
+                "manifest_check_ids": sorted(expected),
+                "results": [
+                    {
+                        "id": check,
+                        "status": "PASS",
+                        "stage": "nfir-lowering",
+                        "evidence_kind": "supported-execution",
+                        "supported_execution": True,
+                    }
+                    for check in sorted(expected)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    report = issue_queue.issue147_release_record(
+        record_file, REVISION, artifact_run_id="999"
+    )
+    assert report["source"] == {"revision": REVISION, "dirty": False}
+    assert expected.issubset({r["id"] for r in report["results"]})
+    assert all(r["status"] == "PASS" for r in report["results"])
+
+
+def test_issue148_release_record_consumer(tmp_path):
+    record_file = tmp_path / "issue148-release-record.json"
+    expected = {
+        "release-nfnext-execution",
+        "release-nfnext-routes",
+        "release-capability-coverage-148",
+    }
+    record_file.write_text(
+        json.dumps(
+            {
+                "acceptance_check": "release-obligation-148",
+                "source": {"revision": REVISION, "dirty": False},
+                "manifest_check_ids": sorted(expected),
+                "results": [
+                    {
+                        "id": check,
+                        "status": "PASS",
+                        "stage": "nfnext-execution",
+                        "evidence_kind": "supported-execution",
+                        "supported_execution": True,
+                    }
+                    for check in sorted(expected)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    report = issue_queue.issue148_release_record(
+        record_file, REVISION, artifact_run_id="999"
+    )
+    assert report["source"] == {"revision": REVISION, "dirty": False}
+    assert expected.issubset({r["id"] for r in report["results"]})
+    assert all(r["status"] == "PASS" for r in report["results"])
+
+
+def test_issue149_release_record_consumer(tmp_path):
+    record_file = tmp_path / "issue149-release-record.json"
+    expected = {
+        "release-engine-consolidation",
+        "release-nf-default",
+        "release-obligation-149",
+    }
+    record_file.write_text(
+        json.dumps(
+            {
+                "acceptance_check": "release-obligation-149",
+                "source": {"revision": REVISION, "dirty": False},
+                "manifest_check_ids": sorted(expected),
+                "results": [
+                    {
+                        "id": check,
+                        "status": "PASS",
+                        "stage": "engine-consolidation",
+                        "evidence_kind": "supported-execution",
+                        "supported_execution": True,
+                    }
+                    for check in sorted(expected)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    report = issue_queue.issue149_release_record(
+        record_file, REVISION, artifact_run_id="999"
+    )
+    assert report["source"] == {"revision": REVISION, "dirty": False}
+    assert expected.issubset({r["id"] for r in report["results"]})
+    assert all(r["status"] == "PASS" for r in report["results"])
+
+
+def test_issue152_release_record_consumer(tmp_path):
+    record_file = tmp_path / "issue152-release-record.json"
+    expected = {
+        "release-energy-protocols",
+        "release-extension-protocols",
+        "release-obligation-152",
+    }
+    record_file.write_text(
+        json.dumps(
+            {
+                "acceptance_check": "release-obligation-152",
+                "source": {"revision": REVISION, "dirty": False},
+                "manifest_check_ids": sorted(expected),
+                "results": [
+                    {
+                        "id": check,
+                        "status": "PASS",
+                        "stage": "energy-protocols",
+                        "evidence_kind": "supported-execution",
+                        "supported_execution": True,
+                    }
+                    for check in sorted(expected)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    report = issue_queue.issue152_release_record(
+        record_file, REVISION, artifact_run_id="999"
+    )
+    assert report["source"] == {"revision": REVISION, "dirty": False}
+    assert expected.issubset({r["id"] for r in report["results"]})
+    assert all(r["status"] == "PASS" for r in report["results"])
+
+
 def test_issue471_checks_report_consumer(tmp_path):
     oracle_file = tmp_path / "oracle.json"
     oracle_file.write_text(
