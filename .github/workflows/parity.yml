@@ -52,6 +52,21 @@ jobs:
       - name: Validate provenance structure
         run: python scripts/validate_provenance.py
 
+      - name: Execute reconciliation prerequisite acceptance
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python scripts/ci/record_reconciliation_prerequisite.py \
+            --revision "$BNG3_SOURCE_REVISION" \
+            --output-dir "$RUNNER_TEMP/reconciliation-prerequisite"
+
+      - name: Retain reconciliation prerequisite acceptance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reconciliation-prerequisite
+          path: ${{ runner.temp }}/reconciliation-prerequisite
+
       - name: Run CI contract tests
         run: |
           python -m pytest \
