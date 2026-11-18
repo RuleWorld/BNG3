@@ -180,8 +180,13 @@ double FunctionalRxnClass::update_a() {
 	if(a<0) {
 		std::ostringstream message;
 		message << "NFsim functional reaction '" << name
-				<< "' produced a negative propensity (" << a
+				<< "' produced a negative propensity (here " << a
 				<< "); reaction propensities must be non-negative";
+		if (cf != nullptr) {
+			cf->printDetails(system);
+		} else if (gf != nullptr) {
+			gf->printDetails(system);
+		}
 		throw std::domain_error(message.str());
 	}
 

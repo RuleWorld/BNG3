@@ -50,7 +50,8 @@ namespace NFinput {
         /* Signed reservoir work from a driven_by() annotation. Nonzero work
          * shifts local detailed balance to exp(-(dG-W)/RT) and forces the
          * materialized expansion path. */
-        double drivingWork = 0.0);
+        double drivingWork = 0.0,
+        bool includeForward = true);
 
     /*
      * Create expanded BasicRxnClass instances for an energy state-change rule.

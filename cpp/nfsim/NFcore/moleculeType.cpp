@@ -2495,8 +2495,10 @@ void MoleculeType::updateRxnMembership(Molecule * m,
 					m, reactionPositions.at(reactionIndex), reactionIndex);
 		else
 			rxn->tryToAdd(m, reactionPositions.at(reactionIndex));
-		double newA = rxn->update_a();
-		this->system->update_A_tot(rxn, oldA, newA);
+		if (!this->system->holdFiringPropensityUpdate(rxn)) {
+			double newA = rxn->update_a();
+			this->system->update_A_tot(rxn, oldA, newA);
+		}
 	};
 	bool useCompactPartnerPoolIndex = hasMembershipChange && directProduct &&
 		membershipChange.moleculeType1 != membershipChange.moleculeType2 &&
@@ -2604,8 +2606,10 @@ void MoleculeType::updateRxnMembership(Molecule * m,
 					this->system->deferMembershipPropensityUpdate(rxn, oldA);
 				} else {
 					double oldA = rxn->get_a();
-					double newA = rxn->update_a();
-					this->system->update_A_tot(rxn, oldA, newA);
+					if (!this->system->holdFiringPropensityUpdate(rxn)) {
+						double newA = rxn->update_a();
+						this->system->update_A_tot(rxn, oldA, newA);
+					}
 				}
 			}
 		}
@@ -2686,8 +2690,10 @@ void MoleculeType::updateRxnMembership(Molecule * m,
 					this->system->deferMembershipPropensityUpdate(rxn, oldA);
 				} else {
 					double oldA = rxn->get_a();
-					double newA = rxn->update_a();
-					this->system->update_A_tot(rxn, oldA, newA);
+					if (!this->system->holdFiringPropensityUpdate(rxn)) {
+						double newA = rxn->update_a();
+						this->system->update_A_tot(rxn, oldA, newA);
+					}
 				}
 				continue;
 			}
@@ -2941,6 +2947,7 @@ void MoleculeType::updateRxnMembership(Molecule * m,
 					NFcore::memprofTryCalls++; mpTries++;
 				}
 			}
+			if (this->system->holdFiringPropensityUpdate(rxn)) continue;
 			double newA = rxn->update_a();
 			if (memprof && newA != oldA) { NFcore::memprofChanged++; mpChanged++; }
 			this->system->update_A_tot(rxn, oldA, newA);
@@ -2970,8 +2977,10 @@ void MoleculeType::updateRxnMembership(Molecule * m,
 				this->system->deferMembershipPropensityUpdate(rxn, oldA);
 			} else {
 				double oldA = rxn->get_a();
-				double newA = rxn->update_a();
-				this->system->update_A_tot(rxn, oldA, newA);
+				if (!this->system->holdFiringPropensityUpdate(rxn)) {
+					double newA = rxn->update_a();
+					this->system->update_A_tot(rxn, oldA, newA);
+				}
 			}
 			continue;
 		}
@@ -3082,6 +3091,7 @@ void MoleculeType::updateRxnMembership(Molecule * m,
 				abort();
 			}
 		}
+		if (this->system->holdFiringPropensityUpdate(rxn)) continue;
 		double newA = rxn->update_a();
 		if (membershipDiff && !isCandidate &&
 				rxn->propensityDependsOnlyOnMembership() && newA != oldA) {
@@ -3123,17 +3133,51 @@ void MoleculeType::updateConnectedRxnMembership(
 	// Preserve the MoleculeType's native reaction order so the connectivity path
 	// mutates reactant containers in the same sequence as a full membership
 	// refresh, while still using the precomputed connectivity matrix.
-	for (unsigned int r=0; r<reactions.size(); r++) {
-		rxn = reactions.at(r);
-		if (!this->system->areReactionsConnected(
-				firedReaction->getRxnId(), rxn->getRxnId())) {
-			continue;
+	// Visit only the connected entries. The index list is built once per fired
+	// reaction, in native order, so the sequence of updates is the same as
+	// scanning every reaction of this type and testing the matrix each time.
+	const unsigned int firedId = (unsigned int)firedReaction->getRxnId();
+	if (connectedReactionIndicesSize != reactions.size()) {
+		// reactions were added since the lists were built: start over
+		connectedReactionIndices.clear();
+		connectedReactionIndicesBuilt.clear();
+		connectedReactionIndicesSize = reactions.size();
+	}
+	if (firedId >= connectedReactionIndicesBuilt.size()) {
+		connectedReactionIndices.resize(firedId+1);
+		connectedReactionIndicesBuilt.resize(firedId+1, 0);
+	}
+	if (!connectedReactionIndicesBuilt[firedId]) {
+		vector <int> &built = connectedReactionIndices[firedId];
+		built.clear();
+		for (unsigned int k=0; k<reactions.size(); k++) {
+			if (this->system->areReactionsConnected(
+					firedReaction->getRxnId(), reactions[k]->getRxnId()))
+				built.push_back((int)k);
 		}
+		connectedReactionIndicesBuilt[firedId] = 1;
+	}
+	const vector <int> &connectedIdx = connectedReactionIndices[firedId];
+	for (unsigned int c=0; c<connectedIdx.size(); c++) {
+		const unsigned int r = (unsigned int)connectedIdx[c];
+		rxn = reactions[r];
 		if (!rxn->shouldUpdateMembership(m, firedReaction, directProduct))
 			continue;
 		int pos = reactionPositions.at(r);
+		if (this->system->holdFiringPropensityUpdate(rxn)) {
+			/* Its rate is computed when the firing is done (issue #115), so
+			 * it has no line in the -trackconnected output. */
+			if (rxn->usesIncrementalMembership())
+				rxn->tryToAddWithIndex(m, pos, r);
+			else
+				rxn->tryToAdd(m, pos);
+			continue;
+		}
 		double oldA = rxn->get_a();
-		double oldAwithTotal = rxn->update_a();
+		// Only -trackconnected reports the propensity just before the update;
+		// computing it costs a second update_a() per rule and molecule.
+		bool trackConnected = this->system->getTrackConnected();
+		double oldAwithTotal = trackConnected ? rxn->update_a() : oldA;
 		if (rxn->usesIncrementalMembership())
 			rxn->tryToAddWithIndex(m, pos, r);
 		else
@@ -3143,7 +3187,7 @@ void MoleculeType::updateConnectedRxnMembership(
 		// Used for debugging to see which reaction rates changed
 		// upon updating molecule membership
 		// Arvind Rasi Subramaniam Nov 21, 2018
-		if (!this->system->getTrackConnected()) continue;
+		if (!trackConnected) continue;
 		if (oldAwithTotal != newA) {
 			this->system->getConnectedRxnFileStream() <<
 			this->system->getGlobalEventCounter() << "\t" <<
@@ -3272,6 +3316,7 @@ void MoleculeType::removeFromRxns(Molecule * m)
 			continue;
 		double oldA = (*rxnIter)->get_a();
 		(*rxnIter)->remove(m, reactionPositions.at(r));
+		if (this->system->holdFiringPropensityUpdate(*rxnIter)) continue;
 		double newA = (*rxnIter)->update_a();
 		this->system->update_A_tot((*rxnIter),oldA,newA);
   	}

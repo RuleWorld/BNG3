@@ -320,33 +320,81 @@ void ReactionClass::appendConnectedRxn(ReactionClass * rxn) {
 	this->connectedReactions.push_back(rxn);
 }
 
+bool ReactionClass::hasDisjointReactantPattern() const {
+	for (auto *molecule : allReactantTemplates) {
+		if (molecule->getN_connectedTo() > 0) return true;
+	}
+	for (unsigned int i=0; i<n_reactants; ++i) {
+		if (reactantTemplates[i]->getN_connectedTo() > 0) return true;
+	}
+	return false;
+}
+
+bool ReactionClass::dependsOnComplexMembership() const {
+	// A pattern such as A().B() matches only molecules in the same complex.
+	if (hasDisjointReactantPattern()) return true;
+	// A reactant counted once per complex (MatchOnce, or a reactant the rule
+	// never transforms while complexes are tracked) changes count whenever
+	// complexes split or join.
+	for (unsigned int i=0; i<n_reactants; i++) {
+		if (matchOncePerReactant[i] || contextCountsPerComplex[i]) return true;
+	}
+	// RuleMonkey's exact propensity leaves out reactant pairs in one complex.
+	if (useRuleMonkey && n_reactants > 1) return true;
+	return false;
+}
+
+bool ReactionClass::dependsOnComplexTopology() const {
+	// RuleMonkey's exact propensity also runs the rule's product-side checks
+	// on each reactant pair, and whether a "+" separates its products depends
+	// on rings inside the complex, which any bond change can open or close.
+	return useRuleMonkey && n_reactants > 1 &&
+			transformationSet->hasProductSideChecks();
+}
+
+bool ReactionClass::hasMoveConnectedTransform() const {
+	return transformationSet->hasMoveConnectedTransform();
+}
+
+bool ReactionClass::lacksConnectivityTemplates() const {
+	// Energy-pattern reactions are built without recording their templates.
+	return n_reactants > 0 && allReactantTemplates.empty();
+}
+
 bool ReactionClass::isReactionConnected(ReactionClass * rxn) {
+	// Without templates nothing can be compared, so assume a connection.
+	if (this->lacksConnectivityTemplates() || rxn->lacksConnectivityTemplates())
+		return true;
+
+	// Deleting a molecule out of a complex frees the sites its partners were
+	// bound to, and MoveConnected changes the compartment of every molecule in
+	// the complex. Those molecules are reached only by traversal and need not
+	// appear in this rule's patterns, so no template comparison finds the
+	// rules that match them.
+	if (this->transformationSet->changesUnmappedMolecules()) return true;
+
+	// Splitting or joining complexes, or adding or removing molecules, changes
+	// matches and counts that depend on complex membership, whatever
+	// components the rules touch.
+	if (this->transformationSet->canChangeComplexMembership() &&
+			rxn->dependsOnComplexMembership()) return true;
+	if (this->transformationSet->hasTopologyChangingTransform() &&
+			rxn->dependsOnComplexTopology()) return true;
+
 	// First check if any of the operations share MoleculeType and components with
 	// one of the reactant templates of rxn.
 	if (this->transformationSet->checkConnection(rxn)) return true;
 
-	// Component-gated fallback (ruleworld/nfsim#107): the full-membership
-	// refresh added for #74 revisits every explicit reactant template of the
-	// fired rule, but isTemplateCompatible() alone returns true for templates
-	// constraining disjoint component sets, over-connecting rules that share a
-	// molecule type while touching unrelated sites (e.g. polymer initiation vs
-	// elongation). Mirroring the TransformationSet::checkConnection gate, a
-	// compatible explicit template only connects basic (own-list-dependent)
-	// reactions when the reactions also share a specified component, while
-	// observable-dependent rate laws keep the broad fallback since any
-	// compatible firing can move their observables. The deterministic
-	// full-list-in-order iteration in MoleculeType::updateConnectedRxnMembership
-	// is unchanged, so seeded-trajectory parity (the #74 goal) is preserved.
-	for (unsigned int i=0; i<allReactantTemplates.size(); i++) {
+	// Full membership refresh revisits every explicit reactant template in the
+	// fired rule. Require component overlap for basic rates (nfsim#107).
+	for (unsigned int i=0, n=allReactantTemplates.size(); i<n; i++) {
 		if (rxn->isTemplateCompatibleWithSharedComponent(allReactantTemplates[i])) return true;
 	}
 
-	// Product templates can also create new compatible mappings, but avoid
-	// broadening synthesis rules where this would over-connect add-only paths.
-	if (n_reactants > 0) {
-		for (unsigned int i=0; i<allProductTemplates.size(); i++) {
-			if (rxn->isTemplateCompatibleWithSharedComponent(allProductTemplates[i])) return true;
-		}
+	// Product templates can create new compatible mappings, including for
+	// rules with no reactants (basicModels/v26).
+	for (unsigned int i=0, n=allProductTemplates.size(); i<n; i++) {
+		if (rxn->isTemplateCompatibleWithSharedComponent(allProductTemplates[i])) return true;
 	}
 	return false;
 }
@@ -630,6 +678,19 @@ string ReactionClass::fire(double random_A_number, bool track) {
 	// First randomly pick the reactants to fire by selecting the MappingSets
 	this->pickMappingSets(random_A_number);
 
+	// Defensive check: a picked MappingSet can occasionally contain an unmapped entry
+	// (null molecule) in edge cases involving internal bond reconnection/symmetry.
+	// Treat this as a null event and skip firing to avoid dereferencing null mappings.
+	// This has to come before checkMolecularity, which reads the complex of each
+	// reactant's first mapped molecule when complex bookkeeping is on.
+	for (unsigned int k=0; k<n_reactants; k++) {
+		Mapping *picked = mappingSet[k] ? mappingSet[k]->get(0) : nullptr;
+		if (picked == 0 || picked->getMolecule() == 0) {
+			++(System::NULL_EVENT_COUNTER);
+			return string("");
+		}
+	}
+
 	// Check reactants for correct molecularity:
 	if ( ! transformationSet->checkMolecularity(mappingSet) ) {
 		// wrong molecularity!  this is a NULL event
@@ -648,17 +709,9 @@ string ReactionClass::fire(double random_A_number, bool track) {
 		return string("");
 	}
 
-	// Defensive check: a picked MappingSet can occasionally contain an unmapped entry
-	// (null molecule) in edge cases involving internal bond reconnection/symmetry.
-	// Treat this as a null event and skip firing to avoid dereferencing null mappings.
+	// Check reactant-side filters (include_reactants / exclude_reactants).
 	for (unsigned int k=0; k<n_reactants; k++) {
-		Mapping *picked = mappingSet[k]->get(0);
-		if (picked == 0 || picked->getMolecule() == 0) {
-			++(System::NULL_EVENT_COUNTER);
-			return string("");
-		}
-
-		Molecule *mol = picked->getMolecule();
+		Molecule *mol = mappingSet[k]->get(0)->getMolecule();
 		if (!transformationSet->checkReactantFilters(k, mol)) {
 			++(System::NULL_EVENT_COUNTER);
 			return string("");
@@ -731,7 +784,12 @@ string ReactionClass::fire(double random_A_number, bool track) {
 	}
 
 	// Loop through the products (excluding added molecules) and remove from observables
+	//
+	// From here until the products are back in their observables, the counts are
+	// of no state the system is in, so no rate is computed from them: each update
+	// is held and applied once, after (issue #115).
 	if (this->onTheFlyObservables) {
+		this->system->beginDeferredFiringPropensityUpdates();
 		bool profileObservables = system->isProfileReactionActive();
 		ProfileTime profileObservablesStart = profileObservables
 			? profileNow() : ProfileTime();
@@ -908,7 +966,7 @@ string ReactionClass::fire(double random_A_number, bool track) {
 		//  NOTE: as a side-effect, DORreactions that depend on molecule-scoped local functions
 		//   (typeI relationship) will be updated as long as UTL is set appropriately.
 		if ( mol->isAlive() ) {
-			bool directProduct = !this->usesIncrementalMembership() ||
+			bool directProduct = !(useConnectivity || this->usesIncrementalMembership()) ||
 					this->isDirectProductMolecule(mol);
 			mol->updateRxnMembership(this, useConnectivity, directProduct);
 		}
@@ -916,6 +974,10 @@ string ReactionClass::fire(double random_A_number, bool track) {
 	if (deferMembershipPropensityUpdates)
 		this->system->endDeferredMembershipPropensityUpdates();
 	this->system->endMembershipMutationCapture();
+	// The products are counted again and are in their reactions: compute what
+	// was held, from this state.
+	if (this->onTheFlyObservables)
+		this->system->endDeferredFiringPropensityUpdates();
 	if (profileMembership)
 		system->recordProfileMembershipPhase(
 				profileElapsedSeconds(profileMembershipStart));
@@ -998,6 +1060,11 @@ string ReactionClass::fire(double random_A_number, bool track) {
 			}
 		}
 	}
+
+	// A system observable that some local function reads may have moved during
+	// this firing. Refresh those cached type-II values once, now that all
+	// observable updates for the event are complete (ruleworld/nfsim#104).
+	this->system->refreshDirtyGlobalLocalFunctions();
 
 	// update the last reaction firing time
 	// this is written to molecule_type_list.tsv at the end of the simulation

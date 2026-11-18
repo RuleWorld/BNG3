@@ -481,6 +481,22 @@ void directionMappings(const CompiledRule& rule, bool reverse,
     }
 }
 
+std::pair<bool, bool> unbindingProductRelation(
+    const MoleculeMap& mappings, const PatternSiteRef& first, const PatternSiteRef& second) {
+    const auto productPattern = [&mappings](const PatternSiteRef& ref) -> std::optional<std::size_t> {
+        for (const auto& [product, reactant] : mappings) {
+            if (reactant.patternIndex == ref.patternIndex &&
+                reactant.moleculeIndex == ref.moleculeIndex)
+                return product.patternIndex;
+        }
+        return std::nullopt;
+    };
+    const auto lhs = productPattern(first);
+    const auto rhs = productPattern(second);
+    if (!lhs || !rhs) return {};
+    return {*lhs != *rhs, *lhs == *rhs};
+}
+
 bool templateForRef(const PatternMoleculeRef& ref,
                     const std::vector<std::vector<NFcore::TemplateMolecule*>>& templates,
                     NFcore::TemplateMolecule*& result,
@@ -589,10 +605,11 @@ struct ProductBondEndpoint {
 };
 
 std::map<std::pair<std::size_t, std::size_t>, std::vector<ProductBondEndpoint>>
-productBondGroups(const CompiledRuleDirection& direction) {
+patternBondGroups(const std::vector<Pattern>& patterns,
+                  PatternSide side) {
     std::map<std::pair<std::size_t, std::size_t>, std::vector<ProductBondEndpoint>> result;
-    for (std::size_t patternIndex = 0; patternIndex < direction.productPatterns.size(); ++patternIndex) {
-        const auto& pattern = direction.productPatterns[patternIndex];
+    for (std::size_t patternIndex = 0; patternIndex < patterns.size(); ++patternIndex) {
+        const auto& pattern = patterns[patternIndex];
         for (std::size_t moleculeIndex = 0; moleculeIndex < pattern.molecules().size(); ++moleculeIndex) {
             const auto& molecule = pattern.molecules()[moleculeIndex];
             for (std::size_t siteIndex = 0; siteIndex < molecule.sites.size(); ++siteIndex) {
@@ -601,7 +618,7 @@ productBondGroups(const CompiledRuleDirection& direction) {
                     if (bond.kind != BondConstraintKind::Exact || bond.group.value == 0) return;
                     result[{patternIndex, bond.group.value}].push_back(
                         ProductBondEndpoint{
-                            PatternSiteRef{PatternSide::Product, patternIndex,
+                            PatternSiteRef{side, patternIndex,
                                            moleculeIndex, siteIndex}, &site});
                 };
                 if (site.bondConstraints.empty())
@@ -612,6 +629,70 @@ productBondGroups(const CompiledRuleDirection& direction) {
         }
     }
     return result;
+}
+
+bool registerProductMolecularity(
+    const CompiledRuleDirection& direction,
+    const MoleculeMap& mappings,
+    const std::vector<std::vector<NFcore::TemplateMolecule*>>& templates,
+    NFcore::TransformationSet& transformations) {
+    // Product molecules initially share a complex only if they came from
+    // the same reactant pattern. Product bonds join the groups they connect.
+    const auto productBonds = patternBondGroups(direction.productPatterns, PatternSide::Product);
+    for (std::size_t p = 0; p < direction.productPatterns.size(); ++p) {
+        const auto count = direction.productPatterns[p].molecules().size();
+        if (count < 2) continue;
+        std::vector<std::size_t> groups(count);
+        for (std::size_t i = 0; i < count; ++i)
+            groups[i] = direction.reactantPatterns.size() + i;
+        for (const auto& [product, reactant] : mappings)
+            if (product.patternIndex == p) groups.at(product.moleculeIndex) = reactant.patternIndex;
+        for (const auto& [key, endpoints] : productBonds) {
+            if (key.first != p || endpoints.size() != 2) continue;
+            const auto lhs = groups.at(endpoints[0].ref.moleculeIndex);
+            const auto rhs = groups.at(endpoints[1].ref.moleculeIndex);
+            std::replace(groups.begin(), groups.end(), rhs, lhs);
+        }
+        if (std::any_of(groups.begin(), groups.end(),
+                        [&](std::size_t group) { return group != groups.front(); })) {
+            transformations.setProductsCannotForm(true);
+            break;
+        }
+    }
+
+    // Explicit bonds to the same deleted cluster induce product-side
+    // connectivity checks between the surviving mapped neighbors.
+    const auto reactantBonds = patternBondGroups(direction.reactantPatterns, PatternSide::Reactant);
+    std::size_t nextCluster = 0;
+    for (std::size_t p = 0; p < templates.size(); ++p) {
+        std::vector<std::optional<std::size_t>> survivorProducts(templates[p].size());
+        for (const auto& [product, reactant] : mappings)
+            if (reactant.patternIndex == p)
+                survivorProducts.at(reactant.moleculeIndex) = product.patternIndex;
+        std::vector<std::size_t> deletedGroups(templates[p].size());
+        for (auto& group : deletedGroups) group = nextCluster++;
+        for (const auto& [key, endpoints] : reactantBonds) {
+            if (key.first != p || endpoints.size() != 2) continue;
+            auto lhs = endpoints[0].ref.moleculeIndex;
+            auto rhs = endpoints[1].ref.moleculeIndex;
+            if (!survivorProducts.at(lhs) && !survivorProducts.at(rhs)) {
+                const auto source = deletedGroups.at(rhs);
+                const auto target = deletedGroups.at(lhs);
+                std::replace(deletedGroups.begin(), deletedGroups.end(), source, target);
+            }
+        }
+        for (const auto& [key, endpoints] : reactantBonds) {
+            if (key.first != p || endpoints.size() != 2) continue;
+            auto lhs = endpoints[0].ref.moleculeIndex;
+            auto rhs = endpoints[1].ref.moleculeIndex;
+            if (survivorProducts.at(rhs)) std::swap(lhs, rhs);
+            if (!survivorProducts.at(lhs) || survivorProducts.at(rhs)) continue;
+            if (!transformations.addSurvivorOfDeletedMolecule(
+                    templates[p].at(lhs), static_cast<int>(deletedGroups.at(rhs)),
+                    static_cast<int>(*survivorProducts.at(lhs)))) return false;
+        }
+    }
+    return true;
 }
 
 bool renderExpression(const CompiledModel& model,
@@ -1825,6 +1906,9 @@ SymmetricCompiledExpansionResult addSymmetricCompiledDirection(
         return SymmetricCompiledExpansionResult::NotApplicable;
     }
 
+    MoleculeMap moleculeMappings;
+    SiteMap siteMappings;
+    directionMappings(rule, reverse, moleculeMappings, siteMappings);
     enum class CenterKind { State, Bond };
     CenterKind centerKind = CenterKind::State;
     std::set<PatternSiteRef> reactionCenter;
@@ -1965,11 +2049,13 @@ SymmetricCompiledExpansionResult addSymmetricCompiledDirection(
                 applied = false;
             } else {
                 try {
+                    const auto [separates, staysConnected] =
+                        unbindingProductRelation(moleculeMappings, mutation.source, mutation.partner);
                     applied = mutation.kind == MutationKind::AddBond
                         ? transformations->addBindingTransform(
                               lhs, lhsName, rhs, rhsName)
                         : transformations->addUnbindingTransform(
-                              lhs, lhsName, rhs, rhsName);
+                              lhs, lhsName, rhs, rhsName, separates, staysConnected);
                 } catch (const std::exception& error) {
                     diagnostic = error.what();
                     applied = false;
@@ -2131,6 +2217,13 @@ bool lowerDirection(const CompiledModel& model,
     SiteMap siteMappings;
     directionMappings(rule, reverse, moleculeMappings, siteMappings);
 
+    if (blockSameComplexBinding &&
+        !registerProductMolecularity(direction, moleculeMappings, templates, *transformations)) {
+        diagnostic = "could not register product molecularity constraints";
+        delete transformations;
+        return false;
+    }
+
     // Compartment transport is derived from the already-resolved molecule map.
     for (const auto& [productRef, reactantRef] : moleculeMappings) {
         const auto* productMolecule = referencedMolecule(direction, productRef);
@@ -2163,9 +2256,12 @@ bool lowerDirection(const CompiledModel& model,
         if (wholeSpeciesDeletion(mutation.source.patternIndex) ||
             wholeSpeciesDeletion(mutation.partner.patternIndex)) continue;
         NFcore::TemplateMolecule *lhs=nullptr, *rhs=nullptr; std::string lhsName, rhsName;
+        const auto [separates, staysConnected] =
+            unbindingProductRelation(moleculeMappings, mutation.source, mutation.partner);
         if (!componentForRef(model, direction, mutation.source, templates, lhs, lhsName, diagnostic) ||
             !componentForRef(model, direction, mutation.partner, templates, rhs, rhsName, diagnostic) ||
-            !transformations->addUnbindingTransform(lhs, lhsName, rhs, rhsName)) {
+            !transformations->addUnbindingTransform(lhs, lhsName, rhs, rhsName,
+                                                     separates, staysConnected)) {
             delete transformations; return false;
         }
     }
@@ -2198,7 +2294,7 @@ bool lowerDirection(const CompiledModel& model,
                                directProducts[index].runtimeComponentNames[site]));
         }
     }
-    for (const auto& [group, endpoints] : productBondGroups(direction)) {
+    for (const auto& [group, endpoints] : patternBondGroups(direction.productPatterns, PatternSide::Product)) {
         (void)group;
         if (endpoints.size() != 2) { diagnostic = "product bond group has invalid arity"; delete transformations; return false; }
         const auto firstAdded = addedSites.find(endpoints[0].ref);

@@ -118,6 +118,13 @@ LocalFunction::LocalFunction(System *s,
 	// default to false
 	this->isEverEvaluatedOnSpeciesScope=false;
 	this->isTimeDependent=false;
+	this->readsGlobalObservable=false;
+	for(unsigned int i=0; i<varRefScope.size(); i++) {
+		if(varRefScope.at(i)==-1) {
+			this->readsGlobalObservable=true;
+			break;
+		}
+	}
 	// remember the system
 	this->system = s;
 
@@ -638,6 +645,24 @@ double LocalFunction::evaluateOn(Complex *c) {
 		}
 	}
 	return newValue;
+}
+
+
+//Recompute this function's cached value on every molecule that can carry it.
+//Called when a system observable this function reads has changed, so cached
+//type-II values (and the DOR rate factors derived from them) follow the
+//observable instead of going stale (ruleworld/nfsim#104).
+void LocalFunction::refreshTypeIIValues() {
+	for(int i=0; i<n_typeIImolecules; i++) {
+		MoleculeType *mt = typeII_mol[i];
+		if(mt==0) continue;
+		for(int m=0; m<mt->getMoleculeCount(); m++) {
+			Molecule *mol = mt->getMolecule(m);
+			if(mol!=0 && mol->isAlive()) {
+				this->evaluateOn(mol, LocalFunction::SPECIES);
+			}
+		}
+	}
 }
 
 

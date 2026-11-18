@@ -127,10 +127,27 @@ namespace NFcore
 
 
 			/*!
-				Adds an unbinding reaction at the given site of the given TemplateMolecule
+				Adds an unbinding reaction at the given site of the given TemplateMolecule.
+				Pass separatesProducts=true when the rule writes "+" between the two
+				molecules the bond joins, so that checkMolecularity() refuses to fire
+				the rule on a bond whose removal would leave them connected.  Pass
+				keepsProductsConnected=true when it writes "." between them, so that
+				the rule is refused when they would come apart.
 				@author Michael Sneddon
 			*/
-			bool addUnbindingTransform(TemplateMolecule *t, string bSiteName, TemplateMolecule *t2, string bSiteName2);
+			bool addUnbindingTransform(TemplateMolecule *t, string bSiteName, TemplateMolecule *t2, string bSiteName2, bool separatesProducts=false, bool keepsProductsConnected=false);
+
+			/*!
+				Records a molecule that the rule keeps but that is bonded, in the
+				reactant pattern, to a molecule the rule deletes.  productPattern is the
+				number of the product pattern the rule writes it in.  Deleting a molecule
+				deletes its bonds, so checkMolecularity() can then require the molecules
+				left behind to end up in different complexes where the rule writes "+"
+				between them, and in one complex where it writes ".".  Deleted molecules
+				that are bonded to one another in the reactant pattern share a cluster
+				number, because what they leave behind has to be judged together.
+			*/
+			bool addSurvivorOfDeletedMolecule(TemplateMolecule *survivor, int cluster, int productPattern);
 
 
 			/*!
@@ -222,6 +239,16 @@ namespace NFcore
 			unsigned int getNumProductPatterns() const { return n_product_patterns; };
 			void setNumProductPatterns( unsigned int val ) { n_product_patterns = val; };
 
+			/*!
+				Marks a rule whose product patterns can never form: it writes two
+				molecules in one product pattern, which says they end up in one complex,
+				but they start in different reactants and no bond the rule adds joins
+				them.  BioNetGen generates no reactions for such a rule, and
+				checkMolecularity() refuses every firing of it.
+			*/
+			bool getProductsCannotForm() const { return productsCannotForm; };
+			void setProductsCannotForm( bool val ) { productsCannotForm = val; };
+
 
 			/*!
 				This function sets up the actual array of Transformation objects for this TransformationSet
@@ -241,9 +268,11 @@ namespace NFcore
 			/*!
 				After selecting mappingSets, call this to check if the molecularity of the reactants
 				is correct.  Returns true if molecularity is correct, false otherwise.  If complex
-				bookkeeping is enabled, this is a simple check for unique complex IDs.  Otherwise,
-				we only check for collisions at the reaction center and cannot guarantee that
-				molecularity is valid.
+				bookkeeping is enabled, the reactant patterns must match distinct complexes, and
+				every bond the rule deletes must leave its two molecules in different complexes
+				if the rule writes "+" between them, or in one complex if it writes ".".
+				Otherwise, we only check for collisions at the reaction center and cannot
+				guarantee that molecularity is valid.
 				@author JustinHogg
 			*/
 			bool checkMolecularity( MappingSet ** mappingSets );
@@ -278,6 +307,18 @@ namespace NFcore
 				@author Michael Sneddon
 			*/
 			bool hasSymUnbindingTransform() const { return hasSymUnbinding; };
+			bool hasTopologyChangingTransform() const { return topologyChanging; };
+			/* Whether a firing can split or join complexes, or add molecules to or
+			 * remove them from a complex. Bonds made or broken inside one complex
+			 * that is required to stay connected do neither. */
+			bool canChangeComplexMembership() const;
+			bool hasMoveConnectedTransform() const;
+			/* Whether a firing must pass product-side molecularity checks. */
+			bool hasProductSideChecks() const { return hasProductSideCheck; };
+			/* Whether this rule changes molecules it does not map: DeleteMolecules
+			 * frees the sites the deleted molecule's partners were bound to, and
+			 * MoveConnected carries the whole complex to another compartment. */
+			bool changesUnmappedMolecules() const;
 
 			/*!
 				Called by reaction class to determine if the rate of a rule must be adjusted to
@@ -287,7 +328,6 @@ namespace NFcore
 			*/
 			bool hasSymBindingTransform() const { return hasSymBinding; };
 
-			bool hasTopologyChangingTransform() const { return topologyChanging; };
 
 			/*!
 				Returns the number of transformations that the template at reactantIndex given has.
@@ -353,12 +393,24 @@ namespace NFcore
 				unbinding rules (Issues #48 and #61).
 				@param mol1 The molecule containing the binding site
 				@param mol2 The bonded partner molecule
-				@param excludedBonds The bond half-edges to exclude from traversal
+				@param excludedBonds The bonds to exclude, each recorded as both of its
+				       (molecule, component-index) half-edges
+				@param addedBonds Bonds the rule is about to create, each as the pair of
+				       molecules it will join; they are walked as if already there
 				@return true if mol1 can be reached from mol2 through alternative paths, false otherwise
 				@author Fix for Issues #48 and #61
 			*/
 			bool canReachExcludingBonds(Molecule *mol1, Molecule *mol2,
-				const std::vector< std::pair<Molecule *, int> > &excludedBonds);
+				const std::vector< std::pair<Molecule *, int> > &excludedBonds,
+				const std::vector< std::pair<Molecule *, Molecule *> > *addedBonds = 0);
+
+			/*!
+				Product-side molecularity.  Looks at the graph as the rule will leave
+				it, with every bond and molecule it deletes gone and every bond it adds
+				in place.  Returns false if two molecules the rule writes "+" between
+				would still be connected, or two it writes "." between would not be.
+			*/
+			bool deletedBondsMatchProducts(MappingSet ** mappingSets);
 
 			/*!	Remembers if the finalize function has been called	*/
 			bool finalized;
@@ -414,6 +466,30 @@ namespace NFcore
 
 			/*! Whether this set can change molecular connectivity. */
 			bool topologyChanging;
+			bool changesComplexMembership;
+			/* Unbindings whose two molecules must stay in one complex, and bonds
+			 * the rule makes inside one reactant pattern; see
+			 * canChangeComplexMembership(). */
+			vector < pair <TemplateMolecule *, TemplateMolecule *> > keptConnectedUnbindings;
+			vector < pair <TemplateMolecule *, TemplateMolecule *> > bondsWithinReactant;
+
+			/*! Whether any bond this rule deletes has a product-side condition: its two
+			    molecules must separate ("+") or must stay in one complex ("."). */
+			bool hasProductSideCheck;
+
+			/*! Whether the rule's product patterns can never form; see setProductsCannotForm(). */
+			bool productsCannotForm;
+
+			/*! One molecule left behind by a molecule this rule deletes; see
+			    addSurvivorOfDeletedMolecule(). */
+			struct DeletedMoleculeLink {
+				TemplateMolecule * survivor;
+				unsigned int reactantIndex;   // which reactant the survivor is in
+				unsigned int transformIndex;  // the empty transform that maps it
+				int cluster;
+				int productPattern;
+			};
+			std::vector< DeletedMoleculeLink > deletedMoleculeLinks;
 
 			/*! are we using the new general method for symmetry handling	*/
 			bool   useSymmetryFactor;

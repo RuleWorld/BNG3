@@ -1597,15 +1597,10 @@ end model
 
         assert "Universal traversal limit = 1" in capfd.readouterr().err
 
-    def test_simulate_nf_separates_complex_bookkeeping_from_ring_blocking(
+    def test_simulate_nf_defaults_to_strict_molecularity_with_explicit_opt_out(
         self, tmp_path
     ):
-        """NFsim's -cb and -bscb switches must keep their distinct meanings.
-
-        Native NFsim enables complex bookkeeping for ``-cb`` but blocks an
-        intracomplex bond only when ``-bscb`` is also present. This fixture
-        makes that distinction observable with a high-rate ring closure.
-        """
+        """An explicit opt-out permits ring closure even with complex tracking."""
         bngl = tmp_path / "nf_complex_flags.bngl"
         bngl.write_text("""
 begin model
@@ -1626,18 +1621,18 @@ begin reaction rules
     A(x!1,y) + B(x!1,z) -> A(x!1,y!2).B(x!1,z!2) k
 end reaction rules
 begin actions
-    simulate_nf({prefix=>"cb",t_end=>1,n_steps=>1,seed=>1,complex=>1})
-    simulate_nf({prefix=>"bscb",t_end=>1,n_steps=>1,seed=>1,complex=>1,param=>"-bscb"})
+    simulate_nf({prefix=>"permissive",t_end=>1,n_steps=>1,seed=>1,complex=>1,param=>"-no-bscb"})
+    simulate_nf({prefix=>"strict",t_end=>1,n_steps=>1,seed=>1})
 end actions
 end model
 """)
 
         bionetgen.load(str(bngl)).execute()
 
-        cb_rows = (tmp_path / "cb.gdat").read_text().splitlines()
-        bscb_rows = (tmp_path / "bscb.gdat").read_text().splitlines()
-        assert float(cb_rows[-1].split()[1]) == pytest.approx(1.0)
-        assert float(bscb_rows[-1].split()[1]) == pytest.approx(0.0)
+        permissive_rows = (tmp_path / "permissive.gdat").read_text().splitlines()
+        strict_rows = (tmp_path / "strict.gdat").read_text().splitlines()
+        assert float(permissive_rows[-1].split()[1]) == pytest.approx(1.0)
+        assert float(strict_rows[-1].split()[1]) == pytest.approx(0.0)
 
     def test_simulate_nf_action_honors_sample_times(self, tmp_path):
         bngl = tmp_path / "nf_sample_times.bngl"

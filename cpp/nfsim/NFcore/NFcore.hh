@@ -610,6 +610,11 @@ namespace NFcore
 			list<Molecule *> &getRecycledProductNodes() { return recycledProductNodes; }
 			bool isUsingComplex() { return useComplex; };   // NETGEN -- is this needed?
 			void setUsingComplex(bool val);  // Added to enable auto-enabling complex bookkeeping for Species observables
+			/* Whether a firing can change matches anywhere in a complex, through
+			 * a rule or Molecules observable with a disjoint pattern such as
+			 * A().B(), or a MoveConnected transport, so that traversal of the
+			 * products must not stop at a fixed depth. */
+			bool needsWholeComplexTraversal() const;
 			bool isOutputtingBinary() { return useBinaryOutput; };
 			double getCurrentTime() const { return current_time; };
 			double * getCurrentTimePtr() { return &current_time; };
@@ -811,10 +816,52 @@ namespace NFcore
 			void updateCompactPartnerPoolBatch(
 					CompactPartnerPool *pool, int oldPoolSize, int newPoolSize);
 
+			/* A firing takes its product molecules out of their observables,
+			 * transforms them, and puts them back. Between the two, the observable
+			 * counts are of a state the system is never in: an observable a single
+			 * molecule keeps nonzero reads 0, and a rate law that divides by it is
+			 * NaN, which a_tot - old + new then keeps for good (issue #115).
+			 *
+			 * A rate law can be negative there too, where it is not in any state
+			 * the system reaches, which ends the run.
+			 *
+			 * So is the state while the products are put back in their reactions,
+			 * one molecule at a time: kd/Xp with TotalRate is infinite once Xp is
+			 * 0 and before X has left the rule's reactants.
+			 *
+			 * From the products leaving the observables until they are back in
+			 * their reactions, the update of a reaction whose rate reads an
+			 * observable is held: the reaction is noted, once, and its rate is not
+			 * computed, so the propensity it holds stays the one the selector has
+			 * for it. At the end each noted reaction's propensity is computed from
+			 * the state the firing leaves and given to the selector. Each place
+			 * that updates a propensity in that span asks
+			 * holdFiringPropensityUpdate() first: an observable whose count
+			 * changes, a molecule the transformation deletes, and a product
+			 * molecule's reactions (MoleculeType::updateRxnMembership, and
+			 * updateConnectedRxnMembership under -connect).
+			 *
+			 * A reaction whose rate reads no observable is updated as before, and
+			 * a system with no reaction that reads one has no such span. */
+			void noteObservableDependentReaction() { hasObservableDependentReactions = true; }
+			void beginDeferredFiringPropensityUpdates();
+			bool holdFiringPropensityUpdate(ReactionClass *r) {
+				return deferringFiringPropensityUpdates
+						&& noteHeldFiringPropensityUpdate(r);
+			}
+			void endDeferredFiringPropensityUpdates();
+
 
 
 
 			void evaluateAllLocalFunctions();
+			/* Mark cached local-function values stale after a system observable
+			 * they read has changed; the refresh is deferred to the end of the
+			 * current reaction firing (ruleworld/nfsim#104). */
+			void markGlobalLocalFunctionsDirty() {
+				if (hasGlobalDependentLocalFunctions) globalLocalFunctionsDirty = true;
+			}
+			void refreshDirtyGlobalLocalFunctions();
 
 
 			void addObservableForOutput(Observable *o);
@@ -1130,6 +1177,8 @@ namespace NFcore
 			//vector <FunctionReference *> functionReferences;
 			vector <GlobalFunction *> globalFunctions;    /*!< container of all global functions available to the system */
 			vector <LocalFunction *> localFunctions;      /*!< container of all local functions available to the system */
+			bool hasGlobalDependentLocalFunctions = false;
+			bool globalLocalFunctionsDirty = false;
 			vector <ReactionClass *> necessaryUpdateRxns; /*!< list of all  reactions that need to update propensity after each step*/
 
 			vector <CompositeFunction *> compositeFunctions;
@@ -1194,6 +1243,11 @@ namespace NFcore
 				int newPoolSize;
 			};
 			bool deferringMembershipPropensityUpdates = false;
+			bool deferringFiringPropensityUpdates = false;
+			bool hasObservableDependentReactions = false;
+			vector<ReactionClass *> heldFiringReactions;
+			bool noteHeldFiringPropensityUpdate(ReactionClass *r);
+			unsigned long long deferredFiringUpdateGeneration = 0;
 			vector<ReactionClass *> deferredMembershipReactions;
 			vector<double> deferredMembershipOldPropensities;
 			vector<DeferredCompactPartnerPoolUpdate>
@@ -1817,6 +1871,13 @@ namespace NFcore
 
 			vector <ReactionClass *> reactions; /* List of reactions that this type can be involved with */
 			vector <int> reactionPositions;   /* the position in the reaction for this type of molecule */
+			/* For each fired reaction (by rxnId), the indices into 'reactions' of the
+			 * entries connected to it, in native order. Built on first use by
+			 * updateConnectedRxnMembership so that -connect visits only connected
+			 * reactions while keeping the order of a full membership refresh. */
+			vector < vector <int> > connectedReactionIndices;
+			vector <char> connectedReactionIndicesBuilt;
+			unsigned int connectedReactionIndicesSize = 0;
 			vector <int> reactionMappingIndices;
 			int reactionMappingCount;
 			vector <CompactPartnerPool *> compactPartnerPools;
@@ -2736,6 +2797,34 @@ namespace NFcore
 			bool isTemplateCompatibleWithSharedComponent(TemplateMolecule * t);
 			bool isDirectProductMolecule(Molecule *molecule) const;
 			void recycleProductNodes();
+			/* Whether this rule's matches or reactant counts depend on which
+			 * complex each molecule is in, not only on the molecule's neighbors. */
+			bool dependsOnComplexMembership() const;
+			/* Whether the rule's propensity depends on bonds inside a complex,
+			 * not only on which complex each molecule is in. */
+			bool dependsOnComplexTopology() const;
+			/* Whether a reactant pattern joins molecules with '.' but no bond,
+			 * as in A().B(). */
+			bool hasDisjointReactantPattern() const;
+			/* Whether the rule has reactants but no recorded templates, so the
+			 * connectivity matrix cannot reason about it. */
+			bool lacksConnectivityTemplates() const;
+			/* Whether the rule moves a whole complex to another compartment. */
+			bool hasMoveConnectedTransform() const;
+
+			/* Whether this reaction's rate reads an observable (issue #115). */
+			void markReadsObservable() {
+				readsObservable = true;
+				if (system != 0) system->noteObservableDependentReaction();
+			}
+			bool getReadsObservable() const { return readsObservable; }
+			/* Mark this reaction once per firing whose updates are held (issue #115). */
+			bool markDeferredFiringUpdate(unsigned long long generation) {
+				if (deferredFiringUpdateGeneration == generation)
+					return false;
+				deferredFiringUpdateGeneration = generation;
+				return true;
+			}
 
 		protected:
 			virtual void pickMappingSets(double randNumber) const=0;
@@ -2768,6 +2857,8 @@ namespace NFcore
 			double a;
 			unsigned int fireCounter;
 			unsigned long long deferredMembershipUpdateGeneration = 0;
+			unsigned long long deferredFiringUpdateGeneration = 0;
+			bool readsObservable = false;
 
 			unsigned int traversalLimit;
 

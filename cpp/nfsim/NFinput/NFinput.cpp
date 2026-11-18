@@ -17,6 +17,11 @@ using namespace NFinput;
 using namespace std;
 using namespace NFcore;
 
+namespace {
+static bool isReverseArrheniusStateDirection(TiXmlElement *rule);
+static bool isPairedArrheniusUnbindingDirection(TiXmlElement *rule);
+}
+
 
 
 component::component(TemplateMolecule *t, string name)
@@ -155,13 +160,15 @@ class LiteXmlDocument;
 class LiteXmlElement {
 public:
 	const char *Attribute(const char *attributeName) const;
-	LiteXmlElement *FirstChildElement(const char *elementName) const;
-	LiteXmlElement *NextSiblingElement(const char *elementName) const;
+	LiteXmlElement *FirstChildElement(const char *elementName = nullptr) const;
+	LiteXmlElement *NextSiblingElement(const char *elementName = nullptr) const;
 	const char *Value() const { return name_; }
+	LiteXmlElement *parentElement() const;
 private:
 	friend class LiteXmlDocument;
 	const LiteXmlDocument *doc_;
 	const char *name_;
+	int parent_;
 	int firstChild_;
 	int nextSibling_;
 	unsigned int attributeBegin_;
@@ -205,7 +212,7 @@ inline const char *LiteXmlElement::Attribute(const char *attributeName) const
 inline LiteXmlElement *LiteXmlElement::FirstChildElement(const char *elementName) const
 {
 	for (int c = firstChild_; c >= 0; c = doc_->nodes_[c].nextSibling_)
-		if (std::strcmp(doc_->nodes_[c].name_, elementName) == 0)
+		if (!elementName || std::strcmp(doc_->nodes_[c].name_, elementName) == 0)
 			return const_cast<LiteXmlElement *>(&doc_->nodes_[c]);
 	return 0;
 }
@@ -213,9 +220,14 @@ inline LiteXmlElement *LiteXmlElement::FirstChildElement(const char *elementName
 inline LiteXmlElement *LiteXmlElement::NextSiblingElement(const char *elementName) const
 {
 	for (int c = nextSibling_; c >= 0; c = doc_->nodes_[c].nextSibling_)
-		if (std::strcmp(doc_->nodes_[c].name_, elementName) == 0)
+		if (!elementName || std::strcmp(doc_->nodes_[c].name_, elementName) == 0)
 			return const_cast<LiteXmlElement *>(&doc_->nodes_[c]);
 	return 0;
+}
+
+inline LiteXmlElement *LiteXmlElement::parentElement() const
+{
+    return parent_ < 0 ? nullptr : const_cast<LiteXmlElement *>(&doc_->nodes_[parent_]);
 }
 
 int LiteXmlDocument::addNode(const char *name, int parent)
@@ -223,6 +235,7 @@ int LiteXmlDocument::addNode(const char *name, int parent)
 	LiteXmlElement node;
 	node.doc_ = this;
 	node.name_ = name;
+	node.parent_ = parent;
 	node.firstChild_ = -1;
 	node.nextSibling_ = -1;
 	node.attributeBegin_ = static_cast<unsigned int>(attributes_.size());
@@ -440,6 +453,522 @@ private:
 
 }
 
+namespace {
+// BNG writes a component's post-state-change value into the product pattern
+// as well as into the StateChange operation.  For an integer component the
+// operation's PLUS/MINUS is relative, so the product annotation is not an
+// absolute allowed state and cannot be used as a template constraint.  Accept
+// it only when the rule has the matching StateChange; the operation remains
+// responsible for the actual state change.
+static TiXmlElement *parentElement(TiXmlElement *node) {
+    return node->Parent() ? node->Parent()->ToElement() : nullptr;
+}
+
+static LiteXmlElement *parentElement(LiteXmlElement *node) {
+    return node->parentElement();
+}
+
+template <class Element>
+static bool isRelativeProductStateAnnotation(Element *component,
+		MoleculeType *moltype)
+{
+	if (!component || !moltype || !component->Attribute("id") ||
+			!component->Attribute("name") || !component->Attribute("state"))
+		return false;
+	const string state = component->Attribute("state");
+	if (state != "PLUS" && state != "MINUS") return false;
+	if (!moltype->isIntegerComponent(string(component->Attribute("name"))))
+		return false;
+
+	Element *node = parentElement(component);
+	bool inProductPattern = false;
+	while (node && string(node->Value()) != "ReactionRule") {
+		if (string(node->Value()) == "ProductPattern")
+			inProductPattern = true;
+		node = parentElement(node);
+	}
+	if (!node || !inProductPattern) return false;
+	Element *rule = node;
+
+	// The StateChange names the reactant site, so find the mapped source of
+	// this product component before comparing.
+	Element *map = rule->FirstChildElement("Map");
+	string sourceSite;
+	for (Element *item = map ? map->FirstChildElement("MapItem") : NULL;
+			item; item = item->NextSiblingElement("MapItem")) {
+		if (item->Attribute("targetID") && item->Attribute("sourceID") &&
+				string(item->Attribute("targetID")) == component->Attribute("id")) {
+			sourceSite = item->Attribute("sourceID");
+			break;
+		}
+	}
+	if (sourceSite.empty()) return false;
+
+	Element *ops = rule->FirstChildElement("ListOfOperations");
+	for (Element *op = ops ? ops->FirstChildElement("StateChange") : NULL;
+			op; op = op->NextSiblingElement("StateChange")) {
+		if (op->Attribute("site") && op->Attribute("finalState") &&
+				string(op->Attribute("site")) == sourceSite &&
+				string(op->Attribute("finalState")) == state)
+			return true;
+	}
+	return false;
+}
+}
+
+// Returns true if the molecules listed under pListOfMols are not all joined by
+// the pattern's own bonds, as in A().B(). readPattern() links such molecules
+// with connectedTo and asks for complex bookkeeping. This makes the same test on
+// the XML, so the answer is known before the System is constructed.
+template <class Element>
+static bool patternIsDisjoint(Element *pListOfMols)
+{
+	if (pListOfMols == NULL) return false;
+
+	// every molecule starts in its own set; remember which molecule owns each component
+	vector <int> setOfMolecule;
+	map <string,int> moleculeOfComponent;
+	for (Element *pMol = pListOfMols->FirstChildElement("Molecule");
+			pMol != NULL; pMol = pMol->NextSiblingElement("Molecule"))
+	{
+		int molIndex = (int)setOfMolecule.size();
+		setOfMolecule.push_back(molIndex);
+		Element *pListOfComps = pMol->FirstChildElement("ListOfComponents");
+		if (pListOfComps == NULL) continue;
+		for (Element *pComp = pListOfComps->FirstChildElement("Component");
+				pComp != NULL; pComp = pComp->NextSiblingElement("Component"))
+		{
+			const char *compId = pComp->Attribute("id");
+			if (compId != NULL) moleculeOfComponent[compId] = molIndex;
+		}
+	}
+	if (setOfMolecule.size() < 2) return false;
+
+	// merge the sets of the two molecules at the ends of each bond
+	Element *pListOfBonds = pListOfMols->NextSiblingElement("ListOfBonds");
+	if (pListOfBonds != NULL)
+	{
+		for (Element *pBond = pListOfBonds->FirstChildElement("Bond");
+				pBond != NULL; pBond = pBond->NextSiblingElement("Bond"))
+		{
+			const char *site1 = pBond->Attribute("site1");
+			const char *site2 = pBond->Attribute("site2");
+			if (site1 == NULL || site2 == NULL) continue;
+			map <string,int>::iterator mol1 = moleculeOfComponent.find(site1);
+			map <string,int>::iterator mol2 = moleculeOfComponent.find(site2);
+			if (mol1 == moleculeOfComponent.end() || mol2 == moleculeOfComponent.end()) continue;
+			int keep = setOfMolecule[mol1->second];
+			int drop = setOfMolecule[mol2->second];
+			if (keep == drop) continue;
+			for (unsigned int i = 0; i < setOfMolecule.size(); ++i)
+				if (setOfMolecule[i] == drop) setOfMolecule[i] = keep;
+		}
+	}
+
+	for (unsigned int i = 1; i < setOfMolecule.size(); ++i)
+		if (setOfMolecule[i] != setOfMolecule[0]) return true;
+	return false;
+}
+
+
+// Returns true if any child of pParent with the given tag holds a disjoint pattern.
+template <class Element>
+static bool anyPatternIsDisjoint(Element *pParent, const char *patternTag)
+{
+	if (pParent == NULL) return false;
+	for (Element *pPattern = pParent->FirstChildElement(patternTag);
+			pPattern != NULL; pPattern = pPattern->NextSiblingElement(patternTag))
+	{
+		if (patternIsDisjoint(pPattern->FirstChildElement("ListOfMolecules"))) return true;
+	}
+	return false;
+}
+
+
+// Returns true if the model holds anything else that makes the reader ask for
+// complex bookkeeping while it is loading: a Molecules observable with a
+// stoichiometric constraint, or a disjoint pattern in an observable, a reactant
+// pattern or an include/exclude filter.
+//
+// The reader used to switch bookkeeping on at the point where it met one of
+// these, by which time the seed molecules already existed. System::setUsingComplex
+// then gave every one of them a complex of its own and left their cached
+// useComplex flag false, so the System believed it was tracking complexes that
+// were never merged. Complex-scoped local functions were evaluated on single
+// molecules as a result, and a model's kinetics changed when such a pattern was
+// added to it. Deciding here, before the System is constructed, removes the late
+// switch.
+//
+// Product patterns are deliberately left out. They are never matched against
+// molecules, so they cannot need bookkeeping; see readTemplatePattern().
+template <class Element>
+static bool ruleNeedsComplexBookkeeping(Element *rule)
+{
+    if (anyPatternIsDisjoint(rule->FirstChildElement("ListOfReactantPatterns"),
+            "ReactantPattern")) return true;
+    for (const char *tag : {"ListOfExcludeReactants", "ListOfIncludeReactants",
+                           "ListOfExcludeProducts", "ListOfIncludeProducts"}) {
+        for (auto *filter = rule->FirstChildElement(tag); filter;
+                filter = filter->NextSiblingElement(tag)) {
+            if (anyPatternIsDisjoint(filter, "Pattern")) return true;
+        }
+    }
+    return false;
+}
+
+bool NFinput::modelNeedsComplexBookkeeping(TiXmlElement *model)
+{
+    auto *observables = model->FirstChildElement("ListOfObservables");
+    if (observables) {
+        for (auto *observable = observables->FirstChildElement("Observable"); observable;
+                observable = observable->NextSiblingElement("Observable")) {
+            const char *type = observable->Attribute("type");
+            if (type && string(type) == "Species") return true;
+            auto *patterns = observable->FirstChildElement("ListOfPatterns");
+            if (!patterns) continue;
+            for (auto *pattern = patterns->FirstChildElement("Pattern"); pattern;
+                    pattern = pattern->NextSiblingElement("Pattern")) {
+                if (pattern->Attribute("relation")) return true;
+            }
+            if (anyPatternIsDisjoint(patterns, "Pattern")) return true;
+        }
+    }
+    auto *rules = model->FirstChildElement("ListOfReactionRules");
+    if (rules) {
+        for (auto *rule = rules->FirstChildElement("ReactionRule"); rule;
+                rule = rule->NextSiblingElement("ReactionRule")) {
+            if (ruleNeedsComplexBookkeeping(rule)) return true;
+        }
+    }
+    return false;
+}
+
+// Returns the id of the reactant molecule that owns a component of a rule, or
+// an empty string if no reactant molecule does.
+template <class Element>
+static string reactantMoleculeOfComponent(Element *pRxnRule, const string &compId)
+{
+	if (pRxnRule == NULL) return "";
+	Element *pListOfReactantPatterns = pRxnRule->FirstChildElement("ListOfReactantPatterns");
+	if (pListOfReactantPatterns == NULL) return "";
+	for (Element *pReactant = pListOfReactantPatterns->FirstChildElement("ReactantPattern");
+			pReactant != NULL; pReactant = pReactant->NextSiblingElement("ReactantPattern"))
+	{
+		Element *pListOfMols = pReactant->FirstChildElement("ListOfMolecules");
+		if (pListOfMols == NULL) continue;
+		for (Element *pMol = pListOfMols->FirstChildElement("Molecule");
+				pMol != NULL; pMol = pMol->NextSiblingElement("Molecule"))
+		{
+			const char *molId = pMol->Attribute("id");
+			Element *pListOfComps = pMol->FirstChildElement("ListOfComponents");
+			if (molId == NULL || pListOfComps == NULL) continue;
+			for (Element *pComp = pListOfComps->FirstChildElement("Component");
+					pComp != NULL; pComp = pComp->NextSiblingElement("Component"))
+			{
+				const char *id = pComp->Attribute("id");
+				if (id != NULL && compId == id) return molId;
+			}
+		}
+	}
+	return "";
+}
+
+
+// Follows a reactant molecule through a rule's Map and returns the position,
+// among the rule's product patterns, of the one it lands in. Returns -1 if the
+// rule deletes the molecule or its Map gives no target, as in XML written by
+// old versions of BioNetGen.
+template <class Element>
+static int productPatternOfReactantMolecule(Element *pRxnRule, const string &molId)
+{
+	if (pRxnRule == NULL || molId.empty()) return -1;
+
+	string target;
+	Element *pMap = pRxnRule->FirstChildElement("Map");
+	if (pMap == NULL) return -1;
+	for (Element *pItem = pMap->FirstChildElement("MapItem");
+			pItem != NULL; pItem = pItem->NextSiblingElement("MapItem"))
+	{
+		const char *source = pItem->Attribute("sourceID");
+		const char *targetId = pItem->Attribute("targetID");
+		if (source != NULL && targetId != NULL && molId == source) target = targetId;
+	}
+	if (target.empty()) return -1;
+
+	Element *pListOfProductPatterns = pRxnRule->FirstChildElement("ListOfProductPatterns");
+	if (pListOfProductPatterns == NULL) return -1;
+	int index = 0;
+	for (Element *pProduct = pListOfProductPatterns->FirstChildElement("ProductPattern");
+			pProduct != NULL; pProduct = pProduct->NextSiblingElement("ProductPattern"), ++index)
+	{
+		Element *pListOfMols = pProduct->FirstChildElement("ListOfMolecules");
+		if (pListOfMols == NULL) continue;
+		for (Element *pMol = pListOfMols->FirstChildElement("Molecule");
+				pMol != NULL; pMol = pMol->NextSiblingElement("Molecule"))
+		{
+			const char *id = pMol->Attribute("id");
+			if (id != NULL && target == id) return index;
+		}
+	}
+	return -1;
+}
+
+
+// Says how a rule writes the two molecules joined by a bond it deletes: in
+// different product patterns ("+" between them), in the same one ("." between
+// them, or one molecule bonded to itself), or neither. site1 and site2 are the
+// component ids from the rule's DeleteBond operation.
+//
+// This follows each molecule through the rule's Map to the product pattern it
+// lands in. It does not rely on the ensureConnected attribute, which older
+// versions of BioNetGen do not write. A molecule the rule deletes has no product
+// pattern, and such a bond gets no product-side condition.
+static const int PRODUCTS_UNKNOWN = 0;
+static const int PRODUCTS_SEPARATE = 1;
+static const int PRODUCTS_TOGETHER = 2;
+template <class Element>
+static int deleteBondProductRelation(Element *pRxnRule, const string &site1, const string &site2)
+{
+	int pattern1 = productPatternOfReactantMolecule(pRxnRule, reactantMoleculeOfComponent(pRxnRule, site1));
+	int pattern2 = productPatternOfReactantMolecule(pRxnRule, reactantMoleculeOfComponent(pRxnRule, site2));
+	if (pattern1 < 0 || pattern2 < 0) return PRODUCTS_UNKNOWN;
+	return (pattern1 != pattern2) ? PRODUCTS_SEPARATE : PRODUCTS_TOGETHER;
+}
+
+
+// A rule that deletes a molecule also deletes every bond that molecule holds, so
+// the molecules it was holding together are in the same position as the two
+// ends of a deleted bond: where the rule writes "+" between them they must end
+// up in different complexes, and where it writes "." they must still be in one.
+//
+// For the molecule a Delete operation removes, this finds each molecule it is
+// bonded to in the reactant pattern that the rule keeps, and records it with the
+// TransformationSet together with the product pattern it lands in. Deleted
+// molecules bonded to one another get the same cluster number, so that what a
+// chain of them leaves behind is judged together.
+template <class Element>
+static bool recordSurvivorsOfDeletedMolecule(Element *pRxnRule, const string &deletedMolId,
+		TransformationSet *ts, map <string,component> &comps)
+{
+	if (pRxnRule == NULL) return true;
+
+	// every molecule this rule deletes one at a time
+	vector <string> deletedMols;
+	Element *pListOfOperations = pRxnRule->FirstChildElement("ListOfOperations");
+	if (pListOfOperations == NULL) return true;
+	for (Element *pDelete = pListOfOperations->FirstChildElement("Delete");
+			pDelete != NULL; pDelete = pDelete->NextSiblingElement("Delete"))
+	{
+		const char *id = pDelete->Attribute("id");
+		const char *keyword = pDelete->Attribute("DeleteMolecules");
+		if (id != NULL && keyword != NULL && string(keyword) != "0") deletedMols.push_back(id);
+	}
+
+	// the reactant pattern that holds the molecule, and its bonds
+	Element *pListOfReactantPatterns = pRxnRule->FirstChildElement("ListOfReactantPatterns");
+	if (pListOfReactantPatterns == NULL) return true;
+	Element *pListOfBonds = NULL;
+	for (Element *pReactant = pListOfReactantPatterns->FirstChildElement("ReactantPattern");
+			pReactant != NULL && pListOfBonds == NULL; pReactant = pReactant->NextSiblingElement("ReactantPattern"))
+	{
+		Element *pListOfMols = pReactant->FirstChildElement("ListOfMolecules");
+		if (pListOfMols == NULL) continue;
+		for (Element *pMol = pListOfMols->FirstChildElement("Molecule");
+				pMol != NULL; pMol = pMol->NextSiblingElement("Molecule"))
+		{
+			const char *id = pMol->Attribute("id");
+			if (id != NULL && deletedMolId == id) { pListOfBonds = pListOfMols->NextSiblingElement("ListOfBonds"); break; }
+		}
+	}
+	if (pListOfBonds == NULL) return true;
+
+	// each bond as the pair of molecules it joins
+	vector <string> bondMol1, bondMol2;
+	for (Element *pBond = pListOfBonds->FirstChildElement("Bond");
+			pBond != NULL; pBond = pBond->NextSiblingElement("Bond"))
+	{
+		const char *site1 = pBond->Attribute("site1");
+		const char *site2 = pBond->Attribute("site2");
+		if (site1 == NULL || site2 == NULL) continue;
+		bondMol1.push_back(reactantMoleculeOfComponent(pRxnRule, site1));
+		bondMol2.push_back(reactantMoleculeOfComponent(pRxnRule, site2));
+	}
+
+	// the cluster: this molecule and every deleted molecule reachable from it
+	// through bonds between deleted molecules. It is numbered by the position
+	// of its first member in the rule's list of deleted molecules.
+	vector <string> cluster;
+	cluster.push_back(deletedMolId);
+	for (unsigned int next = 0; next < cluster.size(); ++next)
+	{
+		for (unsigned int b = 0; b < bondMol1.size(); ++b)
+		{
+			string other;
+			if (bondMol1[b] == cluster[next]) other = bondMol2[b];
+			else if (bondMol2[b] == cluster[next]) other = bondMol1[b];
+			else continue;
+			if (std::find(deletedMols.begin(), deletedMols.end(), other) == deletedMols.end()) continue;
+			if (std::find(cluster.begin(), cluster.end(), other) == cluster.end()) cluster.push_back(other);
+		}
+	}
+	int clusterNumber = (int)deletedMols.size();
+	for (unsigned int i = 0; i < deletedMols.size(); ++i)
+	{
+		if (std::find(cluster.begin(), cluster.end(), deletedMols[i]) != cluster.end()) { clusterNumber = (int)i; break; }
+	}
+
+	// each molecule this one holds that the rule keeps
+	for (unsigned int b = 0; b < bondMol1.size(); ++b)
+	{
+		string other;
+		if (bondMol1[b] == deletedMolId) other = bondMol2[b];
+		else if (bondMol2[b] == deletedMolId) other = bondMol1[b];
+		else continue;
+		if (other == deletedMolId) continue;
+		int productPattern = productPatternOfReactantMolecule(pRxnRule, other);
+		if (productPattern < 0) continue;
+
+		map <string,component>::iterator survivor = comps.find(other);
+		if (survivor == comps.end()) continue;
+		if (!ts->addSurvivorOfDeletedMolecule(survivor->second.t, clusterNumber, productPattern)) return false;
+	}
+	return true;
+}
+
+
+// Returns false if a rule writes two molecules in one product pattern that it
+// can never bring into one complex: they come from different reactant patterns,
+// or one of them is created by the rule, and no bond the rule adds joins them,
+// directly or through other molecules. "A(s~0) + B(a) -> A(s~1).B(a)" is such a
+// rule. BioNetGen generates no reactions for it.
+//
+// Returns true when the Map gives no targets, as in XML written by old versions
+// of BioNetGen, because there is then no telling where a molecule comes from.
+template <class Element>
+static bool productPatternsCanForm(Element *pRxnRule)
+{
+	if (pRxnRule == NULL) return true;
+	Element *pListOfReactantPatterns = pRxnRule->FirstChildElement("ListOfReactantPatterns");
+	Element *pListOfProductPatterns = pRxnRule->FirstChildElement("ListOfProductPatterns");
+	Element *pMap = pRxnRule->FirstChildElement("Map");
+	if (pListOfProductPatterns == NULL || pMap == NULL) return true;
+
+	// Every molecule starts in a group: its reactant pattern, or a group of its
+	// own if the rule creates it. A component belongs to its molecule's group.
+	map <string,string> groupOfReactantMolecule;
+	map <string,string> groupOfComponent;
+	if (pListOfReactantPatterns != NULL)
+	{
+		for (Element *pReactant = pListOfReactantPatterns->FirstChildElement("ReactantPattern");
+				pReactant != NULL; pReactant = pReactant->NextSiblingElement("ReactantPattern"))
+		{
+			const char *patternId = pReactant->Attribute("id");
+			Element *pListOfMols = pReactant->FirstChildElement("ListOfMolecules");
+			if (patternId == NULL || pListOfMols == NULL) continue;
+			for (Element *pMol = pListOfMols->FirstChildElement("Molecule");
+					pMol != NULL; pMol = pMol->NextSiblingElement("Molecule"))
+			{
+				const char *molId = pMol->Attribute("id");
+				if (molId == NULL) continue;
+				groupOfReactantMolecule[molId] = patternId;
+				Element *pListOfComps = pMol->FirstChildElement("ListOfComponents");
+				if (pListOfComps == NULL) continue;
+				for (Element *pComp = pListOfComps->FirstChildElement("Component");
+						pComp != NULL; pComp = pComp->NextSiblingElement("Component"))
+				{
+					const char *compId = pComp->Attribute("id");
+					if (compId != NULL) groupOfComponent[compId] = patternId;
+				}
+			}
+		}
+	}
+
+	map <string,string> sourceOfProductMolecule;
+	bool mapHasTargets = false;
+	for (Element *pItem = pMap->FirstChildElement("MapItem");
+			pItem != NULL; pItem = pItem->NextSiblingElement("MapItem"))
+	{
+		const char *source = pItem->Attribute("sourceID");
+		const char *target = pItem->Attribute("targetID");
+		if (source == NULL || target == NULL) continue;
+		mapHasTargets = true;
+		sourceOfProductMolecule[target] = source;
+	}
+	if (!mapHasTargets && !groupOfReactantMolecule.empty()) return true;
+
+	// the group each product molecule starts in, pattern by pattern
+	vector < vector <string> > groupsInPattern;
+	for (Element *pProduct = pListOfProductPatterns->FirstChildElement("ProductPattern");
+			pProduct != NULL; pProduct = pProduct->NextSiblingElement("ProductPattern"))
+	{
+		vector <string> groups;
+		Element *pListOfMols = pProduct->FirstChildElement("ListOfMolecules");
+		if (pListOfMols != NULL)
+		{
+			for (Element *pMol = pListOfMols->FirstChildElement("Molecule");
+					pMol != NULL; pMol = pMol->NextSiblingElement("Molecule"))
+			{
+				const char *molId = pMol->Attribute("id");
+				if (molId == NULL) continue;
+				string group = molId;   // created by the rule: a group of its own
+				map <string,string>::iterator source = sourceOfProductMolecule.find(molId);
+				if (source != sourceOfProductMolecule.end())
+				{
+					map <string,string>::iterator g = groupOfReactantMolecule.find(source->second);
+					if (g == groupOfReactantMolecule.end()) continue;   // nothing to go on
+					group = g->second;
+				}
+				groups.push_back(group);
+				Element *pListOfComps = pMol->FirstChildElement("ListOfComponents");
+				if (pListOfComps == NULL) continue;
+				for (Element *pComp = pListOfComps->FirstChildElement("Component");
+						pComp != NULL; pComp = pComp->NextSiblingElement("Component"))
+				{
+					const char *compId = pComp->Attribute("id");
+					if (compId != NULL) groupOfComponent[compId] = group;
+				}
+			}
+		}
+		groupsInPattern.push_back(groups);
+	}
+
+	// every bond the rule adds merges the groups of the two molecules it joins
+	map <string,string> mergedInto;
+	Element *pListOfOperations = pRxnRule->FirstChildElement("ListOfOperations");
+	if (pListOfOperations != NULL)
+	{
+		for (Element *pAddBond = pListOfOperations->FirstChildElement("AddBond");
+				pAddBond != NULL; pAddBond = pAddBond->NextSiblingElement("AddBond"))
+		{
+			const char *site1 = pAddBond->Attribute("site1");
+			const char *site2 = pAddBond->Attribute("site2");
+			if (site1 == NULL || site2 == NULL) continue;
+			map <string,string>::iterator g1 = groupOfComponent.find(site1);
+			map <string,string>::iterator g2 = groupOfComponent.find(site2);
+			if (g1 == groupOfComponent.end() || g2 == groupOfComponent.end()) continue;
+			string root1 = g1->second, root2 = g2->second;
+			while (mergedInto.find(root1) != mergedInto.end()) root1 = mergedInto[root1];
+			while (mergedInto.find(root2) != mergedInto.end()) root2 = mergedInto[root2];
+			if (root1 != root2) mergedInto[root2] = root1;
+		}
+	}
+
+	// the molecules of one product pattern must all be in one merged group
+	for (unsigned int p = 0; p < groupsInPattern.size(); ++p)
+	{
+		string first;
+		for (unsigned int m = 0; m < groupsInPattern[p].size(); ++m)
+		{
+			string root = groupsInPattern[p][m];
+			while (mergedInto.find(root) != mergedInto.end()) root = mergedInto[root];
+			if (m == 0) first = root;
+			else if (root != first) return false;
+		}
+	}
+	return true;
+}
+
+
 System * NFinput::initializeFromXML(
 		string filename,
 		bool blockSameComplexBinding,
@@ -448,7 +977,8 @@ System * NFinput::initializeFromXML(
 		int &suggestedTraversalLimit,
 		bool evaluateComplexScopedLocalFunctions,
 		bool connectivityFlag,
-		bool buildSpeciesLog)
+		bool buildSpeciesLog,
+		bool forceComplexBookkeeping)
 {
 	if(!verbose) cout<<"reading xml file ("+filename+")  \n\t[";
 	if(verbose) cout<<"\tTrying to read xml model specification file: \t\n'"<<filename<<"'"<<endl;
@@ -485,6 +1015,17 @@ System * NFinput::initializeFromXML(
 		doc.SetValue(filename.c_str());
 		loadOkay = doc.LoadFile(filename.c_str());
 	}
+	// Arrhenius reverse rules use preceding rule metadata. Keep those
+	// rules together in the DOM while other models retain streaming.
+	if (streamed && loadOkay) {
+		auto *root = doc.RootElement();
+		auto *model = root ? root->FirstChildElement("model") : NULL;
+		if (model && model->FirstChildElement("ListOfEnergyPatterns")) {
+			streamed = false;
+			doc.Clear();
+			loadOkay = doc.LoadFile(filename.c_str());
+		}
+	}
 	const string *streamFile = streamed ? &filename : 0;
 	if (loadOkay)
 	{
@@ -495,23 +1036,26 @@ System * NFinput::initializeFromXML(
 
 		//Read in the root node, which should give us the system's name
 		TiXmlHandle hDoc(&doc);
-		TiXmlElement *pModel = hDoc.FirstChildElement().Node()->FirstChildElement("model");
+		TiXmlElement *pRoot = hDoc.FirstChildElement().Element();
+		TiXmlElement *pModel = pRoot ? pRoot->FirstChildElement("model") : NULL;
 		if(!pModel) { cout<<"\tNo 'model' tag found.  Quitting."; return NULL; }
 
-		//Make sure the basics are there
-		string modelName;
-		if(!pModel->Attribute("id"))  {
-			if(!blockSameComplexBinding) s=new System("nameless",false,globalMoleculeLimit);
-			else s=new System("nameless",true,globalMoleculeLimit);
-			if(verbose) cout<<"\tNo System name given, so I'm calling your system: "<<s->getName()<<endl;
+		// Decide on bookkeeping before constructing molecules. Molecularity
+		// and model features can require it independently.
+		bool useComplex = forceComplexBookkeeping || blockSameComplexBinding ||
+			modelNeedsComplexBookkeeping(pModel);
+		if (!useComplex && streamed) {
+			LiteElementCursor rules(streamFile, &ruleSpans, "ReactionRule");
+			for (auto *rule = rules.first(); rule; rule = rules.next(rule)) {
+				if (ruleNeedsComplexBookkeeping(rule)) {
+					useComplex = true;
+					break;
+				}
+			}
 		}
-		else  {
-			modelName=pModel->Attribute("id");
-			//We have to add complex bookkeeping if we are blocking same complex binding
-			if(!blockSameComplexBinding) s=new System(modelName,false,globalMoleculeLimit);
-			else s=new System(modelName,true,globalMoleculeLimit);
-			if(verbose) cout<<"\tCreating system: "<<s->getName()<<endl;
-		}
+		const char *modelId = pModel->Attribute("id");
+		s = new System(modelId ? modelId : "nameless", useComplex, globalMoleculeLimit);
+		if (verbose) cout << "\tCreating system: " << s->getName() << endl;
 
 		if (pModel->Attribute("NumberPerQuantityUnit")) {
 			double npqu = NFutil::convertToDouble(pModel->Attribute("NumberPerQuantityUnit"));
@@ -2539,6 +3083,16 @@ static bool initReactionRulesBody(
 				ts->setComplexBookkeeping( blockSameComplexBinding );
 				ts->setNumProductPatterns(numProductPatterns);
 
+				// A rule that says its products are one complex but never joins them.
+				if ( !productPatternsCanForm(pRxnRule) )
+				{
+					ts->setProductsCannotForm(true);
+					cout<<"\nWarning!! ReactionRule "<<rxnName<<" writes molecules in one product pattern that it"<<endl;
+					cout<<"never joins by a bond, so they cannot end up in one complex as the rule says."<<endl;
+					cout<<"BioNetGen generates no reactions for such a rule.  NFsim will not fire it either,"<<endl;
+					cout<<"unless the molecularity checks are turned off with -no-bscb.\n"<<endl;
+				}
+
 				// Are we using a symmetry factor?
 				if (useSymmetryFactor)
 				{
@@ -2640,7 +3194,6 @@ static bool initReactionRulesBody(
 					component *c;
 					int finalStateInt = 0;
 					if(!lookup(c, site, comps, symMap)) return false;
-
 					// Check if this is modifying a population (illegal!)
 					if ( c->t->getMoleculeType()->isPopulationType() )
 					{
@@ -2712,6 +3265,9 @@ static bool initReactionRulesBody(
 				//would give you an error!)
 				// Capture binding site names for Arrhenius rule expansion (eBNGL)
 				string addBondSite1, addBondSite2;
+				string deleteBondSite1, deleteBondSite2;
+				MoleculeType *deleteBondType1 = NULL, *deleteBondType2 = NULL;
+				int deleteBondCount = 0, addBondCount = 0;
 				Element *pDeleteBond;
 				for ( pDeleteBond = pListOfOperations->FirstChildElement("DeleteBond");
 						pDeleteBond != 0;  pDeleteBond = pDeleteBond->NextSiblingElement("DeleteBond") )
@@ -2739,16 +3295,37 @@ static bool initReactionRulesBody(
 					component *c2;
 					if(!lookup(c1, site1, comps, symMap)) return false;
 					if(!lookup(c2, site2, comps, symMap)) return false;
+					++deleteBondCount;
+					deleteBondSite1 = c1->symPermutationName;
+					deleteBondSite2 = c2->symPermutationName;
+					deleteBondType1 = c1->t->getMoleculeType();
+					deleteBondType2 = c2->t->getMoleculeType();
 
 					//Even though we had to make sure both ends exist, and we really only need one transformation
 					//we give both templates so we can check for symmetric unbinding
 					// Arvind Rasi Subramaniam: Modified the method below to create
 					// an extra empty transformation for the binding partner
 					// for inferring connectivity later on.
-					if(!ts->addUnbindingTransform(c1->t, c1->symPermutationName, c2->t, c2->symPermutationName)) return false;
+					// Does the rule write "+" or "." between the two molecules this
+					// bond joins? With "+" it may fire only if they really come apart,
+					// with "." only if they do not.
+					int productRelation = deleteBondProductRelation(pRxnRule, site1, site2);
+					if (productRelation == PRODUCTS_UNKNOWN && ts->getNreactants() == 1 && numProductPatterns > 1) {
+						// The rule's Map does not say where these molecules go. XML written
+						// by old versions of BioNetGen gives its MapItems no targetID at all.
+						// Fall back on the rule NFsim used before it read the Map: a rule with
+						// one reactant pattern and several product patterns separates the two
+						// molecules of every bond it deletes.
+						productRelation = PRODUCTS_SEPARATE;
+					}
+					bool separatesProducts = (productRelation == PRODUCTS_SEPARATE);
+					bool keepsProductsConnected = (productRelation == PRODUCTS_TOGETHER);
+					if(!ts->addUnbindingTransform(c1->t, c1->symPermutationName, c2->t, c2->symPermutationName, separatesProducts, keepsProductsConnected)) return false;
 					if(verbose) {
 						cout<<"\t\t\t***Identified unbinding of site: "+c1->t->getMoleculeTypeName()+"("+c1->symPermutationName + ")";
 						cout<<" to site " + c2->t->getMoleculeTypeName()+"("+c2->symPermutationName<<")"<<endl;
+						if(separatesProducts) cout<<"\t\t\t   (the two molecules must end up in different complexes)"<<endl;
+						if(keepsProductsConnected) cout<<"\t\t\t   (the two molecules must stay in one complex)"<<endl;
 					}
 
 				}
@@ -2758,8 +3335,7 @@ static bool initReactionRulesBody(
 				for ( pAddBond = pListOfOperations->FirstChildElement("AddBond");
 						pAddBond != 0;  pAddBond = pAddBond->NextSiblingElement("AddBond") )
 				{
-					//cout<<"adding binding transform!"<<endl;
-					//Make sure all the information about the binding operation is here
+					++addBondCount;
 					string site1, site2;
 					if( !pAddBond->Attribute("site1") || !pAddBond->Attribute("site2") )
 					{
@@ -2980,6 +3556,8 @@ static bool initReactionRulesBody(
 									else
 									{
 										if(!ts->addDeleteMolecule(c.t,TransformationFactory::DELETE_MOLECULES)) return false;
+										// What the rule says about the molecules this one was holding.
+										if(!recordSurvivorsOfDeletedMolecule(pRxnRule, id, ts, comps)) return false;
 									}
 								}
 							}
@@ -3163,18 +3741,6 @@ static bool initReactionRulesBody(
 						// Energy-based rule: expand into multiple BasicRxnClass instances
 						// using the Sekar rule expansion algorithm.
 						//
-						// BNG2 writeXML() emits two ReactionRule entries per reversible rule:
-						//   forward (_R1):         has AddBond op  -> addBondSite1/2 populated
-						//   reverse (_reverse__R1): has DeleteBond  -> addBondSite1/2 empty
-						// The forward expansion creates BOTH directions, so skip the reverse.
-						if (addBondSite1.empty() && arrheniusStateChangeCount == 0) {
-							if(verbose)
-								cout << "\t\t\tSkipping reverse Arrhenius rule '" << rxnName
-								     << "' -- reverse already created by forward expansion." << endl;
-							delete ts;
-							continue;
-						}
-
 						ts->finalize();
 
 						// Read the activation energy (Ea0) from the rate constant
@@ -3220,66 +3786,60 @@ static bool initReactionRulesBody(
 							}
 						}
 
-						if (addBondSite1.empty()) {
-							if (arrheniusStateChangeCount != 1 ||
-									arrheniusStateMoleculeType == NULL ||
-									arrheniusStateFrom.empty() || arrheniusStateTo.empty() ||
-									arrheniusStateTo == "PLUS" || arrheniusStateTo == "MINUS") {
-								cerr << "Arrhenius state-change rule " << rxnName
-								     << " needs one explicit source and destination state." << endl;
-								delete ts;
-								return false;
-							}
-
-							const std::size_t firstNewReaction = s->getAllReactions().size();
-							if (!NFinput::createExpandedStateChangeReactions(
-									rxnName, rule_phi, Ea0, arrheniusStateMoleculeType,
-									arrheniusStateComponent, arrheniusStateFrom, arrheniusStateTo,
-									s, blockSameComplexBinding, verbose, reaction_count,
-									includeArrheniusReverse, "", rule_drivingWork)) {
-								delete ts;
-								return false;
-							}
-							const auto reactions = s->getAllReactions();
-							for (std::size_t reactionIndex = firstNewReaction;
-									reactionIndex < reactions.size(); ++reactionIndex) {
-								auto *reaction = reactions[reactionIndex];
-								reaction->setTotalRateFlag(totalRateFlag);
-								for (std::size_t reactantIndex = 0;
-										reactantIndex < matchOnceList.size(); ++reactantIndex) {
-									reaction->setMatchOnce(
-										static_cast<unsigned int>(reactantIndex),
-										matchOnceList[reactantIndex]);
-								}
-							}
+						Element *operation = pListOfOperations->FirstChildElement();
+						if (!operation || operation->NextSiblingElement()) {
+							cerr << "Arrhenius rule " << rxnName
+							     << " must have one reaction-center operation." << endl;
 							delete ts;
-							continue;
-						}
-
-
-						// Validate: must be a 2-reactant binding rule
-						if(ts->getNreactants() != 2) {
-							cerr << "Arrhenius binding rules must have exactly 2 reactants. "
-							     << rxnName << " has " << ts->getNreactants() << endl;
 							return false;
 						}
-
-						MoleculeType *mt1 = ts->getTemplateMolecule(0)->getMoleculeType();
-						MoleculeType *mt2 = ts->getTemplateMolecule(1)->getMoleculeType();
-
-						if(!NFinput::createExpandedBindingReactions(
-								rxnName, rule_phi, Ea0, mt1, addBondSite1, mt2, addBondSite2,
-								s, parameter, allowedStates, blockSameComplexBinding, verbose, reaction_count,
-								includeArrheniusReverse, "", "", rule_drivingWork))
-						{
-							return false;
+						const bool bng3EnergyRule = pRxnRule->Attribute("energyIncludeReverse");
+						const bool includeReverse = bng3EnergyRule && includeArrheniusReverse;
+						const std::size_t firstNewReaction = s->getAllReactionsRef().size();
+						bool expanded = false;
+						if (addBondCount == 1 && ts->getNreactants() == 2) {
+							expanded = NFinput::createExpandedBindingReactions(
+								rxnName, rule_phi, Ea0, ts->getTemplateMolecule(0)->getMoleculeType(),
+								addBondSite1, ts->getTemplateMolecule(1)->getMoleculeType(), addBondSite2,
+								s, parameter, allowedStates, blockSameComplexBinding, verbose,
+								reaction_count, includeReverse, "", "", rule_drivingWork);
+						} else if (deleteBondCount == 1) {
+							bool paired = false;
+							if constexpr (std::is_same_v<Element, TiXmlElement>)
+								paired = isPairedArrheniusUnbindingDirection(pRxnRule);
+							if (!paired) rule_phi = 1.0 - rule_phi;
+							expanded = NFinput::createExpandedBindingReactions(
+								rxnName, rule_phi, Ea0, deleteBondType1, deleteBondSite1,
+								deleteBondType2, deleteBondSite2, s, parameter, allowedStates,
+								blockSameComplexBinding, verbose, reaction_count,
+								true, "", "", rule_drivingWork, false);
+						} else if (arrheniusStateChangeCount == 1 && arrheniusStateMoleculeType &&
+								!arrheniusStateFrom.empty() && !arrheniusStateTo.empty() &&
+								arrheniusStateTo != "PLUS" && arrheniusStateTo != "MINUS") {
+							if constexpr (std::is_same_v<Element, TiXmlElement>) {
+								if (!bng3EnergyRule && isReverseArrheniusStateDirection(pRxnRule))
+									rule_phi = 1.0 - rule_phi;
+							}
+							expanded = NFinput::createExpandedStateChangeReactions(
+								rxnName, rule_phi, Ea0, arrheniusStateMoleculeType,
+								arrheniusStateComponent, arrheniusStateFrom, arrheniusStateTo,
+								s, blockSameComplexBinding, verbose, reaction_count,
+								includeReverse, "", rule_drivingWork);
 						}
-
-						// Skip normal reaction creation -- expansion already registered all rules.
-						// Deleting ts does NOT free the TemplateMolecules from the 'comps' map;
-						// TransformationSet stores non-owning pointers to them.
 						delete ts;
-						continue;  // proceed to next reaction rule
+						if (!expanded) {
+							cerr << "Could not expand Arrhenius rule " << rxnName << "." << endl;
+							return false;
+						}
+						const auto &reactions = s->getAllReactionsRef();
+						for (std::size_t index = firstNewReaction; index < reactions.size(); ++index) {
+							auto *reaction = reactions[index];
+							reaction->setTotalRateFlag(totalRateFlag);
+							for (unsigned int r = 0; r < reaction->getNumOfReactants() &&
+									r < matchOnceList.size(); ++r)
+								reaction->setMatchOnce(r, matchOnceList[r]);
+						}
+						continue;
 					}
 					else if(rateLawType=="Ele")
 					{
@@ -4001,6 +4561,159 @@ static bool initReactionRulesBody(
 
 
 }
+
+namespace {
+struct ArrheniusStateDirection {
+	string moleculeType;
+	string component;
+	string fromState;
+	string toState;
+	string phi;
+	string activationEnergy;
+};
+
+static bool getArrheniusStateDirection(TiXmlElement *rule,
+		ArrheniusStateDirection &direction)
+{
+	TiXmlElement *operations = rule ? rule->FirstChildElement("ListOfOperations") : NULL;
+	TiXmlElement *stateChange = operations ? operations->FirstChildElement("StateChange") : NULL;
+	if (!stateChange || stateChange->NextSiblingElement() ||
+		!stateChange->Attribute("site") || !stateChange->Attribute("finalState")) return false;
+
+	const string siteId = stateChange->Attribute("site");
+	direction.toState = stateChange->Attribute("finalState");
+	TiXmlElement *reactants = rule->FirstChildElement("ListOfReactantPatterns");
+	if (!reactants) return false;
+	for (TiXmlElement *pattern = reactants->FirstChildElement("ReactantPattern"); pattern;
+		 pattern = pattern->NextSiblingElement("ReactantPattern")) {
+		TiXmlElement *molecules = pattern->FirstChildElement("ListOfMolecules");
+		for (TiXmlElement *molecule = molecules ? molecules->FirstChildElement("Molecule") : NULL;
+			 molecule; molecule = molecule->NextSiblingElement("Molecule")) {
+			TiXmlElement *components = molecule->FirstChildElement("ListOfComponents");
+			for (TiXmlElement *component = components ? components->FirstChildElement("Component") : NULL;
+				 component; component = component->NextSiblingElement("Component")) {
+				if (!component->Attribute("id") || siteId != component->Attribute("id")) continue;
+				if (!molecule->Attribute("name") || !component->Attribute("name") ||
+					!component->Attribute("state")) return false;
+				direction.moleculeType = molecule->Attribute("name");
+				direction.component = component->Attribute("name");
+				direction.fromState = component->Attribute("state");
+				goto found_source;
+			}
+		}
+	}
+	return false;
+
+found_source:
+	TiXmlElement *rateLaw = rule->FirstChildElement("RateLaw");
+	if (!rateLaw || !rateLaw->Attribute("type") ||
+		string(rateLaw->Attribute("type")) != "Arrhenius") return false;
+	TiXmlElement *constants = rateLaw->FirstChildElement("ListOfRateConstants");
+	TiXmlElement *phi = constants ? constants->FirstChildElement("RateConstant") : NULL;
+	TiXmlElement *energy = phi ? phi->NextSiblingElement("RateConstant") : NULL;
+	if (!phi || !energy || !phi->Attribute("value") || !energy->Attribute("value")) return false;
+	direction.phi = phi->Attribute("value");
+	direction.activationEnergy = energy->Attribute("value");
+	return true;
+}
+
+static bool isReverseArrheniusStateDirection(TiXmlElement *rule)
+{
+	ArrheniusStateDirection current;
+	if (!getArrheniusStateDirection(rule, current)) return false;
+	TiXmlElement *list = rule->Parent() ? rule->Parent()->ToElement() : NULL;
+	if (!list) return false;
+	for (TiXmlElement *candidate = list->FirstChildElement("ReactionRule");
+		 candidate && candidate != rule; candidate = candidate->NextSiblingElement("ReactionRule")) {
+		ArrheniusStateDirection previous;
+		const string reverseName = rule->Attribute("name") ? rule->Attribute("name") : "";
+		const string forwardName = candidate->Attribute("name") ? candidate->Attribute("name") : "";
+		if (reverseName == "_reverse_" + forwardName &&
+			getArrheniusStateDirection(candidate, previous) &&
+			previous.moleculeType == current.moleculeType &&
+			previous.component == current.component &&
+			previous.fromState == current.toState &&
+			previous.toState == current.fromState &&
+			previous.phi == current.phi &&
+			previous.activationEnergy == current.activationEnergy)
+			return true;
+	}
+	return false;
+}
+
+struct ArrheniusBondDirection {
+	string molecule1, component1, molecule2, component2;
+	string phi, activationEnergy;
+};
+
+static bool getArrheniusBondDirection(TiXmlElement *rule, const string &operation,
+		ArrheniusBondDirection &direction)
+{
+	TiXmlElement *operations = rule ? rule->FirstChildElement("ListOfOperations") : NULL;
+	TiXmlElement *bond = operations ? operations->FirstChildElement(operation.c_str()) : NULL;
+	if (!bond || bond->NextSiblingElement() || !bond->Attribute("site1") || !bond->Attribute("site2")) return false;
+	TiXmlElement *rateLaw = rule->FirstChildElement("RateLaw");
+	if (!rateLaw || !rateLaw->Attribute("type") || string(rateLaw->Attribute("type")) != "Arrhenius") return false;
+	TiXmlElement *constants = rateLaw->FirstChildElement("ListOfRateConstants");
+	TiXmlElement *phi = constants ? constants->FirstChildElement("RateConstant") : NULL;
+	TiXmlElement *energy = phi ? phi->NextSiblingElement("RateConstant") : NULL;
+	if (!phi || !energy || !phi->Attribute("value") || !energy->Attribute("value")) return false;
+	direction.phi = phi->Attribute("value");
+	direction.activationEnergy = energy->Attribute("value");
+	string *moleculeNames[] = {&direction.molecule1, &direction.molecule2};
+	string *componentNames[] = {&direction.component1, &direction.component2};
+	const char *sites[] = {bond->Attribute("site1"), bond->Attribute("site2")};
+	for (int endpoint = 0; endpoint < 2; ++endpoint) {
+		bool found = false;
+		TiXmlElement *reactants = rule->FirstChildElement("ListOfReactantPatterns");
+		for (TiXmlElement *pattern = reactants ? reactants->FirstChildElement("ReactantPattern") : NULL;
+				pattern && !found; pattern = pattern->NextSiblingElement("ReactantPattern")) {
+			TiXmlElement *molecules = pattern->FirstChildElement("ListOfMolecules");
+			for (TiXmlElement *molecule = molecules ? molecules->FirstChildElement("Molecule") : NULL;
+					molecule && !found; molecule = molecule->NextSiblingElement("Molecule")) {
+				TiXmlElement *components = molecule->FirstChildElement("ListOfComponents");
+				for (TiXmlElement *component = components ? components->FirstChildElement("Component") : NULL;
+						component; component = component->NextSiblingElement("Component")) {
+					if (component->Attribute("id") && string(sites[endpoint]) == component->Attribute("id") &&
+						molecule->Attribute("name") && component->Attribute("name")) {
+						*moleculeNames[endpoint] = molecule->Attribute("name");
+						*componentNames[endpoint] = component->Attribute("name");
+						found = true;
+						break;
+					}
+				}
+			}
+		}
+		if (!found) return false;
+	}
+	return true;
+}
+
+static bool isPairedArrheniusUnbindingDirection(TiXmlElement *rule)
+{
+	ArrheniusBondDirection current;
+	if (!getArrheniusBondDirection(rule, "DeleteBond", current)) return false;
+	TiXmlElement *list = rule->Parent() ? rule->Parent()->ToElement() : NULL;
+	if (!list) return false;
+	for (TiXmlElement *candidate = list->FirstChildElement("ReactionRule");
+			candidate && candidate != rule; candidate = candidate->NextSiblingElement("ReactionRule")) {
+		ArrheniusBondDirection previous;
+		const string reverseName = rule->Attribute("name") ? rule->Attribute("name") : "";
+		const string forwardName = candidate->Attribute("name") ? candidate->Attribute("name") : "";
+		if (reverseName != "_reverse_" + forwardName ||
+			!getArrheniusBondDirection(candidate, "AddBond", previous) ||
+			previous.phi != current.phi || previous.activationEnergy != current.activationEnergy) continue;
+		bool sameOrder = previous.molecule1 == current.molecule1 &&
+			previous.component1 == current.component1 && previous.molecule2 == current.molecule2 &&
+			previous.component2 == current.component2;
+		bool reverseOrder = previous.molecule1 == current.molecule2 &&
+			previous.component1 == current.component2 && previous.molecule2 == current.molecule1 &&
+			previous.component2 == current.component1;
+		if (sameOrder || reverseOrder) return true;
+	}
+	return false;
+}
+} // namespace
 
 bool NFinput::initReactionRules(
 		TiXmlElement * pListOfReactionRules,
@@ -4858,7 +5571,6 @@ bool NFinput::readProductPattern(
 		bool verbose,
 		Compartment *defaultCompartment)
 {
-	//cout<<"reading the product pattern!"<<endl;
 	try {
 
 		// This legacy overload records only molecule types, so compartment
@@ -4971,7 +5683,9 @@ bool NFinput::readProductPattern(
 						string compStateValue = pComp->Attribute("state");
 
 						//Make sure the given state is allowed
-						if(allowedStates.find(molName+"_"+compName+"_"+compStateValue)==allowedStates.end()) {
+						if(isRelativeProductStateAnnotation(pComp, moltype)) {
+							// The StateChange operation applies PLUS/MINUS.
+						} else if(allowedStates.find(molName+"_"+compName+"_"+compStateValue)==allowedStates.end()) {
 							cerr<<"You are trying to give a pattern of type '"<<molName<<"', but you gave an "<<endl;
 							cerr<<"invalid state! The state you gave was: '"<<compStateValue<<"'.  Quitting now."<<endl;
 							return false;
@@ -5124,7 +5838,6 @@ bool readProductMoleculeT(
 		bool verbose,
 		Compartment *defaultCompartment)
 {
-	//cout<<"reading the product molecule!"<<endl;
 	try
 	{
 		// this will hold the template molecule
@@ -5301,6 +6014,11 @@ bool readProductMoleculeT(
 					compStateValue = pComp->Attribute("state");
 
 					//Make sure the given state is allowed
+					if( isRelativeProductStateAnnotation(pComp, moltype) )
+					{
+						// The StateChange operation applies PLUS/MINUS.
+						continue;
+					}
 					if( allowedStates.find(molName+"_"+compName+"_"+compStateValue)==allowedStates.end() )
 					{
 						cerr << "Attempt to assign invalid component state value '" << compStateValue
@@ -5502,7 +6220,9 @@ int readTemplatePatternT(
 						if(pComp->Attribute("state")) {
 							string compStateValue = pComp->Attribute("state");
 							if(compStateValue!="*" && compStateValue!="?") {
-								if(allowedStates.find(molName+"_"+compName+"_"+compStateValue)==allowedStates.end()) {
+								if(isRelativeProductStateAnnotation(pComp, moltype)) {
+									// The StateChange operation applies PLUS/MINUS.
+								} else if(allowedStates.find(molName+"_"+compName+"_"+compStateValue)==allowedStates.end()) {
 									cerr<<"You are trying to give a pattern of type '"<<molName<<"', but you gave an "<<endl;
 									cerr<<"invalid state! The state you gave was: '"<<compStateValue<<"'.  Quitting now."<<endl;
 									return 0;
@@ -5562,7 +6282,9 @@ int readTemplatePatternT(
 
 							//Make sure the given state is allowed (we allow for wildcards...)
 							if(compStateValue!="*" && compStateValue!="?") {
-								if(allowedStates.find(molName+"_"+compName+"_"+compStateValue)==allowedStates.end()) {
+								if(isRelativeProductStateAnnotation(pComp, moltype)) {
+									// The StateChange operation applies PLUS/MINUS.
+								} else if(allowedStates.find(molName+"_"+compName+"_"+compStateValue)==allowedStates.end()) {
 									cerr<<"You are trying to give a pattern of type '"<<molName<<"', but you gave an "<<endl;
 									cerr<<"invalid state! The state you gave was: '"<<compStateValue<<"'.  Quitting now."<<endl;
 									return 0;
@@ -5801,15 +6523,13 @@ int readTemplatePatternT(
 //		}
 
 		if(setCount>1) {
-			// Auto-enable complex bookkeeping for disjoint patterns
-			if(!s->isUsingComplex()) {
-				cout<<"Auto-enabling complex bookkeeping for disjoint pattern support."<<endl;
-				s->setUsingComplex(true);
-			}
-
-			cout<<"\nFound disjoint sets in a pattern. (As in A().B(), with no explicit connection through components)\n";
-			cout<<"Warning!  These type of patterns can be dangerous!!  They also make NFsim run slower!\n";
-			cout<<"If you can express this pattern without this syntax, it is highly advised!\n"<<endl;
+			// This is a product pattern, and BioNetGen writes one like this for
+			// any rule that deletes a bond and joins its products with ".", as
+			// in A(x!1).B(x!1) -> A(x).B(x): the products stay in one complex
+			// through bonds the rule does not mention.  A product pattern is
+			// never matched against molecules, so it needs no complex bookkeeping
+			// and earns no warning.  Switching bookkeeping on here would also
+			// come too late: see modelNeedsComplexBookkeepingForPatterns().
 
 			//Add the connected-to connections
 			int tm1=0; int tm2=0;

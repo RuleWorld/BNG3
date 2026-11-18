@@ -605,7 +605,8 @@ std::vector<double> parseSampleTimes(const std::string& text, ast::Model& model)
 struct LegacyNfParamOptions {
     bool verbose = false;
     bool complex = false;
-    bool blockSameComplexBinding = false;
+    bool explicitlyStrictMolecularity = false;
+    bool disableMolecularity = false;
     bool noComplexScopedLocalFunctions = false;
     bool noOnTheFlyObservables = false;
     bool binaryOutput = false;
@@ -713,9 +714,12 @@ LegacyNfParamOptions parseLegacyNfParams(const std::string& raw, ast::Model& mod
             options.verbose = true;
         } else if (flag == "-cb" || flag == "--complex" || flag == "-complex") {
             options.complex = true;
+            if (flag == "-cb") options.explicitlyStrictMolecularity = true;
         } else if (flag == "-bscb" || flag == "--bscb") {
-            options.blockSameComplexBinding = true;
+            options.explicitlyStrictMolecularity = true;
             options.complex = true;
+        } else if (flag == "-no-bscb" || flag == "--no-bscb") {
+            options.disableMolecularity = true;
         } else if (flag == "-nocslf" || flag == "--nocslf") {
             options.noComplexScopedLocalFunctions = true;
         } else if (flag == "-notf" || flag == "--notf") {
@@ -2792,7 +2796,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         // path, then apply the action's explicit/native default below.  The
         // direct builder uses this value as an output accumulator.
         int suggestedTraversalLimit = -1;
-        const bool blockSameComplexBinding = legacyParam.blockSameComplexBinding;
+        if (legacyParam.disableMolecularity && legacyParam.explicitlyStrictMolecularity)
+            throw std::runtime_error("NFsim -no-bscb cannot be combined with -cb or -bscb");
+        const bool blockSameComplexBinding = !legacyParam.disableMolecularity;
         const bool complexConstruction = useComplex || blockSameComplexBinding;
         const std::string effectiveSeedText = !seedText.empty()
             ? seedText
@@ -2878,10 +2884,11 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             }
             nfSystem = NFinput::initializeFromModel(
                 &model,
-                complexConstruction,
+                blockSameComplexBinding,
                 globalMoleculeLimit,
                 nfVerbose,
-                suggestedTraversalLimit);
+                suggestedTraversalLimit,
+                useComplex);
         }
 
         if (!nfSystem) {
@@ -2903,8 +2910,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 throw std::runtime_error("Failed to write XML for NFSim: " + xmlPath.string());
             }
             nfSystem = NFinput::initializeFromXML(
-                xmlPath.string(), complexConstruction, globalMoleculeLimit, nfVerbose,
-                suggestedTraversalLimit, evalCSLF, connectivityFlag);
+                xmlPath.string(), blockSameComplexBinding, globalMoleculeLimit, nfVerbose,
+                suggestedTraversalLimit, evalCSLF, connectivityFlag, true, useComplex);
         }
 
         if (!nfSystem) {
@@ -2917,7 +2924,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         nfSystem->useConnectivityFlag(connectivityFlag);
         const int effectiveTraversalLimit = explicitTraversalLimit
             ? requestedTraversalLimit
-            : 3;
+            : (nfSystem->needsWholeComplexTraversal() ? NFcore::ReactionClass::NO_LIMIT : 3);
         nfSystem->setUniversalTraversalLimit(effectiveTraversalLimit);
         if (nfVerbose) {
             std::cerr << "[bng_cpp] Universal traversal limit = "
