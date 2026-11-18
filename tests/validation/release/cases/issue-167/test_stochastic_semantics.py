@@ -58,6 +58,8 @@ def _network(case: fm.Case, tmp_path):
 def _hazard(case: fm.Case, n: int) -> float:
     """Hazard of the declared count law at population n, independent of engine."""
     k = float(case.k)
+    if case.convention == "localFunctionState":
+        return k * n * n  # f() = k*nA, multiplied by the reactant multiplicity n
     if case.convention == "saturation":
         return k * n / (float(case.constants[1]) + n)
     if case.convention == "hill":

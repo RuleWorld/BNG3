@@ -465,6 +465,7 @@ def issue167_receipt_reports(receipt, check_reports, revision):
     slice_ids = (
         "parameter-n20-k04",
         "local-function-n20-k04",
+        "local-function-state-n20-k04",
         "builtin-n20-k04",
         "tfun-n20-k04",
         "saturation-n20-k04",

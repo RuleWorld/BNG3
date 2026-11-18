@@ -29,6 +29,10 @@ class RateSpec:
         nr = Exact(n)
         if self.convention in {"elementaryParameter", "localFunction", "builtin", "tfun"} and len(c) == 1:
             return c[0]
+        if self.convention == "localFunctionState" and len(c) == 1:
+            # A local function whose body depends on the current observable
+            # count: its value is k * n and the multiplicity n still applies.
+            return c[0] * nr
         if self.convention == "saturation" and len(c) == 2:
             kcat, K = c
             return None if K + nr == 0 else kcat / (K + nr)
@@ -217,6 +221,20 @@ CASES = (
         rate_law_symbol="f()",
         bngl_rate="f()",
         extra_bngl="begin functions\n  f() = k\nend functions\n",
+    ),
+    Case(
+        id="local-function-state-n20-k04",
+        convention="localFunctionState",
+        constants=(K,),
+        exponent=1,
+        n0=20,
+        k=K,
+        reactants=(Stoich(0, 1),),
+        products=(Stoich(1, 1),),
+        symmetry_factor=1,
+        rate_law_symbol="f()",
+        bngl_rate="f()",
+        extra_bngl="begin functions\n  f() = k*nA\nend functions\n",
     ),
     Case(
         id="builtin-n20-k04",

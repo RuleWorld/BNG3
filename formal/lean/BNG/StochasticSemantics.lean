@@ -43,6 +43,7 @@ BNGL rate convention is outside this slice (issue #167 boundary 1). -/
 inductive RateConvention where
   | elementaryParameter
   | localFunction
+  | localFunctionState
   | builtin
   | tfun
   | saturation
@@ -68,6 +69,7 @@ def RateSpec.rateAt (r : RateSpec) (n : SpeciesCount) : Option ExactValue :=
   match r.convention, r.constants with
   | .elementaryParameter, [k] => some k
   | .localFunction, [k] => some k
+  | .localFunctionState, [k] => some (k * nr)
   | .builtin, [k] => some k
   | .tfun, [k] => some k
   | .saturation, [kcat, K] =>
