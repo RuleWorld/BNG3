@@ -1,0 +1,19 @@
+{
+  "F_mean": 593.6811241965617,
+  "F_obs": 1.71332478721316,
+  "F_p05": 572.7613880975862,
+  "F_p95": 612.9955699439133,
+  "P_wrong_F_ge_F_obs": 1.0,
+  "P_wrong_F_ge_F_obs_wilson95": [
+    0.9873570287754538,
+    0.9999999999999998
+  ],
+  "mu_reference": 1.1,
+  "mu_wrong": 1.05,
+  "n_viol_mean": 50.0,
+  "n_viol_p95": 50.0,
+  "purpose": "power control: wrong law mu vs true reference mu=1.1",
+  "replicates": 300,
+  "seed": 20261119,
+  "trajectories": 40000
+}
