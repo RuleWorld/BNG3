@@ -932,9 +932,18 @@ jobs:
       - name: Install BNG3 Python API as a regular package
         run: |
           python -m pip install scikit-build-core pybind11
-          python -m pip install ".[full,dev]"
+          python -m pip install --config-settings=build-dir=build ".[full,dev]"
         env:
-          CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF -DBUILD_NFSIM_CLI=OFF"
+          CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=ON -DBUILD_NFSIM_CLI=ON"
+
+      - name: Replay upstream NFsim XML and molecularity regressions
+        env:
+          NFSIM_SYNC_ORACLE: ${{ runner.temp }}/oracle-nfsim
+          NFSIM_SYNC_CANDIDATE_BIN: ${{ github.workspace }}/build/cpp
+        run: |
+          python "$NFSIM_SYNC_ORACLE/validate/regressions/check_xml_ports.py" "$NFSIM_SYNC_ORACLE/build/NFsim"
+          python "$NFSIM_SYNC_ORACLE/validate/regressions/check_xml_ports.py" "$NFSIM_SYNC_CANDIDATE_BIN/NFsim"
+          python -m pytest --noconftest -q tests/validation/test_nfsim_upstream_sync.py
 
       - name: Report installed BNG3 package and native identities
         run: |
