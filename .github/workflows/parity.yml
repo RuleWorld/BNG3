@@ -747,12 +747,27 @@ jobs:
             --output "$RUNNER_TEMP/issue138-release-record.json" \
             --summary-file "$GITHUB_STEP_SUMMARY"
 
+      - name: Record Issue 473 JAX release acceptance for the issue queue
+        if: always() && steps.candidate_identity.outcome == 'success'
+        run: |
+          set -euo pipefail
+          python -m pip install 'jax>=0.4.30' 'jaxlib>=0.4.30'
+          python scripts/ci/record_jax_release.py \
+            --output "$RUNNER_TEMP/bng3-jax-release/report.json" \
+            --source-revision "$BNG3_SOURCE_REVISION" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          JAX_PLATFORMS: cpu
+          JAX_ENABLE_X64: "true"
+
       - name: Build exact-revision issue and provenance evidence queue
         if: always()
         run: |
           head_args=()
           issue138_args=()
           issue142_args=()
+          issue473_args=()
           s6_args=()
           delay_args=()
           hybrid_args=()
@@ -769,6 +784,9 @@ jobs:
               --issue142-identity-report "$RUNNER_TEMP/issue142/queue/identity/identity-report.json"
               --issue142-observables-report "$RUNNER_TEMP/issue142/queue/observables/observables-report.json"
             )
+          fi
+          if [[ -s "$RUNNER_TEMP/bng3-jax-release/report.json" ]]; then
+            issue473_args+=(--report "$RUNNER_TEMP/bng3-jax-release/report.json")
           fi
           if [[ -d "$RUNNER_TEMP/bng3-s6-receipts" ]]; then
             s6_args+=(--s6-simulate-receipt-dir "$RUNNER_TEMP/bng3-s6-receipts")
@@ -792,6 +810,7 @@ jobs:
             --report "$RUNNER_TEMP/bng3-integrated-validation/matrix-report.json" \
             "${issue138_args[@]}" \
             "${issue142_args[@]}" \
+            "${issue473_args[@]}" \
             "${s6_args[@]}" \
             "${delay_args[@]}" \
             "${hybrid_args[@]}" \
