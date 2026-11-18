@@ -177,16 +177,16 @@ def _native_samples(fixture, directory, native_binary):
 
     with contextlib.redirect_stdout(io.StringIO()):
         bionetgen.load(str(source)).write_xml(str(xml))
-    normalisation = integrated_traces.native_count_rate_xml(
-        xml, Path(directory) / "count-rate-model.xml"
+    input_evidence = integrated_traces.native_count_rate_input(
+        xml, Path(directory) / "native-static-compartments.xml"
     )
-    if normalisation["status"] != "NORMALISED":
+    if input_evidence["status"] != "OBSERVED":
         return None, (
             "the native NFsim oracle cannot be handed this model in the "
-            "executed count-rate convention: " + str(normalisation["detail"])
+            "executed count-rate convention: " + str(input_evidence["detail"])
         )
     samples = []
-    xml_path = str(Path(normalisation["path"]).resolve())
+    xml_path = input_evidence["path"]
     for seed in range(64):
         work = Path(directory) / f"seed-{seed}"
         work.mkdir(parents=True, exist_ok=True)

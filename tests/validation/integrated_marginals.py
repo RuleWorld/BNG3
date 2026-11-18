@@ -304,13 +304,9 @@ def assess_samples(samples, case, *, alpha=1e-6):
 def native_oracle_realizes_source_law(case):
     """Whether the pinned native NFsim oracle can express this source law.
 
-    The oracle is handed the model the embedded engine executes, stated in
-    BNG2's count-rate convention (``integrated_traces.native_count_rate_xml``
-    folds the compartment unit conversion into the rule's rate constant),
-    so every source law the independent count law covers is reachable.  A
-    model whose compartment unit conversion cannot be determined statically
-    is not: the export then states no count-rate coefficient, and the
-    comparison stays explicitly not tested.
+    The oracle applies BNG2 compartment unit conversion while loading XML.
+    The static coefficient must be independently determinable before the
+    sampled ensemble is compared with the count law.
     """
     law = case.get("law", case.get("family"))
     return law in (
@@ -363,31 +359,31 @@ def run(
                     applicability="native-oracle-unit-conversion-unsupported",
                 )
             else:
-                normalisation = integrated_traces.native_count_rate_xml(
-                    native_xml, directory / "native-count-rate.xml"
+                input_evidence = integrated_traces.native_count_rate_input(
+                    native_xml, directory / "native-static-compartments.xml"
                 )
-                if normalisation["status"] == "UNAVAILABLE":
+                if input_evidence["status"] == "UNAVAILABLE":
                     failure = dict(
                         status="HARNESS_ERROR",
                         detail=(
                             "the model handed to the native NFsim oracle is "
-                            f"unavailable: {normalisation['detail']}"
+                            f"unavailable: {input_evidence['detail']}"
                         ),
                     )
-                elif normalisation["status"] != "NORMALISED":
+                elif input_evidence["status"] != "OBSERVED":
                     failure = dict(
                         status="NOT_TESTED",
                         detail=(
                             "the native NFsim oracle cannot be handed this model "
                             "in BNG2's compartment unit conversion convention: "
-                            f"{normalisation['detail']}; the embedded engine "
+                            f"{input_evidence['detail']}; the embedded engine "
                             "comparison against the independent count law remains "
                             "the authoritative one"
                         ),
                         applicability="native-oracle-unit-conversion-unsupported",
                     )
                 else:
-                    oracle_model = normalisation
+                    oracle_model = input_evidence
         if failure is None and engine == "native" and not Path(native_binary).is_file():
             failure = dict(
                 status="HARNESS_ERROR",

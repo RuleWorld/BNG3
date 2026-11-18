@@ -282,6 +282,7 @@ def test_native_rows_state_the_count_rate_convention_when_the_oracle_is_present(
     xml = tmp_path / "model.xml"
 
     bionetgen.load(str(source)).write_xml(str(xml))
+    source_xml_text = xml.read_text()
     rows = integrated_marginals.run(
         source,
         case,
@@ -297,6 +298,13 @@ def test_native_rows_state_the_count_rate_convention_when_the_oracle_is_present(
     assert all("count-rate convention" in row["detail"] for row in native)
     rule = native[0]["oracle_count_rate_rules"][0]
     assert rule["count_rate_coefficient"] == pytest.approx(0.4 * 0.5 / 3)
+    staged = (tmp_path / "ensembles/native-static-compartments.xml").read_text()
+    assert xml.read_text() == source_xml_text
+    assert 'sizeParameter="V"' in source_xml_text
+    assert "sizeParameter" not in staged
+    assert 'size="3"' in staged
+    assert 'symmetry_factor="0.5"' in staged
+    assert '<RateConstant value="k"' in staged
     # The oracle sampled the model the embedded engine executes.
     embedded = [row for row in rows if row["check"].startswith("embedded.")]
     assert all(row["status"] == "PASS" for row in embedded)
