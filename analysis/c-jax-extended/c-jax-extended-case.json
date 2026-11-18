@@ -1,0 +1,82 @@
+{
+  "all_passed": true,
+  "case": "jax_extended_installed_cpu",
+  "devices": [
+    "cpu:0"
+  ],
+  "flatten": {
+    "num_reactions": 2,
+    "num_species": 3,
+    "rate_constants": [
+      0.30000001192092896,
+      0.10000000149011612
+    ]
+  },
+  "invariants": {
+    "count_conserved": true
+  },
+  "jax_ode_sha256": "45a3822da0a2ede184d124d63d1454b437da7fcf85c3a292d1f11c8667671aea",
+  "jax_ssa_sha256": "e240b430df25aee16c4e414b0316659cbe09df8c6a062ff45916743c85604a9a",
+  "jax_version": "0.11.2",
+  "jaxlib_version": "0.11.2",
+  "law": {
+    "alpha": 0.001,
+    "batch_size": 8192,
+    "dkw_one": 0.023042921732197685,
+    "dkw_two": 0.04608584346439537,
+    "model": "A->B k1; A->C k2 (N0=30)",
+    "seed": 20261119,
+    "t_end": 3.0
+  },
+  "marginals": {
+    "A": {
+      "dkw_one": 0.023042921732197685,
+      "dkw_two": 0.04608584346439537,
+      "expected_mean": 9.03582635736606,
+      "ks_analytic": 0.009148061935307816,
+      "ks_native": 0.0081787109375,
+      "mean": 8.985107421875,
+      "mean_bound": 0.08328915727306274,
+      "p": 0.301194211912202,
+      "passed": true
+    },
+    "B": {
+      "dkw_one": 0.023042921732197685,
+      "dkw_two": 0.04608584346439537,
+      "expected_mean": 15.723130231975453,
+      "ks_analytic": 0.009839000151148886,
+      "ks_native": 0.0123291015625,
+      "mean": 15.7684326171875,
+      "mean_bound": 0.09066750404139728,
+      "p": 0.5241043410658485,
+      "passed": true
+    },
+    "C": {
+      "dkw_one": 0.023042921732197685,
+      "dkw_two": 0.04608584346439537,
+      "expected_mean": 5.241043410658485,
+      "ks_analytic": 0.0024306025872797843,
+      "ks_native": 0.0115966796875,
+      "mean": 5.2464599609375,
+      "mean_bound": 0.06893514654708659,
+      "p": 0.1747014470219495,
+      "passed": true
+    }
+  },
+  "native_extension_sha256": "61016c1883e2fb881969622fc3b2b6b040a5086dbafc88f54f6507feaa21e395",
+  "plan_sha256": "c9adacfa57dd752b780171bb11074a63b83abe68b24bcc797180a2845ce2d772",
+  "revision": "d741b16fd5e3db671797789455236516c4b2ed6e",
+  "units": {
+    "A0": 1204428152.0,
+    "max_abs_error": 24.059774219989777,
+    "passed": true,
+    "rate_constant": [
+      0.5
+    ]
+  },
+  "wrong_law_control": {
+    "ks": 0.9652078571182824,
+    "law": "swapped k1/k2",
+    "rejected": true
+  }
+}
