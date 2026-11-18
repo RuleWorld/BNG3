@@ -67,6 +67,49 @@ def test_reaction_ids_do_not_reuse_parameter_ids(tmp_path):
     assert not (parameter_ids & reaction_ids), (parameter_ids, reaction_ids)
 
 
+def test_reaction_ids_do_not_reuse_observable_ids(tmp_path):
+    # Atomizer translations of SBML species produce observable-derived
+    # parameters named after the source species (e.g. R5/R7 in
+    # BIOMD0000000174). Those observable ids share the SBML model-wide
+    # namespace with generated reactions; a reaction R<n> must not reuse one.
+    source = """begin model
+begin parameters
+  k1 1
+  k2 2
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin observables
+  Molecules R2 A()
+end observables
+begin reaction rules
+  A() -> 0 k1
+  A() -> 0 k2
+end reaction rules
+end model
+"""
+    model = BioNetGenModel(cpp.parse_string(source))
+    network = model.generate_network()
+    path = tmp_path / "observable.xml"
+    cpp.io.write_sbml(model._model, network, str(path))
+    document = libsbml.readSBMLFromFile(str(path))
+    document.checkConsistency()
+    errors = [
+        (document.getError(i).getErrorId(), document.getError(i).getMessage())
+        for i in range(document.getNumErrors())
+        if document.getError(i).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
+    ]
+    assert not errors, errors
+    m = document.getModel()
+    observable_ids = {m.getRule(i).getVariable() for i in range(m.getNumRules())}
+    reaction_ids = {m.getReaction(i).getId() for i in range(m.getNumReactions())}
+    assert not (observable_ids & reaction_ids), (observable_ids, reaction_ids)
+
+
 def test_reserved_split_reaction_suffix_is_not_reused(tmp_path):
     # A delayed consuming reaction appends _init/_complete to its id. A source
     # parameter carrying one of those spellings must force a different base.
