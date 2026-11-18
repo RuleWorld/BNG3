@@ -60,10 +60,23 @@ def test_release_obligation_159_receipt():
     assert receipt["source"]["revision"] == revision
     assert receipt["source"]["dirty"] is False
     rows = {row["id"]: row for row in receipt["results"]}
-    assert set(rows) == {"release-ssts", "release-obligation-159"}
+    # The receipt is the sole structural carrier of all three live #159
+    # acceptance identities to the closure gate. Require exactly those three;
+    # the coverage row must additionally be grounded in a real fixture
+    # execution artifact (fixtures_report_sha256) and report digest, so an
+    # ungrounded, self-authored coverage PASS cannot satisfy this check.
+    expected = {"release-ssts", "release-ssts-coverage", "release-obligation-159"}
+    assert set(rows) == expected
     assert rows["release-ssts"]["evidence_kind"] == "supported-execution"
     assert rows["release-ssts"]["supported_execution"] is True
-    # The catalog declares this as supported-execution; do not weaken it.
+    coverage = rows["release-ssts-coverage"]
+    assert coverage["evidence_kind"] == "supported-execution"
+    assert coverage["supported_execution"] is True
+    assert coverage["receipt"]["fixtures_report_sha256"]
+    assert len(coverage["receipt"]["fixtures_report_sha256"]) == 64
+    assert coverage["receipt"]["report_sha256"]
+    assert coverage["receipt"]["core_rows_checked"] >= 104
+    # The catalog declares these as supported-execution; do not weaken them.
     assert rows["release-obligation-159"]["evidence_kind"] == "supported-execution"
     assert receipt["references"]["ssts"]["revision"]
 
