@@ -18178,6 +18178,97 @@
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           }
+        },
+        {
+          "id": "issue:179:live-acceptance:release-provenance",
+          "criterion": "`release-provenance`: scripts/validate_provenance.py strict gate passes against the accepted lock.",
+          "scope": "scripts/validate_provenance.py strict gate passes against the accepted lock.",
+          "live_body_sha256": "a2ce15f7b05e2865f8374aa25f057b83476e2b849bebfff9b08c1b2d7a308438",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "release-provenance",
+              "evidence_kind": "supported-execution",
+              "expectation": "scripts/validate_provenance.py strict gate passes against the accepted lock.",
+              "identity_requirements": [
+                "source.revision",
+                "references.lock_sha256"
+              ],
+              "selector": "tests/test_ci_contract.py::test_release_provenance_accepts_current_lock_and_ratchet",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#oracle-lock",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
+            }
+          ],
+          "test_references": [
+            "tests/test_ci_contract.py::test_release_provenance_accepts_current_lock_and_ratchet"
+          ],
+          "completion_condition": "The named provenance check passes and retains the lock hash and exact BNG3 revision.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:179:live-acceptance:release-provenance-negative",
+          "criterion": "`release-provenance-negative`: independent fixture mutations to pin/hash/acceptance fail the gate.",
+          "scope": "independent fixture mutations to pin/hash/acceptance fail the gate.",
+          "live_body_sha256": "a2ce15f7b05e2865f8374aa25f057b83476e2b849bebfff9b08c1b2d7a308438",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "release-provenance-negative",
+              "evidence_kind": "supported-execution",
+              "expectation": "independent fixture mutations to pin/hash/acceptance fail the gate.",
+              "identity_requirements": [
+                "source.revision",
+                "references.lock_sha256"
+              ],
+              "selector": "tests/test_ci_contract.py::test_release_provenance_negative_rejects_mutated_lock",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#oracle-lock",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
+            }
+          ],
+          "test_references": [
+            "tests/test_ci_contract.py::test_release_provenance_negative_rejects_mutated_lock",
+            "tests/test_ci_contract.py::test_release_provenance_negative_rejects_stale_ratchet"
+          ],
+          "completion_condition": "The named provenance check passes and retains the lock hash and exact BNG3 revision.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:179:live-acceptance:release-obligation-179",
+          "criterion": "`release-obligation-179`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
+          "scope": "each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
+          "live_body_sha256": "a2ce15f7b05e2865f8374aa25f057b83476e2b849bebfff9b08c1b2d7a308438",
+          "dependencies": [],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "release-obligation-179",
+              "evidence_kind": "supported-execution",
+              "expectation": "each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
+              "identity_requirements": [
+                "source.revision",
+                "references.lock_sha256"
+              ],
+              "selector": "tests/test_ci_contract.py::test_release_obligation_179_executes_strict_gate_before_release_evidence",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#oracle-lock",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
+            }
+          ],
+          "test_references": [
+            "tests/test_ci_contract.py::test_release_obligation_179_executes_strict_gate_before_release_evidence"
+          ],
+          "completion_condition": "The named provenance check passes and retains the lock hash and exact BNG3 revision.",
+          "decisions": [],
+          "unmapped_scope": []
         }
       ]
     },
