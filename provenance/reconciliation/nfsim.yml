@@ -15,7 +15,7 @@
         "tests/python/test_cpp_backend.py::TestSimulation::test_nf_simulation_honors_absolute_start_time",
         "tests/python/test_cpp_backend.py::TestSimulation::test_simulate_nf_rejects_unsupported_continue",
         "tests/python/test_cpp_backend.py::TestSimulation::test_simulate_nf_rejects_unhandled_controls",
-        "tests/python/test_cpp_backend.py::TestSimulation::test_simulate_nf_separates_complex_bookkeeping_from_ring_blocking"
+        "tests/python/test_cpp_backend.py::TestSimulation::test_simulate_nf_defaults_to_strict_molecularity_with_explicit_opt_out"
       ],
       "reviewer": "Codex technical reconciliation; maintainer review pending",
       "rationale": "The listed tests directly cover absolute start time plus time(), unsupported controls, and the distinct complex-bookkeeping/binding-guard flags. No dedicated regression for observable-dependent propensity refresh is mapped yet; this partial set does not establish that behavior. Maintainer review remains pending."
@@ -52,9 +52,7 @@
       "capability": "Check for an unmapped reactant before the molecularity check",
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFcore/reactionClass.cpp",
-      "tests": [
-        ".github/workflows/parity.yml"
-      ],
+      "tests": [],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Check mappings before evaluating molecularity."
     },
@@ -64,7 +62,8 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFinput/NFinput.cpp; cpp/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
       "tests": [
-        "tests/validation/test_nfsim_upstream_sync.py"
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints",
+        "tests/python/test_cpp_backend.py::TestSimulation::test_simulate_nf_defaults_to_strict_molecularity_with_explicit_opt_out"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Lower the product and reactant relationships into the embedded checks and use independent native NFsim as the XML reference."
@@ -75,7 +74,7 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFinput/NFinput.cpp; cpp/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
       "tests": [
-        "tests/validation/test_nfsim_upstream_sync.py"
+        "tests/cpp/test_nfsim_ast_adapter.cpp::NFsim AST adapter maps bare molecule stoichiometric observables"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Lower the product and reactant relationships into the embedded checks and use independent native NFsim as the XML reference."
@@ -102,7 +101,7 @@
       "source_revision": "56f4b18fe3e6e519c144f1121bf335b41561c6fb",
       "capability": "Write an2.bngl's bond-breaking rules so they hold under strict \"+\"",
       "classification": "not-applicable",
-      "bng3_reference": "tests/validation/test_nfsim_upstream_sync.py",
+      "bng3_reference": "provenance/upstreams.lock.yml",
       "tests": [],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Use the pinned upstream fixture lineage for oracle regressions. The upstream-only an2 example is available in that checkout."
@@ -113,7 +112,7 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFinput/NFinput.cpp; cpp/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
       "tests": [
-        "tests/validation/test_nfsim_upstream_sync.py"
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Lower the product and reactant relationships into the embedded checks and use independent native NFsim as the XML reference."
@@ -124,7 +123,7 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFinput/NFinput.cpp; cpp/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
       "tests": [
-        "tests/validation/test_nfsim_upstream_sync.py"
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Lower the product and reactant relationships into the embedded checks and use independent native NFsim as the XML reference."
@@ -135,7 +134,7 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFinput/NFinput.cpp; cpp/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
       "tests": [
-        "tests/validation/test_nfsim_upstream_sync.py"
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Lower the product and reactant relationships into the embedded checks and use independent native NFsim as the XML reference."
@@ -146,7 +145,7 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFinput/NFinput.cpp; cpp/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
       "tests": [
-        "tests/validation/test_nfsim_upstream_sync.py"
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Lower the product and reactant relationships into the embedded checks and use independent native NFsim as the XML reference."
@@ -157,7 +156,7 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFinput/NFinput.cpp; cpp/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
       "tests": [
-        "tests/validation/test_nfsim_upstream_sync.py"
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Lower the product and reactant relationships into the embedded checks and use independent native NFsim as the XML reference."
@@ -168,7 +167,7 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFinput/NFinput_energy.cpp; cpp/nfsim/NFinput/NFinput.cpp",
       "tests": [
-        ".github/workflows/parity.yml"
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Reconcile explicitly directed upstream XML Arrhenius rules with the existing BNG3 XML format, compartment handling, and connectivity logic."
@@ -179,7 +178,7 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFcore/compartment.cpp; cpp/nfsim/NFinput/NFinput.cpp",
       "tests": [
-        ".github/workflows/parity.yml"
+        "tests/cpp/test_nfsim_ast_adapter.cpp::NFsim XML preserves parameter-backed compartment sizes on update"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Retain BNG3 compartment placement and conversion, including dynamic compartment sizes, and apply the upstream XML regression checks."
@@ -190,7 +189,8 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFcore/compartment.cpp; cpp/nfsim/NFinput/NFinput.cpp",
       "tests": [
-        ".github/workflows/parity.yml"
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions",
+        "tests/cpp/test_nfsim_ast_adapter.cpp::NFsim preserves issue 109 created molecule compartment inheritance"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Retain BNG3 compartment placement and conversion, including dynamic compartment sizes, and apply the upstream XML regression checks."
@@ -201,7 +201,7 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFcore/compartment.cpp; cpp/nfsim/NFinput/NFinput.cpp",
       "tests": [
-        ".github/workflows/parity.yml"
+        "tests/cpp/test_nfsim_ast_adapter.cpp::NFsim XML preserves parameter-backed compartment sizes on update"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Retain BNG3 compartment placement and conversion, including dynamic compartment sizes, and apply the upstream XML regression checks."
@@ -221,7 +221,7 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFcore/system.cpp; cpp/nfsim/NFcore/observable.cpp; cpp/nfsim/NFfunction/localFunction.cpp",
       "tests": [
-        ".github/workflows/parity.yml"
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Integrate the upstream observable refresh and complete-state propensity updates into the embedded engine."
@@ -277,7 +277,8 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFcore/moleculeType.cpp; cpp/nfsim/NFcore/reactionClass.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
       "tests": [
-        ".github/workflows/parity.yml"
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions",
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Preserve the BNG3 incremental membership structures while incorporating upstream traversal and connectivity behavior."
@@ -288,7 +289,8 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": ".github/workflows/parity.yml",
       "tests": [
-        ".github/workflows/parity.yml"
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions",
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Exercise connectivity-enabled candidates against the independent native oracle."
@@ -299,7 +301,8 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFcore/moleculeType.cpp; cpp/nfsim/NFcore/reactionClass.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
       "tests": [
-        ".github/workflows/parity.yml"
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions",
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Preserve the BNG3 incremental membership structures while incorporating upstream traversal and connectivity behavior."
@@ -310,7 +313,8 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFcore/moleculeType.cpp; cpp/nfsim/NFcore/reactionClass.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
       "tests": [
-        ".github/workflows/parity.yml"
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions",
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Preserve the BNG3 incremental membership structures while incorporating upstream traversal and connectivity behavior."
@@ -321,7 +325,8 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFcore/moleculeType.cpp; cpp/nfsim/NFcore/reactionClass.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
       "tests": [
-        ".github/workflows/parity.yml"
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions",
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Preserve the BNG3 incremental membership structures while incorporating upstream traversal and connectivity behavior."
@@ -332,7 +337,8 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFcore/moleculeType.cpp; cpp/nfsim/NFcore/reactionClass.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
       "tests": [
-        ".github/workflows/parity.yml"
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions",
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Preserve the BNG3 incremental membership structures while incorporating upstream traversal and connectivity behavior."
@@ -343,7 +349,8 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": ".github/workflows/parity.yml",
       "tests": [
-        ".github/workflows/parity.yml"
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions",
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Use a native oracle without connectivity pruning as the reference for the connectivity candidate."
@@ -354,7 +361,7 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFcore/system.cpp; cpp/nfsim/NFcore/observable.cpp; cpp/nfsim/NFfunction/localFunction.cpp",
       "tests": [
-        ".github/workflows/parity.yml"
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Integrate the upstream observable refresh and complete-state propensity updates into the embedded engine."
@@ -374,7 +381,8 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFcore/moleculeType.cpp; cpp/nfsim/NFcore/reactionClass.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
       "tests": [
-        ".github/workflows/parity.yml"
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions",
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Preserve the BNG3 incremental membership structures while incorporating upstream traversal and connectivity behavior."
@@ -412,7 +420,7 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFcore/system.cpp; cpp/nfsim/NFcore/observable.cpp; cpp/nfsim/NFfunction/localFunction.cpp",
       "tests": [
-        ".github/workflows/parity.yml"
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Integrate the upstream observable refresh and complete-state propensity updates into the embedded engine."

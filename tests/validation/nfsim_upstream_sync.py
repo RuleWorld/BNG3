@@ -1,10 +1,37 @@
-"""Replay representative product-molecularity cases from the locked NFsim source."""
+"""Run explicitly in parity CI with the locked NFsim checkout and candidate binaries."""
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
+
+
+@pytest.fixture(scope="module")
+def nfsim_binaries():
+    upstream = Path(os.environ["NFSIM_SYNC_ORACLE"]).resolve()
+    candidate = Path(os.environ["NFSIM_SYNC_CANDIDATE_BIN"]).resolve()
+    for executable in (
+        upstream / "build/NFsim",
+        candidate / "NFsim",
+        candidate / "bng_cpp",
+    ):
+        assert executable.is_file() and os.access(executable, os.X_OK), executable
+    return upstream, candidate
+
+
+@pytest.mark.parametrize("embedded", [False, True], ids=["oracle", "embedded"])
+def test_upstream_xml_regressions(nfsim_binaries, embedded):
+    upstream, candidate = nfsim_binaries
+    binary = candidate / "NFsim" if embedded else upstream / "build/NFsim"
+    result = subprocess.run(
+        [sys.executable, upstream / "validate/regressions/check_xml_ports.py", binary],
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def terminal_counts(command, output, tmp_path, env):
@@ -32,15 +59,9 @@ def terminal_counts(command, output, tmp_path, env):
     ],
 )
 def test_embedded_and_direct_match_upstream_product_constraints(
-    tmp_path, case, expected
+    tmp_path, nfsim_binaries, case, expected
 ):
-    upstream = os.environ.get("NFSIM_SYNC_ORACLE")
-    candidate = os.environ.get("NFSIM_SYNC_CANDIDATE_BIN")
-    if not upstream or not candidate:
-        pytest.skip("requires the locked NFsim checkout and BNG3 candidate binaries")
-
-    upstream = Path(upstream).resolve()
-    candidate = Path(candidate).resolve()
+    upstream, candidate = nfsim_binaries
     fixture = upstream / "test" / "molecularity" / case
     xml_args = [
         "-xml",

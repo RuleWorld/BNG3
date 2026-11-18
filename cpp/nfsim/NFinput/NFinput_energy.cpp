@@ -81,9 +81,8 @@ bool parseEnergyPatterns(
     // BNG2 where energies are already in RT units.
     double phi = 0.5;
     // BioNetGen stores energies in RT units and applies Arrhenius exponents
-    // without a second RT divisor. A model parameter named RT is an ordinary
-    // parameter used by expressions such as Gf/RT; it does not change this
-    // convention.
+    // without a second RT divisor. Expressions such as Gf/RT can reference
+    // the model parameter RT directly.
     const double RT = 1.0;
 
     if (parameter.find("phi") != parameter.end())
