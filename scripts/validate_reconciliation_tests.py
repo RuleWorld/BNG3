@@ -13,8 +13,10 @@ import argparse
 import ast
 import hashlib
 import json
+import re
 import subprocess
 import sys
+from collections.abc import Iterable
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
@@ -261,6 +263,113 @@ def validate_test_references(
     return errors
 
 
+def audit_nfsim_options(
+    source: str, inventory_ids: Iterable[str]
+) -> dict[str, list[str]]:
+    """Find literal command-line options read by the pinned NFsim executable."""
+
+    tokens = _source_tokens(source)
+    flags = set()
+    for current, one, two, three, four in zip(
+        tokens, tokens[1:], tokens[2:], tokens[3:], tokens[4:]
+    ):
+        if (
+            current == ("identifier", "argMap")
+            and one == ("punctuation", ".")
+            and two in (("identifier", "find"), ("identifier", "count"))
+            and three == ("punctuation", "(")
+            and four[0] == "string"
+        ):
+            flags.add(four[1])
+        if (
+            current[0] == "identifier"
+            and current[1].startswith("parseAs")
+            and one == ("punctuation", "(")
+            and two == ("identifier", "argMap")
+            and three == ("punctuation", ",")
+            and four[0] == "string"
+        ):
+            flags.add(four[1])
+    return {
+        "upstream_options": sorted(flags),
+        **_inventory_difference(flags, inventory_ids, "nf.option."),
+    }
+
+
+def _inventory_difference(
+    upstream_names: set[str], inventory_ids: Iterable[str], prefix: str
+) -> dict[str, list[str]]:
+    expected = {prefix + name for name in upstream_names}
+    actual = {row_id for row_id in inventory_ids if row_id.startswith(prefix)}
+    return {
+        "missing_rows": sorted(expected - actual),
+        "unexpected_rows": sorted(actual - expected),
+    }
+
+
+def audit_pybionetgen_options(
+    main: str, translator: str, inventory_ids: Iterable[str]
+) -> dict[str, list[str]]:
+    """Read registered long options from the two pinned CLI parsers."""
+
+    def long_options(nodes: Iterable[ast.AST]) -> set[str]:
+        return {
+            node.value[2:]
+            for node in nodes
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node.value.startswith("--")
+        }
+
+    main_options: set[str] = set()
+    for node in ast.walk(ast.parse(main)):
+        if isinstance(node, ast.keyword) and node.arg == "arguments":
+            options = node.value
+        elif isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == "arguments"
+            for target in node.targets
+        ):
+            options = node.value
+        else:
+            continue
+        if isinstance(options, ast.List):
+            for item in options.elts:
+                if (
+                    isinstance(item, ast.Tuple)
+                    and item.elts
+                    and isinstance(item.elts[0], ast.List)
+                ):
+                    main_options.update(long_options(item.elts[0].elts))
+    atomizer_options: set[str] = set()
+    for node in ast.walk(ast.parse(translator)):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr == "add_argument":
+                atomizer_options.update(long_options(node.args))
+    return {
+        "main_options": sorted(main_options),
+        "atomizer_options": sorted(atomizer_options),
+        **_inventory_difference(
+            main_options | atomizer_options, inventory_ids, "py.cli.option."
+        ),
+    }
+
+
+def audit_bng2_builtins(
+    source: str, inventory_ids: Iterable[str]
+) -> dict[str, list[str]]:
+    """Read the active named entries from Expression.pm's function table."""
+    table = re.search(
+        r"^my %functions\s*=\s*\((.*?)^\);", source, re.MULTILINE | re.DOTALL
+    )
+    if table is None:
+        raise ValueError("BNG2 Expression.pm has no built-in function table")
+    names = set(re.findall(r'^\s*"([A-Za-z_]\w*)"\s*=>', table[1], re.MULTILINE))
+    return {
+        "upstream_builtins": sorted(names),
+        **_inventory_difference(names, inventory_ids, "builtin."),
+    }
+
+
 def audit_upstream_history(
     checkout: Path, ledger: dict[str, Any], accepted_revision: str
 ) -> dict[str, Any]:
@@ -407,6 +516,37 @@ def main() -> int:
             f"missing ledger for {name}"
             for name in sorted(sources.keys() - history.keys())
         )
+        matrix = json.loads(
+            (REPO / "provenance" / "capability-matrix.yml").read_text(encoding="utf-8")
+        )
+        inventory_ids = [row["id"] for row in matrix["rows"]]
+        inventory = {}
+        if "nfsim" in history and not history["nfsim"]["errors"]:
+            cli_source = sources["nfsim"] / "src" / "NFsim.cpp"
+            inventory["nfsim_options"] = audit_nfsim_options(
+                cli_source.read_text(encoding="utf-8"), inventory_ids
+            )
+        if "bionetgen" in history and not history["bionetgen"]["errors"]:
+            expressions = sources["bionetgen"] / "bng2/Perl2/Expression.pm"
+            inventory["bng2_builtins"] = audit_bng2_builtins(
+                expressions.read_text(encoding="utf-8"), inventory_ids
+            )
+        if "pybionetgen" in history and not history["pybionetgen"]["errors"]:
+            package = sources["pybionetgen"] / "bionetgen"
+            inventory["pybionetgen_options"] = audit_pybionetgen_options(
+                (package / "main.py").read_text(encoding="utf-8"),
+                (package / "atomizer/sbmlTranslator.py").read_text(encoding="utf-8"),
+                inventory_ids,
+            )
+        for surface, result in inventory.items():
+            for row in result["missing_rows"]:
+                print(
+                    f"{surface}: source option or built-in without a matching row: {row}"
+                )
+            for row in result["unexpected_rows"]:
+                print(
+                    f"{surface}: row without a matching source option or built-in: {row}"
+                )
         args.history_report.parent.mkdir(parents=True, exist_ok=True)
         args.history_report.write_text(
             json.dumps(
@@ -417,6 +557,7 @@ def main() -> int:
                         ["git", "-C", str(REPO), "rev-parse", "HEAD"], text=True
                     ).strip(),
                     "sources": history,
+                    "source_inventory_audit": inventory,
                     "errors": errors,
                 },
                 indent=2,

@@ -283,3 +283,70 @@ def test_packaging_is_a_default_installed_requirement(tmp_path, monkeypatch, ins
     else:
         with pytest.raises(ValueError, match="BNG3 installed metadata"):
             check_packaging_requirement(tmp_path, installed)
+
+
+def test_nfsim_option_inventory_uses_parser_flags_as_the_reference():
+    from scripts.validate_reconciliation_tests import audit_nfsim_options
+
+    source = """
+argMap.find("seed");
+argMap.find("oTimes");
+NFinput::parseAsDouble(argMap, "sim", sTime);
+// argMap.find("obsolete");
+"""
+    report = audit_nfsim_options(source, ["nf.option.seed", "nf.option.fake"])
+    assert report["upstream_options"] == ["oTimes", "seed", "sim"]
+    assert report["missing_rows"] == ["nf.option.oTimes", "nf.option.sim"]
+    assert report["unexpected_rows"] == ["nf.option.fake"]
+
+
+def test_pybionetgen_cli_inventory_reports_both_option_surfaces():
+    from scripts.validate_reconciliation_tests import audit_pybionetgen_options
+
+    main = '''
+class Root:
+    class Meta:
+        arguments = [
+            (["-v", "--version"], {}),
+            # (["--sedml"], {})
+        ]
+
+    @cement.ex(arguments=[(["--input"], {})])
+    def run(self):
+        """Other text can mention --unrelated."""
+'''
+    translator = """
+parser.add_argument("-cu", "--convert-units")
+parser.add_argument("--output-file")
+"""
+    rows = [
+        "py.cli.option.sedml",
+        "py.cli.option.convert-units",
+        "py.cli.option.version",
+    ]
+    report = audit_pybionetgen_options(main, translator, rows)
+    assert report["main_options"] == ["input", "version"]
+    assert report["atomizer_options"] == ["convert-units", "output-file"]
+    assert report["missing_rows"] == [
+        "py.cli.option.input",
+        "py.cli.option.output-file",
+    ]
+    assert report["unexpected_rows"] == ["py.cli.option.sedml"]
+
+
+def test_bng2_builtin_inventory_reads_only_the_live_function_table():
+    from scripts.validate_reconciliation_tests import audit_bng2_builtins
+
+    source = """
+my %functions =
+(
+  "exp" => { FPTR => sub { exp($_[0]) }, NARGS => 1 },
+# "old" => { FPTR => sub { 1 }, NARGS => 0 },
+  "TFUN" => { FPTR => sub { TFUN($_[0], $_[1]) }, NARGS => 2 },
+);
+my %other = ("other" => 1);
+"""
+    report = audit_bng2_builtins(source, ["builtin.exp", "builtin.old"])
+    assert report["upstream_builtins"] == ["TFUN", "exp"]
+    assert report["missing_rows"] == ["builtin.TFUN"]
+    assert report["unexpected_rows"] == ["builtin.old"]
