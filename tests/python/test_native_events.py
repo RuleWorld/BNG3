@@ -1,5 +1,7 @@
 """Analytic contracts for continuous-root native event execution."""
 
+import math
+
 import numpy as np
 import pytest
 from _extdep import require_extension
@@ -103,6 +105,55 @@ def test_nonmonotone_root_surfaces_are_refused(tmp_path, trigger):
     with pytest.raises(
         RuntimeError,
         match="trigger requires one time or species observable against a static threshold",
+    ):
+        model(tmp_path, trigger, "X = 0").simulate(method="ode", t_end=2, n_steps=1)
+
+
+def test_affine_state_difference_trigger_executes_with_analytic_law(tmp_path):
+    """An affine arithmetic root over reaction-driven observables is a genuine
+    sign change.  In this model only A decays, so X = 10*exp(-t) and Y = 2;
+    X - Y crosses 5 at t = ln(10/7).  The event sets X = 1, hence
+    X(t_end) = exp(-(t_end - ln(10/7))) and Y(t_end) = 2.
+    """
+    t_end = 2.0
+    crossing = math.log(10.0 / 7.0)
+    result = model(tmp_path, "X - Y <= 5", "X = 1").simulate(
+        method="ode", t_end=t_end, n_steps=2
+    )
+    assert result.observables["X"][-1] == pytest.approx(
+        math.exp(-(t_end - crossing)), rel=1e-5
+    )
+    assert result.observables["Y"][-1] == pytest.approx(2.0, rel=1e-12)
+
+
+def test_affine_scaled_state_combination_trigger_executes(tmp_path):
+    """Static coefficients times observables stay affine: 2*X - 3*Y =
+    20*exp(-t) - 6 crosses 1 at t = ln(20/7), after which X restarts from 1.
+    """
+    t_end = 3.0
+    crossing = math.log(20.0 / 7.0)
+    result = model(tmp_path, "2*X - 3*Y < 1", "X = 1").simulate(
+        method="ode", t_end=t_end, n_steps=2
+    )
+    assert result.observables["X"][-1] == pytest.approx(
+        math.exp(-(t_end - crossing)), rel=1e-5
+    )
+    assert result.observables["Y"][-1] == pytest.approx(2.0, rel=1e-12)
+
+
+@pytest.mark.parametrize(
+    "trigger", ["X*Y <= 25", "X/Y <= 5", "abs(X) <= 5", "(X+Y)*(X-Y) >= 0"]
+)
+def test_nonlinear_arithmetic_root_surfaces_stay_refused(tmp_path, trigger):
+    """Admitting affine surfaces must not broaden the guard to products,
+    quotients or nonlinear functions, whose roots can be tangential or multiple.
+    """
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "trigger requires one time or species observable"
+            "|event division requires a static nonzero denominator"
+        ),
     ):
         model(tmp_path, trigger, "X = 0").simulate(method="ode", t_end=2, n_steps=1)
 
