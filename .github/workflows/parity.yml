@@ -659,6 +659,16 @@ jobs:
           --source-revision "${{ github.event.pull_request.head.sha || github.sha }}"
           --summary-file "$GITHUB_STEP_SUMMARY"
 
+      - name: Validate independent issue-156 BNGIR semantic equality release acceptance
+        if: always() && steps.candidate_identity.outcome == 'success'
+        env:
+          BNG3_PYTHON_TEST_MODE: installed
+        run: >-
+          python scripts/ci/record_bngir_release.py
+          --output "$RUNNER_TEMP/bng3-bngir-release/report.json"
+          --source-revision "${{ github.event.pull_request.head.sha || github.sha }}"
+          --summary-file "$GITHUB_STEP_SUMMARY"
+
       - name: Run integrated cross-component cases
         id: integrated_cases
         run: |
