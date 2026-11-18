@@ -76,6 +76,11 @@ def execute_native(
             timeout=timeout,
         )
     except subprocess.TimeoutExpired as exc:
+        for gdat in Path(output).glob("*.gdat"):
+            try:
+                gdat.unlink()
+            except OSError:
+                pass
         partial = exc.stdout or ""
         if isinstance(partial, bytes):
             partial = partial.decode("utf-8", errors="replace")
