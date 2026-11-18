@@ -1,6 +1,5 @@
 """Native execution honors the retained CLI logging and timeout controls."""
 
-import re
 import subprocess
 
 import pytest
@@ -48,16 +47,24 @@ def test_native_cli_writes_actual_output_to_requested_log(tmp_path, kind):
     assert cli.result.process_return == 0
     text = expected.read_text()
     assert "quit()" in text
+    # Product #757 made the native diagnostic ASCII-only, so the two capture
+    # paths are byte-for-byte identical on every platform. Compare exactly:
+    # the log-vs-return equality is the actual contract under test.
+    assert "\n".join(cli.result.output) == text.rstrip("\n")
 
-    # The native banner contains a UTF-8 em dash.  Windows' default console
-    # codepage can render it as '?' on one capture path but not the other;
-    # compare the ASCII-safe form so the check stays about real log content.
-    def ascii_safe(value):
-        text = value.encode("ascii", "replace").decode("ascii")
-        # Windows codepages can decode the em dash as one or three '?'s.
-        return re.sub(r"\?+", "?", text)
 
-    assert ascii_safe("\n".join(cli.result.output)) == ascii_safe(text.rstrip("\n"))
+def test_native_cli_output_is_ascii_without_replacement_chars(tmp_path):
+    # Encoding regression guard for #757. A non-ASCII emitter (the old em dash)
+    # is mangled to U+FFFD by a UTF-8-decoding parent when MSVC uses a local
+    # execution charset; keep a focused check that both captured paths are
+    # clean ASCII even if the exact-comparison test above is later refactored.
+    log = tmp_path / "ascii.log"
+    cli = _cli(tmp_path, log_file=str(log), suppress=True)
+    cli.run()
+    assert cli.result.process_return == 0
+    for value in ("\n".join(cli.result.output), log.read_text()):
+        assert value.isascii(), value
+        assert "\ufffd" not in value
 
 
 def test_native_cli_honors_timeout_and_does_not_report_success(tmp_path):
