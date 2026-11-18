@@ -14543,7 +14543,7 @@
     },
     {
       "number": 167,
-      "body_sha256": "dbfc87ae5791b34faf9dbfc884690880e30ba0feb9e7e64148b56f91c7ad1059",
+      "body_sha256": "a31fae73ec10631d512c6b2c24ed92128f13a6bd83ad17c465351b78797d3c6e",
       "obligations": [
         {
           "id": "issue:167:encode-the-exact-supported-special-rate-local-function-tfun-and",
@@ -14573,7 +14573,9 @@
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [],
+          "unmapped_scope": [
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ],
           "evidence_on_this_tree": {
             "executable_named_checks": 1,
             "disposition_named_checks": 0,
@@ -14609,7 +14611,9 @@
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [],
+          "unmapped_scope": [
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ],
           "evidence_on_this_tree": {
             "executable_named_checks": 1,
             "disposition_named_checks": 0,
@@ -14639,7 +14643,10 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:167:closure-record.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ],
           "evidence_on_this_tree": {
             "executable_named_checks": 0,
             "disposition_named_checks": 1,

@@ -27,7 +27,11 @@ class RateSpec:
         """Mirror of ``RateSpec.rateAt``; the symmetry factor is NOT folded in."""
         c = self.constants
         nr = Exact(n)
-        if self.convention in {"elementaryParameter", "localFunction", "builtin", "tfun"} and len(c) == 1:
+        if (
+            self.convention
+            in {"elementaryParameter", "localFunction", "builtin", "tfun"}
+            and len(c) == 1
+        ):
             return c[0]
         if self.convention == "localFunctionState" and len(c) == 1:
             # A local function whose body depends on the current observable
@@ -132,12 +136,16 @@ class Channel:
 
     def apply_state_update(self, s: State) -> Optional[State]:
         mid = s.consume([(r.species, r.count) for r in self.reactants])
-        return None if mid is None else mid.produce([(p.species, p.count) for p in self.products])
+        return (
+            None
+            if mid is None
+            else mid.produce([(p.species, p.count) for p in self.products])
+        )
 
 
 def raw_embeddings(s: State, reactants) -> int:
     """Ordered embeddings n(n-1)... before the symmetry factor (Lean
-    ``fallingFactorial`` product).  Used to check the production factor. """
+    ``fallingFactorial`` product).  Used to check the production factor."""
     out = 1
     for r in reactants:
         n = s.count(r.species)
@@ -154,7 +162,12 @@ def next_channel_prob(channels, s: State, channel_id: int) -> Exact:
     total = total_propensity(channels, s)
     if total == 0:
         return Exact(0)
-    return next((ch.exact_propensity(s) for ch in channels if ch.id == channel_id), Exact(0)) / total
+    return (
+        next(
+            (ch.exact_propensity(s) for ch in channels if ch.id == channel_id), Exact(0)
+        )
+        / total
+    )
 
 
 @dataclass
@@ -186,7 +199,9 @@ class Case:
 
     def initial_state(self) -> State:
         if self.reactants:
-            return State(((self.reactants[0].species, self.n0), (self.products[0].species, 0)))
+            return State(
+                ((self.reactants[0].species, self.n0), (self.products[0].species, 0))
+            )
         return State(((self.products[0].species, 0),))
 
 
@@ -261,7 +276,7 @@ CASES = (
         symmetry_factor=1,
         rate_law_symbol="TFUN(time,",
         bngl_rate='TFUN(time, "rates.dat")',
-        extra_bngl="begin functions\n  f() = TFUN(time, \"rates.dat\")\nend functions\n",
+        extra_bngl='begin functions\n  f() = TFUN(time, "rates.dat")\nend functions\n',
         distribution_supported=False,  # time-dependent functional rate: SSA refuses by contract
     ),
     Case(

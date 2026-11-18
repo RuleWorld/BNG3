@@ -412,20 +412,34 @@ def issue167_receipt_reports(receipt, check_reports, revision):
         report = check_reports.get(check)
         if not isinstance(report, dict) or report.get("acceptance_check") != check:
             raise ValueError(f"Issue 167 check {check} report identity conflicts")
-        if report.get("source_revision") != revision or report.get("source_dirty") is not False:
-            raise ValueError(f"Issue 167 check {check} report revision is stale or dirty")
+        if (
+            report.get("source_revision") != revision
+            or report.get("source_dirty") is not False
+        ):
+            raise ValueError(
+                f"Issue 167 check {check} report revision is stale or dirty"
+            )
         raw = (json.dumps(report, sort_keys=True, indent=2) + "\n").encode()
         if hashlib.sha256(raw).hexdigest() != result["report_sha256"]:
-            raise ValueError(f"Issue 167 check {check} report hash differs from the receipt")
+            raise ValueError(
+                f"Issue 167 check {check} report hash differs from the receipt"
+            )
 
     source = {"revision": revision, "dirty": False}
     references = {
-        "formal_semantics": {"sha256": hashlib.sha256(
-            (ROOT / "tests/validation/release/cases/issue-167/formal_semantics.py").read_bytes()
-        ).hexdigest()},
-        "lean_theorems": {"sha256": hashlib.sha256(
-            (ROOT / "formal/lean/BNG/StochasticSemantics.lean").read_bytes()
-        ).hexdigest()},
+        "formal_semantics": {
+            "sha256": hashlib.sha256(
+                (
+                    ROOT
+                    / "tests/validation/release/cases/issue-167/formal_semantics.py"
+                ).read_bytes()
+            ).hexdigest()
+        },
+        "lean_theorems": {
+            "sha256": hashlib.sha256(
+                (ROOT / "formal/lean/BNG/StochasticSemantics.lean").read_bytes()
+            ).hexdigest()
+        },
     }
     reports = []
     for check in ISSUE_167_CHECKS:
@@ -2082,7 +2096,9 @@ def main(argv=None):
                     "Issue 167 receipt requires the proof, correspondence and obligation reports"
                 )
             if campaign.git(ROOT, "status", "--porcelain"):
-                raise ValueError("Issue 167 receipt consumer requires a clean candidate tree")
+                raise ValueError(
+                    "Issue 167 receipt consumer requires a clean candidate tree"
+                )
             check_reports = {
                 "release-stochastic-proof": json.loads(
                     args.issue167_proof_report.read_text()

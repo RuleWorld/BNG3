@@ -114,7 +114,9 @@ def _analytic_means(case: fm.Case, times) -> np.ndarray:
 
 
 def _coefficient(model, network, state):
-    return list(_cpp._validation_ode_rate_coefficients(model, network, 0.0, list(state)))
+    return list(
+        _cpp._validation_ode_rate_coefficients(model, network, 0.0, list(state))
+    )
 
 
 def _rhs(model, network, state):
@@ -151,9 +153,9 @@ def test_exact_propensity_matches_production_coefficients(tmp_path):
             production = coeff
         else:
             production = coeff * raw
-        assert production == formal, (
-            f"{case.id}: production propensity {production} != formal {formal}"
-        )
+        assert (
+            production == formal
+        ), f"{case.id}: production propensity {production} != formal {formal}"
         # The generated factor is the rule's reactant symmetry prefix.
         expected_factor = Fraction(1, 2) if case.symmetry_factor == 2 else Fraction(1)
         assert factor == expected_factor, (case.id, factor)
@@ -173,7 +175,9 @@ def test_tfun_network_identity(tmp_path):
     case = fm.CASES_BY_ID["tfun-n20-k04"]
     model, network = _network(case, tmp_path)
     assert "tfun" in network.reaction_rate_laws[0].lower()
-    assert case.formal_channel().exact_propensity(case.initial_state()) == case.k * case.n0
+    assert (
+        case.formal_channel().exact_propensity(case.initial_state()) == case.k * case.n0
+    )
     assert case.distribution_supported is False
 
 
@@ -204,7 +208,9 @@ def test_seeded_ensemble_matches_analytic_distribution(tmp_path):
         analytic = _analytic_means(case, times)
         assert means[0] == case.n0 and analytic[0] == case.n0
         worst = 0.0
-        for t, observed, expected, sd in zip(times[1:], means[1:], analytic[1:], stds[1:]):
+        for t, observed, expected, sd in zip(
+            times[1:], means[1:], analytic[1:], stds[1:]
+        ):
             # sd is the analytic-process spread reported by the engine; use it
             # only for the standard-error scale, never as the expected value.
             se = max(float(sd), 1e-9) / math.sqrt(BATCH)
@@ -285,7 +291,9 @@ def obligation_result():
     }
     source_identities = {
         "formal_semantics.py": fm.__file__,
-        "stochastic_semantics.lean": str(ROOT / "formal/lean/BNG/StochasticSemantics.lean"),
+        "stochastic_semantics.lean": str(
+            ROOT / "formal/lean/BNG/StochasticSemantics.lean"
+        ),
         "issue167_proofs.lean": str(ROOT / "formal/lean/tests/Issue167Proofs.lean"),
     }
     for label, path in source_identities.items():

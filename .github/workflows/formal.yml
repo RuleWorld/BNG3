@@ -111,16 +111,26 @@ jobs:
         with:
           python-version: '3.12'
 
+      - name: Install build tools and locked runtime
+        run: |
+          set -euo pipefail
+          which cmake ninja gcc g++ > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y build-essential cmake ninja-build
+          }
+          python -m venv .venv
+          .venv/bin/python -m pip install --require-hashes -r provenance/ssts-ci-linux-py312.lock
+
       - name: Build native BNG3 extension
         run: |
           set -euo pipefail
-          python -m pip install --no-deps --no-build-isolation \
+          .venv/bin/python -m pip install --no-deps --no-build-isolation \
             --config-settings=build-dir=build .
 
       - name: Record issue #167 release receipt
         env:
           PYTHONPATH: python:build/cpp
-        run: python scripts/ci/record_issue167_release.py
+        run: .venv/bin/python scripts/ci/record_issue167_release.py
 
       - uses: actions/upload-artifact@v4
         with:

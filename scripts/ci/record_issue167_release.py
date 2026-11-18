@@ -57,7 +57,9 @@ def main():
 
     results = {
         "release-stochastic-proof": case.proof_result(),
-        "release-stochastic-correspondence": case.correspondence_result(Path(tempfile.mkdtemp())),
+        "release-stochastic-correspondence": case.correspondence_result(
+            Path(tempfile.mkdtemp())
+        ),
         "release-obligation-167": case.obligation_result(),
     }
 

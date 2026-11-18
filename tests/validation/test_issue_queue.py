@@ -853,6 +853,8 @@ def test_single_issue_closure_consumes_dependency_status(tmp_path, dependency_st
     ] == [180]
     assert (output / "dependency-issues-input.json").is_file()
     assert bool(table["closed_acceptance_gaps"]) == (dependency_status != "PASS")
+
+
 def _issue167_receipt_fixture(tmp_path, revision=REVISION):
     """Build a valid issue #167 receipt and its three child reports on disk."""
     checks = {}
