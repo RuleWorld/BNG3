@@ -461,7 +461,7 @@ def issue156_receipt_reports(receipt, check_reports, revision):
                 "check": key,
                 "related_issues": [156],
                 "evidence_kind": "disposition",
-                "receipt": checks["release-obligation-156"],
+                "receipt": checks["release-capability-coverage-156"],
             }
         )
     return reports
