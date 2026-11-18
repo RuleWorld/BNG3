@@ -56,6 +56,10 @@ jobs:
         # be named explicitly, or its assertions are never executed by anything.
         run: lake env lean tests/Coverage.lean
 
+      - name: Run issue #167 exact stochastic semantics proofs
+        working-directory: formal/lean
+        run: lake env lean tests/Issue167Proofs.lean
+
       - name: Audit axiom dependencies
         working-directory: formal/lean
         # Makes the kernel-checked / native_decide split measurable rather than a
