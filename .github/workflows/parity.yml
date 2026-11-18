@@ -1069,6 +1069,23 @@ jobs:
           name: reconciliation-nfsim-observable
           path: ${{ runner.temp }}/reconciliation-nfsim-observable.xml
 
+      - name: Record NFsim reconciliation differences
+        env:
+          NFSIM_BIN: ${{ runner.temp }}/oracle-nfsim/build/NFsim
+          BNG3_RECONCILIATION_NFSIM_SOURCE: ${{ runner.temp }}/oracle-nfsim
+        run: |
+          pytest -c tests/validation/pytest.ini \
+            tests/validation/test_reconciliation_nfsim.py \
+            -q -o junit_family=xunit1 \
+            --junitxml="$RUNNER_TEMP/reconciliation-nfsim-differences.xml"
+
+      - name: Retain NFsim reconciliation differences
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reconciliation-nfsim-differences
+          path: ${{ runner.temp }}/reconciliation-nfsim-differences.xml
+
       - name: Run fixed-seed native NFsim parity
         shell: bash
         run: |
