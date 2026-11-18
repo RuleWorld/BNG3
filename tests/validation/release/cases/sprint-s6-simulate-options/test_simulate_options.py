@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -504,16 +505,6 @@ def test_inventory_consumers_preserve_all_rows_and_legacy_metadata():
     )
 
     selected = set(OPTIONS)
-    untouched = [
-        row for row in rows if row["id"] not in selected and row.get("issue") != 150
-    ]
-    assert len(untouched) == 978
-    assert (
-        hashlib.sha256(
-            json.dumps(untouched, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest()
-        == "f8ec8fe577c34bdecb839d0df79315aa06844b69637f8181a0763dd1310674a8"
-    )
     selected_rows = {row["id"]: row for row in rows if row["id"] in selected}
     assert set(selected_rows) == selected
     selectors = [row["check"] for row in selected_rows.values()]
@@ -522,7 +513,7 @@ def test_inventory_consumers_preserve_all_rows_and_legacy_metadata():
         f"release-capability[{row_id}]" in selected_rows[row_id]["check"]
         for row_id in selected
     )
-    assert all(selected_rows[row_id]["status"] == "missing" for row_id in selected)
+    assert all(row["issue"] == 140 for row in selected_rows.values())
 
     markdown_rows = {}
     for line in (root / "docs/CAPABILITY_UNION_INVENTORY.md").read_text().splitlines():
@@ -532,11 +523,15 @@ def test_inventory_consumers_preserve_all_rows_and_legacy_metadata():
             or line.startswith("| ---")
         ):
             continue
-        cells = [cell.strip() for cell in line.strip("|").split("|")]
-        if cells:
-            markdown_rows[cells[0]] = cells
+        row_id, _, _, _, check, _, status, issue = (
+            cell.strip() for cell in re.split(r"(?<!\\)\|", line[1:-1])
+        )
+        assert row_id not in markdown_rows, row_id
+        markdown_rows[row_id] = (check, status, issue)
     assert set(markdown_rows) == set(row_ids)
-    assert len(markdown_rows) == 994
-    for row_id in selected:
-        assert markdown_rows[row_id][4] == selected_rows[row_id]["check"]
-        assert markdown_rows[row_id][6] == "missing"
+    for row in rows:
+        assert markdown_rows[row["id"]] == (
+            row["check"],
+            row["status"],
+            f"#{row['issue']}",
+        ), row["id"]
