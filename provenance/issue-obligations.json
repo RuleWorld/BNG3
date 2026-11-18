@@ -7430,6 +7430,85 @@
             "disposition_named_checks": 0,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           }
+        },
+        {
+          "id": "issue:153:native-bngir-release-acceptance",
+          "criterion": "Native BNGIR reconstruction and capability release acceptance",
+          "scope": "Native reconstruction, malformed-input refusal and capability-matrix execution for BNGIR v0.2.",
+          "dependencies": [
+            142,
+            143
+          ],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "release-bngir-native",
+              "evidence_kind": "supported-execution",
+              "expectation": "Hand-authored native BNGIR documents reconstruct and execute without BNGL source text, compared against independent analytic controls.",
+              "identity_requirements": [
+                "source.revision"
+              ],
+              "selector": "tests/validation/test_bngir_adversarial_native.py::test_native_worker_consumes_independent_documents_and_analytic_controls",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#Validate independent issue-153 native BNGIR release acceptance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
+            },
+            {
+              "id": "release-bngir-native-invalid",
+              "evidence_kind": "supported-execution",
+              "expectation": "Malformed references and incompatible types are refused by the native importer before execution.",
+              "identity_requirements": [
+                "source.revision"
+              ],
+              "selector": "tests/python/test_bngir_adversarial_fixtures.py::test_adversarial_invalid_fixtures_rejected",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#Validate independent issue-153 native BNGIR release acceptance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
+            },
+            {
+              "id": "release-capability-coverage-153",
+              "evidence_kind": "supported-execution",
+              "expectation": "Every assigned BNGIR capability row executes in the round-trip matrix against its named oracle.",
+              "identity_requirements": [
+                "source.revision"
+              ],
+              "selector": "tests/python/test_bngir_roundtrip_matrix.py::test_bngir_roundtrip_matrix",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#Validate independent issue-153 native BNGIR release acceptance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
+            }
+          ],
+          "live_acceptance_criteria": [
+            {
+              "id": "issue:153:acceptance:1",
+              "check_id": "release-bngir-native",
+              "text": "`release-bngir-native`: disable parsing and reconstruct/execute every BNGIR capability pair against BNG2/native NFsim or independent analytic source.",
+              "live_body_sha256": "18b02971bfe88a718f73a98409591c903b277031a8b71acd08ed75fa87242ba8"
+            },
+            {
+              "id": "issue:153:acceptance:2",
+              "check_id": "release-bngir-native-invalid",
+              "text": "`release-bngir-native-invalid`: malformed references and incompatible types produce explicit errors before execution.",
+              "live_body_sha256": "18b02971bfe88a718f73a98409591c903b277031a8b71acd08ed75fa87242ba8"
+            },
+            {
+              "id": "issue:153:acceptance:3",
+              "check_id": "release-capability-coverage-153",
+              "text": "`release-capability-coverage-153`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
+              "live_body_sha256": "18b02971bfe88a718f73a98409591c903b277031a8b71acd08ed75fa87242ba8"
+            }
+          ],
+          "test_references": [
+            "tests/validation/test_bngir_adversarial_native.py::test_native_worker_consumes_independent_documents_and_analytic_controls",
+            "tests/python/test_bngir_adversarial_fixtures.py::test_adversarial_invalid_fixtures_rejected",
+            "tests/python/test_bngir_roundtrip_matrix.py::test_bngir_roundtrip_matrix"
+          ],
+          "completion_condition": "Exact-revision result satisfies each live native-BNGIR check with its selector and consuming receipt.",
+          "decisions": [],
+          "unmapped_scope": []
         }
       ]
     },

@@ -659,6 +659,15 @@ jobs:
           --source-revision "${{ github.event.pull_request.head.sha || github.sha }}"
           --summary-file "$GITHUB_STEP_SUMMARY"
 
+      - name: Validate independent issue-153 native BNGIR release acceptance
+        if: always() && steps.candidate_identity.outcome == 'success'
+        env:
+          BNG3_PYTHON_TEST_MODE: installed
+        run: >-
+          python scripts/ci/record_bngir_native_release.py
+          --source-revision "${{ github.event.pull_request.head.sha || github.sha }}"
+          --output-dir "$RUNNER_TEMP/bng3-bngir-native-release"
+
       - name: Validate independent issue-156 BNGIR semantic equality release acceptance
         if: always() && steps.candidate_identity.outcome == 'success'
         env:
@@ -766,6 +775,7 @@ jobs:
           s6_args=()
           delay_args=()
           bngir_args=()
+          bngir153_args=()
           hybrid_args=()
           issue147_args=()
           if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
@@ -790,6 +800,9 @@ jobs:
           if [[ -s "$RUNNER_TEMP/bng3-bngir-release/report.json" ]]; then
             bngir_args+=(--report "$RUNNER_TEMP/bng3-bngir-release/report.json")
           fi
+          if [[ -s "$RUNNER_TEMP/bng3-bngir-native-release/report.json" ]]; then
+            bngir153_args+=(--report "$RUNNER_TEMP/bng3-bngir-native-release/report.json")
+          fi
           if [[ -s "$RUNNER_TEMP/bng3-hybrid-release/issue-150-release-report.json" ]]; then
             hybrid_args+=(--report "$RUNNER_TEMP/bng3-hybrid-release/issue-150-release-report.json")
           elif [[ -s "$RUNNER_TEMP/bng3-hybrid-release/release-hybrid-evidence/issue-150-release-report.json" ]]; then
@@ -809,6 +822,7 @@ jobs:
             "${s6_args[@]}" \
             "${delay_args[@]}" \
             "${bngir_args[@]}" \
+            "${bngir153_args[@]}" \
             "${hybrid_args[@]}" \
             "${issue147_args[@]}" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
