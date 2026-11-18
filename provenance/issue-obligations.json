@@ -2562,7 +2562,7 @@
               "id": "issue:142:acceptance:1",
               "check_id": "release-graph-identity",
               "text": "`release-graph-identity`: independent exhaustive small-graph isomorphism matches both production paths.",
-              "live_body_sha256": "8ecb459668ca33a7fe8051c791b87f71312fab9c1a96bfd0389b88ea2f07bbd4"
+              "live_body_sha256": "fa21deb3d074453599b7a4d6e8f318d35f00bc0a1d1ff04941d4232a47738b18"
             }
           ]
         },
@@ -2784,7 +2784,7 @@
               "id": "issue:142:acceptance:3",
               "check_id": "release-obligation-142",
               "text": "`release-obligation-142`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
-              "live_body_sha256": "8ecb459668ca33a7fe8051c791b87f71312fab9c1a96bfd0389b88ea2f07bbd4"
+              "live_body_sha256": "fa21deb3d074453599b7a4d6e8f318d35f00bc0a1d1ff04941d4232a47738b18"
             }
           ]
         },
@@ -2832,7 +2832,7 @@
               "id": "issue:142:acceptance:2",
               "check_id": "release-graph-observables",
               "text": "`release-graph-observables`: BNG2/native NFsim reaction multiplicities and observable weights agree for symmetric complexes.",
-              "live_body_sha256": "8ecb459668ca33a7fe8051c791b87f71312fab9c1a96bfd0389b88ea2f07bbd4"
+              "live_body_sha256": "fa21deb3d074453599b7a4d6e8f318d35f00bc0a1d1ff04941d4232a47738b18"
             }
           ]
         }
