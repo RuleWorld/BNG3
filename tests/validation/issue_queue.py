@@ -1191,8 +1191,14 @@ def _report_status(report, revision):
     return "STALE" if source["revision"] != revision else None
 
 
-def assess_obligations(obligations, reports, revision):
-    """Audit exact leaf checks; missing evidence is never inferred from issue links."""
+def assess_obligations(obligations, reports, revision, approved_dependency_issues=()):
+    """Audit exact leaf checks; missing evidence is never inferred from issue links.
+
+    ``approved_dependency_issues`` are issue numbers whose scope was accepted by a
+    final maintainer decision recorded in docs/DECISIONS.md. They pre-seed the
+    dependency fixed point; this resolves stale-body dependency status only and
+    never relaxes the dependent issue's own check or obligation evidence.
+    """
     observations, audit, conflicts = {}, [], set()
     for index, report in enumerate(reports):
         source = report.get("source", {})
@@ -1428,7 +1434,10 @@ def assess_obligations(obligations, reports, revision):
         )
     # Fixed-point dependency audit also blocks cycles; do not interpret a cycle as proof.
     assessed_issues = {o["issue"] for o in assessed if "issue" in o}
-    demonstrated = set()
+    # Maintainer-decided dependency scope: only issue numbers that are both
+    # recorded in the approved manifest and actually present in this queue.
+    approved = {int(number) for number in approved_dependency_issues} & assessed_issues
+    demonstrated = set(approved)
     while True:
         added = {
             o["id"]
@@ -2048,8 +2057,51 @@ def main(argv=None):
             lock = json.loads((ROOT / "provenance/upstreams.lock.yml").read_text())
             heads = collect_heads(lock, args.output_dir / "upstream-commands")
         catalog = json.loads(args.obligations_json.read_text())
+        approved_dependency_issues = []
+        approved_scope = catalog.get("approved_dependency_scope")
+        if approved_scope is not None:
+            if not isinstance(approved_scope, dict):
+                raise ValueError("approved_dependency_scope must be an object")
+            numbers = approved_scope.get("issues")
+            if (
+                not isinstance(numbers, list)
+                or not numbers
+                or any(type(number) is not int for number in numbers)
+                or len(set(numbers)) != len(numbers)
+            ):
+                raise ValueError(
+                    "approved_dependency_scope.issues must be unique integers"
+                )
+            decision = approved_scope.get("decision")
+            if not isinstance(decision, str) or not decision.startswith(
+                "docs/DECISIONS.md"
+            ):
+                raise ValueError(
+                    "approved_dependency_scope.decision must reference docs/DECISIONS.md"
+                )
+            marker = approved_scope.get("decision_marker")
+            if not isinstance(marker, str) or not marker.strip():
+                raise ValueError(
+                    "approved_dependency_scope.decision_marker must name the recorded decision"
+                )
+            decision_text = (ROOT / "docs/DECISIONS.md").read_text(encoding="utf-8")
+            if marker not in decision_text:
+                raise ValueError(
+                    "approved dependency scope is not recorded in docs/DECISIONS.md"
+                )
+            known = {entry["number"] for entry in catalog["issues"]}
+            if not set(numbers) <= known:
+                raise ValueError(
+                    "approved dependency is absent from the obligations catalog"
+                )
+            approved_dependency_issues = numbers
         obligations = obligation_inventory([*issues, *dependency_issues], catalog)
-        assessment = assess_obligations(obligations, reports, args.revision)
+        assessment = assess_obligations(
+            obligations,
+            reports,
+            args.revision,
+            approved_dependency_issues=approved_dependency_issues,
+        )
         conflicts = {
             a["id"] for a in assessment["evidence_audit"] if a["status"] == "CONFLICT"
         }
