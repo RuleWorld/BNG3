@@ -30,7 +30,7 @@ CHECKS = {
     "release-bngir-native-invalid": {
         "selectors": [
             "tests/python/test_bngir_adversarial_fixtures.py::test_adversarial_invalid_fixtures_rejected",
-            "tests/python/test_bngir_native_import.py::test_direct_native_builder_rejects_malformed_state_transition_references",
+            "tests/python/test_bngir_native_import.py::test_native_builder_refuses_malformed_state_transition_references",
         ],
         "minimum_cases": 2,
     },
