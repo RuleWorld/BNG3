@@ -295,3 +295,99 @@ def test_bng2_conformance_provisions_required_independent_nfsim_before_harness()
     )
     assert steps.index(build) < steps.index(harness)
     assert not build.get("continue-on-error")
+
+
+def test_sbml_release_consumers_are_separate_and_fail_closed():
+    """The #159/#160 hosted evidence path must run every consumer on a full run.
+
+    Suite production, the four analytic fixtures, both receipt consumers, the
+    executable selectors and the final aggregate gate are separate steps. The
+    four-fixture artifact must exist before either recorder runs, both recorders
+    must consume the real artifact with consistent product/source identity, and
+    a final gate must keep the run red on a missing, skipped or failed consumer
+    while a post-consumer digest covers every generated artifact.
+    """
+    workflow = parse_workflow(ROOT / ".github/workflows/sbml-conformance.yml")
+    steps = workflow["jobs"]["conformance"]["steps"]
+
+    def named(name):
+        return next(s for s in steps if s.get("name") == name)
+
+    fixtures = named("Execute four Issue 159 Core analytic fixtures")
+    rec159 = named("Record Issue 159 release receipt from full suite")
+    rec160 = named("Record Issue 160 capability receipt from full suite")
+    selectors = named("Execute Issue 159 release selectors")
+    gate = named("Aggregate release-consumer verdicts and finalize evidence digests")
+
+    # Everything runs on a full/scheduled consumer path, even after a failing
+    # stage, and nothing is silently converted to continue-on-error.
+    for step in (fixtures, rec159, rec160, selectors, gate):
+        assert str(step.get("if", "")).startswith("always() &&")
+        assert not step.get("continue-on-error")
+    assert "inputs.bounded != true" in fixtures["if"]
+
+    # Ordering: fixtures -> both recorders -> selectors -> final gate.
+    for before, after in (
+        (fixtures, rec159),
+        (fixtures, rec160),
+        (rec159, selectors),
+        (rec160, selectors),
+        (selectors, gate),
+    ):
+        assert steps.index(before) < steps.index(after)
+
+    # Fixture production emits the explicit per-fixture result artifact.
+    assert "core-fixtures-report.json" in fixtures["run"]
+    assert "test_core_analytic_fixtures.py" in fixtures["run"]
+
+    # Both recorders receive the real four-fixture artifact and the same exact
+    # product revision; neither can self-author a coverage PASS.
+    for recorder in (rec159, rec160):
+        assert "record_issue159_release.py" in recorder["run"] or (
+            "record_issue160_release.py" in recorder["run"]
+        )
+        assert "--core-fixtures-report" in recorder["run"]
+        assert '--source-revision "$BNG3_SOURCE_REVISION"' in recorder["run"]
+        assert "2>&1 | tee" in recorder["run"]
+        assert 'exit "$status"' in recorder["run"]
+    assert "record_issue159_release.py" in rec159["run"]
+    assert "record_issue160_release.py" in rec160["run"]
+
+    # Selectors consume the receipts and the exact product revision (which may
+    # legitimately differ from the workflow/harness SHA).
+    selectors_env = selectors["run"] + selectors.get("env", {}).get(
+        "BNG3_EXACT_REVISION", ""
+    )
+    assert "BNG3_ISSUE159_RECEIPT" in selectors_env
+    assert "BNG3_CORE_FIXTURES_REPORT" in selectors_env
+    assert "BNG3_EXACT_REVISION" in selectors_env
+    assert selectors.get("env", {}).get("BNG3_EXACT_REVISION") == (
+        "${{ inputs.product_revision || github.event.pull_request.head.sha || github.sha }}"
+    )
+
+    # Final gate checks every consumer outcome, requires every named artifact,
+    # and regenerates a post-consumer digest that includes late files.
+    gate_run = gate["run"]
+    for outcome in (
+        "FIXTURES_OUTCOME",
+        "ISSUE159_OUTCOME",
+        "ISSUE160_OUTCOME",
+        "SELECTORS_OUTCOME",
+    ):
+        assert outcome in gate_run and outcome in gate["env"]
+    for artifact in (
+        "issue159-release-receipt.json",
+        "issue160-release-receipt.json",
+        "release-selectors.xml",
+        "core-fixtures-report.json",
+    ):
+        assert artifact in gate_run
+    assert "value != 'success'" in gate_run
+    assert "raise SystemExit" in gate_run
+    assert "sha256.json" in gate_run
+
+    uploads = [
+        s for s in steps if s.get("uses", "").startswith("actions/upload-artifact@")
+    ]
+    assert uploads[0]["if"] == "always()"
+    assert any("release-consumers" in s["with"]["name"] for s in uploads)
