@@ -18,6 +18,7 @@ CASE_DIR = Path(__file__).resolve().parent
 import tests.python.test_jax_dynamic_rates as jdr  # noqa: E402
 import tests.python.test_jax_ode as tjo  # noqa: E402
 import tests.python.test_jax_ssa as tjs  # noqa: E402
+import tests.python.test_jax_ssa_immigration_death as tjid  # noqa: E402
 
 
 def test_release_jax_ode():
@@ -59,6 +60,11 @@ def test_release_jax_ssa():
     tjs.test_jax_ssa_matches_analytic_first_order_survival_distribution()
     tjs.test_jax_ssa_matches_analytic_equilibrium_distribution()
     tjs.test_jax_ssa_trajectory_moments_match_native_reference()
+    # New independently-qualified installed CPU case (immigration-death):
+    # zero-order creation + first-order death, transient mean law and
+    # stationary Poisson(4) DKW check with a wrong-Poisson power control.
+    tjid.test_installed_cpu_jax_ssa_immigration_death_transient_mean()
+    tjid.test_installed_cpu_jax_ssa_immigration_death_stationary_poisson()
 
 
 def test_release_jax_install():

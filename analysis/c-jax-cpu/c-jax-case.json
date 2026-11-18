@@ -1,0 +1,54 @@
+{
+  "all_passed": true,
+  "case": "jax_ssa_immigration_death_installed_cpu",
+  "devices": [
+    "cpu:0"
+  ],
+  "flatten": {
+    "num_reactions": 2,
+    "num_species": 1,
+    "rate_constants": [
+      2.0,
+      0.5
+    ]
+  },
+  "invariants": {
+    "nonnegative": true
+  },
+  "jax_version": "0.11.2",
+  "law": {
+    "alpha": 0.001,
+    "k_off": 0.5,
+    "k_on": 2.0,
+    "lambda": 4.0,
+    "seed": 20261118,
+    "stationary": "Poisson(4)",
+    "transient_mean": "4*(1-exp(-0.5t))"
+  },
+  "plan_sha256": "fa89be332d5f4d38ffc75a036efe7de16a119f829fe72faea49dd36439c5dd09",
+  "revision": "0d42c6666525debeed61a6e7731fedefd1196df6",
+  "stationary": {
+    "batch_size": 8192,
+    "dkw_bound": 0.021538854873441166,
+    "ks_stat": 0.005301778929873491,
+    "n_steps": 1,
+    "passed": true,
+    "sample_mean": 4.0169677734375,
+    "sample_var": 4.025957211852074,
+    "t_end": 20.0
+  },
+  "transient": {
+    "batch_size": 4096,
+    "max_abs_error": 0.06202630026278211,
+    "max_allowed": 0.14503176510334015,
+    "n_steps": 20,
+    "passed": true,
+    "t_end": 20.0
+  },
+  "wrong_law_control": {
+    "dkw_bound": 0.021538854873441166,
+    "ks_stat": 0.3389883273853887,
+    "law": "Poisson(6)",
+    "rejected": true
+  }
+}
