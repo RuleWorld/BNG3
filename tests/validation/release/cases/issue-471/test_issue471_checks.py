@@ -54,7 +54,8 @@ def test_oracle_gate_does_not_promote_inventory_declarations_to_execution(
     assert report["named_oracle_rows"] < 994
     assert report["grounded_execution_rows"] == 0
     assert report["evidence_scope"] == "DECLARATION_ONLY"
-    assert report["source_status_counts"].get("missing", 0) > 0
+    assert report["source_status_counts"].get("implemented", 0) > 0
+    assert sum(report["source_status_counts"].values()) == report["row_count"]
     assert report["result"] == "fail"
     assert not any(
         "matrix/inventory ID coverage mismatch" in item for item in report["findings"]
@@ -254,7 +255,10 @@ def test_verified_output_bytes_are_compared_even_if_receipt_claims_success(
     assert comparison is not None and comparison["consumer_equals_oracle"] is False
 
 
-def test_oracle_consumer_preserves_nonimplemented_inventory_status(tmp_path: Path):
+@pytest.mark.parametrize("status", ["missing", "partial", "unassessed", "deferred"])
+def test_oracle_consumer_preserves_nonimplemented_inventory_status(
+    tmp_path: Path, status: str
+):
     root = tmp_path / "repo"
     (root / "provenance").mkdir(parents=True)
     (root / "docs").mkdir()
@@ -265,7 +269,7 @@ def test_oracle_consumer_preserves_nonimplemented_inventory_status(tmp_path: Pat
                 "rows": [
                     {
                         "id": "sbml.case",
-                        "status": "missing",
+                        "status": status,
                         "oracle": "Pinned BNG2 reference",
                     }
                 ]
@@ -285,7 +289,7 @@ def test_oracle_consumer_preserves_nonimplemented_inventory_status(tmp_path: Pat
     report = checks.oracle_independence_report(root, receipts, "a" * 40)
     assert report["grounded_execution_rows"] == 0
     assert report["result"] == "fail"
-    assert any("matrix status is missing" in item for item in report["findings"])
+    assert any(f"matrix status is {status}" in item for item in report["findings"])
 
 
 def test_minimal_consumer_json_without_artifact_bytes_is_declaration_only(
