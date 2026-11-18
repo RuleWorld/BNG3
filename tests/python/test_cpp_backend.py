@@ -1292,53 +1292,51 @@ end model
         assert result.time[-1] == pytest.approx(1.0)
         assert result.observables["A_total"][0] == pytest.approx(1.0)
 
-    def test_nf_local_function_mixing_global_and_local_observable_is_refused(
-        self, tmp_path, monkeypatch
+    @pytest.mark.parametrize("force_xml", [False, True])
+    def test_nf_local_rate_refreshes_after_global_observable_changes(
+        self, tmp_path, monkeypatch, force_xml
     ):
-        # ruleworld/nfsim#104: a local function reading both a global
-        # observable (outside its argument) and a locally-scoped observable
-        # goes stale, so both loaders must refuse it instead of returning
-        # silently wrong propensities.
+        # A cannot change state until C changes and updates the rate on A.
         bngl = tmp_path / "local_global_observable.bngl"
         bngl.write_text("""
 begin model
-begin parameters
-    k 0.1
-end parameters
 begin molecule types
     A(s~0~1)
-    C(d)
+    C(s~0~1)
 end molecule types
 begin seed species
     A(s~0) 1
-    C(d!1).C(d!1) 1
+    C(s~0) 1
 end seed species
 begin observables
-    Molecules Atot A()
-    Molecules Ctot C()
+    Molecules A0 A(s~0)
+    Molecules A1 A(s~1)
+    Molecules C1 C(s~1)
 end observables
 begin functions
-    loc(x) = k*Atot + 0*Ctot(x)
+    loc(x) = 1e6*A0(x)*C1
 end functions
 begin reaction rules
-    A(s~0) + C(d!1)%x.C(d!1) -> A(s~1) + C(d!1)%x.C(d!1) loc(x)
+    C(s~0) -> C(s~1) 1e6
+    A(s~0)%x -> A(s~1) loc(x)
 end reaction rules
 end model
 """)
 
-        monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
-        with pytest.raises(RuntimeError, match="direct AST initialization required"):
-            bionetgen.load(str(bngl)).simulate(
-                method="nf", t_end=1.0, n_steps=2, seed=1
-            )
+        if force_xml:
+            monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
+            monkeypatch.setenv("BNG_NFSIM_ALLOW_XML_FALLBACK", "1")
+            monkeypatch.delenv("BNG_NFSIM_REQUIRE_DIRECT", raising=False)
+        else:
+            monkeypatch.delenv("BNG_NFSIM_FORCE_XML", raising=False)
+            monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
+        result = bionetgen.load(str(bngl)).simulate(
+            method="nf", t_end=1.0, n_steps=2, seed=1
+        )
 
-        monkeypatch.delenv("BNG_NFSIM_REQUIRE_DIRECT")
-        monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
-        monkeypatch.setenv("BNG_NFSIM_ALLOW_XML_FALLBACK", "1")
-        with pytest.raises(RuntimeError, match="Failed to initialize NFSim system"):
-            bionetgen.load(str(bngl)).simulate(
-                method="nf", t_end=1.0, n_steps=2, seed=1
-            )
+        assert result.construction_path == ("in-memory-xml" if force_xml else "direct")
+        assert list(result.observables["C1"]) == [0.0, 1.0, 1.0]
+        assert list(result.observables["A1"]) == [0.0, 1.0, 1.0]
 
     def test_nf_direct_dynamic_rate_wraps_scoped_local_function(
         self, tmp_path, monkeypatch

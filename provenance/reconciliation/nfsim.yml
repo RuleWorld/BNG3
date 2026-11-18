@@ -221,7 +221,9 @@
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFcore/system.cpp; cpp/nfsim/NFcore/observable.cpp; cpp/nfsim/NFfunction/localFunction.cpp",
       "tests": [
-        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions"
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions",
+        "tests/architecture_contracts/test_native_reader.cpp::direct NFsim refreshes a local rate when its global observable changes",
+        "tests/python/test_cpp_backend.py::TestSimulation::test_nf_local_rate_refreshes_after_global_observable_changes"
       ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Integrate the upstream observable refresh and complete-state propensity updates into the embedded engine."
@@ -249,7 +251,9 @@
       "capability": "Reject a bond partner of the wrong molecule type before indexing it",
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFcore/templateMolecule.cpp",
-      "tests": [],
+      "tests": [
+        "tests/validation/test_parity_nfsim_seed.py::test_an_family_seed_state_order_matches_native_nfsim"
+      ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Check partner molecule types before using template component indices."
     },
@@ -258,7 +262,9 @@
       "capability": "Guard the other three sites that index a partner with its template's index",
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFcore/templateMolecule.cpp",
-      "tests": [],
+      "tests": [
+        "tests/validation/test_parity_nfsim_seed.py::test_an_family_seed_state_order_matches_native_nfsim"
+      ],
       "reviewer": "Codex technical reconciliation",
       "rationale": "Apply the partner type check to the other template matching paths."
     },

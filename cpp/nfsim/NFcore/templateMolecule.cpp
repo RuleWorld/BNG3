@@ -1556,22 +1556,10 @@ bool TemplateMolecule::compare(Molecule *m, ReactantContainer *rc, MappingSet *m
 
 		//Now we have to make sure that the correct bond is present on the other side
 		//of the interaction. This can be tricky because of symmetric sites!
-		//Every index below -- bondPartnerCompIndex[b] in the normal branch, and
-		//the equivalency-class indices tryToMap() takes from t2's type in the
-		//symmetric one -- is a component index in the PARTNER TEMPLATE's molecule
-		//type, applied to m2. That only means anything if m2 is of that type, and
-		//nothing has checked yet: the check is in t2->compare(m2,...), reached
-		//after those reads. Molecule::bond and Molecule::indexOfBond are sized to
-		//the molecule's own component count and the accessors do not bounds-check,
-		//so a molecule of a shorter type is read out of bounds -- in tcr.bngl a
-		//ZAP70 bound to a LAT (2 components) is read at LCP2's component index 3,
-		//past the end of LAT's two-element bond array, which AddressSanitizer
-		//reports as a heap-buffer-overflow here. Where the stray index lands
-		//inside the array instead, it reads an unrelated component's bond.
-		//A molecule of another type cannot satisfy a template of this one, so the
-		//bond cannot match -- which is the verdict compare() reaches anyway. Answer
-		//it before reading anything.
+		// Component indices below belong to the partner template's type.
+		// Reject a mismatch before indexing and release the partial match.
 		if(m2->getMoleculeType()!=t2->getMoleculeType()) {
+			clear();
 			return false;
 		}
 
