@@ -1,0 +1,15 @@
+## Agent C independent disposition — stochastic/00003 at 98b310af
+
+Independent lane C disposition of the one official SSTS failure in run 44199524269 (98b310af). **Finding: quantified oracle/statistic limitation; no product or comparator defect demonstrated. Official failed verdict retained.**
+
+- The case is a subcritical linear birth–death process (X->2X at 1*X, X->0 at 1.1*X, X0=100). The official reference `X-mean/X-sd` equals the exact analytic law to 7e-6, so the comparator reference is correct.
+- Re-running the native CPU batch SSA at the official seed base 1,000,000 / 40,000 trajectories reproduces the reported sample mean and SD arrays **exactly** (0.0 max relative difference) — the report faithfully reflects the product and is deterministic.
+- Across seed bases 1e6..8e6 the engine produces 5,1,9,15,6,0,11,0 violations (F=1.71,1.08,2.85,2.59,3.33,0.77,2.04,0.85). The official 5/100 is a typical seed realization, not a systematic defect.
+- Code trace: correct SplitMix64 per-trajectory seeding (adjacent-seed overlap tested), Welford population-variance (ddof=0) aggregation, comparator `Z=sqrt(N)(mean-mu)/sigma`, `Y=sqrt(N/2)(S^2/sigma^2-1)` exactly the DSMTS definition; narrowing/accumulator fixes already merged; 23/23 moment/numeric-limit + 10/10 closed-form parity tests pass. No defect.
+- The official ±5 SD band assumes a unit-variance normal `Y_sd`. For this non-Gaussian law the true asymptotic `Y_sd` scale grows to 4.4–5.7 at the flagged times (excess kurtosis 37–62), so the observed `|Y_sd|=8.6` is only ~1.7 true-law sigma. The five violations are all SD-side and positive.
+- Retrospective source-law calibration (R=1000) on this exact sample: P(F>=F_obs)=0.391 [0.361,0.422], P(count>=5)=0.446 [0.415,0.477]. A new **predeclared** independent confirmation (plan hashed `194a60d6…` before running, R=1000, new seed 20261118, own exact conditional simulator) gives P(F>=F_obs)=0.415 [0.385,0.446] and P(count>=5)=0.473 [0.442,0.504] — the observed F=1.713 sits at the median of its true-law null (null mean 1.713), and the observed 5 violations is near the null mean 5.36. A corrected wrong-law power control (mu=1.05 scored against the true reference) gives F~594 and 50/50 violations, so the diagnostic rejects a genuinely wrong law. Evidence: `analysis/c-stochastic-00003/{c-diagnostic.json,wrong_law_control.json,PLAN_ADDENDUM.md}`.
+- The report's 3e-7 binomial tail is explicitly diagnostic-only and invalid here because all 50 observation times reuse the same trajectories.
+
+Next action: record this as a known seed-sensitive official case; apply the existing release contract for a retained official failure. Do not reroll seeds, widen tolerances or change expected outputs. No product fix and no shared-harness edit from C.
+
+Evidence: C worktree `/tmp/bng3-c-stochastic-00003` branch `codex/c-stochastic-00003` base 98b310af; `analysis/c-stochastic-00003/{PREDECLARED_PLAN.md,FINDING.md,REPLAY_PACKET.md,independent_diagnostic.py,c-diagnostic.json}`; status in `.../bng3-plan/lane-c-status.md`. Hashes and commands in REPLAY_PACKET.md.

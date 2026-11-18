@@ -1,0 +1,94 @@
+{
+  "config": {
+    "mu": 1.1,
+    "replicates": 1000,
+    "rng": "numpy PCG64",
+    "seed": 20261118,
+    "statistic": "F=max(|Z|/3,|Y|/5); Y=sqrt(K/2)*(S^2/sigma^2-1)",
+    "steps": 50,
+    "trajectories": 40000,
+    "variance_ddof": 0,
+    "wrong_mu": 1.05
+  },
+  "decision_inputs": {
+    "alpha_familywise": 0.01
+  },
+  "identity_checks": {
+    "ensemble_mean_var_ratio_range": {
+      "41": [
+        1.0013667190143,
+        0.030813471255866063
+      ],
+      "43": [
+        1.0012419180523304,
+        0.034385190525307245
+      ],
+      "44": [
+        1.0012650930917237,
+        0.03715340525864912
+      ],
+      "45": [
+        1.001129768890658,
+        0.039156105125937646
+      ],
+      "46": [
+        1.000690073163378,
+        0.04124242801470528
+      ]
+    },
+    "geometric_route_matches_nb": true
+  },
+  "null": {
+    "F_mean": 1.7130932816625135,
+    "F_p95": 3.2316624357068564,
+    "F_sd": 0.6965369958678169,
+    "max_y_mean": 8.556363780361975,
+    "max_y_p95": 16.15831217853428,
+    "max_y_sd": 3.494283111455044,
+    "n_viol_mean": 5.357,
+    "n_viol_p95": 15.0,
+    "n_viol_sd": 4.782512250211538
+  },
+  "observed": {
+    "F": 1.71332478721316,
+    "max_abs_y": 8.5666239360658,
+    "max_abs_z": 2.845986755595871,
+    "n_viol": 5,
+    "sd_thresholds": {
+      "41": 7.6549368286289585,
+      "43": 8.5666239360658,
+      "44": 8.554369861195115,
+      "45": 6.881395125889811,
+      "46": 5.7567379629624815
+    }
+  },
+  "scope": "independent source-law diagnostic; official verdict unchanged",
+  "tail_probabilities": {
+    "P_F_ge_observed": 0.415,
+    "P_F_ge_observed_wilson95": [
+      0.3848433602464026,
+      0.4458071886961417
+    ],
+    "P_joint_sd_thresholds": 0.019,
+    "P_joint_sd_thresholds_wilson95": [
+      0.012196885750790904,
+      0.02948445591231312
+    ],
+    "P_nviol_ge_observed": 0.473,
+    "P_nviol_ge_observed_wilson95": [
+      0.4422178794680813,
+      0.5039887654901387
+    ]
+  },
+  "wrong_law_control": {
+    "F_mean": 0.8153859055538099,
+    "F_p05": 0.4933891840560953,
+    "P_wrong_F_ge_observed": 0.004,
+    "P_wrong_F_ge_observed_wilson95": [
+      0.0015565881404084308,
+      0.010239556277262253
+    ],
+    "mu": 1.05,
+    "n_viol_mean": 0.752
+  }
+}

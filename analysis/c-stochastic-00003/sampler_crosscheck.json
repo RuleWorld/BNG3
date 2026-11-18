@@ -1,0 +1,14 @@
+{
+  "replicates": 30,
+  "trajectories": 40000,
+  "seed": 555,
+  "note": "independent coding routes; both match exact analytic moments within Monte Carlo error",
+  "nb": {
+    "max_rel_mean_err_vs_analytic": 0.006025500891276274,
+    "max_rel_var_err_vs_analytic": 0.018679114366983544
+  },
+  "geometric": {
+    "max_rel_mean_err_vs_analytic": 0.003970843407109376,
+    "max_rel_var_err_vs_analytic": 0.012112174237348264
+  }
+}
