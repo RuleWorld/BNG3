@@ -18323,14 +18323,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-reconciliation-pins.",
-                "No revision-locked consuming receipt producer is declared for required live check release-reconciliation-pins."
-              ]
+              "selector": "scripts/validate_reconciliation_tests.py",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#upstream-reconciliation-history",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],

@@ -89,7 +89,7 @@ jobs:
             -q -ra
 
   upstream-reconciliation-history:
-    name: Verify pinned upstream history and fixtures
+    name: release-reconciliation-pins
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
@@ -109,8 +109,11 @@ jobs:
           done
 
       - name: Compare the ledgers with upstream history and fixture bytes
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           python scripts/validate_reconciliation_tests.py \
+            --candidate-revision "$BNG3_SOURCE_REVISION" \
             --bionetgen "$RUNNER_TEMP/reconciliation/bionetgen" \
             --nfsim "$RUNNER_TEMP/reconciliation/nfsim" \
             --pybionetgen "$RUNNER_TEMP/reconciliation/pybionetgen" \

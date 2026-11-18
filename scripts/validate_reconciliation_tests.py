@@ -22,6 +22,18 @@ from typing import Any
 
 REPO = Path(__file__).resolve().parents[1]
 LEDGER_DIR = REPO / "provenance" / "reconciliation"
+RECONCILIATION_FIXTURES = {
+    "bionetgen": (
+        "bng2/Models2/Motivating_example_cBNGL.bngl",
+        "bng2/Models2/energy_example1.bngl",
+    ),
+    "nfsim": (
+        "test/MM/mm_small_km.bngl",
+        "test/MM/mm_small_km.xml",
+        "test/testSuite/t3.bngl",
+        "test/testSuite/t3.xml",
+    ),
+}
 CLAIM_CLASSIFICATIONS = {
     "incorporated-identically",
     "incorporated-equivalently",
@@ -446,7 +458,11 @@ def _python_source_symbols(source: str) -> set[str]:
 
 
 def audit_upstream_history(
-    checkout: Path, ledger: dict[str, Any], accepted_revision: str
+    checkout: Path,
+    ledger: dict[str, Any],
+    accepted_revision: str,
+    *,
+    fixtures: Iterable[str] = (),
 ) -> dict[str, Any]:
     """Compare ledger commit coverage with the full pinned Git ancestry range."""
 
@@ -495,7 +511,7 @@ def audit_upstream_history(
         report["commits"] = sorted(commits)
         report["missing_commits"] = sorted(commits - ledger_commits)
         report["unexpected_commits"] = sorted(ledger_commits - commits)
-        fixtures = (
+        changed_fixtures = (
             git_bytes(
                 "diff",
                 "--name-only",
@@ -512,9 +528,14 @@ def audit_upstream_history(
             .decode()
             .split("\0")
         )
-        for relative in filter(None, fixtures):
-            path = checkout.resolve() / relative
-            if path.resolve() != path or not path.is_file():
+        checkout_root = checkout.resolve()
+        for relative in sorted(set(fixtures).union(filter(None, changed_fixtures))):
+            path = checkout_root / relative
+            if (
+                not path.is_relative_to(checkout_root)
+                or path.resolve() != path
+                or not path.is_file()
+            ):
                 errors.append(f"fixture is not a regular checkout file: {relative}")
                 continue
             data = path.read_bytes()
@@ -541,11 +562,16 @@ def main() -> int:
     parser.add_argument("--nfsim", type=Path)
     parser.add_argument("--pybionetgen", type=Path)
     parser.add_argument("--history-report", type=Path)
+    parser.add_argument("--candidate-revision", help="Expected BNG3 checkout revision")
     args = parser.parse_args()
     sources = {
         name: getattr(args, name) for name in ("bionetgen", "nfsim", "pybionetgen")
     }
-    verify_history = any(sources.values()) or args.history_report is not None
+    verify_history = (
+        any(sources.values())
+        or args.history_report is not None
+        or args.candidate_revision is not None
+    )
     if verify_history and not (all(sources.values()) and args.history_report):
         parser.error(
             "history audit requires all three source paths and --history-report"
@@ -565,6 +591,22 @@ def main() -> int:
             f"{counts['test_references']} references checked"
         )
     if verify_history:
+        git_command = ["git", "-C", str(REPO)]
+        revision = subprocess.check_output(
+            [*git_command, "rev-parse", "HEAD"], text=True
+        ).strip()
+        dirty = bool(
+            subprocess.check_output(
+                [*git_command, "status", "--porcelain=v1", "--untracked-files=all"],
+                text=True,
+            ).strip()
+        )
+        if args.candidate_revision is not None and revision != args.candidate_revision:
+            errors.append(
+                "BNG3 checkout does not match the requested candidate revision"
+            )
+        if dirty:
+            errors.append("BNG3 checkout has local changes")
         lock = json.loads(
             (REPO / "provenance" / "upstreams.lock.yml").read_text(encoding="utf-8")
         )
@@ -575,7 +617,10 @@ def main() -> int:
                 errors.append(f"unexpected or duplicate source ledger: {source}")
                 continue
             audit = audit_upstream_history(
-                sources[source], ledger, lock["sources"][source]["revision"]
+                sources[source],
+                ledger,
+                lock["sources"][source]["revision"],
+                fixtures=RECONCILIATION_FIXTURES.get(source, ()),
             )
             history[source] = audit
             errors.extend(f"{source}: {error}" for error in audit["errors"])
@@ -640,9 +685,25 @@ def main() -> int:
                 {
                     "schema_version": 1,
                     "audit": "upstream-history-and-fixtures",
-                    "bng3_revision": subprocess.check_output(
-                        ["git", "-C", str(REPO), "rev-parse", "HEAD"], text=True
-                    ).strip(),
+                    "source": {"revision": revision, "dirty": dirty},
+                    "references": {
+                        name: {
+                            "repository": lock["sources"][name]["repository"],
+                            "revision": result["checkout_revision"],
+                            "fixture_sha256": result["fixture_sha256"],
+                        }
+                        for name, result in history.items()
+                    },
+                    "results": [
+                        {
+                            "id": "release-reconciliation-pins",
+                            "status": "FAIL" if errors else "PASS",
+                            "evidence_kind": "supported-execution",
+                            "supported_execution": not errors,
+                            "related_issues": [180],
+                            "detail": "Compare clean pinned source revisions, Git ancestry, and fixture bytes.",
+                        }
+                    ],
                     "sources": history,
                     "source_inventory_audit": inventory,
                     "source_symbol_audit": source_symbols,

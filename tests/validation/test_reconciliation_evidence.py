@@ -371,3 +371,21 @@ def test_source_location_audit_reports_stale_symbols(tmp_path):
     )
     assert report["resolved_rows"] == ["action.ok", "py.ok"]
     assert sorted(report["unresolved_rows"]) == ["action.stale", "py.stale"]
+
+
+def test_history_report_covers_declared_unchanged_fixtures(pinned_history):
+    from scripts.validate_reconciliation_tests import audit_upstream_history
+
+    source, represented, cutoff = pinned_history
+    _git(source, "commit", "--allow-empty", "-qm", "next revision")
+    pin = _git(source, "rev-parse", "HEAD")
+    ledger = {
+        "represented_revision": cutoff,
+        "cutoff_revision": pin,
+        "entries": [{"source_revision": pin}],
+    }
+    report = audit_upstream_history(
+        source, ledger, pin, fixtures=("fixture.txt", "missing.txt")
+    )
+    assert set(report["fixture_sha256"]) == {"fixture.txt"}
+    assert "fixture is not a regular checkout file: missing.txt" in report["errors"]
