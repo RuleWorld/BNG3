@@ -721,10 +721,22 @@ jobs:
             --strict --summary "$GITHUB_STEP_SUMMARY" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}"
 
+      - name: Execute Issue 138 compiled-model release case
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Non-NFsim bngl.* family: 30 syntax rows + pinned BNG2 golden-network
+          # parity, executed from the compiled model after AST destruction.
+          python scripts/ci/record_issue138_release.py \
+            --source-revision "${{ github.event.pull_request.head.sha || github.sha }}" \
+            --output "$RUNNER_TEMP/issue138-release-record.json" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+
       - name: Build exact-revision issue and provenance evidence queue
         if: always()
         run: |
           head_args=()
+          issue138_args=()
           issue142_args=()
           s6_args=()
           delay_args=()
@@ -732,6 +744,9 @@ jobs:
           issue147_args=()
           if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             head_args=(--collect-upstream-heads)
+          fi
+          if [[ -s "$RUNNER_TEMP/issue138-release-record.json" ]]; then
+            issue138_args+=(--issue138-release-record "$RUNNER_TEMP/issue138-release-record.json")
           fi
           if [[ -s "$RUNNER_TEMP/issue142/queue/release-obligation-142.json" ]]; then
             issue142_args+=(
@@ -760,6 +775,7 @@ jobs:
             --issues-json "$RUNNER_TEMP/bng3-issues.json" \
             --report "$RUNNER_TEMP/bng3-integrated-validation/report.json" \
             --report "$RUNNER_TEMP/bng3-integrated-validation/matrix-report.json" \
+            "${issue138_args[@]}" \
             "${issue142_args[@]}" \
             "${s6_args[@]}" \
             "${delay_args[@]}" \
