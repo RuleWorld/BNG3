@@ -26,6 +26,11 @@ ISSUE_142_CHECKS = (
     "release-graph-observables",
     "release-obligation-142",
 )
+ISSUE_156_CHECKS = (
+    "release-bngir-schema",
+    "release-semantic-equality",
+    "release-capability-coverage-156",
+)
 S6_SIMULATE_ROWS = (
     "action.simulate.t_start",
     "action.simulate.t_end",
@@ -377,6 +382,89 @@ def issue142_receipt_reports(
         ):
             report["replay_references"] = replay_references
     return [identity_report_for_queue, observables_report_for_queue, receipt_report]
+
+
+def issue156_receipt_reports(receipt, check_reports, revision):
+    """Consume the exact-revision issue #156 receipt and its child reports."""
+    if not isinstance(receipt, dict) or receipt.get("schema_version") != 1:
+        raise ValueError("invalid Issue 156 receipt schema")
+    if receipt.get("acceptance_check") != "release-obligation-156":
+        raise ValueError("conflicting Issue 156 receipt identity")
+    if receipt.get("source_revision") != revision:
+        raise ValueError("stale Issue 156 receipt revision")
+    if receipt.get("source_dirty") is not False:
+        raise ValueError("Issue 156 receipt source was not recorded clean")
+    checks = receipt.get("checks")
+    if not isinstance(checks, dict) or set(checks) != set(ISSUE_156_CHECKS):
+        raise ValueError("Issue 156 receipt is missing or has conflicting child checks")
+    for check in ISSUE_156_CHECKS:
+        result = checks[check]
+        if not isinstance(result, dict) or result.get("status") != "PASS":
+            raise ValueError(f"Issue 156 check {check} did not pass")
+        if not re.fullmatch(r"[0-9a-f]{64}", result.get("report_sha256", "")):
+            raise ValueError(f"Issue 156 check {check} lacks a valid report hash")
+        report = check_reports.get(check)
+        if not isinstance(report, dict) or report.get("acceptance_check") != check:
+            raise ValueError(f"Issue 156 check {check} report identity conflicts")
+        if (
+            report.get("source_revision") != revision
+            or report.get("source_dirty") is not False
+        ):
+            raise ValueError(
+                f"Issue 156 check {check} report revision is stale or dirty"
+            )
+        raw = (json.dumps(report, sort_keys=True, indent=2) + "\n").encode()
+        if hashlib.sha256(raw).hexdigest() != result["report_sha256"]:
+            raise ValueError(
+                f"Issue 156 check {check} report hash differs from the receipt"
+            )
+
+    source = {"revision": revision, "dirty": False}
+    references = {
+        "bngir_semantics": {
+            "sha256": hashlib.sha256(
+                (ROOT / "python/bionetgen/bngir.py").read_bytes()
+            ).hexdigest()
+        }
+    }
+    reports = []
+    for check in ISSUE_156_CHECKS:
+        row = {
+            "id": check,
+            "status": "PASS",
+            "stage": "issue156-release-receipt",
+            "check": check,
+            "related_issues": [156],
+            "evidence_kind": "supported-execution",
+            "supported_execution": True,
+            "receipt": checks[check],
+        }
+        reports.append(
+            {
+                "source": source,
+                "references": references,
+                "subject": {"sha256": checks[check]["report_sha256"]},
+                "checks": checks,
+                "results": [row],
+            }
+        )
+    for key in (
+        "qualification:issue:156:closure-record",
+        "bngir-equality:approved-default-v01-explicit-v02",
+        "bngir-equality:v01-v02-identity-provenance",
+    ):
+        reports[0]["results"].append(
+            {
+                "id": key,
+                "status": "PASS",
+                "stage": "issue156-release-receipt",
+                "check": key,
+                "related_issues": [156],
+                "evidence_kind": "disposition",
+                "receipt": checks["release-obligation-156"],
+            }
+        )
+    return reports
 
 
 def _s6_expected_times(row, scenario):
@@ -1861,6 +1949,10 @@ def main(argv=None):
     parser.add_argument("--issue142-release-record", type=Path)
     parser.add_argument("--issue142-identity-report", type=Path)
     parser.add_argument("--issue142-observables-report", type=Path)
+    parser.add_argument("--issue156-release-record", type=Path)
+    parser.add_argument("--issue156-schema-report", type=Path)
+    parser.add_argument("--issue156-equality-report", type=Path)
+    parser.add_argument("--issue156-coverage-report", type=Path)
     parser.add_argument("--s6-simulate-receipt-dir", type=Path)
     parser.add_argument("--issue472-docs-report", type=Path)
     parser.add_argument("--issue471-oracle-report", type=Path)
@@ -1949,6 +2041,54 @@ def main(argv=None):
                         for path in (
                             args.issue142_identity_report,
                             args.issue142_observables_report,
+                        )
+                    ],
+                ),
+            ]
+        if args.issue156_release_record:
+            if not all(
+                (
+                    args.issue156_schema_report,
+                    args.issue156_equality_report,
+                    args.issue156_coverage_report,
+                )
+            ):
+                raise ValueError(
+                    "Issue 156 receipt requires schema, equality and coverage reports"
+                )
+            if campaign.git(ROOT, "status", "--porcelain"):
+                raise ValueError(
+                    "Issue 156 receipt consumer requires a clean candidate tree"
+                )
+            check_reports = {
+                "release-bngir-schema": json.loads(
+                    args.issue156_schema_report.read_text()
+                ),
+                "release-semantic-equality": json.loads(
+                    args.issue156_equality_report.read_text()
+                ),
+                "release-capability-coverage-156": json.loads(
+                    args.issue156_coverage_report.read_text()
+                ),
+            }
+            reports.extend(
+                issue156_receipt_reports(
+                    json.loads(args.issue156_release_record.read_text()),
+                    check_reports,
+                    args.revision,
+                )
+            )
+            receipt_reports = [
+                dict(
+                    kind="issue156-release-record",
+                    path=str(args.issue156_release_record),
+                    sha256=inventory.sha256(args.issue156_release_record),
+                    component_reports=[
+                        {"path": str(path), "sha256": inventory.sha256(path)}
+                        for path in (
+                            args.issue156_schema_report,
+                            args.issue156_equality_report,
+                            args.issue156_coverage_report,
                         )
                     ],
                 ),

@@ -9333,14 +9333,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-bngir-schema.",
-                "No revision-locked consuming receipt producer is declared for required live check release-bngir-schema."
-              ]
+              "selector": "tests/validation/release/cases/issue-156/test_bngir_release.py::test_release_bngir_schema",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue156_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -9366,14 +9363,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-semantic-equality.",
-                "No revision-locked consuming receipt producer is declared for required live check release-semantic-equality."
-              ]
+              "selector": "tests/validation/release/cases/issue-156/test_bngir_release.py::test_release_semantic_equality",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue156_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -9399,14 +9393,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-capability-coverage-156.",
-                "No revision-locked consuming receipt producer is declared for required live check release-capability-coverage-156."
-              ]
+              "selector": "tests/validation/release/cases/issue-156/test_bngir_release.py::test_release_capability_coverage_156",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue156_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
