@@ -390,7 +390,7 @@ begin seed species
 end seed species
 begin observables
   Molecules ActiveGene Gene(promoter~active)
-  Molecules RepressedGene Gene(promoter~repressed)
+  Molecules RepressedGene Gene(promoter~repressed!?)
   Molecules TotalmRNA mRNA()
   Molecules TotalProtein Protein()
   Molecules FreeProtein Protein(dna)
@@ -519,25 +519,6 @@ begin reaction rules
 end reaction rules
 end model
 """,
-        # Energy patterns
-        """begin model
-begin parameters
-  G0 -1.0
-end parameters
-begin molecule types
-  A(x~u~p)
-end molecule types
-begin seed species
-  A(x~u) 10
-end seed species
-begin energy patterns
-  A(x~p) G0
-end energy patterns
-begin reaction rules
-  A(x~u) -> A(x~p) 0.1
-end reaction rules
-end model
-""",
         # Barrier patterns
         """begin model
 begin parameters
@@ -597,6 +578,34 @@ end model
         with pytest.raises(RuntimeError) as exc_info:
             model.simulate(method="nfnext", t_end=1.0, n_steps=2)
         assert "NFnext execution unsupported" in str(exc_info.value)
+
+    # A constant energy pattern is statically evaluable BNGL/NFsim input:
+    # pinned BNG2 generates its network and NFsim has EnergyPattern support.
+    # Keep the original case as positive execution coverage rather than as a
+    # fail-closed case; no expected trajectory is normalized to BNG3 output.
+    static_energy = """begin model
+begin parameters
+  G0 -1.0
+end parameters
+begin molecule types
+  A(x~u~p)
+end molecule types
+begin seed species
+  A(x~u) 10
+end seed species
+begin energy patterns
+  A(x~p) G0
+end energy patterns
+begin reaction rules
+  A(x~u) -> A(x~p) 0.1
+end reaction rules
+end model
+"""
+    path = tmp_path / "supported_static_energy.bngl"
+    path.write_text(static_energy, encoding="utf-8")
+    model = bionetgen.load(str(path))
+    result = model.simulate(method="nfnext", t_end=1.0, n_steps=2)
+    assert result.backend == "nfnext"
 
 
 def test_release_nfnext_execution_totalrate_semantics():
