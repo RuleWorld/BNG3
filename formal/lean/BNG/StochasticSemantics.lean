@@ -73,8 +73,13 @@ def RateSpec.rateAt (r : RateSpec) (n : SpeciesCount) : Option ExactValue :=
   | .saturation, [kcat, K] =>
       if K + nr = 0 then none else some (kcat / (K + nr))
   | .hill, [v, K] =>
+      -- Hill(k,K,h) is already the total hazard k*n^h/(K^h+n^h) at count n.
+      -- Return the per-molecule base so the shared multiplicity factor n gives
+      -- exactly that hazard (not n times too large).
       let den : ExactValue := K ^ r.exponent + nr ^ r.exponent
-      if den = 0 then none else some (v * nr ^ r.exponent / den)
+      if den = 0 then none
+      else if n = 0 then some 0
+      else some (v * nr ^ (r.exponent - 1) / den)
   | .michaelisMenten, [v, K] =>
       if K + nr = 0 then none else some (v / (K + nr))
   | _, _ => none
