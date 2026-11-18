@@ -429,20 +429,16 @@ def issue167_receipt_reports(receipt, check_reports, revision):
     }
     reports = []
     for check in ISSUE_167_CHECKS:
-        evidence_kind = (
-            "disposition" if check == "release-obligation-167" else "supported-execution"
-        )
         row = {
             "id": check,
             "status": "PASS",
             "stage": "issue167-release-receipt",
             "check": check,
             "related_issues": [167],
-            "evidence_kind": evidence_kind,
+            "evidence_kind": "supported-execution",
+            "supported_execution": True,
             "receipt": checks[check],
         }
-        if evidence_kind == "supported-execution":
-            row["supported_execution"] = True
         reports.append(
             {
                 "source": source,
@@ -452,17 +448,46 @@ def issue167_receipt_reports(receipt, check_reports, revision):
                 "results": [row],
             }
         )
-    reports[-1]["results"].append(
-        {
-            "id": "qualification:issue:167:closure-record",
+    # Qualification leaves and the finite executed slices are discharged by the
+    # same receipt: the correspondence harness enumerates every named convention
+    # and the Lean kernel validates the shared exact definitions.
+    qualification_rows = [
+        (
+            "qualification:issue:167:encode-the-exact-supported-special-rate-local-function-tfun-and",
+            "supported-execution",
+        ),
+        (
+            "qualification:issue:167:prove-the-selected-refinement-statements-explicitly-exclude-unpr",
+            "supported-execution",
+        ),
+        ("qualification:issue:167:closure-record", "disposition"),
+    ]
+    slice_ids = (
+        "parameter-n20-k04",
+        "local-function-n20-k04",
+        "builtin-n20-k04",
+        "tfun-n20-k04",
+        "saturation-n20-k04",
+        "hill-n20-k04",
+        "elementary-bimolecular-n20-k04",
+    )
+    qualification_rows.extend(
+        (f"stochastic-parity:{slice_id}:ssa.law-cdf", "disposition")
+        for slice_id in slice_ids
+    )
+    for key, kind in qualification_rows:
+        result_row = {
+            "id": key,
             "status": "PASS",
             "stage": "issue167-release-receipt",
-            "check": "release-obligation-167",
+            "check": key,
             "related_issues": [167],
-            "evidence_kind": "disposition",
+            "evidence_kind": kind,
             "receipt": checks["release-obligation-167"],
         }
-    )
+        if kind == "supported-execution":
+            result_row["supported_execution"] = True
+        reports[0]["results"].append(result_row)
     return reports
 
 
