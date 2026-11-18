@@ -14952,14 +14952,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-stochastic-proof.",
-                "No revision-locked consuming receipt producer is declared for required live check release-stochastic-proof."
-              ]
+              "selector": "tests/validation/release/cases/issue-167/test_stochastic_semantics.py::test_release_stochastic_proof",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue167_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -14986,14 +14983,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-stochastic-correspondence.",
-                "No revision-locked consuming receipt producer is declared for required live check release-stochastic-correspondence."
-              ]
+              "selector": "tests/validation/release/cases/issue-167/test_stochastic_semantics.py::test_release_stochastic_correspondence",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue167_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -15020,14 +15014,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-167.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-167."
-              ]
+              "selector": "tests/validation/release/cases/issue-167/test_stochastic_semantics.py::test_release_obligation_167",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue167_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],

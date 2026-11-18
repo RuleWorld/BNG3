@@ -88,3 +88,43 @@ jobs:
         working-directory: formal/lean
         timeout-minutes: 20
         run: ./scripts/check_harness_itself.sh
+
+  issue167-correspondence:
+    name: Issue 167 exact stochastic correspondence receipt
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Install pinned Lean toolchain
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1.5.0
+        with:
+          lake-package-directory: formal/lean
+          auto-config: false
+          build: false
+          test: false
+          use-mathlib-cache: false
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Build native BNG3 extension
+        run: |
+          set -euo pipefail
+          python -m pip install --no-deps --no-build-isolation \
+            --config-settings=build-dir=build .
+
+      - name: Record issue #167 release receipt
+        env:
+          PYTHONPATH: python:build/cpp
+        run: python scripts/ci/record_issue167_release.py
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: issue167-release-receipt-${{ github.sha }}
+          path: tests/validation/evidence/issue167-*.json
+          if-no-files-found: error
+          retention-days: 30
