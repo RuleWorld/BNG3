@@ -1036,6 +1036,20 @@ jobs:
               tests/validation/test_parity_nfsim_seed.py \
               -q
 
+      - name: Verify species-observable propensity refresh
+        run: |
+          pytest -c tests/validation/pytest.ini \
+            tests/validation/test_parity_nfsim.py::test_reconciliation_species_observable_refresh \
+            -q -o junit_family=xunit1 \
+            --junitxml="$RUNNER_TEMP/reconciliation-nfsim-observable.xml"
+
+      - name: Retain reconciliation NFsim observable evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reconciliation-nfsim-observable
+          path: ${{ runner.temp }}/reconciliation-nfsim-observable.xml
+
       - name: Run fixed-seed native NFsim parity
         shell: bash
         run: |
