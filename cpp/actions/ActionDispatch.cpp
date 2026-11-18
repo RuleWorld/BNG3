@@ -3451,9 +3451,13 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "quit") {
-            // quit() — stop processing further actions (BNG2 interpreter exit)
+            // quit() -- stop processing further actions (BNG2 interpreter exit)
+            // Keep CLI diagnostics ASCII-only: this stderr text is captured by
+            // the Python parent with a UTF-8 decoder, and a non-ASCII emitter
+            // is mangled to U+FFFD by compilers that use a local execution
+            // charset (notably MSVC without /utf-8), breaking log fidelity.
             if (verbose) {
-                std::cerr << "[bng_cpp] quit() — stopping action processing\n";
+                std::cerr << "[bng_cpp] quit() -- stopping action processing\n";
             }
             return;
         }
