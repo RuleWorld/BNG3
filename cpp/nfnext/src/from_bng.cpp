@@ -1862,8 +1862,15 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
             } else if (const auto value = constantExpression(factor.expression, source)) {
                 irEnergy.energy = *value;
             } else {
-                issue(result, BngLoweringSeverity::Error, factor.label,
-                      "dynamic energy pattern expressions with unresolvable static evaluation are not supported in NFIR lowering");
+                // A dynamic energy expression is representable as source text
+                // in `expression`; only the static `energy` field is unset.
+                // Record that fact as a warning rather than rejecting the whole
+                // model. Rate expansion already refuses dynamic Arrhenius
+                // modulation, so this never claims dynamic energy execution.
+                irEnergy.energy = 0.0;
+                issue(result, BngLoweringSeverity::Warning, factor.label,
+                      "dynamic energy pattern has no static value; represented "
+                      "by expression and deferred to rate expansion for execution");
             }
             BngLoweringResult patternValidation;
             const auto pattern = flattenReactants({factor.pattern}, patternValidation, factor.label);

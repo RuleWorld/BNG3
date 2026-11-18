@@ -1693,6 +1693,49 @@ void lowersDynamicPopulationMapRates() {
            nfnext::canonicalizeModel(lowered2.model).canonicalBytes());
 }
 
+void lowersDynamicEnergyPatterns() {
+    // A dynamic energy expression is representable as source text even though
+    // it has no static energy value. NFIR lowering must preserve it for
+    // representation consumers; rate expansion still governs execution.
+    const auto parseDynamic = [](const std::string& energy) {
+        return bng::parser::parseModel(
+            "begin parameters\n G0 1.0\nend parameters\n"
+            "begin molecule types\n A(x~u~p)\nend molecule types\n"
+            "begin observables\n Molecules U A(x~u)\nend observables\n"
+            "begin seed species\n A(x~u) 10\nend seed species\n"
+            "begin reaction rules\n R1: A(x~u) -> A(x~p) 0.1\nend reaction rules\n"
+            "begin energy patterns\n ep1: A(x~p) " + energy + "\nend energy patterns\n");
+    };
+    const auto ast = parseDynamic("G0 * U()");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(lowered.ok());
+    assert(lowered.model.energy_patterns.size() == 1);
+    const auto& ep = lowered.model.energy_patterns[0];
+    assert(ep.energy == 0.0);
+    assert(ep.expression.find("U()") != std::string::npos);
+    bool warned = false;
+    for (const auto& entry : lowered.issues) {
+        assert(entry.severity != nfnext::BngLoweringSeverity::Error);
+        if (entry.severity == nfnext::BngLoweringSeverity::Warning &&
+            entry.message.find("dynamic energy pattern") != std::string::npos) {
+            warned = true;
+        }
+    }
+    assert(warned);
+
+    // The dynamic expression participates in canonical identity.
+    const auto ast2 = parseDynamic("G0 * U() + 1");
+    const bng::compile::CompiledModel semantic2(*ast2);
+    const auto lowered2 = nfnext::lowerFromBioNetGen(semantic2);
+    assert(lowered2.ok());
+    assert(lowered.model.fingerprint() != lowered2.model.fingerprint());
+    assert(nfnext::canonicalizeModel(lowered.model).canonicalBytes() !=
+           nfnext::canonicalizeModel(lowered2.model).canonicalBytes());
+}
+
 void lowersModifierFlags() {
     const auto ast = bng::parser::parseModel(R"BNGL(
 begin molecule types
@@ -2038,6 +2081,7 @@ end reaction rules
     lowersEnergyPatterns();
     lowersPopulationMaps();
     lowersDynamicPopulationMapRates();
+    lowersDynamicEnergyPatterns();
     lowersModifierFlags();
     lowersFilterPatterns();
     cacheRoundTripsNewModelFields();
