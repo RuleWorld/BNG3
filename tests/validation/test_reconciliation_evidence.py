@@ -265,3 +265,21 @@ def test_upstream_history_reads_fixture_bytes_despite_git_index_flags(pinned_his
     assert "fixture differs from the accepted revision: fixture.bngl" in (
         audit_upstream_history(source, ledger, pin)["errors"]
     )
+
+
+@pytest.mark.parametrize(
+    "installed",
+    [[], ["packaging; extra == 'dev'"], ["packaging>=24"]],
+)
+def test_packaging_is_a_default_installed_requirement(tmp_path, monkeypatch, installed):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "scripts/ci"))
+    from check_pybionetgen_compat import check_packaging_requirement
+
+    (tmp_path / "setup.py").write_text(
+        "setup(install_requires=['packaging'])\n", encoding="utf-8"
+    )
+    if installed == ["packaging>=24"]:
+        check_packaging_requirement(tmp_path, installed)
+    else:
+        with pytest.raises(ValueError, match="BNG3 installed metadata"):
+            check_packaging_requirement(tmp_path, installed)
