@@ -3,7 +3,9 @@
 import re
 
 import libsbml
+import numpy as np
 import pytest
+import roadrunner
 from _extdep import require_extension
 
 from bionetgen.atomizer.modern import Atomizer
@@ -122,3 +124,45 @@ def test_dynamic_compartment_is_never_frozen_to_a_literal():
     # static literal.  The native event lowering declines in that case.
     assert not assignments
     assert "begin bng3_events" not in result.bngl
+
+
+@pytest.mark.parametrize("piecewise", [False, True], ids=["arithmetic", "piecewise"])
+@pytest.mark.parametrize("compartment_size", [2.0, 4.0])
+def test_native_event_compartment_matches_original_source_law(
+    piecewise, compartment_size
+):
+    """Independent original-source trajectory oracle (#729 detector).
+
+    At constant volume the event adds 1/cell to the concentration, i.e. one to
+    the amount; the explicit compartment flux gives S'=1-S^3. libRoadRunner is
+    an independent consumer of the *original* SBML, so this checks the emitted
+    BNGL reproduces the source trajectory, not just the assignment text.
+    """
+    source = _source(piecewise=piecewise, compartment_size=compartment_size)
+    document = libsbml.readSBMLFromString(source)
+    document.checkConsistency()
+    errors = [
+        document.getError(i).getMessage()
+        for i in range(document.getNumErrors())
+        if document.getError(i).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
+    ]
+    assert not errors
+    times = np.array([0.0, 0.25, 0.75, 1.0])
+    oracle = roadrunner.RoadRunner(source)
+    oracle.integrator.setValue("relative_tolerance", 1e-10)
+    oracle.integrator.setValue("absolute_tolerance", 1e-12)
+    expected = np.asarray(oracle.simulate(times=times, selections=["time", "S"]))
+    assert 0 < expected[1, 1] < compartment_size * times[1]
+    assert expected[2, 1] > compartment_size * 0.5
+
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(source)
+    assert result.success, result.error
+    assert "begin bng3_events version 1" in result.bngl
+    model = cpp.parse_string(result.bngl)
+    network = cpp.generate_network(model, max_iter=5)
+    actual = cpp.simulate_ode(
+        model, network, sample_times=times.tolist(), rtol=1e-10, atol=1e-12
+    )
+    np.testing.assert_allclose(
+        actual["observables"]["S_amt"], expected[:, 1], rtol=1e-7, atol=1e-9
+    )
