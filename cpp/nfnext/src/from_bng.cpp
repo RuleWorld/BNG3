@@ -1897,8 +1897,17 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
             if (rateValue) {
                 irPopMap.rate = *rateValue;
             } else {
-                issue(result, BngLoweringSeverity::Error, popMap.populationName,
-                      "dynamic population map rates with unresolvable static evaluation are not supported in NFIR lowering");
+                // A dynamic population-map rate is representable losslessly as
+                // an expression: `rate_expression` already carries the source
+                // text and the cache/canonical forms preserve it. Record that
+                // the static `rate` field is unset and defer execution to the
+                // hybrid generator. `executeFromBioNetGen` still refuses every
+                // population map, so this improves representation only and
+                // never claims dynamic execution support.
+                irPopMap.rate = 0.0;
+                issue(result, BngLoweringSeverity::Warning, popMap.populationName,
+                      "dynamic population map rate has no static value; represented "
+                      "by rate_expression and deferred to generate_hybrid_model for execution");
             }
             result.model.population_maps.push_back(std::move(irPopMap));
         }
