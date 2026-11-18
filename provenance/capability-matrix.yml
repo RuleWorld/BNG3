@@ -8,7 +8,7 @@
       "id": "bngl.model-blocks",
       "behavior": "model blocks",
       "upstream": "bionetgen:bng2/Perl2/BNGModel.pm:readFile",
-      "bng3": "cpp/parser/Parser.cpp",
+      "bng3": "cpp/parser/BNGParser.g4; cpp/parser/BNGAstVisitor.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.model-blocks]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
       "status": "missing",
@@ -19,7 +19,7 @@
       "id": "bngl.parameters",
       "behavior": "parameters",
       "upstream": "bionetgen:bng2/Perl2/BNGModel.pm:readFile",
-      "bng3": "cpp/parser/Parser.cpp",
+      "bng3": "cpp/parser/BNGParser.g4; cpp/parser/BNGAstVisitor.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.parameters]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
       "status": "missing",
@@ -30,7 +30,7 @@
       "id": "bngl.molecule-types",
       "behavior": "molecule types",
       "upstream": "bionetgen:bng2/Perl2/BNGModel.pm:readFile",
-      "bng3": "cpp/parser/Parser.cpp",
+      "bng3": "cpp/parser/BNGParser.g4; cpp/parser/BNGAstVisitor.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.molecule-types]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
       "status": "missing",
@@ -41,7 +41,7 @@
       "id": "bngl.species-and-seed-species",
       "behavior": "species and seed species",
       "upstream": "bionetgen:bng2/Perl2/BNGModel.pm:readFile",
-      "bng3": "cpp/parser/Parser.cpp",
+      "bng3": "cpp/parser/BNGParser.g4; cpp/parser/BNGAstVisitor.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.species-and-seed-species]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
       "status": "missing",
@@ -52,7 +52,7 @@
       "id": "bngl.reaction-rules",
       "behavior": "reaction rules",
       "upstream": "bionetgen:bng2/Perl2/BNGModel.pm:readFile",
-      "bng3": "cpp/parser/Parser.cpp",
+      "bng3": "cpp/parser/BNGParser.g4; cpp/parser/BNGAstVisitor.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.reaction-rules]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
       "status": "missing",
@@ -63,7 +63,7 @@
       "id": "bngl.observables",
       "behavior": "observables",
       "upstream": "bionetgen:bng2/Perl2/BNGModel.pm:readFile",
-      "bng3": "cpp/parser/Parser.cpp",
+      "bng3": "cpp/parser/BNGParser.g4; cpp/parser/BNGAstVisitor.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.observables]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
       "status": "missing",
@@ -74,7 +74,7 @@
       "id": "bngl.functions",
       "behavior": "functions",
       "upstream": "bionetgen:bng2/Perl2/BNGModel.pm:readFile",
-      "bng3": "cpp/parser/Parser.cpp",
+      "bng3": "cpp/parser/BNGParser.g4; cpp/parser/BNGAstVisitor.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.functions]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
       "status": "missing",
@@ -85,7 +85,7 @@
       "id": "bngl.compartments",
       "behavior": "compartments",
       "upstream": "bionetgen:bng2/Perl2/BNGModel.pm:readFile",
-      "bng3": "cpp/parser/Parser.cpp",
+      "bng3": "cpp/parser/BNGParser.g4; cpp/parser/BNGAstVisitor.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.compartments]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
       "status": "missing",
@@ -96,7 +96,7 @@
       "id": "bngl.energy-patterns",
       "behavior": "energy patterns",
       "upstream": "bionetgen:bng2/Perl2/BNGModel.pm:readFile",
-      "bng3": "cpp/parser/Parser.cpp",
+      "bng3": "cpp/parser/BNGParser.g4; cpp/parser/BNGAstVisitor.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.energy-patterns]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
       "status": "missing",
@@ -107,7 +107,7 @@
       "id": "bngl.population-maps",
       "behavior": "population maps",
       "upstream": "bionetgen:bng2/Perl2/BNGModel.pm:readFile",
-      "bng3": "cpp/parser/Parser.cpp",
+      "bng3": "cpp/parser/BNGParser.g4; cpp/parser/BNGAstVisitor.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.population-maps]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
       "status": "missing",
@@ -118,7 +118,7 @@
       "id": "bngl.actions",
       "behavior": "actions",
       "upstream": "bionetgen:bng2/Perl2/BNGModel.pm:readFile",
-      "bng3": "cpp/parser/Parser.cpp",
+      "bng3": "cpp/parser/BNGParser.g4; cpp/parser/BNGAstVisitor.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.actions]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
       "status": "missing",
@@ -129,7 +129,7 @@
       "id": "bngl.simulation-protocols",
       "behavior": "simulation protocols",
       "upstream": "bionetgen:bng2/Perl2/BNGModel.pm:readFile",
-      "bng3": "cpp/parser/Parser.cpp",
+      "bng3": "cpp/parser/BNGParser.g4; cpp/parser/BNGAstVisitor.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.simulation-protocols]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
       "status": "missing",
@@ -140,7 +140,7 @@
       "id": "bngl.comments-and-line-continuations",
       "behavior": "comments and line continuations",
       "upstream": "bionetgen:bng2/Perl2/BNGModel.pm:readFile",
-      "bng3": "cpp/parser/Parser.cpp",
+      "bng3": "cpp/parser/BNGLexer.g4; cpp/ast/MacroBNGModel.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.comments-and-line-continuations]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
       "status": "missing",
@@ -151,7 +151,7 @@
       "id": "bngl.source-file-include-readmodel",
       "behavior": "source file include/readModel",
       "upstream": "bionetgen:bng2/Perl2/BNGModel.pm:readFile",
-      "bng3": "cpp/parser/Parser.cpp",
+      "bng3": "cpp/actions/ActionDispatch.cpp; cpp/parser/BNGAstVisitor.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.source-file-include-readmodel]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
       "status": "missing",
@@ -162,7 +162,7 @@
       "id": "bngl.indexed-declarations",
       "behavior": "indexed declarations",
       "upstream": "bionetgen:bng2/Perl2/BNGModel.pm:readFile",
-      "bng3": "cpp/parser/Parser.cpp",
+      "bng3": "cpp/parser/BNGParser.g4; cpp/parser/BNGAstVisitor.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.indexed-declarations]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
       "status": "missing",
@@ -1872,7 +1872,7 @@
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "status": "implemented",
       "issue": 150,
-      "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
+      "evidence": "The action or option has a named #150 check. Full hybrid runtime acceptance is tracked separately by hybrid.execution and requires downstream execution and source parity."
     },
     {
       "id": "action.generate_hybrid_model.actions",
@@ -1883,7 +1883,7 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "status": "implemented",
       "issue": 150,
-      "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
+      "evidence": "The action or option has a named #150 check. Full hybrid runtime acceptance is tracked separately by hybrid.execution and requires downstream execution and source parity."
     },
     {
       "id": "action.generate_hybrid_model.execute",
@@ -1894,7 +1894,7 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "status": "implemented",
       "issue": 150,
-      "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
+      "evidence": "The action or option has a named #150 check. Full hybrid runtime acceptance is tracked separately by hybrid.execution and requires downstream execution and source parity."
     },
     {
       "id": "action.generate_hybrid_model.overwrite",
@@ -1905,7 +1905,7 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "status": "implemented",
       "issue": 150,
-      "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
+      "evidence": "The action or option has a named #150 check. Full hybrid runtime acceptance is tracked separately by hybrid.execution and requires downstream execution and source parity."
     },
     {
       "id": "action.generate_hybrid_model.prefix",
@@ -1916,7 +1916,7 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "status": "implemented",
       "issue": 150,
-      "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
+      "evidence": "The action or option has a named #150 check. Full hybrid runtime acceptance is tracked separately by hybrid.execution and requires downstream execution and source parity."
     },
     {
       "id": "action.generate_hybrid_model.suffix",
@@ -1927,7 +1927,7 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "status": "implemented",
       "issue": 150,
-      "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
+      "evidence": "The action or option has a named #150 check. Full hybrid runtime acceptance is tracked separately by hybrid.execution and requires downstream execution and source parity."
     },
     {
       "id": "action.generate_hybrid_model.verbose",
@@ -1938,7 +1938,7 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "status": "implemented",
       "issue": 150,
-      "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
+      "evidence": "The action or option has a named #150 check. Full hybrid runtime acceptance is tracked separately by hybrid.execution and requires downstream execution and source parity."
     },
     {
       "id": "action.bifurcate",
@@ -8747,7 +8747,7 @@
       "oracle": "official SSTS expected outputs; libRoadRunner; analytic DAE/DDE solution where needed",
       "status": "missing",
       "issue": 160,
-      "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
+      "evidence": "The #160 fixtures cover bounded exact fast-equilibrium lowering and the refusal of a separately validated required input. Full fast-reaction semantics and independent execution evidence remain incomplete."
     },
     {
       "id": "sbml.core.Reaction.compartment",
@@ -10056,7 +10056,7 @@
       "oracle": "BNG2/native NFsim roundtrip execution",
       "status": "missing",
       "issue": 156,
-      "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
+      "evidence": "Structural v0.2 is the public default. Bounded native reconstruction and round-trip checks exist. Full lossless BNGL interchange, version compatibility and consumer execution remain under #154, #155 and #156."
     },
     {
       "id": "bngir.native",
@@ -10073,12 +10073,12 @@
       "id": "bngir.equality",
       "behavior": "Exact process semantic_equal",
       "upstream": "BNG3 release decision / source extension",
-      "bng3": "python/bionetgen/bngir.py:3070",
+      "bng3": "python/bionetgen/bngir.py:semantic_equal",
       "check": "release-semantic-equality",
       "oracle": "proof certificates and independent exact network enumerator",
-      "status": "wrong",
+      "status": "missing",
       "issue": 156,
-      "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
+      "evidence": "PR #743 (598361cf) repairs the seed-identity false positive for renumbered bonds and adds focused regressions. Exact process equality across all required families and versions remains unqualified under #156."
     },
     {
       "id": "energy.barriers",
@@ -10117,12 +10117,12 @@
       "id": "nfnext.full",
       "behavior": "Complete network-free execution from CompiledModel",
       "upstream": "BNG3 release decision / source extension",
-      "bng3": "cpp/nfnext/src/from_bng.cpp:864",
+      "bng3": "cpp/nfnext/src/from_bng.cpp:executeFromBioNetGen",
       "check": "tests/validation/release/cases/issue-148/test_nfnext_execution.py::test_release_capability_coverage_148",
       "oracle": "pinned native NFsim",
       "status": "missing",
       "issue": 148,
-      "evidence": "Incomplete full release capability at 501b8d4c. PRs #656/#657 implement selected modifier/filter and compartment execution; #659 adds scaffold/genome examples. Energy, barriers, physical units and population-map execution remain refused and full pinned-native corpus/population/lattice/protocol acceptance is not established."
+      "evidence": "At 5f17ce1b, the production route executes selected dynamic observable rates, filters/modifiers, compartment moves, constant elementary physical-unit rates and bounded static Arrhenius forms. PRs #753/#754 add NFIR representation for dynamic population-map rates and energy expressions. Execution of those dynamic features, unlowered population maps and other required cases remains incomplete, as do full pinned-native corpus, population, lattice and protocol acceptance. PR #659 retains scaffold and genome examples."
     },
     {
       "id": "hybrid.execution",
@@ -10155,7 +10155,7 @@
       "oracle": "analytic laws and BNG2",
       "status": "missing",
       "issue": 171,
-      "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
+      "evidence": "PR #761 records installed CPU SSA immigration-death evidence against an analytic transient mean and stationary Poisson CDF at source 0d42c666. The bounded case does not qualify full CPU ODE/SSA or all installed-extra routes under #473."
     },
     {
       "id": "backend.gpu",
@@ -10177,7 +10177,7 @@
       "oracle": "analytic delay laws and independent delayed solver",
       "status": "missing",
       "issue": 143,
-      "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
+      "evidence": "Native delayed-rule execution and structural BNGIR cases exist. Independent coverage across applicable ODE, stochastic and interchange routes remains under #475. BNGsim rejects delayed semantics."
     },
     {
       "id": "bngl.ast.model",
