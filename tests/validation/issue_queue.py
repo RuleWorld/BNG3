@@ -63,6 +63,69 @@ S6_SIMULATE_CONTRACT = (
 S6_SCENARIOS = ("default", "explicit", "invalid", "interaction")
 
 
+def issue138_release_record(
+    record_path: Path, revision: str, *, artifact_run_id: str | None = None
+) -> dict:
+    """Validate and adapt a #138 compiled-model release record as queue evidence.
+
+    The record is produced by scripts/ci/record_issue138_release.py after it
+    executes tests/validation/release/cases/issue-138/test_compiled_model.py
+    against the pinned BNG2 golden network oracle. A stale, dirty, incomplete
+    or non-supported-execution record is rejected rather than counted.
+    """
+    record_path = Path(record_path)
+    if not record_path.is_file():
+        raise ValueError(f"Issue 138 release record missing: {record_path}")
+    data = json.loads(record_path.read_text(encoding="utf-8"))
+    if data.get("acceptance_check") != "release-obligation-138":
+        raise ValueError("Issue 138 release record check identity mismatch")
+    if data.get("source", {}).get("revision") != revision:
+        raise ValueError("stale Issue 138 release record revision")
+    if data.get("source", {}).get("dirty") is not False:
+        raise ValueError("Issue 138 release record from a dirty checkout")
+    expected = {
+        "release-compiled-inputs",
+        "release-compiled-parity",
+        "release-capability-coverage-138",
+    }
+    rows = data.get("results") or []
+    if {row.get("id") for row in rows} != expected:
+        raise ValueError("Issue 138 release record missing required check rows")
+    if set(data.get("manifest_check_ids") or []) != expected:
+        raise ValueError("Issue 138 manifest check identities mismatch")
+    for row in rows:
+        if (
+            row.get("status") != "PASS"
+            or row.get("supported_execution") is not True
+            or row.get("evidence_kind") != "supported-execution"
+        ):
+            raise ValueError(
+                f"Issue 138 check {row.get('id')} is not supported execution"
+            )
+    return {
+        "source": {"revision": revision, "dirty": False},
+        "artifact": {
+            "name": f"issue-138-release-{revision}",
+            "workflow_run_id": artifact_run_id,
+            "path": str(record_path),
+            "sha256": inventory.sha256(record_path),
+        },
+        "results": [
+            {
+                "id": row["id"],
+                "status": "PASS",
+                "stage": row.get("stage", "issue-138-release"),
+                "check": row["id"],
+                "related_issues": [138],
+                "evidence_kind": "supported-execution",
+                "supported_execution": True,
+                "receipt_sha256": inventory.sha256(record_path),
+            }
+            for row in rows
+        ],
+    }
+
+
 def issue142_receipt_reports(
     receipt, identity_path, observables_path, revision, *, artifact_run_id=None
 ):
@@ -1789,6 +1852,7 @@ def main(argv=None):
     )
     parser.add_argument("--max-families", type=int, default=3)
     parser.add_argument("--report", action="append", type=Path, default=[])
+    parser.add_argument("--issue138-release-record", type=Path)
     parser.add_argument("--issue142-release-record", type=Path)
     parser.add_argument("--issue142-identity-report", type=Path)
     parser.add_argument("--issue142-observables-report", type=Path)
@@ -1818,6 +1882,20 @@ def main(argv=None):
         issues = json.loads(issues_bytes)
         reports = [json.loads(path.read_text()) for path in args.report]
         receipt_reports = []
+        if args.issue138_release_record:
+            record = issue138_release_record(
+                args.issue138_release_record,
+                args.revision,
+                artifact_run_id=os.environ.get("GITHUB_RUN_ID"),
+            )
+            reports.append(record)
+            receipt_reports.append(
+                {
+                    "kind": "issue138-release-record",
+                    "path": str(args.issue138_release_record),
+                    "sha256": inventory.sha256(args.issue138_release_record),
+                }
+            )
         if args.issue142_release_record:
             if (
                 not args.issue142_identity_report
