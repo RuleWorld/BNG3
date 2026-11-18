@@ -1,5 +1,6 @@
 """Native execution honors the retained CLI logging and timeout controls."""
 
+import re
 import subprocess
 
 import pytest
@@ -52,7 +53,9 @@ def test_native_cli_writes_actual_output_to_requested_log(tmp_path, kind):
     # codepage can render it as '?' on one capture path but not the other;
     # compare the ASCII-safe form so the check stays about real log content.
     def ascii_safe(value):
-        return value.encode("ascii", "replace").decode("ascii")
+        text = value.encode("ascii", "replace").decode("ascii")
+        # Windows codepages can decode the em dash as one or three '?'s.
+        return re.sub(r"\?+", "?", text)
 
     assert ascii_safe("\n".join(cli.result.output)) == ascii_safe(text.rstrip("\n"))
 
