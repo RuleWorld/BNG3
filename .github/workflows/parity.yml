@@ -765,6 +765,7 @@ jobs:
           issue142_args=()
           s6_args=()
           delay_args=()
+          bngir_args=()
           hybrid_args=()
           issue147_args=()
           if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
@@ -786,6 +787,9 @@ jobs:
           if [[ -s "$RUNNER_TEMP/bng3-delay-release/report.json" ]]; then
             delay_args+=(--report "$RUNNER_TEMP/bng3-delay-release/report.json")
           fi
+          if [[ -s "$RUNNER_TEMP/bng3-bngir-release/report.json" ]]; then
+            bngir_args+=(--report "$RUNNER_TEMP/bng3-bngir-release/report.json")
+          fi
           if [[ -s "$RUNNER_TEMP/bng3-hybrid-release/issue-150-release-report.json" ]]; then
             hybrid_args+=(--report "$RUNNER_TEMP/bng3-hybrid-release/issue-150-release-report.json")
           elif [[ -s "$RUNNER_TEMP/bng3-hybrid-release/release-hybrid-evidence/issue-150-release-report.json" ]]; then
@@ -804,6 +808,7 @@ jobs:
             "${issue142_args[@]}" \
             "${s6_args[@]}" \
             "${delay_args[@]}" \
+            "${bngir_args[@]}" \
             "${hybrid_args[@]}" \
             "${issue147_args[@]}" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
