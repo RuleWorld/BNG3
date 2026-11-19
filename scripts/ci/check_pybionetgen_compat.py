@@ -118,6 +118,7 @@ def run_compatibility(source_root: Path, summary_file: Path | None = None) -> in
     compatibility_tests = [
         "tests/python/test_compatibility_contract.py",
         "tests/python/test_pybionetgen_bngfile_strip_actions_compat.py",
+        "tests/python/test_pybionetgen_result_access_compat.py",
     ]
     command = [
         sys.executable,
