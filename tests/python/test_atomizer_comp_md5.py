@@ -80,6 +80,7 @@ def test_nested_external_checksum_is_reported_before_flattening(tmp_path):
     parent.write_text(outer)
 
     model = SBMLParser().parse(outer, source_path=parent)
+    assert model.parameters["child__child__p"].value == 2
     warnings = [w for w in model.import_warnings if w.category == "compChecksum"]
     assert len(warnings) == 1
     assert "nested/child.xml" in warnings[0].message
