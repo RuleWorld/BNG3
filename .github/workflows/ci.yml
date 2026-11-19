@@ -1164,6 +1164,7 @@ jobs:
             --source-revision ${{ github.sha }} &&
             pytest {project}/tests/python/test_cpp_backend.py -v --tb=short &&
             pytest {project}/tests/python/test_migration_workflows.py -v --tb=short &&
+            pytest {project}/tests/python/test_migration_guide_installed_example.py -v --tb=short &&
             bionetgen --version &&
             bionetgen --help
           CIBW_ENVIRONMENT: CMAKE_ARGS="-DBUILD_TESTS=OFF -DBUILD_CLI=OFF"
