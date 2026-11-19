@@ -251,8 +251,13 @@ class BNGFile:
         return stripped_model
 
     def _not_action(self, line) -> bool:
+        # Anchor the match to the start of the left-stripped line, matching the
+        # pinned PyBioNetGen 28bf351 contract. A substring test misclassifies
+        # definitions such as ``conversion(t) = ...`` (which contains
+        # ``version(``) as actions and drops them from the stripped model.
+        stripped = line.lstrip()
         for action in self._action_list:
-            if action in line:
+            if stripped.startswith(action):
                 return False
         return True
 

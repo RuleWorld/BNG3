@@ -113,11 +113,17 @@ def run_compatibility(source_root: Path, summary_file: Path | None = None) -> in
     # so provenance helpers under test use their own explicit fixtures.
     env.pop("BNG3_SOURCE_REVISION", None)
     env.pop("BNG3_PR_HEAD_SHA", None)
+    # Dedicated PyBioNetGen differential cases are listed explicitly so the
+    # hosted compatibility job runs them against the installed package.
+    compatibility_tests = [
+        "tests/python/test_compatibility_contract.py",
+        "tests/python/test_pybionetgen_bngfile_strip_actions_compat.py",
+    ]
     command = [
         sys.executable,
         "-m",
         "pytest",
-        "tests/python/test_compatibility_contract.py",
+        *compatibility_tests,
         "-q",
         "-p",
         "no:cacheprovider",
