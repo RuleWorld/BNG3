@@ -344,6 +344,7 @@ private:
     void advancePeriodicEventClocks(std::size_t event, double time);
     void queueDuePeriodicEventClocks(double time, const std::vector<double>& state);
     void validateEventRootSurface();
+    bool isProvablyStrictlyPositiveInvariant(const ast::Expression& expression) const;
     double evaluateParameterWithEventState(
         const std::string& name, double time,
         const std::unordered_map<std::string, double>& eventValues) const;
