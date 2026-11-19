@@ -86,6 +86,23 @@ open BNG
 #print axioms BNG.NFnextPacking.fromSignature_type_entry
 #print axioms BNG.NFnextPacking.fromSignature_site_entry
 #print axioms BNG.NFnextPacking.fromSignature_state_entry
+-- Issue #167 exact rate / stochastic process theorems.  These must depend only
+-- on Lean's three standard axioms: no native_decide, no new opaque axiom.
+#print axioms BNG.rateAt_unimolecular
+#print axioms BNG.propensity_disabled_is_zero
+#print axioms BNG.propensity_respects_canonical_fields
+#print axioms BNG.energy_factor_restores_propensity
+#print axioms BNG.intervention_disable_zero_propensity
+#print axioms BNG.hybrid_regime_does_not_change_propensity
+#print axioms BNG.fire_delayed_preserves_state
+#print axioms BNG.formal_trace_uses_exact_propensity
+#print axioms BNG.delayed_channel_defers_update
+#print axioms BNG.processSemanticEqual_refl
+#print axioms BNG.processSemanticEqual_symm
+#print axioms BNG.processSemanticEqual_trans
+#print axioms BNG.semantic_equal_implies_total_equal
+#print axioms BNG.supported_manifest_excludes_float_solver
+#print axioms BNG.supported_manifest_exact_arithmetic
 LEAN
 
 OUT="$(lake env lean "$TMP/audit.lean" 2>&1)"

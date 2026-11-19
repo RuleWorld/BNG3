@@ -56,6 +56,10 @@ jobs:
         # be named explicitly, or its assertions are never executed by anything.
         run: lake env lean tests/Coverage.lean
 
+      - name: Run issue #167 exact stochastic semantics proofs
+        working-directory: formal/lean
+        run: lake env lean tests/Issue167Proofs.lean
+
       - name: Audit axiom dependencies
         working-directory: formal/lean
         # Makes the kernel-checked / native_decide split measurable rather than a
@@ -84,3 +88,60 @@ jobs:
         working-directory: formal/lean
         timeout-minutes: 20
         run: ./scripts/check_harness_itself.sh
+
+  issue167-correspondence:
+    name: Issue 167 propensity and ensemble mean checks
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Install pinned Lean toolchain
+        uses: leanprover/lean-action@38fbc41a8c28c4cbaec22d7f7de508ec2e7c0dd9 # v1.5.0
+        with:
+          lake-package-directory: formal/lean
+          auto-config: false
+          build: false
+          test: false
+          use-mathlib-cache: false
+
+      - name: Kernel-build the Lean library
+        working-directory: formal/lean
+        run: lake build
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install build tools and locked runtime
+        run: |
+          set -euo pipefail
+          which cmake ninja gcc g++ > /dev/null 2>&1 || {
+            sudo apt-get update
+            sudo apt-get install -y build-essential cmake ninja-build
+          }
+          python -m venv .venv
+          .venv/bin/python -m pip install --require-hashes -r provenance/ssts-ci-linux-py312.lock
+
+      - name: Build native BNG3 extension
+        run: |
+          set -euo pipefail
+          .venv/bin/python -m pip install --no-deps --no-build-isolation \
+            --config-settings=build-dir=build .
+
+      - name: Compare compiled propensities and ensemble means with independent laws
+        env:
+          BNG3_PYTHON_TEST_MODE: installed
+        run: |
+          .venv/bin/python -m pytest -q tests/validation/release/cases/issue-167/ \
+            --junitxml="$RUNNER_TEMP/issue167-results.xml"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: issue167-comparisons-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/issue167-results.xml
+          if-no-files-found: error
+          retention-days: 30
