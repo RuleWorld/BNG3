@@ -87,9 +87,9 @@ def _pin(native: Path) -> tuple[str, str]:
         text=True,
         timeout=10,
     ).stdout.strip()
-    assert actual == expected, (
-        f"native NFsim was not built from the accepted pin: {actual} != {expected}"
-    )
+    assert (
+        actual == expected
+    ), f"native NFsim was not built from the accepted pin: {actual} != {expected}"
     return expected, hashlib.sha256(native.read_bytes()).hexdigest()
 
 
@@ -112,14 +112,13 @@ def _assert_fixed_structure(xml: Path) -> None:
         molecules = [
             child
             for child in element.iter()
-            if child.tag.rsplit("}", 1)[-1] == "Molecule"
-            and child.get("name") == "A"
+            if child.tag.rsplit("}", 1)[-1] == "Molecule" and child.get("name") == "A"
         ]
         if molecules:
             species.append(element)
-    assert species and all(s.get("Fixed") == "1" for s in species), (
-        "exported BNG-XML did not mark the $-prefixed seed A() as Fixed=1"
-    )
+    assert species and all(
+        s.get("Fixed") == "1" for s in species
+    ), "exported BNG-XML did not mark the $-prefixed seed A() as Fixed=1"
     names = set(re.findall(r'<Observable\s+id="O\d+"\s+name="([^"]+)"', root))
     assert set(OBSERVABLES) <= names, f"exported observables missing: {names}"
 
@@ -140,7 +139,10 @@ def _run_consumer(xml: Path, work_dir: Path) -> tuple[dict[str, list[float]], st
     for name in OBSERVABLES:
         assert name in columns, f"consumer did not report observable {name}: {columns}"
     return (
-        {name: [float(v) for v in data[:, columns.index(name)]] for name in OBSERVABLES},
+        {
+            name: [float(v) for v in data[:, columns.index(name)]]
+            for name in OBSERVABLES
+        },
         str(gdat),
     )
 
@@ -152,9 +154,7 @@ def test_exported_xml_fixed_seed_consumed_by_native_nfsim(
 ):
     """Qualify one exported BNG-XML fact through the accepted native oracle."""
     native = oracle_nfsim.nfsim_binary()
-    require_oracle(
-        native is not None, "native NFsim binary not found (set NFSIM_BIN)"
-    )
+    require_oracle(native is not None, "native NFsim binary not found (set NFSIM_BIN)")
     assert native is not None
     revision, binary_digest = _pin(native)
 
