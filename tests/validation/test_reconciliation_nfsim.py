@@ -83,9 +83,10 @@ def test_record_complex_flag_reconciliation(
 
     matched = True
     for name, flags, options, expected in (
-        ("default", (), "", 1.0),
+        ("default", (), "", 0.0),
         ("cb", ("-cb",), ",complex=>1", 0.0),
         ("bscb", ("-bscb",), ',param=>"-bscb"', 0.0),
+        ("no_bscb", ("-no-bscb",), ',param=>"-no-bscb"', 1.0),
     ):
         oracle_output = tmp_path / f"oracle-{name}.gdat"
         result = _run_native(native, xml, oracle_output, *flags)
