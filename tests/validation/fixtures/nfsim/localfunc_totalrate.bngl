@@ -1,0 +1,21 @@
+# Minimal reduced counterexample for NFsim Issue91:
+# a local-function rate law combined with TotalRate.
+begin parameters
+  kCat 1
+end parameters
+
+begin seed species
+  Receptor(m~0,a!1).CheA(rec!1,p~unphos) 10
+end seed species
+
+begin observables
+  Molecules R0 Receptor(m~0)
+end observables
+
+begin functions
+  pOn(x) = kCat*R0(x)
+end functions
+
+begin reaction rules
+  %x::Receptor(a!1).CheA(rec!1,p~unphos) -> %x::Receptor(a!1).CheA(rec!1,p~PHOS) pOn(x) TotalRate
+end reaction rules
