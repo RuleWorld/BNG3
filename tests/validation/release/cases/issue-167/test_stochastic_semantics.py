@@ -1,25 +1,7 @@
-"""Named release checks for issue #167 — formal rate and stochastic semantics.
-
-The production side is the compiled BNG3 engine (generated network coefficients,
-symmetry factors and seeded SSA ensemble).  The formal side is the exact port of
-the Lean definitions in ``formal_semantics.py``.  The independent scientific
-oracle is a master-equation integration of the declared count law, never a BNG3
-output and never the formal port itself.
-
-Named checks implemented here:
-
-* ``release-stochastic-proof`` — Lean kernel validates the theorem file and the
-  axiom manifest (no new opaque axiom, no floating-point solver proof).
-* ``release-stochastic-correspondence`` — production exact propensity equals the
-  formal exact propensity and the seeded ensemble mean agrees with the analytic
-  distribution law at every sampled time.
-* ``release-obligation-167`` — reconciliation of the named checks and their
-  source/oracle identities.
-"""
+"""Bounded formal propensity, ensemble mean, and kernel proof comparisons for #167."""
 
 from __future__ import annotations
 
-import hashlib
 import math
 import shutil
 import subprocess
@@ -71,7 +53,7 @@ def _hazard(case: fm.Case, n: int) -> float:
     return k * n
 
 
-def _analytic_means(case: fm.Case, times) -> np.ndarray:
+def _analytic_moments(case: fm.Case, times) -> np.ndarray:
     """Integrate the pure-death master equation of the declared law."""
     step = 2 if case.symmetry_factor == 2 else 1
     states = list(range(case.n0, -1, -step))
@@ -79,13 +61,19 @@ def _analytic_means(case: fm.Case, times) -> np.ndarray:
     rates = [_hazard(case, n) for n in states]
     weights = np.zeros(len(states))
     weights[idx[case.n0]] = 1.0
-    out = np.zeros(len(times))
+    out = np.zeros((len(times), 2))
+    counts = np.asarray(states)
+
+    def moments():
+        mean = weights @ counts
+        return mean, weights @ ((counts - mean) ** 2)
+
     t = 0.0
     # Fine fixed-step RK4; the law is smooth on [0, T_END].
     dt = 1e-4
     ti = 0
     while ti < len(times) and times[ti] <= t + 1e-12:
-        out[ti] = sum(weights[i] * states[i] for i in range(len(states)))
+        out[ti] = moments()
         ti += 1
 
     def deriv(w):
@@ -105,10 +93,10 @@ def _analytic_means(case: fm.Case, times) -> np.ndarray:
         weights = weights + dt / 6.0 * (k1 + 2 * k2 + 2 * k3 + k4)
         t += dt
         while ti < len(times) and times[ti] <= t + 1e-12:
-            out[ti] = sum(weights[i] * states[i] for i in range(len(states)))
+            out[ti] = moments()
             ti += 1
     while ti < len(times):
-        out[ti] = sum(weights[i] * states[i] for i in range(len(states)))
+        out[ti] = moments()
         ti += 1
     return out
 
@@ -117,10 +105,6 @@ def _coefficient(model, network, state):
     return list(
         _cpp._validation_ode_rate_coefficients(model, network, 0.0, list(state))
     )
-
-
-def _rhs(model, network, state):
-    return list(_cpp._validation_ode_rhs(model, network, 0.0, list(state)))
 
 
 def _as_fraction(value: float) -> Fraction:
@@ -181,14 +165,8 @@ def test_tfun_network_identity(tmp_path):
     assert case.distribution_supported is False
 
 
-def test_seeded_ensemble_matches_analytic_distribution(tmp_path):
-    """SSA ensemble mean equals the analytic mean of the declared law.
-
-    Two-sided Z test with fixed seed and run budget; the null variance is the
-    analytic law's own variance, estimated by a second independent integration
-    of the forward equations for the second moment.  ``Z_LIMIT = 5`` is far
-    outside ordinary Monte-Carlo error and far inside a propensity error.
-    """
+def test_seeded_ensemble_mean_matches_master_equation(tmp_path):
+    """Compare each sampled mean using variance from the independent count law."""
     for case in fm.CASES:
         if not case.distribution_supported:
             continue
@@ -204,48 +182,18 @@ def test_seeded_ensemble_matches_analytic_distribution(tmp_path):
         )
         times = np.asarray(result["time"], dtype=float)
         means = np.asarray(result["observable_means"]["nA"], dtype=float)
-        stds = np.asarray(result["observable_stds"]["nA"], dtype=float)
-        analytic = _analytic_means(case, times)
-        assert means[0] == case.n0 and analytic[0] == case.n0
+        analytic = _analytic_moments(case, times)
+        assert means[0] == case.n0 and analytic[0, 0] == case.n0
         worst = 0.0
-        for t, observed, expected, sd in zip(
-            times[1:], means[1:], analytic[1:], stds[1:]
-        ):
-            # sd is the analytic-process spread reported by the engine; use it
-            # only for the standard-error scale, never as the expected value.
-            se = max(float(sd), 1e-9) / math.sqrt(BATCH)
+        for observed, (expected, variance) in zip(means[1:], analytic[1:]):
+            se = math.sqrt(variance / BATCH)
+            assert se > 0
             z = (float(observed) - float(expected)) / se
             worst = max(worst, abs(z))
         assert worst < Z_LIMIT, f"{case.id}: ensemble vs analytic max |Z|={worst:.2f}"
 
 
-def correspondence_result(tmp_path):
-    """Named supported-execution check result (reused by the receipt producer)."""
-    test_exact_propensity_matches_production_coefficients(tmp_path)
-    test_tfun_network_identity(tmp_path)
-    test_seeded_ensemble_matches_analytic_distribution(tmp_path)
-    return {
-        "check": "release-stochastic-correspondence",
-        "cases": [c.id for c in fm.CASES],
-        "distribution_cases": [c.id for c in fm.CASES if c.distribution_supported],
-        "batch": BATCH,
-        "seed": SEED,
-        "z_limit": Z_LIMIT,
-    }
-
-
-def test_release_stochastic_correspondence(tmp_path):
-    """Named supported-execution check: all correspondence slices agree."""
-    correspondence_result(tmp_path)
-
-
-# ---------------------------------------------------------------------------
-# release-stochastic-proof
-# ---------------------------------------------------------------------------
-
-
-def proof_result():
-    """Named Lean proof check result (reused by the receipt producer)."""
+def test_stochastic_proofs_and_axioms():
     lean_dir = ROOT / "formal" / "lean"
     if shutil.which("lake") is None:
         pytest.skip("pinned Lean toolchain (lake) is not installed on this host")
@@ -265,50 +213,3 @@ def proof_result():
     )
     assert audit.returncode == 0, audit.stderr
     assert "AXIOM AUDIT PASS" in audit.stdout
-    return {
-        "check": "release-stochastic-proof",
-        "proof_sha256": hashlib.sha256(proof.stdout.encode()).hexdigest(),
-        "audit_sha256": hashlib.sha256(audit.stdout.encode()).hexdigest(),
-    }
-
-
-def test_release_stochastic_proof():
-    """Named supported-execution check: the Lean kernel validates the theorems."""
-    proof_result()
-
-
-# ---------------------------------------------------------------------------
-# release-obligation-167
-# ---------------------------------------------------------------------------
-
-
-def obligation_result():
-    """Named reconciliation result (reused by the receipt producer)."""
-    names = {
-        "release-stochastic-proof",
-        "release-stochastic-correspondence",
-        "release-obligation-167",
-    }
-    source_identities = {
-        "formal_semantics.py": fm.__file__,
-        "stochastic_semantics.lean": str(
-            ROOT / "formal/lean/BNG/StochasticSemantics.lean"
-        ),
-        "issue167_proofs.lean": str(ROOT / "formal/lean/tests/Issue167Proofs.lean"),
-    }
-    for label, path in source_identities.items():
-        assert Path(path).is_file(), f"missing source identity {label}: {path}"
-    oracle = "independent pure-death master-equation law integrated from the declared count hazard"
-    assert oracle
-    assert all(name for name in names)
-    return {
-        "check": "release-obligation-167",
-        "named_checks": sorted(names),
-        "source_identities": source_identities,
-        "oracle": oracle,
-    }
-
-
-def test_release_obligation_167():
-    """Named reconciliation check: every task has a named result and oracle."""
-    obligation_result()

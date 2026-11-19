@@ -26,11 +26,6 @@ ISSUE_142_CHECKS = (
     "release-graph-observables",
     "release-obligation-142",
 )
-ISSUE_167_CHECKS = (
-    "release-stochastic-proof",
-    "release-stochastic-correspondence",
-    "release-obligation-167",
-)
 S6_SIMULATE_ROWS = (
     "action.simulate.t_start",
     "action.simulate.t_end",
@@ -382,128 +377,6 @@ def issue142_receipt_reports(
         ):
             report["replay_references"] = replay_references
     return [identity_report_for_queue, observables_report_for_queue, receipt_report]
-
-
-def issue167_receipt_reports(receipt, check_reports, revision):
-    """Adapt the dedicated issue #167 receipt and its three child reports.
-
-    The receipt is produced by ``scripts/ci/record_issue167_release.py`` at a
-    fixed source revision.  This consumer verifies the receipt identity, the
-    exact revision and dirty flag, and every child report hash before turning
-    the named checks into queue leaves.  No GitHub or CI state is inferred.
-    """
-    if not isinstance(receipt, dict) or receipt.get("schema_version") != 1:
-        raise ValueError("invalid Issue 167 receipt schema")
-    if receipt.get("acceptance_check") != "release-obligation-167":
-        raise ValueError("conflicting Issue 167 receipt identity")
-    if receipt.get("source_revision") != revision:
-        raise ValueError("stale Issue 167 receipt revision")
-    if receipt.get("source_dirty") is not False:
-        raise ValueError("Issue 167 receipt source was not recorded clean")
-    checks = receipt.get("checks")
-    if not isinstance(checks, dict) or set(checks) != set(ISSUE_167_CHECKS):
-        raise ValueError("Issue 167 receipt is missing or has conflicting child checks")
-    for check in ISSUE_167_CHECKS:
-        result = checks[check]
-        if not isinstance(result, dict) or result.get("status") != "PASS":
-            raise ValueError(f"Issue 167 check {check} did not pass")
-        if not re.fullmatch(r"[0-9a-f]{64}", result.get("report_sha256", "")):
-            raise ValueError(f"Issue 167 check {check} lacks a valid report hash")
-        report = check_reports.get(check)
-        if not isinstance(report, dict) or report.get("acceptance_check") != check:
-            raise ValueError(f"Issue 167 check {check} report identity conflicts")
-        if (
-            report.get("source_revision") != revision
-            or report.get("source_dirty") is not False
-        ):
-            raise ValueError(
-                f"Issue 167 check {check} report revision is stale or dirty"
-            )
-        raw = (json.dumps(report, sort_keys=True, indent=2) + "\n").encode()
-        if hashlib.sha256(raw).hexdigest() != result["report_sha256"]:
-            raise ValueError(
-                f"Issue 167 check {check} report hash differs from the receipt"
-            )
-
-    source = {"revision": revision, "dirty": False}
-    references = {
-        "formal_semantics": {
-            "sha256": hashlib.sha256(
-                (
-                    ROOT
-                    / "tests/validation/release/cases/issue-167/formal_semantics.py"
-                ).read_bytes()
-            ).hexdigest()
-        },
-        "lean_theorems": {
-            "sha256": hashlib.sha256(
-                (ROOT / "formal/lean/BNG/StochasticSemantics.lean").read_bytes()
-            ).hexdigest()
-        },
-    }
-    reports = []
-    for check in ISSUE_167_CHECKS:
-        row = {
-            "id": check,
-            "status": "PASS",
-            "stage": "issue167-release-receipt",
-            "check": check,
-            "related_issues": [167],
-            "evidence_kind": "supported-execution",
-            "supported_execution": True,
-            "receipt": checks[check],
-        }
-        reports.append(
-            {
-                "source": source,
-                "references": references,
-                "subject": {"sha256": checks[check]["report_sha256"]},
-                "checks": checks,
-                "results": [row],
-            }
-        )
-    # Qualification leaves and the finite executed slices are discharged by the
-    # same receipt: the correspondence harness enumerates every named convention
-    # and the Lean kernel validates the shared exact definitions.
-    qualification_rows = [
-        (
-            "qualification:issue:167:encode-the-exact-supported-special-rate-local-function-tfun-and",
-            "supported-execution",
-        ),
-        (
-            "qualification:issue:167:prove-the-selected-refinement-statements-explicitly-exclude-unpr",
-            "supported-execution",
-        ),
-        ("qualification:issue:167:closure-record", "disposition"),
-    ]
-    slice_ids = (
-        "parameter-n20-k04",
-        "local-function-n20-k04",
-        "local-function-state-n20-k04",
-        "builtin-n20-k04",
-        "tfun-n20-k04",
-        "saturation-n20-k04",
-        "hill-n20-k04",
-        "elementary-bimolecular-n20-k04",
-    )
-    qualification_rows.extend(
-        (f"stochastic-parity:{slice_id}:ssa.law-cdf", "disposition")
-        for slice_id in slice_ids
-    )
-    for key, kind in qualification_rows:
-        result_row = {
-            "id": key,
-            "status": "PASS",
-            "stage": "issue167-release-receipt",
-            "check": key,
-            "related_issues": [167],
-            "evidence_kind": kind,
-            "receipt": checks["release-obligation-167"],
-        }
-        if kind == "supported-execution":
-            result_row["supported_execution"] = True
-        reports[0]["results"].append(result_row)
-    return reports
 
 
 def _s6_expected_times(row, scenario):
@@ -1997,10 +1870,6 @@ def main(argv=None):
     parser.add_argument("--issue142-release-record", type=Path)
     parser.add_argument("--issue142-identity-report", type=Path)
     parser.add_argument("--issue142-observables-report", type=Path)
-    parser.add_argument("--issue167-release-record", type=Path)
-    parser.add_argument("--issue167-proof-report", type=Path)
-    parser.add_argument("--issue167-correspondence-report", type=Path)
-    parser.add_argument("--issue167-obligation-report", type=Path)
     parser.add_argument("--s6-simulate-receipt-dir", type=Path)
     parser.add_argument("--issue472-docs-report", type=Path)
     parser.add_argument("--issue471-oracle-report", type=Path)
@@ -2089,57 +1958,6 @@ def main(argv=None):
                         for path in (
                             args.issue142_identity_report,
                             args.issue142_observables_report,
-                        )
-                    ],
-                ),
-            ]
-        if args.issue167_release_record:
-            if not all(
-                (
-                    args.issue167_proof_report,
-                    args.issue167_correspondence_report,
-                    args.issue167_obligation_report,
-                )
-            ):
-                raise ValueError(
-                    "Issue 167 receipt requires the proof, correspondence and obligation reports"
-                )
-            if campaign.git(ROOT, "status", "--porcelain"):
-                raise ValueError(
-                    "Issue 167 receipt consumer requires a clean candidate tree"
-                )
-            check_reports = {
-                "release-stochastic-proof": json.loads(
-                    args.issue167_proof_report.read_text()
-                ),
-                "release-stochastic-correspondence": json.loads(
-                    args.issue167_correspondence_report.read_text()
-                ),
-                "release-obligation-167": json.loads(
-                    args.issue167_obligation_report.read_text()
-                ),
-            }
-            reports.extend(
-                issue167_receipt_reports(
-                    json.loads(args.issue167_release_record.read_text()),
-                    check_reports,
-                    args.revision,
-                )
-            )
-            receipt_reports = [
-                dict(
-                    kind="issue167-release-record",
-                    path=str(args.issue167_release_record),
-                    sha256=inventory.sha256(args.issue167_release_record),
-                    component_reports=[
-                        {
-                            "path": str(path),
-                            "sha256": inventory.sha256(path),
-                        }
-                        for path in (
-                            args.issue167_proof_report,
-                            args.issue167_correspondence_report,
-                            args.issue167_obligation_report,
                         )
                     ],
                 ),

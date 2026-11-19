@@ -90,7 +90,7 @@ jobs:
         run: ./scripts/check_harness_itself.sh
 
   issue167-correspondence:
-    name: Issue 167 exact stochastic correspondence receipt
+    name: Issue 167 propensity and ensemble mean checks
     runs-on: ubuntu-22.04
     timeout-minutes: 45
     steps:
@@ -131,14 +131,17 @@ jobs:
           .venv/bin/python -m pip install --no-deps --no-build-isolation \
             --config-settings=build-dir=build .
 
-      - name: Record issue #167 release receipt
+      - name: Compare compiled propensities and ensemble means with independent laws
         env:
-          PYTHONPATH: python:build/cpp
-        run: .venv/bin/python scripts/ci/record_issue167_release.py
+          BNG3_PYTHON_TEST_MODE: installed
+        run: |
+          .venv/bin/python -m pytest -q tests/validation/release/cases/issue-167/ \
+            --junitxml="$RUNNER_TEMP/issue167-results.xml"
 
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: issue167-release-receipt-${{ github.sha }}
-          path: tests/validation/evidence/issue167-*.json
+          name: issue167-comparisons-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/issue167-results.xml
           if-no-files-found: error
           retention-days: 30
