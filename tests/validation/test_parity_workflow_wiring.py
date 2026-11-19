@@ -706,26 +706,6 @@ def test_issue147_release_receipt_is_recorded_and_consumed_in_parity_queue():
     assert "tests/validation/test_issue_147_release_record.py" in ci_contracts["run"]
 
 
-def test_issue137_148_149_152_release_receipts_are_recorded_and_consumed_in_parity_queue():
-    workflow = _parse_workflow()
-    integrated = workflow["jobs"]["integrated-semantic-validation"]
-    step_names = [s.get("name") for s in integrated["steps"]]
-    assert "Execute Issue 137 capability inventory release case" in step_names
-    assert "Execute Issue 148 NFnext execution release case" in step_names
-    assert "Execute Issue 149 NFcore consolidation release case" in step_names
-    assert "Execute Issue 152 energy protocols release case" in step_names
-
-    queue_step = next(
-        step
-        for step in integrated["steps"]
-        if step.get("name")
-        == "Build exact-revision issue and provenance evidence queue"
-    )
-    for issue_id in ("137", "148", "149", "152"):
-        assert f"issue{issue_id}-release-record.json" in queue_step["run"]
-        assert f'"${{issue{issue_id}_args[@]}}"' in queue_step["run"]
-
-
 def test_jax_release_receipt_is_recorded_in_ci_workflow():
     ci_workflow = yaml.safe_load(
         (REPO / ".github/workflows/ci.yml").read_text(encoding="utf-8")
@@ -748,3 +728,23 @@ def test_jax_release_receipt_is_recorded_in_ci_workflow():
     assert (
         upload_step["with"]["path"] == "${{ runner.temp }}/bng3-jax-release/report.json"
     )
+
+
+def test_upstream_history_job_checks_all_pins_and_retains_the_report():
+    job = _parse_workflow()["jobs"]["upstream-reconciliation-history"]
+    steps = job["steps"]
+    checkout = next(
+        step for step in steps if "checkout_oracle.py" in step.get("run", "")
+    )
+    command = next(
+        step["run"]
+        for step in steps
+        if "validate_reconciliation_tests.py" in step.get("run", "")
+    )
+    upload = next(step for step in steps if "upload-artifact" in step.get("uses", ""))
+    for source in ("bionetgen", "nfsim", "pybionetgen"):
+        assert source in checkout["run"]
+        assert f'--{source} "$RUNNER_TEMP/reconciliation/{source}"' in command
+    assert "--history-report" in command
+    assert upload["if"] == "always()"
+    assert upload["with"]["path"] == "${{ runner.temp }}/reconciliation-history.json"

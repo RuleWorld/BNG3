@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "issue": 156,
+  "title": "D04: Define BNGIR version defaults, compatibility and semantic equality",
+  "source": {
+    "repository": "RuleWorld/BNG3",
+    "contract": "Make BNGIR v0.2 the default lossless wire version representing all BNGL constructs including physical units, observable kinds, and delayed rules without data loss; implement exact process semantic equality distinguishing process equivalence from numerical similarity."
+  },
+  "oracle": {
+    "identity": "Independent exact network enumerator, proof certificates, and semantic-equal-design.md EQ-* test suite.",
+    "law": "Semantic equality holds if and only if process transition structures match up to consistent renaming, observable definitions, and conserved transition rate sums; numerical similarity never establishes equality; unprovable procedures raise explicit EqualityUndecided."
+  },
+  "acceptance_checks": [
+    "release-bngir-schema",
+    "release-semantic-equality",
+    "release-capability-coverage-156"
+  ],
+  "inventory_rows": [
+    "bngir.v02",
+    "bngir.equality"
+  ],
+  "obligations": [
+    "issue:156:live-acceptance:release-bngir-schema",
+    "issue:156:live-acceptance:release-semantic-equality",
+    "issue:156:live-acceptance:release-capability-coverage-156"
+  ]
+}

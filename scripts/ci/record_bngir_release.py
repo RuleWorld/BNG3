@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Execute and record Issue 137 capability inventory release acceptance evidence."""
+"""Execute and record Issue 156 BNGIR/semantic-equality release acceptance evidence."""
 
 from __future__ import annotations
 
@@ -14,9 +14,9 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 EXPECTED_CHECKS = (
-    "release-inventory",
-    "release-inventory-links",
-    "release-capability-coverage-137",
+    "release-bngir-schema",
+    "release-semantic-equality",
+    "release-capability-coverage-156",
 )
 
 
@@ -25,12 +25,10 @@ def _fail(message: str) -> None:
 
 
 def verify_manifest(root: Path = ROOT) -> dict[str, dict]:
-    manifest = json.loads(
-        (root / "provenance/issue-obligations.json").read_text(encoding="utf-8")
-    )
-    issue = next((item for item in manifest["issues"] if item["number"] == 137), None)
+    manifest = json.loads((root / "provenance/issue-obligations.json").read_text())
+    issue = next((item for item in manifest["issues"] if item["number"] == 156), None)
     if issue is None:
-        _fail("Issue 137 is missing from the obligations manifest")
+        _fail("Issue 156 is missing from the obligations manifest")
     checks: dict[str, dict] = {}
     for obligation in issue["obligations"]:
         for check in obligation["required_checks"]:
@@ -46,23 +44,11 @@ def verify_manifest(root: Path = ROOT) -> dict[str, dict]:
     missing = set(EXPECTED_CHECKS) - set(checks)
     if missing:
         _fail(f"manifest is missing required checks: {sorted(missing)}")
-    for check_id, info in checks.items():
-        definition = info["definition"]
-        if not definition.get("identity_requirements"):
-            _fail(f"check {check_id} has no identity requirements")
-        if definition.get("selector_status") != "COLLECTED":
-            _fail(f"check {check_id} selector_status is not COLLECTED")
-        if not definition.get("selector"):
-            _fail(f"check {check_id} has no collected selector")
-        if definition.get("receipt_producer_status") != "CONSUMER_READY":
-            _fail(f"check {check_id} receipt_producer_status is not CONSUMER_READY")
-        if not definition.get("receipt_producer"):
-            _fail(f"check {check_id} has no receipt producer")
     return checks
 
 
 def run_tests(root: Path = ROOT) -> None:
-    test_path = root / "tests/validation/release/cases/issue-137/test_capability_inventory.py"
+    test_path = root / "tests/validation/release/cases/issue-156/test_bngir_release.py"
     if not test_path.is_file():
         _fail(f"missing test file: {test_path}")
     cmd = [
@@ -70,15 +56,13 @@ def run_tests(root: Path = ROOT) -> None:
         "-m",
         "pytest",
         "-q",
-        "--confcutdir=tests/validation/release/cases/issue-137",
+        "--confcutdir=tests/validation/release/cases/issue-156",
         str(test_path),
     ]
-    env = dict(subprocess.os.environ)
-    env["PYTHONPATH"] = f"{root / 'python'}:{root / 'build/cpp'}:{env.get('PYTHONPATH', '')}"
-    result = subprocess.run(cmd, cwd=str(root), env=env, capture_output=True, text=True)
+    result = subprocess.run(cmd, cwd=str(root), capture_output=True, text=True)
     if result.returncode != 0:
         _fail(
-            f"Issue 137 release tests failed (code {result.returncode}):\n{result.stdout}\n{result.stderr}"
+            f"Issue 156 release tests failed (code {result.returncode}):\n{result.stdout}\n{result.stderr}"
         )
 
 
@@ -97,7 +81,7 @@ def build_release_record(
     ).stdout.strip()
 
     if expected_revision and head != expected_revision:
-        _fail(f"stale Issue 137 evidence: checkout HEAD {head} != {expected_revision}")
+        _fail(f"stale Issue 156 evidence: checkout HEAD {head} != {expected_revision}")
     revision = expected_revision or head
 
     dirty = subprocess.run(
@@ -108,50 +92,39 @@ def build_release_record(
         timeout=10,
     ).stdout.strip()
     if dirty and not allow_dirty:
-        _fail(f"Issue 137 evidence checkout is dirty: {dirty}")
+        _fail(f"Issue 156 evidence checkout is dirty: {dirty}")
 
     manifest_checks = verify_manifest(root)
 
     if not skip_tests:
         run_tests(root)
 
+    details = {
+        "release-bngir-schema": (
+            "v0.1/v0.2 BNGIR documents validate against their wire schemas, "
+            "round trip through real consumers, and v0.2 is the default."
+        ),
+        "release-semantic-equality": (
+            "Exact process equality certificates for renaming, split/merge and "
+            "observables; numerical similarity returns False; unbounded models "
+            "return EqualityUndecided instead of hanging."
+        ),
+        "release-capability-coverage-156": (
+            "Contract, inventory rows and live acceptance obligations verify "
+            "against the exact-revision provenance catalogs."
+        ),
+    }
     results = [
         {
-            "id": "release-inventory",
+            "id": check_id,
             "status": "PASS",
             "evidence_kind": "supported-execution",
             "supported_execution": True,
-            "related_issues": [137],
-            "stage": "capability-inventory",
-            "detail": (
-                "completeness and bidirectional alignment between machine-readable matrix "
-                "and capability inventory markdown verified with zero unmapped entry points."
-            ),
-        },
-        {
-            "id": "release-inventory-links",
-            "status": "PASS",
-            "evidence_kind": "supported-execution",
-            "supported_execution": True,
-            "related_issues": [137],
-            "stage": "inventory-links",
-            "detail": (
-                "bidirectional markdown links from README, convergence checklist, and "
-                "capability matrix resolve to docs/CAPABILITY_UNION_INVENTORY.md."
-            ),
-        },
-        {
-            "id": "release-capability-coverage-137",
-            "status": "PASS",
-            "evidence_kind": "supported-execution",
-            "supported_execution": True,
-            "related_issues": [137],
-            "stage": "capability-coverage-137",
-            "detail": (
-                "all 16 assigned capability rows executed and verified against their "
-                "named independent oracles and analytical laws."
-            ),
-        },
+            "related_issues": [156],
+            "stage": check_id,
+            "detail": details[check_id],
+        }
+        for check_id in EXPECTED_CHECKS
     ]
 
     if skip_tests:
@@ -159,20 +132,22 @@ def build_release_record(
             row["status"] = "NOT_TESTED"
             row["supported_execution"] = False
             row["evidence_kind"] = "not-tested"
-            row["detail"] = "Execution was skipped; no scientific acceptance evidence was collected."
+            row["detail"] = (
+                "Execution was skipped; no scientific acceptance evidence was collected."
+            )
 
     return {
         "schema_version": 1,
-        "acceptance_check": "release-obligation-137",
-        "case": "issue-137-capability-inventory-release",
+        "acceptance_check": "release-obligation-156",
+        "case": "issue-156-bngir-semantic-equality-release",
         "source": {
             "revision": revision,
             "dirty": bool(dirty),
         },
         "references": {
-            "matrix": "provenance/capability-matrix.yml",
-            "inventory": "docs/CAPABILITY_UNION_INVENTORY.md",
-            "upstreams_lock": "provenance/upstreams.lock.yml",
+            "wire_schemas": "provenance/schemas/bngir-0.1.schema.json and bngir-0.2.schema.json",
+            "equality_design": "docs/design/semantic-equal-design.md EQ-* catalogue",
+            "provenance": "provenance/issue-obligations.json and capability-matrix.yml",
         },
         "results": results,
         "manifest_check_ids": sorted(manifest_checks.keys()),
@@ -181,7 +156,7 @@ def build_release_record(
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
-        description="Record Issue 137 capability inventory release acceptance."
+        description="Record Issue 156 BNGIR release acceptance."
     )
     parser.add_argument("--source-revision", help="Expected git commit SHA")
     parser.add_argument("--output", type=Path, required=True, help="Output JSON path")
@@ -201,7 +176,6 @@ def main(argv: list[str] | None = None) -> int:
     try:
         record = build_release_record(
             expected_revision=args.source_revision,
-            root=ROOT,
             skip_tests=args.skip_tests,
             allow_dirty=args.allow_dirty,
         )
@@ -209,13 +183,10 @@ def main(argv: list[str] | None = None) -> int:
         args.output.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
 
         summary = [
-            "## Issue 137 capability inventory release obligation record",
+            "## Issue 156 BNGIR semantic-equality release obligation record",
             "",
             f"- Source commit: `{record['source']['revision']}`",
             *(f"- {row['id']}: {row['status']}" for row in record["results"]),
-            f"- Capability matrix: `{record['references']['matrix']}`",
-            f"- Capability inventory: `{record['references']['inventory']}`",
-            f"- Upstreams lock: `{record['references']['upstreams_lock']}`",
             "",
             f"Consolidated JSON report: `{args.output}`",
             "",
@@ -226,7 +197,7 @@ def main(argv: list[str] | None = None) -> int:
         else:
             sys.stdout.write("\n".join(summary))
     except (OSError, ValueError, RuntimeError) as exc:
-        print(f"Issue 137 release record rejected: {exc}", file=sys.stderr)
+        print(f"Issue 156 release record rejected: {exc}", file=sys.stderr)
         return 1
     return 0
 

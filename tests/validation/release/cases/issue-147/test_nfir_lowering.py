@@ -261,9 +261,6 @@ def test_release_nfir_lowering_supported_unary_model():
     assert not snap.get("energy_patterns")
 
 
-test_release_nfir_lowering_unary_model = test_release_nfir_lowering_supported_unary_model
-
-
 def test_release_nfir_lowering_unsupported_rejection_diagnostics():
     """Verify that unsupported families are identified and rejected fail-closed."""
     for fam in FAMILIES:
@@ -366,9 +363,6 @@ end reaction rules
     assert len(r_toggle["forward"]["products"]) == 1
 
 
-test_release_nfir_roundtrip_model_facts = test_release_nfir_roundtrip_canonical_model_facts
-
-
 # ==============================================================================
 # release-obligation-147: Execution boundary, analytical pure-death law, and 21 slice checks
 # ==============================================================================
@@ -424,11 +418,6 @@ def test_release_obligation_147_execution_boundary_analytical_pure_death():
     assert cases_refused["function-rate"]["refused"] is True
     assert cases_refused["compartment"]["refused"] is True
     assert cases_refused["bonded-seed"]["refused"] is True
-
-
-test_release_obligation_147_analytical_pure_death_law = (
-    test_release_obligation_147_execution_boundary_analytical_pure_death
-)
 
 
 def test_release_obligation_147_twenty_one_slice_checks():

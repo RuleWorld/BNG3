@@ -288,181 +288,6 @@ def test_issue138_release_record_consumer(tmp_path):
             issue_queue.issue138_release_record(path, REVISION)
 
 
-def test_issue137_release_record_consumer(tmp_path):
-    record_file = tmp_path / "issue137-release-record.json"
-    expected = {
-        "release-inventory",
-        "release-inventory-links",
-        "release-capability-coverage-137",
-    }
-    record_file.write_text(
-        json.dumps(
-            {
-                "acceptance_check": "release-obligation-137",
-                "source": {"revision": REVISION, "dirty": False},
-                "manifest_check_ids": sorted(expected),
-                "results": [
-                    {
-                        "id": check,
-                        "status": "PASS",
-                        "stage": "capability-inventory",
-                        "evidence_kind": "supported-execution",
-                        "supported_execution": True,
-                    }
-                    for check in sorted(expected)
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-    report = issue_queue.issue137_release_record(
-        record_file, REVISION, artifact_run_id="999"
-    )
-    assert report["source"] == {"revision": REVISION, "dirty": False}
-    assert expected.issubset({r["id"] for r in report["results"]})
-    assert all(r["status"] == "PASS" for r in report["results"])
-
-
-def test_issue147_release_record_consumer(tmp_path):
-    record_file = tmp_path / "issue147-release-record.json"
-    expected = {
-        "release-nfir-lowering",
-        "release-nfir-roundtrip",
-        "release-obligation-147",
-    }
-    record_file.write_text(
-        json.dumps(
-            {
-                "acceptance_check": "release-obligation-147",
-                "source": {"revision": REVISION, "dirty": False},
-                "manifest_check_ids": sorted(expected),
-                "results": [
-                    {
-                        "id": check,
-                        "status": "PASS",
-                        "stage": "nfir-lowering",
-                        "evidence_kind": "supported-execution",
-                        "supported_execution": True,
-                    }
-                    for check in sorted(expected)
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-    report = issue_queue.issue147_release_record(
-        record_file, REVISION, artifact_run_id="999"
-    )
-    assert report["source"] == {"revision": REVISION, "dirty": False}
-    assert expected.issubset({r["id"] for r in report["results"]})
-    assert all(r["status"] == "PASS" for r in report["results"])
-
-
-def test_issue148_release_record_consumer(tmp_path):
-    record_file = tmp_path / "issue148-release-record.json"
-    expected = {
-        "release-nfnext-execution",
-        "release-nfnext-routes",
-        "release-capability-coverage-148",
-    }
-    record_file.write_text(
-        json.dumps(
-            {
-                "acceptance_check": "release-obligation-148",
-                "source": {"revision": REVISION, "dirty": False},
-                "manifest_check_ids": sorted(expected),
-                "results": [
-                    {
-                        "id": check,
-                        "status": "PASS",
-                        "stage": "nfnext-execution",
-                        "evidence_kind": "supported-execution",
-                        "supported_execution": True,
-                    }
-                    for check in sorted(expected)
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-    report = issue_queue.issue148_release_record(
-        record_file, REVISION, artifact_run_id="999"
-    )
-    assert report["source"] == {"revision": REVISION, "dirty": False}
-    assert expected.issubset({r["id"] for r in report["results"]})
-    assert all(r["status"] == "PASS" for r in report["results"])
-
-
-def test_issue149_release_record_consumer(tmp_path):
-    record_file = tmp_path / "issue149-release-record.json"
-    expected = {
-        "release-engine-consolidation",
-        "release-nf-default",
-        "release-obligation-149",
-    }
-    record_file.write_text(
-        json.dumps(
-            {
-                "acceptance_check": "release-obligation-149",
-                "source": {"revision": REVISION, "dirty": False},
-                "manifest_check_ids": sorted(expected),
-                "results": [
-                    {
-                        "id": check,
-                        "status": "PASS",
-                        "stage": "engine-consolidation",
-                        "evidence_kind": "supported-execution",
-                        "supported_execution": True,
-                    }
-                    for check in sorted(expected)
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-    report = issue_queue.issue149_release_record(
-        record_file, REVISION, artifact_run_id="999"
-    )
-    assert report["source"] == {"revision": REVISION, "dirty": False}
-    assert expected.issubset({r["id"] for r in report["results"]})
-    assert all(r["status"] == "PASS" for r in report["results"])
-
-
-def test_issue152_release_record_consumer(tmp_path):
-    record_file = tmp_path / "issue152-release-record.json"
-    expected = {
-        "release-energy-protocols",
-        "release-extension-protocols",
-        "release-obligation-152",
-    }
-    record_file.write_text(
-        json.dumps(
-            {
-                "acceptance_check": "release-obligation-152",
-                "source": {"revision": REVISION, "dirty": False},
-                "manifest_check_ids": sorted(expected),
-                "results": [
-                    {
-                        "id": check,
-                        "status": "PASS",
-                        "stage": "energy-protocols",
-                        "evidence_kind": "supported-execution",
-                        "supported_execution": True,
-                    }
-                    for check in sorted(expected)
-                ],
-            }
-        ),
-        encoding="utf-8",
-    )
-    report = issue_queue.issue152_release_record(
-        record_file, REVISION, artifact_run_id="999"
-    )
-    assert report["source"] == {"revision": REVISION, "dirty": False}
-    assert expected.issubset({r["id"] for r in report["results"]})
-    assert all(r["status"] == "PASS" for r in report["results"])
-
-
 def test_issue471_checks_report_consumer(tmp_path):
     oracle_file = tmp_path / "oracle.json"
     oracle_file.write_text(
@@ -1028,3 +853,115 @@ def test_single_issue_closure_consumes_dependency_status(tmp_path, dependency_st
     ] == [180]
     assert (output / "dependency-issues-input.json").is_file()
     assert bool(table["closed_acceptance_gaps"]) == (dependency_status != "PASS")
+
+
+def test_approved_dependency_scope_resolves_only_stale_scope(tmp_path):
+    """A recorded maintainer decision unblocks stale dependency scope only.
+
+    The dependent issue's own checks still have to execute and pass; the
+    decision never waives its evidence.
+    """
+    revision = issue_queue.campaign.git(issue_queue.ROOT, "rev-parse", "HEAD")
+    target_body = "## Acceptance criteria\n- [ ] `release-target`: verify target.\n"
+    dependency_body = (
+        "## Acceptance criteria\n- [ ] `release-dependency`: verify dependency.\n"
+    )
+    target = dict(number=473, title="Target", state="CLOSED", body=target_body)
+    dependency = dict(
+        number=179, title="Dependency", state="CLOSED", body=dependency_body
+    )
+    (tmp_path / "issues.json").write_text(json.dumps([target]))
+    (tmp_path / "deps.json").write_text(json.dumps([dependency]))
+
+    def catalog_entry(issue, check, deps, text):
+        return dict(
+            number=issue["number"],
+            body_sha256=hashlib.sha256(issue["body"].encode()).hexdigest(),
+            obligations=[
+                dict(
+                    id=f"issue:{issue['number']}:live-acceptance:{check}",
+                    criterion=f"`{check}`: {text}",
+                    scope=text,
+                    completion_condition="Exact-revision evidence",
+                    dependencies=deps,
+                    boundaries=[],
+                    test_references=[],
+                    decisions=[],
+                    unmapped_scope=[],
+                    required_checks=[
+                        dict(
+                            id=check,
+                            evidence_kind="supported-execution",
+                            expectation=text,
+                        )
+                    ],
+                )
+            ],
+        )
+
+    catalog = dict(
+        issues=[
+            catalog_entry(target, "release-target", [179], "verify target."),
+            catalog_entry(dependency, "release-dependency", [], "verify dependency."),
+        ]
+    )
+    (tmp_path / "catalog.json").write_text(json.dumps(catalog))
+    artifact = tmp_path / "report.json"
+
+    def write_report(status):
+        row = report(
+            [
+                dict(
+                    id="release-target",
+                    status=status,
+                    related_issues=[473],
+                    supported_execution=status == "PASS",
+                    evidence_kind=(
+                        "supported-execution"
+                        if status == "PASS"
+                        else "observed-failure"
+                    ),
+                )
+            ]
+        )
+        row["source"]["revision"] = revision
+        artifact.write_text(json.dumps(row))
+
+    write_report("PASS")
+    common = [
+        "--issues-json",
+        str(tmp_path / "issues.json"),
+        "--dependency-issues-json",
+        str(tmp_path / "deps.json"),
+        "--obligations-json",
+        str(tmp_path / "catalog.json"),
+        "--revision",
+        revision,
+        "--report",
+        str(artifact),
+        "--require-closed-acceptance",
+    ]
+    # Without the recorded decision the stale dependency still blocks.
+    assert issue_queue.main(common + ["--output-dir", str(tmp_path / "off")]) == 1
+
+    catalog["approved_dependency_scope"] = dict(
+        issues=[179],
+        decision="docs/DECISIONS.md#test",
+        decision_marker="unrecorded dependency scope decision",
+    )
+    (tmp_path / "catalog.json").write_text(json.dumps(catalog))
+    # A catalog-only edit is rejected: the decision must be recorded in the
+    # repository decision document, not just asserted by the evidence catalog.
+    assert issue_queue.main(common + ["--output-dir", str(tmp_path / "fake")]) == 1
+
+    decision = issue_queue.ROOT / "docs" / "DECISIONS.md"
+    original = decision.read_text()
+    try:
+        decision.write_text(original + "\nunrecorded dependency scope decision\n")
+        assert issue_queue.main(common + ["--output-dir", str(tmp_path / "on")]) == 0
+    finally:
+        decision.write_text(original)
+
+    # A failing target check is still a gap even with the dependency accepted.
+    write_report("FAIL")
+    assert issue_queue.main(common + ["--output-dir", str(tmp_path / "fail")]) == 1

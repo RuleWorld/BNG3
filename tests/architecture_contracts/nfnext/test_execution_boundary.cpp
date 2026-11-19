@@ -229,7 +229,25 @@ std::vector<std::pair<std::string, std::string>> refusals() {
          "begin seed species\n  A(x) 10\n  B(y) 10\nend seed species\n"
          "begin energy patterns\n  A(x!1).B(y!1) Gf\nend energy patterns\n"
          "begin observables\n  Molecules AB A(x!1).B(y!1)\nend observables\n"
-         "begin reaction rules\n  R1: A(x) + B(y) <-> A(x!1).B(y!1) Arrhenius(phi,Ea), Arrhenius(phi,Ea)\nend reaction rules\n"}};
+         "begin reaction rules\n  R1: A(x) + B(y) <-> A(x!1).B(y!1) Arrhenius(phi,Ea), Arrhenius(phi,Ea)\nend reaction rules\n"},
+        {"delayed-rule",
+         "begin parameters\n  tau 1\n  k 0.5\nend parameters\n"
+         "begin molecule types\n  A()\n  B()\nend molecule types\n"
+         "begin seed species\n  A() 10\nend seed species\n"
+         "begin observables\n  Molecules B B()\nend observables\n"
+         "begin reaction rules\n  A() -> B() k delay=tau\nend reaction rules\n"},
+        {"nonconsuming-delayed-rule",
+         "begin parameters\n  tau 1\n  k 0.5\nend parameters\n"
+         "begin molecule types\n  A()\n  B()\nend molecule types\n"
+         "begin seed species\n  A() 10\nend seed species\n"
+         "begin observables\n  Molecules B B()\nend observables\n"
+         "begin reaction rules\n  A() -> A() + B() k delay=tau NonConsuming\nend reaction rules\n"},
+        {"delayed-rate-expression",
+         "begin parameters\n  tau 1\n  k 0.5\nend parameters\n"
+         "begin molecule types\n  A()\n  B()\nend molecule types\n"
+         "begin seed species\n  A() 10\nend seed species\n"
+         "begin observables\n  Molecules Aobs A()\nend observables\n"
+         "begin reaction rules\n  A() -> B() k\n  0 -> B() k*delay(Aobs, tau)\nend reaction rules\n"}};
     for (const auto& [name, source] : cases) {
         const auto ast = bng::parser::parseModel(source);
         if (!ast) {

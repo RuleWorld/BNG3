@@ -22,6 +22,11 @@ STRUCTURAL_VERSION = "0.2"
 DEFAULT_VERSION = STRUCTURAL_VERSION
 SUPPORTED_VERSIONS = frozenset({VERSION, STRUCTURAL_VERSION})
 
+# Bound on network-generation iterations used by exact equality proof search.
+# Unbounded models otherwise expand exponentially and never reach the fixed
+# point that the certificate requires; truncation is reported as undecided.
+_EQUALITY_NETWORK_MAX_ITER = 6
+
 _FEATURES = frozenset(
     {
         "barrier_patterns",
@@ -3784,7 +3789,24 @@ def _extract_jump_hazards(
 ]:
     """Extract rational hazards and network completeness signals."""
     param_dict = {p.name: Fraction(str(p.value)) for p in model.parameters}
-    net = model.generate_network()
+    # A complete finite network is required for an equality certificate.  An
+    # unbounded network (e.g. a polymerisation rule) grows exponentially and
+    # the default generation budget never terminates.  Bound the search so an
+    # incomplete/truncated network is reported through generation_converged /
+    # generation_pruned_species, which exact_process_equal turns into an
+    # explicit EqualityUndecided instead of hanging.  Finite networks that
+    # converge within the budget keep their exact verdict.  An explicit
+    # generate_network(max_iter=>N) action is a user-declared cutoff and is
+    # preserved (including max_iter=>0, which must remain a truncation control).
+    equality_max_iter = _EQUALITY_NETWORK_MAX_ITER
+    for action in getattr(model._model, "actions", []):
+        if action.name == "generate_network" and "max_iter" in action.arguments:
+            try:
+                equality_max_iter = int(action.arguments["max_iter"])
+            except (TypeError, ValueError):
+                pass
+            break
+    net = model.generate_network(max_iter=equality_max_iter)
     species_names = list(net.species_names)
 
     init_counts: dict[str, Fraction] = {sp: Fraction(0) for sp in species_names}

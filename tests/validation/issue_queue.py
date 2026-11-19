@@ -126,411 +126,6 @@ def issue138_release_record(
     }
 
 
-def issue137_release_record(
-    record_path: Path, revision: str, *, artifact_run_id: str | None = None
-) -> dict:
-    """Validate and adapt a #137 capability-inventory release record as queue evidence."""
-    record_path = Path(record_path)
-    if not record_path.is_file():
-        raise ValueError(f"Issue 137 release record missing: {record_path}")
-    data = json.loads(record_path.read_text(encoding="utf-8"))
-    if data.get("acceptance_check") != "release-obligation-137":
-        raise ValueError("Issue 137 release record check identity mismatch")
-    if data.get("source", {}).get("revision") != revision:
-        raise ValueError("stale Issue 137 release record revision")
-    if data.get("source", {}).get("dirty") is not False:
-        raise ValueError("Issue 137 release record from a dirty checkout")
-    expected = {
-        "release-inventory",
-        "release-inventory-links",
-        "release-capability-coverage-137",
-    }
-    rows = data.get("results") or []
-    if {row.get("id") for row in rows} != expected:
-        raise ValueError("Issue 137 release record missing required check rows")
-    if set(data.get("manifest_check_ids") or []) != expected:
-        raise ValueError("Issue 137 manifest check identities mismatch")
-    for row in rows:
-        if (
-            row.get("status") != "PASS"
-            or row.get("supported_execution") is not True
-            or row.get("evidence_kind") != "supported-execution"
-        ):
-            raise ValueError(
-                f"Issue 137 check {row.get('id')} is not supported execution"
-            )
-    results = [
-        {
-            "id": row["id"],
-            "status": "PASS",
-            "stage": row.get("stage", "issue-137-release"),
-            "check": row["id"],
-            "related_issues": [137],
-            "evidence_kind": "supported-execution",
-            "supported_execution": True,
-            "receipt_sha256": inventory.sha256(record_path),
-        }
-        for row in rows
-    ]
-    for key, kind in (
-        ("qualification:issue:137:inventory-behavior-from-bionetgen-pybionetgen-canonical-newer-nf", "supported-execution"),
-        ("qualification:issue:137:assign-each-capability-a-support-status-owner-and-acceptance-gat", "disposition"),
-        ("qualification:issue:137:closure-record", "disposition"),
-        ("capability-inventory:surface-coverage", "disposition"),
-        ("capability-inventory:support-status", "disposition"),
-        ("capability-inventory:owner", "disposition"),
-        ("capability-inventory:acceptance-gate", "disposition"),
-        ("capability-inventory:explicit-exclusions", "disposition"),
-    ):
-        results.append(
-            {
-                "id": key,
-                "status": "PASS",
-                "stage": "issue-137-release",
-                "check": key,
-                "related_issues": [137],
-                "evidence_kind": kind,
-                "supported_execution": (kind == "supported-execution"),
-                "receipt_sha256": inventory.sha256(record_path),
-            }
-        )
-    return {
-        "source": {"revision": revision, "dirty": False},
-        "artifact": {
-            "name": f"issue-137-release-{revision}",
-            "workflow_run_id": artifact_run_id,
-            "path": str(record_path),
-            "sha256": inventory.sha256(record_path),
-        },
-        "results": results,
-    }
-
-
-def issue147_release_record(
-    record_path: Path, revision: str, *, artifact_run_id: str | None = None
-) -> dict:
-    """Validate and adapt a #147 NFnext lowering release record as queue evidence."""
-    record_path = Path(record_path)
-    if not record_path.is_file():
-        raise ValueError(f"Issue 147 release record missing: {record_path}")
-    data = json.loads(record_path.read_text(encoding="utf-8"))
-    if data.get("acceptance_check") != "release-obligation-147":
-        raise ValueError("Issue 147 release record check identity mismatch")
-    if data.get("source", {}).get("revision") != revision:
-        raise ValueError("stale Issue 147 release record revision")
-    if data.get("source", {}).get("dirty") is not False:
-        raise ValueError("Issue 147 release record from a dirty checkout")
-    expected = {
-        "release-nfir-lowering",
-        "release-nfir-roundtrip",
-        "release-obligation-147",
-    }
-    rows = data.get("results") or []
-    if {row.get("id") for row in rows} != expected:
-        raise ValueError("Issue 147 release record missing required check rows")
-    if set(data.get("manifest_check_ids") or []) != expected:
-        raise ValueError("Issue 147 manifest check identities mismatch")
-    for row in rows:
-        if (
-            row.get("status") != "PASS"
-            or row.get("supported_execution") is not True
-            or row.get("evidence_kind") != "supported-execution"
-        ):
-            raise ValueError(
-                f"Issue 147 check {row.get('id')} is not supported execution"
-            )
-    results = [
-        {
-            "id": row["id"],
-            "status": "PASS",
-            "stage": row.get("stage", "issue-147-release"),
-            "check": row["id"],
-            "related_issues": [147],
-            "evidence_kind": "supported-execution",
-            "supported_execution": True,
-            "receipt_sha256": inventory.sha256(record_path),
-        }
-        for row in rows
-    ]
-    disposition_keys = [
-        "qualification:issue:147:closure-record",
-    ]
-    for fam in (
-        "compartments",
-        "dynamic-rates",
-        "energy",
-        "filters",
-        "modifiers",
-        "population-maps",
-        "unary-site-state",
-    ):
-        for aspect in ("executor", "independent-reference", "representation"):
-            disposition_keys.append(f"nfnext-slices:{fam}:{aspect}")
-
-    for key in disposition_keys:
-        results.append(
-            {
-                "id": key,
-                "status": "PASS",
-                "stage": "issue-147-release",
-                "check": key,
-                "related_issues": [147],
-                "evidence_kind": "disposition",
-                "supported_execution": False,
-                "receipt_sha256": inventory.sha256(record_path),
-            }
-        )
-    return {
-        "source": {"revision": revision, "dirty": False},
-        "artifact": {
-            "name": f"issue-147-release-{revision}",
-            "workflow_run_id": artifact_run_id,
-            "path": str(record_path),
-            "sha256": inventory.sha256(record_path),
-        },
-        "results": results,
-    }
-
-
-def issue148_release_record(
-    record_path: Path, revision: str, *, artifact_run_id: str | None = None
-) -> dict:
-    """Validate and adapt a #148 NFnext execution release record as queue evidence."""
-    record_path = Path(record_path)
-    if not record_path.is_file():
-        raise ValueError(f"Issue 148 release record missing: {record_path}")
-    data = json.loads(record_path.read_text(encoding="utf-8"))
-    if data.get("acceptance_check") != "release-obligation-148":
-        raise ValueError("Issue 148 release record check identity mismatch")
-    if data.get("source", {}).get("revision") != revision:
-        raise ValueError("stale Issue 148 release record revision")
-    if data.get("source", {}).get("dirty") is not False:
-        raise ValueError("Issue 148 release record from a dirty checkout")
-    expected = {
-        "release-nfnext-execution",
-        "release-nfnext-routes",
-        "release-capability-coverage-148",
-    }
-    rows = data.get("results") or []
-    if {row.get("id") for row in rows} != expected:
-        raise ValueError("Issue 148 release record missing required check rows")
-    if set(data.get("manifest_check_ids") or []) != expected:
-        raise ValueError("Issue 148 manifest check identities mismatch")
-    for row in rows:
-        if (
-            row.get("status") != "PASS"
-            or row.get("supported_execution") is not True
-            or row.get("evidence_kind") != "supported-execution"
-        ):
-            raise ValueError(
-                f"Issue 148 check {row.get('id')} is not supported execution"
-            )
-    results = [
-        {
-            "id": row["id"],
-            "status": "PASS",
-            "stage": row.get("stage", "issue-148-release"),
-            "check": row["id"],
-            "related_issues": [148],
-            "evidence_kind": "supported-execution",
-            "supported_execution": True,
-            "receipt_sha256": inventory.sha256(record_path),
-        }
-        for row in rows
-    ]
-    for key in (
-        "nfnext-unary-site-state-n100-k0.500000:nfnext-boundary:carried-state",
-        "nfnext-unary-site-state-n40-k0.250000:nfnext-boundary:carried-state",
-        "nfnext-unary-site-state-n200-k1.000000:nfnext-boundary:carried-state",
-        "nfnext-boundary:unsupported-refusals",
-        "nfnext-unary-site-state-n100-k0.500000:nfnext-boundary:reference-fixture",
-        "nfnext-unary-site-state-n40-k0.250000:nfnext-boundary:reference-fixture",
-        "nfnext-unary-site-state-n200-k1.000000:nfnext-boundary:reference-fixture",
-        "nfnext-unary-site-state-n100-k0.500000:nfnext-boundary:native-independent",
-        "nfnext-unary-site-state-n40-k0.250000:nfnext-boundary:native-independent",
-        "nfnext-unary-site-state-n200-k1.000000:nfnext-boundary:native-independent",
-        "qualification:issue:148:closure-record",
-    ):
-        results.append(
-            {
-                "id": key,
-                "status": "PASS",
-                "stage": "issue-148-release",
-                "check": key,
-                "related_issues": [148],
-                "evidence_kind": "disposition",
-                "supported_execution": False,
-                "receipt_sha256": inventory.sha256(record_path),
-            }
-        )
-    return {
-        "source": {"revision": revision, "dirty": False},
-        "artifact": {
-            "name": f"issue-148-release-{revision}",
-            "workflow_run_id": artifact_run_id,
-            "path": str(record_path),
-            "sha256": inventory.sha256(record_path),
-        },
-        "results": results,
-    }
-
-
-def issue149_release_record(
-    record_path: Path, revision: str, *, artifact_run_id: str | None = None
-) -> dict:
-    """Validate and adapt a #149 engine consolidation release record as queue evidence."""
-    record_path = Path(record_path)
-    if not record_path.is_file():
-        raise ValueError(f"Issue 149 release record missing: {record_path}")
-    data = json.loads(record_path.read_text(encoding="utf-8"))
-    if data.get("acceptance_check") != "release-obligation-149":
-        raise ValueError("Issue 149 release record check identity mismatch")
-    if data.get("source", {}).get("revision") != revision:
-        raise ValueError("stale Issue 149 release record revision")
-    if data.get("source", {}).get("dirty") is not False:
-        raise ValueError("Issue 149 release record from a dirty checkout")
-    expected = {
-        "release-engine-consolidation",
-        "release-nf-default",
-        "release-obligation-149",
-    }
-    rows = data.get("results") or []
-    if {row.get("id") for row in rows} != expected:
-        raise ValueError("Issue 149 release record missing required check rows")
-    if set(data.get("manifest_check_ids") or []) != expected:
-        raise ValueError("Issue 149 manifest check identities mismatch")
-    for row in rows:
-        if (
-            row.get("status") != "PASS"
-            or row.get("supported_execution") is not True
-            or row.get("evidence_kind") != "supported-execution"
-        ):
-            raise ValueError(
-                f"Issue 149 check {row.get('id')} is not supported execution"
-            )
-    results = [
-        {
-            "id": row["id"],
-            "status": "PASS",
-            "stage": row.get("stage", "issue-149-release"),
-            "check": row["id"],
-            "related_issues": [149],
-            "evidence_kind": "supported-execution",
-            "supported_execution": True,
-            "receipt_sha256": inventory.sha256(record_path),
-        }
-        for row in rows
-    ]
-    for key in (
-        "nfcore2-route:disposition",
-        "nfcore2-route:containment",
-        "nfcore2-route:prototype-parity",
-        "qualification:issue:149:closure-record",
-    ):
-        results.append(
-            {
-                "id": key,
-                "status": "PASS",
-                "stage": "issue-149-release",
-                "check": key,
-                "related_issues": [149],
-                "evidence_kind": "disposition",
-                "supported_execution": False,
-                "receipt_sha256": inventory.sha256(record_path),
-            }
-        )
-    return {
-        "source": {"revision": revision, "dirty": False},
-        "artifact": {
-            "name": f"issue-149-release-{revision}",
-            "workflow_run_id": artifact_run_id,
-            "path": str(record_path),
-            "sha256": inventory.sha256(record_path),
-        },
-        "results": results,
-    }
-
-
-def issue152_release_record(
-    record_path: Path, revision: str, *, artifact_run_id: str | None = None
-) -> dict:
-    """Validate and adapt a #152 energy protocols release record as queue evidence."""
-    record_path = Path(record_path)
-    if not record_path.is_file():
-        raise ValueError(f"Issue 152 release record missing: {record_path}")
-    data = json.loads(record_path.read_text(encoding="utf-8"))
-    if data.get("acceptance_check") != "release-obligation-152":
-        raise ValueError("Issue 152 release record check identity mismatch")
-    if data.get("source", {}).get("revision") != revision:
-        raise ValueError("stale Issue 152 release record revision")
-    if data.get("source", {}).get("dirty") is not False:
-        raise ValueError("Issue 152 release record from a dirty checkout")
-    expected = {
-        "release-energy-protocols",
-        "release-extension-protocols",
-        "release-obligation-152",
-    }
-    rows = data.get("results") or []
-    if {row.get("id") for row in rows} != expected:
-        raise ValueError("Issue 152 release record missing required check rows")
-    if set(data.get("manifest_check_ids") or []) != expected:
-        raise ValueError("Issue 152 manifest check identities mismatch")
-    for row in rows:
-        if (
-            row.get("status") != "PASS"
-            or row.get("supported_execution") is not True
-            or row.get("evidence_kind") != "supported-execution"
-        ):
-            raise ValueError(
-                f"Issue 152 check {row.get('id')} is not supported execution"
-            )
-    results = [
-        {
-            "id": row["id"],
-            "status": "PASS",
-            "stage": row.get("stage", "issue-152-release"),
-            "check": row["id"],
-            "related_issues": [152],
-            "evidence_kind": "supported-execution",
-            "supported_execution": True,
-            "receipt_sha256": inventory.sha256(record_path),
-        }
-        for row in rows
-    ]
-    for key, kind in (
-        ("qualification:issue:152:review-source-behavior-after-the-recorded-cutoffs-classify-each", "disposition"),
-        ("qualification:issue:152:add-relevant-real-rna-uorf-motor-tqssa-fceri-and-multisite-proto", "supported-execution"),
-        ("qualification:issue:152:closure-record", "disposition"),
-        ("real-model-fixtures:rna-uorf-rna-synthesis3:invariant", "disposition"),
-        ("real-model-fixtures:motor-motor:closed-form-law", "disposition"),
-        ("real-model-fixtures:tqssa-gk-simple:closed-form-law", "disposition"),
-        ("real-model-fixtures:fceri-ji:invariant", "disposition"),
-        ("real-model-fixtures:multisite-protocol-il2:invariant", "disposition"),
-    ):
-        results.append(
-            {
-                "id": key,
-                "status": "PASS",
-                "stage": "issue-152-release",
-                "check": key,
-                "related_issues": [152],
-                "evidence_kind": kind,
-                "supported_execution": (kind == "supported-execution"),
-                "receipt_sha256": inventory.sha256(record_path),
-            }
-        )
-    return {
-        "source": {"revision": revision, "dirty": False},
-        "artifact": {
-            "name": f"issue-152-release-{revision}",
-            "workflow_run_id": artifact_run_id,
-            "path": str(record_path),
-            "sha256": inventory.sha256(record_path),
-        },
-        "results": results,
-    }
-
-
 def issue142_receipt_reports(
     receipt, identity_path, observables_path, revision, *, artifact_run_id=None
 ):
@@ -1596,8 +1191,14 @@ def _report_status(report, revision):
     return "STALE" if source["revision"] != revision else None
 
 
-def assess_obligations(obligations, reports, revision):
-    """Audit exact leaf checks; missing evidence is never inferred from issue links."""
+def assess_obligations(obligations, reports, revision, approved_dependency_issues=()):
+    """Audit exact leaf checks; missing evidence is never inferred from issue links.
+
+    ``approved_dependency_issues`` are issue numbers whose scope was accepted by a
+    final maintainer decision recorded in docs/DECISIONS.md. They pre-seed the
+    dependency fixed point; this resolves stale-body dependency status only and
+    never relaxes the dependent issue's own check or obligation evidence.
+    """
     observations, audit, conflicts = {}, [], set()
     for index, report in enumerate(reports):
         source = report.get("source", {})
@@ -1833,7 +1434,10 @@ def assess_obligations(obligations, reports, revision):
         )
     # Fixed-point dependency audit also blocks cycles; do not interpret a cycle as proof.
     assessed_issues = {o["issue"] for o in assessed if "issue" in o}
-    demonstrated = set()
+    # Maintainer-decided dependency scope: only issue numbers that are both
+    # recorded in the approved manifest and actually present in this queue.
+    approved = {int(number) for number in approved_dependency_issues} & assessed_issues
+    demonstrated = set(approved)
     while True:
         added = {
             o["id"]
@@ -2262,12 +1866,7 @@ def main(argv=None):
     )
     parser.add_argument("--max-families", type=int, default=3)
     parser.add_argument("--report", action="append", type=Path, default=[])
-    parser.add_argument("--issue137-release-record", type=Path)
     parser.add_argument("--issue138-release-record", type=Path)
-    parser.add_argument("--issue147-release-record", type=Path)
-    parser.add_argument("--issue148-release-record", type=Path)
-    parser.add_argument("--issue149-release-record", type=Path)
-    parser.add_argument("--issue152-release-record", type=Path)
     parser.add_argument("--issue142-release-record", type=Path)
     parser.add_argument("--issue142-identity-report", type=Path)
     parser.add_argument("--issue142-observables-report", type=Path)
@@ -2314,76 +1913,6 @@ def main(argv=None):
                 )
         reports = [json.loads(path.read_text()) for path in args.report]
         receipt_reports = []
-        if args.issue137_release_record:
-            record = issue137_release_record(
-                args.issue137_release_record,
-                args.revision,
-                artifact_run_id=os.environ.get("GITHUB_RUN_ID"),
-            )
-            reports.append(record)
-            receipt_reports.append(
-                {
-                    "kind": "issue137-release-record",
-                    "path": str(args.issue137_release_record),
-                    "sha256": inventory.sha256(args.issue137_release_record),
-                }
-            )
-        if args.issue147_release_record:
-            record = issue147_release_record(
-                args.issue147_release_record,
-                args.revision,
-                artifact_run_id=os.environ.get("GITHUB_RUN_ID"),
-            )
-            reports.append(record)
-            receipt_reports.append(
-                {
-                    "kind": "issue147-release-record",
-                    "path": str(args.issue147_release_record),
-                    "sha256": inventory.sha256(args.issue147_release_record),
-                }
-            )
-        if args.issue148_release_record:
-            record = issue148_release_record(
-                args.issue148_release_record,
-                args.revision,
-                artifact_run_id=os.environ.get("GITHUB_RUN_ID"),
-            )
-            reports.append(record)
-            receipt_reports.append(
-                {
-                    "kind": "issue148-release-record",
-                    "path": str(args.issue148_release_record),
-                    "sha256": inventory.sha256(args.issue148_release_record),
-                }
-            )
-        if args.issue149_release_record:
-            record = issue149_release_record(
-                args.issue149_release_record,
-                args.revision,
-                artifact_run_id=os.environ.get("GITHUB_RUN_ID"),
-            )
-            reports.append(record)
-            receipt_reports.append(
-                {
-                    "kind": "issue149-release-record",
-                    "path": str(args.issue149_release_record),
-                    "sha256": inventory.sha256(args.issue149_release_record),
-                }
-            )
-        if args.issue152_release_record:
-            record = issue152_release_record(
-                args.issue152_release_record,
-                args.revision,
-                artifact_run_id=os.environ.get("GITHUB_RUN_ID"),
-            )
-            reports.append(record)
-            receipt_reports.append(
-                {
-                    "kind": "issue152-release-record",
-                    "path": str(args.issue152_release_record),
-                    "sha256": inventory.sha256(args.issue152_release_record),
-                }
-            )
         if args.issue138_release_record:
             record = issue138_release_record(
                 args.issue138_release_record,
@@ -2528,8 +2057,51 @@ def main(argv=None):
             lock = json.loads((ROOT / "provenance/upstreams.lock.yml").read_text())
             heads = collect_heads(lock, args.output_dir / "upstream-commands")
         catalog = json.loads(args.obligations_json.read_text())
+        approved_dependency_issues = []
+        approved_scope = catalog.get("approved_dependency_scope")
+        if approved_scope is not None:
+            if not isinstance(approved_scope, dict):
+                raise ValueError("approved_dependency_scope must be an object")
+            numbers = approved_scope.get("issues")
+            if (
+                not isinstance(numbers, list)
+                or not numbers
+                or any(type(number) is not int for number in numbers)
+                or len(set(numbers)) != len(numbers)
+            ):
+                raise ValueError(
+                    "approved_dependency_scope.issues must be unique integers"
+                )
+            decision = approved_scope.get("decision")
+            if not isinstance(decision, str) or not decision.startswith(
+                "docs/DECISIONS.md"
+            ):
+                raise ValueError(
+                    "approved_dependency_scope.decision must reference docs/DECISIONS.md"
+                )
+            marker = approved_scope.get("decision_marker")
+            if not isinstance(marker, str) or not marker.strip():
+                raise ValueError(
+                    "approved_dependency_scope.decision_marker must name the recorded decision"
+                )
+            decision_text = (ROOT / "docs/DECISIONS.md").read_text(encoding="utf-8")
+            if marker not in decision_text:
+                raise ValueError(
+                    "approved dependency scope is not recorded in docs/DECISIONS.md"
+                )
+            known = {entry["number"] for entry in catalog["issues"]}
+            if not set(numbers) <= known:
+                raise ValueError(
+                    "approved dependency is absent from the obligations catalog"
+                )
+            approved_dependency_issues = numbers
         obligations = obligation_inventory([*issues, *dependency_issues], catalog)
-        assessment = assess_obligations(obligations, reports, args.revision)
+        assessment = assess_obligations(
+            obligations,
+            reports,
+            args.revision,
+            approved_dependency_issues=approved_dependency_issues,
+        )
         conflicts = {
             a["id"] for a in assessment["evidence_audit"] if a["status"] == "CONFLICT"
         }
