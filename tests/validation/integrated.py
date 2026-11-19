@@ -651,28 +651,15 @@ def run_case(case, args, rows, env):
         deps=[atomizer],
         required=("nf.gdat", "identity.json"),
     )
-    # The pinned oracle applies a compartment size only to zero-order
-    # synthesis, so BNG2's XML states a reactant-bearing rule at a rate the
-    # oracle reads without the compartment unit conversion. The XML is
-    # normalised into BNG2's count-rate convention first, so the oracle
-    # samples the model the embedded engine executes. When the rewrite cannot
-    # state the convention, the oracle runs on BNG2's XML and the stage records
-    # why, rather than the whole run stopping.
+    # The pinned native oracle applies the compartment and symmetry factors
+    # to the original XML at load time.
     native_xml = work / "bng2/model.xml"
-    normalised = integrated_traces.native_count_rate_xml(
-        native_xml, work / "native-nf/count-rate-model.xml"
-    )
-    oracle_xml = (
-        work / "native-nf/count-rate-model.xml"
-        if normalised["status"] == "NORMALISED"
-        else native_xml
-    )
     native = stage(
         "native-nf",
         [
             str(args.nfsim_binary),
             "-xml",
-            str(oracle_xml),
+            str(native_xml),
             "-o",
             str(work / "native-nf/nf.gdat"),
             "-sim",
@@ -685,14 +672,6 @@ def run_case(case, args, rows, env):
         deps=[bng2],
         required=("nf.gdat",),
     )
-    if normalised["status"] != "NORMALISED":
-        # The oracle could not be handed the model in BNG2's count-rate
-        # convention, so the stage ran on BNG2's XML and the reason is kept
-        # with the stage's record.
-        native["detail"] = (
-            "the native NFsim oracle ran on BNG2's XML, not on the model in "
-            "BNG2's count-rate convention: " + normalised["detail"]
-        )
 
     consumers = []
     for operation in integrated_consumers.OPERATIONS:

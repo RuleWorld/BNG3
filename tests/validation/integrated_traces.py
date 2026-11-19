@@ -614,6 +614,83 @@ def exported_bng_xml(path, source: dict | None = None) -> dict:
     )
 
 
+def native_count_rate_input(source_xml, target_xml) -> dict:
+    """Stage XML for one native simulation and describe its elementary rates.
+
+    The pinned oracle applies symmetry and compartment factors at load time.
+    Its compartment reader runs before its parameter reader, so materialize
+    only a verified constant size snapshot when XML names a size parameter.
+    The oracle runs have no parameter updates.
+    """
+    source = Path(source_xml).resolve()
+    try:
+        tree = ET.parse(source)
+    except (OSError, ET.ParseError) as exc:
+        return dict(status="UNAVAILABLE", detail=f"BNG-XML export unavailable: {exc}")
+    exported = exported_bng_xml(source)
+    rules = exported["rules"]
+    if not rules:
+        return dict(
+            status="UNSUPPORTED", detail="the export declares no reaction rules"
+        )
+    coefficients = []
+    for rule in rules:
+        coefficient = rule["observed_elementary_coefficient"]
+        if coefficient is None or not math.isfinite(coefficient):
+            return dict(
+                status="UNSUPPORTED",
+                detail=f"reaction rule {rule['id']} has no statically determinable elementary count-rate coefficient",
+            )
+        coefficients.append(
+            dict(
+                id=rule["id"],
+                rate_constant=rule["rate_constant_value"],
+                symmetry_factor=float(rule["symmetry_factor"] or 1),
+                compartment_unit_conversion=rule["compartment_unit_conversion"],
+                count_rate_coefficient=coefficient,
+                reactant_pattern_count=rule["reactant_pattern_count"],
+            )
+        )
+    root = tree.getroot()
+    constants = {
+        node.get("id"): node.get("value")
+        for node in root.iter()
+        if _tag(node) == "Parameter" and node.get("type") == "Constant"
+    }
+    staged = source
+    for node in root.iter():
+        if _tag(node) not in ("Compartment", "compartment"):
+            continue
+        if node.get("sizeExpression") or node.get("dynamicSize") in {"1", "true"}:
+            return dict(
+                status="UNSUPPORTED",
+                detail="the oracle requires a static compartment size",
+            )
+        parameter = node.get("sizeParameter")
+        if not parameter:
+            continue
+        try:
+            size = float(node.get("size"))
+            agrees = (
+                math.isfinite(size) and size > 0 and size == float(constants[parameter])
+            )
+        except (TypeError, ValueError, KeyError):
+            agrees = False
+        if not agrees:
+            return dict(
+                status="UNSUPPORTED",
+                detail=f"compartment {node.get('id')} has no verified constant size snapshot",
+            )
+        node.attrib.pop("sizeParameter")
+        staged = Path(target_xml).resolve()
+    if staged != source:
+        if root.tag.startswith("{"):
+            ET.register_namespace("", root.tag[1:].split("}")[0])
+        staged.parent.mkdir(parents=True, exist_ok=True)
+        tree.write(staged, encoding="utf-8", xml_declaration=True)
+    return dict(status="OBSERVED", path=str(staged), rules=coefficients)
+
+
 def _oracle_zero_order_conversion(element, geometry):
     """The compartment factor the pinned oracle applies to a rule itself.
 
@@ -649,7 +726,7 @@ def native_count_rate_xml(source_xml, target_xml) -> dict:
 
     BNG2's count-rate convention divides a reactant-bearing rate constant by
     the reaction compartment's size (``bng2/Perl2/Rxn.pm:100-197``).  The
-    pinned native NFsim applies a compartment size only to zero-order
+    historical native NFsim at 9b00d42 applies a compartment size only to zero-order
     synthesis (``src/NFinput/NFinput.cpp`` sets ``volumeConversion`` for
     ``ts->getNreactants() == 0``), and only when the model states the
     compartment on the molecule.  This export states it on the pattern, so

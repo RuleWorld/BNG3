@@ -1037,7 +1037,15 @@ jobs:
           python -m pip install scikit-build-core pybind11
           python -m pip install ".[full,dev]"
         env:
-          CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF -DBUILD_NFSIM_CLI=OFF"
+          SKBUILD_BUILD_DIR: build
+          CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=ON -DBUILD_NFSIM_CLI=ON"
+
+      - name: Replay upstream NFsim XML and molecularity regressions
+        env:
+          NFSIM_SYNC_ORACLE: ${{ runner.temp }}/oracle-nfsim
+          NFSIM_SYNC_CANDIDATE_BIN: ${{ github.workspace }}/build/cpp
+        run: |
+          python -m pytest --noconftest -q tests/validation/nfsim_upstream_sync.py
 
       - name: Report installed BNG3 package and native identities
         run: |

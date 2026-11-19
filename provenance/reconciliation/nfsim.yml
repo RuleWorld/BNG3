@@ -3,7 +3,7 @@
   "schema_version": 1,
   "source": "nfsim",
   "represented_revision": "a6f9fa945c9d6e1e122e789c952260112c93f157",
-  "cutoff_revision": "9b00d42f734dcc3e695205600f12cae5b44d1daa",
+  "cutoff_revision": "8c449bbccc4a0c54586ae562f46f4955e65fe876",
   "owner": "akutuva21",
   "entries": [
     {
@@ -13,6 +13,9 @@
       "bng3_reference": "cpp/nfsim/; tests/python/test_cpp_backend.py",
       "tests": [
         "tests/python/test_cpp_backend.py::TestSimulation::test_nf_simulation_honors_absolute_start_time",
+        "tests/python/test_cpp_backend.py::TestSimulation::test_simulate_nf_rejects_unsupported_continue",
+        "tests/python/test_cpp_backend.py::TestSimulation::test_simulate_nf_rejects_unhandled_controls",
+        "tests/python/test_cpp_backend.py::TestSimulation::test_simulate_nf_defaults_to_strict_molecularity_with_explicit_opt_out",
         "tests/validation/test_parity_nfsim.py::test_reconciliation_species_observable_refresh",
         "tests/validation/test_reconciliation_nfsim.py::test_record_complex_flag_reconciliation",
         "tests/validation/test_reconciliation_nfsim.py::test_record_totalrate_reconciliation",
@@ -47,6 +50,399 @@
       "tests": [],
       "reviewer": "Codex technical reconciliation; maintainer review pending",
       "rationale": "Merge container for source-repository work; no independent behavior is assigned to this merge entry."
+    },
+    {
+      "source_revision": "883613baa0591663dee7718c6a986ca9e2463e4c",
+      "capability": "Check for an unmapped reactant before the molecularity check",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFcore/reactionClass.cpp",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Check mappings before evaluating molecularity."
+    },
+    {
+      "source_revision": "2dbf1889e166ab791e6ac2fea8d227cb482f9d0b",
+      "capability": "Enforce \"+\" molecularity by default and add -no-bscb to turn it off",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFinput/NFinput.cpp; cpp/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints",
+        "tests/python/test_cpp_backend.py::TestSimulation::test_simulate_nf_defaults_to_strict_molecularity_with_explicit_opt_out"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Lower the product and reactant relationships into the embedded checks and use independent native NFsim as the XML reference."
+    },
+    {
+      "source_revision": "d76c15736aa1b186b426943c1d34a48b113db18f",
+      "capability": "Decide complex bookkeeping before the System is built, not while loading",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFinput/NFinput.cpp; cpp/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
+      "tests": [
+        "tests/cpp/test_nfsim_ast_adapter.cpp::NFsim AST adapter maps bare molecule stoichiometric observables"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Lower the product and reactant relationships into the embedded checks and use independent native NFsim as the XML reference."
+    },
+    {
+      "source_revision": "e5a1989c1a01a551907fa3c702f9114025a1f2c7",
+      "capability": "Write AN.bngl's bond-breaking rules so they hold under strict \"+\"",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "models/chemotaxisAdaptation/AN.bngl",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Port the upstream example compatible with strict molecularity."
+    },
+    {
+      "source_revision": "3e5246760b89733977def69fe898634886f6e802",
+      "capability": "Write ANx.bngl's bond-breaking rules so they hold under strict \"+\"",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "models/chemotaxisAdaptation/ANx.bngl",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Port the upstream example compatible with strict molecularity."
+    },
+    {
+      "source_revision": "56f4b18fe3e6e519c144f1121bf335b41561c6fb",
+      "capability": "Write an2.bngl's bond-breaking rules so they hold under strict \"+\"",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/upstreams.lock.yml",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Use the pinned upstream fixture lineage for oracle regressions. The upstream-only an2 example is available in that checkout."
+    },
+    {
+      "source_revision": "3b3dd532519c8b854916a8d7c5d4fe22423ad496",
+      "capability": "Check that products separate for rules with more than one reactant",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFinput/NFinput.cpp; cpp/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Lower the product and reactant relationships into the embedded checks and use independent native NFsim as the XML reference."
+    },
+    {
+      "source_revision": "5d63b5d5407d9a0b77861133c4ac50b3d6886f60",
+      "capability": "Check that products separate for the reverse of an energy rule",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFinput/NFinput.cpp; cpp/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Lower the product and reactant relationships into the embedded checks and use independent native NFsim as the XML reference."
+    },
+    {
+      "source_revision": "d0bba8035cc8b499bfca70560b821ff23331b1bc",
+      "capability": "Check that products written with \".\" stay in one complex",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFinput/NFinput.cpp; cpp/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Lower the product and reactant relationships into the embedded checks and use independent native NFsim as the XML reference."
+    },
+    {
+      "source_revision": "1a7f1b1a7ec1dd7e1b0db6326068cdbf0f76986d",
+      "capability": "Check \"+\" and \".\" between the molecules a deleted molecule leaves behind",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFinput/NFinput.cpp; cpp/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Lower the product and reactant relationships into the embedded checks and use independent native NFsim as the XML reference."
+    },
+    {
+      "source_revision": "c1419dccdc3ac779b2c36e01c840d0816707935d",
+      "capability": "Do not fire a rule whose products can never form one complex",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFinput/NFinput.cpp; cpp/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Lower the product and reactant relationships into the embedded checks and use independent native NFsim as the XML reference."
+    },
+    {
+      "source_revision": "68403b825df9b07f96af42724a068373af63ac4f",
+      "capability": "fix: port Arrhenius, scope, compartment and connectivity corrections",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFinput/NFinput_energy.cpp; cpp/nfsim/NFinput/NFinput.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Reconcile explicitly directed upstream XML Arrhenius rules with the existing BNG3 XML format, compartment handling, and connectivity logic."
+    },
+    {
+      "source_revision": "66d30a9e9c86035bc5a976053dea8529e4eb6982",
+      "capability": "Fix NFsim compartment volume rate conversion",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFcore/compartment.cpp; cpp/nfsim/NFinput/NFinput.cpp",
+      "tests": [
+        "tests/cpp/test_nfsim_ast_adapter.cpp::NFsim XML preserves parameter-backed compartment sizes on update"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Retain BNG3 compartment placement and conversion, including dynamic compartment sizes, and apply the upstream XML regression checks."
+    },
+    {
+      "source_revision": "a4ce5df6bb3a912ec079a020f7e601eb0ebb9dca",
+      "capability": "Fix native NFsim compartment placement semantics",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFcore/compartment.cpp; cpp/nfsim/NFinput/NFinput.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions",
+        "tests/cpp/test_nfsim_ast_adapter.cpp::NFsim preserves issue 109 created molecule compartment inheritance"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Retain BNG3 compartment placement and conversion, including dynamic compartment sizes, and apply the upstream XML regression checks."
+    },
+    {
+      "source_revision": "acfea5944375feee67bc9abdbc6b41ec612f015f",
+      "capability": "Test and guard NFsim volume conversions",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFcore/compartment.cpp; cpp/nfsim/NFinput/NFinput.cpp",
+      "tests": [
+        "tests/cpp/test_nfsim_ast_adapter.cpp::NFsim XML preserves parameter-backed compartment sizes on update"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Retain BNG3 compartment placement and conversion, including dynamic compartment sizes, and apply the upstream XML regression checks."
+    },
+    {
+      "source_revision": "328b8b9dd97072cd40543f171a21a1f7040d5bd0",
+      "capability": "Merge pull request #103 from RuleWorld/fix/strict-molecularity-by-default",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "a3cc9d6e42438f63fdcc9adcbc941cae251a0893",
+      "capability": "Refresh local functions that read system observables",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFcore/system.cpp; cpp/nfsim/NFcore/observable.cpp; cpp/nfsim/NFfunction/localFunction.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions",
+        "tests/architecture_contracts/test_native_reader.cpp::direct NFsim refreshes a local rate when its global observable changes",
+        "tests/python/test_cpp_backend.py::TestSimulation::test_nf_local_rate_refreshes_after_global_observable_changes"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Integrate the upstream observable refresh and complete-state propensity updates into the embedded engine."
+    },
+    {
+      "source_revision": "0255dff39563fd4e467a419bded6e39a7c01c6c6",
+      "capability": "Merge upstream/master into codex/bng3-283-286",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "fe6abd62bd66f7640c183a3368cf3e649ee321ef",
+      "capability": "Merge pull request #111 from akutuva21/codex/bng3-283-286",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "18815abc929b447caf1b0c261c03388adf6a0435",
+      "capability": "Reject a bond partner of the wrong molecule type before indexing it",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFcore/templateMolecule.cpp",
+      "tests": [
+        "tests/validation/test_parity_nfsim_seed.py::test_an_family_seed_state_order_matches_native_nfsim"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Check partner molecule types before using template component indices."
+    },
+    {
+      "source_revision": "bd6698b4184c3b76ba97d4150635c19cb8f4d012",
+      "capability": "Guard the other three sites that index a partner with its template's index",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFcore/templateMolecule.cpp",
+      "tests": [
+        "tests/validation/test_parity_nfsim_seed.py::test_an_family_seed_state_order_matches_native_nfsim"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Apply the partner type check to the other template matching paths."
+    },
+    {
+      "source_revision": "cb8e521a30b259f6120b4b308252af999ef8f54b",
+      "capability": "Fix the comment's slot arithmetic, and say per site what reaching it needs",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFcore/templateMolecule.cpp",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Carry the final upstream matching comments with the defensive checks."
+    },
+    {
+      "source_revision": "d369bf59f95176e3b71443f8970baa1e37109b70",
+      "capability": "Use the connectivity matrix for all product molecules with -connect (#107)",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFcore/moleculeType.cpp; cpp/nfsim/NFcore/reactionClass.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions",
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Preserve the BNG3 incremental membership structures while incorporating upstream traversal and connectivity behavior."
+    },
+    {
+      "source_revision": "a42d6cf80b2fe13b13cc4285ef0b5a785839737f",
+      "capability": "Run the validation suite with -connect in CI",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": ".github/workflows/parity.yml",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions",
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Exercise connectivity-enabled candidates against the independent native oracle."
+    },
+    {
+      "source_revision": "62448db14687181ccaac0891c36a0973788250a5",
+      "capability": "Connect synthesis rules to the rules that match their products",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFcore/moleculeType.cpp; cpp/nfsim/NFcore/reactionClass.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions",
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Preserve the BNG3 incremental membership structures while incorporating upstream traversal and connectivity behavior."
+    },
+    {
+      "source_revision": "cab374ff86ab04bebcec0e90859797bb21e3b271",
+      "capability": "Connect rules whose effects reach molecules outside their patterns",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFcore/moleculeType.cpp; cpp/nfsim/NFcore/reactionClass.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions",
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Preserve the BNG3 incremental membership structures while incorporating upstream traversal and connectivity behavior."
+    },
+    {
+      "source_revision": "2ba5dcec70e7e6a4fd5708ceae86e520d92be581",
+      "capability": "Skip the extra update_a in connected membership updates",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFcore/moleculeType.cpp; cpp/nfsim/NFcore/reactionClass.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions",
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Preserve the BNG3 incremental membership structures while incorporating upstream traversal and connectivity behavior."
+    },
+    {
+      "source_revision": "8d646241455ef31c8432bf21e69b3f48a363c57d",
+      "capability": "Traverse whole complexes by default for disjoint patterns and MoveConnected",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFcore/moleculeType.cpp; cpp/nfsim/NFcore/reactionClass.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions",
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Preserve the BNG3 incremental membership structures while incorporating upstream traversal and connectivity behavior."
+    },
+    {
+      "source_revision": "d63eaeaf7e8e0c1f4d1374e947954db129531253",
+      "capability": "validate: keep connectivity parity reference runs without -connect",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": ".github/workflows/parity.yml",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions",
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Use a native oracle without connectivity pruning as the reference for the connectivity candidate."
+    },
+    {
+      "source_revision": "a4552bbd561a41734a34db0b1d54de7639ad9600",
+      "capability": "Compute no rate while a firing has its products out of the observables (#115)",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFcore/system.cpp; cpp/nfsim/NFcore/observable.cpp; cpp/nfsim/NFfunction/localFunction.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Integrate the upstream observable refresh and complete-state propensity updates into the embedded engine."
+    },
+    {
+      "source_revision": "57404e2b6422d5ddbe954a0d289a8790e0a8e81a",
+      "capability": "Merge pull request #114 from RuleWorld/connect-indirect-products",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "243a6ded106ea4433f6f5e2c78ae0d723577267e",
+      "capability": "Visit only connected reactions in the -connect membership update",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFcore/moleculeType.cpp; cpp/nfsim/NFcore/reactionClass.cpp; cpp/nfsim/NFreactions/transformations/transformationSet.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions",
+        "tests/validation/nfsim_upstream_sync.py::test_embedded_and_direct_match_upstream_product_constraints"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Preserve the BNG3 incremental membership structures while incorporating upstream traversal and connectivity behavior."
+    },
+    {
+      "source_revision": "e1c7199f1147ab4a1b2809a7aefde366192fa543",
+      "capability": "Merge pull request #118 from RuleWorld/connect-native-order-list",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "bee871273de48b4d9cbbaa66731719240d2dad6d",
+      "capability": "Merge pull request #113 from wshlavacek/fix/checkbonds-partner-type-oob",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "a0bf91340ffe92d84ee085755050fff8eee7e8a0",
+      "capability": "Merge pull request #117 from Montana/fix/115-defer-observable-rate-updates",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
+    },
+    {
+      "source_revision": "a39daedda80cebd72eb241f362a1f711c6596203",
+      "capability": "Report a negative composite rate law instead of crashing",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFcore/system.cpp; cpp/nfsim/NFcore/observable.cpp; cpp/nfsim/NFfunction/localFunction.cpp",
+      "tests": [
+        "tests/validation/nfsim_upstream_sync.py::test_upstream_xml_regressions"
+      ],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "Integrate the upstream observable refresh and complete-state propensity updates into the embedded engine."
+    },
+    {
+      "source_revision": "8c449bbccc4a0c54586ae562f46f4955e65fe876",
+      "capability": "Merge pull request #119 from Montana/fix/negative-composite-rate",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/reconciliation/nfsim.yml",
+      "tests": [],
+      "reviewer": "Codex technical reconciliation",
+      "rationale": "The merge records the upstream source history. The changes carried by its parent commits are mapped individually."
     }
   ]
 }

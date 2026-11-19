@@ -517,6 +517,7 @@ void System::tagReaction(unsigned int rID) {
 
 
 void System::addObservableForOutput(Observable *o) {
+	o->setSystem(this);
 	if(o->getType()==Observable::SPECIES)
 		this->speciesObservables.push_back(o);
 	this->obsToOutput.push_back(o);
@@ -544,6 +545,29 @@ void System::addNecessaryUpdateReaction(ReactionClass *reaction)
 	reaction->init();
 	allReactions.push_back(reaction);
 	necessaryUpdateRxns.push_back(reaction);
+}
+
+bool System::needsWholeComplexTraversal() const {
+	for (unsigned int r=0; r<allReactions.size(); r++) {
+		if (allReactions[r]->hasDisjointReactantPattern() ||
+				allReactions[r]->hasMoveConnectedTransform())
+			return true;
+	}
+	// Molecules observables are updated only for product molecules. Species
+	// observables are evaluated on whole product complexes, and reactant
+	// filters when a rule fires, so neither needs the traversal.
+	for (unsigned int m=0; m<allMoleculeTypes.size(); m++) {
+		MoleculeType *mt = allMoleculeTypes[m];
+		for (int o=0; o<mt->getNumOfMolObs(); o++) {
+			int n = 0;
+			TemplateMolecule **tmList = 0;
+			mt->getMolObs(o)->getTemplateMoleculeList(n, tmList);
+			for (int t=0; t<n; t++) {
+				if (tmList[t]->getN_connectedTo() > 0) return true;
+			}
+		}
+	}
+	return false;
 }
 
 void System::setUniversalTraversalLimit(int utl) {
@@ -862,7 +886,10 @@ void System::prepareForSimulation()
 	else
 		this->selector = new DirectSelector(allReactions, this);
 
-  	// Infer connected reactions if asked to do so from command line
+	for (auto *reaction : allReactions)
+		reaction->setConnectivityFlag(connectivityFlag);
+
+	// Infer connected reactions if asked to do so from command line
   	// Arvind Rasi Subramaniam
   	if (connectivityFlag) {
 		// resize connected reactions map and intialize to false
@@ -1085,6 +1112,37 @@ void System::update_A_tot(ReactionClass *r, double old_a, double new_a)
 	//a_tot+=new_a;
 }
 
+bool System::noteHeldFiringPropensityUpdate(ReactionClass *r)
+{
+	if (!r->getReadsObservable())
+		return false;
+	if (r->markDeferredFiringUpdate(deferredFiringUpdateGeneration))
+		heldFiringReactions.push_back(r);
+	return true;
+}
+
+void System::beginDeferredFiringPropensityUpdates()
+{
+	if (!hasObservableDependentReactions)
+		return;
+	heldFiringReactions.clear();
+	++deferredFiringUpdateGeneration;
+	deferringFiringPropensityUpdates = true;
+}
+
+void System::endDeferredFiringPropensityUpdates()
+{
+	if (!deferringFiringPropensityUpdates)
+		return;
+	/* Reset the guard first, so each update below reaches the selector. No
+	 * held reaction's rate was computed in the window, so each still holds
+	 * the propensity the selector has for it, which updateBatch() reads. */
+	deferringFiringPropensityUpdates = false;
+	if (!heldFiringReactions.empty())
+		a_tot = selector->updateBatch(heldFiringReactions);
+	heldFiringReactions.clear();
+}
+
 void System::beginDeferredMembershipPropensityUpdates()
 {
 	deferredMembershipReactions.clear();
@@ -1096,7 +1154,7 @@ void System::beginDeferredMembershipPropensityUpdates()
 
 void System::deferMembershipPropensityUpdate(ReactionClass *r, double oldA)
 {
-	if (r != 0 && r->markDeferredMembershipUpdate(
+	if (r != 0 && !holdFiringPropensityUpdate(r) && r->markDeferredMembershipUpdate(
 			deferredMembershipUpdateGeneration)) {
 		deferredMembershipReactions.push_back(r);
 		deferredMembershipOldPropensities.push_back(oldA);
@@ -1261,6 +1319,7 @@ double System::sim(double duration, long int sampleTimes, bool verbose)
 	//Do this once at the beginning, so that we start on the right page
 	// A pending event can come from stepTo() or a preceding sim() call. Keep
 	// its absolute time and the RNG stream intact across continuation calls.
+	refreshDirtyGlobalLocalFunctions();
 	if (!pendingEventValid) recompute_A_tot();
 
 	double delta_t = 0; unsigned long long iteration = 0, stepIteration = 0;
@@ -1519,6 +1578,7 @@ nextReaction->fire(randElement);
 
 double System::stepTo(double stoppingTime)
 {
+	refreshDirtyGlobalLocalFunctions();
 	while(current_time < stoppingTime)
 	{
 		if(!pendingEventValid) {
@@ -1577,6 +1637,7 @@ void System::singleStep()
 	cout<<"  -System is at time: "<<this->current_time<<endl;
 	double delta_t = 0;
 
+	refreshDirtyGlobalLocalFunctions();
 	recompute_A_tot();
 	cout<<"  -total propensity (a_total) calculated as: "<<a_tot<<endl;
 	if(a_tot>ATOT_TOLERANCE) delta_t = -log(rng_.random_open()) / a_tot;
@@ -1686,6 +1747,9 @@ void System::replenishFixedSpecies() {
 
 	if (updated) {
 		invalidatePendingEvent();
+		// Replenishment updates observables, so system-observable-dependent
+		// local functions must be refreshed before propensities are rebuilt.
+		refreshDirtyGlobalLocalFunctions();
 		recompute_A_tot();
 	}
 }
@@ -2328,6 +2392,21 @@ void System::printIndexAndNames()
 
 void System::addLocalFunction(LocalFunction *lf) {
 	localFunctions.push_back(lf);
+	if (lf != 0 && lf->dependsOnGlobalObservable())
+		hasGlobalDependentLocalFunctions = true;
+}
+
+
+void System::refreshDirtyGlobalLocalFunctions() {
+	if (!globalLocalFunctionsDirty) return;
+	// Clear first: evaluateOn() may update DOR propensities, which must not
+	// re-enter this refresh.
+	globalLocalFunctionsDirty = false;
+	for (unsigned int i = 0; i < localFunctions.size(); i++) {
+		LocalFunction *lf = localFunctions.at(i);
+		if (lf != 0 && lf->dependsOnGlobalObservable())
+			lf->refreshTypeIIValues();
+	}
 }
 
 

@@ -1537,70 +1537,41 @@ TEST_CASE("native NFcore2 reader refuses MoveConnected exclusions without a grap
     CHECK(lowered.fallback_rule_count == 1);
 }
 
-TEST_CASE("direct NFsim construction refuses a local function mixing global and local observables") {
-    // ruleworld/nfsim#104: a local function that reads both a global
-    // observable (outside its argument) and a locally-scoped observable goes
-    // stale under legacy evaluation, because global changes never invalidate
-    // cached per-molecule values. Construction must fail closed instead of
-    // returning silently wrong propensities.
-    auto mixedModel = bng::parser::parseModel(R"(
-begin parameters
- k 0.1
-end parameters
+TEST_CASE("direct NFsim refreshes a local rate when its global observable changes") {
+    // A remains unchanged when C changes state. Refresh the cached rate on A
+    // using the completed event's global count alongside the local count.
+    auto model = bng::parser::parseModel(R"(
 begin molecule types
  A(s~0~1)
- C(d)
+ C(s~0~1)
 end molecule types
 begin seed species
  A(s~0) 1
- C(d) 1
+ C(s~0) 1
 end seed species
 begin observables
- Molecules Atot A()
- Molecules Ctot C()
+ Molecules A0 A(s~0)
+ Molecules C1 C(s~1)
 end observables
 begin functions
- loc(x) = k*Atot + Ctot(x)
+ loc(x) = A0(x) + C1
 end functions
 begin reaction rules
- A(s~0)%x -> A(s~1) loc(x)
+ UpdateGlobal: C(s~0) -> C(s~1) 1
+ ReadGlobal: A(s~0)%x -> A(s~1) loc(x)
 end reaction rules
 )");
-    REQUIRE(mixedModel);
+    REQUIRE(model);
     int traversal = 0;
-    auto mixed = std::unique_ptr<NFcore::System>(
-        NFinput::buildSystemFromAst(*mixedModel, false, 100, false, traversal));
-    CHECK(mixed == nullptr);
-
-    // Control: the same shape with only a locally-scoped observable still
-    // builds, so the refusal above is due to the mixing, not the model shape.
-    auto localOnlyModel = bng::parser::parseModel(R"(
-begin parameters
- k 0.1
-end parameters
-begin molecule types
- A(s~0~1)
- C(d)
-end molecule types
-begin seed species
- A(s~0) 1
- C(d) 1
-end seed species
-begin observables
- Molecules Atot A()
- Molecules Ctot C()
-end observables
-begin functions
- loc(x) = k*Ctot(x)
-end functions
-begin reaction rules
- A(s~0)%x -> A(s~1) loc(x)
-end reaction rules
-)");
-    REQUIRE(localOnlyModel);
-    auto localOnly = std::unique_ptr<NFcore::System>(
-        NFinput::buildSystemFromAst(*localOnlyModel, false, 100, false, traversal));
-    CHECK(localOnly != nullptr);
+    auto system = std::unique_ptr<NFcore::System>(
+        NFinput::buildSystemFromAst(*model, true, 100, false, traversal));
+    REQUIRE(system);
+    system->prepareForSimulation();
+    const auto& reactions = system->getAllReactionsRef();
+    REQUIRE(reactions.size() == 2);
+    REQUIRE(reactions[1]->get_a() == 1.0);
+    reactions[0]->fire(0.5);
+    CHECK(reactions[1]->get_a() == 2.0);
 }
 
 TEST_CASE("native NFcore2 reader refuses a local function mixing global and local observables") {

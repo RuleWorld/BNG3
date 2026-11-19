@@ -13,6 +13,7 @@
 
 #include "../NFcore/NFcore.hh"
 #include "../NFcore/energyPattern.hh"
+#include "../NFfunction/NFfunction.hh"
 #include "../NFreactions/reactions/reaction.hh"
 #include "NFinput.hh"
 #include "TinyXML/tinyxml.h"
@@ -31,6 +32,24 @@ using namespace NFcore;
 
 
 namespace NFinput {
+
+static double evaluateEnergyExpression(const string &expression,
+                                       map<string, double> &parameters)
+{
+    mu::Parser parser;
+    for (auto &parameter : parameters)
+        parser.DefineVar(parameter.first, &parameter.second);
+    double value;
+    try {
+        parser.SetExpr(expression);
+        value = parser.Eval();
+    } catch (const mu::Parser::exception_type &error) {
+        throw std::runtime_error(error.GetMsg());
+    }
+    if (!std::isfinite(value))
+        throw std::runtime_error("energy expression is not finite");
+    return value;
+}
 
 /*
  * Parse <ListOfEnergyPatterns> from the XML model element.
@@ -61,13 +80,13 @@ bool parseEnergyPatterns(
     // AST/Compiled adapters do NOT read RT and always use RT == 1, matching
     // BNG2 where energies are already in RT units.
     double phi = 0.5;
-    double RT = 2.478;
+    // BioNetGen stores energies in RT units and applies Arrhenius exponents
+    // without a second RT divisor. Expressions such as Gf/RT can reference
+    // the model parameter RT directly.
+    const double RT = 1.0;
 
     if (parameter.find("phi") != parameter.end())
         phi = parameter.find("phi")->second;
-    if (parameter.find("RT") != parameter.end())
-        RT = parameter.find("RT")->second;
-
     EnergyFunction *ef = new EnergyFunction(phi, RT);
 
     TiXmlElement *pEP;
@@ -83,15 +102,12 @@ bool parseEnergyPatterns(
         string epExpr = pEP->Attribute("expression");
 
         double energyVal = 0.0;
-        if (parameter.find(epExpr) != parameter.end()) {
-            energyVal = parameter.find(epExpr)->second;
-        } else {
-            try { energyVal = NFutil::convertToDouble(epExpr); }
-            catch (...) {
-                cerr << "Error: cannot resolve energy '" << epExpr << "' for pattern " << epId << endl;
-                delete ef;
-                return false;
-            }
+        try { energyVal = evaluateEnergyExpression(epExpr, parameter); }
+        catch (const std::exception &error) {
+            cerr << "Error: cannot evaluate energy expression '" << epExpr
+                 << "' for pattern " << epId << ": " << error.what() << endl;
+            delete ef;
+            return false;
         }
 
         EnergyPatternInfo epInfo;
@@ -248,7 +264,8 @@ bool createExpandedBindingReactions(
     bool includeReverse,
     const string& energySite1,
     const string& energySite2,
-    double drivingWork)
+    double drivingWork,
+    bool includeForward)
 {
     EnergyFunction *ef = s->getEnergyFunction();
     if (!ef) return false;
@@ -315,9 +332,15 @@ bool createExpandedBindingReactions(
     }
 
     if (useCompact) {
+        const double activationRate = std::exp(-Ea0 / ef->getRT());
+        if (!std::isfinite(activationRate) || activationRate < 0.0) {
+            cerr << "Error: Arrhenius activation rate for " << rxnName
+                 << " is not finite and non-negative." << endl;
+            return false;
+        }
         for (int direction = 0; direction < 2; direction++) {
             const bool isForward = (direction == 0);
-            if (!includeReverse && !isForward) continue;
+            if ((isForward && !includeForward) || (!isForward && !includeReverse)) continue;
             TemplateMolecule *t1 = new TemplateMolecule(molType1);
             TemplateMolecule *t2 = new TemplateMolecule(molType2);
 
@@ -334,7 +357,9 @@ bool createExpandedBindingReactions(
 
             TransformationSet *ts = new TransformationSet(templates);
             if (isForward) ts->addBindingTransform(t1, bindSite1, t2, bindSite2);
-            else ts->addUnbindingTransform(t1, bindSite1, t2, bindSite2);
+            // The rule is written "A + B <-> A.B", so the reverse direction has
+            // "+" between its products and may fire only if they come apart.
+            else ts->addUnbindingTransform(t1, bindSite1, t2, bindSite2, true);
             ts->setComplexBookkeeping(blockSameComplexBinding);
             ts->finalize();
 
@@ -369,7 +394,11 @@ bool createExpandedBindingReactions(
         drivingWork);
 
     for (const auto &rule : expanded) {
-        if (!includeReverse && !rule.isForward) continue;
+        if ((rule.isForward && !includeForward) || (!rule.isForward && !includeReverse)) continue;
+        if (!std::isfinite(rule.rate) || rule.rate < 0.0) {
+            cerr << "Error: Arrhenius rate for " << rule.name << " is not finite and non-negative." << endl;
+            return false;
+        }
         TemplateMolecule *t1, *t2;
 
         if (rule.isForward) {
@@ -395,7 +424,8 @@ bool createExpandedBindingReactions(
 
         TransformationSet *ts = new TransformationSet(templates);
         if (rule.isForward) ts->addBindingTransform(t1, bindSite1, t2, bindSite2);
-        else ts->addUnbindingTransform(t1, bindSite1, t2, bindSite2);
+        // As above: "+" between the products of the reverse direction.
+        else ts->addUnbindingTransform(t1, bindSite1, t2, bindSite2, true);
 
         // Wire complex bookkeeping for blockSameComplexBinding flag
         ts->setComplexBookkeeping(blockSameComplexBinding);

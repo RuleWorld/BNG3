@@ -68,14 +68,18 @@ namespace NFinput {
 			int &suggestedTraversalLimit,
 			bool evaluateComplexScopedLocalFunctions=false,
 			bool connectivityFlag=false,
-			bool buildSpeciesLog=true);
+			bool buildSpeciesLog=true,
+			bool forceComplexBookkeeping=false);
+
+	bool modelNeedsComplexBookkeeping(TiXmlElement *model);
 
     System * initializeFromModel(
             void* model_ptr,
             bool blockSameComplexBinding,
             int globalMoleculeLimit,
             bool verbose,
-            int &suggestedTraversalLimit);
+            int &suggestedTraversalLimit,
+            bool forceComplexBookkeeping=false);
 
 	//! Reads the parameter XML block and puts them in the parameter map.
 	/*!

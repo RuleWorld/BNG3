@@ -110,7 +110,7 @@ void bind_nfsim(py::module_& m) {
             py::gil_scoped_release release;
             system.reset(NFinput::buildSystemFromAst(
                 model,
-                false,    // blockSameComplexBinding
+                true,     // strict molecularity
                 -1,       // globalMoleculeLimit (unlimited)
                 verbose,
                 suggestedTraversalLimit,
@@ -156,7 +156,7 @@ void bind_nfsim(py::module_& m) {
                 // adapter any unproven semantics.
                 system.reset(NFinput::initializeFromModel(
                     &model,
-                    false,    // blockSameComplexBinding
+                    true,     // strict molecularity
                     -1,       // globalMoleculeLimit (unlimited)
                     verbose,
                     suggestedTraversalLimit
@@ -190,11 +190,11 @@ void bind_nfsim(py::module_& m) {
                 }
                 system.reset(NFinput::initializeFromXML(
                     tmp_guard.path,
-                    false,    // blockSameComplexBinding
+                    true,     // strict molecularity
                     -1,       // globalMoleculeLimit (unlimited)
                     verbose,
                     suggestedTraversalLimit,
-                    false,    // evaluateComplexScopedLocalFunctions
+                    true,     // evaluateComplexScopedLocalFunctions
                     false     // connectivityFlag
                 ));
             }
@@ -209,8 +209,10 @@ void bind_nfsim(py::module_& m) {
         // or large complexes silently fall back to an unrestricted graph walk.
         // A caller-supplied non-negative value retains the native -utl escape
         // hatch; -1 uses the recommendation computed while building the system.
+        const int automaticTraversalLimit = system->needsWholeComplexTraversal()
+            ? NFcore::ReactionClass::NO_LIMIT : suggestedTraversalLimit;
         const int effectiveTraversalLimit =
-            traversal_limit >= 0 ? traversal_limit : suggestedTraversalLimit;
+            traversal_limit >= 0 ? traversal_limit : automaticTraversalLimit;
         system->setUniversalTraversalLimit(effectiveTraversalLimit);
         if (verbose) {
             std::cerr << "[bind_nfsim] Universal traversal limit = "

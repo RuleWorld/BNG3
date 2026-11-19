@@ -19,6 +19,7 @@ Observable::Observable(string name)
 	this->dependentRxns= new ReactionClass *[n_dependentRxns];
 	this->count=0;
 	this->type=Observable::NO_TYPE;
+	this->system=0;
 }
 
 Observable::~Observable()
@@ -34,6 +35,7 @@ Observable::~Observable()
 
 void Observable::notifyLocalFunctions()
 {
+	if (system) system->markGlobalLocalFunctionsDirty();
 	for (LocalFunction *localFunction : localFunctionReferences) {
 		if (localFunction != nullptr) localFunction->refreshObservableCounter();
 	}
@@ -50,12 +52,7 @@ void Observable::add()
 	//First, we add to our observable count
 	count++;
 
-	//Next, we update our dependent reactions, if there are any
-	for(int r=0; r<n_dependentRxns; r++) {
-		double old_a = dependentRxns[r]->get_a();
-		double new_a = dependentRxns[r]->update_a();
-		templateMolecules[0]->getMoleculeType()->getSystem()->update_A_tot(dependentRxns[r],old_a,new_a);
-	}
+	updateDependentReactions();
 	notifyLocalFunctions();
 }
 
@@ -69,13 +66,7 @@ void Observable::add( int n_matches )
 	// First, we add to our observable count
 	count += n_matches;
 
-	// Next, we update our dependent reactions, if there are any
-	for (int r=0; r<n_dependentRxns; r++)
-	{
-		double old_a = dependentRxns[r]->get_a();
-		double new_a = dependentRxns[r]->update_a();
-		templateMolecules[0]->getMoleculeType()->getSystem()->update_A_tot( dependentRxns[r], old_a, new_a);
-	}
+	updateDependentReactions();
 	notifyLocalFunctions();
 }
 
@@ -102,12 +93,7 @@ void Observable::subtract()
 
 	count--;
 
-	//Next, we update our dependent reactions, if there are any
-	for(int r=0; r<n_dependentRxns; r++) {
-		double old_a = dependentRxns[r]->get_a();
-		double new_a = dependentRxns[r]->update_a();
-		templateMolecules[0]->getMoleculeType()->getSystem()->update_A_tot(dependentRxns[r],old_a,new_a);
-	}
+	updateDependentReactions();
 	notifyLocalFunctions();
 }
 
@@ -128,13 +114,7 @@ void Observable::subtract( int n_matches )
 	// First, we subtract from our observable count
 	count -= n_matches;
 
-	// Next, we update our dependent reactions, if there are any
-	for (int r=0; r<n_dependentRxns; r++)
-	{
-		double old_a = dependentRxns[r]->get_a();
-		double new_a = dependentRxns[r]->update_a();
-		templateMolecules[0]->getMoleculeType()->getSystem()->update_A_tot( dependentRxns[r], old_a, new_a);
-	}
+	updateDependentReactions();
 	notifyLocalFunctions();
 }
 
@@ -148,6 +128,24 @@ void Observable::straightSubtract(int n_matches)
 {
 	count -= n_matches;
 	notifyLocalFunctions();
+}
+
+void Observable::updateDependentReactions()
+{
+	System *s = n_dependentRxns > 0
+			? templateMolecules[0]->getMoleculeType()->getSystem() : 0;
+	for (int r=0; r<n_dependentRxns; r++)
+	{
+		/* During a firing this count is of no state the system is in: the
+		 * rate is computed when the firing's products are counted again
+		 * (issue #115). */
+		if (s->holdFiringPropensityUpdate(dependentRxns[r]))
+			continue;
+		double old_a = dependentRxns[r]->get_a();
+		double new_a = dependentRxns[r]->update_a();
+		s->update_A_tot(
+				dependentRxns[r], old_a, new_a);
+	}
 }
 
 
@@ -192,6 +190,7 @@ void Observable::addDependentRxn(ReactionClass *r)
 	delete [] dependentRxns;
 	dependentRxns = newDepRxns;
 	n_dependentRxns++;
+	r->markReadsObservable();
 }
 
 

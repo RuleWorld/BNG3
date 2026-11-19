@@ -363,10 +363,9 @@ def test_release_obligation_152(monkeypatch):
     assert (
         RECONCILIATION_PATH.is_file()
     ), f"Missing reconciliation ledger at {RECONCILIATION_PATH}"
-    ledger_text = RECONCILIATION_PATH.read_text()
-    assert (
-        "9b00d42f734dcc3e695205600f12cae5b44d1daa" in ledger_text
-    ), "Missing cutoff revision in reconciliation ledger"
+    ledger = json.loads(RECONCILIATION_PATH.read_text())
+    source_lock = json.loads((ROOT / "provenance/upstreams.lock.yml").read_text())
+    assert ledger["cutoff_revision"] == source_lock["sources"]["nfsim"]["revision"]
 
     # 4. Fail-closed refusal when BNG_NFSIM_GENERAL_ENERGY is disabled
     monkeypatch.delenv("BNG_NFSIM_GENERAL_ENERGY", raising=False)

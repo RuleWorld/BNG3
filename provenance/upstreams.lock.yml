@@ -44,12 +44,12 @@
     "nfsim": {
       "repository": "https://github.com/RuleWorld/NFsim.git",
       "branch": "master",
-      "revision": "9b00d42f734dcc3e695205600f12cae5b44d1daa",
+      "revision": "8c449bbccc4a0c54586ae562f46f4955e65fe876",
       "role": "reconciliation-source-and-native-oracle-lineage",
       "status": "accepted",
       "evidence": {
         "kind": "remote-commit",
-        "checked_at": "2026-10-08"
+        "checked_at": "2026-11-18"
       }
     },
     "nfsim-rasi": {
@@ -130,7 +130,7 @@
       "source": "nfsim",
       "status": "locked",
       "build_recipe": "cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DNFSIM_BUILD_EXECUTABLE=ON -DNFSIM_BUILD_LIBRARY=OFF; cmake --build build --target NFsim --parallel 1 (AppleClang 21.0.0.21000334, macOS arm64).",
-      "artifact_digest": "sha256:7621bb850efc6cf203ec2c42004c2cffcc0115af7e3ce03d62aabab100bf31a1"
+      "artifact_digest": "sha256:caf0ad15f23169d13ff9634a5075337e915a0931a823522d3b0c5ca10253800a"
     }
   },
   "dependencies": {

@@ -365,6 +365,14 @@ namespace NFcore {
 			double evaluateOn(Molecule *m, int scope);
 			// Evaluate a species-scoped local function over a component already
 			// traversed by the caller.
+			// True when this function reads a system observable outside its
+			// argument. Such values must be refreshed when that observable moves.
+			bool dependsOnGlobalObservable() const { return readsGlobalObservable; }
+			// Re-evaluate this function on every type-II molecule so cached
+			// values follow any system observable they read.
+			void refreshTypeIIValues();
+			// evaluates a species-scoped local function on a connected component
+			// that was already traversed by the caller
 			double evaluateOn(Molecule *m, const list <Molecule *> &members);
 			// this version evaluates local fcn on a complex with SPECIES scope
 			double evaluateOn(Complex *c);
@@ -399,6 +407,9 @@ namespace NFcore {
 			string interpolationMethod;
 			Observable *counterObservable;
 			// AS-2021
+
+			// true when at least one reference has global (-1) scope
+			bool readsGlobalObservable;
 
 			string name;
 			string nicename;

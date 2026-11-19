@@ -44,7 +44,8 @@ System* initializeFromModel(
         bool   blockSameComplexBinding,
         int    globalMoleculeLimit,
         bool   verbose,
-        int&   suggestedTraversalLimit)
+        int&   suggestedTraversalLimit,
+        bool   forceComplexBookkeeping)
 {
     if (!model_ptr) {
         cerr << "[nfsim] initializeFromModel: null model_ptr — falling back to XML path.\n";
@@ -116,7 +117,7 @@ System* initializeFromModel(
     const std::string& modelName = model->getModelName();
     System* s = new System(
         modelName.empty() ? "model" : modelName,
-        blockSameComplexBinding,
+        forceComplexBookkeeping || blockSameComplexBinding || modelNeedsComplexBookkeeping(pModel),
         globalMoleculeLimit
     );
     // initializeFromModel has no separate -nocslf parameter.  Match the

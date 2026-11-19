@@ -1556,6 +1556,13 @@ bool TemplateMolecule::compare(Molecule *m, ReactantContainer *rc, MappingSet *m
 
 		//Now we have to make sure that the correct bond is present on the other side
 		//of the interaction. This can be tricky because of symmetric sites!
+		// Component indices below belong to the partner template's type.
+		// Reject a mismatch before indexing and release the partial match.
+		if(m2->getMoleculeType()!=t2->getMoleculeType()) {
+			clear();
+			return false;
+		}
+
 		if(bondPartnerCompIndex[b]<0) { //Argh!  this means we are symmetric!!
 
 
@@ -1659,6 +1666,18 @@ bool TemplateMolecule::compare(Molecule *m, ReactantContainer *rc, MappingSet *m
 					}
 				}
 
+
+				//Same unchecked partner-template index as in checkBonds above:
+				//symBondPartnerCompIndex[c] and tryToMap()'s equivalency-class
+				//indices both belong to t2's molecule type and are applied to m2,
+				//and the only type check is in the t2->compare(m2,...) reached
+				//after them. A molecule of another type cannot match, so skip this
+				//candidate before reading it -- `continue` rather than `return
+				//false` because this loop is searching the symmetric components
+				//for a mapping, and every path under a type mismatch continues.
+				if(m2->getMoleculeType()!=t2->getMoleculeType()) {
+					continue;
+				}
 
 				if(symBondPartnerCompIndex[c]<0) { //Argh!  this means we are symmetric!!
 					//See if we can map this bond to one of the symmetric components on m2
