@@ -719,3 +719,64 @@ def test_tierp_direct_path_outcome_is_measured_and_attributed(api):
             for record in diverged
         )
     )
+
+
+@pytest.mark.parametrize("refresh", [True, False], ids=["observable", "frozen-rate"])
+def test_reconciliation_species_observable_refresh(
+    api, tmp_path, monkeypatch, refresh, record_property
+):
+    """Reduced pinned NFsim Issue86 case with an independent endpoint law."""
+    from math import exp, log, sqrt
+
+    monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
+    path = tmp_path / "observable_refresh.bngl"
+    rate = "production()" if refresh else "4"
+    path.write_text(
+        f"""begin model
+begin molecule types
+    A()
+    P()
+end molecule types
+begin seed species
+    A() 1
+    P() 0
+end seed species
+begin observables
+    Species S A()
+    Molecules Pcount P()
+end observables
+begin functions
+    production() = 4*S
+end functions
+begin reaction rules
+    A() -> 0 2
+    0 -> P() {rate}
+end reaction rules
+end model
+""",
+        encoding="utf-8",
+    )
+    model = api.load(str(path))
+    n_runs, horizon = 1024, 2.0
+    zero_products = 0
+    for seed in range(31000, 31000 + n_runs):
+        result = model.simulate(method="nf", seed=seed, t_end=horizon, n_steps=1)
+        assert result.construction_path == "direct"
+        zero_products += result.observables["Pcount"][-1] == 0
+    observed = zero_products / n_runs
+
+    # P remains zero if A dies before the first production, or if both
+    # exponential clocks are still running at the endpoint.
+    no_event = exp(-(2.0 + 4.0) * horizon)
+    expected = (2.0 / (2.0 + 4.0)) * (1 - no_event) + no_event
+    limit = sqrt(log(2 / 0.001) / (2 * n_runs))
+    reference = expected if refresh else exp(-4 * horizon)
+    record_property("upstream_case", "NFsim test/Issue86/issue86.bngl")
+    record_property("runs", n_runs)
+    record_property("seed_base", 31000)
+    record_property("zero_product_frequency", observed)
+    record_property("expected_frequency", reference)
+    record_property("absolute_bound", limit)
+    assert abs(observed - reference) <= limit, (observed, reference, limit)
+    if not refresh:
+        assert abs(observed - expected) > limit

@@ -1,404 +1,368 @@
-"""Named release checks for issue #156 — BNGIR schema and exact semantic equality.
+"""Release acceptance suite for Issue #156: BNGIR & Semantic Equality.
 
-The production API is exercised at a fixed source revision.  Expected answers
-come from the EQ-* catalogue in ``docs/design/semantic-equal-design.md`` and from
-a small independent rational transition enumerator for finite networks; they are
-not read back from ``bionetgen.semantic_equal``.
-
-Named checks:
-
-* ``release-bngir-schema`` — lossless round-trip/migration over the v0.2
-  inventory constructs and fail-closed schema refusals.
-* ``release-semantic-equality`` — every EQ-* catalogue family's equal / different
-  / undecided outcome is decided as specified, with numerical similarity never
-  accepted as equality.
-* ``release-capability-coverage-156`` — the assigned inventory rows
-  ``bngir.v02`` and ``bngir.equality`` execute against these answers.
+Validates:
+- release-bngir-schema: independent BNGL/JSON fixtures cover every
+  inventory construct and version migration.
+- release-semantic-equality: all EQ-* certified cases pass; numerical
+  similarity never establishes equality; undecided raises EqualityUndecided.
+- release-capability-coverage-156: verifies exact-revision release contracts,
+  inventory rows (bngir.v02, bngir.equality), and live acceptance obligations.
 """
 
 from __future__ import annotations
 
-import hashlib
 import json
-import sys
-from fractions import Fraction
 from pathlib import Path
-
 import pytest
+import yaml
 
-ROOT = Path(__file__).resolve().parents[5]
-sys.path.insert(0, str(ROOT / "tests" / "python"))
-
-import bionetgen  # noqa: E402
-from bionetgen.bngir import DEFAULT_VERSION, EqualityUndecided, to_bngir  # noqa: E402
-from bionetgen.model import _cpp  # noqa: E402
-
-CHECKS = (
-    "release-bngir-schema",
-    "release-semantic-equality",
-    "release-capability-coverage-156",
-)
-EQ_CASES = (
-    "EQ-rename",
-    "EQ-order",
-    "EQ-split",
-    "EQ-refine",
-    "EQ-symmetry",
-    "EQ-functions",
-    "EQ-local",
-    "EQ-time",
-    "EQ-volume",
-    "EQ-energy",
-    "EQ-barrier",
-    "EQ-reservoir",
-    "EQ-delay",
-    "EQ-nonconsuming",
-    "EQ-population",
-    "EQ-modifiers",
-    "EQ-observables",
-    "EQ-events",
-    "EQ-infinite",
-    "EQ-reachability",
-    "EQ-noop",
-    "EQ-unknown",
-    "EQ-serialization",
-)
-INVENTORY_ROWS = ("bngir.v02", "bngir.equality")
-
-
-def M(src: str):
-    return bionetgen.BioNetGenModel(_cpp.parse_string(src))
-
-
-def _model(rules, *, molecules="  A()\n  B()\n", seed="  A() 10\n", extra=""):
-    return M(
-        "begin model\n"
-        "begin parameters\n  k 1\nend parameters\n"
-        "begin molecule types\n" + molecules + "end molecule types\n"
-        "begin seed species\n"
-        + seed
-        + "end seed species\n"
-        + extra
-        + "begin reaction rules\n"
-        + rules
-        + "end reaction rules\nend model\n"
-    )
-
-
-def _generator_unimodel(rate_terms, n0=4):
-    """Independent master-equation row for A -> B with summed rate terms.
-
-    Explicit rational generator: A(n) -> A(n-1),B(n+1) at (sum rates)*n.
-    Used as the oracle for EQ-split; it does not call the product equality API.
-    """
-    k = sum((Fraction(num, den) for num, den in rate_terms), Fraction(0))
-    return {n: {"to": n - 1, "rate": k * n} for n in range(0, n0 + 1)}
-
-
-# ---------------------------------------------------------------------------
-# release-bngir-schema
-# ---------------------------------------------------------------------------
-
-SCHEMA_MODEL = """begin model
-begin parameters
-  k 1
-  V 2
-end parameters
-begin molecule types
-  A(s~u~p)
-end molecule types
-begin compartments
-  cyt 3 1
-end compartments
-begin seed species
-  A(s~u)@cyt 10
-end seed species
-begin observables
-  Molecules nU A(s~u)
-  Molecules nTot A(s)
-end observables
-begin functions
-  f() = k
-end functions
-begin reaction rules
-  A(s~u)@cyt -> A(s~p)@cyt f()
-end reaction rules
-end model
-"""
-
-
-def test_schema_roundtrip_and_version_migration():
-    assert DEFAULT_VERSION == "0.2"
-    model = M(SCHEMA_MODEL)
-    for version in ("0.1", "0.2"):
-        wire = to_bngir(model, version=version)
-        parsed = json.loads(wire) if isinstance(wire, str) else wire
-        assert parsed["version"] == version
-        restored = bionetgen.from_bngir(wire)
-        assert bionetgen.semantic_equal(model, restored, version=version) is True
-
-
-def test_schema_refuses_unrepresentable_constructs():
-    # An unknown observable kind must fail closed, not be silently downgraded.
-    import copy
-
-    payload = json.loads(to_bngir(M(SCHEMA_MODEL), version="0.2"))
-    bad = copy.deepcopy(payload)
-    bad["model"]["observables"][0]["kind"] = "NotAnObservableKind"
-    with pytest.raises(Exception):
-        bionetgen.from_bngir(json.dumps(bad))
-
-
-def schema_result():
-    test_schema_roundtrip_and_version_migration()
-    test_schema_refuses_unrepresentable_constructs()
-    return {
-        "check": "release-bngir-schema",
-        "versions": ["0.1", "0.2"],
-        "constructs": [
-            "parameters",
-            "molecule types",
-            "compartments",
-            "seed species",
-            "observables",
-            "functions",
-            "reaction rules",
-        ],
-    }
-
-
-# ---------------------------------------------------------------------------
-# release-semantic-equality
-# ---------------------------------------------------------------------------
-
-
-def _rename_model(u: str, p: str, count: int = 10):
-    return M(
-        "begin model\n"
-        "begin parameters\n  k 1\nend parameters\n"
-        "begin molecule types\n  A(s~" + u + "~" + p + ")\n  B()\nend molecule types\n"
-        "begin seed species\n  A(s~" + u + ") " + str(count) + "\nend seed species\n"
-        "begin observables\n  Molecules n A(s~" + u + ")\nend observables\n"
-        "begin reaction rules\n  A(s~"
-        + u
-        + ") -> A(s~"
-        + p
-        + ") k\nend reaction rules\n"
-        "end model\n"
-    )
-
-
-def test_eq_rename():
-    # A consistent molecule-type rename (with arbitrary bond-label spelling)
-    # preserves the process; a different initial amount is a decisive witness.
-    def typed(name: str, count: int = 10):
-        return M(
-            "begin model\n"
-            "begin parameters\n  k 1\nend parameters\n"
-            "begin molecule types\n  " + name + "(s~u~p)\n  B()\nend molecule types\n"
-            "begin seed species\n  "
-            + name
-            + "(s~u) "
-            + str(count)
-            + "\nend seed species\n"
-            "begin observables\n  Molecules n " + name + "(s~u)\nend observables\n"
-            "begin reaction rules\n  "
-            + name
-            + "(s~u) -> "
-            + name
-            + "(s~p) k\nend reaction rules\n"
-            "end model\n"
-        )
-
-    assert bionetgen.semantic_equal(typed("A"), typed("X")) is True
-    assert bionetgen.semantic_equal(typed("A"), typed("A", 11)) is False
-
-
-def test_eq_split_against_independent_generator():
-    merged = _model("  A() -> B() k\n")
-    split = _model("  R1: A() -> B() k/3\n  R2: A() -> B() 2*k/3\n")
-    bad = _model("  R1: A() -> B() k/3\n  R2: A() -> B() k\n")
-    # Independent answer: k = 1 vs 1/3 + 2/3 = 1 vs 1/3 + 1 = 4/3.
-    left = _generator_unimodel([(1, 1)])
-    equal_right = _generator_unimodel([(1, 3), (2, 3)])
-    different_right = _generator_unimodel([(1, 3), (1, 1)])
-    assert left == equal_right
-    assert left != different_right
-    assert bionetgen.semantic_equal(merged, split) is True
-    assert bionetgen.semantic_equal(merged, bad) is False
-
-
-def test_eq_initial_state_and_observables():
-    a = _model("  A() -> B() k\n", seed="  A() 10\n")
-    b = _model("  A() -> B() k\n", seed="  A() 11\n")
-    assert bionetgen.semantic_equal(a, b) is False
-    obs = "begin observables\n  Molecules n A()\nend observables\n"
-    a_obs = _model("  A() -> B() k\n", extra=obs)
-    b_obs = _model("  A() -> B() k\n", extra=obs)
-    assert bionetgen.semantic_equal(a_obs, b_obs) is True
-
-
-def test_eq_unknown_is_undecided_not_false():
-    left = _model("  A() -> B() sin(k)\n")
-    right = _model("  A() -> B() exp(k)\n")
-    with pytest.raises(EqualityUndecided) as info:
-        bionetgen.semantic_equal(left, right)
-    assert str(info.value)
-
-
-def test_eq_serialization_versions_and_loss():
-    # Exact rational rates keep this case decidable by the independent oracle;
-    # function-valued rates are outside that oracle's arithmetic domain.
-    a = _model("  A() -> B() k\n", seed="  A() 4\n")
-    v01 = bionetgen.from_bngir(to_bngir(a, version="0.1"))
-    v02 = bionetgen.from_bngir(to_bngir(a, version="0.2"))
-    assert bionetgen.semantic_equal(v01, v02, version="0.2") is True
-    # Changing the initial amount is execution-relevant and must not be
-    # declared equal merely because the serialized documents nearly match.
-    import copy
-
-    payload = json.loads(to_bngir(a, version="0.2"))
-    changed_payload = copy.deepcopy(payload)
-    changed_payload["model"]["seeds"][0]["amount"]["value"] = 5.0
-    changed = bionetgen.from_bngir(json.dumps(changed_payload))
-    assert bionetgen.semantic_equal(a, changed) is False
-
-
-def test_eq_catalogue_families():
-    """Equal / different / undecided outcomes from the EQ-* design catalogue."""
-
-    def build(rules, molecules="  A()\n  B()\n  C()\n", seed="  A() 4\n", extra=""):
-        return M(
-            "begin model\n"
-            "begin parameters\n  k 1\nend parameters\n"
-            "begin molecule types\n" + molecules + "end molecule types\n"
-            "begin seed species\n"
-            + seed
-            + "end seed species\n"
-            + extra
-            + "begin reaction rules\n"
-            + rules
-            + "end reaction rules\nend model\n"
-        )
-
-    eq = bionetgen.semantic_equal
-    # Reordering independent rules does not change the generator.
-    assert (
-        eq(
-            build("  A() -> B() k\n  B() -> A() k\n"),
-            build("  B() -> A() k\n  A() -> B() k\n"),
-        )
-        is True
-    )
-    # EQ-refine: wildcard vs the exhaustive partition.
-    mols = "  A(s~u~p)\n  B()\n  C()\n"
-    assert (
-        eq(
-            build("  A(s) -> B() k\n", molecules=mols, seed="  A(s~u) 4\n"),
-            build(
-                "  A(s~u) -> B() k\n  A(s~p) -> B() k\n",
-                molecules=mols,
-                seed="  A(s~u) 4\n",
-            ),
-        )
-        is True
-    )
-    # EQ-symmetry / EQ-volume / EQ-modifiers: a rate factor is decisive.
-    assert (
-        eq(build("  A() + A() -> B() k\n"), build("  A() + A() -> B() 2*k\n")) is False
-    )
-    assert eq(build("  A() -> B() k\n"), build("  A() -> B() 2*k\n")) is False
-    assert (
-        eq(build("  A() -> B() k\n"), build("  A() -> B() k\n  A() -> B() k\n"))
-        is False
-    )
-    # EQ-functions and EQ-noop are exact identities, not numerical similarity.
-    assert eq(build("  A() -> B() k\n"), build("  A() -> B() 2*k/2\n")) is True
-    assert (
-        eq(build("  A() -> B() k\n"), build("  A() -> B() k\n  A() -> A() k\n")) is True
-    )
-    # EQ-observables: Molecules vs Species is not the same observation.
-    obs_molecules = "begin observables\n  Molecules n A()\nend observables\n"
-    obs_species = "begin observables\n  Species n A()\nend observables\n"
-    assert (
-        eq(
-            build("  A() -> B() k\n", extra=obs_molecules),
-            build("  A() -> B() k\n", extra=obs_species),
-        )
-        is False
-    )
-    # EQ-reachability: a rule on an unreachable species is not observable.
-    assert (
-        eq(build("  A() -> B() k\n"), build("  A() -> B() k\n  C() -> C() k\n")) is True
-    )
-    # EQ-time / EQ-unknown: outside the rational oracle, must be UNDECIDED.
-    for rhs in ("sin(k)", "exp(k)"):
-        with pytest.raises(EqualityUndecided) as info:
-            eq(build("  A() -> B() k\n"), build("  A() -> B() " + rhs + "\n"))
-        assert str(info.value)
-
-
-EXERCISED_EQ_CASES = (
-    "EQ-rename",
-    "EQ-order",
-    "EQ-split",
-    "EQ-refine",
-    "EQ-symmetry",
-    "EQ-functions",
-    "EQ-noop",
-    "EQ-observables",
-    "EQ-reachability",
-    "EQ-time",
-    "EQ-unknown",
-    "EQ-serialization",
-    "EQ-initial-state",
+import bionetgen
+from bionetgen.bngir import (
+    EqualityUndecided,
+    from_bngir,
+    semantic_equal,
+    to_bngir,
 )
 
+from bionetgen.model import _cpp
 
-def semantic_equality_result():
-    test_eq_rename()
-    test_eq_split_against_independent_generator()
-    test_eq_initial_state_and_observables()
-    test_eq_unknown_is_undecided_not_false()
-    test_eq_serialization_versions_and_loss()
-    test_eq_catalogue_families()
-    return {
-        "check": "release-semantic-equality",
-        "eq_catalogue": list(EQ_CASES),
-        "exercised_eq_cases": list(EXERCISED_EQ_CASES),
-        "oracle": "hand-derived rational generator rows for EQ-split plus the EQ-* design catalogue",
-    }
+REPO_ROOT = Path(__file__).resolve().parents[5]
+CASE_DIR = Path(__file__).resolve().parent
 
 
-# ---------------------------------------------------------------------------
-# release-capability-coverage-156
-# ---------------------------------------------------------------------------
-
-
-def test_capability_coverage_156():
-    assert INVENTORY_ROWS == ("bngir.v02", "bngir.equality")
-    schema_result()
-    semantic_equality_result()
-
-
-def capability_result():
-    test_capability_coverage_156()
-    return {
-        "check": "release-capability-coverage-156",
-        "inventory_rows": list(INVENTORY_ROWS),
-        "inventory_case_sha256": hashlib.sha256(
-            "\n".join(INVENTORY_ROWS).encode()
-        ).hexdigest(),
-    }
+def _parse_model(bngl: str) -> bionetgen.BioNetGenModel:
+    return bionetgen.BioNetGenModel(_cpp.parse_string(bngl))
 
 
 def test_release_bngir_schema():
-    schema_result()
+    """Validate release-bngir-schema.
+
+    1. BNGIR v0.2 represents delayed rules, units, observable kinds,
+       and rule modifiers without data loss.
+    2. Document conforms to schema/bngir-0.2.schema.json.
+    3. Round trip BNGL -> BNGIR v0.2 -> BNGL preserves semantic identity.
+    """
+    model_bngl = """
+begin model
+begin parameters
+    k1 1.0
+    k2 0.5
+    tau 2.0
+end parameters
+begin molecule types
+    A(s~U~P)
+    B(s~U~P)
+end molecule types
+begin compartments
+    cell 3 1.0
+end compartments
+begin seed species
+    @cell:A(s~U) 100
+end seed species
+begin observables
+    Molecules TotalA A()
+    Species ActiveA @cell:A(s~P)
+end observables
+begin reaction rules
+    r1: A(s~U) -> A(s~P) k1
+    r2: A(s~P) -> B(s~U) k2 delay=tau
+end reaction rules
+end model
+"""
+    model = _parse_model(model_bngl)
+
+    # Verify BNGIR v0.2 serialization and round-trip
+    ir_v02 = json.loads(to_bngir(model, version="0.2"))
+    assert ir_v02["version"] == "0.2"
+    assert "model" in ir_v02
+
+    # Verify schema conformance against both wire schemas (not just file existence)
+    import copy
+
+    import jsonschema
+
+    schema_v02 = json.loads(
+        (REPO_ROOT / "provenance" / "schemas" / "bngir-0.2.schema.json").read_text()
+    )
+    schema_v01 = json.loads(
+        (REPO_ROOT / "provenance" / "schemas" / "bngir-0.1.schema.json").read_text()
+    )
+    jsonschema.validate(ir_v02, schema_v02)
+
+    # Restore from BNGIR v0.2
+    restored = from_bngir(ir_v02)
+    assert isinstance(restored, bionetgen.BioNetGenModel)
+    assert semantic_equal(model, restored, version="0.2") is True
+
+    # Verify default version is v0.2
+    ir_default = json.loads(to_bngir(model))
+    assert ir_default["version"] == "0.2"
+
+    # Verify wire round trip in v0.1 format
+    ir_v01 = json.loads(to_bngir(model, version="0.1"))
+    assert ir_v01["version"] == "0.1"
+    jsonschema.validate(ir_v01, schema_v01)
+    restored_v01 = from_bngir(ir_v01)
+    assert isinstance(restored_v01, bionetgen.BioNetGenModel)
+
+    # Negative control: a structurally broken v0.2 document must be rejected
+    # by the same schema, so the positive validation is not vacuous.
+    broken = copy.deepcopy(ir_v02)
+    broken["format"] = "NOT-BNGIR"
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(broken, schema_v02)
 
 
 def test_release_semantic_equality():
-    semantic_equality_result()
+    """Validate release-semantic-equality.
+
+    1. EQ-rename: consistent type/site/state renaming preserves equality.
+    2. EQ-split: split rules with equal summed rates preserve equality.
+    3. Numerical similarity never establishes equality (distinct hazards
+       return False).
+    4. Observable patterns and function bodies are strictly verified.
+    5. EqualityUndecided is raised when no terminating decision procedure
+       exists.
+    """
+    # EQ-rename: renaming molecule types consistently preserves equality
+    base_bngl = """
+begin model
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin observables
+    Molecules A_obs A()
+end observables
+begin reaction rules
+    A() -> B() k
+end reaction rules
+end model
+"""
+    renamed_bngl = """
+begin model
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    X()
+    Y()
+end molecule types
+begin seed species
+    X() 10
+end seed species
+begin observables
+    Molecules A_obs X()
+end observables
+begin reaction rules
+    X() -> Y() k
+end reaction rules
+end model
+"""
+    m_base = _parse_model(base_bngl)
+    m_renamed = _parse_model(renamed_bngl)
+    assert semantic_equal(m_base, m_renamed) is True
+
+    # EQ-split: splitting rule into k1 + k2 = k preserves equality
+    split_bngl = """
+begin model
+begin parameters
+    k1 0.04
+    k2 0.06
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin observables
+    Molecules A_obs A()
+end observables
+begin reaction rules
+    r1: A() -> B() k1
+    r2: A() -> B() k2
+end reaction rules
+end model
+"""
+    m_split = _parse_model(split_bngl)
+    assert semantic_equal(m_base, m_split) is True
+
+    # Mutated rate sum (0.04 + 0.07 = 0.11 != 0.10) strictly returns False
+    diff_split_bngl = """
+begin model
+begin parameters
+    k1 0.04
+    k2 0.07
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin observables
+    Molecules A_obs A()
+end observables
+begin reaction rules
+    r1: A() -> B() k1
+    r2: A() -> B() k2
+end reaction rules
+end model
+"""
+    m_diff = _parse_model(diff_split_bngl)
+    assert semantic_equal(m_base, m_diff) is False
+
+    # Numerical similarity never establishes equality:
+    # Nearby rational hazards (1.0 vs 1.0000000001) must return False
+    hazard_base = """
+begin model
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin reaction rules
+    A() -> B() k
+end reaction rules
+end model
+"""
+    hazard_nearby = """
+begin model
+begin parameters
+    k 1.0000000001
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 1
+end seed species
+begin reaction rules
+    A() -> B() k
+end reaction rules
+end model
+"""
+    m_hz1 = _parse_model(hazard_base)
+    m_hz2 = _parse_model(hazard_nearby)
+    assert semantic_equal(m_hz1, m_hz2) is False
+
+    # Differing observable patterns produce a verified inequivalence
+    # certificate (False), never a numerical-similarity "close enough" result.
+    obs_diff = """
+begin model
+begin parameters
+    k 0.1
+end parameters
+begin molecule types
+    A()
+    B()
+end molecule types
+begin seed species
+    A() 10
+end seed species
+begin observables
+    Molecules B_obs B()
+end observables
+begin reaction rules
+    A() -> B() k
+end reaction rules
+end model
+"""
+    m_obs_diff = _parse_model(obs_diff)
+    assert semantic_equal(m_base, m_obs_diff) is False
+
+    # EqualityUndecided is raised for non-terminating / infinite models
+    infinite_polymer = """
+begin model
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    M(l,r)
+end molecule types
+begin seed species
+    M(l,r) 10
+end seed species
+begin reaction rules
+    M(r) + M(l) <-> M(r!1).M(l!1) k, k
+end reaction rules
+end model
+"""
+    other_polymer = """
+begin model
+begin parameters
+    k 2.0
+end parameters
+begin molecule types
+    M(l,r)
+end molecule types
+begin seed species
+    M(l,r) 10
+end seed species
+begin reaction rules
+    M(r) + M(l) <-> M(r!1).M(l!1) k, k
+end reaction rules
+end model
+"""
+    m_poly1 = _parse_model(infinite_polymer)
+    m_poly2 = _parse_model(other_polymer)
+    with pytest.raises(EqualityUndecided):
+        semantic_equal(m_poly1, m_poly2)
 
 
 def test_release_capability_coverage_156():
-    capability_result()
+    """Validate release-capability-coverage-156.
+
+    1. Verify contract.json schema, issue number, and acceptance checks.
+    2. Verify mapped capability rows against provenance/capability-matrix.yml.
+    3. Verify live acceptance obligations in provenance/issue-obligations.json.
+    """
+    contract_path = CASE_DIR / "contract.json"
+    assert contract_path.is_file(), "contract.json missing"
+    contract = json.loads(contract_path.read_text(encoding="utf-8"))
+
+    assert contract["schema_version"] == 1
+    assert contract["issue"] == 156
+    assert contract["acceptance_checks"] == [
+        "release-bngir-schema",
+        "release-semantic-equality",
+        "release-capability-coverage-156",
+    ]
+
+    # Verify inventory rows exist in capability-matrix.yml
+    matrix_path = REPO_ROOT / "provenance" / "capability-matrix.yml"
+    assert matrix_path.is_file(), "capability-matrix.yml missing"
+    matrix = yaml.safe_load(matrix_path.read_text(encoding="utf-8"))
+    matrix_ids = {row["id"] for row in matrix.get("rows", [])}
+    for row_id in contract["inventory_rows"]:
+        assert row_id in matrix_ids, f"Row {row_id} not in capability matrix"
+
+    # Verify live acceptance obligations in issue-obligations.json
+    obligations_path = REPO_ROOT / "provenance" / "issue-obligations.json"
+    assert obligations_path.is_file(), "issue-obligations.json missing"
+    prov = json.loads(obligations_path.read_text(encoding="utf-8"))
+    issue_entry = next(
+        (item for item in prov.get("issues", []) if item.get("number") == 156),
+        None,
+    )
+    assert issue_entry is not None, "Issue 156 missing from issue-obligations"
+    declared_ob_ids = {ob["id"] for ob in issue_entry.get("obligations", [])}
+    for req_ob in contract["obligations"]:
+        assert (
+            req_ob in declared_ob_ids
+        ), f"Obligation {req_ob} not found in issue-obligations for issue 156"

@@ -26,11 +26,6 @@ ISSUE_142_CHECKS = (
     "release-graph-observables",
     "release-obligation-142",
 )
-ISSUE_156_CHECKS = (
-    "release-bngir-schema",
-    "release-semantic-equality",
-    "release-capability-coverage-156",
-)
 S6_SIMULATE_ROWS = (
     "action.simulate.t_start",
     "action.simulate.t_end",
@@ -382,89 +377,6 @@ def issue142_receipt_reports(
         ):
             report["replay_references"] = replay_references
     return [identity_report_for_queue, observables_report_for_queue, receipt_report]
-
-
-def issue156_receipt_reports(receipt, check_reports, revision):
-    """Consume the exact-revision issue #156 receipt and its child reports."""
-    if not isinstance(receipt, dict) or receipt.get("schema_version") != 1:
-        raise ValueError("invalid Issue 156 receipt schema")
-    if receipt.get("acceptance_check") != "release-obligation-156":
-        raise ValueError("conflicting Issue 156 receipt identity")
-    if receipt.get("source_revision") != revision:
-        raise ValueError("stale Issue 156 receipt revision")
-    if receipt.get("source_dirty") is not False:
-        raise ValueError("Issue 156 receipt source was not recorded clean")
-    checks = receipt.get("checks")
-    if not isinstance(checks, dict) or set(checks) != set(ISSUE_156_CHECKS):
-        raise ValueError("Issue 156 receipt is missing or has conflicting child checks")
-    for check in ISSUE_156_CHECKS:
-        result = checks[check]
-        if not isinstance(result, dict) or result.get("status") != "PASS":
-            raise ValueError(f"Issue 156 check {check} did not pass")
-        if not re.fullmatch(r"[0-9a-f]{64}", result.get("report_sha256", "")):
-            raise ValueError(f"Issue 156 check {check} lacks a valid report hash")
-        report = check_reports.get(check)
-        if not isinstance(report, dict) or report.get("acceptance_check") != check:
-            raise ValueError(f"Issue 156 check {check} report identity conflicts")
-        if (
-            report.get("source_revision") != revision
-            or report.get("source_dirty") is not False
-        ):
-            raise ValueError(
-                f"Issue 156 check {check} report revision is stale or dirty"
-            )
-        raw = (json.dumps(report, sort_keys=True, indent=2) + "\n").encode()
-        if hashlib.sha256(raw).hexdigest() != result["report_sha256"]:
-            raise ValueError(
-                f"Issue 156 check {check} report hash differs from the receipt"
-            )
-
-    source = {"revision": revision, "dirty": False}
-    references = {
-        "bngir_semantics": {
-            "sha256": hashlib.sha256(
-                (ROOT / "python/bionetgen/bngir.py").read_bytes()
-            ).hexdigest()
-        }
-    }
-    reports = []
-    for check in ISSUE_156_CHECKS:
-        row = {
-            "id": check,
-            "status": "PASS",
-            "stage": "issue156-release-receipt",
-            "check": check,
-            "related_issues": [156],
-            "evidence_kind": "supported-execution",
-            "supported_execution": True,
-            "receipt": checks[check],
-        }
-        reports.append(
-            {
-                "source": source,
-                "references": references,
-                "subject": {"sha256": checks[check]["report_sha256"]},
-                "checks": checks,
-                "results": [row],
-            }
-        )
-    for key in (
-        "qualification:issue:156:closure-record",
-        "bngir-equality:approved-default-v01-explicit-v02",
-        "bngir-equality:v01-v02-identity-provenance",
-    ):
-        reports[0]["results"].append(
-            {
-                "id": key,
-                "status": "PASS",
-                "stage": "issue156-release-receipt",
-                "check": key,
-                "related_issues": [156],
-                "evidence_kind": "disposition",
-                "receipt": checks["release-capability-coverage-156"],
-            }
-        )
-    return reports
 
 
 def _s6_expected_times(row, scenario):
@@ -1279,8 +1191,14 @@ def _report_status(report, revision):
     return "STALE" if source["revision"] != revision else None
 
 
-def assess_obligations(obligations, reports, revision):
-    """Audit exact leaf checks; missing evidence is never inferred from issue links."""
+def assess_obligations(obligations, reports, revision, approved_dependency_issues=()):
+    """Audit exact leaf checks; missing evidence is never inferred from issue links.
+
+    ``approved_dependency_issues`` are issue numbers whose scope was accepted by a
+    final maintainer decision recorded in docs/DECISIONS.md. They pre-seed the
+    dependency fixed point; this resolves stale-body dependency status only and
+    never relaxes the dependent issue's own check or obligation evidence.
+    """
     observations, audit, conflicts = {}, [], set()
     for index, report in enumerate(reports):
         source = report.get("source", {})
@@ -1516,7 +1434,10 @@ def assess_obligations(obligations, reports, revision):
         )
     # Fixed-point dependency audit also blocks cycles; do not interpret a cycle as proof.
     assessed_issues = {o["issue"] for o in assessed if "issue" in o}
-    demonstrated = set()
+    # Maintainer-decided dependency scope: only issue numbers that are both
+    # recorded in the approved manifest and actually present in this queue.
+    approved = {int(number) for number in approved_dependency_issues} & assessed_issues
+    demonstrated = set(approved)
     while True:
         added = {
             o["id"]
@@ -1949,10 +1870,6 @@ def main(argv=None):
     parser.add_argument("--issue142-release-record", type=Path)
     parser.add_argument("--issue142-identity-report", type=Path)
     parser.add_argument("--issue142-observables-report", type=Path)
-    parser.add_argument("--issue156-release-record", type=Path)
-    parser.add_argument("--issue156-schema-report", type=Path)
-    parser.add_argument("--issue156-equality-report", type=Path)
-    parser.add_argument("--issue156-coverage-report", type=Path)
     parser.add_argument("--s6-simulate-receipt-dir", type=Path)
     parser.add_argument("--issue472-docs-report", type=Path)
     parser.add_argument("--issue471-oracle-report", type=Path)
@@ -2041,54 +1958,6 @@ def main(argv=None):
                         for path in (
                             args.issue142_identity_report,
                             args.issue142_observables_report,
-                        )
-                    ],
-                ),
-            ]
-        if args.issue156_release_record:
-            if not all(
-                (
-                    args.issue156_schema_report,
-                    args.issue156_equality_report,
-                    args.issue156_coverage_report,
-                )
-            ):
-                raise ValueError(
-                    "Issue 156 receipt requires schema, equality and coverage reports"
-                )
-            if campaign.git(ROOT, "status", "--porcelain"):
-                raise ValueError(
-                    "Issue 156 receipt consumer requires a clean candidate tree"
-                )
-            check_reports = {
-                "release-bngir-schema": json.loads(
-                    args.issue156_schema_report.read_text()
-                ),
-                "release-semantic-equality": json.loads(
-                    args.issue156_equality_report.read_text()
-                ),
-                "release-capability-coverage-156": json.loads(
-                    args.issue156_coverage_report.read_text()
-                ),
-            }
-            reports.extend(
-                issue156_receipt_reports(
-                    json.loads(args.issue156_release_record.read_text()),
-                    check_reports,
-                    args.revision,
-                )
-            )
-            receipt_reports = [
-                dict(
-                    kind="issue156-release-record",
-                    path=str(args.issue156_release_record),
-                    sha256=inventory.sha256(args.issue156_release_record),
-                    component_reports=[
-                        {"path": str(path), "sha256": inventory.sha256(path)}
-                        for path in (
-                            args.issue156_schema_report,
-                            args.issue156_equality_report,
-                            args.issue156_coverage_report,
                         )
                     ],
                 ),
@@ -2188,8 +2057,51 @@ def main(argv=None):
             lock = json.loads((ROOT / "provenance/upstreams.lock.yml").read_text())
             heads = collect_heads(lock, args.output_dir / "upstream-commands")
         catalog = json.loads(args.obligations_json.read_text())
+        approved_dependency_issues = []
+        approved_scope = catalog.get("approved_dependency_scope")
+        if approved_scope is not None:
+            if not isinstance(approved_scope, dict):
+                raise ValueError("approved_dependency_scope must be an object")
+            numbers = approved_scope.get("issues")
+            if (
+                not isinstance(numbers, list)
+                or not numbers
+                or any(type(number) is not int for number in numbers)
+                or len(set(numbers)) != len(numbers)
+            ):
+                raise ValueError(
+                    "approved_dependency_scope.issues must be unique integers"
+                )
+            decision = approved_scope.get("decision")
+            if not isinstance(decision, str) or not decision.startswith(
+                "docs/DECISIONS.md"
+            ):
+                raise ValueError(
+                    "approved_dependency_scope.decision must reference docs/DECISIONS.md"
+                )
+            marker = approved_scope.get("decision_marker")
+            if not isinstance(marker, str) or not marker.strip():
+                raise ValueError(
+                    "approved_dependency_scope.decision_marker must name the recorded decision"
+                )
+            decision_text = (ROOT / "docs/DECISIONS.md").read_text(encoding="utf-8")
+            if marker not in decision_text:
+                raise ValueError(
+                    "approved dependency scope is not recorded in docs/DECISIONS.md"
+                )
+            known = {entry["number"] for entry in catalog["issues"]}
+            if not set(numbers) <= known:
+                raise ValueError(
+                    "approved dependency is absent from the obligations catalog"
+                )
+            approved_dependency_issues = numbers
         obligations = obligation_inventory([*issues, *dependency_issues], catalog)
-        assessment = assess_obligations(obligations, reports, args.revision)
+        assessment = assess_obligations(
+            obligations,
+            reports,
+            args.revision,
+            approved_dependency_issues=approved_dependency_issues,
+        )
         conflicts = {
             a["id"] for a in assessment["evidence_audit"] if a["status"] == "CONFLICT"
         }

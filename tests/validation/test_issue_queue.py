@@ -855,61 +855,113 @@ def test_single_issue_closure_consumes_dependency_status(tmp_path, dependency_st
     assert bool(table["closed_acceptance_gaps"]) == (dependency_status != "PASS")
 
 
-def _issue156_receipt_fixture(tmp_path, revision=REVISION):
-    checks, reports = {}, {}
-    for check in issue_queue.ISSUE_156_CHECKS:
-        payload = {
-            "schema_version": 1,
-            "acceptance_check": check,
-            "source_revision": revision,
-            "source_dirty": False,
-            "result": {"check": check},
-        }
-        raw = (json.dumps(payload, sort_keys=True, indent=2) + "\n").encode()
-        (tmp_path / f"{check}.json").write_bytes(raw)
-        reports[check] = json.loads(raw)
-        checks[check] = {
-            "status": "PASS",
-            "report_sha256": hashlib.sha256(raw).hexdigest(),
-        }
-    receipt = {
-        "schema_version": 1,
-        "acceptance_check": "release-obligation-156",
-        "source_revision": revision,
-        "source_dirty": False,
-        "checks": checks,
-    }
-    return receipt, reports
+def test_approved_dependency_scope_resolves_only_stale_scope(tmp_path):
+    """A recorded maintainer decision unblocks stale dependency scope only.
 
+    The dependent issue's own checks still have to execute and pass; the
+    decision never waives its evidence.
+    """
+    revision = issue_queue.campaign.git(issue_queue.ROOT, "rev-parse", "HEAD")
+    target_body = "## Acceptance criteria\n- [ ] `release-target`: verify target.\n"
+    dependency_body = (
+        "## Acceptance criteria\n- [ ] `release-dependency`: verify dependency.\n"
+    )
+    target = dict(number=473, title="Target", state="CLOSED", body=target_body)
+    dependency = dict(
+        number=179, title="Dependency", state="CLOSED", body=dependency_body
+    )
+    (tmp_path / "issues.json").write_text(json.dumps([target]))
+    (tmp_path / "deps.json").write_text(json.dumps([dependency]))
 
-def test_issue156_receipt_consumer_emits_named_and_qualification_leaves(tmp_path):
-    receipt, reports = _issue156_receipt_fixture(tmp_path)
-    adapted = issue_queue.issue156_receipt_reports(receipt, reports, REVISION)
-    assert len(adapted) == 3
-    ids = {row["id"] for report in adapted for row in report["results"]}
-    assert set(issue_queue.ISSUE_156_CHECKS) <= ids
-    assert "qualification:issue:156:closure-record" in ids
-    for check in issue_queue.ISSUE_156_CHECKS:
-        row, adapted_report = next(
-            (row, adapted_report)
-            for adapted_report in adapted
-            for row in adapted_report["results"]
-            if row["id"] == check
+    def catalog_entry(issue, check, deps, text):
+        return dict(
+            number=issue["number"],
+            body_sha256=hashlib.sha256(issue["body"].encode()).hexdigest(),
+            obligations=[
+                dict(
+                    id=f"issue:{issue['number']}:live-acceptance:{check}",
+                    criterion=f"`{check}`: {text}",
+                    scope=text,
+                    completion_condition="Exact-revision evidence",
+                    dependencies=deps,
+                    boundaries=[],
+                    test_references=[],
+                    decisions=[],
+                    unmapped_scope=[],
+                    required_checks=[
+                        dict(
+                            id=check,
+                            evidence_kind="supported-execution",
+                            expectation=text,
+                        )
+                    ],
+                )
+            ],
         )
-        assert row["status"] == "PASS"
-        assert row["evidence_kind"] == "supported-execution"
-        assert row["supported_execution"] is True
-        assert adapted_report["source"]["revision"] == REVISION
 
+    catalog = dict(
+        issues=[
+            catalog_entry(target, "release-target", [179], "verify target."),
+            catalog_entry(dependency, "release-dependency", [], "verify dependency."),
+        ]
+    )
+    (tmp_path / "catalog.json").write_text(json.dumps(catalog))
+    artifact = tmp_path / "report.json"
 
-def test_issue156_receipt_consumer_rejects_tampered_and_stale_evidence(tmp_path):
-    receipt, reports = _issue156_receipt_fixture(tmp_path)
-    tampered = dict(reports)
-    tampered["release-bngir-schema"] = {
-        **reports["release-bngir-schema"],
-        "result": {"check": "tampered"},
-    }
-    with pytest.raises(ValueError, match="report hash"):
-        issue_queue.issue156_receipt_reports(receipt, tampered, REVISION)
-    with pytest.raises(ValueError, match="stale"):
-        issue_queue.issue156_receipt_reports(receipt, reports, "b" * 40)
+    def write_report(status):
+        row = report(
+            [
+                dict(
+                    id="release-target",
+                    status=status,
+                    related_issues=[473],
+                    supported_execution=status == "PASS",
+                    evidence_kind=(
+                        "supported-execution"
+                        if status == "PASS"
+                        else "observed-failure"
+                    ),
+                )
+            ]
+        )
+        row["source"]["revision"] = revision
+        artifact.write_text(json.dumps(row))
+
+    write_report("PASS")
+    common = [
+        "--issues-json",
+        str(tmp_path / "issues.json"),
+        "--dependency-issues-json",
+        str(tmp_path / "deps.json"),
+        "--obligations-json",
+        str(tmp_path / "catalog.json"),
+        "--revision",
+        revision,
+        "--report",
+        str(artifact),
+        "--require-closed-acceptance",
+    ]
+    # Without the recorded decision the stale dependency still blocks.
+    assert issue_queue.main(common + ["--output-dir", str(tmp_path / "off")]) == 1
+
+    catalog["approved_dependency_scope"] = dict(
+        issues=[179],
+        decision="docs/DECISIONS.md#test",
+        decision_marker="unrecorded dependency scope decision",
+    )
+    (tmp_path / "catalog.json").write_text(json.dumps(catalog))
+    # A catalog-only edit is rejected: the decision must be recorded in the
+    # repository decision document, not just asserted by the evidence catalog.
+    assert issue_queue.main(common + ["--output-dir", str(tmp_path / "fake")]) == 1
+
+    decision = issue_queue.ROOT / "docs" / "DECISIONS.md"
+    original = decision.read_text()
+    try:
+        decision.write_text(original + "\nunrecorded dependency scope decision\n")
+        assert issue_queue.main(common + ["--output-dir", str(tmp_path / "on")]) == 0
+    finally:
+        decision.write_text(original)
+
+    # A failing target check is still a gap even with the dependency accepted.
+    write_report("FAIL")
+    assert issue_queue.main(common + ["--output-dir", str(tmp_path / "fail")]) == 1

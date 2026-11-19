@@ -293,7 +293,7 @@
     {
       "id": "bngl.matchonce",
       "behavior": "MatchOnce",
-      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:newRxnRule",
       "bng3": "cpp/ast/ReactionRule.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.matchonce]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -326,7 +326,7 @@
     {
       "id": "bngl.irreversible-rules",
       "behavior": "irreversible rules",
-      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:newRxnRule",
       "bng3": "cpp/ast/ReactionRule.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.irreversible-rules]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -337,7 +337,7 @@
     {
       "id": "bngl.reversible-rules",
       "behavior": "reversible rules",
-      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:newRxnRule",
       "bng3": "cpp/ast/ReactionRule.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.reversible-rules]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -348,7 +348,7 @@
     {
       "id": "bngl.null-reactants-and-products",
       "behavior": "null reactants and products",
-      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:newRxnRule",
       "bng3": "cpp/ast/ReactionRule.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.null-reactants-and-products]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -359,7 +359,7 @@
     {
       "id": "bngl.binding",
       "behavior": "binding",
-      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:apply_operations",
       "bng3": "cpp/ast/ReactionRule.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.binding]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -370,7 +370,7 @@
     {
       "id": "bngl.unbinding",
       "behavior": "unbinding",
-      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:apply_operations",
       "bng3": "cpp/ast/ReactionRule.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.unbinding]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -381,7 +381,7 @@
     {
       "id": "bngl.state-changes",
       "behavior": "state changes",
-      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:apply_operations",
       "bng3": "cpp/ast/ReactionRule.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.state-changes]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -392,7 +392,7 @@
     {
       "id": "bngl.molecule-creation",
       "behavior": "molecule creation",
-      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:apply_operations",
       "bng3": "cpp/ast/ReactionRule.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.molecule-creation]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -403,7 +403,7 @@
     {
       "id": "bngl.molecule-deletion",
       "behavior": "molecule deletion",
-      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:apply_operations",
       "bng3": "cpp/ast/ReactionRule.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.molecule-deletion]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -414,7 +414,7 @@
     {
       "id": "bngl.deletemolecules",
       "behavior": "DeleteMolecules",
-      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:newRxnRule",
       "bng3": "cpp/ast/ReactionRule.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.deletemolecules]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -425,7 +425,7 @@
     {
       "id": "bngl.moveconnected",
       "behavior": "MoveConnected",
-      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:apply_operations",
       "bng3": "cpp/ast/ReactionRule.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.moveconnected]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -436,7 +436,7 @@
     {
       "id": "bngl.totalrate",
       "behavior": "TotalRate",
-      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:newRxnRule",
       "bng3": "cpp/ast/ReactionRule.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.totalrate]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -447,7 +447,7 @@
     {
       "id": "bngl.include-reactants",
       "behavior": "include_reactants",
-      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:newRxnRule",
       "bng3": "cpp/ast/ReactionRule.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.include-reactants]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -458,7 +458,7 @@
     {
       "id": "bngl.exclude-reactants",
       "behavior": "exclude_reactants",
-      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:newRxnRule",
       "bng3": "cpp/ast/ReactionRule.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.exclude-reactants]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -469,7 +469,7 @@
     {
       "id": "bngl.include-products",
       "behavior": "include_products",
-      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:newRxnRule",
       "bng3": "cpp/ast/ReactionRule.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.include-products]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -480,7 +480,7 @@
     {
       "id": "bngl.exclude-products",
       "behavior": "exclude_products",
-      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:newRxnRule",
       "bng3": "cpp/ast/ReactionRule.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.exclude-products]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -491,7 +491,7 @@
     {
       "id": "bngl.compartment-transport",
       "behavior": "compartment transport",
-      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:apply_operations",
       "bng3": "cpp/ast/ReactionRule.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.compartment-transport]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -502,7 +502,7 @@
     {
       "id": "bngl.reaction-center-symmetry",
       "behavior": "reaction-center symmetry",
-      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:findMap",
       "bng3": "cpp/ast/ReactionRule.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.reaction-center-symmetry]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -513,7 +513,7 @@
     {
       "id": "bngl.connected-context-preservation",
       "behavior": "connected context preservation",
-      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:apply_operations",
       "bng3": "cpp/ast/ReactionRule.cpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.connected-context-preservation]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -722,7 +722,7 @@
     {
       "id": "bngl.mass-action",
       "behavior": "mass action",
-      "upstream": "bionetgen:bng2/Perl2/RateLaw.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RateLaw.pm:newRateLaw",
       "bng3": "cpp/compile/CompiledRateLaw.hpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.mass-action]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -733,7 +733,7 @@
     {
       "id": "bngl.ele",
       "behavior": "Ele",
-      "upstream": "bionetgen:bng2/Perl2/RateLaw.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RateLaw.pm:newRateLaw",
       "bng3": "cpp/compile/CompiledRateLaw.hpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.ele]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -744,7 +744,7 @@
     {
       "id": "bngl.function",
       "behavior": "Function",
-      "upstream": "bionetgen:bng2/Perl2/RateLaw.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RateLaw.pm:newRateLaw",
       "bng3": "cpp/compile/CompiledRateLaw.hpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.function]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -755,7 +755,7 @@
     {
       "id": "bngl.functionproduct",
       "behavior": "FunctionProduct",
-      "upstream": "bionetgen:bng2/Perl2/RateLaw.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RateLaw.pm:newRateLaw",
       "bng3": "cpp/compile/CompiledRateLaw.hpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.functionproduct]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -766,7 +766,7 @@
     {
       "id": "bngl.mm",
       "behavior": "MM",
-      "upstream": "bionetgen:bng2/Perl2/RateLaw.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RateLaw.pm:newRateLaw",
       "bng3": "cpp/compile/CompiledRateLaw.hpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.mm]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -777,7 +777,7 @@
     {
       "id": "bngl.sat",
       "behavior": "Sat",
-      "upstream": "bionetgen:bng2/Perl2/RateLaw.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RateLaw.pm:newRateLaw",
       "bng3": "cpp/compile/CompiledRateLaw.hpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.sat]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -788,7 +788,7 @@
     {
       "id": "bngl.hill",
       "behavior": "Hill",
-      "upstream": "bionetgen:bng2/Perl2/RateLaw.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RateLaw.pm:newRateLaw",
       "bng3": "cpp/compile/CompiledRateLaw.hpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.hill]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -799,7 +799,7 @@
     {
       "id": "bngl.arrhenius",
       "behavior": "Arrhenius",
-      "upstream": "bionetgen:bng2/Perl2/RateLaw.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RateLaw.pm:newRateLaw",
       "bng3": "cpp/compile/CompiledRateLaw.hpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.arrhenius]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -810,7 +810,7 @@
     {
       "id": "bngl.reverse-rates",
       "behavior": "reverse rates",
-      "upstream": "bionetgen:bng2/Perl2/RateLaw.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RateLaw.pm:newRateLaw",
       "bng3": "cpp/compile/CompiledRateLaw.hpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.reverse-rates]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -821,7 +821,7 @@
     {
       "id": "bngl.statistical-rate-factors",
       "behavior": "statistical rate factors",
-      "upstream": "bionetgen:bng2/Perl2/RateLaw.pm:readString",
+      "upstream": "bionetgen:bng2/Perl2/RxnRule.pm:findMap",
       "bng3": "cpp/compile/CompiledRateLaw.hpp",
       "check": "tests/validation/test_parity_net.py + release-capability[bngl.statistical-rate-factors]",
       "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
@@ -10479,7 +10479,7 @@
     {
       "id": "py.cli.option.convert-units",
       "behavior": "PyBioNetGen CLI option --convert-units",
-      "upstream": "pybionetgen:bionetgen/main.py:BNGBase argument decorators",
+      "upstream": "pybionetgen:bionetgen/atomizer/sbmlTranslator.py:defineConsole",
       "bng3": "python/bionetgen/cli.py (map accepted command/option behavior)",
       "check": "release-capability[py.cli.option.convert-units]",
       "oracle": "pinned PyBioNetGen CLI default/explicit/error cases",
