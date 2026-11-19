@@ -5,6 +5,7 @@ exercised by the current BNGIR implementation.
 """
 
 import json
+import math
 
 import pytest
 
@@ -273,7 +274,7 @@ end model
 
 # Native reconstruction is intentionally narrow; enable only for cases within
 # the current native v0.2 supported slice.
-NATIVE_CASES = {"states_and_bonds"}
+NATIVE_CASES = {"states_and_bonds", "consuming_delay"}
 
 
 @pytest.mark.parametrize("name,src", list(CASES.items()))
@@ -404,3 +405,22 @@ end model
     doc2 = json.loads(restored.to_bngir(version="0.2"))
     assert doc2["model"]["rules"][0]["driving_work"] == "w"
     assert bionetgen.semantic_equal(m, restored, version="0.2") is True
+
+
+def test_consuming_delay_native_reconstruction_and_time_course():
+    src = CASES["consuming_delay"]
+    m = _model(src)
+    doc_v2 = json.loads(m.to_bngir(version="0.2"))
+    restored = bionetgen.from_bngir(doc_v2, native=True)
+    assert bionetgen.semantic_equal(m, restored, version="0.2")
+
+    # Time course check against analytic law:
+    # A0 = 5, k = 1, tau = 2.
+    # A(t) = 5 * exp(-t)
+    # B(t) = 0 for t < 2; B(t) = 5 * (1 - exp(-(t - 2))) for t >= 2.
+    sim = restored.simulate(method="ode", t_end=3.0, n_steps=6)
+    for time, (a, b) in zip(sim.time, sim.concentrations):
+        exp_a = 5.0 * math.exp(-1.0 * time)
+        exp_b = 0.0 if time <= 2.0 else 5.0 * (1.0 - math.exp(-1.0 * (time - 2.0)))
+        assert a == pytest.approx(exp_a, abs=1e-6)
+        assert b == pytest.approx(exp_b, abs=1e-6)
