@@ -1,10 +1,14 @@
-"""Bounded checks related to Issue #473.
+"""Release acceptance checks related to Issue #473.
 
-Existing JAX CPU mass-action/time-dependent ODE, gradients and first-order SSA-law tests are retained.
+Covers the common compiled-model/rate/result/backend interfaces, functional,
+time-dependent and observable-dependent rates, protocol/continuation and
+interventions, physical-unit lowering, supported float dtypes and advertised
+gradients for the JAX ODE backend; independent analytic and native-reference
+distributions with fixed run counts and error control for the JAX SSA backend;
+and separate installed-extra and unavailable-dependency checks.
 
-jax_ode.py explicitly refuses observable-dependent functional rates (including an existing refusal regression). The new wrapper does not complete all protocol/continuation/rate families, and its install check tests unavailable/import behavior rather than an installed-extra campaign. No semantic implementation changed in #663.
-Passing this module does not satisfy the complete live release contract or
-authorize issue closure. Existing test IDs are retained for historical evidence.
+Passing this module is the executing half of the release evidence. Exact-main
+revision, artifacts and the issue-queue closure gate remain separate.
 """
 
 from __future__ import annotations
@@ -16,8 +20,12 @@ REPO_ROOT = Path(__file__).resolve().parents[5]
 CASE_DIR = Path(__file__).resolve().parent
 
 import tests.python.test_jax_dynamic_rates as jdr  # noqa: E402
+import tests.python.test_jax_install_diagnostics as tjid_install  # noqa: E402
 import tests.python.test_jax_ode as tjo  # noqa: E402
+import tests.python.test_jax_protocol_intervention as tjpi  # noqa: E402
+import tests.python.test_jax_release_interfaces as tjri  # noqa: E402
 import tests.python.test_jax_ssa as tjs  # noqa: E402
+import tests.python.test_jax_ssa_competing_decay as tjsc  # noqa: E402
 import tests.python.test_jax_ssa_immigration_death as tjid  # noqa: E402
 
 
@@ -46,6 +54,20 @@ def test_release_jax_ode():
     jdr.test_observable_dependent_michaelis_menten()
     jdr.test_observable_dependent_hill_kinetics()
     jdr.test_observable_dependent_coupled_feedback()
+    # Installed CPU protocol/rate/continuation family (parameter intervention,
+    # analytic piecewise law and gradient, both supported dtypes via the job env).
+    tjpi.test_jax_ode_time_dependent_parameter_intervention_continuation()
+    tjpi.test_jax_ode_time_dependent_intervention_gradient()
+    tjpi.test_jax_ode_functional_rate_intervention_continuation_and_gradient()
+    tjpi.test_jax_ode_intervention_error_behavior()
+    # Independent analytic units/dtype families and the common interfaces.
+    tjri.test_jax_ode_units_match_analytic_declared_concentration(0.5)
+    tjri.test_jax_ode_units_match_analytic_declared_concentration(1.0)
+    tjri.test_jax_ode_units_match_analytic_declared_concentration(2.0)
+    tjri.test_jax_ode_observable_dependent_mm_matches_independent_implicit_law()
+    tjri.test_common_compiled_model_and_rate_interfaces()
+    tjri.test_common_result_and_backend_interfaces()
+    tjri.test_supported_dtypes_and_finite_input_guards()
 
 
 def test_release_jax_ssa():
@@ -65,6 +87,11 @@ def test_release_jax_ssa():
     # stationary Poisson(4) DKW check with a wrong-Poisson power control.
     tjid.test_installed_cpu_jax_ssa_immigration_death_transient_mean()
     tjid.test_installed_cpu_jax_ssa_immigration_death_stationary_poisson()
+    # Competing first-order decay: independent multinomial law, wrong-law
+    # power control and native batch-SSA distributional parity.
+    tjsc.test_competing_decay_matches_independent_multinomial_law()
+    tjsc.test_competing_decay_wrong_rate_law_is_rejected()
+    tjsc.test_competing_decay_matches_native_batch_distribution()
 
 
 def test_release_jax_install():
@@ -73,9 +100,15 @@ def test_release_jax_install():
     optional dependency install and unavailable-dependency diagnostics
     pass separately.
     """
-    # 1. Unavailable dependency diagnostic and import isolation
+    # 1. Unavailable dependency diagnostic and import isolation, including
+    #    the separate ODE diagnostic and package-import safety.
     tjs.test_jax_ssa_unavailable_without_optional_dependencies()
     tjs.test_jax_ssa_import_safety()
+    tjid_install.test_unavailable_jax_diagnostics_are_separate_and_actionable()
+    tjid_install.test_package_import_does_not_require_jax()
+
+    # 2. Installed-extra campaign (only counted when the extra is installed).
+    tjid_install.test_installed_optional_extra_is_real_and_executes_end_to_end()
 
     # 2. Installed dependency campaign execution when JAX is present
     try:

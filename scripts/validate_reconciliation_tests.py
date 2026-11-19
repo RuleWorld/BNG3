@@ -9,14 +9,31 @@ so renames cannot silently leave stale provenance behind.
 
 from __future__ import annotations
 
+import argparse
 import ast
+import hashlib
 import json
+import re
+import subprocess
 import sys
+from collections.abc import Iterable
 from pathlib import Path, PureWindowsPath
 from typing import Any
 
 REPO = Path(__file__).resolve().parents[1]
 LEDGER_DIR = REPO / "provenance" / "reconciliation"
+RECONCILIATION_FIXTURES = {
+    "bionetgen": (
+        "bng2/Models2/Motivating_example_cBNGL.bngl",
+        "bng2/Models2/energy_example1.bngl",
+    ),
+    "nfsim": (
+        "test/MM/mm_small_km.bngl",
+        "test/MM/mm_small_km.xml",
+        "test/testSuite/t3.bngl",
+        "test/testSuite/t3.xml",
+    ),
+}
 CLAIM_CLASSIFICATIONS = {
     "incorporated-identically",
     "incorporated-equivalently",
@@ -258,7 +275,307 @@ def validate_test_references(
     return errors
 
 
+def audit_nfsim_options(
+    source: str, inventory_ids: Iterable[str]
+) -> dict[str, list[str]]:
+    """Find literal command-line options read by the pinned NFsim executable."""
+
+    tokens = _source_tokens(source)
+    flags = set()
+    for current, one, two, three, four in zip(
+        tokens, tokens[1:], tokens[2:], tokens[3:], tokens[4:]
+    ):
+        if (
+            current == ("identifier", "argMap")
+            and one == ("punctuation", ".")
+            and two in (("identifier", "find"), ("identifier", "count"))
+            and three == ("punctuation", "(")
+            and four[0] == "string"
+        ):
+            flags.add(four[1])
+        if (
+            current[0] == "identifier"
+            and current[1].startswith("parseAs")
+            and one == ("punctuation", "(")
+            and two == ("identifier", "argMap")
+            and three == ("punctuation", ",")
+            and four[0] == "string"
+        ):
+            flags.add(four[1])
+    return {
+        "upstream_options": sorted(flags),
+        **_inventory_difference(flags, inventory_ids, "nf.option."),
+    }
+
+
+def _inventory_difference(
+    upstream_names: set[str], inventory_ids: Iterable[str], prefix: str
+) -> dict[str, list[str]]:
+    expected = {prefix + name for name in upstream_names}
+    actual = {row_id for row_id in inventory_ids if row_id.startswith(prefix)}
+    return {
+        "missing_rows": sorted(expected - actual),
+        "unexpected_rows": sorted(actual - expected),
+    }
+
+
+def audit_pybionetgen_options(
+    main: str, translator: str, inventory_ids: Iterable[str]
+) -> dict[str, list[str]]:
+    """Read registered long options from the two pinned CLI parsers."""
+
+    def long_options(nodes: Iterable[ast.AST]) -> set[str]:
+        return {
+            node.value[2:]
+            for node in nodes
+            if isinstance(node, ast.Constant)
+            and isinstance(node.value, str)
+            and node.value.startswith("--")
+        }
+
+    main_options: set[str] = set()
+    for node in ast.walk(ast.parse(main)):
+        if isinstance(node, ast.keyword) and node.arg == "arguments":
+            options = node.value
+        elif isinstance(node, ast.Assign) and any(
+            isinstance(target, ast.Name) and target.id == "arguments"
+            for target in node.targets
+        ):
+            options = node.value
+        else:
+            continue
+        if isinstance(options, ast.List):
+            for item in options.elts:
+                if (
+                    isinstance(item, ast.Tuple)
+                    and item.elts
+                    and isinstance(item.elts[0], ast.List)
+                ):
+                    main_options.update(long_options(item.elts[0].elts))
+    atomizer_options: set[str] = set()
+    for node in ast.walk(ast.parse(translator)):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr == "add_argument":
+                atomizer_options.update(long_options(node.args))
+    return {
+        "main_options": sorted(main_options),
+        "atomizer_options": sorted(atomizer_options),
+        **_inventory_difference(
+            main_options | atomizer_options, inventory_ids, "py.cli.option."
+        ),
+    }
+
+
+def audit_bng2_builtins(
+    source: str, inventory_ids: Iterable[str]
+) -> dict[str, list[str]]:
+    """Read the active named entries from Expression.pm's function table."""
+    table = re.search(
+        r"^my %functions\s*=\s*\((.*?)^\);", source, re.MULTILINE | re.DOTALL
+    )
+    if table is None:
+        raise ValueError("BNG2 Expression.pm has no built-in function table")
+    names = set(re.findall(r'^\s*"([A-Za-z_]\w*)"\s*=>', table[1], re.MULTILINE))
+    return {
+        "upstream_builtins": sorted(names),
+        **_inventory_difference(names, inventory_ids, "builtin."),
+    }
+
+
+def audit_source_locations(
+    rows: Iterable[dict[str, str]], sources: dict[str, Path]
+) -> dict[str, Any]:
+    """Resolve matrix source symbol anchors against the pinned source files."""
+    resolved = []
+    unresolved = {}
+    non_symbol_rows = []
+    symbols_by_file: dict[Path, set[str]] = {}
+    for row in rows:
+        location = row["upstream"].split(":", 2)
+        if len(location) != 3 or location[0] not in sources or location[0] == "nfsim":
+            continue
+        upstream, relative, anchor = location
+        match = re.fullmatch(r"\d+ \(([^)]+)\)", anchor)
+        symbol = match[1] if match else anchor
+        if not re.fullmatch(r"[A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*", symbol):
+            non_symbol_rows.append(row["id"])
+            continue
+        checkout = sources[upstream].resolve()
+        path = (checkout / relative).resolve()
+        if not path.is_relative_to(checkout) or not path.is_file():
+            unresolved[row["id"]] = row["upstream"]
+            continue
+        if path not in symbols_by_file:
+            text = path.read_text(encoding="utf-8")
+            symbols_by_file[path] = (
+                _python_source_symbols(text)
+                if upstream == "pybionetgen"
+                else set(re.findall(r"^\s*sub\s+([A-Za-z_]\w*)", text, re.MULTILINE))
+            )
+        if symbol in symbols_by_file[path]:
+            resolved.append(row["id"])
+        else:
+            unresolved[row["id"]] = row["upstream"]
+    return {
+        "resolved_rows": sorted(resolved),
+        "unresolved_rows": unresolved,
+        "non_symbol_rows": sorted(non_symbol_rows),
+    }
+
+
+def _python_source_symbols(source: str) -> set[str]:
+    symbols = set()
+    for node in ast.parse(source).body:
+        if isinstance(node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
+            symbols.add(node.name)
+        elif isinstance(node, (ast.Assign, ast.AnnAssign)):
+            symbols.update(
+                child.id
+                for child in ast.walk(node)
+                if isinstance(child, ast.Name) and isinstance(child.ctx, ast.Store)
+            )
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for child in node.body:
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                symbols.add(f"{node.name}.{child.name}")
+            elif isinstance(child, (ast.Assign, ast.AnnAssign)):
+                symbols.update(
+                    f"{node.name}.{target.id}"
+                    for target in ast.walk(child)
+                    if isinstance(target, ast.Name)
+                    and isinstance(target.ctx, ast.Store)
+                )
+        symbols.update(
+            f"{node.name}.{child.attr}"
+            for child in ast.walk(node)
+            if isinstance(child, ast.Attribute)
+            and isinstance(child.ctx, ast.Store)
+            and isinstance(child.value, ast.Name)
+            and child.value.id == "self"
+        )
+    return symbols
+
+
+def audit_upstream_history(
+    checkout: Path,
+    ledger: dict[str, Any],
+    accepted_revision: str,
+    *,
+    fixtures: Iterable[str] = (),
+) -> dict[str, Any]:
+    """Compare ledger commit coverage with the full pinned Git ancestry range."""
+
+    def git_bytes(*args: str) -> bytes:
+        return subprocess.run(
+            ["git", "--no-replace-objects", "-C", str(checkout), *args],
+            capture_output=True,
+            check=True,
+        ).stdout
+
+    def git(*args: str) -> str:
+        return git_bytes(*args).decode().strip()
+
+    represented_revision = ledger["represented_revision"]
+    errors: list[str] = []
+    fixture_hashes: dict[str, str] = {}
+    report = {
+        "accepted_revision": accepted_revision,
+        "represented_revision": represented_revision,
+        "checkout_revision": None,
+        "commits": [],
+        "missing_commits": [],
+        "unexpected_commits": [],
+        "fixture_sha256": fixture_hashes,
+        "errors": errors,
+    }
+    if ledger["cutoff_revision"] != accepted_revision:
+        errors.append("ledger cutoff does not match the accepted revision")
+    try:
+        if Path(git("rev-parse", "--show-toplevel")).resolve() != checkout.resolve():
+            errors.append("path is not the root of the upstream checkout")
+            return report
+        report["checkout_revision"] = git("rev-parse", "HEAD")
+        if report["checkout_revision"] != accepted_revision:
+            errors.append("checkout HEAD does not match the accepted revision")
+        if git("status", "--porcelain=v1", "--untracked-files=all"):
+            errors.append("checkout has local changes")
+        if git("rev-parse", "--is-shallow-repository") != "false":
+            errors.append("checkout has shallow history")
+            return report
+        git("merge-base", "--is-ancestor", represented_revision, accepted_revision)
+        commits = set(
+            git("rev-list", f"{represented_revision}..{accepted_revision}").splitlines()
+        )
+        ledger_commits = {entry["source_revision"] for entry in ledger["entries"]}
+        report["commits"] = sorted(commits)
+        report["missing_commits"] = sorted(commits - ledger_commits)
+        report["unexpected_commits"] = sorted(ledger_commits - commits)
+        changed_fixtures = (
+            git_bytes(
+                "diff",
+                "--name-only",
+                "--no-renames",
+                "--diff-filter=AM",
+                "-z",
+                represented_revision,
+                accepted_revision,
+                "--",
+                "*.bngl",
+                "*.net",
+                "*.xml",
+            )
+            .decode()
+            .split("\0")
+        )
+        checkout_root = checkout.resolve()
+        for relative in sorted(set(fixtures).union(filter(None, changed_fixtures))):
+            path = checkout_root / relative
+            if (
+                not path.is_relative_to(checkout_root)
+                or path.resolve() != path
+                or not path.is_file()
+            ):
+                errors.append(f"fixture is not a regular checkout file: {relative}")
+                continue
+            data = path.read_bytes()
+            if data != git_bytes("cat-file", "blob", f"{accepted_revision}:{relative}"):
+                errors.append(f"fixture differs from the accepted revision: {relative}")
+                continue
+            fixture_hashes[relative] = hashlib.sha256(data).hexdigest()
+    except (OSError, subprocess.CalledProcessError) as exc:
+        detail = (
+            exc.stderr.decode(errors="replace").strip()
+            if isinstance(exc, subprocess.CalledProcessError)
+            else str(exc)
+        )
+        errors.append(
+            f"cannot establish upstream history: {exc}"
+            + (f": {detail}" if detail else "")
+        )
+    return report
+
+
 def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--bionetgen", type=Path)
+    parser.add_argument("--nfsim", type=Path)
+    parser.add_argument("--pybionetgen", type=Path)
+    parser.add_argument("--history-report", type=Path)
+    parser.add_argument("--candidate-revision", help="Expected BNG3 checkout revision")
+    args = parser.parse_args()
+    sources = {
+        name: getattr(args, name) for name in ("bionetgen", "nfsim", "pybionetgen")
+    }
+    verify_history = (
+        any(sources.values())
+        or args.history_report is not None
+        or args.candidate_revision is not None
+    )
+    if verify_history and not (all(sources.values()) and args.history_report):
+        parser.error(
+            "history audit requires all three source paths and --history-report"
+        )
     try:
         ledgers = load_ledgers()
     except ValueError as exc:
@@ -273,11 +590,136 @@ def main() -> int:
             f"{counts['claims_without_test_refs']} without; "
             f"{counts['test_references']} references checked"
         )
+    if verify_history:
+        git_command = ["git", "-C", str(REPO)]
+        revision = subprocess.check_output(
+            [*git_command, "rev-parse", "HEAD"], text=True
+        ).strip()
+        dirty = bool(
+            subprocess.check_output(
+                [*git_command, "status", "--porcelain=v1", "--untracked-files=all"],
+                text=True,
+            ).strip()
+        )
+        if args.candidate_revision is not None and revision != args.candidate_revision:
+            errors.append(
+                "BNG3 checkout does not match the requested candidate revision"
+            )
+        if dirty:
+            errors.append("BNG3 checkout has local changes")
+        lock = json.loads(
+            (REPO / "provenance" / "upstreams.lock.yml").read_text(encoding="utf-8")
+        )
+        history = {}
+        for _, ledger in ledgers:
+            source = ledger["source"]
+            if source not in sources or source in history:
+                errors.append(f"unexpected or duplicate source ledger: {source}")
+                continue
+            audit = audit_upstream_history(
+                sources[source],
+                ledger,
+                lock["sources"][source]["revision"],
+                fixtures=RECONCILIATION_FIXTURES.get(source, ()),
+            )
+            history[source] = audit
+            errors.extend(f"{source}: {error}" for error in audit["errors"])
+            errors.extend(
+                f"{source}: missing ledger commit {sha}"
+                for sha in audit["missing_commits"]
+            )
+            errors.extend(
+                f"{source}: out-of-range ledger commit {sha}"
+                for sha in audit["unexpected_commits"]
+            )
+        errors.extend(
+            f"missing ledger for {name}"
+            for name in sorted(sources.keys() - history.keys())
+        )
+        matrix = json.loads(
+            (REPO / "provenance" / "capability-matrix.yml").read_text(encoding="utf-8")
+        )
+        inventory_ids = [row["id"] for row in matrix["rows"]]
+        inventory = {}
+        if "nfsim" in history and not history["nfsim"]["errors"]:
+            cli_source = sources["nfsim"] / "src" / "NFsim.cpp"
+            inventory["nfsim_options"] = audit_nfsim_options(
+                cli_source.read_text(encoding="utf-8"), inventory_ids
+            )
+        if "bionetgen" in history and not history["bionetgen"]["errors"]:
+            expressions = sources["bionetgen"] / "bng2/Perl2/Expression.pm"
+            inventory["bng2_builtins"] = audit_bng2_builtins(
+                expressions.read_text(encoding="utf-8"), inventory_ids
+            )
+        if "pybionetgen" in history and not history["pybionetgen"]["errors"]:
+            package = sources["pybionetgen"] / "bionetgen"
+            inventory["pybionetgen_options"] = audit_pybionetgen_options(
+                (package / "main.py").read_text(encoding="utf-8"),
+                (package / "atomizer/sbmlTranslator.py").read_text(encoding="utf-8"),
+                inventory_ids,
+            )
+        for surface, result in inventory.items():
+            for row in result["missing_rows"]:
+                print(
+                    f"{surface}: source option or built-in without a matching row: {row}"
+                )
+            for row in result["unexpected_rows"]:
+                print(
+                    f"{surface}: row without a matching source option or built-in: {row}"
+                )
+        source_symbols = audit_source_locations(
+            matrix["rows"],
+            {
+                name: sources[name]
+                for name, result in history.items()
+                if not result["errors"]
+            },
+        )
+        if source_symbols["unresolved_rows"]:
+            print(
+                f"source symbol audit: {len(source_symbols['unresolved_rows'])} unresolved rows"
+            )
+        args.history_report.parent.mkdir(parents=True, exist_ok=True)
+        args.history_report.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "audit": "upstream-history-and-fixtures",
+                    "source": {"revision": revision, "dirty": dirty},
+                    "references": {
+                        name: {
+                            "repository": lock["sources"][name]["repository"],
+                            "revision": result["checkout_revision"],
+                            "fixture_sha256": result["fixture_sha256"],
+                        }
+                        for name, result in history.items()
+                    },
+                    "results": [
+                        {
+                            "id": "release-reconciliation-pins",
+                            "status": "FAIL" if errors else "PASS",
+                            "evidence_kind": "supported-execution",
+                            "supported_execution": not errors,
+                            "related_issues": [180],
+                            "detail": "Compare clean pinned source revisions, Git ancestry, and fixture bytes.",
+                        }
+                    ],
+                    "sources": history,
+                    "source_inventory_audit": inventory,
+                    "source_symbol_audit": source_symbols,
+                    "errors": errors,
+                },
+                indent=2,
+                sort_keys=True,
+            )
+            + "\n",
+            encoding="utf-8",
+        )
     for error in errors:
         print(f"ERROR: {error}", file=sys.stderr)
     if errors:
         print(
-            f"reconciliation test-reference validation failed ({len(errors)} error(s))",
+            f"reconciliation validation failed ({len(errors)} error(s))",
             file=sys.stderr,
         )
         return 1

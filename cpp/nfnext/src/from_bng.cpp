@@ -34,6 +34,21 @@ using BngMutationKind = bng::compile::MutationKind;
 
 using BondEndpoint = std::tuple<std::size_t, std::size_t, std::size_t>;
 
+// Delayed semantics are owned by the native DDE method-of-steps / delayed-SSA
+// engines.  NFnext lowering does not carry a pending-completion queue, so a
+// delayed rule lowered here would silently execute as an immediate reaction.
+// Fail closed on any delay call so the runner never reports a wrong trajectory.
+bool resolvedExpressionUsesDelay(const bng::compile::ResolvedExpression& expression) {
+    if (expression.kind == bng::compile::ResolvedExpressionKind::BuiltinCall &&
+        expression.builtin == bng::compile::BuiltinFunction::Delay) {
+        return true;
+    }
+    for (const auto& argument : expression.arguments) {
+        if (resolvedExpressionUsesDelay(argument)) return true;
+    }
+    return false;
+}
+
 std::vector<bng::compile::PatternBondDescriptor> patternBonds(
     const bng::compile::PatternSiteDescriptor& site) {
     if (!site.bondConstraints.empty()) return site.bondConstraints;
@@ -1988,6 +2003,26 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         };
         checkRate(rule.forward());
         if (rule.reverse()) checkRate(*rule.reverse());
+    }
+    // Network-free execution has no pending-completion queue. Refuse delayed
+    // semantics explicitly rather than executing a delayed rule as immediate.
+    for (const auto& rule : source.rules()) {
+        if (rule.delayExpression() || rule.resolvedDelayExpression()) {
+            refuse("delayed rules require the native DDE method-of-steps solver");
+        }
+        const auto checkRateDelay = [&](const bng::compile::CompiledRuleDirection& direction) {
+            if (direction.rateLaw &&
+                resolvedExpressionUsesDelay(direction.rateLaw->resolvedExpression())) {
+                refuse("delay() rate expressions require the native DDE method-of-steps solver");
+            }
+        };
+        checkRateDelay(rule.forward());
+        if (rule.reverse()) checkRateDelay(*rule.reverse());
+    }
+    for (const auto& function : source.functions()) {
+        if (resolvedExpressionUsesDelay(function.expression)) {
+            refuse("delay() function expressions require the native DDE method-of-steps solver");
+        }
     }
     auto lowered = lowerFromBioNetGen(source);
     if (!lowered.ok()) {

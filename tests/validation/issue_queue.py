@@ -63,6 +63,69 @@ S6_SIMULATE_CONTRACT = (
 S6_SCENARIOS = ("default", "explicit", "invalid", "interaction")
 
 
+def issue138_release_record(
+    record_path: Path, revision: str, *, artifact_run_id: str | None = None
+) -> dict:
+    """Validate and adapt a #138 compiled-model release record as queue evidence.
+
+    The record is produced by scripts/ci/record_issue138_release.py after it
+    executes tests/validation/release/cases/issue-138/test_compiled_model.py
+    against the pinned BNG2 golden network oracle. A stale, dirty, incomplete
+    or non-supported-execution record is rejected rather than counted.
+    """
+    record_path = Path(record_path)
+    if not record_path.is_file():
+        raise ValueError(f"Issue 138 release record missing: {record_path}")
+    data = json.loads(record_path.read_text(encoding="utf-8"))
+    if data.get("acceptance_check") != "release-obligation-138":
+        raise ValueError("Issue 138 release record check identity mismatch")
+    if data.get("source", {}).get("revision") != revision:
+        raise ValueError("stale Issue 138 release record revision")
+    if data.get("source", {}).get("dirty") is not False:
+        raise ValueError("Issue 138 release record from a dirty checkout")
+    expected = {
+        "release-compiled-inputs",
+        "release-compiled-parity",
+        "release-capability-coverage-138",
+    }
+    rows = data.get("results") or []
+    if {row.get("id") for row in rows} != expected:
+        raise ValueError("Issue 138 release record missing required check rows")
+    if set(data.get("manifest_check_ids") or []) != expected:
+        raise ValueError("Issue 138 manifest check identities mismatch")
+    for row in rows:
+        if (
+            row.get("status") != "PASS"
+            or row.get("supported_execution") is not True
+            or row.get("evidence_kind") != "supported-execution"
+        ):
+            raise ValueError(
+                f"Issue 138 check {row.get('id')} is not supported execution"
+            )
+    return {
+        "source": {"revision": revision, "dirty": False},
+        "artifact": {
+            "name": f"issue-138-release-{revision}",
+            "workflow_run_id": artifact_run_id,
+            "path": str(record_path),
+            "sha256": inventory.sha256(record_path),
+        },
+        "results": [
+            {
+                "id": row["id"],
+                "status": "PASS",
+                "stage": row.get("stage", "issue-138-release"),
+                "check": row["id"],
+                "related_issues": [138],
+                "evidence_kind": "supported-execution",
+                "supported_execution": True,
+                "receipt_sha256": inventory.sha256(record_path),
+            }
+            for row in rows
+        ],
+    }
+
+
 def issue142_receipt_reports(
     receipt, identity_path, observables_path, revision, *, artifact_run_id=None
 ):
@@ -1128,8 +1191,14 @@ def _report_status(report, revision):
     return "STALE" if source["revision"] != revision else None
 
 
-def assess_obligations(obligations, reports, revision):
-    """Audit exact leaf checks; missing evidence is never inferred from issue links."""
+def assess_obligations(obligations, reports, revision, approved_dependency_issues=()):
+    """Audit exact leaf checks; missing evidence is never inferred from issue links.
+
+    ``approved_dependency_issues`` are issue numbers whose scope was accepted by a
+    final maintainer decision recorded in docs/DECISIONS.md. They pre-seed the
+    dependency fixed point; this resolves stale-body dependency status only and
+    never relaxes the dependent issue's own check or obligation evidence.
+    """
     observations, audit, conflicts = {}, [], set()
     for index, report in enumerate(reports):
         source = report.get("source", {})
@@ -1365,7 +1434,10 @@ def assess_obligations(obligations, reports, revision):
         )
     # Fixed-point dependency audit also blocks cycles; do not interpret a cycle as proof.
     assessed_issues = {o["issue"] for o in assessed if "issue" in o}
-    demonstrated = set()
+    # Maintainer-decided dependency scope: only issue numbers that are both
+    # recorded in the approved manifest and actually present in this queue.
+    approved = {int(number) for number in approved_dependency_issues} & assessed_issues
+    demonstrated = set(approved)
     while True:
         added = {
             o["id"]
@@ -1787,8 +1859,14 @@ def main(argv=None):
         type=Path,
         default=ROOT / "provenance/issue-obligations.json",
     )
+    parser.add_argument(
+        "--dependency-issues-json",
+        type=Path,
+        help="Review dependency scope from a separate live issue snapshot without adding those issues to the closure queue.",
+    )
     parser.add_argument("--max-families", type=int, default=3)
     parser.add_argument("--report", action="append", type=Path, default=[])
+    parser.add_argument("--issue138-release-record", type=Path)
     parser.add_argument("--issue142-release-record", type=Path)
     parser.add_argument("--issue142-identity-report", type=Path)
     parser.add_argument("--issue142-observables-report", type=Path)
@@ -1816,8 +1894,39 @@ def main(argv=None):
             raise ValueError("requested revision differs from checked-out candidate")
         issues_bytes = args.issues_json.read_bytes()
         issues = json.loads(issues_bytes)
+        dependency_bytes = None
+        dependency_issues = []
+        if args.dependency_issues_json:
+            dependency_bytes = args.dependency_issues_json.read_bytes()
+            dependency_issues = json.loads(dependency_bytes)
+            if not isinstance(dependency_issues, list) or any(
+                not isinstance(issue, dict) or not isinstance(issue.get("number"), int)
+                for issue in dependency_issues
+            ):
+                raise ValueError("dependency snapshot must contain issue records")
+            dependency_numbers = {issue["number"] for issue in dependency_issues}
+            if len(dependency_numbers) != len(dependency_issues):
+                raise ValueError("dependency snapshot contains duplicate issue numbers")
+            if dependency_numbers & {issue["number"] for issue in issues}:
+                raise ValueError(
+                    "dependency snapshot overlaps the primary issue snapshot"
+                )
         reports = [json.loads(path.read_text()) for path in args.report]
         receipt_reports = []
+        if args.issue138_release_record:
+            record = issue138_release_record(
+                args.issue138_release_record,
+                args.revision,
+                artifact_run_id=os.environ.get("GITHUB_RUN_ID"),
+            )
+            reports.append(record)
+            receipt_reports.append(
+                {
+                    "kind": "issue138-release-record",
+                    "path": str(args.issue138_release_record),
+                    "sha256": inventory.sha256(args.issue138_release_record),
+                }
+            )
         if args.issue142_release_record:
             if (
                 not args.issue142_identity_report
@@ -1948,8 +2057,51 @@ def main(argv=None):
             lock = json.loads((ROOT / "provenance/upstreams.lock.yml").read_text())
             heads = collect_heads(lock, args.output_dir / "upstream-commands")
         catalog = json.loads(args.obligations_json.read_text())
-        obligations = obligation_inventory(issues, catalog)
-        assessment = assess_obligations(obligations, reports, args.revision)
+        approved_dependency_issues = []
+        approved_scope = catalog.get("approved_dependency_scope")
+        if approved_scope is not None:
+            if not isinstance(approved_scope, dict):
+                raise ValueError("approved_dependency_scope must be an object")
+            numbers = approved_scope.get("issues")
+            if (
+                not isinstance(numbers, list)
+                or not numbers
+                or any(type(number) is not int for number in numbers)
+                or len(set(numbers)) != len(numbers)
+            ):
+                raise ValueError(
+                    "approved_dependency_scope.issues must be unique integers"
+                )
+            decision = approved_scope.get("decision")
+            if not isinstance(decision, str) or not decision.startswith(
+                "docs/DECISIONS.md"
+            ):
+                raise ValueError(
+                    "approved_dependency_scope.decision must reference docs/DECISIONS.md"
+                )
+            marker = approved_scope.get("decision_marker")
+            if not isinstance(marker, str) or not marker.strip():
+                raise ValueError(
+                    "approved_dependency_scope.decision_marker must name the recorded decision"
+                )
+            decision_text = (ROOT / "docs/DECISIONS.md").read_text(encoding="utf-8")
+            if marker not in decision_text:
+                raise ValueError(
+                    "approved dependency scope is not recorded in docs/DECISIONS.md"
+                )
+            known = {entry["number"] for entry in catalog["issues"]}
+            if not set(numbers) <= known:
+                raise ValueError(
+                    "approved dependency is absent from the obligations catalog"
+                )
+            approved_dependency_issues = numbers
+        obligations = obligation_inventory([*issues, *dependency_issues], catalog)
+        assessment = assess_obligations(
+            obligations,
+            reports,
+            args.revision,
+            approved_dependency_issues=approved_dependency_issues,
+        )
         conflicts = {
             a["id"] for a in assessment["evidence_audit"] if a["status"] == "CONFLICT"
         }
@@ -1992,6 +2144,13 @@ def main(argv=None):
             provenance=provenance_debt(heads),
         )
         (args.output_dir / "issues-input.json").write_bytes(issues_bytes)
+        if dependency_bytes is not None:
+            report["dependency_snapshot_sha256"] = hashlib.sha256(
+                dependency_bytes
+            ).hexdigest()
+            (args.output_dir / "dependency-issues-input.json").write_bytes(
+                dependency_bytes
+            )
         if heads is not None:
             (args.output_dir / "upstream-heads.json").write_text(
                 json.dumps(heads, indent=2) + "\n"

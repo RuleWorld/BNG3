@@ -231,6 +231,63 @@ def test_issue472_docs_report_consumer(tmp_path):
         issue_queue.issue472_docs_report(report_file, REVISION)
 
 
+def test_issue138_release_record_consumer(tmp_path):
+    record_file = tmp_path / "issue138-release-record.json"
+    expected = {
+        "release-compiled-inputs",
+        "release-compiled-parity",
+        "release-capability-coverage-138",
+    }
+    record_file.write_text(
+        json.dumps(
+            {
+                "acceptance_check": "release-obligation-138",
+                "source": {"revision": REVISION, "dirty": False},
+                "manifest_check_ids": sorted(expected),
+                "results": [
+                    {
+                        "id": check,
+                        "status": "PASS",
+                        "stage": "compiled-model",
+                        "evidence_kind": "supported-execution",
+                        "supported_execution": True,
+                    }
+                    for check in sorted(expected)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    report = issue_queue.issue138_release_record(
+        record_file, REVISION, artifact_run_id="999"
+    )
+    assert report["source"] == {"revision": REVISION, "dirty": False}
+    assert {r["id"] for r in report["results"]} == expected
+    assert all(
+        r["status"] == "PASS" and r["related_issues"] == [138]
+        for r in report["results"]
+    )
+    assert report["artifact"]["sha256"]
+
+    # Negative controls: stale, dirty, incomplete or non-executed records fail closed.
+    data = json.loads(record_file.read_text())
+    for mutate, match in (
+        (lambda d: d["source"].update(revision="0" * 40), "stale"),
+        (lambda d: d["source"].update(dirty=True), "dirty"),
+        (lambda d: d["results"].pop(), "missing required check rows"),
+        (
+            lambda d: d["results"][0].update(status="NOT_TESTED"),
+            "not supported execution",
+        ),
+    ):
+        bad = json.loads(json.dumps(data))
+        mutate(bad)
+        path = tmp_path / "bad.json"
+        path.write_text(json.dumps(bad), encoding="utf-8")
+        with pytest.raises(ValueError, match=match):
+            issue_queue.issue138_release_record(path, REVISION)
+
+
 def test_issue471_checks_report_consumer(tmp_path):
     oracle_file = tmp_path / "oracle.json"
     oracle_file.write_text(
@@ -692,3 +749,219 @@ def test_dependency_acceptance_requires_demonstrated_obligations(
     assert assessed[-1]["blocked_dependencies"] == (
         dependencies[-1] if expected[-1] == "BLOCKED" else []
     )
+
+
+@pytest.mark.parametrize("dependency_status", ["PASS", "FAIL", "STALE"])
+def test_single_issue_closure_consumes_dependency_status(tmp_path, dependency_status):
+    target_body = "## Acceptance criteria\n- [ ] `release-target`: verify target.\n"
+    dependency_body = (
+        "## Acceptance criteria\n- [ ] `release-dependency`: verify dependency.\n"
+    )
+    target = dict(number=180, title="Target", state="CLOSED", body=target_body)
+    dependency = dict(
+        number=179, title="Dependency", state="CLOSED", body=dependency_body
+    )
+
+    def catalog_entry(issue, check, description, dependencies):
+        return dict(
+            number=issue["number"],
+            body_sha256=hashlib.sha256(issue["body"].encode()).hexdigest(),
+            obligations=[
+                dict(
+                    id=f"issue:{issue['number']}:live-acceptance:{check}",
+                    criterion=f"`{check}`: {description}.",
+                    scope=description,
+                    completion_condition="Independently verified",
+                    dependencies=dependencies,
+                    boundaries=[],
+                    test_references=[],
+                    decisions=[],
+                    unmapped_scope=[],
+                    required_checks=[
+                        dict(
+                            id=check,
+                            evidence_kind="supported-execution",
+                            expectation=description,
+                        )
+                    ],
+                )
+            ],
+        )
+
+    inputs = {
+        "issues": [target],
+        "dependency-issues": [dependency],
+        "obligations": dict(
+            issues=[
+                catalog_entry(target, "release-target", "verify target", [179]),
+                catalog_entry(
+                    dependency, "release-dependency", "verify dependency", []
+                ),
+            ]
+        ),
+    }
+    if dependency_status == "STALE":
+        dependency["body"] += "\nCurrent issue scope changed.\n"
+    for name, contents in inputs.items():
+        (tmp_path / f"{name}.json").write_text(json.dumps(contents))
+
+    revision = issue_queue.campaign.git(issue_queue.ROOT, "rev-parse", "HEAD")
+    result_report = report(
+        [
+            dict(
+                id=check,
+                status=status,
+                related_issues=[number],
+                supported_execution=True,
+                evidence_kind="supported-execution",
+            )
+            for check, number, status in (
+                ("release-target", 180, "PASS"),
+                (
+                    "release-dependency",
+                    179,
+                    "FAIL" if dependency_status == "FAIL" else "PASS",
+                ),
+            )
+        ]
+    )
+    result_report["source"]["revision"] = revision
+    artifact = tmp_path / "report.json"
+    artifact.write_text(json.dumps(result_report))
+    output = tmp_path / "output"
+    assert issue_queue.main(
+        [
+            "--issues-json",
+            str(tmp_path / "issues.json"),
+            "--dependency-issues-json",
+            str(tmp_path / "dependency-issues.json"),
+            "--obligations-json",
+            str(tmp_path / "obligations.json"),
+            "--revision",
+            revision,
+            "--report",
+            str(artifact),
+            "--output-dir",
+            str(output),
+            "--require-closed-acceptance",
+        ]
+    ) == (0 if dependency_status == "PASS" else 1)
+
+    table = json.loads((output / "issue-queue.json").read_text())
+    assert [
+        entry["number"] for entry in table["queue"] if entry["state"] == "CLOSED"
+    ] == [180]
+    assert (output / "dependency-issues-input.json").is_file()
+    assert bool(table["closed_acceptance_gaps"]) == (dependency_status != "PASS")
+
+
+def test_approved_dependency_scope_resolves_only_stale_scope(tmp_path):
+    """A recorded maintainer decision unblocks stale dependency scope only.
+
+    The dependent issue's own checks still have to execute and pass; the
+    decision never waives its evidence.
+    """
+    revision = issue_queue.campaign.git(issue_queue.ROOT, "rev-parse", "HEAD")
+    target_body = "## Acceptance criteria\n- [ ] `release-target`: verify target.\n"
+    dependency_body = (
+        "## Acceptance criteria\n- [ ] `release-dependency`: verify dependency.\n"
+    )
+    target = dict(number=473, title="Target", state="CLOSED", body=target_body)
+    dependency = dict(
+        number=179, title="Dependency", state="CLOSED", body=dependency_body
+    )
+    (tmp_path / "issues.json").write_text(json.dumps([target]))
+    (tmp_path / "deps.json").write_text(json.dumps([dependency]))
+
+    def catalog_entry(issue, check, deps, text):
+        return dict(
+            number=issue["number"],
+            body_sha256=hashlib.sha256(issue["body"].encode()).hexdigest(),
+            obligations=[
+                dict(
+                    id=f"issue:{issue['number']}:live-acceptance:{check}",
+                    criterion=f"`{check}`: {text}",
+                    scope=text,
+                    completion_condition="Exact-revision evidence",
+                    dependencies=deps,
+                    boundaries=[],
+                    test_references=[],
+                    decisions=[],
+                    unmapped_scope=[],
+                    required_checks=[
+                        dict(
+                            id=check,
+                            evidence_kind="supported-execution",
+                            expectation=text,
+                        )
+                    ],
+                )
+            ],
+        )
+
+    catalog = dict(
+        issues=[
+            catalog_entry(target, "release-target", [179], "verify target."),
+            catalog_entry(dependency, "release-dependency", [], "verify dependency."),
+        ]
+    )
+    (tmp_path / "catalog.json").write_text(json.dumps(catalog))
+    artifact = tmp_path / "report.json"
+
+    def write_report(status):
+        row = report(
+            [
+                dict(
+                    id="release-target",
+                    status=status,
+                    related_issues=[473],
+                    supported_execution=status == "PASS",
+                    evidence_kind=(
+                        "supported-execution"
+                        if status == "PASS"
+                        else "observed-failure"
+                    ),
+                )
+            ]
+        )
+        row["source"]["revision"] = revision
+        artifact.write_text(json.dumps(row))
+
+    write_report("PASS")
+    common = [
+        "--issues-json",
+        str(tmp_path / "issues.json"),
+        "--dependency-issues-json",
+        str(tmp_path / "deps.json"),
+        "--obligations-json",
+        str(tmp_path / "catalog.json"),
+        "--revision",
+        revision,
+        "--report",
+        str(artifact),
+        "--require-closed-acceptance",
+    ]
+    # Without the recorded decision the stale dependency still blocks.
+    assert issue_queue.main(common + ["--output-dir", str(tmp_path / "off")]) == 1
+
+    catalog["approved_dependency_scope"] = dict(
+        issues=[179],
+        decision="docs/DECISIONS.md#test",
+        decision_marker="unrecorded dependency scope decision",
+    )
+    (tmp_path / "catalog.json").write_text(json.dumps(catalog))
+    # A catalog-only edit is rejected: the decision must be recorded in the
+    # repository decision document, not just asserted by the evidence catalog.
+    assert issue_queue.main(common + ["--output-dir", str(tmp_path / "fake")]) == 1
+
+    decision = issue_queue.ROOT / "docs" / "DECISIONS.md"
+    original = decision.read_text()
+    try:
+        decision.write_text(original + "\nunrecorded dependency scope decision\n")
+        assert issue_queue.main(common + ["--output-dir", str(tmp_path / "on")]) == 0
+    finally:
+        decision.write_text(original)
+
+    # A failing target check is still a gap even with the dependency accepted.
+    write_report("FAIL")
+    assert issue_queue.main(common + ["--output-dir", str(tmp_path / "fail")]) == 1
