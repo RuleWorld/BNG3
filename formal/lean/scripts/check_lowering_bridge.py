@@ -38,7 +38,6 @@ from __future__ import annotations
 import argparse
 import os
 import subprocess
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -96,9 +95,16 @@ def find_native_bridge_executable() -> Path | None:
         candidates.append(Path(env_dir) / "bng3_nfnext_bng_lowering_bridge")
     candidates.extend(
         [
-            ROOT / "build" / "tests" / "architecture_contracts" / "bng3_nfnext_bng_lowering_bridge",
-            ROOT.parent / "build" / "tests" / "architecture_contracts" / "bng3_nfnext_bng_lowering_bridge",
-            Path("/Users/akutuva/Documents/BioNetGen/BNG3/build/tests/architecture_contracts/bng3_nfnext_bng_lowering_bridge"),
+            ROOT
+            / "build"
+            / "tests"
+            / "architecture_contracts"
+            / "bng3_nfnext_bng_lowering_bridge",
+            ROOT.parent
+            / "build"
+            / "tests"
+            / "architecture_contracts"
+            / "bng3_nfnext_bng_lowering_bridge",
         ]
     )
     for c in candidates:
@@ -115,7 +121,10 @@ def run_native_bridge(exe_path: Path) -> tuple[bool, str]:
         check=False,
     )
     if proc.returncode != 0:
-        return False, f"Process exited with {proc.returncode}:\n{proc.stdout}\n{proc.stderr}"
+        return (
+            False,
+            f"Process exited with {proc.returncode}:\n{proc.stdout}\n{proc.stderr}",
+        )
     if "BNG -> NFnext lowering bridge: PASS" not in proc.stdout:
         return False, f"Pass banner missing from stdout:\n{proc.stdout}"
     return True, proc.stdout.strip()
@@ -156,14 +165,26 @@ def main() -> int:
     )
 
     if mult != INDEPENDENT_REFERENCE["multiplicity"]:
-        failures.append(f"multiplicity: formal {mult} != ref {INDEPENDENT_REFERENCE['multiplicity']}")
+        failures.append(
+            f"multiplicity: formal {mult} != ref {INDEPENDENT_REFERENCE['multiplicity']}"
+        )
     if enabled != INDEPENDENT_REFERENCE["enabled"]:
-        failures.append(f"enabled: formal {enabled} != ref {INDEPENDENT_REFERENCE['enabled']}")
+        failures.append(
+            f"enabled: formal {enabled} != ref {INDEPENDENT_REFERENCE['enabled']}"
+        )
     if abs(rate - INDEPENDENT_REFERENCE["rate"]) > 1e-9:
         failures.append(f"rate: formal {rate} != ref {INDEPENDENT_REFERENCE['rate']}")
-    if u_before != INDEPENDENT_REFERENCE["obs_u_before"] or p_before != INDEPENDENT_REFERENCE["obs_p_before"]:
-        failures.append(f"initial observables mismatch: formal U={u_before}, P={p_before}")
-    if u_after != INDEPENDENT_REFERENCE["obs_u_after"] or p_after != INDEPENDENT_REFERENCE["obs_p_after"]:
+    if (
+        u_before != INDEPENDENT_REFERENCE["obs_u_before"]
+        or p_before != INDEPENDENT_REFERENCE["obs_p_before"]
+    ):
+        failures.append(
+            f"initial observables mismatch: formal U={u_before}, P={p_before}"
+        )
+    if (
+        u_after != INDEPENDENT_REFERENCE["obs_u_after"]
+        or p_after != INDEPENDENT_REFERENCE["obs_p_after"]
+    ):
         failures.append(f"final observables mismatch: formal U={u_after}, P={p_after}")
     if not ctx_pres:
         failures.append("formal evaluator reports contextual site was not preserved")
@@ -175,21 +196,31 @@ def main() -> int:
     # Verify negative cases in Lean
     neg_target = lean_results.get("negative_mutated_target_state")
     if not neg_target or neg_target.get("divergence_detected") != "true":
-        failures.append("negative case (mutated target state) failed to detect divergence")
+        failures.append(
+            "negative case (mutated target state) failed to detect divergence"
+        )
     else:
-        print(f"[formal:negative] mutated_target_state: divergence detected (P after = {neg_target.get('obs_p_after')})")
+        print(
+            f"[formal:negative] mutated_target_state: divergence detected (P after = {neg_target.get('obs_p_after')})"
+        )
 
     neg_wrong_site = lean_results.get("negative_wrong_site_unchanged")
     if not neg_wrong_site or neg_wrong_site.get("divergence_detected") != "true":
-        failures.append("negative case (wrong site unchanged) failed to detect divergence")
+        failures.append(
+            "negative case (wrong site unchanged) failed to detect divergence"
+        )
     else:
-        print(f"[formal:negative] wrong_site_unchanged: divergence detected (P after = {neg_wrong_site.get('obs_p_after')})")
+        print(
+            f"[formal:negative] wrong_site_unchanged: divergence detected (P after = {neg_wrong_site.get('obs_p_after')})"
+        )
 
     print("\n=== Step 2: Evaluating Production Lowering Artifact ===")
     exe = find_native_bridge_executable()
     if not exe:
         if args.require_native:
-            failures.append("Native bng3_nfnext_bng_lowering_bridge executable not found")
+            failures.append(
+                "Native bng3_nfnext_bng_lowering_bridge executable not found"
+            )
         else:
             print("Native bridge executable not found, skipping native execution.")
     else:

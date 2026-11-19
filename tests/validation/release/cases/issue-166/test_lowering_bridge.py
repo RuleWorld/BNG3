@@ -45,12 +45,7 @@ def test_release_lowering_bridge_native_contract():
     """Verify the production lowering bridge architecture contract binary."""
     exe = ARCH_TESTS_DIR / "bng3_nfnext_bng_lowering_bridge"
     if not exe.is_file():
-        # Fallback to system build dir if worktree build dir not populated
-        alt_exe = Path("/Users/akutuva/Documents/BioNetGen/BNG3/build/tests/architecture_contracts/bng3_nfnext_bng_lowering_bridge")
-        if alt_exe.is_file():
-            exe = alt_exe
-        else:
-            pytest.skip(f"Architecture contract binary missing: {exe}")
+        pytest.skip(f"Architecture contract binary missing: {exe}")
     proc = subprocess.run([str(exe)], capture_output=True, text=True, check=False)
     assert proc.returncode == 0, (
         f"bng3_nfnext_bng_lowering_bridge failed:\n"
