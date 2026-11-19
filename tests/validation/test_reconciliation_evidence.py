@@ -171,3 +171,221 @@ def test_inventory_reports_empty_claim_evidence_without_promoting_it():
             "test_references": 1,
         }
     }
+
+
+def _git(checkout, *args):
+    from subprocess import check_output
+
+    return check_output(["git", "-C", str(checkout), *args], text=True).strip()
+
+
+@pytest.fixture
+def pinned_history(tmp_path):
+    source = tmp_path / "source"
+    source.mkdir()
+    _git(source, "init", "-q")
+    _git(source, "config", "user.name", "Reconciliation test")
+    _git(source, "config", "user.email", "reconciliation@example.invalid")
+    _git(source, "commit", "--allow-empty", "-qm", "represented revision")
+    represented = _git(source, "rev-parse", "HEAD")
+    fixture = source / "fixture.txt"
+    fixture.write_text("reference data\n", encoding="utf-8")
+    _git(source, "add", "fixture.txt")
+    _git(source, "commit", "-qm", "add canonical fixture")
+    cutoff = _git(source, "rev-parse", "HEAD")
+    return source, represented, cutoff
+
+
+def test_upstream_history_detects_an_omitted_ledger_commit(pinned_history):
+    from scripts.validate_reconciliation_tests import audit_upstream_history
+
+    source, represented, cutoff = pinned_history
+    ledger = {
+        "represented_revision": represented,
+        "cutoff_revision": cutoff,
+        "entries": [],
+    }
+    report = audit_upstream_history(source, ledger, cutoff)
+    assert report["missing_commits"] == [cutoff]
+    assert report["errors"] == []
+    ledger["entries"] = [{"source_revision": cutoff}]
+    assert audit_upstream_history(source, ledger, cutoff)["missing_commits"] == []
+
+
+def test_upstream_history_rejects_dirty_and_wrong_pins(pinned_history):
+    from scripts.validate_reconciliation_tests import audit_upstream_history
+
+    source, represented, cutoff = pinned_history
+    ledger = {
+        "represented_revision": represented,
+        "cutoff_revision": cutoff,
+        "entries": [{"source_revision": cutoff}],
+    }
+    report = audit_upstream_history(source, ledger, represented)
+    assert "ledger cutoff does not match the accepted revision" in report["errors"]
+    assert "checkout HEAD does not match the accepted revision" in report["errors"]
+    (source / "fixture.txt").write_text("altered data\n", encoding="utf-8")
+    report = audit_upstream_history(source, ledger, cutoff)
+    assert "checkout has local changes" in report["errors"]
+
+
+def test_upstream_history_detects_out_of_range_ledger_commit(pinned_history):
+    from scripts.validate_reconciliation_tests import audit_upstream_history
+
+    source, represented, cutoff = pinned_history
+    ledger = {
+        "represented_revision": represented,
+        "cutoff_revision": cutoff,
+        "entries": [{"source_revision": cutoff}, {"source_revision": represented}],
+    }
+    report = audit_upstream_history(source, ledger, cutoff)
+    assert report["unexpected_commits"] == [represented]
+
+
+def test_upstream_history_reads_fixture_bytes_despite_git_index_flags(pinned_history):
+    import hashlib
+
+    from scripts.validate_reconciliation_tests import audit_upstream_history
+
+    source, represented, cutoff = pinned_history
+    _git(source, "mv", "fixture.txt", "fixture.bngl")
+    _git(source, "commit", "-qm", "rename canonical fixture")
+    pin = _git(source, "rev-parse", "HEAD")
+    ledger = {
+        "represented_revision": represented,
+        "cutoff_revision": pin,
+        "entries": [{"source_revision": cutoff}, {"source_revision": pin}],
+    }
+    report = audit_upstream_history(source, ledger, pin)
+    digest = hashlib.sha256(b"reference data\n").hexdigest()
+    assert report["fixture_sha256"] == {"fixture.bngl": digest}
+    _git(source, "update-index", "--assume-unchanged", "fixture.bngl")
+    (source / "fixture.bngl").write_bytes(b"substitute data\n")
+    assert _git(source, "status", "--porcelain") == ""
+    assert "fixture differs from the accepted revision: fixture.bngl" in (
+        audit_upstream_history(source, ledger, pin)["errors"]
+    )
+
+
+@pytest.mark.parametrize(
+    "installed",
+    [[], ["packaging; extra == 'dev'"], ["packaging>=24"]],
+)
+def test_packaging_is_a_default_installed_requirement(tmp_path, monkeypatch, installed):
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "scripts/ci"))
+    from check_pybionetgen_compat import check_packaging_requirement
+
+    (tmp_path / "setup.py").write_text(
+        "setup(install_requires=['packaging'])\n", encoding="utf-8"
+    )
+    if installed == ["packaging>=24"]:
+        check_packaging_requirement(tmp_path, installed)
+    else:
+        with pytest.raises(ValueError, match="BNG3 installed metadata"):
+            check_packaging_requirement(tmp_path, installed)
+
+
+def test_nfsim_option_inventory_uses_parser_flags_as_the_reference():
+    from scripts.validate_reconciliation_tests import audit_nfsim_options
+
+    source = """
+argMap.find("seed");
+argMap.find("oTimes");
+NFinput::parseAsDouble(argMap, "sim", sTime);
+// argMap.find("obsolete");
+"""
+    report = audit_nfsim_options(source, ["nf.option.seed", "nf.option.fake"])
+    assert report["upstream_options"] == ["oTimes", "seed", "sim"]
+    assert report["missing_rows"] == ["nf.option.oTimes", "nf.option.sim"]
+    assert report["unexpected_rows"] == ["nf.option.fake"]
+
+
+def test_pybionetgen_cli_inventory_reports_both_option_surfaces():
+    from scripts.validate_reconciliation_tests import audit_pybionetgen_options
+
+    main = '''
+class Root:
+    class Meta:
+        arguments = [
+            (["-v", "--version"], {}),
+            # (["--sedml"], {})
+        ]
+
+    @cement.ex(arguments=[(["--input"], {})])
+    def run(self):
+        """Other text can mention --unrelated."""
+'''
+    translator = """
+parser.add_argument("-cu", "--convert-units")
+parser.add_argument("--output-file")
+"""
+    rows = [
+        "py.cli.option.sedml",
+        "py.cli.option.convert-units",
+        "py.cli.option.version",
+    ]
+    report = audit_pybionetgen_options(main, translator, rows)
+    assert report["main_options"] == ["input", "version"]
+    assert report["atomizer_options"] == ["convert-units", "output-file"]
+    assert report["missing_rows"] == [
+        "py.cli.option.input",
+        "py.cli.option.output-file",
+    ]
+    assert report["unexpected_rows"] == ["py.cli.option.sedml"]
+
+
+def test_bng2_builtin_inventory_reads_only_the_live_function_table():
+    from scripts.validate_reconciliation_tests import audit_bng2_builtins
+
+    source = """
+my %functions =
+(
+  "exp" => { FPTR => sub { exp($_[0]) }, NARGS => 1 },
+# "old" => { FPTR => sub { 1 }, NARGS => 0 },
+  "TFUN" => { FPTR => sub { TFUN($_[0], $_[1]) }, NARGS => 2 },
+);
+my %other = ("other" => 1);
+"""
+    report = audit_bng2_builtins(source, ["builtin.exp", "builtin.old"])
+    assert report["upstream_builtins"] == ["TFUN", "exp"]
+    assert report["missing_rows"] == ["builtin.TFUN"]
+    assert report["unexpected_rows"] == ["builtin.old"]
+
+
+def test_source_location_audit_reports_stale_symbols(tmp_path):
+    from scripts.validate_reconciliation_tests import audit_source_locations
+
+    (tmp_path / "Actions.pm").write_text("sub realAction { }\n", encoding="utf-8")
+    (tmp_path / "api.py").write_text(
+        "class Runner:\n    def __init__(self):\n        self.result = None\n",
+        encoding="utf-8",
+    )
+    rows = [
+        {"id": "action.ok", "upstream": "bionetgen:Actions.pm:4 (realAction)"},
+        {"id": "action.stale", "upstream": "bionetgen:Actions.pm:oldAction"},
+        {"id": "py.ok", "upstream": "pybionetgen:api.py:3 (Runner.result)"},
+        {"id": "py.stale", "upstream": "pybionetgen:api.py:3 (Runner.old)"},
+    ]
+    report = audit_source_locations(
+        rows, {"bionetgen": tmp_path, "pybionetgen": tmp_path}
+    )
+    assert report["resolved_rows"] == ["action.ok", "py.ok"]
+    assert sorted(report["unresolved_rows"]) == ["action.stale", "py.stale"]
+
+
+def test_history_report_covers_declared_unchanged_fixtures(pinned_history):
+    from scripts.validate_reconciliation_tests import audit_upstream_history
+
+    source, represented, cutoff = pinned_history
+    _git(source, "commit", "--allow-empty", "-qm", "next revision")
+    pin = _git(source, "rev-parse", "HEAD")
+    ledger = {
+        "represented_revision": cutoff,
+        "cutoff_revision": pin,
+        "entries": [{"source_revision": pin}],
+    }
+    report = audit_upstream_history(
+        source, ledger, pin, fixtures=("fixture.txt", "missing.txt")
+    )
+    assert set(report["fixture_sha256"]) == {"fixture.txt"}
+    assert "fixture is not a regular checkout file: missing.txt" in report["errors"]
