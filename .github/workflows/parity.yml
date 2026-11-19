@@ -1139,6 +1139,7 @@ jobs:
         run: |
           pytest -c tests/validation/pytest.ini \
             tests/validation/test_reconciliation_nfsim.py \
+            tests/validation/test_nfsim_totalrate_local_function_parity.py \
             -q -o junit_family=xunit1 \
             --junitxml="$RUNNER_TEMP/reconciliation-nfsim-differences.xml"
 
