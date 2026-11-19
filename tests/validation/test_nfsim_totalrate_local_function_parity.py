@@ -89,7 +89,9 @@ def test_totalrate_local_function_source_rejects_product_executes(
     record_property("pinned_source_revision", revision)
     record_property("native_oracle_sha256", "sha256:" + digest)
     record_property("source_fixture", SOURCE_FIXTURE)
-    record_property("source_fixture_sha256", hashlib.sha256(source_xml.encode()).hexdigest())
+    record_property(
+        "source_fixture_sha256", hashlib.sha256(source_xml.encode()).hexdigest()
+    )
     record_property("reduced_bngl_sha256", BNGL_SHA256)
     record_property("reduced_xml_sha256", XML_SHA256)
 
@@ -116,7 +118,9 @@ def test_totalrate_local_function_source_rejects_product_executes(
     )
     baseline_output = (run.stdout + run.stderr).strip()
     baseline_rejected = (not output.exists()) and SOURCE_REJECTION in baseline_output
-    record_property("baseline_command", f"{native} -xml {XML} -o {output} -sim 1 -oSteps 1 -seed 1")
+    record_property(
+        "baseline_command", f"{native} -xml {XML} -o {output} -sim 1 -oSteps 1 -seed 1"
+    )
     record_property("baseline_returncode", run.returncode)
     record_property("baseline_produced_trajectory", output.exists())
     record_property("baseline_diagnostic", baseline_output)
@@ -145,7 +149,10 @@ def test_totalrate_local_function_source_rejects_product_executes(
         candidate = "executed"
         record_property("candidate_result", candidate)
         record_property("candidate_construction_path", route)
-    record_property("candidate_command", f"bionetgen.load({BNGL}).simulate(method='nf', t_end=1, n_steps=1, seed=1)")
+    record_property(
+        "candidate_command",
+        f"bionetgen.load({BNGL}).simulate(method='nf', t_end=1, n_steps=1, seed=1)",
+    )
     if candidate_detail:
         record_property("candidate_detail", candidate_detail)
 
