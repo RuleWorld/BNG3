@@ -151,18 +151,6 @@ def _peak_rss() -> dict:
     }
 
 
-def _time_log() -> dict:
-    path = os.environ.get("BNG3_RSS_TIMELOG")
-    if not path or not Path(path).exists():
-        return {"captured": False}
-    lines = [
-        ln
-        for ln in Path(path).read_text(errors="replace").splitlines()
-        if "resident set size" in ln.lower() or "maximum resident" in ln.lower()
-    ]
-    return {"captured": True, "path": path, "lines": lines}
-
-
 def _law(t):
     return LAMBDA_INF * (1.0 - math.exp(-K_OFF * float(t)))
 
@@ -354,14 +342,22 @@ def run() -> dict:
         ],
         "host_resolution_floor": HOST_RESOLUTION_FLOOR,
     }
-    max_aa = max(
-        noise["model_prep_time_ms"]["max_abs_rel_diff"],
-        noise["trajectories_per_sec_sim"]["max_abs_rel_diff"],
-    )
-    noise["assessment"] = (
-        "noisy: A/A spread exceeds host resolution floor"
-        if max_aa > HOST_RESOLUTION_FLOOR
-        else "within host resolution floor (A/A difference is noise, not a code effect)"
+    # Predeclared plan reports startup and warm throughput separately: startup
+    # (model_prep_time_ms) is sub-millisecond and expected to be noisy in
+    # relative terms; warm trajectory throughput is the stable statistic.
+    def verdict(max_abs: float) -> str:
+        return (
+            "noisy: A/A spread exceeds host resolution floor"
+            if max_abs > HOST_RESOLUTION_FLOOR
+            else "within host resolution floor (A/A difference is noise, not a code effect)"
+        )
+
+    noise["assessments"] = {
+        key: verdict(noise[key]["max_abs_rel_diff"])
+        for key in ("model_prep_time_ms", "trajectories_per_sec_sim")
+    }
+    noise["assessment"] = "; ".join(
+        f"{key}: {v}" for key, v in noise["assessments"].items()
     )
 
     # one supplemental representative multi-core observation (not part of A/A)
@@ -371,13 +367,18 @@ def run() -> dict:
     so = sorted(ROOT.glob("build/cpp/_bionetgen_cpp*.so"))
     ext_sha = _sha256(so[0]) if so else "unavailable"
     rss = _peak_rss()
-    rss["external_time_log"] = _time_log()
 
     return {
         "case": "native_cpu_batch_ssa_immigration_death_baseline",
         "predeclared_plan_sha256": _sha256(Path(__file__).with_name("PREDECLARED_PLAN.md")),
         "revision": _git("rev-parse", "HEAD"),
         "branch": _git("rev-parse", "--abbrev-ref", "HEAD"),
+        "engine_source_revision": _git("merge-base", "HEAD", "origin/main"),
+        "engine_source_note": (
+            "Revision of origin/main from which the native C++/Python extension "
+            "in build/cpp was compiled. This case commit changes only analysis/ "
+            "files, so the benchmarked engine source is identical to that revision."
+        ),
         "environment": {
             "platform": platform.platform(),
             "machine": platform.machine(),
