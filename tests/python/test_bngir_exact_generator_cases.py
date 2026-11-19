@@ -1,6 +1,5 @@
 """Bounded exact-generator and BNGIR semantic equality regressions."""
 
-
 import json
 from fractions import Fraction
 
