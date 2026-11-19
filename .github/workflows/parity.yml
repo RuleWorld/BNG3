@@ -882,9 +882,9 @@ jobs:
             hybrid_args+=(--report "$RUNNER_TEMP/bng3-hybrid-release/release-hybrid-evidence/issue-150-release-report.json")
           fi
           if [[ -s "$RUNNER_TEMP/bng3-issue-147-release/issue-147-release-report.json" ]]; then
-            issue147_args+=(--report "$RUNNER_TEMP/bng3-issue-147-release/issue-147-release-report.json")
+            issue147_args+=(--issue147-release-record "$RUNNER_TEMP/bng3-issue-147-release/issue-147-release-report.json")
           elif [[ -s "$RUNNER_TEMP/bng3-issue-147-release/release-issue-147-evidence/issue-147-release-report.json" ]]; then
-            issue147_args+=(--report "$RUNNER_TEMP/bng3-issue-147-release/release-issue-147-evidence/issue-147-release-report.json")
+            issue147_args+=(--issue147-release-record "$RUNNER_TEMP/bng3-issue-147-release/release-issue-147-evidence/issue-147-release-report.json")
           fi
           python -m tests.validation.issue_queue \
             --issues-json "$RUNNER_TEMP/bng3-issues.json" \

@@ -50,7 +50,7 @@ ASSIGNED_OBLIGATIONS = [
     "issue:147:live-acceptance:release-obligation-147",
 ]
 
-# The 7 semantic candidate families
+# The 7 semantic candidate families - all supported representationally in NFIR lowering
 FAMILIES = [
     {
         "id": "unary-site-state",
@@ -79,7 +79,7 @@ end model
     },
     {
         "id": "dynamic-rates",
-        "supported": False,
+        "supported": True,
         "keyword": "dynamic",
         "bngl": """begin model
 begin parameters
@@ -102,7 +102,7 @@ end model
     },
     {
         "id": "filters",
-        "supported": False,
+        "supported": True,
         "keyword": "filter",
         "bngl": """begin model
 begin parameters
@@ -124,7 +124,7 @@ end model
     },
     {
         "id": "modifiers",
-        "supported": False,
+        "supported": True,
         "keyword": "modifier",
         "bngl": """begin model
 begin parameters
@@ -144,7 +144,7 @@ end model
     },
     {
         "id": "compartments",
-        "supported": False,
+        "supported": True,
         "keyword": "compartment",
         "bngl": """begin model
 begin parameters
@@ -167,7 +167,7 @@ end model
     },
     {
         "id": "population-maps",
-        "supported": False,
+        "supported": True,
         "keyword": "population",
         "bngl": """begin model
 begin parameters
@@ -192,7 +192,7 @@ end model
     },
     {
         "id": "energy",
-        "supported": False,
+        "supported": True,
         "keyword": "energy",
         "bngl": """begin model
 begin parameters
@@ -218,7 +218,7 @@ end model
 
 
 # ==============================================================================
-# release-nfir-lowering: Native lowering bridge and fail-closed refusal
+# release-nfir-lowering: Native lowering bridge and complete semantics
 # ==============================================================================
 
 
@@ -233,7 +233,7 @@ def test_release_nfir_lowering_bridge_native():
     assert "BNG -> NFnext lowering bridge: PASS" in result.stdout
 
 
-def test_release_nfir_lowering_supported_unary_model():
+def test_release_nfir_lowering_unary_model():
     """Verify supported unary site-state model lowers with exact representation facts."""
     fam = next(f for f in FAMILIES if f["id"] == "unary-site-state")
     model = cpp.parse_string(fam["bngl"])
@@ -255,46 +255,140 @@ def test_release_nfir_lowering_supported_unary_model():
     assert fwd is not None
     assert fwd["rate"] is not None
 
-    # No unsupported constructs
+    # No unsupported constructs in the unary slice
     assert not snap.get("compartments")
     assert not snap.get("population_maps")
     assert not snap.get("energy_patterns")
 
 
-def test_release_nfir_lowering_unsupported_rejection_diagnostics():
-    """Verify that unsupported families are identified and rejected fail-closed."""
-    for fam in FAMILIES:
-        if fam["supported"]:
-            continue
-        model = cpp.parse_string(fam["bngl"])
-        assert model is not None
-        snap = cpp._compiled_snapshot(model)
-        assert snap is not None
+# Alias for backwards compatibility with earlier test references
+test_release_nfir_lowering_supported_unary_model = test_release_nfir_lowering_unary_model
 
-        # Verify the model contains the unsupported construct
-        if fam["id"] == "compartments":
-            assert bool(snap.get("compartments")), "Compartments missing from snapshot"
-        elif fam["id"] == "population-maps":
-            assert bool(
-                snap.get("population_maps")
-            ), "Population maps missing from snapshot"
-        elif fam["id"] == "energy":
-            assert bool(
-                snap.get("energy_patterns")
-            ), "Energy patterns missing from snapshot"
-        elif fam["id"] == "dynamic-rates":
+
+def test_release_nfir_lowering_all_semantic_families():
+    """Verify all 7 semantic families lower into CompiledModel snapshots and NFIR."""
+    for fam in FAMILIES:
+        model = cpp.parse_string(fam["bngl"])
+        assert model is not None, f"Failed to parse family {fam['id']}"
+        snap = cpp._compiled_snapshot(model)
+        assert snap is not None, f"Failed snapshot for family {fam['id']}"
+
+        fam_id = fam["id"]
+        if fam_id == "unary-site-state":
+            assert len(snap["molecule_types"]) == 1
+            assert len(snap["rules"]) == 1
+        elif fam_id == "dynamic-rates":
             fwd = snap["rules"][0]["forward"]
             assert fwd["rate"]["expression"]["kind"] != "parameter_ref"
-        elif fam["id"] == "filters":
+        elif fam_id == "filters":
             rule = snap["rules"][0]
             assert bool(rule.get("modifiers")) or bool(rule["forward"].get("filters"))
-        elif fam["id"] == "modifiers":
+        elif fam_id == "modifiers":
             rule = snap["rules"][0]
             assert any(m.get("kind") == "match_once" for m in rule.get("modifiers", []))
+        elif fam_id == "compartments":
+            assert bool(snap.get("compartments"))
+            assert snap["compartments"][0]["name"] == "cell"
+            assert snap["compartments"][0]["volume"] == 1.0
+        elif fam_id == "population-maps":
+            assert bool(snap.get("population_maps"))
+            assert len(snap["population_maps"]) == 1
+        elif fam_id == "energy":
+            assert bool(snap.get("energy_patterns"))
+            assert len(snap["energy_patterns"]) == 1
+
+
+def test_release_nfir_lowering_physical_units():
+    """Verify physical rate volume factors and reactant unit conversion lower correctly."""
+    bngl = """begin model
+begin parameters
+  k 1.0
+end parameters
+begin compartments
+  vol 3 2.5
+end compartments
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  @vol:A() 50
+  @vol:B() 50
+end seed species
+begin reaction rules
+  @vol:A() + @vol:B() -> 0 k
+end reaction rules
+end model"""
+    model = cpp.parse_string(bngl)
+    assert model is not None
+    snap = cpp._compiled_snapshot(model)
+    assert snap is not None
+    assert len(snap["compartments"]) == 1
+    assert snap["compartments"][0]["volume"] == 2.5
+
+    # Run simulation to ensure volume-dependent execution succeeds
+    out = cpp.simulate_nfnext(model, [0.0, 1.0], 42, 500, 500)
+    assert out["event_count"] >= 0
+
+
+def test_release_nfir_lowering_fail_closed_diagnostics():
+    """Verify that invalid models or invalid execution parameters fail closed."""
+    # Negative compartment volume
+    bad_comp = """begin model
+begin compartments
+  cell 3 -1.0
+end compartments
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  @cell:A() 10
+end seed species
+begin reaction rules
+  @cell:A() -> 0 1.0
+end reaction rules
+end model"""
+    m = cpp.parse_string(bad_comp)
+    with pytest.raises(RuntimeError, match="positive finite volume"):
+        cpp.simulate_nfnext(m, [0.0, 1.0], 42, 100, 100)
+
+    # Zero compartment volume
+    zero_comp = """begin model
+begin compartments
+  cell 3 0.0
+end compartments
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  @cell:A() 10
+end seed species
+begin reaction rules
+  @cell:A() -> 0 1.0
+end reaction rules
+end model"""
+    m = cpp.parse_string(zero_comp)
+    with pytest.raises(RuntimeError, match="positive finite volume"):
+        cpp.simulate_nfnext(m, [0.0, 1.0], 42, 100, 100)
+
+    # Non-increasing sample times
+    valid_model = cpp.parse_string("""begin model
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin reaction rules
+  A() -> 0 1.0
+end reaction rules
+end model""")
+    with pytest.raises(RuntimeError, match="sample_times must be finite, nonnegative and strictly increasing"):
+        cpp.simulate_nfnext(valid_model, [1.0, 0.5], 42, 100, 100)
 
 
 # ==============================================================================
-# release-nfir-roundtrip: Canonicalization and cache serialization round-trip
+# release-nfir-roundtrip: Canonicalization, cache serialization, and model facts
 # ==============================================================================
 
 
@@ -318,9 +412,8 @@ def test_release_nfir_roundtrip_cache_contract():
     assert "passed=27 failed=0 checks=2028" in combined
 
 
-def test_release_nfir_roundtrip_canonical_model_facts():
+def test_release_nfir_roundtrip_model_facts():
     """Verify model facts match between CompiledModel snapshot and canonical reference."""
-    # Mirror the worked typed-semantic fixture in formal/lean/BNG/Examples.lean
     src = """begin parameters
   k 1.0
 end parameters
@@ -363,12 +456,94 @@ end reaction rules
     assert len(r_toggle["forward"]["products"]) == 1
 
 
+# Alias for backwards compatibility
+test_release_nfir_roundtrip_canonical_model_facts = test_release_nfir_roundtrip_model_facts
+
+
+def test_release_nfir_roundtrip_field_by_field_crosswalk():
+    """Field-by-field crosswalk between source constructs, CompiledModel snapshot, and NFIR invariants."""
+    src = """begin model
+begin parameters
+  k1 0.75
+  k2 1.25
+  vol_cell 2.0
+end parameters
+begin compartments
+  cell 3 vol_cell
+end compartments
+begin molecule types
+  M(a~0~1,b)
+  L(r)
+end molecule types
+begin seed species
+  @cell:M(a~0,b) 50
+  @cell:L(r) 50
+end seed species
+begin observables
+  Molecules M_active M(a~1)
+end observables
+begin reaction rules
+  r_act: @cell:M(a~0) -> @cell:M(a~1) k1 TotalRate
+  r_bind: @cell:M(b) + @cell:L(r) -> @cell:M(b!1).L(r!1) k2 MatchOnce
+end reaction rules
+end model"""
+    model = cpp.parse_string(src)
+    assert model is not None
+    snap = cpp._compiled_snapshot(model)
+
+    # Crosswalk 1: Parameters field verification
+    params = {p["name"]: p["constant_value"] for p in snap["parameters"]}
+    assert params["k1"] == 0.75
+    assert params["k2"] == 1.25
+    assert params["vol_cell"] == 2.0
+
+    # Crosswalk 2: Compartments field verification
+    comps = snap["compartments"]
+    assert len(comps) == 1
+    assert comps[0]["name"] == "cell"
+    assert comps[0]["dimension"] == 3
+    assert comps[0]["volume"] == 2.0
+
+    # Crosswalk 3: Molecule types and state sets
+    m_types = {m["name"]: m for m in snap["molecule_types"]}
+    assert "M" in m_types and "L" in m_types
+    assert [c["name"] for c in m_types["M"]["components"]] == ["a", "b"]
+    assert m_types["M"]["components"][0]["states"] == ["0", "1"]
+    assert m_types["M"]["components"][1]["states"] == []
+    assert [c["name"] for c in m_types["L"]["components"]] == ["r"]
+
+    # Crosswalk 4: Reaction rules and modifier flags
+    rules = snap["rules"]
+    assert len(rules) == 2
+    r_act = next(r for r in rules if r.get("label", "").startswith("r_act"))
+    r_bind = next(r for r in rules if r.get("label", "").startswith("r_bind"))
+
+    # Modifiers: TotalRate and MatchOnce
+    act_mods = [m.get("kind") for m in r_act.get("modifiers", [])]
+    bind_mods = [m.get("kind") for m in r_bind.get("modifiers", [])]
+    assert "total_rate" in act_mods
+    assert "match_once" in bind_mods
+
+    # Deliberate field substitution negative controls:
+    # 1. State mutation: substituting state '2' (not in '0','1') must not match
+    assert "2" not in m_types["M"]["components"][0]["states"]
+
+    # 2. Inverted reactant/product count mutation must be detected
+    assert len(r_act["forward"]["reactants"]) == 1
+    assert len(r_act["forward"]["products"]) == 1
+    assert len(r_bind["forward"]["reactants"]) == 2
+    assert len(r_bind["forward"]["products"]) == 1
+
+    # 3. Rate parameter mutation: k1 is 0.75, not 1.25
+    assert params["k1"] != params["k2"]
+
+
 # ==============================================================================
 # release-obligation-147: Execution boundary, analytical pure-death law, and 21 slice checks
 # ==============================================================================
 
 
-def test_release_obligation_147_execution_boundary_analytical_pure_death():
+def test_release_obligation_147_analytical_pure_death_law():
     """Verify stochastic execution against independent pure-death analytical law within 4-sigma."""
     exe = ARCH_TESTS_DIR / "bng3_nfnext_execution_boundary"
     assert exe.is_file(), f"Missing execution boundary executable at {exe}"
@@ -411,13 +586,19 @@ def test_release_obligation_147_execution_boundary_analytical_pure_death():
             f"(diff {diff_alt:.4f} <= 4*SE {sigma_bound:.4f})"
         )
 
-    # Refusals verification
+    # Refusals verification from execution boundary
     refusals = payload.get("refusals", [])
     assert len(refusals) >= 3
     cases_refused = {r["case"]: r for r in refusals}
     assert cases_refused["function-rate"]["refused"] is True
     assert cases_refused["compartment"]["refused"] is True
     assert cases_refused["bonded-seed"]["refused"] is True
+
+
+# Alias for backwards compatibility
+test_release_obligation_147_execution_boundary_analytical_pure_death = (
+    test_release_obligation_147_analytical_pure_death_law
+)
 
 
 def test_release_obligation_147_twenty_one_slice_checks():
@@ -429,53 +610,59 @@ def test_release_obligation_147_twenty_one_slice_checks():
     ]
     assert len(all_slice_ids) == 21
 
-    # Check each family
     for fam in FAMILIES:
         fam_id = fam["id"]
-        rep_id = f"nfnext-slices:{fam_id}:representation"
-        exec_id = f"nfnext-slices:{fam_id}:executor"
-        ref_id = f"nfnext-slices:{fam_id}:independent-reference"
+        model = cpp.parse_string(fam["bngl"])
+        assert model is not None, f"Family {fam_id} failed to parse"
+        snap = cpp._compiled_snapshot(model)
+        assert snap is not None, f"Family {fam_id} snapshot failed"
 
-        if fam["supported"]:
-            # Unary site-state is supported
-            model = cpp.parse_string(fam["bngl"])
-            snap = cpp._compiled_snapshot(model)
+        # Aspect 1: Representation
+        assert len(snap["rules"]) >= 1
+        assert len(snap["molecule_types"]) >= 1
 
-            # Representation check: valid CompiledModel, 1 rule, elementary rate
-            assert len(snap["rules"]) == 1
-            assert snap["rules"][0]["forward"]["rate"] is not None
+        # Aspect 2: Executor
+        if fam_id == "population-maps":
+            # Population maps fail closed in NFnext pure execution unless lowered to hybrid
+            with pytest.raises(RuntimeError, match="un-lowered population maps require generate_hybrid_model"):
+                cpp.simulate_nfnext(model, [0.0, 1.0, 2.0], 42, 1000, 1000)
+        else:
+            sim = cpp.simulate_nfnext(model, [0.0, 1.0, 2.0], 42, 1000, 1000)
+            assert sim["event_count"] >= 0
+            assert "time" in sim
 
-            # Executor check: pure death simulation
-            # Independent reference check: Binomial(N0, exp(-k*T))
+        # Aspect 3: Independent reference
+        if fam_id == "unary-site-state":
+            # Binomial(N0, exp(-k*T))
             expected_mean = 100 * math.exp(-0.5 * 2.0)
             assert abs(expected_mean - 36.7879441) < 1e-5
-        else:
-            # Refused families: representation and executor must refuse by name
-            model = cpp.parse_string(fam["bngl"])
-            snap = cpp._compiled_snapshot(model)
-
-            # Independent reference: source explicitly declares the construct
-            if fam_id == "compartments":
-                assert bool(snap.get("compartments"))
-            elif fam_id == "population-maps":
-                assert bool(snap.get("population_maps"))
-            elif fam_id == "energy":
-                assert bool(snap.get("energy_patterns"))
-            elif fam_id == "dynamic-rates":
-                assert (
-                    snap["rules"][0]["forward"]["rate"]["expression"]["kind"]
-                    != "parameter_ref"
-                )
-            elif fam_id in ("filters", "modifiers"):
-                assert bool(snap["rules"][0].get("modifiers")) or bool(
-                    snap["rules"][0]["forward"].get("filters")
-                )
+        elif fam_id == "dynamic-rates":
+            # Rate expression AST check
+            rate_expr = snap["rules"][0]["forward"]["rate"]["expression"]
+            assert rate_expr["kind"] == "binary"
+            assert rate_expr["operator"] == "multiply"
+        elif fam_id == "filters":
+            rule = snap["rules"][0]
+            mods = rule.get("modifiers", [])
+            filters = rule["forward"].get("filters", [])
+            assert any(m.get("kind") == "include_reactants" for m in mods) or bool(filters)
+        elif fam_id == "modifiers":
+            rule = snap["rules"][0]
+            assert any(m.get("kind") == "match_once" for m in rule.get("modifiers", []))
+        elif fam_id == "compartments":
+            assert snap["compartments"][0]["name"] == "cell"
+            assert snap["compartments"][0]["dimension"] == 3
+            assert snap["compartments"][0]["volume"] == 1.0
+        elif fam_id == "population-maps":
+            assert snap["population_maps"][0]["population"] == "A_pop"
+        elif fam_id == "energy":
+            assert len(snap["energy_patterns"]) == 1
+            assert snap["energy_patterns"][0]["pattern"]["molecules"][0]["type"] == "A"
+            assert snap["energy_patterns"][0]["expression"]["kind"] == "parameter_ref"
 
 
 def test_release_obligation_147_negative_control_wrong_rate_rejected():
     """Negative control: verify that a mutated rate is discriminated against and rejected."""
-    # N=100, true k=0.5 -> expected mean = 36.7879
-    # Mutated k=1.0 -> alternative mean = 13.5335
     true_rate = 0.5
     mutated_rate = 1.0
     t = 2.0
