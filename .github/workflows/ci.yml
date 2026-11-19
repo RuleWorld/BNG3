@@ -743,12 +743,12 @@ jobs:
           python -c 'import jax, jaxlib; print(jax.__version__, jaxlib.__version__, jax.devices()); assert jax.default_backend() == "cpu"'
 
       - name: Test JAX float32 ODE and vectorized SSA
-        run: python -m pytest tests/python/test_jax_ode.py tests/python/test_jax_ssa.py tests/python/test_jax_dynamic_rates.py -q
+        run: python -m pytest tests/python/test_jax_ode.py tests/python/test_jax_ssa.py tests/python/test_jax_dynamic_rates.py tests/python/test_jax_protocol_intervention.py tests/python/test_jax_ssa_immigration_death.py tests/python/test_jax_ssa_competing_decay.py tests/python/test_jax_release_interfaces.py tests/python/test_jax_install_diagnostics.py -q
         env:
           JAX_ENABLE_X64: "false"
 
       - name: Test JAX float64 ODE and vectorized SSA
-        run: python -m pytest tests/python/test_jax_ode.py tests/python/test_jax_ssa.py tests/python/test_jax_dynamic_rates.py -q
+        run: python -m pytest tests/python/test_jax_ode.py tests/python/test_jax_ssa.py tests/python/test_jax_dynamic_rates.py tests/python/test_jax_protocol_intervention.py tests/python/test_jax_ssa_immigration_death.py tests/python/test_jax_ssa_competing_decay.py tests/python/test_jax_release_interfaces.py tests/python/test_jax_install_diagnostics.py -q
         env:
           JAX_ENABLE_X64: "true"
 

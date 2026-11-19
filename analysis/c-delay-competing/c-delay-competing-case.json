@@ -1,0 +1,36 @@
+{
+  "all_passed": true,
+  "case": "delayed_nonconsuming_competing_intervention",
+  "identity": {
+    "bionetgen_package": "/private/tmp/bng3-c-venv/lib/python3.14/site-packages/bionetgen/__init__.py",
+    "native_extension": "/private/tmp/bng3-c-venv/lib/python3.14/site-packages/bionetgen/_bionetgen_cpp.cpython-314-darwin.so",
+    "native_extension_sha256": "7689c11ded430f68c1d99ef61a9d1fee1cba578b544b9a54254534adc40871fe",
+    "numpy": "2.5.5",
+    "python": "3.14.6",
+    "source_revision": "5f17ce1b9f8636c9002147ff0baef3c6d0464f31"
+  },
+  "law": "B(t)~Poisson(80*(1-exp(-0.5*(t-1)))) for t>=1; A(t)=20",
+  "observed_at_t3": {
+    "analytic_lambda": 50.56964470628461,
+    "mean": 50.41,
+    "variance": 48.70856666666666
+  },
+  "plan_sha256": "7fe66c893885c6d653a10d2a484e17a103168b80114ec451ac5cd1af90d2ca3a",
+  "protocol": {
+    "error_control": "4*sqrt(lambda/N) mean; var within 0.5*lambda",
+    "n_runs": 300,
+    "sample_times": [
+      1.5,
+      2.0,
+      3.0,
+      4.0
+    ],
+    "seed_base": 7000
+  },
+  "wire_format": "BNGIR v0.1/v0.2 are model specifications, not live pending-queue checkpoints",
+  "wrong_implementation_controls": {
+    "no_decay_prediction": 80.0,
+    "rate_halved_prediction": 25.284822353142307,
+    "rejected": true
+  }
+}

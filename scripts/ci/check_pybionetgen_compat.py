@@ -7,9 +7,11 @@ import ast
 import os
 import subprocess
 import sys
+from importlib.metadata import requires
 from pathlib import Path
 
 from check_python_package_identity import inspect_installed_package
+from packaging.requirements import Requirement
 
 REPO = Path(__file__).resolve().parents[2]
 REQUIRED_SYMBOLS = {"bngmodel", "run", "sim_getter"}
@@ -54,12 +56,37 @@ def source_run_parameters(source_root: Path) -> set[str]:
     raise ValueError(f"PyBioNetGen runner has no public run(): {path}")
 
 
+def check_packaging_requirement(source_root: Path, installed: list[str]) -> None:
+    """Verify the runtime dependency published in pinned PyBioNetGen 0.8.7."""
+
+    def declares_packaging(requirements: list[str]) -> bool:
+        parsed = (Requirement(value) for value in requirements)
+        return any(
+            req.name.lower() == "packaging" and req.marker is None for req in parsed
+        )
+
+    setup_path = source_root / "setup.py"
+    setup = ast.parse(setup_path.read_text(encoding="utf-8"), filename=str(setup_path))
+    dependencies = [
+        ast.literal_eval(node.value)
+        for node in ast.walk(setup)
+        if isinstance(node, ast.keyword) and node.arg == "install_requires"
+    ]
+    if len(dependencies) != 1 or not declares_packaging(dependencies[0]):
+        raise ValueError("locked PyBioNetGen setup.py does not declare packaging")
+    if not declares_packaging(installed):
+        raise ValueError(
+            "BNG3 installed metadata must declare packaging for default installs"
+        )
+
+
 def run_compatibility(source_root: Path, summary_file: Path | None = None) -> int:
     identity = inspect_installed_package()
     print("BNG3 installed package identity:")
     for key, value in identity.items():
         print(f"  {key}: {value}")
 
+    check_packaging_requirement(source_root, requires("bionetgen") or [])
     exports = source_exports(source_root)
     source_parameters = source_run_parameters(source_root)
     missing = REQUIRED_SYMBOLS - exports
@@ -118,6 +145,9 @@ def run_compatibility(source_root: Path, summary_file: Path | None = None) -> in
                 "- Source-derived runner parameters: "
                 + ", ".join(sorted(REQUIRED_RUN_PARAMETERS))
                 + "\n"
+            )
+            stream.write(
+                "- Pinned packaging requirement matches installed runtime metadata\n"
             )
             stream.write(f"- Compatibility test return code: `{result.returncode}`\n\n")
     return result.returncode

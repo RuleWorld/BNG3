@@ -1,0 +1,27 @@
+{
+  "all_passed": true,
+  "case": "jax_ode_protocol_parameter_intervention_installed_cpu",
+  "identity": {
+    "bionetgen_package": "/private/tmp/bng3-c-venv/lib/python3.14/site-packages/bionetgen/__init__.py",
+    "devices": [
+      "cpu:0"
+    ],
+    "jax": "0.12.0.1",
+    "jax_enable_x64": false,
+    "jaxlib": "0.12.0.1",
+    "native_extension": "/private/tmp/bng3-c-venv/lib/python3.14/site-packages/bionetgen/_bionetgen_cpp.cpython-314-darwin.so",
+    "native_extension_sha256": "7689c11ded430f68c1d99ef61a9d1fee1cba578b544b9a54254534adc40871fe",
+    "numpy": "2.5.5",
+    "source_revision": "5f17ce1b9f8636c9002147ff0baef3c6d0464f31"
+  },
+  "laws": {
+    "functional": "A(t0)/(1+k*A(t0)*(t-t0))",
+    "time_dependent": "A(t0)+0.5*k*(t^2-t0^2); dA(4)/dk2=6"
+  },
+  "plan_sha256": "a2bbc42d6dfef61567b30be40670187bdd1d8c65d2d701c7b289ea43fe3ecbbf",
+  "wrong_implementation_control": {
+    "analytic_A4": 20.0,
+    "frozen_rate_prediction_A4": 8.0,
+    "rejected": true
+  }
+}

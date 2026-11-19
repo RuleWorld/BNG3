@@ -16,7 +16,9 @@ REPO_ROOT = Path(__file__).resolve().parents[5]
 CASE_DIR = Path(__file__).resolve().parent
 
 import bionetgen  # noqa: E402
+import tests.python.test_delayed_competing_intervention as tdci  # noqa: E402
 import tests.python.test_delayed_method_of_steps as dmos  # noqa: E402
+import tests.python.test_delayed_release_gaps as gaps  # noqa: E402
 import tests.python.test_delayed_simulation_api as dsa  # noqa: E402
 from tests.python.test_bngir import (  # noqa: E402
     test_bngir_round_trips_delayed_rules_in_both_wire_versions,
@@ -35,6 +37,8 @@ def test_release_delay_ode():
     dmos.test_delayed_nonconsuming_linear_ramp()
     dmos.test_delayed_parameter_change_preserves_prehistory()
     dmos.test_delayed_prehistory_jump_across_delay_horizon()
+    # Competing-transition NonConsuming DDE with pending completion across splits.
+    tdci.test_delayed_nonconsuming_competing_decay_ode_split_and_uninterrupted()
 
 
 def test_release_delay_ssa():
@@ -49,6 +53,13 @@ def test_release_delay_ssa():
     dsa.test_failed_fresh_run_preserves_pending_continuation_after_parameter_change()  # noqa: E501
     dsa.test_python_direct_ssa_continues_pending_completion()
     dsa.test_delayed_ssa_independent_jump_distribution()
+    # Independent Poisson law for competing NonConsuming completion + decay,
+    # with predeclared seeds and wrong-implementation controls.
+    tdci.test_delayed_nonconsuming_competing_decay_ssa_poisson_law()
+    # Pending-queue state: cancellation on reset, FIFO completion order, and
+    # reproducibility of the ordered completion stream.
+    gaps.test_delayed_pending_completion_cancelled_by_reset()
+    gaps.test_delayed_ssa_completion_queue_order_and_determinism()
 
 
 def test_release_delay_formats(tmp_path: Path):
@@ -64,6 +75,10 @@ def test_release_delay_formats(tmp_path: Path):
     # 1. BNGIR wire format v0.1 and v0.2 lossless roundtrip and execution comparison
     test_bngir_round_trips_delayed_rules_in_both_wire_versions()
     test_semantic_equal_does_not_ignore_delayed_completion_time()
+    # v0.1/v0.2 wire documents carry the competing NonConsuming delay law into
+    # a real downstream consumer; exact-equality counterexamples decline safely.
+    tdci.test_delayed_nonconsuming_bngir_reconstruction_source_law()
+    tdci.test_delayed_semantic_equal_counterexamples()
 
     source = """
 begin model
@@ -137,6 +152,12 @@ end model
     chk = bionetgen.model._cpp.check_bngsim_lowering(model._model, net)
     assert chk["supported"] is False
     assert any("delayed reactions require the native DDE" in b for b in chk["blockers"])
+
+    # 4. Complete delay guard: every backend that cannot carry a pending
+    #    completion queue fails closed (no silent immediate-reaction lowering),
+    #    and a continuation leg may not change the delay.
+    gaps.test_delayed_guard_rejects_all_non_native_backends()
+    gaps.test_delayed_guard_rejects_changed_delay_on_continuation()
 
 
 def test_release_capability_coverage_475():
