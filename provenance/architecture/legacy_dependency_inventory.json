@@ -15,6 +15,7 @@
           "tests.python.test_get_rule_mod",
           "tests.python.test_modelapi_runner_explicit_options",
           "tests.python.test_pybionetgen_api_compat",
+          "tests.python.test_pybionetgen_bngfile_strip_actions_compat",
           "tests.python.test_pybionetgen_differential_behaviors",
           "tests.python.test_pybionetgen_runner_result_compat",
           "tests.python.test_regression",
