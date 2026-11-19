@@ -18,6 +18,7 @@ CASE_DIR = Path(__file__).resolve().parent
 import bionetgen  # noqa: E402
 import tests.python.test_delayed_competing_intervention as tdci  # noqa: E402
 import tests.python.test_delayed_method_of_steps as dmos  # noqa: E402
+import tests.python.test_delayed_release_gaps as gaps  # noqa: E402
 import tests.python.test_delayed_simulation_api as dsa  # noqa: E402
 from tests.python.test_bngir import (  # noqa: E402
     test_bngir_round_trips_delayed_rules_in_both_wire_versions,
@@ -55,6 +56,10 @@ def test_release_delay_ssa():
     # Independent Poisson law for competing NonConsuming completion + decay,
     # with predeclared seeds and wrong-implementation controls.
     tdci.test_delayed_nonconsuming_competing_decay_ssa_poisson_law()
+    # Pending-queue state: cancellation on reset, FIFO completion order, and
+    # reproducibility of the ordered completion stream.
+    gaps.test_delayed_pending_completion_cancelled_by_reset()
+    gaps.test_delayed_ssa_completion_queue_order_and_determinism()
 
 
 def test_release_delay_formats(tmp_path: Path):
@@ -147,6 +152,12 @@ end model
     chk = bionetgen.model._cpp.check_bngsim_lowering(model._model, net)
     assert chk["supported"] is False
     assert any("delayed reactions require the native DDE" in b for b in chk["blockers"])
+
+    # 4. Complete delay guard: every backend that cannot carry a pending
+    #    completion queue fails closed (no silent immediate-reaction lowering),
+    #    and a continuation leg may not change the delay.
+    gaps.test_delayed_guard_rejects_all_non_native_backends()
+    gaps.test_delayed_guard_rejects_changed_delay_on_continuation()
 
 
 def test_release_capability_coverage_475():

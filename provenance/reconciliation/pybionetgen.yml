@@ -4,22 +4,24 @@
   "source": "pybionetgen",
   "represented_revision": "43b09a5346402986d48b1defba5eaec0ae2f7802",
   "cutoff_revision": "28bf351a9bbfc197e19487c26dedda683716bb64",
-  "owner": "Unassigned; maintainer assignment pending",
+  "owner": "akutuva21",
   "entries": [
     {
       "source_revision": "26bed32c34ba1366d95cec225c1e664ce33178df",
-      "capability": "Declare packaging as a runtime dependency for version comparison",
+      "capability": "Publish the existing direct packaging dependency and version import in release 0.8.7",
       "classification": "incorporated-equivalently",
-      "bng3_reference": "pyproject.toml; python/bionetgen/main.py",
-      "tests": [],
+      "bng3_reference": "pyproject.toml; python/bionetgen/main.py; scripts/ci/check_pybionetgen_compat.py",
+      "tests": [
+        "tests/validation/test_reconciliation_evidence.py::test_packaging_is_a_default_installed_requirement"
+      ],
       "reviewer": "Codex technical reconciliation; maintainer review pending",
-      "rationale": "The runtime dependency is present in pyproject.toml and imported by python/bionetgen/main.py. No focused test currently asserts that the built package declares and installs packaging, so that contract remains unverified here. Maintainer review remains pending."
+      "rationale": "The cutoff makes a release that publishes the dependency fix already present at the represented revision. The compatibility job reads the pinned setup.py and verifies that the installed BNG3 distribution also declares packaging as a required dependency for default installs. This checks package metadata for the py.cli.option.version workflow."
     },
     {
       "source_revision": "28bf351a9bbfc197e19487c26dedda683716bb64",
       "capability": "Merge release 0.8.7",
       "classification": "not-applicable",
-      "bng3_reference": "docs/UPSTREAM_RECONCILIATION_2026-09-23.md",
+      "bng3_reference": "docs/archive/reports/UPSTREAM_RECONCILIATION_2026-09-23.md",
       "tests": [],
       "reviewer": "Codex technical reconciliation; maintainer review pending",
       "rationale": "Release merge/versioning is specific to the PyBioNetGen repository; the material dependency declaration from the release is reconciled in the preceding entry."

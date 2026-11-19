@@ -4,21 +4,24 @@
   "source": "nfsim",
   "represented_revision": "a6f9fa945c9d6e1e122e789c952260112c93f157",
   "cutoff_revision": "8c449bbccc4a0c54586ae562f46f4955e65fe876",
-  "owner": "Unassigned; maintainer assignment pending",
+  "owner": "akutuva21",
   "entries": [
     {
       "source_revision": "afad408606ee3e8f579ff50269d266bc66dae0b2",
       "capability": "Repair NFsim absolute-start-time, time-function, observable propensity refresh, and unsupported-rate/flag regressions",
-      "classification": "incorporated-equivalently",
+      "classification": "pending-port",
       "bng3_reference": "cpp/nfsim/; tests/python/test_cpp_backend.py",
       "tests": [
         "tests/python/test_cpp_backend.py::TestSimulation::test_nf_simulation_honors_absolute_start_time",
         "tests/python/test_cpp_backend.py::TestSimulation::test_simulate_nf_rejects_unsupported_continue",
         "tests/python/test_cpp_backend.py::TestSimulation::test_simulate_nf_rejects_unhandled_controls",
-        "tests/python/test_cpp_backend.py::TestSimulation::test_simulate_nf_defaults_to_strict_molecularity_with_explicit_opt_out"
+        "tests/python/test_cpp_backend.py::TestSimulation::test_simulate_nf_defaults_to_strict_molecularity_with_explicit_opt_out",
+        "tests/validation/test_parity_nfsim.py::test_reconciliation_species_observable_refresh",
+        "tests/validation/test_reconciliation_nfsim.py::test_record_complex_flag_reconciliation",
+        "tests/validation/test_reconciliation_nfsim.py::test_record_totalrate_reconciliation"
       ],
       "reviewer": "Codex technical reconciliation; maintainer review pending",
-      "rationale": "The listed tests directly cover absolute start time plus time(), unsupported controls, and the distinct complex-bookkeeping/binding-guard flags. No dedicated regression for observable-dependent propensity refresh is mapped yet; this partial set does not establish that behavior. Maintainer review remains pending."
+      "rationale": "The start-time and time() tests cover NFsim Issue78 (action.simulate_nf.t_start, action.simulate_nf.sample_times, nfsim.energy-and-time-functions). The focused Issue86 test compares post-event Species-observable propensity refresh with an analytic endpoint law (nfsim.observables). Issue51 is a separate product difference: the pinned NFsim CLI applies the distinct-complex binding policy for either -cb or -bscb, while the BNG3 compiled action route distinguishes the options (action.simulate_nf.complex, nf.option.cb, nf.option.bscb). The Issue91 probes compare the explicit rejection of MM and scoped local functions with the same pinned NFsim controls. MM matches in the direct route. The local-function test observes product execution where the oracle rejects. Arrhenius, Sat and local function products still need independent checks (bngl.totalrate)."
     },
     {
       "source_revision": "74e78d75b35fc7249ceabca497e39d3d81389d66",

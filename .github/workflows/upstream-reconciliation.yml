@@ -1,0 +1,77 @@
+name: Upstream reconciliation acceptance
+
+on:
+  workflow_dispatch:
+    inputs:
+      pin_run:
+        description: Cross-tool parity run with the pin audit for this revision
+        required: true
+        type: string
+      behavior_runs:
+        description: Space-separated run IDs with reconciliation-behavior artifacts
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  reconcile:
+    name: release-reconciliation and release-obligation-180
+    runs-on: ubuntu-22.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Collect exact-revision reconciliation evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PIN_RUN: ${{ inputs.pin_run }}
+          BEHAVIOR_RUNS: ${{ inputs.behavior_runs }}
+        run: |
+          set -euo pipefail
+          verify_run() {
+            [[ "$1" =~ ^[0-9]+$ ]]
+            local head
+            head=$(gh run view "$1" --repo "$GITHUB_REPOSITORY" --json headSha --jq .headSha)
+            [[ "$head" == "$GITHUB_SHA" ]]
+          }
+          evidence="$RUNNER_TEMP/reconciliation-input"
+          verify_run "$PIN_RUN"
+          gh run download "$PIN_RUN" --repo "$GITHUB_REPOSITORY" \
+            --name upstream-reconciliation-history --dir "$evidence/pins"
+          read -r -a runs <<< "$BEHAVIOR_RUNS"
+          for run in "${runs[@]}"; do
+            verify_run "$run"
+            gh run download "$run" --repo "$GITHUB_REPOSITORY" \
+              --pattern 'reconciliation-behavior-*' --dir "$evidence/behavior/$run"
+          done
+
+      - name: Consume reconciliation behavior reports
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/reconciliation-input"
+          args=()
+          if [[ -d "$evidence/behavior" ]]; then
+            while IFS= read -r -d '' path; do
+              args+=(--behavior-report "$path")
+            done < <(find "$evidence/behavior" -type f -name '*.json' -print0)
+          fi
+          python scripts/ci/record_reconciliation_release.py \
+            --revision "$GITHUB_SHA" \
+            --pin-report "$evidence/pins/reconciliation-history.json" \
+            --output "$RUNNER_TEMP/reconciliation-acceptance.json" "${args[@]}"
+
+      - name: Retain the reconciliation acceptance result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: upstream-reconciliation-acceptance
+          path: ${{ runner.temp }}/reconciliation-acceptance.json
