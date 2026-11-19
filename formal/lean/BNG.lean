@@ -47,6 +47,8 @@ import BNG.Seeds
 
 import BNG.Propensity
 
+import BNG.StochasticSemantics
+
 /-!
 # BNG3 semantic formalization
 

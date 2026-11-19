@@ -58,6 +58,10 @@ echo "== Lean test: tests/Coverage.lean =="
 lake env lean tests/Coverage.lean
 
 echo
+echo "== Lean test: tests/Issue167Proofs.lean =="
+lake env lean tests/Issue167Proofs.lean
+
+echo
 echo "== axiom dependency audit =="
 ./scripts/check_axiom_dependencies.sh
 

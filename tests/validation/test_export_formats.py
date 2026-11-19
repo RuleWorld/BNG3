@@ -467,6 +467,125 @@ generate_network({overwrite=>1})
     )
 
 
+@pytest.mark.export
+def test_bng2_network3_consumes_exported_net_observable(bng_cpp, tmp_path):
+    """Complete the public NET interchange path with the observable assertion.
+
+    This reuses the adjacent positive case's public exporter, pinned consumer
+    and analytic comparison, adding the consumer assertion that case lacks:
+    the authored observable must survive as a weighted .net group. A controlled
+    perturbation of that group must be rejected by the same typed comparator
+    for the observable reason. Native-event refusals stay in the separate #769
+    detector; this case is strictly event-free and source-valid.
+    """
+    run_network = _network3_executable()
+    require_oracle(
+        run_network is not None,
+        "pinned Network3 run_network not found (set BNGPATH to the locked BNG2 checkout)",
+    )
+    assert run_network is not None
+
+    source = tmp_path / "observable_conversion.bngl"
+    source.write_text(
+        """begin model
+begin parameters
+  k 0.35
+end parameters
+begin molecule types
+  A()
+  B()
+end molecule types
+begin seed species
+  A() 8
+  B() 0
+end seed species
+begin observables
+  Molecules Atot A()
+  Molecules Btot B()
+end observables
+begin reaction rules
+  convert: A() -> B() k
+end reaction rules
+end model
+
+generate_network({overwrite=>1})
+""",
+        encoding="utf-8",
+    )
+    net_path, _, err = runner.run_cli_path(bng_cpp, source, tmp_path / "bng3")
+    assert net_path is not None, f"BNG3 failed to write the .net: {err}"
+
+    artifact = net_path.read_bytes()
+    print(f"NET artifact sha256: {hashlib.sha256(artifact).hexdigest()}")
+
+    network = compare.parse_net(net_path)
+    assert network is not None
+    assert network.species_by_index == {1: "A()", 2: "B()"}
+    # The missing consumer assertion: exported observables keep their names and
+    # weighted species membership in the .net groups block.
+    assert {name: entries for name, entries in network.groups.values()} == {
+        "Atot": {1: 1.0},
+        "Btot": {2: 1.0},
+    }
+
+    # The independently pinned BNG2 reader executes this exact exported file.
+    output_prefix = tmp_path / "network3_consumed"
+    proc = subprocess.run(
+        [
+            str(run_network),
+            "-o",
+            str(output_prefix),
+            str(net_path),
+            "0",
+            "0.5",
+            "1",
+        ],
+        cwd=tmp_path,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert proc.returncode == 0, (
+        "pinned Network3 could not consume the BNG3 .net:\n"
+        f"stdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
+
+    cdat_path = output_prefix.with_suffix(".cdat")
+    observed, columns = compare.parse_gdat(cdat_path)
+    assert observed is not None, f"Network3 produced no readable {cdat_path.name}"
+    assert columns == ["time", "S1", "S2"]
+
+    times = np.asarray([0.0, 0.5, 1.0])
+    a = 8.0 * np.exp(-0.35 * times)
+    expected = np.column_stack((times, a, 8.0 - a))
+    assert np.array_equal(observed[:, 0], times)
+    diff = compare.compare_trajectories(
+        expected,
+        ["time", "S1", "S2"],
+        observed,
+        columns,
+        rtol=1e-6,
+        atol=1e-9,
+        columns=compare.COLUMNS_EXACT,
+    )
+    assert diff.ok, (
+        "Network3 trajectory disagrees with analytic A -> B solution: "
+        f"{diff.summary()}"
+    )
+
+    # Controlled perturbation: redirect Atot from A() (species 1) to B()
+    # (species 2) in a copy of the exact exported artifact. The typed
+    # comparator must reject it for the observable-group reason, not for a
+    # species, count or rate mismatch.
+    perturbed = tmp_path / "perturbed_observable.net"
+    perturbed.write_bytes(artifact.replace(b"1 Atot 1", b"1 Atot 2"))
+    changed = compare.parse_net(perturbed)
+    assert changed is not None
+    pdiff = compare.compare_net(network, changed)
+    assert not pdiff.ok
+    assert pdiff.groups_changed == {1}, pdiff.summary()
+
+
 def _locked_bng2_script() -> Path | None:
     """Return BNG2.pl only when it belongs to the locked checkout in BNGPATH."""
     script_text = os.environ.get("BNG2_PERL")

@@ -1,0 +1,150 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Created by BioNetGen C++ -->
+<sbml xmlns="http://www.sbml.org/sbml/level3" level="3" version="1">
+  <model id="">
+    <ListOfParameters>
+      <Parameter id="kCat" type="Constant" value="1" expr="1"/>
+    </ListOfParameters>
+    <ListOfMoleculeTypes>
+      <MoleculeType id="CheA">
+        <ListOfComponentTypes>
+          <ComponentType id="p">
+            <ListOfAllowedStates>
+              <AllowedState id="unphos"/>
+              <AllowedState id="PHOS"/>
+            </ListOfAllowedStates>
+          </ComponentType>
+          <ComponentType id="rec"/>
+        </ListOfComponentTypes>
+      </MoleculeType>
+      <MoleculeType id="Receptor">
+        <ListOfComponentTypes>
+          <ComponentType id="a"/>
+          <ComponentType id="m">
+            <ListOfAllowedStates>
+              <AllowedState id="0"/>
+            </ListOfAllowedStates>
+          </ComponentType>
+        </ListOfComponentTypes>
+      </MoleculeType>
+    </ListOfMoleculeTypes>
+    <ListOfSpecies>
+      <Species id="S1" concentration="10" name="CheA(p~unphos,rec!1).Receptor(a!1,m~0)">
+        <ListOfMolecules>
+          <Molecule id="S1_M1" name="CheA">
+            <ListOfComponents>
+              <Component id="S1_M1_C1" name="p" state="unphos" numberOfBonds="0"/>
+              <Component id="S1_M1_C2" name="rec" numberOfBonds="1"/>
+            </ListOfComponents>
+          </Molecule>
+          <Molecule id="S1_M2" name="Receptor">
+            <ListOfComponents>
+              <Component id="S1_M2_C1" name="a" numberOfBonds="1"/>
+              <Component id="S1_M2_C2" name="m" state="0" numberOfBonds="0"/>
+            </ListOfComponents>
+          </Molecule>
+        </ListOfMolecules>
+        <ListOfBonds>
+          <Bond id="S1_B1" site1="S1_M1_C2" site2="S1_M2_C1"/>
+        </ListOfBonds>
+      </Species>
+    </ListOfSpecies>
+    <ListOfReactionRules>
+      <ReactionRule id="RR1" name="R1">
+        <ListOfReactantPatterns>
+          <ReactantPattern id="RR1_RP1" label="x">
+            <ListOfMolecules>
+              <Molecule id="RR1_RP1_M1" name="Receptor">
+                <ListOfComponents>
+                  <Component id="RR1_RP1_M1_C1" name="a" numberOfBonds="1"/>
+                </ListOfComponents>
+              </Molecule>
+              <Molecule id="RR1_RP1_M2" name="CheA">
+                <ListOfComponents>
+                  <Component id="RR1_RP1_M2_C1" name="rec" numberOfBonds="1"/>
+                  <Component id="RR1_RP1_M2_C2" name="p" state="unphos" numberOfBonds="0"/>
+                </ListOfComponents>
+              </Molecule>
+            </ListOfMolecules>
+            <ListOfBonds>
+              <Bond id="RR1_RP1_B1" site1="RR1_RP1_M1_C1" site2="RR1_RP1_M2_C1"/>
+            </ListOfBonds>
+          </ReactantPattern>
+        </ListOfReactantPatterns>
+        <ListOfProductPatterns>
+          <ProductPattern id="RR1_PP1" label="x">
+            <ListOfMolecules>
+              <Molecule id="RR1_PP1_M1" name="Receptor">
+                <ListOfComponents>
+                  <Component id="RR1_PP1_M1_C1" name="a" numberOfBonds="1"/>
+                </ListOfComponents>
+              </Molecule>
+              <Molecule id="RR1_PP1_M2" name="CheA">
+                <ListOfComponents>
+                  <Component id="RR1_PP1_M2_C1" name="rec" numberOfBonds="1"/>
+                  <Component id="RR1_PP1_M2_C2" name="p" state="PHOS" numberOfBonds="0"/>
+                </ListOfComponents>
+              </Molecule>
+            </ListOfMolecules>
+            <ListOfBonds>
+              <Bond id="RR1_PP1_B1" site1="RR1_PP1_M1_C1" site2="RR1_PP1_M2_C1"/>
+            </ListOfBonds>
+          </ProductPattern>
+        </ListOfProductPatterns>
+        <RateLaw id="RR1_RateLaw" type="Function" totalrate="1" name="__bng3_reaction_rate_RR1">
+          <ListOfArguments>
+            <Argument id="x" type="ObjectReference" value="RR1_RP1"/>
+          </ListOfArguments>
+        </RateLaw>
+        <Map>
+          <MapItem sourceID="RR1_RP1_M1" targetID="RR1_PP1_M1"/>
+          <MapItem sourceID="RR1_RP1_M2" targetID="RR1_PP1_M2"/>
+          <MapItem sourceID="RR1_RP1_M1_C1" targetID="RR1_PP1_M1_C1"/>
+          <MapItem sourceID="RR1_RP1_M2_C1" targetID="RR1_PP1_M2_C1"/>
+          <MapItem sourceID="RR1_RP1_M2_C2" targetID="RR1_PP1_M2_C2"/>
+        </Map>
+        <ListOfOperations>
+          <StateChange site="RR1_RP1_M2_C2" finalState="PHOS"/>
+        </ListOfOperations>
+      </ReactionRule>
+    </ListOfReactionRules>
+    <ListOfObservables>
+      <Observable id="O1" name="R0" type="Molecules">
+        <ListOfPatterns>
+          <Pattern id="O1_P1" automorphisms="1">
+            <ListOfMolecules>
+              <Molecule id="O1_P1_M1" name="Receptor">
+                <ListOfComponents>
+                  <Component id="O1_P1_M1_C1" name="m" state="0" numberOfBonds="0"/>
+                </ListOfComponents>
+              </Molecule>
+            </ListOfMolecules>
+          </Pattern>
+        </ListOfPatterns>
+      </Observable>
+    </ListOfObservables>
+    <ListOfFunctions>
+      <Function id="pOn" args="x">
+        <ListOfArguments>
+          <Argument id="x"/>
+        </ListOfArguments>
+        <ListOfReferences>
+          <Reference name="R0" type="Observable"/>
+          <Reference name="kCat" type="Constant"/>
+          <Reference name="x" type="Local"/>
+        </ListOfReferences>
+        <Expression>(kCat * R0(x))</Expression>
+      </Function>
+      <Function id="__bng3_reaction_rate_RR1" args="x">
+        <ListOfArguments>
+          <Argument id="x"/>
+        </ListOfArguments>
+        <ListOfReferences>
+          <Reference name="pOn" type="Function"/>
+          <Reference name="x" type="Local"/>
+        </ListOfReferences>
+        <Expression>pOn(x)</Expression>
+      </Function>
+    </ListOfFunctions>
+  </model>
+</sbml>

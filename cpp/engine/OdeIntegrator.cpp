@@ -2583,13 +2583,39 @@ void OdeIntegrator::pruneDiscreteEventRoots() {
 
 void OdeIntegrator::validateEventRootSurface() {
     if (nativeEvents_.empty()) return;
-    const auto dynamic = [&](const ast::Expression& value) {
+    // Classify sums and constant multiples of the supported dynamic atoms.
+    const auto dynamicAtom = [&](const ast::Expression& value) {
         return ((value.kind() == ast::ExpressionKind::Identifier ||
                  value.kind() == ast::ExpressionKind::ObservableRef) &&
                 (value.name() == "time" || observableIndex_.count(value.name()))) ||
                (value.kind() == ast::ExpressionKind::Function &&
                 value.name() == "delay" && value.args().size() == 2);
     };
+    enum class RootTerm { Static, Dynamic, Unsupported };
+    std::function<RootTerm(const ast::Expression&)> classify =
+        [&](const ast::Expression& value) -> RootTerm {
+            if (dynamicAtom(value)) return RootTerm::Dynamic;
+            if (value.kind() == ast::ExpressionKind::Number) return RootTerm::Static;
+            if (value.kind() == ast::ExpressionKind::Identifier) {
+                const auto& parameters = model_.getParameters();
+                if (parameters.contains(value.name()) &&
+                    !eventDependentParameterNames_.count(value.name()) &&
+                    !parameters.isTimeDependent(value.name())) return RootTerm::Static;
+                return RootTerm::Unsupported;
+            }
+            const auto& op = value.name();
+            if (value.kind() == ast::ExpressionKind::Unary && (op == "+" || op == "-"))
+                return classify(value.args().front());
+            if (value.kind() != ast::ExpressionKind::Binary ||
+                (op != "+" && op != "-" && op != "*")) return RootTerm::Unsupported;
+            const auto left = classify(value.args()[0]);
+            const auto right = classify(value.args()[1]);
+            if (left == RootTerm::Unsupported || right == RootTerm::Unsupported ||
+                (op == "*" && left == RootTerm::Dynamic && right == RootTerm::Dynamic))
+                return RootTerm::Unsupported;
+            return left == RootTerm::Dynamic || right == RootTerm::Dynamic
+                ? RootTerm::Dynamic : RootTerm::Static;
+        };
     for (const auto& event : nativeEvents_) {
         const auto expandedTrigger = functionEvaluator_.expandFunctions(event.trigger);
         const auto originalConjuncts = triggerConjuncts(event.trigger);
@@ -2597,7 +2623,12 @@ void OdeIntegrator::validateEventRootSurface() {
         for (std::size_t index = 0; index < expandedConjuncts.size(); ++index) {
             const auto* conjunct = expandedConjuncts[index];
             const auto& arguments = conjunct->args();
-            if (dynamic(arguments[0]) || dynamic(arguments[1])) continue;
+            // Preserve the direct-atom comparisons accepted by the existing runtime.
+            if (dynamicAtom(arguments[0]) || dynamicAtom(arguments[1])) continue;
+            const auto left = classify(arguments[0]);
+            const auto right = classify(arguments[1]);
+            if (left != RootTerm::Unsupported && right != RootTerm::Unsupported &&
+                (left == RootTerm::Dynamic || right == RootTerm::Dynamic)) continue;
             // A conjunct of any arithmetic form over species that only events
             // change is admitted: it is re-tested at every event execution.
             if (index < originalConjuncts.size() &&

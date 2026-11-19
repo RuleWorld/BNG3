@@ -44,6 +44,10 @@ Thumbs.db
 # tests that read them fail with a missing file rather than a missing rule.
 !tests/fixtures/sbml_test_suite_reaction_rate/*.xml
 
+# Frozen native-NFsim input for the pinned Issue91 local-function TotalRate
+# parity case.  It is a hand-reduced, byte-stable input, not generated output.
+!tests/validation/fixtures/nfsim/localfunc_totalrate.xml
+
 # Test reference data (large binary files from BNG2 Validate)
 tests/reference_data/
 
