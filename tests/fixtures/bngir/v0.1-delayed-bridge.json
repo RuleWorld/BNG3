@@ -1,0 +1,92 @@
+{
+  "features": {
+    "required": [],
+    "used": [
+      "delayed_rules",
+      "observables",
+      "rules",
+      "seeds"
+    ]
+  },
+  "format": "BNGIR",
+  "model": {
+    "barrier_patterns": [],
+    "compartments": [],
+    "energy_patterns": [],
+    "functions": [],
+    "molecule_types": [
+      {
+        "components": [],
+        "name": "A",
+        "population": false
+      },
+      {
+        "components": [],
+        "name": "B",
+        "population": false
+      }
+    ],
+    "name": "bngir_delayed_bridge",
+    "observables": [
+      {
+        "name": "A_obs",
+        "patterns": [
+          "A()"
+        ],
+        "type": "Molecules"
+      },
+      {
+        "name": "B_obs",
+        "patterns": [
+          "B()"
+        ],
+        "type": "Molecules"
+      }
+    ],
+    "options": {},
+    "parameters": [
+      {
+        "expression": "0.5",
+        "name": "k"
+      },
+      {
+        "expression": "2.0",
+        "name": "tau"
+      }
+    ],
+    "population_maps": [],
+    "rules": [
+      {
+        "bidirectional": false,
+        "delay": "tau",
+        "driving_work": "",
+        "label": "delayed_decay",
+        "modifiers": [],
+        "name": "delayed_decay",
+        "products": [
+          "B()"
+        ],
+        "rates": [
+          "k"
+        ],
+        "reactants": [
+          "A()"
+        ]
+      }
+    ],
+    "seeds": [
+      {
+        "amount": "10.0",
+        "compartment": "",
+        "constant": false,
+        "pattern": "A()"
+      }
+    ],
+    "substance_units": "",
+    "version": ""
+  },
+  "protocol": {
+    "actions": []
+  },
+  "version": "0.1"
+}

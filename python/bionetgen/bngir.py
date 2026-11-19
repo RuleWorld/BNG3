@@ -3099,6 +3099,11 @@ def _validate_native_v02(root: Mapping[str, Any]) -> None:
     expected_used = sorted(
         ["structured_patterns", "structured_expressions"]
         + (["compartments"] if model.get("compartments") else [])
+        + (
+            ["delayed_rules"]
+            if any(rule.get("delay") is not None for rule in model["rules"])
+            else []
+        )
         + (["functions"] if model["functions"] else [])
         + (["observables"] if model["observables"] else [])
         + (["rules"] if model["rules"] else [])
