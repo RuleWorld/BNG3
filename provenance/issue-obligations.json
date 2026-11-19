@@ -7520,7 +7520,7 @@
     },
     {
       "number": 154,
-      "body_sha256": "326363a249d76925dc0e7882fc0c16368de2d2ed94917dcb046396dfdbf59f37",
+      "body_sha256": "e927be5af71551feff5eb044045fdb3a3ed06d37cc0c578f87a555a6fe0111b6",
       "obligations": [
         {
           "id": "issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi",
@@ -7807,14 +7807,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-bngir-roundtrip.",
-                "No revision-locked consuming receipt producer is declared for required live check release-bngir-roundtrip."
-              ]
+              "selector": "tests/validation/release/cases/issue-154/test_bngir_roundtrip_release.py::test_release_bngir_roundtrip",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#Validate independent issue-154 BNGIR round trip release acceptance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -7840,14 +7837,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-bngir-version.",
-                "No revision-locked consuming receipt producer is declared for required live check release-bngir-version."
-              ]
+              "selector": "tests/validation/release/cases/issue-154/test_bngir_roundtrip_release.py::test_release_bngir_version",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#Validate independent issue-154 BNGIR round trip release acceptance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -7873,14 +7867,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-154.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-154."
-              ]
+              "selector": "tests/validation/release/cases/issue-154/test_bngir_roundtrip_release.py::test_release_obligation_154",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#Validate independent issue-154 BNGIR round trip release acceptance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
