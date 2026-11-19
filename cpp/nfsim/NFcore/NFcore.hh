@@ -855,7 +855,7 @@ namespace NFcore
 
 
 			void evaluateAllLocalFunctions();
-			/* Mark cached local-function values stale after a system observable
+			/* Invalidate cached values of local functions after a system observable
 			 * they read has changed; the refresh is deferred to the end of the
 			 * current reaction firing (ruleworld/nfsim#104). */
 			void markGlobalLocalFunctionsDirty() {
