@@ -2806,7 +2806,10 @@ def _rate_for_reaction(
             )
 
     stripped = _strip_mass_action_factors(converted, reactants)
-    if preserved_compartment_flux:
+    retains_reactants = any(
+        references_species(stripped, species_id) for species_id in reactants
+    )
+    if preserved_compartment_flux and retains_reactants:
         # No mass-action constant could carry this law's volume correction, so
         # keep the source compartment factor in the complete flux instead of
         # emitting a concentration rate with its amount/time scale missing.
