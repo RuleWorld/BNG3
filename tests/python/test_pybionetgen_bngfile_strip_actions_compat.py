@@ -198,9 +198,7 @@ def test_strip_actions_inline_comment_does_not_join_next_line(tmp_path):
 def test_strip_actions_quoted_comment_marker_keeps_line_separate(tmp_path):
     """A quoted `#` blocks continuation collapse, as in the pinned reference."""
 
-    model_path = _write_model(
-        tmp_path, MODEL_QUOTED_COMMENT_MARKER, "quoted_hash.bngl"
-    )
+    model_path = _write_model(tmp_path, MODEL_QUOTED_COMMENT_MARKER, "quoted_hash.bngl")
     bng_file, stripped = _strip(model_path, tmp_path)
 
     assert stripped.strip() == ""
