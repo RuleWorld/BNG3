@@ -126,9 +126,13 @@ def _compiler() -> dict:
     version = ""
     if cxx != "unavailable":
         try:
-            version = subprocess.run(
-                [cxx, "--version"], capture_output=True, text=True, check=True
-            ).stdout.splitlines()[0].strip()
+            version = (
+                subprocess.run(
+                    [cxx, "--version"], capture_output=True, text=True, check=True
+                )
+                .stdout.splitlines()[0]
+                .strip()
+            )
         except (OSError, subprocess.CalledProcessError, IndexError):
             pass
     return {"cxx": cxx, "version": version}
@@ -299,9 +303,13 @@ def run() -> dict:
     rounds = []
     for r in range(1, ROUNDS + 1):
         order = ["A", "B"] if r % 2 == 1 else ["B", "A"]
-        results = {arm: _timing(_simulate(model, network, threads=THREADS_PRIMARY))
-                   for arm in order}
-        rounds.append({"round": r, "order": order, "A": results["A"], "B": results["B"]})
+        results = {
+            arm: _timing(_simulate(model, network, threads=THREADS_PRIMARY))
+            for arm in order
+        }
+        rounds.append(
+            {"round": r, "order": order, "A": results["A"], "B": results["B"]}
+        )
 
     def diffs(key):
         out = []
@@ -311,13 +319,17 @@ def run() -> dict:
             out.append((a - b) / denom if denom else 0.0)
         return out
 
-    all_sim = [rd[arm]["trajectories_per_sec_sim"] for rd in rounds for arm in ("A", "B")]
+    all_sim = [
+        rd[arm]["trajectories_per_sec_sim"] for rd in rounds for arm in ("A", "B")
+    ]
     all_prep = [rd[arm]["model_prep_time_ms"] for rd in rounds for arm in ("A", "B")]
     sim_mean = float(np.mean(all_sim))
     prep_mean = float(np.mean(all_prep))
     sim_cv = float(np.std(all_sim) / sim_mean) if sim_mean else 0.0
     prep_cv = float(np.std(all_prep) / prep_mean) if prep_mean else 0.0
-    prep_diffs, sim_diffs = diffs("model_prep_time_ms"), diffs("trajectories_per_sec_sim")
+    prep_diffs, sim_diffs = diffs("model_prep_time_ms"), diffs(
+        "trajectories_per_sec_sim"
+    )
     noise = {
         "rounds": rounds,
         "warmups": WARMUPS,
@@ -337,11 +349,13 @@ def run() -> dict:
             "cv_across_reps": sim_cv,
         },
         "event_count_mismatch_rounds": [
-            rd["round"] for rd in rounds
+            rd["round"]
+            for rd in rounds
             if rd["A"]["total_events"] != rd["B"]["total_events"]
         ],
         "host_resolution_floor": HOST_RESOLUTION_FLOOR,
     }
+
     # Predeclared plan reports startup and warm throughput separately: startup
     # (model_prep_time_ms) is sub-millisecond and expected to be noisy in
     # relative terms; warm trajectory throughput is the stable statistic.
@@ -370,7 +384,9 @@ def run() -> dict:
 
     return {
         "case": "native_cpu_batch_ssa_immigration_death_baseline",
-        "predeclared_plan_sha256": _sha256(Path(__file__).with_name("PREDECLARED_PLAN.md")),
+        "predeclared_plan_sha256": _sha256(
+            Path(__file__).with_name("PREDECLARED_PLAN.md")
+        ),
         "revision": os.environ.get("BNG3_SOURCE_REVISION") or _git("rev-parse", "HEAD"),
         "branch": _git("rev-parse", "--abbrev-ref", "HEAD"),
         "engine_source_revision": _git("merge-base", "HEAD", "origin/main"),
@@ -413,7 +429,9 @@ def run() -> dict:
         "noise_baseline": noise,
         "supplemental_multicore": supplemental,
         "peak_rss": rss,
-        "replay_command": os.environ.get("BNG3_REPLAY_COMMAND", "see PREDECLARED_PLAN.md"),
+        "replay_command": os.environ.get(
+            "BNG3_REPLAY_COMMAND", "see PREDECLARED_PLAN.md"
+        ),
     }
 
 
@@ -426,13 +444,18 @@ def main() -> int:
     result["script_wall_s"] = time.time() - t0
     args.json.parent.mkdir(parents=True, exist_ok=True)
     args.json.write_text(json.dumps(result, indent=2, sort_keys=True) + "\n")
-    print(json.dumps({
-        "revision": result["revision"],
-        "correctness_all_passed": result["correctness"]["all_passed"],
-        "noise_assessment": result["noise_baseline"]["assessment"],
-        "peak_rss_bytes": result["peak_rss"]["peak_rss_bytes"],
-        "artifact": str(args.json),
-    }, indent=2))
+    print(
+        json.dumps(
+            {
+                "revision": result["revision"],
+                "correctness_all_passed": result["correctness"]["all_passed"],
+                "noise_assessment": result["noise_baseline"]["assessment"],
+                "peak_rss_bytes": result["peak_rss"]["peak_rss_bytes"],
+                "artifact": str(args.json),
+            },
+            indent=2,
+        )
+    )
     return 0 if result["correctness"]["all_passed"] else 1
 
 
