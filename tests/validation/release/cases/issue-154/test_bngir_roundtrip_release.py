@@ -474,8 +474,16 @@ def test_release_bngir_version():
         },
         "protocol": {
             "actions": [
-                {"scope": "model", "name": "generate_network", "arguments": {"overwrite": "1"}},
-                {"scope": "model", "name": "setparameter", "arguments": {"target": "k1", "value": "1.0"}},
+                {
+                    "scope": "model",
+                    "name": "generate_network",
+                    "arguments": {"overwrite": "1"},
+                },
+                {
+                    "scope": "model",
+                    "name": "setparameter",
+                    "arguments": {"target": "k1", "value": "1.0"},
+                },
             ]
         },
     }
