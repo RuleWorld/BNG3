@@ -371,7 +371,7 @@ def run() -> dict:
     return {
         "case": "native_cpu_batch_ssa_immigration_death_baseline",
         "predeclared_plan_sha256": _sha256(Path(__file__).with_name("PREDECLARED_PLAN.md")),
-        "revision": _git("rev-parse", "HEAD"),
+        "revision": os.environ.get("BNG3_SOURCE_REVISION") or _git("rev-parse", "HEAD"),
         "branch": _git("rev-parse", "--abbrev-ref", "HEAD"),
         "engine_source_revision": _git("merge-base", "HEAD", "origin/main"),
         "engine_source_note": (
