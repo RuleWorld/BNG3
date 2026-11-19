@@ -142,7 +142,8 @@ def test_affine_scaled_state_combination_trigger_executes(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "trigger", ["X*Y <= 25", "X/Y <= 5", "abs(X) <= 5", "(X+Y)*(X-Y) >= 0"]
+    "trigger", ["X*Y <= 25", "X/Y <= 5", "abs(X) <= 5", "(X+Y)*(X-Y) >= 0",
+                "X + X*X <= 25", "X - 2 <= X*X"]
 )
 def test_nonlinear_arithmetic_root_surfaces_stay_refused(tmp_path, trigger):
     """Admitting affine surfaces must not broaden the guard to products,

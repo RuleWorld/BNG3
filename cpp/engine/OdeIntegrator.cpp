@@ -2583,14 +2583,7 @@ void OdeIntegrator::pruneDiscreteEventRoots() {
 
 void OdeIntegrator::validateEventRootSurface() {
     if (nativeEvents_.empty()) return;
-    // A trigger side is admissible as a CVODE root when it is affine in time
-    // and observable state: a sum of static coefficients times dynamic atoms.
-    // For such a surface the root is a single, well-defined sign change, so the
-    // runtime's rising-edge rule applies exactly as it does for a direct
-    // ``observable op threshold`` comparison.  Products/powers of dynamic
-    // quantities, abs(), floor() and other nonlinear constructs are deliberately
-    // excluded: their roots can be tangential (no sign change) or multiple,
-    // which the crossing detector cannot disambiguate.  They remain refused.
+    // Classify sums and constant multiples of the supported dynamic atoms.
     const auto dynamicAtom = [&](const ast::Expression& value) {
         return ((value.kind() == ast::ExpressionKind::Identifier ||
                  value.kind() == ast::ExpressionKind::ObservableRef) &&
@@ -2598,49 +2591,30 @@ void OdeIntegrator::validateEventRootSurface() {
                (value.kind() == ast::ExpressionKind::Function &&
                 value.name() == "delay" && value.args().size() == 2);
     };
-    // A subexpression that contains no time/observable reference and no
-    // time-dependent parameter may be used as an affine coefficient.
-    std::function<bool(const ast::Expression&)> staticFactor =
-        [&](const ast::Expression& value) {
-            if (value.kind() == ast::ExpressionKind::Number) return true;
+    enum class RootTerm { Static, Dynamic, Unsupported };
+    std::function<RootTerm(const ast::Expression&)> classify =
+        [&](const ast::Expression& value) -> RootTerm {
+            if (dynamicAtom(value)) return RootTerm::Dynamic;
+            if (value.kind() == ast::ExpressionKind::Number) return RootTerm::Static;
             if (value.kind() == ast::ExpressionKind::Identifier) {
-                if (value.name() == "time" || observableIndex_.count(value.name())) {
-                    return false;
-                }
-                try {
-                    return !model_.getParameters().isTimeDependent(value.name());
-                } catch (const std::exception&) {
-                    return false;
-                }
+                const auto& parameters = model_.getParameters();
+                if (parameters.contains(value.name()) &&
+                    !eventDependentParameterNames_.count(value.name()) &&
+                    !parameters.isTimeDependent(value.name())) return RootTerm::Static;
+                return RootTerm::Unsupported;
             }
-            if (value.kind() == ast::ExpressionKind::Unary &&
-                (value.name() == "+" || value.name() == "-")) {
-                return staticFactor(value.args().front());
-            }
-            if (value.kind() == ast::ExpressionKind::Binary &&
-                (value.name() == "+" || value.name() == "-" || value.name() == "*")) {
-                return staticFactor(value.args()[0]) && staticFactor(value.args()[1]);
-            }
-            return false;
-        };
-    std::function<bool(const ast::Expression&)> affineState =
-        [&](const ast::Expression& value) {
-            if (dynamicAtom(value)) return true;
-            if (value.kind() == ast::ExpressionKind::Unary &&
-                (value.name() == "+" || value.name() == "-")) {
-                return affineState(value.args().front());
-            }
-            if (value.kind() == ast::ExpressionKind::Binary &&
-                (value.name() == "+" || value.name() == "-")) {
-                return affineState(value.args()[0]) || affineState(value.args()[1]);
-            }
-            if (value.kind() == ast::ExpressionKind::Binary && value.name() == "*") {
-                const auto& left = value.args()[0];
-                const auto& right = value.args()[1];
-                return (affineState(left) && staticFactor(right)) ||
-                       (staticFactor(left) && affineState(right));
-            }
-            return false;
+            const auto& op = value.name();
+            if (value.kind() == ast::ExpressionKind::Unary && (op == "+" || op == "-"))
+                return classify(value.args().front());
+            if (value.kind() != ast::ExpressionKind::Binary ||
+                (op != "+" && op != "-" && op != "*")) return RootTerm::Unsupported;
+            const auto left = classify(value.args()[0]);
+            const auto right = classify(value.args()[1]);
+            if (left == RootTerm::Unsupported || right == RootTerm::Unsupported ||
+                (op == "*" && left == RootTerm::Dynamic && right == RootTerm::Dynamic))
+                return RootTerm::Unsupported;
+            return left == RootTerm::Dynamic || right == RootTerm::Dynamic
+                ? RootTerm::Dynamic : RootTerm::Static;
         };
     for (const auto& event : nativeEvents_) {
         const auto expandedTrigger = functionEvaluator_.expandFunctions(event.trigger);
@@ -2649,7 +2623,12 @@ void OdeIntegrator::validateEventRootSurface() {
         for (std::size_t index = 0; index < expandedConjuncts.size(); ++index) {
             const auto* conjunct = expandedConjuncts[index];
             const auto& arguments = conjunct->args();
-            if (affineState(arguments[0]) || affineState(arguments[1])) continue;
+            // Preserve the direct-atom comparisons accepted by the existing runtime.
+            if (dynamicAtom(arguments[0]) || dynamicAtom(arguments[1])) continue;
+            const auto left = classify(arguments[0]);
+            const auto right = classify(arguments[1]);
+            if (left != RootTerm::Unsupported && right != RootTerm::Unsupported &&
+                (left == RootTerm::Dynamic || right == RootTerm::Dynamic)) continue;
             // A conjunct of any arithmetic form over species that only events
             // change is admitted: it is re-tested at every event execution.
             if (index < originalConjuncts.size() &&
