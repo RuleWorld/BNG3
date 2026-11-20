@@ -22,6 +22,7 @@ on:
       - 'tests/python/test_atomizer_dae_ida.py'
       - 'tests/python/test_atomizer_delay_history.py'
       - 'tests/python/test_atomizer_fast_reaction.py'
+      - 'tests/python/test_sbml_external_comp_public.py'
       - 'tests/python/test_atomizer_comp_md5.py'
       - 'scripts/ci/checkout_oracle.py'
       - 'scripts/ci/oracle_sources.py'
@@ -311,6 +312,7 @@ jobs:
             tests/python/test_atomizer_dae_ida.py \
             tests/python/test_atomizer_delay_history.py \
             tests/python/test_atomizer_fast_reaction.py \
+            tests/python/test_sbml_external_comp_public.py \
             tests/python/test_atomizer_comp_md5.py \
             --junitxml="$RUNNER_TEMP/issue-160-artifacts/pytest.xml"
 
