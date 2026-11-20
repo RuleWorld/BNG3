@@ -487,12 +487,12 @@ def test_inventory_consumers_preserve_all_rows_and_legacy_metadata():
     matrix = json.loads((root / "provenance/capability-matrix.yml").read_text())
     rows = matrix["rows"]
     row_ids = sorted(row["id"] for row in rows)
-    assert len(rows) == 994
-    assert len(set(row_ids)) == 994
+    assert len(rows) == 997
+    assert len(set(row_ids)) == 997
     assert hashlib.sha256(
         json.dumps(row_ids, separators=(",", ":")).encode()
     ).hexdigest() == (
-        "acd4ed676970116c4c3055de3fb3bf1dfd3b6b55678040d49023ff3d21828669"
+        "5580b09a076fc66471254e7bf2da4dd8a08498a9fb16680b4392ecd685132060"
     )
 
     legacy = matrix["validation_capabilities"]

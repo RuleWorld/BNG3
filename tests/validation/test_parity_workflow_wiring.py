@@ -695,6 +695,7 @@ def test_issue147_release_receipt_is_recorded_and_consumed_in_parity_queue():
     )
     assert "bng3-issue-147-release" in queue_step["run"]
     assert "issue-147-release-report.json" in queue_step["run"]
+    assert "--issue147-release-record" in queue_step["run"]
     assert '"${issue147_args[@]}"' in queue_step["run"]
 
     contract_job = workflow["jobs"]["oracle-lock"]

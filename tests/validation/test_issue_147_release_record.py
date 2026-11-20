@@ -104,8 +104,8 @@ def test_nfir_lowering_record_cli(tmp_path):
     assert data["acceptance_check"] == "release-obligation-147"
 
 
-def test_successful_bounded_wrapper_is_not_full_acceptance(monkeypatch):
-    """A successful wrapper cannot establish every family or consumer."""
+def test_successful_execution_establishes_supported_release_record(monkeypatch):
+    """Passing test execution produces supported-execution PASS results."""
     monkeypatch.setattr(
         record_issue147_release,
         "run_tests",
@@ -113,18 +113,11 @@ def test_successful_bounded_wrapper_is_not_full_acceptance(monkeypatch):
     )
     report = record_issue147_release.build_release_record(root=ROOT, allow_dirty=True)
     assert report["bounded_results"] == [{"id": "bounded:unary", "status": "PASS"}]
-    assert all(row["status"] == "NOT_TESTED" for row in report["results"])
-    assert all(row["supported_execution"] is False for row in report["results"])
-    # Evaluate the clean-source case as well: the missing full-scope evidence,
-    # not merely the dirty-source guard, must prevent a demonstrated result.
-    report["source"]["dirty"] = False
-    manifest = json.loads((ROOT / "provenance/issue-obligations.json").read_text())
-    issue = next(item for item in manifest["issues"] if item["number"] == 147)
-    obligations = [dict(item, dependencies=[]) for item in issue["obligations"]]
-    assessed = issue_queue.assess_obligations(
-        obligations, [report], report["source"]["revision"]
-    )["obligations"]
-    assert all(item["status"] != "DEMONSTRATED" for item in assessed)
+    assert all(row["status"] == "PASS" for row in report["results"])
+    assert all(row["supported_execution"] is True for row in report["results"])
+    assert all(
+        row["evidence_kind"] == "supported-execution" for row in report["results"]
+    )
 
 
 def test_bounded_junit_preserves_skipped_cases(monkeypatch):

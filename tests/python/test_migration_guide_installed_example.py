@@ -1,4 +1,4 @@
-"""Execute the migration guide's parameter-scan example against BNG3.
+"""Execute the migration guide's examples against the installed BNG3 package.
 
 The guide is the source of truth: this test extracts the BNGL fixture and the
 Python example from the ``### Parameter Scans`` section of
@@ -20,7 +20,11 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
+import shutil
+import subprocess
 import sys
+import sysconfig
 
 import numpy as np
 import pytest
@@ -29,23 +33,23 @@ import bionetgen
 
 _ROOT = Path(__file__).resolve().parents[2]
 _GUIDE = _ROOT / "docs" / "migration_guide.md"
-_SECTION_HEADING = "### Parameter Scans"
 
 
-def _parameter_scan_section() -> str:
+def _guide_section(heading: str) -> str:
     text = _GUIDE.read_text(encoding="utf-8")
-    start = text.index(_SECTION_HEADING) + len(_SECTION_HEADING)
-    remainder = text[start:]
-    next_section = remainder.find("\n### ")
-    return remainder if next_section < 0 else remainder[:next_section]
+    section = re.search(
+        rf"^### {re.escape(heading)}\n(.*?)(?=^##(?:#)? |\Z)",
+        text,
+        re.MULTILINE | re.DOTALL,
+    )
+    assert section is not None, f"{_GUIDE.name} has no section {heading!r}"
+    return section.group(1)
 
 
 def _fenced_code(section: str, language: str) -> str:
-    match = re.search(rf"```{re.escape(language)}\n(.*?)```", section, re.DOTALL)
-    assert (
-        match is not None
-    ), f"{_GUIDE.name} parameter-scan section has no {language!r} fenced block"
-    return match.group(1)
+    matches = re.findall(rf"```{re.escape(language)}\n(.*?)```", section, re.DOTALL)
+    assert matches, f"{_GUIDE.name} section has no {language!r} fenced block"
+    return matches[-1]
 
 
 def _sha256(path: Path) -> str:
@@ -90,7 +94,7 @@ def _record_artifact(
 
 def test_migration_guide_parameter_scan_example(tmp_path: Path, monkeypatch):
     """The guide's two-rate decay scan must run and keep values with rates."""
-    section = _parameter_scan_section()
+    section = _guide_section("Parameter Scans")
     model_text = _fenced_code(section, "bngl")
     example_text = _fenced_code(section, "python")
 
@@ -132,3 +136,93 @@ def test_migration_guide_parameter_scan_example(tmp_path: Path, monkeypatch):
     )
 
     _record_artifact(scan, rates, endpoints, expected)
+
+
+@pytest.fixture
+def guide_model(tmp_path: Path, monkeypatch):
+    source = _fenced_code(_guide_section("Parameter Scans"), "bngl")
+    (tmp_path / "model.bngl").write_text(source, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+    return tmp_path
+
+
+def _run_example(heading: str) -> dict:
+    example = _fenced_code(_guide_section(heading), "python")
+    namespace = {"__name__": "__migration_guide_example__"}
+    exec(compile(example, str(_GUIDE), "exec"), namespace)
+    return namespace
+
+
+def test_guide_loading_simulation_and_results(guide_model):
+    assert _run_example("Load A Model")["model"].parameters[0].name == "k"
+    for heading in ("Run A Simulation", "Inspect Results"):
+        result = _run_example(heading)["result"]
+        assert result.time[-1] == 2.0
+        expected = 100.0 * np.exp(-0.1 * result.time)
+        np.testing.assert_allclose(result.observables["A_total"], expected, rtol=1e-6)
+    assert list(result.to_dataframe().columns) == ["time", "A_total"]
+
+
+def test_guide_sensitivity_and_parameter_access(guide_model):
+    values = _run_example("Access Parameters")["values"]
+    assert values == {"k": 0.1}
+    sensitivity = _run_example("Sensitivity Analysis")["sensitivity"]
+    assert sensitivity.parameter_names == ["k"]
+    assert sensitivity.observable_names == ["A_total"]
+    # d(log A(2))/d(log k) = -k * 2 for the documented decay.
+    assert sensitivity.matrix[0, 0] == pytest.approx(-0.2, rel=1e-4)
+
+
+def test_guide_network_free_and_builder(guide_model):
+    result = _run_example("Run Network-Free")["result"]
+    trajectory = np.asarray(result.observables["A_total"])
+    assert result.time[-1] == 2.0
+    assert trajectory[0] == 100 and 0 <= trajectory[-1] < 100
+    assert np.all(np.diff(trajectory) <= 0)
+    model = _run_example("Programmatic Model Building")["model"]
+    assert len(model.reaction_rules) == 2
+    result = model.simulate(method="ode", t_end=2.0, n_steps=2)
+    assert result.observables["AB"][0] == 0
+    assert 0 < result.observables["AB"][-1] < 100
+
+
+def test_guide_sbml_export_and_import(guide_model):
+    import libsbml
+
+    _run_example("SBML Export")
+    document = libsbml.readSBML(str(guide_model / "model.xml"))
+    assert document.getNumErrors(libsbml.LIBSBML_SEV_ERROR) == 0
+    assert document.getModel().getNumReactions() == 1
+    result = _run_example("SBML Import")["result"]
+    assert result.time[-1] == 2.0
+    concentration = result.concentrations[:, 0]
+    np.testing.assert_allclose(
+        concentration, 100 * np.exp(-0.1 * result.time), rtol=1e-6
+    )
+
+
+def test_guide_command_line_examples(guide_model):
+    executable = shutil.which("bionetgen", path=sysconfig.get_path("scripts"))
+    assert executable is not None, "expected installed bionetgen console entry"
+    commands = _fenced_code(_guide_section("Command Line"), "bash").splitlines()
+    result = None
+    for command in commands:
+        if not command.strip():
+            continue
+        program, *args = shlex.split(command)
+        assert program == "bionetgen"
+        result = subprocess.run(
+            [executable, *args], check=True, capture_output=True, text=True
+        )
+    assert result is not None and "Exported" in result.stdout
+    table = np.genfromtxt(guide_model / "decay.tsv", names=True, delimiter="\t")
+    assert table["time"][-1] == 2.0
+    np.testing.assert_allclose(
+        table["A_total"], 100 * np.exp(-0.1 * table["time"]), rtol=1e-6
+    )
+    network = _run_example("Inspect A NET File")["network"]
+    assert len(network.parameters) == 1
+    assert len(network.species) == 1
+    assert len(network.reactions) == 1
+    assert len(network.groups) == 1
+    assert str(type(network)(str(guide_model / "decay_copy.net"))) == str(network)
