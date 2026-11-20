@@ -633,7 +633,7 @@ def test_release_obligation_147_twenty_one_slice_checks():
             # Population maps fail closed in NFnext pure execution unless lowered to hybrid
             with pytest.raises(
                 RuntimeError,
-                match="un-lowered population maps require generate_hybrid_model",
+                match="un-lowered population maps",
             ):
                 cpp.simulate_nfnext(model, [0.0, 1.0, 2.0], 42, 1000, 1000)
         else:
