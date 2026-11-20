@@ -10785,6 +10785,17 @@
       "evidence": "Extracted from actual pinned CLI option literals."
     },
     {
+      "id": "py.cli.option.sedml",
+      "behavior": "PyBioNetGen CLI option --sedml",
+      "upstream": "pybionetgen:bionetgen/main.py:BNGBase argument decorators",
+      "bng3": "python/bionetgen/cli.py (map accepted command/option behavior)",
+      "check": "release-capability[py.cli.option.sedml]",
+      "oracle": "pinned PyBioNetGen CLI default/explicit/error cases",
+      "status": "unassessed",
+      "issue": 171,
+      "evidence": "Extracted from actual pinned CLI option literals."
+    },
+    {
       "id": "py.cli.option.timeout",
       "behavior": "PyBioNetGen CLI option --timeout",
       "upstream": "pybionetgen:bionetgen/main.py:BNGBase argument decorators",
