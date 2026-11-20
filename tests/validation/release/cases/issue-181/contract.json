@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "issue": 181,
+  "title": "H03: Populate complete capability-driven corpus tiers",
+  "source": {
+    "repository": "RuleWorld/BNG3",
+    "contract": "Frozen corpus selection (provenance/corpus/selection.json), tiered corpus runners and independently pinned BNG2, NFsim and PyBioNetGen references; per-case artifacts must be identity-checked and resumable."
+  },
+  "oracle": {
+    "identity": "provenance/upstreams.lock.yml accepted pins: bionetgen 9601746f8884ed19ab2acea49fe87fc4660ace46, NFsim 8c449bbccc4a0c54586ae562f46f4955e65fe876, PyBioNetGen 28bf351a9bbfc197e19487c26dedda683716bb64",
+    "law": "Each selected case records its source digest, candidate SHA, oracle identity, configuration and consumer verdict; a partial shard resumes only from artifacts whose full identity matches, and stale or partial artifacts cannot yield a pass."
+  },
+  "acceptance_checks": [
+    "release-corpus-coverage",
+    "release-corpus-results",
+    "release-obligation-181"
+  ],
+  "obligations": [
+    "issue:181:reconcile-106-selected-models-and-the-separate-71-model-workflow",
+    "issue:181:expand-justified-nf-format-and-stress-selections-populate-curren",
+    "issue:181:closure-record",
+    "issue:181:executed-slice:selection-agreement",
+    "issue:181:executed-slice:tier-justification",
+    "issue:181:executed-slice:empty-tier-reporting",
+    "issue:181:live-acceptance:release-corpus-coverage",
+    "issue:181:live-acceptance:release-corpus-results",
+    "issue:181:live-acceptance:release-obligation-181"
+  ],
+  "scope_note": "This contract declares the issue-181 check identities. It does not claim they pass: current exact-revision evidence qualifies resumable per-case artifacts for the locked tier-S shard only (see README.md)."
+}
