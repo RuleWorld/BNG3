@@ -776,8 +776,8 @@ def check_product_fixture_names(root: Path, base: str, head: str = "HEAD") -> li
             pass
         needles.update(ID_RE.findall(text))
         needles.update(CASE_TOKEN_RE.findall(text))
-    # Read complete Python modules: a line regex mistakes annotations such as
-    # case_id: str for a declared ID and misses lists and annotated assignments.
+    # Read Python declarations. Arbitrary string literals also include product
+    # option keys and pytest parameter names, neither of which declares an ID.
     for rel in sorted(p for p in test_paths if p.endswith(".py")):
         for revision in (base, head):
             try:
@@ -785,7 +785,6 @@ def check_product_fixture_names(root: Path, base: str, head: str = "HEAD") -> li
             except subprocess.CalledProcessError:
                 continue
             needles.update(_python_fixture_ids(text))
-            needles.update(CASE_TOKEN_RE.findall(text))
     for rel in paths:
         if rel.startswith(("tests/", "fixtures/")) and Path(rel).suffix in {
             ".bngl",
