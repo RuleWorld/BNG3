@@ -212,3 +212,41 @@ def test_nested_inline_model_default_survives_flattening():
     rr = roadrunner.RoadRunner(flat)
     rr.timeCourseSelections = ["time", "[child__inner__A]"]
     assert rr.simulate(0, 1, 2)[-1, 1] == pytest.approx(6)
+
+
+def test_nested_external_model_defaults_survive_flattening(tmp_path):
+    import xml.etree.ElementTree as ET
+
+    roadrunner = pytest.importorskip("roadrunner")
+    core = "http://www.sbml.org/sbml/level3/version1/core"
+    comp = "http://www.sbml.org/sbml/level3/version1/comp/version1"
+    root = ET.fromstring(SOURCE.read_text())
+    child = root.find(f"{{{comp}}}listOfModelDefinitions/{{{comp}}}modelDefinition")
+    child.tag = f"{{{core}}}model"
+    child_doc = ET.Element(f"{{{core}}}sbml", level="3", version="1")
+    child_doc.append(child)
+    (tmp_path / "leaf.xml").write_bytes(
+        ET.tostring(child_doc, encoding="utf-8", xml_declaration=True)
+    )
+    template = """<?xml version="1.0" encoding="UTF-8"?>
+    <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:comp="http://www.sbml.org/sbml/level3/version1/comp/version1"
+      level="3" version="1" comp:required="true"><model id="{model}">
+      <comp:listOfSubmodels><comp:submodel comp:id="{instance}" comp:modelRef="external"/>
+      </comp:listOfSubmodels></model><comp:listOfExternalModelDefinitions>
+      <comp:externalModelDefinition comp:id="external" comp:source="{source}"
+      comp:modelRef="{reference}"/></comp:listOfExternalModelDefinitions></sbml>"""
+    middle = template.format(
+        model="middle", instance="inner", source="leaf.xml", reference="childModel"
+    )
+    (tmp_path / "middle.xml").write_text(middle)
+    outer = template.format(
+        model="parent", instance="child", source="middle.xml", reference="middle"
+    )
+    parent_path = tmp_path / "parent.xml"
+    parent_path.write_text(outer)
+    flat, failure = _flatten_comp_package(outer, parent_path)
+    assert failure is None
+    rr = roadrunner.RoadRunner(flat)
+    rr.timeCourseSelections = ["time", "[child__inner__A]"]
+    assert rr.simulate(0, 1, 2)[-1, 1] == pytest.approx(6)
