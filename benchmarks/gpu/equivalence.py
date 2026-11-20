@@ -419,7 +419,10 @@ def compare_runs(
                 return [], f"{side} {field_name} is missing observables: {missing}"
             unexpected = [name for name in values if name not in side_names]
             if unexpected:
-                return [], f"{side} {field_name} has unreported observables: {unexpected}"
+                return (
+                    [],
+                    f"{side} {field_name} has unreported observables: {unexpected}",
+                )
             return [values[name] for name in names], None
         if values is None:
             return [], f"{side} {field_name} is absent"
@@ -440,9 +443,7 @@ def compare_runs(
         ("observable_means", means_a, means_b),
         ("observable_stds", std_a, std_b),
     ):
-        ordered_a, error_a = order_observables(
-            values_a, field_name, "host", names_a
-        )
+        ordered_a, error_a = order_observables(values_a, field_name, "host", names_a)
         ordered_b, error_b = order_observables(
             values_b, field_name, "comparison", names_b
         )
@@ -530,9 +531,7 @@ def compare_runs(
     if final_a is not None and final_b is not None:
         comparison_indices = [names_b.index(name) for name in names]
         if comparison_indices != list(range(len(names))):
-            final_b = [
-                [row[index] for index in comparison_indices] for row in final_b
-            ]
+            final_b = [[row[index] for index in comparison_indices] for row in final_b]
         g = min(final_width or 0, max(1, ks_observables))
         for o in range(g):
             col_a = [row[o] for row in final_a[:max_trajectories_for_ks]]
