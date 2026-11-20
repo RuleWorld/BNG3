@@ -454,6 +454,43 @@ std::optional<std::string> observableRateExpression(
         if (!left || !right) return std::nullopt;
         return "(" + *left + operation + *right + ")";
     }
+    case Kind::BuiltinCall: {
+        if (!expression.builtin) return std::nullopt;
+        const char* name = nullptr;
+        std::size_t arity = 0;
+        switch (*expression.builtin) {
+        case bng::compile::BuiltinFunction::Exp: name = "exp"; arity = 1; break;
+        case bng::compile::BuiltinFunction::Ln: name = "log"; arity = 1; break;
+        case bng::compile::BuiltinFunction::Sqrt: name = "sqrt"; arity = 1; break;
+        case bng::compile::BuiltinFunction::Sin: name = "sin"; arity = 1; break;
+        case bng::compile::BuiltinFunction::Cos: name = "cos"; arity = 1; break;
+        case bng::compile::BuiltinFunction::Tan: name = "tan"; arity = 1; break;
+        case bng::compile::BuiltinFunction::Abs: name = "abs"; arity = 1; break;
+        case bng::compile::BuiltinFunction::Min: name = "min"; arity = 2; break;
+        case bng::compile::BuiltinFunction::Max: name = "max"; arity = 2; break;
+        default:
+            // Builtins without a FunctionVM counterpart (time, delay, tables,
+            // variadic reductions) stay unrepresentable rather than being
+            // approximated.
+            return std::nullopt;
+        }
+        if (expression.arguments.size() != arity) return std::nullopt;
+        std::vector<std::string> arguments;
+        arguments.reserve(arity);
+        for (const auto& argument : expression.arguments) {
+            const auto child = observableRateExpression(argument, model, observableIds);
+            if (!child) return std::nullopt;
+            arguments.push_back(*child);
+        }
+        std::ostringstream out;
+        out << name << '(';
+        for (std::size_t i = 0; i < arguments.size(); ++i) {
+            if (i != 0) out << ',';
+            out << arguments[i];
+        }
+        out << ')';
+        return out.str();
+    }
     default:
         return std::nullopt;
     }
@@ -2302,7 +2339,10 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
     };
     for (const auto& seed : source.seeds()) {
         const auto amount = constantExpression(seed.amount, source);
-        if (seed.constant || seed.declaredUnit ||
+        // A constant seed species only marks the species as immutable for
+        // concentration-assignment actions; it still initializes particles
+        // exactly like a non-constant seed, including a zero-count sink.
+        if (seed.declaredUnit ||
             !amount || !std::isfinite(*amount) || *amount < 0.0 ||
             std::floor(*amount) != *amount)
             refuse("seeds require bounded static integer particle counts");
@@ -2454,6 +2494,32 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
 
     GenericMatcher matcher(model);
 
+    // BNG2/native NFsim multiply observable pattern counts by the pattern's
+    // automorphism multiplicity. Node swaps are reported by MatchPlan; swaps
+    // of identically constrained same-name sites must be counted here.
+    auto observableAutomorphismWeight = [&](const PatternIR& pattern) -> std::size_t {
+        std::size_t weight = compileMatchPlan(pattern, model).automorphismCount();
+        for (const auto& node : pattern.nodes) {
+            const auto& type = model.molecule_types.at(node.molecule_type);
+            std::map<std::string, std::size_t> classes;
+            for (const auto& constraint : node.constraints) {
+                std::ostringstream key;
+                const std::string site_name =
+                    constraint.site < type.sites.size()
+                        ? type.sites[constraint.site].name
+                        : std::to_string(constraint.site);
+                key << site_name << ':' << static_cast<int>(constraint.kind) << ':';
+                for (const auto state : constraint.states) key << state << ',';
+                key << constraint.state;
+                ++classes[key.str()];
+            }
+            for (const auto& [_, count] : classes) {
+                for (std::size_t factor = 2; factor <= count; ++factor) weight *= factor;
+            }
+        }
+        return weight;
+    };
+
     auto evaluateObservable = [&](const ObservableDef& obs) -> double {
         double value = 0.0;
         if (obs.kind == bng::compile::ObservableKind::Molecules) {
@@ -2471,8 +2537,12 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                     continue;
                 }
                 const auto count = matcher.enumerate(term.pattern, state).size();
-                if (term.relation.empty()) value += static_cast<double>(count);
-                else if (bng::compile::observablePatternCountMatches(count, term.relation, term.quantity))
+                // BNG2/native NFsim weight observable pattern counts by the
+                // pattern's automorphism multiplicity (XML `automorphisms`).
+                const std::size_t weight = observableAutomorphismWeight(term.pattern);
+                const std::size_t weighted = count * weight;
+                if (term.relation.empty()) value += static_cast<double>(weighted);
+                else if (bng::compile::observablePatternCountMatches(weighted, term.relation, term.quantity))
                     value += 1.0;
             }
         } else if (obs.kind == bng::compile::ObservableKind::Species) {
@@ -2780,6 +2850,41 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                         rulePropensities[index] = prop;
                         total += prop;
                         continue;
+                    }
+                    // Disconnected reactant patterns with no cross-node
+                    // topology or symmetry factor exactly into a product of
+                    // per-molecule match counts. Sampling one embedding from
+                    // that product preserves the propensity and the uniform
+                    // event distribution without materializing every pair.
+                    if (!rule.total_rate && !rule.match_once && rule.filters.empty()) {
+                        if (const auto independent = matcher.countIndependent(rule.pattern, state)) {
+                            std::vector<Embedding> sampled;
+                            if (independent->count > 0) {
+                                std::vector<ParticleId> selected;
+                                std::vector<TypeId> types;
+                                selected.reserve(rule.pattern.nodes.size());
+                                types.reserve(rule.pattern.nodes.size());
+                                for (std::size_t node = 0; node < rule.pattern.nodes.size(); ++node) {
+                                    const auto& candidates = independent->candidates[node];
+                                    const double draw = rng.uniformOpen01(
+                                        layout.word(RngPurpose::Auxiliary,
+                                                    output.event_count * 8 + node));
+                                    std::size_t pick = static_cast<std::size_t>(
+                                        draw * static_cast<double>(candidates.size()));
+                                    if (pick >= candidates.size()) pick = candidates.size() - 1;
+                                    const auto particle = candidates[pick];
+                                    selected.push_back(particle);
+                                    types.push_back(state.type(particle));
+                                }
+                                sampled.emplace_back(std::move(selected), std::move(types));
+                            }
+                            const double prop = rate * static_cast<double>(independent->count);
+                            currentRates[index] = prop;
+                            matches.push_back(std::move(sampled));
+                            rulePropensities[index] = prop;
+                            total += prop;
+                            continue;
+                        }
                     }
                     auto rawMatches = matcher.enumerate(rule.pattern, state);
                     if (!rule.filters.empty()) {

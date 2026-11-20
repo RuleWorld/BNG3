@@ -33,11 +33,11 @@ end parameters
 
 
 
-begin molecule type
+begin molecule types
   #Declare the molecules and thier possible states
   CheY(p~unphos~PHOS)
   Motor(state~CW~CCW)
-end molecule type
+end molecule types
 
 
 begin seed species

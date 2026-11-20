@@ -3,8 +3,11 @@
 #include "nfnext/validator.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <functional>
+#include <limits>
 #include <numeric>
+#include <set>
 #include <sstream>
 #include <tuple>
 #include <utility>
@@ -359,6 +362,55 @@ MatchPlan compileMatchPlan(const PatternIR& pattern, const ModelIR& model) {
 std::size_t bruteForceAutomorphismCount(const PatternIR& pattern, const ModelIR& model) {
     validatePattern(pattern, model);
     return automorphismCount(pattern);
+}
+
+std::optional<IndependentMatchCount> GenericMatcher::countIndependent(
+    const PatternIR& pattern, const GenericGraphState& state) const {
+    // Cross-node topology or symmetry makes the embedding count a nontrivial
+    // combinatorial problem; those patterns use the full enumerator.
+    if (!pattern.bonds.empty() || !pattern.aliases.empty() ||
+        !pattern.connected_to.empty() || !pattern.interchangeable.empty() ||
+        pattern.nodes.empty())
+        return std::nullopt;
+    // DifferentComplex is only trivially satisfiable when every candidate is
+    // an isolated (completely unbound) particle. SameComplex always needs the
+    // general enumerator.
+    for (const auto& constraint : pattern.molecularity)
+        if (constraint.kind != MolecularityKind::DifferentComplex) return std::nullopt;
+    std::set<TypeId> types;
+    for (const auto& node : pattern.nodes)
+        if (!types.insert(node.molecule_type).second) return std::nullopt;
+
+    const auto particles = state.liveParticles();
+    auto isolated = [&](ParticleId particle) -> bool {
+        const auto* type = findType(*model_, state.type(particle));
+        if (!type) return false;
+        for (std::size_t site = 0; site < type->sites.size(); ++site)
+            if (state.bound(particle, static_cast<std::uint16_t>(site))) return false;
+        return true;
+    };
+    IndependentMatchCount result;
+    result.candidates.reserve(pattern.nodes.size());
+    double product = 1.0;
+    for (const auto& node : pattern.nodes) {
+        std::vector<ParticleId> matches;
+        for (const auto particle : particles) {
+            if (!nodeMatches(node, particle, state)) continue;
+            if (!pattern.molecularity.empty() && !isolated(particle)) return std::nullopt;
+            matches.push_back(particle);
+        }
+        if (matches.empty()) {
+            result.count = 0;
+            return result;
+        }
+        product *= static_cast<double>(matches.size());
+        if (!std::isfinite(product) ||
+            product > static_cast<double>(std::numeric_limits<std::size_t>::max()))
+            return std::nullopt;
+        result.candidates.push_back(std::move(matches));
+    }
+    result.count = static_cast<std::size_t>(product);
+    return result;
 }
 
 std::vector<Embedding> GenericMatcher::enumerate(const PatternIR& pattern,

@@ -645,7 +645,7 @@
     {
       "id": "motor",
       "path": "models/flagellar_motor/motor.bngl",
-      "sha256": "sha256:d92bc666e796912f2d12b6ac30b448a1817d81f6ae505ba68f30fb4487794627",
+      "sha256": "sha256:152ca54e7db657053f6e0bdc0002a8bb6a9ecf3134788f7348fddb20069561f3",
       "origin": "repository-fixture",
       "tiers": [
         "p",
