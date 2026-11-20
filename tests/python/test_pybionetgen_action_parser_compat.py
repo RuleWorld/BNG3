@@ -38,3 +38,36 @@ def test_modelapi_preserves_action_values(
     model = bionetgen.bngmodel(str(model_path))
     recorded = model.actions[0]
     assert recorded.args[argument] == expected
+
+
+@pytest.mark.parametrize(
+    ("action", "args", "diagnostic"),
+    [
+        ("setParameter", {'"k"': None}, "exactly 2 positional"),
+        ("setParameter", {'"k"': 2}, "is positional"),
+        ("quit", {"1": None}, "exactly 0 positional"),
+        ("simulate_ode", {"unknown_arg": 2}, "unknown_arg not recognized"),
+    ],
+)
+def test_pinned_action_validation_is_shared_with_model_api(action, args, diagnostic):
+    from bionetgen.core.exc import BNGParseError
+    from bionetgen.core.utils.utils import ActionList
+    from bionetgen.modelapi.structs import Action
+
+    with pytest.raises(BNGParseError, match=diagnostic):
+        ActionList().validate_action(action, args)
+    with pytest.raises(BNGParseError, match=diagnostic):
+        Action(action, args)
+
+
+def test_pinned_action_validation_accepts_named_and_positional_calls():
+    from bionetgen.core.utils.utils import ActionList
+    from bionetgen.modelapi.structs import Action
+
+    for name, args, rendered in [
+        ("generate_network", {"check_iso": "1"}, "generate_network({check_iso=>1})"),
+        ("setParameter", {'"k"': None, "2": None}, 'setParameter("k",2)'),
+        ("saveParameters", {}, "saveParameters([])"),
+    ]:
+        assert ActionList().validate_action(name, args) is None
+        assert str(Action(name, args)) == rendered
