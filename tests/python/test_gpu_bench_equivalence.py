@@ -1,11 +1,13 @@
 """Regression coverage for comparing named native observables."""
 
+import os
+import subprocess
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "benchmarks"))
 
-from gpu.equivalence import compare_runs
+from gpu.equivalence import compare_runs, moment_test
 
 
 def test_compare_runs_orders_named_observables_by_reported_names():
@@ -132,6 +134,23 @@ def test_compare_runs_rejects_different_reported_time_points():
     assert "reported time points differ" in report.notes[0]
 
 
+def test_compare_runs_rejects_distinct_near_zero_time_points():
+    result = {
+        "observable_names": ["A"],
+        "observable_means": {"A": [0.0, 1.0]},
+        "observable_stds": {"A": [0.0, 1.0]},
+        "final_observables": [[0.0], [1.0]],
+        "batch_size": 2,
+        "time": [0.0, 1e-10],
+    }
+    comparison = {**result, "time": [0.0, 1e-9]}
+
+    report = compare_runs(result, comparison)
+
+    assert not report.passed
+    assert "reported time points differ" in report.notes[0]
+
+
 def test_compare_runs_accepts_float32_rounding_in_same_time_grid():
     result = {
         "observable_names": ["A"],
@@ -200,3 +219,137 @@ def test_compare_runs_rejects_missing_final_observables_on_both_sides():
 
     assert not report.passed
     assert "final_observables is absent" in report.notes[0]
+
+
+def test_compare_runs_rejects_infinite_standard_deviation_hiding_mean_error():
+    host = {
+        "observable_names": ["A"],
+        "observable_means": {"A": [0.0]},
+        "observable_stds": {"A": [1.0]},
+        "final_observables": [[0.0], [0.0]],
+        "batch_size": 2,
+        "time": [0.0],
+    }
+    device = {
+        **host,
+        "observable_means": {"A": [1e30]},
+        "observable_stds": {"A": [float("inf")]},
+    }
+
+    report = compare_runs(host, device)
+
+    assert not report.passed
+    assert "non-finite" in report.notes[0]
+
+
+def test_compare_runs_rejects_nonfinite_mean_statistics():
+    result = {
+        "observable_names": ["A"],
+        "observable_means": {"A": [float("nan")]},
+        "observable_stds": {"A": [1.0]},
+        "final_observables": [[0.0], [0.0]],
+        "batch_size": 2,
+        "time": [0.0],
+    }
+
+    report = compare_runs(result, result)
+
+    assert not report.passed
+    assert "non-finite" in report.notes[0]
+
+
+def test_compare_runs_does_not_overflow_large_standard_errors():
+    host = {
+        "observable_names": ["A"],
+        "observable_means": {"A": [0.0]},
+        "observable_stds": {"A": [1e200]},
+        "final_observables": [[0.0], [0.0]],
+        "batch_size": 2,
+        "time": [0.0],
+    }
+    device = {
+        **host,
+        "observable_means": {"A": [1e201]},
+    }
+
+    report = compare_runs(host, device)
+
+    assert not report.passed
+    assert report.max_abs_z > report.z_threshold
+
+
+def test_compare_runs_does_not_underflow_small_standard_errors():
+    host = {
+        "observable_names": ["A"],
+        "observable_means": {"A": [0.0]},
+        "observable_stds": {"A": [1e-200]},
+        "final_observables": [[0.0], [0.0]],
+        "batch_size": 2,
+        "time": [0.0],
+    }
+    device = {
+        **host,
+        "observable_means": {"A": [1e-200]},
+    }
+
+    report = compare_runs(host, device)
+
+    assert report.passed
+    assert report.max_abs_z < report.z_threshold
+
+
+def test_compare_runs_rejects_negative_standard_deviation():
+    result = {
+        "observable_names": ["A"],
+        "observable_means": {"A": [0.0]},
+        "observable_stds": {"A": [-1.0]},
+        "final_observables": [[0.0], [0.0]],
+        "batch_size": 2,
+        "time": [0.0],
+    }
+
+    report = compare_runs(result, result)
+
+    assert not report.passed
+    assert "negative standard deviation" in report.notes[0]
+
+
+def test_moment_test_reports_zero_variance_ratio_without_raising():
+    report = moment_test([0.0, 2.0], [1.0, 1.0])
+
+    assert report["variance_ratio"] == 0.0
+    assert report["shape_flag"] is True
+
+
+def test_compare_runs_rejects_nan_final_values_without_hanging():
+    code = """
+import json
+from gpu.equivalence import compare_runs
+result = {
+    'observable_names': ['A'],
+    'observable_means': {'A': [0.0]},
+    'observable_stds': {'A': [1.0]},
+    'final_observables': [[float('nan')], [1.0]],
+    'batch_size': 2,
+    'time': [0.0],
+}
+report = compare_runs(result, result)
+print('PASS' if report.passed else 'FAIL')
+"""
+    env = dict(os.environ)
+    benchmarks = str(Path(__file__).resolve().parents[2] / "benchmarks")
+    env["PYTHONPATH"] = os.pathsep.join(
+        part for part in (benchmarks, env.get("PYTHONPATH", "")) if part
+    )
+
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=Path(__file__).resolve().parents[2],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=5,
+        check=True,
+    )
+
+    assert result.stdout.strip() == "FAIL"

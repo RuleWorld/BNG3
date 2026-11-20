@@ -34,28 +34,88 @@ jobs:
           mkdir -p "${RUNNER_TEMP}/gpu-artifacts"
           git rev-parse HEAD | tee "${RUNNER_TEMP}/gpu-artifacts/source_revision.txt"
           nvidia-smi -q > "${RUNNER_TEMP}/gpu-artifacts/nvidia-smi.txt"
-          nvidia-smi --query-gpu=name,uuid,compute_cap,driver_version --format=csv,noheader | tee "${RUNNER_TEMP}/gpu-artifacts/device.csv"
           python - <<'PY'
-          import csv
+          import ctypes
+          import ctypes.util
+          import json
           import os
           from pathlib import Path
 
-          device_file = Path(os.environ["RUNNER_TEMP"]) / "gpu-artifacts/device.csv"
-          with device_file.open(encoding="utf-8") as handle:
-              rows = list(csv.reader(handle))
-          if not rows or len(rows[0]) != 4:
-              raise SystemExit("nvidia-smi did not report a usable device 0")
-          name, uuid, compute_cap, driver = (value.strip() for value in rows[0])
-          if not all((name, uuid, compute_cap, driver)):
-              raise SystemExit("device 0 identity is incomplete")
-          architecture = compute_cap.replace(".", "")
-          if not architecture.isdigit():
-              raise SystemExit(f"invalid compute capability {compute_cap!r}")
+          library = ctypes.util.find_library("cuda") or "libcuda.so.1"
+          driver = ctypes.CDLL(library)
+
+          def check(result, operation):
+              if result != 0:
+                  raise SystemExit(f"CUDA driver {operation} failed with code {result}")
+
+          driver.cuInit.argtypes = [ctypes.c_uint]
+          driver.cuInit.restype = ctypes.c_int
+          check(driver.cuInit(0), "cuInit")
+
+          device = ctypes.c_int()
+          driver.cuDeviceGet.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.c_int]
+          driver.cuDeviceGet.restype = ctypes.c_int
+          check(driver.cuDeviceGet(ctypes.byref(device), 0), "cuDeviceGet(ordinal 0)")
+
+          name_buffer = ctypes.create_string_buffer(256)
+          driver.cuDeviceGetName.argtypes = [
+              ctypes.c_char_p,
+              ctypes.c_int,
+              ctypes.c_int,
+          ]
+          driver.cuDeviceGetName.restype = ctypes.c_int
+          check(
+              driver.cuDeviceGetName(name_buffer, len(name_buffer), device.value),
+              "cuDeviceGetName",
+          )
+
+          uuid_buffer = ctypes.create_string_buffer(16)
+          driver.cuDeviceGetUuid.argtypes = [ctypes.c_void_p, ctypes.c_int]
+          driver.cuDeviceGetUuid.restype = ctypes.c_int
+          check(
+              driver.cuDeviceGetUuid(uuid_buffer, device.value),
+              "cuDeviceGetUuid",
+          )
+
+          major = ctypes.c_int()
+          minor = ctypes.c_int()
+          driver.cuDeviceComputeCapability.argtypes = [
+              ctypes.POINTER(ctypes.c_int),
+              ctypes.POINTER(ctypes.c_int),
+              ctypes.c_int,
+          ]
+          driver.cuDeviceComputeCapability.restype = ctypes.c_int
+          check(
+              driver.cuDeviceComputeCapability(
+                  ctypes.byref(major), ctypes.byref(minor), device.value
+              ),
+              "cuDeviceComputeCapability",
+          )
+
+          name = name_buffer.value.decode("utf-8")
+          uuid = uuid_buffer.raw[:16].hex()
+          compute_cap = f"{major.value}.{minor.value}"
+          architecture = major.value * 10 + minor.value
+          if not name or len(uuid) != 32 or architecture <= 0:
+              raise SystemExit("runtime ordinal 0 identity is incomplete")
+          identity = {
+              "runtime_ordinal": 0,
+              "name": name,
+              "uuid": uuid,
+              "compute_capability": compute_cap,
+              "cmake_cuda_architecture": architecture,
+              "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+          }
+          artifact = (
+              Path(os.environ["RUNNER_TEMP"])
+              / "gpu-artifacts/cuda-runtime-device.json"
+          )
+          artifact.write_text(json.dumps(identity, indent=2) + "\n", encoding="utf-8")
           with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
               env.write(f"BNG3_CUDA_ARCH={architecture}\n")
           print(
-              f"selected CUDA device 0: {name}, UUID {uuid}, compute "
-              f"capability {compute_cap}, driver {driver}, CMake architecture {architecture}"
+              f"selected CUDA runtime ordinal 0: {name}, UUID {uuid}, compute "
+              f"capability {compute_cap}, CMake architecture {architecture}"
           )
           PY
 
@@ -104,6 +164,7 @@ jobs:
           python -m pytest -q
           tests/python/test_gpu_qualification.py
           tests/python/test_gpu_bench_equivalence.py
+          tests/python/test_gpu_bench_runner.py
           tests/python/test_gpu_bench_metrics.py
 
       - name: Require actual CUDA kernel execution and independent parity

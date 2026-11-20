@@ -233,7 +233,11 @@ def mean_z_test(
             mb = float(mean_b[o][t])
             sa = float(std_a[o][t])
             sb = float(std_b[o][t])
-            se = math.sqrt((sa * sa) / n_a + (sb * sb) / n_b) if n_a and n_b else 0.0
+            se = (
+                math.hypot(sa / math.sqrt(n_a), sb / math.sqrt(n_b))
+                if n_a and n_b
+                else 0.0
+            )
             if se <= 0.0:
                 # Both sides have no spread at this cell; identical means mean
                 # agreement, differing means mean a real difference. Only the
@@ -334,6 +338,9 @@ def moment_test(
     z = (ma - mb) / se if se > 0 else (0.0 if ma == mb else float("inf"))
     mean_rel = (ma - mb) / abs(ma) if ma != 0 else (0.0 if mb == 0 else float("inf"))
     var_ratio = (vb / va) if va > 0 else float("nan")
+    shape_flag = None
+    if va > 0:
+        shape_flag = var_ratio < (1.0 / 1.5) or var_ratio > 1.5
     return {
         "testable": True,
         "n_a": na,
@@ -346,9 +353,7 @@ def moment_test(
         "variance_ratio": var_ratio,
         "mean_z": z,
         "passes": abs(z) <= 3.0,
-        "shape_flag": (
-            None if not (va > 0) else abs(math.log(var_ratio)) > math.log(1.5)
-        ),
+        "shape_flag": shape_flag,
     }
 
 
@@ -478,6 +483,44 @@ def compare_runs(
     if len(set(time_grid_lengths)) != 1:
         return invalid("observable statistics time-grid lengths differ")
 
+    for side in ("host", "comparison"):
+        means = ordered[
+            "observable_means" if side == "host" else "observable_means_comparison"
+        ]
+        stds = ordered[
+            "observable_stds" if side == "host" else "observable_stds_comparison"
+        ]
+        for name, mean_values, std_values in zip(names, means, stds):
+            for time_index, (mean_value, std_value) in enumerate(
+                zip(mean_values, std_values)
+            ):
+                for label, value in (
+                    ("mean", mean_value),
+                    ("standard deviation", std_value),
+                ):
+                    if isinstance(value, (str, bytes)) or isinstance(value, Iterable):
+                        return invalid(
+                            f"{side} {label} for {name} at time index {time_index} "
+                            "is not a numeric scalar"
+                        )
+                    try:
+                        numeric = float(value)
+                    except (TypeError, ValueError, OverflowError):
+                        return invalid(
+                            f"{side} {label} for {name} at time index {time_index} "
+                            "is not numeric"
+                        )
+                    if not math.isfinite(numeric):
+                        return invalid(
+                            f"{side} {label} for {name} at time index {time_index} "
+                            "is non-finite"
+                        )
+                    if label == "standard deviation" and numeric < 0:
+                        return invalid(
+                            f"{side} has a negative standard deviation for {name} "
+                            f"at time index {time_index}"
+                        )
+
     def read_time_grid(
         result: dict[str, Any], side: str
     ) -> tuple[list[float], str | None]:
@@ -513,7 +556,7 @@ def compare_runs(
     # CPU and accelerator time arrays can differ by float32 rounding even when
     # they describe the same requested sample grid.
     if any(
-        not math.isclose(a, b, rel_tol=1e-6, abs_tol=1e-8)
+        not math.isclose(a, b, rel_tol=1e-6, abs_tol=0.0)
         for a, b in zip(times_a, times_b)
     ):
         return invalid("reported time points differ")
@@ -563,6 +606,25 @@ def compare_runs(
                     f"{side} final_observables has {row_widths[0]} columns for "
                     f"{expected_width} named observables"
                 )
+            for row_index, row in enumerate(values):
+                for column_index, value in enumerate(row):
+                    if isinstance(value, (str, bytes)) or isinstance(value, Iterable):
+                        return invalid(
+                            f"{side} final_observables[{row_index}][{column_index}] "
+                            "is not a numeric scalar"
+                        )
+                    try:
+                        numeric = float(value)
+                    except (TypeError, ValueError, OverflowError):
+                        return invalid(
+                            f"{side} final_observables[{row_index}][{column_index}] "
+                            "is not numeric"
+                        )
+                    if not math.isfinite(numeric):
+                        return invalid(
+                            f"{side} final_observables[{row_index}][{column_index}] "
+                            "is non-finite"
+                        )
             widths.append(row_widths[0])
         if widths[0] != widths[1]:
             return invalid("final_observables column counts differ between results")

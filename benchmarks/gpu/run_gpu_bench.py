@@ -40,14 +40,14 @@ Exit status
 -----------
     0   the run completed and every guard held
     2   a guard failed: a silent fallback was possible, a requested backend was
-        unusable, or a device assertion did not hold
+        unusable, a device assertion did not hold, or requested equivalence
+        evidence was missing or rejected
     3   usage error
 """
 
 from __future__ import annotations
 
 import argparse
-import json
 import os
 import sys
 from typing import Any
@@ -60,24 +60,19 @@ from gpu import (  # noqa: E402
     ContentionTrace,
     DeviceAssertionError,
     MeasurementConfig,
-    ModelSpec,
     PairedTimer,
-    TimingSample,
     calibrate_event_density,
     capability_report,
     contention_caveat,
-    engine_fails_closed,
     finish_host_facts,
     host_facts,
-    judge,
-    shape_grid,
+    shape_models,
     single_precision_device_note,
     source_identity,
-    summarise,
     write_trace,
 )
 from gpu.arms import BatchConfig, assert_no_silent_fallback  # noqa: E402
-from gpu.engine_import import load_engine, usable_backend  # noqa: E402
+from gpu.engine_import import load_engine  # noqa: E402
 from gpu.equivalence import compare_runs  # noqa: E402
 
 BAR = "=" * 78
@@ -377,6 +372,59 @@ def primary_metric(report: dict[str, Any]) -> str:
     return report.get("primary_metric", "child_cpu_s")
 
 
+def failed_equivalence_report(note: str) -> dict[str, Any]:
+    """Return the standard report shape when a requested comparison is absent."""
+    return {
+        "passed": False,
+        "claim": "statistical equivalence comparison could not be completed",
+        "n_trajectories_a": 0,
+        "n_trajectories_b": 0,
+        "detectable_effect_size": "unavailable",
+        "test_power_label": "unavailable",
+        "max_abs_z": float("nan"),
+        "z_threshold": float("nan"),
+        "z_cells": 0,
+        "z_passes": 0,
+        "worst_observable": None,
+        "ks_results": [],
+        "moment_results": [],
+        "alpha": None,
+        "notes": [note],
+    }
+
+
+def compare_arm_payloads(
+    payload_a: dict[str, Any] | None,
+    payload_b: dict[str, Any] | None,
+    alpha: float,
+) -> tuple[dict[str, Any], int]:
+    """Compare two arms and fail closed when requested evidence is missing."""
+    if payload_a is None or payload_b is None:
+        missing = [
+            label
+            for label, payload in (("host", payload_a), ("comparison", payload_b))
+            if payload is None
+        ]
+        report = failed_equivalence_report(
+            f"equivalence comparison is missing arm payload(s): {', '.join(missing)}"
+        )
+        return report, 2
+    try:
+        report = compare_runs(payload_a, payload_b, alpha=alpha).as_dict()
+    except Exception as exc:  # noqa: BLE001 - requested qualification must fail closed
+        report = failed_equivalence_report(
+            f"equivalence comparison raised {type(exc).__name__}: {exc}"
+        )
+        report["alpha"] = alpha
+        return report, 2
+    return report, 0 if report.get("passed") is True else 2
+
+
+def crossover_verdict(report: dict[str, Any]) -> dict[str, Any] | None:
+    """Return the elapsed-time verdict; host CPU time is resource use, not speed."""
+    return report.get("verdicts", {}).get("wall_s")
+
+
 def print_null_band(report: dict[str, Any], metric: str | None = None) -> None:
     """Print the instrument's noise floor, before any effect is discussed."""
     metric = metric or primary_metric(report)
@@ -549,9 +597,7 @@ def run_one(
         arm.prepare(model, network)
     trace.mark()
 
-    payload_a = None
     device_reports: list[dict[str, Any]] = []
-    precision_notes: list[str] = []
 
     if args.self_test:
         # Arm A against itself. Nothing else is measured; the point is the band.
@@ -584,9 +630,6 @@ def run_one(
         """Run the arm named `label`, capturing its result and assertions."""
         arm = arm_b if label == arm_b.label else arm_a
         result = arm.run(model, network)
-        if arm is arm_a:
-            payload_a_local = result
-            return result.sample, result
         return result.sample, result
 
     last: dict[str, Any] = {}
@@ -631,13 +674,16 @@ def run_one(
             return {"report": report, "info": info}, 2
 
     equivalence = None
+    equivalence_status = 0
     if args.equivalence:
         a_payload = last.get(arm_a.label)
         b_payload = last.get(arm_b.label)
-        if a_payload and b_payload:
-            equivalence = compare_runs(
-                a_payload.payload, b_payload.payload, alpha=args.alpha
-            ).as_dict()
+        equivalence, equivalence_status = compare_arm_payloads(
+            getattr(a_payload, "payload", None),
+            getattr(b_payload, "payload", None),
+            alpha=args.alpha,
+        )
+        if equivalence.get("passed") is True:
             equivalence["device_precision"] = single_precision_device_note()
 
     result_a = last.get(arm_a.label)
@@ -696,6 +742,10 @@ def run_one(
 
     if args.equivalence and equivalence is not None:
         _heading("STATISTICAL EQUIVALENCE")
+        _p(
+            f"comparison verdict       : "
+            f"{'PASS' if equivalence.get('passed') is True else 'FAIL'}"
+        )
         _p(f"claim                    : {equivalence['claim']}")
         _p(
             f"trajectories per side    : {equivalence['n_trajectories_a']} / "
@@ -729,9 +779,11 @@ def run_one(
         _p("a demonstration that the two arms are the same computation: they use")
         _p("different random streams and, on this device, different precision.")
 
-    status = 0
+    status = equivalence_status
     primary = report["verdicts"][primary_metric(report)]
-    if not primary["clears_null"] and not args.no_null:
+    if args.equivalence and equivalence is not None and not equivalence.get("passed"):
+        payload["outcome"] = "EQUIVALENCE_FAILED"
+    elif not primary["clears_null"] and not args.no_null:
         # Not a failure: a null result is a valid result. The exit status
         # reflects whether the run was trustworthy, not whether it found a win.
         payload["outcome"] = "INDISTINGUISHABLE_FROM_NOISE"
@@ -750,11 +802,14 @@ def run_sweep(
     counts = [int(x) for x in args.sweep_reactions.split(",") if x.strip()]
     _heading("SYNTHETIC LADDER: reactions vs measured effect")
     _p("Each rung calibrates its own event density by measurement, then measures")
-    _p("the same pair of arms. The crossover, if there is one, appears as the")
-    _p("first rung whose effect clears its own null band.")
+    _p("the same pair of arms. Crossover uses elapsed wall time; host CPU time")
+    _p("is reported separately as resource use and can point in another direction.")
+    _p("The crossover, if there is one, appears as the first rung whose wall-time")
+    _p("effect clears its own null band.")
     _p()
     _p(
-        f"{'R':>6} {'ev/traj':>8} {'B/A cpu':>9} {'null band':>18} {'clears':>7}  verdict"
+        f"{'R':>6} {'ev/traj':>8} {'B/A wall':>9} {'wall band':>18} "
+        f"{'wall clears':>11} {'B/A CPU':>10}  elapsed-time verdict"
     )
     rungs: list[dict[str, Any]] = []
     status = 0
@@ -783,12 +838,21 @@ def run_sweep(
         payload, st = run_one(sub, cpp, model, network, info, trace, capabilities)
         status |= st
         meas = payload.get("measurement") or {}
-        verdict = meas.get("verdicts", {}).get(primary_metric(meas))
+        verdict = crossover_verdict(meas)
         if verdict is None:
+            status |= 2
+            _p(
+                f"{r:>6} {'n/a':>8} {'n/a':>9} {'n/a':>18} {'n/a':>11} "
+                f"{'n/a':>10}  missing wall-time verdict"
+            )
             continue
+        cpu_verdict = meas.get("verdicts", {}).get(primary_metric(meas))
         band = verdict["null_band"]
         eff = verdict["effect_ratio_b_over_a"]
         clr = verdict["clears_null"]
+        cpu_effect = (
+            cpu_verdict["effect_ratio_b_over_a"] if cpu_verdict is not None else None
+        )
         dens = payload.get("events_per_trajectory")
         rungs.append(
             {
@@ -797,12 +861,15 @@ def run_sweep(
                 "effect": eff,
                 "band": band,
                 "clears": clr,
+                "elapsed_time_metric": "wall_s",
+                "host_cpu_effect_ratio_b_over_a": cpu_effect,
                 "achieved_density": calib.achieved_density,
             }
         )
         _p(
             f"{r:>6} {(dens or 0):>8.1f} {eff:>9.4f} "
-            f"{f'[{band[0]:.3f}, {band[1]:.3f}]':>18} {str(clr):>7}  "
+            f"{f'[{band[0]:.3f}, {band[1]:.3f}]':>18} {str(clr):>11} "
+            f"{cpu_effect if cpu_effect is not None else float('nan'):>10.4f}  "
             f"{verdict['verdict']}"
         )
         trace.mark()
@@ -904,7 +971,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.sweep:
             for rung in payload.get("sweep", []):
                 _p(
-                    f"R={rung['R']:<6} effect={rung['effect']:.4f} "
+                    f"R={rung['R']:<6} B/A wall={rung['effect']:.4f} "
                     f"band=[{rung['band'][0]:.3f}, {rung['band'][1]:.3f}] "
                     f"clears={rung['clears']}"
                 )
