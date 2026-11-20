@@ -77,6 +77,15 @@ def _install_oracle(monkeypatch, verdicts: dict[str, str], calls: dict[str, int]
 
     def fake_model(name, source, args, directory, reference, env):
         calls[name] = calls.get(name, 0) + 1
+        # Mirror the real case runner: it creates staged outputs from scratch,
+        # so leftover outputs from an interrupted case must have been cleared
+        # before this call. This is the regression that a filename-only test
+        # would miss.
+        original = Path(directory) / "models" / name / "original"
+        if original.exists():
+            raise FileExistsError(f"staged outputs already exist: {original}")
+        original.mkdir(parents=True)
+        (original / "staged.bngl").write_text("staged")
         # The oracle consumes the real locked source, so a stale source digest
         # cannot be substituted without changing the recorded invocation.
         digest = "sha256:" + hashlib.sha256(source.read_bytes()).hexdigest()
@@ -154,6 +163,8 @@ def test_resume_reuses_completed_case_and_executes_withheld_case(tmp_path, monke
         )
     withheld = corpus_resume.artifact_path(interrupted, "simple_system")
     assert withheld.is_file()
+    leftover = interrupted / "models" / "simple_system" / "original"
+    assert leftover.is_dir()  # staged outputs of the withheld case remain
     withheld.unlink()
 
     before = dict(calls)
