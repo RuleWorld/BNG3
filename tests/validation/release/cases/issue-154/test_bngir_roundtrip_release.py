@@ -27,7 +27,11 @@ from bionetgen.bngir import (
     semantic_equal,
     to_bngir,
 )
-from bionetgen.model import _cpp
+
+try:
+    import bionetgen._bionetgen_cpp as _cpp
+except ImportError:
+    from bionetgen.model import _cpp
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 CASE_DIR = Path(__file__).resolve().parent
@@ -47,7 +51,17 @@ SCHEMA_V02 = json.loads(
 
 
 def _parse_model(bngl: str) -> bionetgen.BioNetGenModel:
-    return bionetgen.BioNetGenModel(_cpp.parse_string(bngl))
+    if _cpp is not None and hasattr(_cpp, "parse_string"):
+        return bionetgen.BioNetGenModel(_cpp.parse_string(bngl))
+    import tempfile
+
+    with tempfile.NamedTemporaryFile("w", suffix=".bngl", delete=False) as f:
+        f.write(bngl)
+        f.flush()
+        try:
+            return bionetgen.load(f.name)
+        finally:
+            Path(f.name).unlink(missing_ok=True)
 
 
 # Comprehensive construct models exercising each required family
