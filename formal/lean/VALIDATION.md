@@ -152,18 +152,22 @@ that script. The measured dependencies are:
 
 - No axioms: BNG.source_text_is_not_semantics, BNG.source_irrelevance_again,
   BNG.rule_side_roundtrip, BNG.PatternSide.flip_involutive,
-  BNG.pattern_lowering_keeps_bonds, and BNG.lower_preserves_bond_count.
+  BNG.pattern_lowering_keeps_bonds, BNG.lower_preserves_bond_count,
+  BNG.setState?_preserves_bonds, and BNG.state_change_preserves_bonds.
 - propext only: BNG.pattern_lowering_keeps_nodes,
   BNG.rule_lowering_keeps_edits, BNG.lower_preserves_molecule_count,
   BNG.lower_preserves_mutation_count, BNG.backend_one_edit_refines_semantics,
   BNG.execute_lowered_mutation_eq_reference, BNG.connectedFrom_empty,
-  BNG.empty_molecule_observable_zero, BNG.structural_roundtrip, and
-  BNG.compileStructuralSemantics_deterministic.
+  BNG.empty_molecule_observable_zero, BNG.structural_roundtrip,
+  BNG.compileStructuralSemantics_deterministic,
+  BNG.changeState_mutation_preserves_bonds, and
+  BNG.lowered_setState_preserves_bonds.
 - propext and Quot.sound: BNG.backend_edit_program_refines_semantics,
   BNG.backend_rule_step_refines_semantics,
   BNG.execute_lowered_program_eq_reference,
-  BNG.execute_lowered_rule_eq_reference, and
-  BNG.Examples.example_lowered_step_equals_semantic_step.
+  BNG.execute_lowered_rule_eq_reference,
+  BNG.Examples.example_lowered_step_equals_semantic_step, and
+  BNG.lowered_state_change_preserves_bonds.
 - BNG.Examples.nfnextBridgeContract_holds depends on propext,
   Classical.choice, Quot.sound, and its allowlisted
   nfnextBridgeContract_holds._native.native_decide.ax_1_1 extension.
@@ -190,6 +194,43 @@ nfnextBridgeContract_holds checks one concrete lowering fixture. The native
 C++ bridge CTest checks the same BNGL example through the production parser,
 CompiledModel, and NFnext lowering implementation. These independent checks do
 not form a general Lean-to-C++ refinement theorem.
+
+## Production lowering correspondence and state-change preservation — Issue #166
+
+A production-to-Lean correspondence bridge connects the actual C++ production
+lowering output (`bng::compile::CompiledModel` → `nfnext::lowerFromBioNetGen`) with
+Lean's formal operational semantics and an independent expected oracle.
+
+- Concrete target rule: exercises minimal state change with an unchanged contextual
+  site, a non-unit rate, and state-sensitive observables:
+  `A(x~u, c~off) -> A(x~p, c~off) 0.5` with observables `U` and `P`.
+- Data path: the production lowering artifact is produced via `lowerFromBioNetGen`,
+  emitting an expanded rule with rate `0.5`, 4 predicates (constraining both `x`
+  and contextual `c` to free and correct state), and exactly 1 action (`SetSiteState`
+  on target site `x`, with no action on contextual site `c`).
+- Lean formal evaluator (`formal/lean/LoweringBridge.lean`): implements the corresponding
+  pattern, predicates, and actions in Lean's formal operational model, verifying
+  match multiplicity (1), firing condition, preservation of contextual site `c~off`,
+  update of target site `x~p`, and observable transition `U: 1 -> 0, P: 0 -> 1`.
+- Independent reference oracle: `formal/lean/scripts/check_lowering_bridge.py`
+  evaluates the production artifact, formal Lean evaluator output, and independent
+  reference against each other.
+- Negative cases: comparator includes negative controls for:
+  1. Mutated target state (rule leaves `x` in `u` instead of `p`). Lowering produces
+     zero actions; comparator rejects due to missing action.
+  2. Wrong site unchanged (rule mutates `c` to `on` and leaves `x` unchanged). Lowering
+     emits action on site 1 (`c`) instead of site 0 (`x`); comparator rejects.
+  Both negative cases detect divergence even though species and rule counts match.
+- Lean kernel preservation proofs:
+  `BNG.state_change_preserves_bonds` and `BNG.lowered_state_change_preserves_bonds`
+  are proved directly in the Lean kernel (without `native_decide` or opaque axioms).
+  They establish that applying a state change (semantically or via lowered `setState`)
+  strictly preserves all mixture bonds. Their axiom footprint is audited in
+  `scripts/check_axiom_dependencies.sh` (zero nonstandard axioms; `propext` and
+  `Quot.sound` only).
+- Release test case: `tests/validation/release/cases/issue-166/test_lowering_bridge.py`
+  runs the Lean kernel proof check, the C++ native architecture contract, and the
+  end-to-end Python lowering bridge.
 
 ## NFnext and hybrid checks
 

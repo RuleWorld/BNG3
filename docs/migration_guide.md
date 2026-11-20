@@ -136,18 +136,55 @@ print(result.to_dataframe().head())
 
 ### Parameter Scans
 
+Save this one-species decay model as `model.bngl`:
+
+```bngl
+begin model
+begin parameters
+  k 0.1
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 100
+end seed species
+begin observables
+  Molecules A_total A()
+end observables
+begin reaction rules
+  decay: A() -> 0 k
+end reaction rules
+end model
+```
+
+The mass-action law for `A() -> 0` is `A(t) = A0 * exp(-k * t)`. With
+`A0 = 100` and `t_end = 2.0`, the requested rates `0.1` and `1.0` give the
+endpoints `100 * exp(-0.2) ≈ 81.873075` and `100 * exp(-2) ≈ 13.533528`.
+`ScanResult.parameter_values` records the rate used by each simulation in
+request order, `parameter_name` names the scanned parameter, and `final()`
+returns one endpoint per value in that same order.
+
 ```python
-import numpy as np
+import bionetgen
 
 model = bionetgen.load("model.bngl")
 scan = model.parameter_scan(
-	parameter="k_on",
-	values=np.logspace(-2, 2, 50),
-	method="ode",
-	t_end=100,
+    parameter="k",
+    values=[0.1, 1.0],
+    method="ode",
+    t_end=2.0,
 )
-print(scan.final("AB"))
+print(scan.parameter_name, scan.parameter_values)
+print(scan.final("A_total"))
 ```
+
+The old workflow looped over `bionetgen.run()` calls, edited the parameter and
+parsed one output file per rate. BNG3 applies each value to the named parameter
+directly and the result keeps the value-to-endpoint association. This example
+is executed verbatim by `tests/python/test_migration_guide_installed_example.py`
+against the installed wheel. Cross-package trajectory equivalence is not
+claimed; see the compatibility limits below.
 
 ### SBML Import
 
@@ -190,7 +227,7 @@ the same models produce the same trajectories or side effects in both packages.
 | Run a single simulation from a file | `bionetgen.run(path, method=..., t_end=..., n_steps=...)` | `tests/python/test_compatibility_contract.py` exercises supported methods, results, and dispatch. The modern API returns `SimResult`, not the old file result. |
 | Run declared model actions into an output directory | `bionetgen.run(path, out=...)` | BNG3 compatibility tests exercise generated `.xml`, `.net`, `.gdat`, and `.cdat` outputs and action preservation. This uses BNG3's in-process runner; it does not promise PyBioNetGen backend or time-grid parity. |
 | Inspect simulation results | `SimResult.time`, `.observables`, `.to_dataframe()` | The migration workflow test checks the documented fields and dataframe shape. |
-| Scan a parameter | `model.parameter_scan(...)` | The migration workflow test checks a small ODE scan. Cross-package scan equivalence is not established. |
+| Scan a parameter | `model.parameter_scan(...)` | The installed-example test executes the guide's two-rate decay scan and checks its analytic endpoints; cross-package scan equivalence is not established. |
 | Build a model in Python | `ModelBuilder` | A construction and simulation smoke test exists; full equivalence to direct edits of PyBioNetGen's block model is not established. |
 | Import SBML | `bionetgen.from_sbml(path, atomize=True)` | The migration test covers one simple SBML model. It is not evidence for all SBML Core or package semantics; see the SBML qualification records. |
 | Use the command line | `bng3 run`, `bng3 check`, `bng3 export`, and other BNG3 commands | The migration test checks CLI version/help, and compatibility tests cover notebook generation. The old CLI option inventory is not fully mapped or parity-tested. |
@@ -198,7 +235,10 @@ the same models produce the same trajectories or side effects in both packages.
 CI's `pybionetgen-compat` job checks selected root exports and runner parameters
 from the locked source, then runs `tests/python/test_compatibility_contract.py`
 against the installed BNG3 package. `tests/python/test_migration_workflows.py`
-executes the examples above against BNG3. These checks do not import both
+executes the examples above against BNG3. The wheel job also runs
+`tests/python/test_migration_guide_installed_example.py`, which extracts and
+executes the parameter-scan text above verbatim against the installed package,
+so editing the published example can break CI. These checks do not import both
 packages and compare all 4.7 inventory rows, do not validate every legacy
 module or CLI option, and do not qualify every workflow listed here as
 source-semantic parity.

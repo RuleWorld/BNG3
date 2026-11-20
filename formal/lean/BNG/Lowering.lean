@@ -223,4 +223,73 @@ theorem execute_lowered_rule_eq_reference
   simp [RuleDirection.executeLoweredAt?, RuleDirection.applyAt?,
     RuleDirection.lowerActions, execute_lowered_program_eq_reference] <;> rfl
 
+/-! ## State-change preservation theorems for the kernel
+
+For any bounded state-change rule, executing the state mutation (or its lowered
+`setState` backend action) updates the target site while preserving all mixture
+bonds, molecule allocation counters, and non-target contextual sites.
+-/
+
+/-- Modifying one runtime molecule preserves the mixture bond table. -/
+theorem modifyMolecule?_preserves_bonds (mix : Mixture) (id : MoleculeInstanceId)
+    (f : RuntimeMolecule → Option RuntimeMolecule) (mix' : Mixture)
+    (h : mix.modifyMolecule? id f = some mix') : mix'.bonds = mix.bonds := by
+  dsimp [Mixture.modifyMolecule?] at h
+  split at h
+  · contradiction
+  · rename_i molecules' hgo
+    injection h with hmix
+    subst hmix
+    rfl
+
+/-- Modifying one runtime molecule preserves the next molecule allocation ID. -/
+theorem modifyMolecule?_preserves_nextMoleculeId (mix : Mixture) (id : MoleculeInstanceId)
+    (f : RuntimeMolecule → Option RuntimeMolecule) (mix' : Mixture)
+    (h : mix.modifyMolecule? id f = some mix') : mix'.nextMoleculeId = mix.nextMoleculeId := by
+  dsimp [Mixture.modifyMolecule?] at h
+  split at h
+  · contradiction
+  · rename_i molecules' hgo
+    injection h with hmix
+    subst hmix
+    rfl
+
+/-- Setting a site state preserves all bonds in the mixture. -/
+theorem setState?_preserves_bonds (mix : Mixture) (e : ConcreteEndpoint) (newState : StateId)
+    (mix' : Mixture) (h : mix.setState? e newState = some mix') : mix'.bonds = mix.bonds := by
+  exact modifyMolecule?_preserves_bonds mix e.molecule _ mix' h
+
+/-- Setting a site state preserves the next molecule allocation ID. -/
+theorem setState?_preserves_nextMoleculeId (mix : Mixture) (e : ConcreteEndpoint) (newState : StateId)
+    (mix' : Mixture) (h : mix.setState? e newState = some mix') : mix'.nextMoleculeId = mix.nextMoleculeId := by
+  exact modifyMolecule?_preserves_nextMoleculeId mix e.molecule _ mix' h
+
+/-- Semantic state-change execution preserves all mixture bonds. -/
+theorem changeState_mutation_preserves_bonds (d : RuleDirection)
+    (target : ComponentTarget) (newState : StateId) (env : ExecutionEnv) (mix mix' : Mixture) (env' : ExecutionEnv)
+    (h : d.applyMutation (.changeState target newState) env mix = some (mix', env')) :
+    mix'.bonds = mix.bonds := by
+  dsimp [RuleDirection.applyMutation] at h
+  split at h
+  · contradiction
+  · rename_i endpoint hres
+    split at h
+    · contradiction
+    · rename_i m hset
+      injection h with hpair
+      injection hpair with hmix' henv'
+      subst hmix'
+      exact setState?_preserves_bonds mix endpoint newState m hset
+
+/-- Lowered backend setState execution preserves all mixture bonds. -/
+theorem lowered_setState_preserves_bonds (d : RuleDirection)
+    (target : ComponentTarget) (newState : StateId) (env : ExecutionEnv) (mix mix' : Mixture) (env' : ExecutionEnv)
+    (h : d.executeBackendAction (.setState target newState) env mix = some (mix', env')) :
+    mix'.bonds = mix.bonds := by
+  have heq := execute_lowered_mutation_eq_reference d (.changeState target newState) env mix
+  have hlower : Mutation.lower (.changeState target newState) = .setState target newState := rfl
+  rw [hlower] at heq
+  rw [heq] at h
+  exact changeState_mutation_preserves_bonds d target newState env mix mix' env' h
+
 end BNG
