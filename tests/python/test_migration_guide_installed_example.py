@@ -220,4 +220,9 @@ def test_guide_command_line_examples(guide_model):
     np.testing.assert_allclose(
         table["A_total"], 100 * np.exp(-0.1 * table["time"]), rtol=1e-6
     )
-    assert (guide_model / "decay.net").is_file()
+    network = _run_example("Inspect A NET File")["network"]
+    assert len(network.parameters) == 1
+    assert len(network.species) == 1
+    assert len(network.reactions) == 1
+    assert len(network.groups) == 1
+    assert str(type(network)(str(guide_model / "decay_copy.net"))) == str(network)

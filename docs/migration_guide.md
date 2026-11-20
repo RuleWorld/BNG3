@@ -290,6 +290,17 @@ bionetgen run model.bngl --method ode --t-end 2 --n-steps 10 --output decay.tsv
 bionetgen export model.bngl --format net --output decay.net
 ```
 
+### Inspect A NET File
+
+Run the command-line export above first.
+
+```python
+from bionetgen.network.network import Network
+
+network = Network("decay.net")
+network.write_model("decay_copy.net")
+```
+
 ## PyBioNetGen API Differences
 
 The migration reference is PyBioNetGen revision
@@ -356,11 +367,14 @@ Other API boundaries:
   The legacy compatibility runner does not route via PyBioNetGen's
   `simulator="bngsim"` choice. These are distinct workflows and their parity
   remains unqualified.
-- PyBioNetGen's `simulator.csimulator` compile-to-C classes are not exposed.
-  Use the BNG3 simulation API for its supported methods; this does not preserve
-  C compiler or generated-library workflows.
-- The PyBioNetGen Python `.net` object model is not exposed. Native BNG3 file
-  handling does not provide that Python object's editing and inspection API.
+- The legacy `bionetgen.simulator.csimulator` classes are available for
+  import. The compile-to-C workflow requires a C compiler and the legacy
+  toolchain. The `sim_getter` convenience API selects the RoadRunner
+  adapter. Use `model.simulate()` for the native BNG3 defaults.
+- The legacy `bionetgen.network.network.Network` class reads and writes
+  `.net` files for inspection and editing. The migration example exercises
+  one exported network. Full installed differential coverage remains part
+  of [#171](https://github.com/RuleWorld/BNG3/issues/171).
 - `BNGFormatError` and `BNGSimError` are available in `bionetgen.core.exc`.
 
 ## Removed Dependencies
