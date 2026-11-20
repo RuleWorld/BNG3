@@ -78,3 +78,27 @@ def test_accepts_a_recorded_analytic_law_and_rejects_loss_diagnostics():
     result = coverage_report(ROWS, LOCK, [record], REVISION)
     assert result["observed_rows"] == {"action.simulate": "PASS"}
     assert result["missing_rows"] == ["action.visualize"]
+
+
+def test_stale_or_dirty_behavior_report_is_ignored():
+    stale_record = evidence(observation("action.simulate"), revision="stale" * 8)
+    dirty_record = {
+        "source": {"revision": REVISION, "dirty": True},
+        "references": {"bionetgen": {"revision": UPSTREAM}},
+        "results": [observation("action.visualize")],
+    }
+    result = coverage_report(ROWS, LOCK, [stale_record, dirty_record], REVISION)
+    assert result["observed_rows"] == {}
+    assert result["missing_rows"] == ["action.simulate", "action.visualize"]
+
+
+def test_unmatched_source_reference_revision_is_ignored():
+    mismatched_record = {
+        "source": {"revision": REVISION, "dirty": False},
+        "references": {"bionetgen": {"revision": "wrong" * 8}},
+        "results": [observation("action.simulate")],
+    }
+    result = coverage_report(ROWS, LOCK, [mismatched_record], REVISION)
+    assert result["observed_rows"] == {}
+    assert result["missing_rows"] == ["action.simulate", "action.visualize"]
+
