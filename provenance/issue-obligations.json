@@ -2,13 +2,15 @@
   "schema_version": 1,
   "approved_dependency_scope": {
     "issues": [
+      138,
       140,
+      142,
       143,
       150,
       156
     ],
     "decision": "docs/DECISIONS.md#18",
-    "decision_marker": "Dependencies #140, #143, #150 and #156 for downstream release qualification",
+    "decision_marker": "Dependencies #138, #140, #142, #143, #150 and #156 for downstream release qualification",
     "reason": "Maintainer decision item 18 records that the reviewed scope for these dependency issues is authoritative for downstream exact-revision closure dry runs despite later live-body edits. This resolves stale dependency status only; dependent issues must still pass all of their own acceptance checks."
   },
   "issues": [
@@ -4733,7 +4735,7 @@
     },
     {
       "number": 147,
-      "body_sha256": "ea9a754041080505cacf0955d7d15738967146eaa6670f532c1f3a9a86504341",
+      "body_sha256": "e4a556d0e180fc86b013b2547a5323e97c418d26aae8e40b8f60731f173af72a",
       "obligations": [
         {
           "id": "issue:147:select-supported-additions-for-dynamic-rates-filters-modifiers-c",
@@ -5175,7 +5177,7 @@
           "id": "issue:147:live-acceptance:release-nfir-lowering",
           "criterion": "`release-nfir-lowering`: every network-free inventory row lowers with complete semantics and validated IDs.",
           "scope": "`release-nfir-lowering`: every network-free inventory row lowers with complete semantics and validated IDs.",
-          "live_body_sha256": "ea9a754041080505cacf0955d7d15738967146eaa6670f532c1f3a9a86504341",
+          "live_body_sha256": "e4a556d0e180fc86b013b2547a5323e97c418d26aae8e40b8f60731f173af72a",
           "dependencies": [
             138,
             142,
@@ -5206,7 +5208,7 @@
           "id": "issue:147:live-acceptance:release-nfir-roundtrip",
           "criterion": "`release-nfir-roundtrip`: independently authored canonical model facts agree with NFIR and native NFsim input facts.",
           "scope": "`release-nfir-roundtrip`: independently authored canonical model facts agree with NFIR and native NFsim input facts.",
-          "live_body_sha256": "ea9a754041080505cacf0955d7d15738967146eaa6670f532c1f3a9a86504341",
+          "live_body_sha256": "e4a556d0e180fc86b013b2547a5323e97c418d26aae8e40b8f60731f173af72a",
           "dependencies": [
             138,
             142,
@@ -5237,7 +5239,7 @@
           "id": "issue:147:live-acceptance:release-obligation-147",
           "criterion": "`release-obligation-147`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
           "scope": "`release-obligation-147`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
-          "live_body_sha256": "ea9a754041080505cacf0955d7d15738967146eaa6670f532c1f3a9a86504341",
+          "live_body_sha256": "e4a556d0e180fc86b013b2547a5323e97c418d26aae8e40b8f60731f173af72a",
           "dependencies": [
             138,
             142,

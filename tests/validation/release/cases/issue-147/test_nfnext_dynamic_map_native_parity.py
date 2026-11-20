@@ -20,6 +20,7 @@ import math
 import os
 from pathlib import Path
 import subprocess
+import sys
 
 import pytest
 
@@ -33,9 +34,12 @@ build_so = (
     / "cpp"
     / "_bionetgen_cpp.cpython-314-darwin.so"
 )
-if build_so.exists():
+if "_bionetgen_cpp" in sys.modules:
+    cpp = sys.modules["_bionetgen_cpp"]
+elif build_so.exists():
     spec = importlib.util.spec_from_file_location("_bionetgen_cpp", str(build_so))
     cpp = importlib.util.module_from_spec(spec)
+    sys.modules["_bionetgen_cpp"] = cpp
     assert spec.loader is not None
     spec.loader.exec_module(cpp)
 else:
