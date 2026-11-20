@@ -387,6 +387,14 @@ double energyFactorValue(const bng::compile::CompiledEnergyFactor& ep,
     return 0.0;
 }
 
+// A dynamic energy factor has no static value. Its expression must be
+// evaluated against runtime state instead of being folded into a constant
+// rate; folding it to zero would silently change the model semantics.
+bool isDynamicEnergyFactor(const bng::compile::CompiledEnergyFactor& ep,
+                           const bng::compile::CompiledModel& source) {
+    return !ep.evaluatedValue && !constantExpression(ep.expression, source);
+}
+
 std::optional<std::string> observableRateExpression(
     const bng::compile::ResolvedExpression& expression,
     const bng::compile::CompiledModel& model,
@@ -1541,23 +1549,41 @@ void addDirection(const bng::compile::CompiledRule& rule,
         std::vector<int> always;
         std::vector<int> conditional;
 
-        auto signedCenterEnergy = [&](std::size_t patternIndex, double& contrib) -> bool {
+        struct CenterContribution {
+            bool has_center{false};
+            int coefficient{0};
+        };
+        // The signed energy delta is this coefficient times the pattern's
+        // energy value. Keeping the coefficient separate lets a dynamic
+        // expression be composed at runtime instead of folded to zero.
+        auto signedCenterContribution = [&](std::size_t patternIndex) -> CenterContribution {
             const auto& ep = source.energyFactors()[patternIndex];
-            int centerCount = 0;
-            contrib = 0.0;
+            CenterContribution result;
             for (const auto& mol : ep.pattern.molecules()) {
                 if (!mol.moleculeTypeId || mol.moleculeTypeId->value() != molTypeId) continue;
                 for (const auto& site : mol.sites) {
                     if (!site.componentType || site.componentType->index != centerSiteTypeId) continue;
                     if (site.stateConstraintResolved.kind != bng::compile::StateConstraintKind::Exact ||
                         !site.stateConstraintResolved.exact) continue;
-                    ++centerCount;
+                    result.has_center = true;
                     const auto st = site.stateConstraintResolved.exact->index;
-                    if (st == toStateId) contrib += energyFactorValue(ep, source);
-                    else if (st == fromStateId) contrib -= energyFactorValue(ep, source);
+                    if (st == toStateId) ++result.coefficient;
+                    else if (st == fromStateId) --result.coefficient;
                 }
             }
-            return centerCount >= 1;
+            return result;
+        };
+        auto appendDynamicEnergyTerm = [&](int coefficient,
+                                           const bng::compile::CompiledEnergyFactor& ep,
+                                           std::vector<std::string>& terms) -> bool {
+            if (coefficient == 0) return true;
+            std::set<std::size_t> observableIds;
+            const auto expression = observableRateExpression(ep.expression, source, observableIds);
+            if (!expression) return false;
+            std::ostringstream term;
+            term << '(' << coefficient << "*(" << *expression << "))";
+            terms.push_back(term.str());
+            return true;
         };
 
         for (std::size_t pi = 0; pi < source.energyFactors().size(); ++pi) {
@@ -1596,8 +1622,7 @@ void addDirection(const bng::compile::CompiledRule& rule,
                       "energy-modulated state change requires one weighted reactant molecule per energy pattern");
                 return;
             }
-            double ignored = 0.0;
-            if (!signedCenterEnergy(pi, ignored)) {
+            if (!signedCenterContribution(pi).has_center) {
                 issue(result, BngLoweringSeverity::Error, entity,
                       "energy-modulated state change requires a reaction-center state constraint in relevant energy patterns");
                 return;
@@ -1627,10 +1652,19 @@ void addDirection(const bng::compile::CompiledRule& rule,
         }
 
         double baseEnergy = 0.0;
+        std::vector<std::string> baseDynamicTerms;
         for (int pi : always) {
-            double c = 0.0;
-            signedCenterEnergy(static_cast<std::size_t>(pi), c);
-            baseEnergy += c;
+            const auto center = signedCenterContribution(static_cast<std::size_t>(pi));
+            const auto& ep = source.energyFactors()[static_cast<std::size_t>(pi)];
+            if (isDynamicEnergyFactor(ep, source)) {
+                if (!appendDynamicEnergyTerm(center.coefficient, ep, baseDynamicTerms)) {
+                    issue(result, BngLoweringSeverity::Error, entity,
+                          "dynamic energy expression could not be resolved to NFIR arithmetic");
+                    return;
+                }
+            } else {
+                baseEnergy += static_cast<double>(center.coefficient) * energyFactorValue(ep, source);
+            }
         }
 
         double barrierContribution = 0.0;
@@ -1697,11 +1731,20 @@ void addDirection(const bng::compile::CompiledRule& rule,
                 }
             }
             double deltaG = baseEnergy;
+            std::vector<std::string> dynamicTerms = baseDynamicTerms;
             for (int pi : active) {
                 if (std::find(always.begin(), always.end(), pi) != always.end()) continue;
-                double c = 0.0;
-                signedCenterEnergy(static_cast<std::size_t>(pi), c);
-                deltaG += c;
+                const auto center = signedCenterContribution(static_cast<std::size_t>(pi));
+                const auto& ep = source.energyFactors()[static_cast<std::size_t>(pi)];
+                if (isDynamicEnergyFactor(ep, source)) {
+                    if (!appendDynamicEnergyTerm(center.coefficient, ep, dynamicTerms)) {
+                        issue(result, BngLoweringSeverity::Error, entity,
+                              "dynamic energy expression could not be resolved to NFIR arithmetic");
+                        return;
+                    }
+                } else {
+                    deltaG += static_cast<double>(center.coefficient) * energyFactorValue(ep, source);
+                }
             }
             const double work = drivingWorkValue ? *drivingWorkValue : 0.0;
             // deltaG is computed for this direction's state change. For the
@@ -1710,18 +1753,39 @@ void addDirection(const bng::compile::CompiledRule& rule,
             // k_rev = exp(-(Ea+B + (phi-1)*(deltaG_forward-W)))
             //       = exp(-(Ea+B + (1-phi)*deltaG_dir + (1-phi)*W)).
             const double phiEff = reverseDirection ? (1.0 - *phi) : *phi;
-            const double rate = std::exp(-(*ea + barrierContribution +
-                                           phiEff * deltaG +
-                                           (reverseDirection ? phiEff * work : -phiEff * work)));
-            if (!std::isfinite(rate) || rate < 0.0) {
+            const double constantPart = *ea + barrierContribution + phiEff * deltaG +
+                                         (reverseDirection ? phiEff * work : -phiEff * work);
+            if (!std::isfinite(constantPart)) {
                 issue(result, BngLoweringSeverity::Error, entity, "expanded energy-modulated rate is invalid");
                 return;
             }
-            variant.rate = rate;
-            std::ostringstream rateText;
-            rateText.precision(17);
-            rateText << rate;
-            variant.rate_law.expression = rateText.str();
+            if (dynamicTerms.empty()) {
+                const double rate = std::exp(-constantPart);
+                if (!std::isfinite(rate) || rate < 0.0) {
+                    issue(result, BngLoweringSeverity::Error, entity, "expanded energy-modulated rate is invalid");
+                    return;
+                }
+                variant.rate = rate;
+                std::ostringstream rateText;
+                rateText.precision(17);
+                rateText << rate;
+                variant.rate_law.expression = rateText.str();
+            } else {
+                // Dynamic energy factors are evaluated from current observables
+                // by the same Function rate machinery used for dynamic rates.
+                std::ostringstream dynamicDelta;
+                for (std::size_t i = 0; i < dynamicTerms.size(); ++i) {
+                    if (i != 0) dynamicDelta << '+';
+                    dynamicDelta << dynamicTerms[i];
+                }
+                std::ostringstream rateText;
+                rateText.precision(17);
+                rateText << "exp(-(" << constantPart << " + (" << phiEff
+                         << ")*(" << dynamicDelta.str() << ")))";
+                variant.rate = 0.0;
+                variant.rate_law.kind = RateLawKind::Function;
+                variant.rate_law.expression = rateText.str();
+            }
             result.model.expanded_rules.push_back(std::move(variant));
         }
         return;
@@ -1879,13 +1943,13 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
             } else {
                 // A dynamic energy expression is representable as source text
                 // in `expression`; only the static `energy` field is unset.
-                // Record that fact as a warning rather than rejecting the whole
-                // model. Rate expansion already refuses dynamic Arrhenius
-                // modulation, so this never claims dynamic energy execution.
+                // For an energy-modulated Arrhenius rate the expansion composes
+                // the expression into a runtime Function rate law; energy
+                // patterns with no modulating rule remain representation-only.
                 irEnergy.energy = 0.0;
                 issue(result, BngLoweringSeverity::Warning, factor.label,
                       "dynamic energy pattern has no static value; represented "
-                      "by expression and deferred to rate expansion for execution");
+                      "by expression and evaluated at runtime when it modulates a rule");
             }
             BngLoweringResult patternValidation;
             const auto pattern = flattenReactants({factor.pattern}, patternValidation, factor.label);
@@ -1898,9 +1962,20 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
             result.model.energy_patterns.push_back(std::move(irEnergy));
         }
     }
-    // Lower population maps into NFIR. Population maps define the mapping
-    // between particle-level species and population-level species for hybrid
-    // particle-population simulation.
+    // Lower population maps into NFIR. A map is always retained as metadata for
+    // representation consumers. For the supported simple shape we additionally
+    // synthesize an executable ExpandedRuleIR so NFnext can run the map
+    // directly; anything outside that shape remains fail-closed at execution.
+    struct ExecutablePopulationMap {
+        std::size_t index{0};
+        std::string name;
+        PatternIR pattern;
+        TypeId product_type{0};
+        bool rate_is_static{false};
+        double static_rate{0.0};
+        std::string rate_expression;
+    };
+    std::vector<ExecutablePopulationMap> executableMaps;
     if (!source.populationMaps().empty()) {
         result.model.population_maps.reserve(source.populationMaps().size());
         for (const auto& popMap : source.populationMaps()) {
@@ -1919,17 +1994,87 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
             if (rateValue) {
                 irPopMap.rate = *rateValue;
             } else {
-                // A dynamic population-map rate is representable losslessly as
-                // an expression: `rate_expression` already carries the source
-                // text and the cache/canonical forms preserve it. Record that
-                // the static `rate` field is unset and defer execution to the
-                // hybrid generator. `executeFromBioNetGen` still refuses every
-                // population map, so this improves representation only and
-                // never claims dynamic execution support.
                 irPopMap.rate = 0.0;
                 issue(result, BngLoweringSeverity::Warning, popMap.populationName,
-                      "dynamic population map rate has no static value; represented "
-                      "by rate_expression and deferred to generate_hybrid_model for execution");
+                      "dynamic population map rate has no static value; lowered to a "
+                      "runtime observable-dependent rate law when its dependency is supported");
+            }
+
+            // Decide whether this map has an exactly representable shape that
+            // NFnext can execute. All other shapes stay fail-closed.
+            std::string unsupported;
+            if (!pattern || !patternValidation.ok()) {
+                unsupported = "population map pattern could not be lowered";
+            } else {
+                for (const auto& node : pattern->pattern.nodes) {
+                    const auto* molType = source.moleculeType(
+                        bng::compile::MoleculeTypeId::fromDenseIndex(
+                            static_cast<std::size_t>(node.molecule_type)));
+                    if (!molType) {
+                        unsupported = "population map reactant references an unknown molecule type";
+                        break;
+                    }
+                    if (molType->population) {
+                        // A map reactant must be a particle pattern; bonds to
+                        // population nodes are therefore outside this shape.
+                        unsupported = "population map reactants must be particle molecules";
+                        break;
+                    }
+                }
+            }
+            // The product must be a declared population type with no components.
+            TypeId productType{0};
+            if (unsupported.empty()) {
+                bool found = false;
+                for (const auto& molType : source.moleculeTypes()) {
+                    if (!molType.population || molType.name != popMap.populationName) continue;
+                    if (!molType.components.empty()) {
+                        unsupported = "population map product must have no components";
+                    } else {
+                        productType = static_cast<TypeId>(molType.id.value());
+                        found = true;
+                    }
+                    break;
+                }
+                if (unsupported.empty() && !found)
+                    unsupported = "population map product is not a declared population type";
+            }
+            // The rate is either a finite non-negative constant or an
+            // observable-only arithmetic expression evaluated at runtime.
+            ExecutablePopulationMap executable;
+            if (unsupported.empty()) {
+                executable.index = popMap.index;
+                executable.name = popMap.populationName;
+                executable.pattern = pattern->pattern;
+                executable.product_type = productType;
+                if (rateValue) {
+                    if (!std::isfinite(*rateValue) || *rateValue < 0.0) {
+                        unsupported = "population map rate is not finite and non-negative";
+                    } else {
+                        executable.rate_is_static = true;
+                        executable.static_rate = *rateValue;
+                        std::ostringstream rateText;
+                        rateText.precision(17);
+                        rateText << *rateValue;
+                        executable.rate_expression = rateText.str();
+                    }
+                } else {
+                    std::set<std::size_t> observableIds;
+                    const auto expression = observableRateExpression(
+                        popMap.rate, source, observableIds);
+                    if (!expression) {
+                        unsupported = "population map rate depends on state that is not a Molecules observable";
+                    } else {
+                        executable.rate_is_static = false;
+                        executable.rate_expression = *expression;
+                    }
+                }
+            }
+            if (!unsupported.empty()) {
+                issue(result, BngLoweringSeverity::Warning, popMap.populationName,
+                      "population map is not executable in NFnext (" + unsupported + ")");
+            } else {
+                executableMaps.push_back(std::move(executable));
             }
             result.model.population_maps.push_back(std::move(irPopMap));
         }
@@ -1952,6 +2097,43 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
     for (const auto& rule : source.rules()) {
         addDirection(rule, rule.forward(), nextRule++, "", false, source, result);
         if (rule.reverse()) addDirection(rule, *rule.reverse(), nextRule++, "__reverse", true, source, result);
+    }
+
+    // Synthesize one executable rule per accepted population map. It behaves
+    // like an elementary rule whose reactant is the map pattern and whose only
+    // product is the lumped population type: the SSA loop's population-aware
+    // action path consumes the matched particles and increments the population
+    // count. The map index annotation lets execution fail closed on any map
+    // that was not accepted.
+    for (const auto& accepted : executableMaps) {
+        ExpandedRuleIR mapRule;
+        mapRule.id = nextRule++;
+        mapRule.name = "population_map_" + std::to_string(accepted.index) + ":" + accepted.name;
+        mapRule.pattern = accepted.pattern;
+        addPredicates(mapRule.pattern, mapRule.predicates);
+        mapRule.rate = accepted.rate_is_static ? accepted.static_rate : 0.0;
+        mapRule.rate_law.kind = accepted.rate_is_static
+            ? RateLawKind::Elementary : RateLawKind::Function;
+        mapRule.rate_law.expression = accepted.rate_expression;
+
+        // Destroy each matched particle reactant and create one lumped product.
+        // Created nodes live in a second namespace starting after the matched
+        // reactant nodes, matching ExpandedRuleIR action conventions.
+        for (std::size_t node = 0; node < mapRule.pattern.nodes.size(); ++node) {
+            ActionIR destroy;
+            destroy.kind = ActionKind::Destroy;
+            destroy.target_node = static_cast<PatternNodeId>(node);
+            destroy.molecule_type = mapRule.pattern.nodes[node].molecule_type;
+            mapRule.actions.push_back(destroy);
+        }
+        ActionIR create;
+        create.kind = ActionKind::Create;
+        create.molecule_type = accepted.product_type;
+        create.target_node = static_cast<PatternNodeId>(mapRule.pattern.nodes.size());
+        mapRule.actions.push_back(create);
+
+        mapRule.annotations["bng.population_map_index"] = std::to_string(accepted.index);
+        result.model.expanded_rules.push_back(std::move(mapRule));
     }
 
     if (!result.ok()) {
@@ -1987,8 +2169,8 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             refuse("compartment dimensions must be 1, 2, or 3");
         }
     }
-    if (!source.populationMaps().empty())
-        refuse("un-lowered population maps require generate_hybrid_model");
+    // Population-map support is decided after lowering, once the synthesized
+    // executable map rules (if any) are known; see the check below.
     for (const auto& rule : source.rules()) {
         const auto checkRate = [&](const bng::compile::CompiledRuleDirection& direction) {
             if (!direction.rateLaw) refuse("missing rate law");
@@ -2033,7 +2215,24 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
     // Physical rate units are converted during lowering for supported
     // constant elementary forms; execution refuses only if conversion failed.
 
-    if (!model.population_maps.empty()) refuse("un-lowered population maps require generate_hybrid_model");
+    // A population map executes only when lowering synthesized an explicit
+    // rule for it. Any map outside the supported simple shape (bonds to
+    // population nodes, unresolvable or non-Molecules-observable or
+    // time-dependent rates, undeclared product types, ...) remains a
+    // fail-closed refusal rather than an approximation.
+    if (!source.populationMaps().empty()) {
+        std::unordered_set<std::string> executableMapIndices;
+        for (const auto& rule : model.expanded_rules) {
+            const auto found = rule.annotations.find("bng.population_map_index");
+            if (found != rule.annotations.end()) executableMapIndices.insert(found->second);
+        }
+        for (const auto& popMap : source.populationMaps()) {
+            if (!executableMapIndices.count(std::to_string(popMap.index))) {
+                refuse("un-lowered population maps: map '" + popMap.populationName +
+                       "' has an unsupported shape or rate for NFnext execution");
+            }
+        }
+    }
     bool has_energy_modulated_rate = false;
     for (const auto& rule : source.rules()) {
         auto check = [&](const bng::compile::CompiledRuleDirection& d) {
@@ -2047,7 +2246,10 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
     if (has_energy_modulated_rate) {
         bool all_expanded = !model.expanded_rules.empty();
         for (const auto& er : model.expanded_rules) {
-            if (er.rate_law.kind != RateLawKind::Elementary) { all_expanded = false; break; }
+            // Dynamic energy factors lower to Function rate laws that the
+            // observable-dependent rate executor evaluates at runtime.
+            if (er.rate_law.kind != RateLawKind::Elementary &&
+                er.rate_law.kind != RateLawKind::Function) { all_expanded = false; break; }
         }
         for (const auto& rule : source.rules()) {
             auto check = [&](const bng::compile::CompiledRuleDirection& d) {
@@ -2070,7 +2272,34 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
     if (request.max_particles > std::numeric_limits<std::uint32_t>::max())
         refuse("particle budget exceeds native index capacity");
     GenericGraphState state(model);
-    std::vector<std::uint64_t> population_counts(model.molecule_types.size(), 0);
+    using PopulationLocation = std::pair<TypeId, std::optional<CompartmentId>>;
+    using PopulationCounts = std::map<PopulationLocation, std::uint64_t>;
+    PopulationCounts population_counts;
+    std::unordered_set<TypeId> compartmentalized_populations;
+    const auto location = [](const PatternIR::Node& node) -> PopulationLocation {
+        return {node.molecule_type, node.compartment};
+    };
+    const auto incrementPopulation = [&](const PopulationLocation& key, std::uint64_t amount) {
+        auto& count = population_counts[key];
+        if (amount > std::numeric_limits<std::uint64_t>::max() - count)
+            refuse("population count exceeds native capacity");
+        count += amount;
+    };
+    const auto populationCount = [&](const PopulationLocation& key) -> std::uint64_t {
+        const auto found = population_counts.find(key);
+        return found == population_counts.end() ? 0 : found->second;
+    };
+    const auto observedPopulation = [&](const PatternIR::Node& node) -> std::uint64_t {
+        if (node.compartment) return populationCount(location(node));
+        std::uint64_t total = 0;
+        for (auto it = population_counts.lower_bound({node.molecule_type, std::nullopt});
+             it != population_counts.end() && it->first.first == node.molecule_type; ++it) {
+            if (it->second > std::numeric_limits<std::uint64_t>::max() - total)
+                refuse("population observable exceeds native count capacity");
+            total += it->second;
+        }
+        return total;
+    };
     for (const auto& seed : source.seeds()) {
         const auto amount = constantExpression(seed.amount, source);
         if (seed.constant || seed.declaredUnit ||
@@ -2099,9 +2328,11 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             model.molecule_types.at(pat.nodes.front().molecule_type).is_population &&
             pat.nodes.front().constraints.empty();
         if (is_pure_population_seed) {
-            const auto count = static_cast<std::uint64_t>(*amount);
-            const auto type_id = pat.nodes.front().molecule_type;
-            population_counts.at(type_id) += count;
+            if (*amount >= std::ldexp(1.0, std::numeric_limits<std::uint64_t>::digits))
+                refuse("population seed count exceeds native capacity");
+            const auto key = location(pat.nodes.front());
+            if (key.second) compartmentalized_populations.insert(key.first);
+            incrementPopulation(key, static_cast<std::uint64_t>(*amount));
             continue;
         }
 
@@ -2223,10 +2454,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
 
     GenericMatcher matcher(model);
 
-    auto evaluateObservable = [&](ObservableId obsId) -> double {
-        const auto it = observableIdToDefIndex.find(obsId);
-        if (it == observableIdToDefIndex.end()) refuse("unresolved observable dependency");
-        const auto& obs = observables[it->second];
+    auto evaluateObservable = [&](const ObservableDef& obs) -> double {
         double value = 0.0;
         if (obs.kind == bng::compile::ObservableKind::Molecules) {
             for (const auto& term : obs.terms) {
@@ -2235,7 +2463,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                     term.pattern.molecularity.empty() && term.pattern.aliases.empty() &&
                     term.pattern.connected_to.empty() &&
                     model.molecule_types.at(term.pattern.nodes.front().molecule_type).is_population) {
-                    const auto count = population_counts.at(term.pattern.nodes.front().molecule_type);
+                    const auto count = observedPopulation(term.pattern.nodes.front());
                     if (term.relation.empty()) value += static_cast<double>(count);
                     else if (bng::compile::observablePatternCountMatches(
                                  static_cast<std::size_t>(count), term.relation, term.quantity))
@@ -2255,10 +2483,9 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                     term.pattern.molecularity.empty() && term.pattern.aliases.empty() &&
                     term.pattern.connected_to.empty() &&
                     model.molecule_types.at(term.pattern.nodes.front().molecule_type).is_population) {
-                    const auto count = population_counts.at(term.pattern.nodes.front().molecule_type);
-                    if (bng::compile::observablePatternCountMatches(
-                            static_cast<std::size_t>(count), term.relation, term.quantity))
-                        value += 1.0;
+                    const auto count = observedPopulation(term.pattern.nodes.front());
+                    if (bng::compile::observablePatternCountMatches(1, term.relation, term.quantity))
+                        value += static_cast<double>(count);
                     continue;
                 }
                 complex_counts.clear();
@@ -2279,7 +2506,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
     auto isSimpleLumpedPopulationReactant = [&](const PatternIR& pattern, std::size_t nodeIndex) {
         const auto& node = pattern.nodes.at(nodeIndex);
         if (!model.molecule_types.at(node.molecule_type).is_population) return false;
-        if (!node.constraints.empty() || node.compartment.has_value()) return false;
+        if (!node.constraints.empty()) return false;
         for (const auto& bond : pattern.bonds)
             if (bond.first == nodeIndex || bond.second == nodeIndex) return false;
         for (const auto& pair : pattern.aliases)
@@ -2295,7 +2522,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
     struct MixedLumpedInfo {
         bool enabled{false};
         std::vector<std::size_t> particleReactantNodes; // original reactant node indices
-        std::map<TypeId, std::uint64_t> popReactantCounts;
+        PopulationCounts popReactantCounts;
         PatternIR particlePattern;
     };
     std::vector<MixedLumpedInfo> mixedLumped(model.expanded_rules.size());
@@ -2317,7 +2544,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         std::map<std::size_t, std::size_t> oldToNew;
         for (std::size_t ni = 0; ni < rule.pattern.nodes.size(); ++ni) {
             if (model.molecule_types.at(rule.pattern.nodes[ni].molecule_type).is_population) {
-                info.popReactantCounts[rule.pattern.nodes[ni].molecule_type] += 1;
+                info.popReactantCounts[location(rule.pattern.nodes[ni])] += 1;
             } else {
                 oldToNew[ni] = info.particleReactantNodes.size();
                 info.particleReactantNodes.push_back(ni);
@@ -2363,16 +2590,44 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         mixedLumped[ri] = std::move(info);
     }
 
+    // A population reactant without a compartment needs assignment across
+    // occupied compartments. Support explicit locations until that matching
+    // and product-inheritance semantics are represented in the executor.
+    for (const auto& rule : model.expanded_rules) {
+        for (const auto& action : rule.actions) {
+            if (action.kind == ActionKind::SetCompartment &&
+                action.target_node < rule.pattern.nodes.size()) {
+                const auto type = rule.pattern.nodes[action.target_node].molecule_type;
+                if (model.molecule_types.at(type).is_population)
+                    compartmentalized_populations.insert(type);
+            }
+            if (action.kind != ActionKind::Create ||
+                !model.molecule_types.at(action.molecule_type).is_population)
+                continue;
+            for (const auto& other : rule.actions) {
+                if (other.kind == ActionKind::SetCompartment &&
+                    other.target_node == action.target_node)
+                    compartmentalized_populations.insert(action.molecule_type);
+            }
+        }
+    }
+    for (const auto& rule : model.expanded_rules) {
+        for (const auto& node : rule.pattern.nodes) {
+            if (!node.compartment && compartmentalized_populations.count(node.molecule_type))
+                refuse("unqualified reactant for a compartmentalized population");
+        }
+    }
+
     auto populationOnlyReactants = [&](const ExpandedRuleIR& rule) {
         return !rule.pattern.nodes.empty() &&
                std::all_of(rule.pattern.nodes.begin(), rule.pattern.nodes.end(), [&](const auto& node) {
                    return model.molecule_types.at(node.molecule_type).is_population;
                }) && rule.pattern.bonds.empty() && rule.filters.empty() && !rule.match_once && !rule.total_rate;
     };
-    auto populationCombinationFactor = [&](const std::map<TypeId, std::uint64_t>& required) {
+    auto populationCombinationFactor = [&](const PopulationCounts& required) {
         double comb = 1.0;
-        for (const auto& [type, stoich] : required) {
-            const std::uint64_t n = population_counts.at(type);
+        for (const auto& [key, stoich] : required) {
+            const std::uint64_t n = populationCount(key);
             if (n < stoich) return 0.0;
             double c = 1.0;
             for (std::uint64_t i = 0; i < stoich; ++i) {
@@ -2384,9 +2639,28 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         return comb;
     };
     auto populationReactantPropensity = [&](const ExpandedRuleIR& rule) {
-        std::map<TypeId, std::uint64_t> required;
-        for (const auto& node : rule.pattern.nodes) ++required[node.molecule_type];
+        PopulationCounts required;
+        for (const auto& node : rule.pattern.nodes) ++required[location(node)];
         return populationCombinationFactor(required);
+    };
+
+    const auto restoreRetainedPopulations = [&](const ExpandedRuleIR& rule) {
+        for (std::size_t i = 0; i < rule.pattern.nodes.size(); ++i) {
+            const auto& node = rule.pattern.nodes[i];
+            if (!model.molecule_types.at(node.molecule_type).is_population) continue;
+            auto destination = location(node);
+            bool destroyed = false;
+            for (const auto& action : rule.actions) {
+                if (action.target_node != i) continue;
+                if (action.kind == ActionKind::Destroy || action.kind == ActionKind::DestroyComplex) {
+                    destroyed = true;
+                    break;
+                }
+                if (action.kind == ActionKind::SetCompartment)
+                    destination.second = static_cast<CompartmentId>(action.value);
+            }
+            if (!destroyed) incrementPopulation(destination, 1);
+        }
     };
 
     const auto layout = RngLayout::exactSSA();
@@ -2414,7 +2688,11 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                         for (const auto depId : prep.compiledFunction->observableDependencies()) {
                             auto obsIt = currentObservableValues.find(depId);
                             if (obsIt == currentObservableValues.end()) {
-                                obsIt = currentObservableValues.emplace(depId, evaluateObservable(depId)).first;
+                                const auto definition = observableIdToDefIndex.find(depId);
+                                if (definition == observableIdToDefIndex.end())
+                                    refuse("unresolved observable dependency");
+                                obsIt = currentObservableValues.emplace(
+                                    depId, evaluateObservable(observables[definition->second])).first;
                             }
                             functionEnvironment.set("observable_" + std::to_string(depId), obsIt->second);
                         }
@@ -2637,13 +2915,13 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
 
             const auto& rule = model.expanded_rules[selected_rule];
             if (selected_population_rule) {
-                std::map<TypeId, std::uint64_t> required;
-                for (const auto& node : rule.pattern.nodes) ++required[node.molecule_type];
-                for (const auto& [type, stoich] : required) {
-                    if (population_counts.at(type) < stoich) refuse("population underflow");
+                PopulationCounts required;
+                for (const auto& node : rule.pattern.nodes) ++required[location(node)];
+                for (const auto& [key, stoich] : required) {
+                    if (populationCount(key) < stoich) refuse("population underflow");
                 }
-                for (const auto& [type, stoich] : required) {
-                    population_counts.at(type) -= stoich;
+                for (const auto& [key, stoich] : required) {
+                    population_counts.at(key) -= stoich;
                 }
                 std::map<PatternNodeId, CreatedMoleculeId> node_to_created;
                 std::map<PatternNodeId, TypeId> created_types;
@@ -2667,8 +2945,12 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                     const TypeId type = created_types[node];
                     if (model.molecule_types.at(type).is_population) {
                         if (created_states.count(node)) refuse("stateful population products are not supported");
-                        if (created_compartments.count(node)) refuse("compartmentalized population products are not supported");
-                        population_counts.at(type) += 1;
+                        const auto location = created_compartments.find(node);
+                        incrementPopulation(
+                            {type, location == created_compartments.end()
+                                       ? std::nullopt
+                                       : std::make_optional(location->second)},
+                            1);
                         continue;
                     }
                     CompartmentId comp = 0;
@@ -2701,6 +2983,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                         refuse("unsupported action in population-only lumped rule");
                     }
                 }
+                restoreRetainedPopulations(rule);
                 if (state.liveCount() > request.max_particles) refuse("particle budget exhausted");
                 ++output.event_count;
                 pending = false;
@@ -2708,11 +2991,11 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             }
             if (selected_mixed_lumped_rule) {
                 const auto& info = mixedLumped[selected_rule];
-                for (const auto& [type, stoich] : info.popReactantCounts) {
-                    if (population_counts.at(type) < stoich) refuse("population underflow");
+                for (const auto& [key, stoich] : info.popReactantCounts) {
+                    if (populationCount(key) < stoich) refuse("population underflow");
                 }
-                for (const auto& [type, stoich] : info.popReactantCounts) {
-                    population_counts.at(type) -= stoich;
+                for (const auto& [key, stoich] : info.popReactantCounts) {
+                    population_counts.at(key) -= stoich;
                 }
 
                 MatchEmbedding full_embedding;
@@ -2742,8 +3025,12 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                     const TypeId type = created_types[node];
                     if (model.molecule_types.at(type).is_population) {
                         if (created_states.count(node)) refuse("stateful population products are not supported");
-                        if (created_compartments.count(node)) refuse("compartmentalized population products are not supported");
-                        population_counts.at(type) += 1;
+                        const auto location = created_compartments.find(node);
+                        incrementPopulation(
+                            {type, location == created_compartments.end()
+                                       ? std::nullopt
+                                       : std::make_optional(location->second)},
+                            1);
                         continue;
                     }
                     CompartmentId comp = 0;
@@ -2894,6 +3181,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                     }
                 }
 
+                restoreRetainedPopulations(rule);
                 if (state.liveCount() > request.max_particles) refuse("particle budget exhausted");
                 ++output.event_count;
                 pending = false;
@@ -2941,8 +3229,12 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                     const TypeId type = created_types[node];
                     if (model.molecule_types.at(type).is_population) {
                         if (created_states.count(node)) refuse("stateful population products are not supported");
-                        if (created_compartments.count(node)) refuse("compartmentalized population products are not supported");
-                        population_counts.at(type) += 1;
+                        const auto location = created_compartments.find(node);
+                        incrementPopulation(
+                            {type, location == created_compartments.end()
+                                       ? std::nullopt
+                                       : std::make_optional(location->second)},
+                            1);
                         continue;
                     }
                     CompartmentId comp = 0;
@@ -3025,9 +3317,9 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                     case ActionKind::Destroy: {
                         if (action.target_node < rule.pattern.nodes.size() &&
                             model.molecule_types.at(rule.pattern.nodes[action.target_node].molecule_type).is_population) {
-                            const auto type = rule.pattern.nodes[action.target_node].molecule_type;
-                            if (population_counts.at(type) == 0) refuse("population underflow");
-                            population_counts.at(type) -= 1;
+                            const auto key = location(rule.pattern.nodes[action.target_node]);
+                            if (populationCount(key) == 0) refuse("population underflow");
+                            --population_counts.at(key);
                             break;
                         }
                         try {
@@ -3039,9 +3331,9 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                     case ActionKind::DestroyComplex: {
                         if (action.target_node < rule.pattern.nodes.size() &&
                             model.molecule_types.at(rule.pattern.nodes[action.target_node].molecule_type).is_population) {
-                            const auto type = rule.pattern.nodes[action.target_node].molecule_type;
-                            if (population_counts.at(type) == 0) refuse("population underflow");
-                            population_counts.at(type) -= 1;
+                            const auto key = location(rule.pattern.nodes[action.target_node]);
+                            if (populationCount(key) == 0) refuse("population underflow");
+                            --population_counts.at(key);
                             break;
                         }
                         try {
@@ -3143,56 +3435,8 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             pending = false;
         }
         std::vector<double> row{sample};
-        for (const auto& obs : observables) {
-            double value = 0.0;
-            if (obs.kind == bng::compile::ObservableKind::Molecules) {
-                for (const auto& term : obs.terms) {
-                    if (term.pattern.nodes.size() == 1 && term.pattern.bonds.empty() &&
-                        term.pattern.nodes.front().constraints.empty() &&
-                        term.pattern.molecularity.empty() && term.pattern.aliases.empty() &&
-                        term.pattern.connected_to.empty() &&
-                        model.molecule_types.at(term.pattern.nodes.front().molecule_type).is_population) {
-                        const auto count = population_counts.at(term.pattern.nodes.front().molecule_type);
-                        if (term.relation.empty()) value += static_cast<double>(count);
-                        else if (bng::compile::observablePatternCountMatches(
-                                     static_cast<std::size_t>(count), term.relation, term.quantity))
-                            value += 1.0;
-                        continue;
-                    }
-                    const auto count = matcher.enumerate(term.pattern, state).size();
-                    if (term.relation.empty()) value += static_cast<double>(count);
-                    else if (bng::compile::observablePatternCountMatches(count, term.relation, term.quantity))
-                        value += 1.0;
-                }
-            } else if (obs.kind == bng::compile::ObservableKind::Species) {
-                // Evaluate per-complex match counts so observable relations apply to
-                // the number of embeddings within each complex/species instance.
-                std::unordered_map<std::uint32_t, std::size_t> complex_counts;
-                for (const auto& term : obs.terms) {
-                    if (term.pattern.nodes.size() == 1 && term.pattern.bonds.empty() &&
-                        term.pattern.nodes.front().constraints.empty() &&
-                        term.pattern.molecularity.empty() && term.pattern.aliases.empty() &&
-                        term.pattern.connected_to.empty() &&
-                        model.molecule_types.at(term.pattern.nodes.front().molecule_type).is_population) {
-                        const auto count = population_counts.at(term.pattern.nodes.front().molecule_type);
-                        if (bng::compile::observablePatternCountMatches(
-                                static_cast<std::size_t>(count), term.relation, term.quantity))
-                            value += 1.0;
-                        continue;
-                    }
-                    complex_counts.clear();
-                    for (const auto& match : matcher.enumerate(term.pattern, state)) {
-                        if (!match.particles().empty())
-                            ++complex_counts[state.complexId(match.particle(0))];
-                    }
-                    for (const auto& [_, count] : complex_counts) {
-                        if (bng::compile::observablePatternCountMatches(count, term.relation, term.quantity))
-                            value += 1.0;
-                    }
-                }
-            }
-            row.push_back(value);
-        }
+        for (const auto& obs : observables)
+            row.push_back(evaluateObservable(obs));
         output.rows.push_back(std::move(row));
     }
     return output;

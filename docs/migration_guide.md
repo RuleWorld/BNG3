@@ -1,10 +1,31 @@
 # Migration Guide
 
-The migration surface is still being qualified. Use
-[`CURRENT_PROGRESS.md`](CURRENT_PROGRESS.md) for the current branch state and
-the [capability inventory](CAPABILITY_UNION_INVENTORY.md) for release scope, [DECISIONS.md](DECISIONS.md) for final policy, and [CURRENT_PROGRESS.md](CURRENT_PROGRESS.md) for issue-level qualification evidence.
+BioNetGen 3 provides an in-process Python API backed by C++. The
+[capability inventory](CAPABILITY_UNION_INVENTORY.md) defines release scope.
+See [current progress](CURRENT_PROGRESS.md) for qualification evidence and
+[the maintainer decisions](DECISIONS.md) for release policy.
 
-BioNetGen 3 replaces the subprocess-based PyBioNetGen/BNG2 workflow with an in-process Python API backed by C++.
+## Install And Choose A Backend
+
+BNG3 and PyBioNetGen share the distribution name `bionetgen`. To stay on
+PyBioNetGen during the transition, install `bionetgen<3` in a separate
+environment. To evaluate BNG3, install an identified pre-release wheel or
+run `python -m pip install .` from a BNG3 checkout. Once BNG3 is published
+as a stable release, the standard install command is `pip install bionetgen`.
+Check the resolved version with `bionetgen --version`.
+
+| Backend | Selection and qualification |
+| --- | --- |
+| Native finite-network | The default for `ode`, `ssa`, `pla`, and `psa`. |
+| NFcore | The default for `method="nf"`. |
+| NFnext | Explicit `method="nfnext"`. Default promotion requires the full independent checks in [#149](https://github.com/RuleWorld/BNG3/issues/149). |
+| BNGsim | Optional finite-network backend selected with `backend="bngsim"` in a build that includes the adapter. See [ADR 0003](adr/0003-bngsim-canonical-finite-backend.md). |
+| JAX CPU | The `jax` extra installs the dependencies for the separate [JAX ODE](../python/bionetgen/jax_ode.py) and [JAX SSA](../python/bionetgen/jax_ssa.py). See [#473](https://github.com/RuleWorld/BNG3/issues/473) for the qualified surface. |
+| Metal and CUDA | Actual device qualification is tracked separately in [#474](https://github.com/RuleWorld/BNG3/issues/474). |
+
+Install the `plotting` extra for plotting and dataframe access, `notebook`
+for a notebook kernel, and `full` for the SBML and SymPy integrations.
+
 
 ## Compatibility Overview
 
@@ -69,8 +90,8 @@ options such as `rtol`, `atol`, `seed`, `pla_config`, and `psa_poplevel` require
 an explicit modern `method=` override; action-preserving calls reject them
 rather than dropping them.
 
-The CLI keeps the same distinction. `bng3 run MODEL --method ssa ...` writes a
-tab-separated table for one selected simulation. `bng3 run --input MODEL`
+The CLI keeps the same distinction. `bionetgen run MODEL --method ssa ...` writes a
+tab-separated table for one selected simulation. `bionetgen run --input MODEL`
 executes the model's actions into an output directory; explicit time options
 modify the action grid while preserving actions. Supplying `--method` with
 `--input` opts into a single modern simulation; solver-specific options are
@@ -99,6 +120,9 @@ finite-network API and does not reproduce PyBioNetGen's optional Python
 
 ## Before And After
 
+Save the BNGL in [Parameter Scans](#parameter-scans) as `model.bngl` and
+run these examples from its directory.
+
 ### Load A Model
 
 ```python
@@ -120,17 +144,19 @@ run("model.bngl")
 
 # New
 import bionetgen
-result = bionetgen.load("model.bngl").simulate(method="ode", t_end=100)
+result = bionetgen.load("model.bngl").simulate(method="ode", t_end=2.0)
 ```
 
 ### Inspect Results
 
 ```python
+import bionetgen
+
 model = bionetgen.load("model.bngl")
-result = model.simulate(method="ode", t_end=100)
+result = model.simulate(method="ode", t_end=2.0)
 
 print(result.time)
-print(result.observables["AB"])
+print(result.observables["A_total"])
 print(result.to_dataframe().head())
 ```
 
@@ -186,11 +212,55 @@ is executed verbatim by `tests/python/test_migration_guide_installed_example.py`
 against the installed wheel. Cross-package trajectory equivalence is not
 claimed; see the compatibility limits below.
 
-### SBML Import
+### Sensitivity Analysis
 
 ```python
+import bionetgen
+
+model = bionetgen.load("model.bngl")
+sensitivity = model.sensitivity_analysis(
+    parameters=["k"], observables=["A_total"], method="ode", t_end=2.0
+)
+print(sensitivity.matrix)
+```
+
+### Run Network-Free
+
+```python
+import bionetgen
+
+model = bionetgen.load("model.bngl")
+result = model.simulate(method="nf", t_end=2.0, n_steps=10, seed=172)
+```
+
+### Access Parameters
+
+```python
+import bionetgen
+
+model = bionetgen.load("model.bngl")
+values = {parameter.name: parameter.value for parameter in model.parameters}
+print(values)
+```
+
+### SBML Export
+
+```python
+import bionetgen
+
+model = bionetgen.load("model.bngl")
+model.write_sbml("model.xml")
+```
+
+### SBML Import
+
+With the `full` extra installed, use the `model.xml` from SBML Export.
+
+```python
+import bionetgen
+
 model = bionetgen.from_sbml("model.xml", atomize=True)
-result = model.simulate(method="ode", t_end=100)
+result = model.simulate(method="ode", t_end=2.0)
 ```
 
 ### Programmatic Model Building
@@ -212,6 +282,25 @@ builder.add_rule("A(b!1).B(a!1) -> A(b) + B(a)", "k_off")
 model = builder.build()
 ```
 
+### Command Line
+
+```bash
+bionetgen check model.bngl
+bionetgen run model.bngl --method ode --t-end 2 --n-steps 10 --output decay.tsv
+bionetgen export model.bngl --format net --output decay.net
+```
+
+### Inspect A NET File
+
+Run the command-line export above first.
+
+```python
+from bionetgen.network.network import Network
+
+network = Network("decay.net")
+network.write_model("decay_copy.net")
+```
+
 ## PyBioNetGen API Differences
 
 The migration reference is PyBioNetGen revision
@@ -230,15 +319,16 @@ the same models produce the same trajectories or side effects in both packages.
 | Scan a parameter | `model.parameter_scan(...)` | The installed-example test executes the guide's two-rate decay scan and checks its analytic endpoints; cross-package scan equivalence is not established. |
 | Build a model in Python | `ModelBuilder` | A construction and simulation smoke test exists; full equivalence to direct edits of PyBioNetGen's block model is not established. |
 | Import SBML | `bionetgen.from_sbml(path, atomize=True)` | The migration test covers one simple SBML model. It is not evidence for all SBML Core or package semantics; see the SBML qualification records. |
-| Use the command line | `bng3 run`, `bng3 check`, `bng3 export`, and other BNG3 commands | The migration test checks CLI version/help, and compatibility tests cover notebook generation. The old CLI option inventory is not fully mapped or parity-tested. |
+| Use the command line | `bionetgen run`, `bionetgen check`, `bionetgen export`, and other BNG3 commands | The migration test checks CLI version/help, and compatibility tests cover notebook generation. The old CLI option inventory is not fully mapped or parity-tested. |
 
 CI's `pybionetgen-compat` job checks selected root exports and runner parameters
 from the locked source, then runs `tests/python/test_compatibility_contract.py`
 against the installed BNG3 package. `tests/python/test_migration_workflows.py`
 executes the examples above against BNG3. The wheel job also runs
-`tests/python/test_migration_guide_installed_example.py`, which extracts and
-executes the parameter-scan text above verbatim against the installed package,
-so editing the published example can break CI. These checks do not import both
+`tests/python/test_migration_guide_installed_example.py`, which executes
+the examples in this guide against the installed package and console script.
+It checks the decay trajectory, scan endpoints, sensitivity, and interchange
+behavior for the example model. These checks do not import both
 packages and compare all 4.7 inventory rows, do not validate every legacy
 module or CLI option, and do not qualify every workflow listed here as
 source-semantic parity.
@@ -277,11 +367,14 @@ Other API boundaries:
   The legacy compatibility runner does not route via PyBioNetGen's
   `simulator="bngsim"` choice. These are distinct workflows and their parity
   remains unqualified.
-- PyBioNetGen's `simulator.csimulator` compile-to-C classes are not exposed.
-  Use the BNG3 simulation API for its supported methods; this does not preserve
-  C compiler or generated-library workflows.
-- The PyBioNetGen Python `.net` object model is not exposed. Native BNG3 file
-  handling does not provide that Python object's editing and inspection API.
+- The legacy `bionetgen.simulator.csimulator` classes are available for
+  import. The compile-to-C workflow requires a C compiler and the legacy
+  toolchain. The `sim_getter` convenience API selects the RoadRunner
+  adapter. Use `model.simulate()` for the native BNG3 defaults.
+- The legacy `bionetgen.network.network.Network` class reads and writes
+  `.net` files for inspection and editing. The migration example exercises
+  one exported network. Full installed differential coverage remains part
+  of [#171](https://github.com/RuleWorld/BNG3/issues/171).
 - `BNGFormatError` and `BNGSimError` are available in `bionetgen.core.exc`.
 
 ## Removed Dependencies
@@ -324,3 +417,14 @@ export BIONETGEN_USE_PERL=1
 ```
 
 This is a transition aid, not the recommended long-term path.
+
+
+## Repository Maintenance
+
+The [maintainer decision](DECISIONS.md) designates
+[RuleWorld/BNG3](https://github.com/RuleWorld/BNG3) as the successor to the
+BioNetGen, NFsim, and PyBioNetGen repositories. Report BNG3 bugs and submit
+changes in BNG3. At the transition, the predecessor repositories retire from
+maintenance. Their source history remains available and their accepted
+revisions remain pinned as independent references in
+[`provenance/upstreams.lock.yml`](../provenance/upstreams.lock.yml).

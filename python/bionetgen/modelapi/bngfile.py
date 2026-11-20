@@ -208,9 +208,14 @@ class BNGFile:
         with open(model_path, "r", encoding="UTF-8") as mf:
             # read and strip actions
             mstr = mf.read()
-            # this removes any new line escapes (\ \n) to continue
-            # to another line, so we can just remove the action lines
-            mstr = re.sub(r"\\\n", "", mstr)
+            # Collapse `\`+newline live-line continuations so the action parser
+            # sees the same logical lines as BNG2.pl. A marker at or after a
+            # `#` is part of the comment (BNG2.pl does not continue from it), so
+            # it must be left alone; otherwise the following physical line --
+            # often a live definition -- is glued into the comment and lost.
+            # Trailing whitespace between the `\` and the newline is tolerated,
+            # matching the pinned PyBioNetGen 28bf351 / BNG2.pl behavior.
+            mstr = re.sub(r"^([^#\n]*)\\[ \t]*\n", r"\1", mstr, flags=re.MULTILINE)
             mlines = mstr.split("\n")
 
             stripped_lines = []

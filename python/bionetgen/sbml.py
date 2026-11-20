@@ -72,7 +72,7 @@ def _translate_modern_with_model(
             n_steps=options.get("n_steps", 100),
             native_dae_runtime=options.get("native_dae_runtime", False),
         )
-        result = atomizer.atomize(sbml_text)
+        result = atomizer.atomize(sbml_text, source_path=Path(sbml_path))
     except Exception as exc:  # pragma: no cover - depends on optional deps
         raise BioNetGenError(f"Modern SBML atomizer is unavailable: {exc}") from exc
     if not result.success or not result.bngl:

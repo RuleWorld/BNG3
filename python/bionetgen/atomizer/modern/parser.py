@@ -8,6 +8,7 @@ optional and platform-sensitive libSBML SWIG bindings.
 from __future__ import annotations
 
 import math
+import hashlib
 import re
 import base64
 import ast
@@ -383,6 +384,15 @@ def _flatten_simple_inline_comp(sbml_string: str) -> Optional[str]:
     ):
         return None
 
+    # The child model conversionFactor is the default for each species in the
+    # child. Once flattened, that Model no longer exists; carry the default
+    # onto species that do not override it before renaming identifiers.
+    child_conversion = definition.get("conversionFactor")
+    if child_conversion:
+        for element in definition.iter(core_tag("species")):
+            if element.get("conversionFactor") is None:
+                element.set("conversionFactor", child_conversion)
+
     identifiers: Dict[str, str] = {}
     for element in definition.iter():
         identifier = element.get("id")
@@ -393,7 +403,14 @@ def _flatten_simple_inline_comp(sbml_string: str) -> Optional[str]:
     for element in definition.iter():
         if element.get("id") in identifiers:
             element.set("id", identifiers[element.get("id")])
-        for attribute in ("compartment", "species", "variable", "symbol", "units"):
+        for attribute in (
+            "compartment",
+            "species",
+            "variable",
+            "symbol",
+            "units",
+            "conversionFactor",
+        ):
             value = element.get(attribute)
             if value in identifiers:
                 element.set(attribute, identifiers[value])
@@ -623,6 +640,12 @@ def _flatten_simple_external_comp(
             elements, element = matches[0]
             elements.remove(element)
 
+    child_conversion = child_model.get("conversionFactor")
+    if child_conversion:
+        for element in child_model.iter(core_tag("species")):
+            if element.get("conversionFactor") is None:
+                element.set("conversionFactor", child_conversion)
+
     identifiers: Dict[str, str] = {}
     for element in child_model.iter():
         identifier = element.get("id")
@@ -634,7 +657,14 @@ def _flatten_simple_external_comp(
         identifier = element.get("id")
         if identifier in identifiers:
             element.set("id", identifiers[identifier])
-        for attribute in ("compartment", "species", "variable", "symbol", "units"):
+        for attribute in (
+            "compartment",
+            "species",
+            "variable",
+            "symbol",
+            "units",
+            "conversionFactor",
+        ):
             value = element.get(attribute)
             if value in identifiers:
                 element.set(attribute, identifiers[value])
@@ -797,6 +827,80 @@ def _has_unflattened_external_submodel_deletions(sbml_string: str) -> bool:
     )
 
 
+def _comp_checksum_warnings(
+    sbml_string: str, source_path: Optional[Path]
+) -> list[dict]:
+    """Check local external documents before flattening removes comp metadata."""
+    if source_path is None:
+        return []
+    root_dir = Path(source_path).expanduser().resolve().parent
+    visited: set[Path] = set()
+    warnings: list[dict] = []
+
+    def inspect_document(content: str | bytes, directory: Path) -> None:
+        try:
+            root = ET.fromstring(content)
+        except ET.ParseError:
+            return
+        # External definitions are document children, never annotation payloads.
+        definitions = (
+            element
+            for container in root
+            if _local_name(str(container.tag)) == "listOfExternalModelDefinitions"
+            for element in container
+            if str(element.tag).startswith("{")
+            and _local_name(str(element.tag)) == "externalModelDefinition"
+            and str(container.tag).partition("}")[0]
+            == str(element.tag).partition("}")[0]
+        )
+        for element in definitions:
+            tag = str(element.tag)
+            namespace = tag[1:].split("}", 1)[0]
+            if not re.fullmatch(
+                r"https?://www\.sbml\.org/sbml/level3/version\d+/comp/version\d+",
+                namespace,
+                re.IGNORECASE,
+            ):
+                continue
+            prefix = f"{{{namespace}}}"
+            source = element.get(prefix + "source", "")
+            parsed = urlsplit(source)
+            if parsed.scheme not in {"", "file"} or parsed.netloc not in {
+                "",
+                "localhost",
+            }:
+                continue
+            if not parsed.path:
+                continue
+            path = (directory / unquote(parsed.path)).resolve()
+            if not path.is_relative_to(root_dir):
+                continue
+            try:
+                data = path.read_bytes()
+            except OSError:
+                continue  # The flattening path reports unavailable sources.
+            expected = element.get(prefix + "md5")
+            if expected is not None:
+                actual = hashlib.md5(data, usedforsecurity=False).hexdigest()
+                if expected.strip().lower() != actual:
+                    warnings.append(
+                        {
+                            "category": "compChecksum",
+                            "message": f"comp external source {str(path.relative_to(root_dir))!r} MD5 mismatch: "
+                            f"expected {expected!r}, calculated {actual}; "
+                            "the referenced document may have changed.",
+                            "count": 1,
+                            "severity": "info",
+                        }
+                    )
+            if path not in visited:
+                visited.add(path)
+                inspect_document(data, path.parent)
+
+    inspect_document(sbml_string, root_dir)
+    return warnings
+
+
 def _flatten_comp_package(
     sbml_string: str, source_path: Optional[Path] = None
 ) -> tuple[str, Optional[str]]:
@@ -850,6 +954,48 @@ def _flatten_comp_package(
         source_location = Path(source_path).expanduser().resolve()
         if source_location.is_file():
             document.setLocationURI(source_location.as_uri())
+    # A Core model default applies only to its own species, not to species
+    # instantiated from a submodel. Move the top-level default to those
+    # species so that it does not leak into the flattened submodels.
+    top_model = document.getModel()
+    if top_model.isSetConversionFactor():
+        factor = top_model.getConversionFactor()
+        for species in top_model.getListOfSpecies():
+            if not species.isSetConversionFactor():
+                species.setConversionFactor(factor)
+        top_model.unsetConversionFactor()
+    # libSBML flattens away each ModelDefinition, including its Core
+    # conversionFactor. Materialize that default on its species before the
+    # converter resolves identifiers and replacements.
+    visited_documents = set()
+
+    def preserve_child_defaults(child_document):
+        identity = str(child_document.this)
+        if identity in visited_documents:
+            return
+        visited_documents.add(identity)
+        plugin = child_document.getPlugin("comp")
+        if plugin is None:
+            return
+        definitions = [
+            plugin.getModelDefinition(index)
+            for index in range(plugin.getNumModelDefinitions())
+        ]
+        for index in range(plugin.getNumExternalModelDefinitions()):
+            reference = plugin.getExternalModelDefinition(index).getReferencedModel()
+            if reference is not None:
+                definitions.append(reference)
+                referenced_document = reference.getSBMLDocument()
+                if referenced_document is not None:
+                    preserve_child_defaults(referenced_document)
+        for definition in definitions:
+            if definition.isSetConversionFactor():
+                factor = definition.getConversionFactor()
+                for species in definition.getListOfSpecies():
+                    if not species.isSetConversionFactor():
+                        species.setConversionFactor(factor)
+
+    preserve_child_defaults(document)
     properties = libsbml.ConversionProperties()
     properties.addOption("flatten comp", True)
     # Refuse a partial flatten if any required package has no supported
@@ -3312,6 +3458,11 @@ class SBMLParser:
     ) -> SBMLModel:
         original_packages = _declared_package_uris(sbml_string)
         original_comp_constructs = _has_comp_constructs(sbml_string)
+        checksum_warnings = (
+            _comp_checksum_warnings(sbml_string, source_path)
+            if original_comp_constructs
+            else []
+        )
         sbml_string, comp_failure = _flatten_comp_package(sbml_string, source_path)
         try:
             root = ET.fromstring(sbml_string)
@@ -3372,6 +3523,9 @@ class SBMLParser:
             declared_packages,
             native_dae_runtime=native_dae_runtime,
         )
+        result.import_warnings.extend(checksum_warnings)
+        for warning in checksum_warnings:
+            logger.warning("SBM022", f"[compChecksum] {warning['message']}")
         if "comp" in original_packages and original_comp_constructs:
             if comp_failure is None:
                 result.import_warnings.append(
