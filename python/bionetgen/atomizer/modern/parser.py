@@ -384,6 +384,15 @@ def _flatten_simple_inline_comp(sbml_string: str) -> Optional[str]:
     ):
         return None
 
+    # The child model conversionFactor is the default for each species in the
+    # child. Once flattened, that Model no longer exists; carry the default
+    # onto species that do not override it before renaming identifiers.
+    child_conversion = definition.get("conversionFactor")
+    if child_conversion:
+        for element in definition.iter(core_tag("species")):
+            if element.get("conversionFactor") is None:
+                element.set("conversionFactor", child_conversion)
+
     identifiers: Dict[str, str] = {}
     for element in definition.iter():
         identifier = element.get("id")
@@ -394,7 +403,14 @@ def _flatten_simple_inline_comp(sbml_string: str) -> Optional[str]:
     for element in definition.iter():
         if element.get("id") in identifiers:
             element.set("id", identifiers[element.get("id")])
-        for attribute in ("compartment", "species", "variable", "symbol", "units"):
+        for attribute in (
+            "compartment",
+            "species",
+            "variable",
+            "symbol",
+            "units",
+            "conversionFactor",
+        ):
             value = element.get(attribute)
             if value in identifiers:
                 element.set(attribute, identifiers[value])
@@ -624,6 +640,12 @@ def _flatten_simple_external_comp(
             elements, element = matches[0]
             elements.remove(element)
 
+    child_conversion = child_model.get("conversionFactor")
+    if child_conversion:
+        for element in child_model.iter(core_tag("species")):
+            if element.get("conversionFactor") is None:
+                element.set("conversionFactor", child_conversion)
+
     identifiers: Dict[str, str] = {}
     for element in child_model.iter():
         identifier = element.get("id")
@@ -635,7 +657,14 @@ def _flatten_simple_external_comp(
         identifier = element.get("id")
         if identifier in identifiers:
             element.set("id", identifiers[identifier])
-        for attribute in ("compartment", "species", "variable", "symbol", "units"):
+        for attribute in (
+            "compartment",
+            "species",
+            "variable",
+            "symbol",
+            "units",
+            "conversionFactor",
+        ):
             value = element.get(attribute)
             if value in identifiers:
                 element.set(attribute, identifiers[value])
@@ -925,6 +954,48 @@ def _flatten_comp_package(
         source_location = Path(source_path).expanduser().resolve()
         if source_location.is_file():
             document.setLocationURI(source_location.as_uri())
+    # A Core model default applies only to its own species, not to species
+    # instantiated from a submodel. Move the top-level default to those
+    # species so that it does not leak into the flattened submodels.
+    top_model = document.getModel()
+    if top_model.isSetConversionFactor():
+        factor = top_model.getConversionFactor()
+        for species in top_model.getListOfSpecies():
+            if not species.isSetConversionFactor():
+                species.setConversionFactor(factor)
+        top_model.unsetConversionFactor()
+    # libSBML flattens away each ModelDefinition, including its Core
+    # conversionFactor. Materialize that default on its species before the
+    # converter resolves identifiers and replacements.
+    visited_documents = set()
+
+    def preserve_child_defaults(child_document):
+        identity = str(child_document.this)
+        if identity in visited_documents:
+            return
+        visited_documents.add(identity)
+        plugin = child_document.getPlugin("comp")
+        if plugin is None:
+            return
+        definitions = [
+            plugin.getModelDefinition(index)
+            for index in range(plugin.getNumModelDefinitions())
+        ]
+        for index in range(plugin.getNumExternalModelDefinitions()):
+            reference = plugin.getExternalModelDefinition(index).getReferencedModel()
+            if reference is not None:
+                definitions.append(reference)
+                referenced_document = reference.getSBMLDocument()
+                if referenced_document is not None:
+                    preserve_child_defaults(referenced_document)
+        for definition in definitions:
+            if definition.isSetConversionFactor():
+                factor = definition.getConversionFactor()
+                for species in definition.getListOfSpecies():
+                    if not species.isSetConversionFactor():
+                        species.setConversionFactor(factor)
+
+    preserve_child_defaults(document)
     properties = libsbml.ConversionProperties()
     properties.addOption("flatten comp", True)
     # Refuse a partial flatten if any required package has no supported
