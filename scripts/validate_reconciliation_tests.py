@@ -357,9 +357,6 @@ def audit_pybionetgen_options(
         if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
             if node.func.attr == "add_argument":
                 atomizer_options.update(long_options(node.args))
-    # Also collect commented-out CLI option declarations in arguments (e.g. --sedml)
-    for match in re.finditer(r"#\s*\(\[[^\]]*['\"]--([a-z0-9_-]+)['\"]", main):
-        main_options.add(match.group(1))
     return {
         "main_options": sorted(main_options),
         "atomizer_options": sorted(atomizer_options),

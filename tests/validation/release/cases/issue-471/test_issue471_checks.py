@@ -50,8 +50,8 @@ def test_oracle_gate_does_not_promote_inventory_declarations_to_execution(
     receipts = tmp_path / "consumer-receipts"
     receipts.mkdir()
     report = checks.oracle_independence_report(ROOT, receipts, "a" * 40)
-    assert report["row_count"] == 998
-    assert report["named_oracle_rows"] < 998
+    assert report["row_count"] == 997
+    assert report["named_oracle_rows"] < 997
     assert report["grounded_execution_rows"] == 0
     assert report["evidence_scope"] == "DECLARATION_ONLY"
     assert report["source_status_counts"].get("implemented", 0) > 0
