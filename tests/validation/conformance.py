@@ -641,8 +641,21 @@ def _resume_case(
         configuration=resume_configuration,
         expected_contract_ids=expected_contract_ids,
     )
+
+    def clear_stale_case_outputs() -> None:
+        # An interrupted case can leave staged inputs and comparison outputs
+        # behind even when its result artifact was withheld.  The case runner
+        # creates those paths from scratch, so clear them before re-executing.
+        case_dir = directory / "models" / name
+        if case_dir.is_dir():
+            shutil.rmtree(case_dir)
+
     return corpus_resume.reuse_or_execute(
-        directory, identity, run_case, enabled=args.resume
+        directory,
+        identity,
+        run_case,
+        enabled=args.resume,
+        before_execute=clear_stale_case_outputs,
     )
 
 

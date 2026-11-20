@@ -139,11 +139,20 @@ def reuse_or_execute(
     execute: Callable[[], list[dict]],
     *,
     enabled: bool,
+    before_execute: Callable[[], None] | None = None,
 ) -> tuple[list[dict], str]:
-    """Reuse a matching artifact or execute the case and persist its verdicts."""
+    """Reuse a matching artifact or execute the case and persist its verdicts.
+
+    ``before_execute`` is called only when the case will actually run.  The
+    runner uses it to clear leftover staged outputs from an interrupted case:
+    without it, re-execution collides with directories such as ``original``
+    that the case runner creates from scratch.
+    """
     cached, reason = load(directory, identity)
     if enabled and cached is not None:
         return cached, "reused"
+    if before_execute is not None:
+        before_execute()
     rows = execute()
     if not isinstance(rows, list):
         raise TypeError("case execution must return a list of verdict rows")
