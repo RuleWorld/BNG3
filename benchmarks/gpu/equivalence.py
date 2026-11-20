@@ -41,7 +41,7 @@ the numbers it prints can be audited in one file.
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Sequence
 
@@ -368,7 +368,7 @@ def compare_runs(
 
     `result_a` is the host run, `result_b` the other run (typically an
     accelerator run). Both are the dicts `simulate_batch_ssa_*` returns, so this
-    reads `observable_means`, `observable_stds`, `final_observables`,
+    reads `observable_means`, `observable_stds`, `final_observables`, `time`,
     `observable_names` and `batch_size` straight from the engine.
 
     Only the first `ks_observables` observables get a KS test: the final-state
@@ -478,6 +478,46 @@ def compare_runs(
     if len(set(time_grid_lengths)) != 1:
         return invalid("observable statistics time-grid lengths differ")
 
+    def read_time_grid(
+        result: dict[str, Any], side: str
+    ) -> tuple[list[float], str | None]:
+        values = result.get("time")
+        if values is None:
+            return [], f"{side} reported time grid is absent"
+        try:
+            raw_times = list(values)
+        except TypeError:
+            return [], f"{side} reported time grid is not a one-dimensional sequence"
+        if any(
+            isinstance(value, (str, bytes)) or isinstance(value, Iterable)
+            for value in raw_times
+        ):
+            return [], f"{side} reported time grid is not a one-dimensional sequence"
+        try:
+            times = [float(value) for value in raw_times]
+        except (TypeError, ValueError, OverflowError):
+            return [], f"{side} reported time grid contains non-numeric values"
+        if not times or not all(math.isfinite(value) for value in times):
+            return [], f"{side} reported time grid is empty or non-finite"
+        return times, None
+
+    times_a, error_a = read_time_grid(result_a, "host")
+    times_b, error_b = read_time_grid(result_b, "comparison")
+    errors = [error for error in (error_a, error_b) if error]
+    if errors:
+        return invalid("; ".join(errors))
+    if len(times_a) != len(times_b):
+        return invalid("reported time-grid lengths differ")
+    if len(times_a) != time_grid_lengths[0]:
+        return invalid("reported time-grid length differs from observable statistics")
+    # CPU and accelerator time arrays can differ by float32 rounding even when
+    # they describe the same requested sample grid.
+    if any(
+        not math.isclose(a, b, rel_tol=1e-6, abs_tol=1e-8)
+        for a, b in zip(times_a, times_b)
+    ):
+        return invalid("reported time points differ")
+
     cells, max_z, threshold, worst_name = mean_z_test(
         ordered["observable_means"],
         ordered["observable_stds"],
@@ -495,8 +535,8 @@ def compare_runs(
     final_a = result_a.get("final_observables")
     final_b = result_b.get("final_observables")
 
-    if (final_a is None) != (final_b is None):
-        return invalid("final_observables is absent from only one result")
+    if final_a is None or final_b is None:
+        return invalid("final_observables is absent from at least one result")
 
     final_width: int | None = None
     if final_a is not None and final_b is not None:
@@ -544,17 +584,11 @@ def compare_runs(
             moment_results.append(moment)
 
     notes: list[str] = []
-    if ks_results:
-        notes.append(
-            f"KS and moment tests covered {len(ks_results)} of "
-            f"{len(names) or 'unreported'} observables; the remainder are "
-            f"covered only by the mean z-test"
-        )
-    else:
-        notes.append(
-            "no final-observable arrays were available, so only the mean z-test "
-            "ran; shape differences in the final state would not be detected"
-        )
+    notes.append(
+        f"KS and moment tests covered {len(ks_results)} of "
+        f"{len(names)} observables; the remainder are "
+        f"covered only by the mean z-test"
+    )
 
     ks_ok = all(r.get("passes", True) for r in ks_results)
     moment_ok = all(r.get("passes", True) for r in moment_results)

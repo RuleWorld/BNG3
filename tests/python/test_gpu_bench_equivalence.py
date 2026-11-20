@@ -15,6 +15,7 @@ def test_compare_runs_orders_named_observables_by_reported_names():
         "observable_stds": {"A": [0.0, 1.0], "B": [0.0, 0.0]},
         "final_observables": [[0.0, 10.0], [1.0, 10.0], [0.0, 10.0]],
         "batch_size": 3,
+        "time": [0.0, 1.0],
     }
     result_b = {
         "observable_names": ["A", "B"],
@@ -22,6 +23,7 @@ def test_compare_runs_orders_named_observables_by_reported_names():
         "observable_stds": {"B": [0.0, 0.0], "A": [0.0, 1.0]},
         "final_observables": [[0.0, 10.0], [1.0, 10.0], [0.0, 10.0]],
         "batch_size": 3,
+        "time": [0.0, 1.0],
     }
 
     report = compare_runs(result_a, result_b)
@@ -38,6 +40,7 @@ def test_compare_runs_aligns_final_columns_by_observable_name():
         "observable_stds": {"A": [0.0], "B": [0.0]},
         "final_observables": [[1.0, 10.0], [2.0, 20.0]],
         "batch_size": 2,
+        "time": [0.0],
     }
     device = {
         "observable_names": ["B", "A"],
@@ -45,6 +48,7 @@ def test_compare_runs_aligns_final_columns_by_observable_name():
         "observable_stds": {"B": [0.0], "A": [0.0]},
         "final_observables": [[10.0, 1.0], [20.0, 2.0]],
         "batch_size": 2,
+        "time": [0.0],
     }
 
     report = compare_runs(host, device)
@@ -61,6 +65,7 @@ def test_compare_runs_rejects_final_observable_batch_shape_mismatch():
         "observable_stds": {"A": [0.0, 1.0]},
         "final_observables": [[0.0], [1.0]],
         "batch_size": 2,
+        "time": [0.0, 1.0],
     }
     malformed = {**result, "final_observables": [[0.0]], "batch_size": 2}
 
@@ -77,6 +82,7 @@ def test_compare_runs_rejects_missing_named_observable():
         "observable_stds": {"A": [0.0], "B": [0.0]},
         "final_observables": [[0.0, 1.0], [0.0, 1.0]],
         "batch_size": 2,
+        "time": [0.0, 1.0],
     }
     malformed = {
         **result,
@@ -96,6 +102,7 @@ def test_compare_runs_rejects_inconsistent_time_grid_shapes():
         "observable_stds": {"A": [0.0, 1.0]},
         "final_observables": [[0.0], [1.0]],
         "batch_size": 2,
+        "time": [0.0, 1.0],
     }
     malformed = {
         **result,
@@ -106,3 +113,90 @@ def test_compare_runs_rejects_inconsistent_time_grid_shapes():
 
     assert not report.passed
     assert "time-grid lengths differ" in report.notes[0]
+
+
+def test_compare_runs_rejects_different_reported_time_points():
+    result = {
+        "observable_names": ["A"],
+        "observable_means": {"A": [0.0, 1.0, 2.0]},
+        "observable_stds": {"A": [0.0, 1.0, 1.2]},
+        "final_observables": [[2.0]] * 10,
+        "batch_size": 10,
+        "time": [0.0, 1.0, 2.0],
+    }
+    comparison = {**result, "time": [0.0, 0.5, 2.0]}
+
+    report = compare_runs(result, comparison)
+
+    assert not report.passed
+    assert "reported time points differ" in report.notes[0]
+
+
+def test_compare_runs_accepts_float32_rounding_in_same_time_grid():
+    result = {
+        "observable_names": ["A"],
+        "observable_means": {"A": [0.0, 1.0, 2.0]},
+        "observable_stds": {"A": [0.0, 1.0, 1.2]},
+        "final_observables": [[2.0]] * 10,
+        "batch_size": 10,
+        "time": [0.0, 1.0 / 3.0, 2.0 / 3.0],
+    }
+    comparison = {
+        **result,
+        "time": [0.0, float("0.3333333432674408"), float("0.6666666865348816")],
+    }
+
+    report = compare_runs(result, comparison)
+
+    assert report.passed
+
+
+def test_compare_runs_rejects_a_missing_time_grid():
+    result = {
+        "observable_names": ["A"],
+        "observable_means": {"A": [0.0, 1.0]},
+        "observable_stds": {"A": [0.0, 1.0]},
+        "final_observables": [[0.0], [1.0]],
+        "batch_size": 2,
+        "time": [0.0, 1.0],
+    }
+    comparison = {key: value for key, value in result.items() if key != "time"}
+
+    report = compare_runs(result, comparison)
+
+    assert not report.passed
+    assert "reported time grid is absent" in report.notes[0]
+
+
+def test_compare_runs_rejects_a_time_grid_that_does_not_cover_statistics():
+    result = {
+        "observable_names": ["A"],
+        "observable_means": {"A": [0.0, 1.0]},
+        "observable_stds": {"A": [0.0, 1.0]},
+        "final_observables": [[0.0], [1.0]],
+        "batch_size": 2,
+        "time": [0.0],
+    }
+
+    report = compare_runs(result, result)
+
+    assert not report.passed
+    assert (
+        "reported time-grid length differs from observable statistics"
+        in report.notes[0]
+    )
+
+
+def test_compare_runs_rejects_missing_final_observables_on_both_sides():
+    result = {
+        "observable_names": ["A"],
+        "observable_means": {"A": [0.0, 1.0]},
+        "observable_stds": {"A": [0.0, 1.0]},
+        "batch_size": 2,
+        "time": [0.0, 1.0],
+    }
+
+    report = compare_runs(result, result)
+
+    assert not report.passed
+    assert "final_observables is absent" in report.notes[0]
