@@ -262,7 +262,9 @@ def test_release_nfir_lowering_unary_model():
 
 
 # Alias for backwards compatibility with earlier test references
-test_release_nfir_lowering_supported_unary_model = test_release_nfir_lowering_unary_model
+test_release_nfir_lowering_supported_unary_model = (
+    test_release_nfir_lowering_unary_model
+)
 
 
 def test_release_nfir_lowering_all_semantic_families():
@@ -383,7 +385,10 @@ begin reaction rules
   A() -> 0 1.0
 end reaction rules
 end model""")
-    with pytest.raises(RuntimeError, match="sample_times must be finite, nonnegative and strictly increasing"):
+    with pytest.raises(
+        RuntimeError,
+        match="sample_times must be finite, nonnegative and strictly increasing",
+    ):
         cpp.simulate_nfnext(valid_model, [1.0, 0.5], 42, 100, 100)
 
 
@@ -457,7 +462,9 @@ end reaction rules
 
 
 # Alias for backwards compatibility
-test_release_nfir_roundtrip_canonical_model_facts = test_release_nfir_roundtrip_model_facts
+test_release_nfir_roundtrip_canonical_model_facts = (
+    test_release_nfir_roundtrip_model_facts
+)
 
 
 def test_release_nfir_roundtrip_field_by_field_crosswalk():
@@ -624,7 +631,10 @@ def test_release_obligation_147_twenty_one_slice_checks():
         # Aspect 2: Executor
         if fam_id == "population-maps":
             # Population maps fail closed in NFnext pure execution unless lowered to hybrid
-            with pytest.raises(RuntimeError, match="un-lowered population maps require generate_hybrid_model"):
+            with pytest.raises(
+                RuntimeError,
+                match="un-lowered population maps require generate_hybrid_model",
+            ):
                 cpp.simulate_nfnext(model, [0.0, 1.0, 2.0], 42, 1000, 1000)
         else:
             sim = cpp.simulate_nfnext(model, [0.0, 1.0, 2.0], 42, 1000, 1000)
@@ -645,7 +655,9 @@ def test_release_obligation_147_twenty_one_slice_checks():
             rule = snap["rules"][0]
             mods = rule.get("modifiers", [])
             filters = rule["forward"].get("filters", [])
-            assert any(m.get("kind") == "include_reactants" for m in mods) or bool(filters)
+            assert any(m.get("kind") == "include_reactants" for m in mods) or bool(
+                filters
+            )
         elif fam_id == "modifiers":
             rule = snap["rules"][0]
             assert any(m.get("kind") == "match_once" for m in rule.get("modifiers", []))

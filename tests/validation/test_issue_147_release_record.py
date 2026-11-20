@@ -109,13 +109,15 @@ def test_successful_execution_establishes_supported_release_record(monkeypatch):
     monkeypatch.setattr(
         record_issue147_release,
         "run_tests",
-        lambda root: [{"id": "bounded:suite", "status": "PASS"}],
+        lambda root: [{"id": "bounded:unary", "status": "PASS"}],
     )
     report = record_issue147_release.build_release_record(root=ROOT, allow_dirty=True)
-    assert report["bounded_results"] == [{"id": "bounded:suite", "status": "PASS"}]
+    assert report["bounded_results"] == [{"id": "bounded:unary", "status": "PASS"}]
     assert all(row["status"] == "PASS" for row in report["results"])
     assert all(row["supported_execution"] is True for row in report["results"])
-    assert all(row["evidence_kind"] == "supported-execution" for row in report["results"])
+    assert all(
+        row["evidence_kind"] == "supported-execution" for row in report["results"]
+    )
 
 
 def test_bounded_junit_preserves_skipped_cases(monkeypatch):
