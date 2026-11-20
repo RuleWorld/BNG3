@@ -148,24 +148,84 @@ def test_hybrid_release_record_verifies_evidence_directory(tmp_path):
     }
     (ev_dir / "qualification.json").write_text(json.dumps(qual), encoding="utf-8")
 
+    revision = "a" * 40
     cov = {
+        "source": {"revision": revision, "dirty": False},
         "semantic_checks": {
             "release-hybrid": {"passed": True},
             "release-hybrid-conservation": {"passed": True},
-        }
+        },
     }
     (ev_dir / "capability-coverage-150.json").write_text(
         json.dumps(cov), encoding="utf-8"
     )
 
-    res = record_hybrid_release.verify_evidence_directory(ev_dir)
-    assert res["evidence_verified"] is True
+    assert record_hybrid_release.verify_evidence_directory(ev_dir, revision) == {
+        "release-hybrid",
+        "release-hybrid-conservation",
+    }
+    with pytest.raises(ValueError, match="stale or dirty"):
+        record_hybrid_release.verify_evidence_directory(ev_dir, "b" * 40)
 
     # Corrupt qualification
     qual_bad = {"distributional_comparison": {"passed": False}}
     (ev_dir / "qualification.json").write_text(json.dumps(qual_bad), encoding="utf-8")
     with pytest.raises(ValueError, match="distributional comparison failed"):
-        record_hybrid_release.verify_evidence_directory(ev_dir)
+        record_hybrid_release.verify_evidence_directory(ev_dir, revision)
+
+
+@pytest.mark.parametrize(
+    ("scope", "include_coverage_check", "omit_row", "expected_status"),
+    [
+        ("partial", False, False, "NOT_TESTED"),
+        ("partial", True, False, "NOT_TESTED"),
+        ("complete", False, False, "NOT_TESTED"),
+        ("complete", True, True, "NOT_TESTED"),
+        ("complete", True, False, "PASS"),
+    ],
+)
+def test_hybrid_release_record_requires_affirmative_complete_coverage(
+    tmp_path, scope, include_coverage_check, omit_row, expected_status
+):
+    revision = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+    ).strip()
+    checks = {
+        "release-hybrid": {"passed": True},
+        "release-hybrid-conservation": {"passed": True},
+    }
+    if include_coverage_check:
+        checks["release-capability-coverage-150"] = {"passed": True}
+    matrix = json.loads(
+        (ROOT / "provenance/capability-matrix.yml").read_text(encoding="utf-8")
+    )
+    cases = {
+        row["id"]: {"passed": True} for row in matrix["rows"] if row["issue"] == 150
+    }
+    if omit_row:
+        del cases["hybrid.execution"]
+    (tmp_path / "capability-coverage-150.json").write_text(
+        json.dumps(
+            {
+                "source": {"revision": revision, "dirty": False},
+                "issue_150_acceptance": scope,
+                "semantic_checks": checks,
+                "inventory_cases": cases,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    receipt = record_hybrid_release.build_release_record(
+        expected_revision=revision, evidence_dir=tmp_path, root=ROOT, allow_dirty=True
+    )
+
+    results = {row["id"]: row for row in receipt["results"]}
+    assert results["release-hybrid"]["status"] == "PASS"
+    assert results["release-hybrid-conservation"]["status"] == "PASS"
+    coverage = results["release-capability-coverage-150"]
+    assert coverage["status"] == expected_status
+    assert coverage["supported_execution"] is (expected_status == "PASS")
 
 
 def test_hybrid_record_cli(tmp_path):
