@@ -140,12 +140,12 @@ def test_nfnext_dynamic_population_map_matches_independent_pure_death_ssa():
     # Fixed seeds make this reproducible; the independent SSA oracle has its
     # own small Monte-Carlo error, and a 4-sigma band on the NFnext ensemble
     # mean still separates the two laws at this budget.
-    assert abs(nf_mean - ssa_mean) <= 4.0 * nf_se, (
-        f"NFnext U(T)={nf_mean:.3f} vs independent SSA {ssa_mean:.3f} (se={nf_se:.3f})"
-    )
+    assert (
+        abs(nf_mean - ssa_mean) <= 4.0 * nf_se
+    ), f"NFnext U(T)={nf_mean:.3f} vs independent SSA {ssa_mean:.3f} (se={nf_se:.3f})"
     # Frozen-observable wrong law: U0 * exp(-k*U0*T) ~ 36.8, far below the
     # state-dependent pure-death law.
     frozen = N0 * math.exp(-K * N0 * T)
-    assert nf_mean - frozen > 4.0 * nf_se, (
-        f"NFnext {nf_mean:.3f} not separated from frozen-rate law {frozen:.3f}"
-    )
+    assert (
+        nf_mean - frozen > 4.0 * nf_se
+    ), f"NFnext {nf_mean:.3f} not separated from frozen-rate law {frozen:.3f}"

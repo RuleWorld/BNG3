@@ -28,7 +28,10 @@ from tests.validation.strict import require_oracle
 
 # Fresh local extension when present, matching the other NFnext tests.
 build_so = (
-    Path(__file__).resolve().parents[5] / "build" / "cpp" / "_bionetgen_cpp.cpython-314-darwin.so"
+    Path(__file__).resolve().parents[5]
+    / "build"
+    / "cpp"
+    / "_bionetgen_cpp.cpython-314-darwin.so"
 )
 if build_so.exists():
     spec = importlib.util.spec_from_file_location("_bionetgen_cpp", str(build_so))
@@ -93,7 +96,13 @@ def _native_ensemble(tmp_path, native_bin, bng2):
     env["BNGPATH"] = str(bng2.parent)
     env["PERL5LIB"] = str(bng2.parent / "Perl2")
     subprocess.run(
-        [os.environ.get("PERL", "perl"), str(bng2), "--outdir", str(tmp_path), str(source)],
+        [
+            os.environ.get("PERL", "perl"),
+            str(bng2),
+            "--outdir",
+            str(tmp_path),
+            str(source),
+        ],
         cwd=tmp_path,
         env=env,
         check=True,
@@ -106,13 +115,26 @@ def _native_ensemble(tmp_path, native_bin, bng2):
     # Native NFsim declares observables as variables named `U`, not functions
     # `U()`; this is a spelling translation, not a change to the rate law.
     native_xml = tmp_path / "law_native.xml"
-    native_xml.write_text(xml.read_text(encoding="utf-8").replace("k*U()", "k*U"), encoding="utf-8")
+    native_xml.write_text(
+        xml.read_text(encoding="utf-8").replace("k*U()", "k*U"), encoding="utf-8"
+    )
     samples = []
     for i in range(RUNS):
         out = tmp_path / f"native-{i}.gdat"
         subprocess.run(
-            [str(native_bin), "-xml", str(native_xml), "-o", str(out),
-             "-sim", str(T), "-oSteps", "2", "-seed", str(SEED_BASE + i)],
+            [
+                str(native_bin),
+                "-xml",
+                str(native_xml),
+                "-o",
+                str(out),
+                "-sim",
+                str(T),
+                "-oSteps",
+                "2",
+                "-seed",
+                str(SEED_BASE + i),
+            ],
             check=True,
             capture_output=True,
             text=True,
@@ -131,7 +153,10 @@ def _native_ensemble(tmp_path, native_bin, bng2):
 def test_nfnext_dynamic_map_matches_pinned_native_nfsim(tmp_path):
     native = os.environ.get("NFSIM_BIN")
     bng2 = oracle_perl._bng2_path()
-    require_oracle(bool(native) and Path(native).is_file(), "pinned native NFsim unavailable (set NFSIM_BIN)")
+    require_oracle(
+        bool(native) and Path(native).is_file(),
+        "pinned native NFsim unavailable (set NFSIM_BIN)",
+    )
     require_oracle(bng2 is not None, "pinned BNG2 unavailable (set BNG2_PERL)")
     assert native is not None and bng2 is not None
 
