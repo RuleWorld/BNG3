@@ -68,6 +68,15 @@ CONSERVATION_RTOL = 1e-6
 KS_ALPHA = 1e-3
 Z_THRESHOLD = 3.5
 
+# The additional GPU count-law fixture is an immigration-death process started
+# empty. At every time t its count is Poisson with mean
+# lambda/mu * (1 - exp(-mu*t)). These thresholds are fixed before running the
+# device gate; the wrong-law control below omits death and uses Poisson(lambda*t).
+POISSON_CHI2_ALPHA = 1e-3
+POISSON_MEAN_Z_LIMIT = 5.0
+POISSON_VARIANCE_RATIO_MIN = 0.8
+POISSON_VARIANCE_RATIO_MAX = 1.2
+
 # ─────────────────────────────────────────────────────────────────────────────
 # CPU reference gate
 # ─────────────────────────────────────────────────────────────────────────────
@@ -180,6 +189,99 @@ def run_cpu_batch(bngl_path, t_end, n_steps, batch_size, base_seed, threads=0):
 
 def _observable_names(res):
     return list(res.get("observable_names", []))
+
+
+def evaluate_poisson_count_sample(sample, expected_mean):
+    """Check integer count samples against one independently declared Poisson law."""
+    values = np.asarray(sample, dtype=float)
+    report = {
+        "status": "FAIL",
+        "sample_size": int(values.size),
+        "expected_mean": float(expected_mean),
+        "observed_mean": None,
+        "mean_z": None,
+        "variance_ratio": None,
+        "chi_square": None,
+        "chi_square_p": None,
+        "bins": 0,
+        "reason": "",
+    }
+    if values.ndim != 1 or values.size < 2:
+        report["reason"] = (
+            "sample must be a one-dimensional ensemble with at least two counts"
+        )
+        return report
+    if (
+        not np.isfinite(values).all()
+        or (values < 0).any()
+        or not np.equal(values, np.floor(values)).all()
+    ):
+        report["reason"] = "sample must contain only finite non-negative integer counts"
+        return report
+    if not np.isfinite(expected_mean) or expected_mean <= 0.0:
+        report["reason"] = "expected Poisson mean must be positive and finite"
+        return report
+
+    sample_size = values.size
+    observed_mean = float(values.mean())
+    sample_variance = float(values.var(ddof=1))
+    mean_z = (observed_mean - expected_mean) / math.sqrt(expected_mean / sample_size)
+    variance_ratio = sample_variance / expected_mean
+    report.update(
+        observed_mean=observed_mean,
+        mean_z=float(mean_z),
+        variance_ratio=float(variance_ratio),
+    )
+
+    # Keep a pooled upper tail with at least five expected observations. Pool
+    # adjacent sparse lower cells as well, so Pearson's approximation is used
+    # only with adequately populated bins.
+    tail_start = 0
+    while (
+        stats.poisson.sf(tail_start, expected_mean) * sample_size >= MIN_EXPECTED_COUNTS
+    ):
+        tail_start += 1
+    expected_counts = []
+    observed_counts = []
+    pending_expected = 0.0
+    pending_observed = 0
+    for count in range(tail_start):
+        pending_expected += stats.poisson.pmf(count, expected_mean) * sample_size
+        pending_observed += int(np.count_nonzero(values == count))
+        if pending_expected >= MIN_EXPECTED_COUNTS:
+            expected_counts.append(pending_expected)
+            observed_counts.append(pending_observed)
+            pending_expected = 0.0
+            pending_observed = 0
+    pending_expected += stats.poisson.sf(tail_start - 1, expected_mean) * sample_size
+    pending_observed += int(np.count_nonzero(values >= tail_start))
+    expected_counts.append(pending_expected)
+    observed_counts.append(pending_observed)
+    if len(expected_counts) < 2 or min(expected_counts) < MIN_EXPECTED_COUNTS:
+        report["reason"] = (
+            "sample budget is too small for a populated Poisson goodness-of-fit test"
+        )
+        return report
+
+    chi_square, chi_square_p = stats.chisquare(observed_counts, expected_counts)
+    report.update(
+        chi_square=float(chi_square),
+        chi_square_p=float(chi_square_p),
+        bins=len(expected_counts),
+    )
+    reasons = []
+    if chi_square_p < POISSON_CHI2_ALPHA:
+        reasons.append(f"chi-square p={chi_square_p:.4g} < {POISSON_CHI2_ALPHA:g}")
+    if abs(mean_z) > POISSON_MEAN_Z_LIMIT:
+        reasons.append(f"|mean Z|={abs(mean_z):.3f} > {POISSON_MEAN_Z_LIMIT:g}")
+    if not (POISSON_VARIANCE_RATIO_MIN <= variance_ratio <= POISSON_VARIANCE_RATIO_MAX):
+        reasons.append(
+            f"variance ratio={variance_ratio:.4f} outside "
+            f"[{POISSON_VARIANCE_RATIO_MIN:g}, {POISSON_VARIANCE_RATIO_MAX:g}]"
+        )
+    report["reason"] = "; ".join(reasons)
+    report["status"] = "FAIL" if reasons else "PASS"
+    return report
 
 
 def check_conservation_identities(name, res, spec, batch_size):
@@ -553,6 +655,125 @@ def check_device_result(result, backend, batch_size, expected_times):
                 assert (np.asarray(values) >= 0).all()
 
 
+def validate_immigration_death_gpu(backend, *, receipt=None):
+    """Qualify zero- and first-order device propensities against a Poisson law."""
+    model_path = Path("models/gpu_immigration_death.bngl")
+    immigration_rate = 4.0
+    death_rate = 0.7
+    t_end = 2.0
+    n_steps = 4
+    batch_size = 5000
+    base_seed = 240474
+    expected_times = np.linspace(0.0, t_end, n_steps + 1).astype(np.float32)
+    model = cpp.parse_file(str(model_path))
+    network = cpp.generate_network(model)
+
+    def run(batch, seed):
+        return cpp.simulate_batch_ssa_gpu(
+            model,
+            network,
+            batch_size=batch,
+            t_end=t_end,
+            n_steps=n_steps,
+            t_start=0.0,
+            base_seed=seed,
+            backend=backend,
+        )
+
+    result = run(batch_size, base_seed)
+    check_device_result(result, backend, batch_size, expected_times)
+    if result["observable_names"] != ["A_count"]:
+        raise AssertionError(f"unexpected observables: {result['observable_names']}")
+
+    mean_trajectory = np.asarray(result["observable_means"]["A_count"], dtype=float)
+    std_trajectory = np.asarray(result["observable_stds"]["A_count"], dtype=float)
+    if mean_trajectory[0] != 0.0 or std_trajectory[0] != 0.0:
+        raise AssertionError("the empty initial population changed at the t=0 sample")
+    time_checks = []
+    for index, time in enumerate(expected_times[1:], start=1):
+        expected_mean = (
+            immigration_rate / death_rate * (1.0 - math.exp(-death_rate * float(time)))
+        )
+        mean_z = (mean_trajectory[index] - expected_mean) / math.sqrt(
+            expected_mean / batch_size
+        )
+        variance_ratio = std_trajectory[index] ** 2 / expected_mean
+        time_checks.append(
+            {
+                "time": float(time),
+                "expected_mean": expected_mean,
+                "observed_mean": float(mean_trajectory[index]),
+                "mean_z": float(mean_z),
+                "variance_ratio": float(variance_ratio),
+            }
+        )
+        if abs(mean_z) > POISSON_MEAN_Z_LIMIT:
+            raise AssertionError(
+                f"t={time:g}: Poisson mean Z={mean_z:.3f} exceeds "
+                f"{POISSON_MEAN_Z_LIMIT:g}"
+            )
+        if not (
+            POISSON_VARIANCE_RATIO_MIN <= variance_ratio <= POISSON_VARIANCE_RATIO_MAX
+        ):
+            raise AssertionError(
+                f"t={time:g}: Poisson variance ratio {variance_ratio:.4f} is outside "
+                f"[{POISSON_VARIANCE_RATIO_MIN:g}, {POISSON_VARIANCE_RATIO_MAX:g}]"
+            )
+
+    expected_final_mean = (
+        immigration_rate / death_rate * (1.0 - math.exp(-death_rate * t_end))
+    )
+    final_sample = np.asarray(result["final_observables"], dtype=float)[:, 0]
+    final_fit = evaluate_poisson_count_sample(final_sample, expected_final_mean)
+    if final_fit["status"] != "PASS":
+        raise AssertionError(f"GPU count sample failed the Poisson law: {final_fit}")
+
+    # This control intentionally omits death. Its Poisson(lambda*t) law must
+    # fall outside the acceptance bands for the declared immigration-death law.
+    wrong_mean = immigration_rate * t_end
+    wrong_sample = np.random.default_rng(20261120).poisson(wrong_mean, size=batch_size)
+    wrong_fit = evaluate_poisson_count_sample(wrong_sample, expected_final_mean)
+    if wrong_fit["status"] != "FAIL":
+        raise AssertionError("the no-death wrong-law control passed the Poisson gate")
+
+    # Device trajectories are keyed by trajectory index. Repetition after an
+    # unrelated batch and changing the batch boundary must preserve every
+    # corresponding trajectory exactly.
+    interleaved = run(17, base_seed + 1)
+    check_device_result(interleaved, backend, 17, expected_times)
+    repeated = run(batch_size, base_seed)
+    for key in ("final_observables", "final_species", "event_counts"):
+        np.testing.assert_array_equal(result[key], repeated[key])
+
+    prefix_sizes = (63, 64, 65, 255, 256, 257)
+    for prefix_size in prefix_sizes:
+        prefix = run(prefix_size, base_seed)
+        check_device_result(prefix, backend, prefix_size, expected_times)
+        for key in ("final_observables", "final_species", "event_counts"):
+            np.testing.assert_array_equal(result[key][:prefix_size], prefix[key])
+
+    if receipt is not None:
+        receipt.update(
+            {
+                "status": "PASS",
+                "backend": result["backend"],
+                "batch_size": batch_size,
+                "base_seed": base_seed,
+                "model_sha256": hashlib.sha256(model_path.read_bytes()).hexdigest(),
+                "initial_population": 0,
+                "immigration_rate": immigration_rate,
+                "death_rate": death_rate,
+                "time_checks": time_checks,
+                "final_count_law": "Poisson(lambda/mu * (1-exp(-mu*t)))",
+                "final_count_fit": final_fit,
+                "no_death_wrong_law_rejected": True,
+                "repeated_after_interleaving": True,
+                "trajectory_index_prefix_equal_at_batch_sizes": list(prefix_sizes),
+            }
+        )
+    return True
+
+
 def validate_model(
     name, bngl_path, t_end, n_steps, batch_size=2000, *, backend="auto", receipt=None
 ):
@@ -886,6 +1107,15 @@ def run_gpu_parity_gate(*, backend="auto", require_device=False, report=None):
         receipt["status"] = "PASS" if ok else "FAIL"
         if not ok:
             all_ok = False
+
+    receipt = {"model": "gpu_immigration_death", "status": "FAIL"}
+    report["models"].append(receipt)
+    try:
+        validate_immigration_death_gpu(selected, receipt=receipt)
+    except Exception as exc:
+        receipt["error"] = f"{type(exc).__name__}: {exc}"
+        print(f"[FAIL] gpu_immigration_death: {receipt['error']}")
+        all_ok = False
     report["status"] = "PASS" if all_ok else "FAIL"
 
     print("\n" + "=" * 70)
