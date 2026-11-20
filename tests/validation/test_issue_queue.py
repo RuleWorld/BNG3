@@ -288,6 +288,63 @@ def test_issue138_release_record_consumer(tmp_path):
             issue_queue.issue138_release_record(path, REVISION)
 
 
+def test_issue147_release_record_consumer(tmp_path):
+    record_file = tmp_path / "issue147-release-record.json"
+    expected = {
+        "release-nfir-lowering",
+        "release-nfir-roundtrip",
+        "release-obligation-147",
+    }
+    record_file.write_text(
+        json.dumps(
+            {
+                "acceptance_check": "release-obligation-147",
+                "source": {"revision": REVISION, "dirty": False},
+                "manifest_check_ids": sorted(expected),
+                "results": [
+                    {
+                        "id": check,
+                        "status": "PASS",
+                        "stage": "nfnext-lowering",
+                        "evidence_kind": "supported-execution",
+                        "supported_execution": True,
+                    }
+                    for check in sorted(expected)
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    report = issue_queue.issue147_release_record(
+        record_file, REVISION, artifact_run_id="999"
+    )
+    assert report["source"] == {"revision": REVISION, "dirty": False}
+    assert {r["id"] for r in report["results"]} == expected
+    assert all(
+        r["status"] == "PASS" and r["related_issues"] == [147]
+        for r in report["results"]
+    )
+    assert report["artifact"]["sha256"]
+
+    # Negative controls: stale, dirty, incomplete or non-executed records fail closed.
+    data = json.loads(record_file.read_text())
+    for mutate, match in (
+        (lambda d: d["source"].update(revision="0" * 40), "stale"),
+        (lambda d: d["source"].update(dirty=True), "dirty"),
+        (lambda d: d["results"].pop(), "missing required check rows"),
+        (
+            lambda d: d["results"][0].update(status="NOT_TESTED"),
+            "not supported execution",
+        ),
+    ):
+        bad = json.loads(json.dumps(data))
+        mutate(bad)
+        path = tmp_path / "bad.json"
+        path.write_text(json.dumps(bad), encoding="utf-8")
+        with pytest.raises(ValueError, match=match):
+            issue_queue.issue147_release_record(path, REVISION)
+
+
 def test_issue471_checks_report_consumer(tmp_path):
     oracle_file = tmp_path / "oracle.json"
     oracle_file.write_text(

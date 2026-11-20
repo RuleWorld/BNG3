@@ -56,9 +56,11 @@
       "capability": "Check for an unmapped reactant before the molecularity check",
       "classification": "incorporated-equivalently",
       "bng3_reference": "cpp/nfsim/NFcore/reactionClass.cpp",
-      "tests": [],
+      "tests": [
+        "tests/validation/test_reconciliation_nfsim.py::test_record_unmapped_reactant_reconciliation"
+      ],
       "reviewer": "Codex technical reconciliation",
-      "rationale": "Check mappings before evaluating molecularity."
+      "rationale": "Check mappings before evaluating molecularity. Verified via basicModels/v31 internal bond reconnection running under both -cb and -bscb without segfaulting."
     },
     {
       "source_revision": "2dbf1889e166ab791e6ac2fea8d227cb482f9d0b",
@@ -86,20 +88,20 @@
     {
       "source_revision": "e5a1989c1a01a551907fa3c702f9114025a1f2c7",
       "capability": "Write AN.bngl's bond-breaking rules so they hold under strict \"+\"",
-      "classification": "incorporated-equivalently",
-      "bng3_reference": "models/chemotaxisAdaptation/AN.bngl",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/upstreams.lock.yml",
       "tests": [],
       "reviewer": "Codex technical reconciliation",
-      "rationale": "Port the upstream example compatible with strict molecularity."
+      "rationale": "Use the pinned upstream fixture lineage for oracle regressions. The upstream AN example is preserved in that checkout."
     },
     {
       "source_revision": "3e5246760b89733977def69fe898634886f6e802",
       "capability": "Write ANx.bngl's bond-breaking rules so they hold under strict \"+\"",
-      "classification": "incorporated-equivalently",
-      "bng3_reference": "models/chemotaxisAdaptation/ANx.bngl",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/upstreams.lock.yml",
       "tests": [],
       "reviewer": "Codex technical reconciliation",
-      "rationale": "Port the upstream example compatible with strict molecularity."
+      "rationale": "Use the pinned upstream fixture lineage for oracle regressions. The upstream ANx example is preserved in that checkout."
     },
     {
       "source_revision": "56f4b18fe3e6e519c144f1121bf335b41561c6fb",
@@ -275,11 +277,11 @@
     {
       "source_revision": "cb8e521a30b259f6120b4b308252af999ef8f54b",
       "capability": "Fix the comment's slot arithmetic, and say per site what reaching it needs",
-      "classification": "incorporated-equivalently",
-      "bng3_reference": "cpp/nfsim/NFcore/templateMolecule.cpp",
+      "classification": "not-applicable",
+      "bng3_reference": "provenance/upstreams.lock.yml",
       "tests": [],
       "reviewer": "Codex technical reconciliation",
-      "rationale": "Carry the final upstream matching comments with the defensive checks."
+      "rationale": "Source comment and documentation fix; no behavioral code change."
     },
     {
       "source_revision": "d369bf59f95176e3b71443f8970baa1e37109b70",

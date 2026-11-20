@@ -524,19 +524,6 @@ def test_emitter_output_conforms_to_the_published_schema():
             )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "population_maps.items in bngir-0.2.schema.json still requires a 'function' "
-        "string and forbids 'population'/'population_id'/'rate', i.e. it encodes the "
-        "pre-canonical rate-less vocabulary. pyBngir ruled the READER authoritative "
-        "and the schema stale (see PR for pyBngir's ruling); the schema rewrite is "
-        "assigned to provenance/schemas' owner. The emitter deliberately keeps the "
-        "canonical keys: dropping 'rate' would reintroduce the v0.1 lossy shape and "
-        "would remove the population_id cross-check the reader performs against "
-        "population_types. Turns green when the schema lands, with no emitter change."
-    ),
-)
 def test_population_maps_section_is_schema_valid():
     jsonschema = pytest.importorskip("jsonschema")
     schema = json.loads(SCHEMA_PATH.read_text())

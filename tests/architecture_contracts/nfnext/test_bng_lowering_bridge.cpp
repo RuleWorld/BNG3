@@ -17,6 +17,7 @@
 #include <cstdint>
 #include <cmath>
 #include <filesystem>
+#include <functional>
 #include <iostream>
 #include <iterator>
 #include <limits>
@@ -1601,7 +1602,11 @@ end reaction rules
     assert(pop.pattern.nodes[0].constraints.size() == 1);
     assert(pop.pattern.nodes[0].constraints[0].kind == nfnext::PatternIR::SiteConstraintKind::State);
 
-    // Negative control: execution refuses population maps fail-closed
+    // This model does not declare `begin population types PopA()`, so the
+    // product is not a declared population type: the map is outside the
+    // executable shape and no rule is synthesized for it.
+    for (const auto& rule : lowered.model.expanded_rules)
+        assert(rule.annotations.count("bng.population_map_index") == 0);
     nfnext::BngExecutionRequest req;
     req.sample_times = {0.0, 1.0};
     bool refused = false;
@@ -1637,13 +1642,14 @@ end reaction rules
 }
 
 void lowersDynamicPopulationMapRates() {
-    // A dynamic population-map rate is representable as an expression even
-    // though it has no static value. NFIR lowering must preserve it for
-    // representation consumers while execution stays fail-closed.
+    // A dynamic population-map rate is preserved for representation consumers
+    // and, for the supported shape, lowered to an executable runtime Function
+    // rate law. The product type is declared so the map is within that shape.
     const auto parseDynamic = [](const std::string& rate) {
         return bng::parser::parseModel(
             "begin parameters\n k 0.5\nend parameters\n"
             "begin molecule types\n A(x~p)\nend molecule types\n"
+            "begin population types\n PopA()\nend population types\n"
             "begin observables\n Molecules U A(x~p)\nend observables\n"
             "begin seed species\n A(x~p) 10\nend seed species\n"
             "begin reaction rules\n R1: A(x~p) -> A(x~p) k\nend reaction rules\n"
@@ -1668,19 +1674,21 @@ void lowersDynamicPopulationMapRates() {
         }
     }
     assert(warned);
+    // The supported dynamic map also produces an executable Function rule.
+    assert(lowered.model.expanded_rules.size() == 2);
+    const auto& mapRule = lowered.model.expanded_rules.back();
+    assert(mapRule.annotations.count("bng.population_map_index") == 1);
+    assert(mapRule.rate_law.kind == nfnext::RateLawKind::Function);
+    assert(mapRule.rate_law.expression.find("observable_") != std::string::npos);
 
-    // Execution still refuses every population map: representation is not
-    // an execution-support claim.
+    // Execution now runs the supported map instead of refusing it.
     nfnext::BngExecutionRequest req;
     req.sample_times = {0.0, 1.0};
-    bool refused = false;
-    try {
-        nfnext::executeFromBioNetGen(semantic, req);
-    } catch (const std::exception& e) {
-        refused = true;
-        assert(std::string(e.what()).find("population map") != std::string::npos);
-    }
-    assert(refused);
+    req.seed = 11;
+    const auto result = nfnext::executeFromBioNetGen(semantic, req);
+    assert(result.rows.size() == 2);
+    assert(result.rows[0][1] == 10.0);
+    assert(result.rows[1][1] < 10.0);
 
     // The dynamic expression participates in canonical identity: a different
     // rate law is a different represented model, not the same static zero.
@@ -1691,6 +1699,175 @@ void lowersDynamicPopulationMapRates() {
     assert(lowered.model.fingerprint() != lowered2.model.fingerprint());
     assert(nfnext::canonicalizeModel(lowered.model).canonicalBytes() !=
            nfnext::canonicalizeModel(lowered2.model).canonicalBytes());
+}
+
+// Exact mean of a pure death process X(0)=n0 with death rate lambda_n from
+// n -> n-1 at time T. P(X(T)=m|X(0)=n0) for distinct lambda_n is
+//   (prod_{k=m+1}^{n0} lambda_k) *
+//     sum_{i=m}^{n0} exp(-lambda_i T) / prod_{j=m,j!=i}^{n0} (lambda_j - lambda_i)
+// (lambda_0 = 0). Written independently of the NFnext product so it is a
+// genuine oracle, not a restatement of the implementation.
+double pureDeathMean(double T, std::size_t n0,
+                     const std::function<double(std::size_t)>& deathRate) {
+    const auto lambda = [&](std::size_t n) { return n == 0 ? 0.0 : deathRate(n); };
+    double mean = 0.0;
+    for (std::size_t m = 0; m <= n0; ++m) {
+        double product = 1.0;
+        for (std::size_t k = m + 1; k <= n0; ++k) product *= lambda(k);
+        double sum = 0.0;
+        for (std::size_t i = m; i <= n0; ++i) {
+            double denominator = 1.0;
+            for (std::size_t j = m; j <= n0; ++j) {
+                if (j == i) continue;
+                denominator *= (lambda(j) - lambda(i));
+            }
+            sum += std::exp(-lambda(i) * T) / denominator;
+        }
+        mean += static_cast<double>(m) * product * sum;
+    }
+    return mean;
+}
+
+void executesDynamicPopulationMapRate() {
+    // Reference fixture (release case issue-147): BNG2 lowers
+    //   A(x~u) -> A_pop()  k_gather*U()
+    // to an observable-dependent map rule. The supported shape now executes.
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin parameters
+  k_gather 0.01
+end parameters
+begin molecule types
+  A(x~u)
+end molecule types
+begin population types
+  A_pop()
+end population types
+begin seed species
+  A(x~u) 100
+end seed species
+begin observables
+  Molecules U A(x~u)
+  Molecules P A_pop()
+end observables
+begin reaction rules
+  R1: A(x~u) -> A(x~u) k_gather
+end reaction rules
+begin population maps
+  A(x~u) -> A_pop() k_gather * U()
+end population maps
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(lowered.ok());
+    // The identity rule plus one synthesized executable map rule.
+    assert(lowered.model.expanded_rules.size() == 2);
+    bool saw_function_map = false;
+    for (const auto& rule : lowered.model.expanded_rules) {
+        if (rule.annotations.count("bng.population_map_index")) {
+            assert(rule.rate_law.kind == nfnext::RateLawKind::Function);
+            assert(rule.rate_law.expression.find("observable_") != std::string::npos);
+            assert(rule.pattern.nodes.size() == 1);
+            assert(rule.actions.size() == 2);
+            saw_function_map = true;
+        }
+    }
+    assert(saw_function_map);
+
+    nfnext::BngExecutionRequest req;
+    req.sample_times = {0.0, 1.0};
+    req.seed = 42;
+    const auto result = nfnext::executeFromBioNetGen(semantic, req);
+    assert((result.columns == std::vector<std::string>{"time", "U", "P"}));
+    assert(result.rows.size() == 2);
+    assert(result.rows[0][1] == 100.0 && result.rows[0][2] == 0.0);
+    assert(result.rows[1][1] < 100.0);
+    assert(std::abs(result.rows[1][1] + result.rows[1][2] - 100.0) < 1e-9);
+}
+
+void dynamicPopulationMapRateMatchesExactSSA() {
+    // Map propensity = rate * (# A(x~u) matches) = (k*U) * U with U = n.
+    // Starting from n0=4 that is a pure death process with lambda_n = k*n^2,
+    // k=0.5. A wrong implementation that ignores the observable dependence
+    // would use lambda_n = k*n; the two means differ by >1 at T=1.
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin parameters
+  k 0.5
+end parameters
+begin molecule types
+  A(x~u)
+end molecule types
+begin population types
+  A_pop()
+end population types
+begin seed species
+  A(x~u) 4
+end seed species
+begin observables
+  Molecules U A(x~u)
+  Molecules P A_pop()
+end observables
+begin reaction rules
+  R: A(x~u) -> A(x~u) k
+end reaction rules
+begin population maps
+  A(x~u) -> A_pop() k * U()
+end population maps
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+
+    constexpr double T = 1.0;
+    constexpr std::size_t runCount = 400;
+    const double expected = pureDeathMean(T, 4, [](std::size_t n) { return 0.5 * n * n; });
+    const double wrong = pureDeathMean(T, 4, [](std::size_t n) { return 0.5 * n; });
+    double empirical = 0.0;
+    nfnext::BngExecutionRequest request;
+    request.sample_times = {0.0, T};
+    for (std::size_t run = 0; run < runCount; ++run) {
+        request.seed = 771337 + run;
+        const auto result = nfnext::executeFromBioNetGen(semantic, request);
+        const double u = result.rows.back()[1];
+        const double p = result.rows.back()[2];
+        assert(std::abs(u + p - 4.0) < 1e-9);
+        empirical += u;
+    }
+    empirical /= static_cast<double>(runCount);
+    // ~7 standard errors at this sample count; far below the wrong-law gap.
+    assert(std::abs(empirical - expected) < 0.25);
+    assert(std::abs(empirical - wrong) > 0.5);
+}
+
+void refusesUnsupportedPopulationMapRateShapes() {
+    const auto expectRefusal = [](const std::string& rate,
+                                  const std::string& extraBlock = std::string()) {
+        const auto ast = bng::parser::parseModel(
+            "begin parameters\n k 0.5\nend parameters\n"
+            "begin molecule types\n A(x~u)\nend molecule types\n"
+            "begin population types\n A_pop()\nend population types\n"
+            + extraBlock +
+            "begin seed species\n A(x~u) 4\nend seed species\n"
+            "begin reaction rules\n R: A(x~u) -> A(x~u) k\nend reaction rules\n"
+            "begin population maps\n A(x~u) -> A_pop() " + rate + "\nend population maps\n");
+        assert(ast);
+        const bng::compile::CompiledModel semantic(*ast);
+        assert(semantic.valid());
+        nfnext::BngExecutionRequest request;
+        request.sample_times = {0.0, 1.0};
+        bool refused = false;
+        try { nfnext::executeFromBioNetGen(semantic, request); }
+        catch (const std::exception& e) {
+            refused = true;
+            assert(std::string(e.what()).find("population map") != std::string::npos);
+        }
+        assert(refused);
+    };
+    // Time-dependent rate is not representable as a runtime observable rate.
+    expectRefusal("k * time()");
+    // A Species observable cannot back a Function rate law.
+    expectRefusal("k * S()", "begin observables\n Species S A(x~u)\nend observables\n");
 }
 
 void lowersDynamicEnergyPatterns() {
@@ -1734,6 +1911,97 @@ void lowersDynamicEnergyPatterns() {
     assert(lowered.model.fingerprint() != lowered2.model.fingerprint());
     assert(nfnext::canonicalizeModel(lowered.model).canonicalBytes() !=
            nfnext::canonicalizeModel(lowered2.model).canonicalBytes());
+}
+
+void executesDynamicEnergyPatternRate() {
+    // A dynamic energy expression must change the Arrhenius propensity at
+    // runtime. Here the energy pattern gives state u an energy of
+    // G0 * NB() = 0.1 * 10 = 1, so the two-state chain has
+    //   kf = exp(-(Ea + phi*(-1))) = exp(-0.5)
+    //   kr = exp(-(Ea + (1-phi)*(+1))) = exp(-1.5)
+    // A silently zeroed dynamic energy would give kf = kr = exp(-1) instead.
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin parameters
+  G0 0.1
+  phi 0.5
+  Ea 1
+end parameters
+begin molecule types
+  A(x~u~p)
+  B()
+end molecule types
+begin observables
+  Molecules NB B()
+  Molecules P_count A(x~p)
+end observables
+begin seed species
+  A(x~u) 1
+  B() 10
+end seed species
+begin energy patterns
+  ep1: A(x~u) G0 * NB()
+end energy patterns
+begin reaction rules
+  fwd: A(x~u) -> A(x~p) Arrhenius(phi, Ea)
+  rev: A(x~p) -> A(x~u) Arrhenius(phi, Ea)
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(lowered.ok());
+    assert(lowered.model.expanded_rules.size() == 2);
+
+    // Lowering invariant: a dynamic energy contribution is a runtime function,
+    // not a constant folded as if the energy were zero.
+    bool saw_dynamic = false;
+    for (const auto& rule : lowered.model.expanded_rules) {
+        if (rule.rate_law.kind == nfnext::RateLawKind::Function) {
+            saw_dynamic = true;
+            assert(rule.rate_law.expression.find("observable_") != std::string::npos);
+        }
+    }
+    assert(saw_dynamic);
+
+    // Evaluate the compiled rates against the seeded observable value.
+    const auto obsId = static_cast<nfnext::ObservableId>(semantic.observables().front().id.value());
+    nfnext::FunctionEnvironment environment;
+    environment.addObservable("observable_" + std::to_string(obsId), 10.0, obsId);
+    bool saw_forward_rate = false;
+    bool saw_reverse_rate = false;
+    for (const auto& rule : lowered.model.expanded_rules) {
+        if (rule.rate_law.kind != nfnext::RateLawKind::Function) continue;
+        const auto compiled = nfnext::FunctionCompiler().compile(rule.rate_law.expression, environment);
+        const double rate = compiled.evaluate(environment);
+        if (std::abs(rate - std::exp(-0.5)) < 1e-9) saw_forward_rate = true;
+        if (std::abs(rate - std::exp(-1.5)) < 1e-9) saw_reverse_rate = true;
+    }
+    assert(saw_forward_rate);
+    assert(saw_reverse_rate);
+
+    // Independent analytic law: a two-state CTMC with constant rates
+    // kf, kr has P_p(T) = kf/(kf+kr) * (1 - exp(-(kf+kr) T)).
+    const double kf = std::exp(-0.5);
+    const double kr = std::exp(-1.5);
+    const double T = 2.0;
+    const double expected = kf / (kf + kr) * (1.0 - std::exp(-(kf + kr) * T));
+
+    constexpr std::size_t runCount = 200;
+    std::size_t in_p = 0;
+    nfnext::BngExecutionRequest request;
+    request.sample_times = {0.0, T};
+    for (std::size_t run = 0; run < runCount; ++run) {
+        request.seed = 20261119 + run;
+        const auto result = nfnext::executeFromBioNetGen(semantic, request);
+        assert(result.columns.size() == 3);
+        const double p = result.rows.back()[2];
+        assert(std::abs(p - 0.0) < 1e-9 || std::abs(p - 1.0) < 1e-9);
+        if (p > 0.5) ++in_p;
+    }
+    const double empirical = static_cast<double>(in_p) / runCount;
+    const double epsilon = std::sqrt(std::log(2.0 / 0.01) / (2.0 * runCount));
+    assert(std::abs(empirical - expected) <= epsilon);
 }
 
 void lowersModifierFlags() {
@@ -2215,7 +2483,11 @@ end reaction rules
     lowersEnergyPatterns();
     lowersPopulationMaps();
     lowersDynamicPopulationMapRates();
+    executesDynamicPopulationMapRate();
+    dynamicPopulationMapRateMatchesExactSSA();
+    refusesUnsupportedPopulationMapRateShapes();
     lowersDynamicEnergyPatterns();
+    executesDynamicEnergyPatternRate();
     lowersModifierFlags();
     lowersFilterPatterns();
     cacheRoundTripsNewModelFields();

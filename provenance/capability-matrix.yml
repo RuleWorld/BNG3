@@ -4207,6 +4207,17 @@
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
     },
     {
+      "id": "nf.option.no-bscb",
+      "behavior": "NFsim -no-bscb",
+      "upstream": "nfsim:src/NFsim.cpp:512 (main/initSystemFromFlags/runFromArgs)",
+      "bng3": "cpp/nfsim/NFsim.cpp:546; cpp/actions/ActionDispatch.cpp:674",
+      "check": "tests/validation/test_parity_nfsim.py + release-capability[nf.option.no-bscb]",
+      "oracle": "pinned native NFsim command/result contract",
+      "status": "partial",
+      "issue": 146,
+      "evidence": "#146 NFcore tests exercise selected observables, local scopes and accepted option combinations. The named independent per-row execution and full interactions remain to be verified."
+    },
+    {
       "id": "nf.option.nocslf",
       "behavior": "NFsim -nocslf",
       "upstream": "nfsim:src/NFsim.cpp:518 (main/initSystemFromFlags/runFromArgs)",
@@ -10455,6 +10466,17 @@
       "evidence": "Extracted from actual pinned CLI option literals."
     },
     {
+      "id": "py.cli.option.bionetgen-analysis",
+      "behavior": "PyBioNetGen CLI option --bionetgen-analysis",
+      "upstream": "pybionetgen:bionetgen/atomizer/sbmlTranslator.py:defineConsole",
+      "bng3": "python/bionetgen/cli.py (map accepted command/option behavior)",
+      "check": "release-capability[py.cli.option.bionetgen-analysis]",
+      "oracle": "pinned PyBioNetGen CLI default/explicit/error cases",
+      "status": "unassessed",
+      "issue": 171,
+      "evidence": "Extracted from actual pinned CLI option literals."
+    },
+    {
       "id": "py.cli.option.colors",
       "behavior": "PyBioNetGen CLI option --colors",
       "upstream": "pybionetgen:bionetgen/main.py:BNGBase argument decorators",
@@ -10526,6 +10548,17 @@
       "upstream": "pybionetgen:bionetgen/main.py:BNGBase argument decorators",
       "bng3": "python/bionetgen/cli.py (map accepted command/option behavior)",
       "check": "release-capability[py.cli.option.input]",
+      "oracle": "pinned PyBioNetGen CLI default/explicit/error cases",
+      "status": "unassessed",
+      "issue": 171,
+      "evidence": "Extracted from actual pinned CLI option literals."
+    },
+    {
+      "id": "py.cli.option.input-file",
+      "behavior": "PyBioNetGen CLI option --input-file",
+      "upstream": "pybionetgen:bionetgen/atomizer/sbmlTranslator.py:defineConsole",
+      "bng3": "python/bionetgen/cli.py (map accepted command/option behavior)",
+      "check": "release-capability[py.cli.option.input-file]",
       "oracle": "pinned PyBioNetGen CLI default/explicit/error cases",
       "status": "unassessed",
       "issue": 171,
@@ -10697,6 +10730,17 @@
       "evidence": "Extracted from actual pinned CLI option literals."
     },
     {
+      "id": "py.cli.option.output-file",
+      "behavior": "PyBioNetGen CLI option --output-file",
+      "upstream": "pybionetgen:bionetgen/atomizer/sbmlTranslator.py:defineConsole",
+      "bng3": "python/bionetgen/cli.py (map accepted command/option behavior)",
+      "check": "release-capability[py.cli.option.output-file]",
+      "oracle": "pinned PyBioNetGen CLI default/explicit/error cases",
+      "status": "unassessed",
+      "issue": 171,
+      "evidence": "Extracted from actual pinned CLI option literals."
+    },
+    {
       "id": "py.cli.option.output2",
       "behavior": "PyBioNetGen CLI option --output2",
       "upstream": "pybionetgen:bionetgen/main.py:BNGBase argument decorators",
@@ -10735,17 +10779,6 @@
       "upstream": "pybionetgen:bionetgen/main.py:BNGBase argument decorators",
       "bng3": "python/bionetgen/cli.py (map accepted command/option behavior)",
       "check": "release-capability[py.cli.option.require]",
-      "oracle": "pinned PyBioNetGen CLI default/explicit/error cases",
-      "status": "unassessed",
-      "issue": 171,
-      "evidence": "Extracted from actual pinned CLI option literals."
-    },
-    {
-      "id": "py.cli.option.sedml",
-      "behavior": "PyBioNetGen CLI option --sedml",
-      "upstream": "pybionetgen:bionetgen/main.py:BNGBase argument decorators",
-      "bng3": "python/bionetgen/cli.py (map accepted command/option behavior)",
-      "check": "release-capability[py.cli.option.sedml]",
       "oracle": "pinned PyBioNetGen CLI default/explicit/error cases",
       "status": "unassessed",
       "issue": 171,

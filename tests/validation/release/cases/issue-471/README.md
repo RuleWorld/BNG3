@@ -32,7 +32,7 @@ python tests/validation/release/cases/issue-471/issue471_checks.py oracle \
   --revision "$GITHUB_SHA" --report "$RUNNER_TEMP/oracle-independence.json"
 ```
 
-The current matrix has 994 rows, with 986 `missing`, 7 `implemented`, and 1
+The current matrix has 997 rows, with 986 `missing`, 7 `implemented`, and 1
 `wrong`; 16 rows use the unresolved generic declaration “canonical source or
 analytic specification as appropriate.” No fresh exact-revision consumer
 receipts are supplied by this package, so `release-oracle-independence`

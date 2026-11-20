@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" xmlns:comp="http://www.sbml.org/sbml/level3/version1/comp/version1" level="3" version="1" comp:required="true">
+ <model id="parent"><comp:listOfSubmodels><comp:submodel comp:id="child" comp:modelRef="childModel"/></comp:listOfSubmodels></model>
+ <comp:listOfModelDefinitions><comp:modelDefinition id="childModel" conversionFactor="cf">
+  <listOfCompartments><compartment id="c" size="1" constant="true"/></listOfCompartments>
+  <listOfSpecies><species id="A" compartment="c" initialAmount="0" hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/></listOfSpecies>
+  <listOfParameters><parameter id="cf" value="3" constant="true"/></listOfParameters>
+  <listOfReactions><reaction id="r" reversible="false" fast="false"><listOfProducts><speciesReference species="A" stoichiometry="1" constant="true"/></listOfProducts><kineticLaw><math xmlns="http://www.w3.org/1998/Math/MathML"><cn>2</cn></math></kineticLaw></reaction></listOfReactions>
+ </comp:modelDefinition></comp:listOfModelDefinitions>
+</sbml>

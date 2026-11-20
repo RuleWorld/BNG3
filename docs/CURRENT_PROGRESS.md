@@ -1,5 +1,66 @@
 # BNG3 current progress
 
+## NFnext dynamic energy execution — 2026-11-19
+
+`cpp/nfnext/src/from_bng.cpp` no longer folds a dynamic energy expression to
+zero when expanding an energy-modulated Arrhenius state change. The signed
+reaction-centre coefficient is now separated from the energy value; observable
+dependent energy expressions are translated with `observableRateExpression`
+and composed into a runtime `RateLawKind::Function` rate (the same executor and
+observable refresh path already qualified for dynamic observable rates in
+#746). Static energy patterns keep the existing Elementary folded-rate path.
+Time-dependent or otherwise untranslatable energy expressions remain fail-closed
+lowering errors. A focused regression in
+`tests/architecture_contracts/nfnext/test_bng_lowering_bridge.cpp` checks the
+lowering invariant, the compiled forward/reverse rates and an analytic two-state
+law; the full CTest suite (830 tests) passes locally. The same model run through
+the public Python route (`cpp.simulate_nfnext`) gave empirical
+`P_p(T=2)=0.620` versus analytic `0.592` over 200 fixed seeds (DKW bound
+`0.115`), after rebuilding the Python extension: a stale
+`build/cpp/_bionetgen_cpp*.so` silently reproduced the old zeroed-energy
+behavior and must be relinked before accepting Python-route evidence.
+
+Dynamic population-map rates now also execute for the supported simple shape
+(particle reactant pattern, declared componentless population product, constant
+or Molecules-observable arithmetic rate). Lowering synthesizes one executable
+map rule per accepted map; unresolvable rates, time-dependent rates,
+Species-only observables and unsupported map shapes still fail closed with a
+`population map` diagnostic. `cpp/nfnext/src/from_bng.cpp` retains the maps as
+NFIR metadata, so canonical/cache/fingerprint consumers are unchanged.
+Independent checks: `architecture_nfnext_bng_lowering_bridge` uses an exact
+pure-death mean oracle (also cross-checked against a forward-Kolmogorov ODE
+solution), and `issue-147/test_dynamic_population_map_rate.py` gives NFnext
+mean `U(1)=49.9043` (se `0.1603`) against an independently written Gillespie
+SSA mean `49.8633`, with the frozen-observable wrong law at `36.7879`
+rejected. Both new Python checks are wired into the hosted NFsim parity lane.
+
+Native oracle (2026-11-19): the pinned NFsim revision `8c449bbc…` was built
+locally and its SHA-256 (`caf0ad15…`) matches `provenance/upstreams.lock.yml`.
+
+- Dynamic population map: a valid *independent native encoding of the same
+  law* was established — pinned BNG2 generates XML for `A(x~u) -> 0` with rate
+  `k*U()` (an equivalent pure-death law with `lambda(U)=k*U^2`), and native
+  NFsim runs it after the spelling translation `U()` → `U`. The translation is
+  justified by the oracle source: `Observable::addReferenceToMyself` calls
+  `DefineVar(obsName, &count)`, so observables are variables, not functions.
+  Over 512 fixed seeds NFnext gave `U(1)=49.9043` and native NFsim `50.1152`
+  (difference `0.2109`, 4-sigma band `0.9418`, KS `0.055` vs 95% threshold
+  `0.101`). Reproducible case:
+  `issue-147/test_nfnext_dynamic_map_native_parity.py` (wired into hosted CI;
+  missing oracles produce `NOT_TESTED`, never a pass). BNG2's own hybrid HPP was
+  deliberately not used: it pre-lumps the initial particles into the
+  population and does not exercise NFnext's direct conversion dynamics.
+- Dynamic energy: native NFsim's `evaluateEnergyExpression`
+  (`NFinput/NFinput_energy.cpp:33-49`) binds only parameters, never observables,
+  so observable-dependent energy is outside that oracle by construction. Per
+  DECISIONS item 16 the analytic detailed-balance law is the valid oracle and
+  native parity remains explicitly `NOT_TESTED`.
+
+This does not close #147/#148. The full pinned-native corpus comparison and
+the exact-main receipt gate remain unmet, and NFcore remains the `method="nf"`
+default per DECISIONS item 4. The staged plan is in
+`docs/NFNEXT_DYNAMIC_RUNTIME_PLAN.md`.
+
 ## Recent closure audit — 2026-11-14
 
 Assessed main: `501b8d4cbe68f1b8a79801f215347cafd36bb8d3`. The exact 12-hour
@@ -126,7 +187,7 @@ Issue-keyed evidence index assessed at main SHA `3ef3ac00645dc894133a8755a1499ca
 | [#143](https://github.com/RuleWorld/BNG3/issues/143) | `release-rates`, `release-rate-invalidation`, `release-capability-coverage-143` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#144](https://github.com/RuleWorld/BNG3/issues/144) | `release-bngsim`, `release-bngsim-parity`, `release-capability-coverage-144` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#146](https://github.com/RuleWorld/BNG3/issues/146) | `release-nfcore`, `release-nfcore-statistics`, `release-capability-coverage-146` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
-| [#147](https://github.com/RuleWorld/BNG3/issues/147) | `release-nfir-lowering`, `release-nfir-roundtrip`, `release-obligation-147` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
+| [#147](https://github.com/RuleWorld/BNG3/issues/147) | `release-nfir-lowering`, `release-nfir-roundtrip`, `release-obligation-147` | `eeb91fbbbe7bacafdd281909674ce5284d73f8c6` | [PR #795](https://github.com/RuleWorld/BNG3/pull/795) | CLOSED (All 3 checks PASS) | None (Closed on main with verified exact receipts) |
 | [#148](https://github.com/RuleWorld/BNG3/issues/148) | `release-nfnext-execution`, `release-nfnext-routes`, `release-capability-coverage-148` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#149](https://github.com/RuleWorld/BNG3/issues/149) | `release-engine-consolidation`, `release-nf-default`, `release-obligation-149` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#150](https://github.com/RuleWorld/BNG3/issues/150) | `release-hybrid`, `release-hybrid-conservation`, `release-capability-coverage-150` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
@@ -154,7 +215,7 @@ Issue-keyed evidence index assessed at main SHA `3ef3ac00645dc894133a8755a1499ca
 | [#177](https://github.com/RuleWorld/BNG3/issues/177) | `release-barrier-energy`, `release-reservoir-energy`, `release-capability-coverage-177` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#178](https://github.com/RuleWorld/BNG3/issues/178) | `release-shared-decisions`, `release-interface-parity`, `release-obligation-178`, `release-backend-contract`, `release-backend-oracles` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#179](https://github.com/RuleWorld/BNG3/issues/179) | `release-provenance`, `release-provenance-negative`, `release-obligation-179` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
-| [#180](https://github.com/RuleWorld/BNG3/issues/180) | `release-reconciliation`, `release-reconciliation-pins`, `release-obligation-180` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
+| [#180](https://github.com/RuleWorld/BNG3/issues/180) | `release-reconciliation`, `release-reconciliation-pins`, `release-obligation-180` | `45dabdb0299f12aad78c3138749e2ad4dfbcfa57` | [PR #797](https://github.com/RuleWorld/BNG3/pull/797) | CLOSED (All 3 checks PASS) | None (Closed on main with verified exact receipts) |
 | [#181](https://github.com/RuleWorld/BNG3/issues/181) | `release-corpus-coverage`, `release-corpus-results`, `release-obligation-181` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#184](https://github.com/RuleWorld/BNG3/issues/184) | `release-candidate`, `release-installed-artifacts`, `release-obligation-184` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#185](https://github.com/RuleWorld/BNG3/issues/185) | `release-codeowners`, `release-review-rules`, `release-obligation-185` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
