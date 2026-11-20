@@ -119,6 +119,15 @@
           "additionalProperties": {
             "type": "string"
           }
+        },
+        "unit_defaults": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string"
+          }
+        },
+        "unit_definitions": {
+          "type": "array"
         }
       }
     },
@@ -503,6 +512,12 @@
         },
         "expression": {
           "$ref": "#/$defs/expression"
+        },
+        "unit": {
+          "type": "string"
+        },
+        "resolved_unit": {
+          "type": "string"
         }
       }
     },
@@ -741,6 +756,18 @@
               },
               "constant_value": {
                 "type": "number"
+              },
+              "unit": {
+                "type": "string"
+              },
+              "declared_unit": {
+                "type": "string"
+              },
+              "inferred_unit": {
+                "type": "string"
+              },
+              "normalized_value": {
+                "type": "number"
               }
             },
             "additionalProperties": false
@@ -828,6 +855,15 @@
               "parent_id": {
                 "type": "integer",
                 "minimum": 0
+              },
+              "unit": {
+                "type": "string"
+              },
+              "declared_unit": {
+                "type": "string"
+              },
+              "normalized_volume": {
+                "type": "number"
               }
             },
             "additionalProperties": false
@@ -859,6 +895,15 @@
               },
               "compartment": {
                 "type": "string"
+              },
+              "unit": {
+                "type": "string"
+              },
+              "declared_unit": {
+                "type": "string"
+              },
+              "normalized_amount": {
+                "type": "number"
               }
             },
             "additionalProperties": false
@@ -1035,7 +1080,6 @@
               "index",
               "label",
               "pattern",
-              "function",
               "arguments"
             ],
             "properties": {
@@ -1051,6 +1095,16 @@
               },
               "function": {
                 "type": "string"
+              },
+              "population": {
+                "type": "string"
+              },
+              "population_id": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "rate": {
+                "$ref": "#/$defs/expression"
               },
               "arguments": {
                 "type": "array",
