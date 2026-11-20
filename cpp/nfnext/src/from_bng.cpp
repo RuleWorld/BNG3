@@ -387,6 +387,14 @@ double energyFactorValue(const bng::compile::CompiledEnergyFactor& ep,
     return 0.0;
 }
 
+// A dynamic energy factor has no static value. Its expression must be
+// evaluated against runtime state instead of being folded into a constant
+// rate; folding it to zero would silently change the model semantics.
+bool isDynamicEnergyFactor(const bng::compile::CompiledEnergyFactor& ep,
+                           const bng::compile::CompiledModel& source) {
+    return !ep.evaluatedValue && !constantExpression(ep.expression, source);
+}
+
 std::optional<std::string> observableRateExpression(
     const bng::compile::ResolvedExpression& expression,
     const bng::compile::CompiledModel& model,
@@ -1541,23 +1549,41 @@ void addDirection(const bng::compile::CompiledRule& rule,
         std::vector<int> always;
         std::vector<int> conditional;
 
-        auto signedCenterEnergy = [&](std::size_t patternIndex, double& contrib) -> bool {
+        struct CenterContribution {
+            bool has_center{false};
+            int coefficient{0};
+        };
+        // The signed energy delta is this coefficient times the pattern's
+        // energy value. Keeping the coefficient separate lets a dynamic
+        // expression be composed at runtime instead of folded to zero.
+        auto signedCenterContribution = [&](std::size_t patternIndex) -> CenterContribution {
             const auto& ep = source.energyFactors()[patternIndex];
-            int centerCount = 0;
-            contrib = 0.0;
+            CenterContribution result;
             for (const auto& mol : ep.pattern.molecules()) {
                 if (!mol.moleculeTypeId || mol.moleculeTypeId->value() != molTypeId) continue;
                 for (const auto& site : mol.sites) {
                     if (!site.componentType || site.componentType->index != centerSiteTypeId) continue;
                     if (site.stateConstraintResolved.kind != bng::compile::StateConstraintKind::Exact ||
                         !site.stateConstraintResolved.exact) continue;
-                    ++centerCount;
+                    result.has_center = true;
                     const auto st = site.stateConstraintResolved.exact->index;
-                    if (st == toStateId) contrib += energyFactorValue(ep, source);
-                    else if (st == fromStateId) contrib -= energyFactorValue(ep, source);
+                    if (st == toStateId) ++result.coefficient;
+                    else if (st == fromStateId) --result.coefficient;
                 }
             }
-            return centerCount >= 1;
+            return result;
+        };
+        auto appendDynamicEnergyTerm = [&](int coefficient,
+                                           const bng::compile::CompiledEnergyFactor& ep,
+                                           std::vector<std::string>& terms) -> bool {
+            if (coefficient == 0) return true;
+            std::set<std::size_t> observableIds;
+            const auto expression = observableRateExpression(ep.expression, source, observableIds);
+            if (!expression) return false;
+            std::ostringstream term;
+            term << '(' << coefficient << "*(" << *expression << "))";
+            terms.push_back(term.str());
+            return true;
         };
 
         for (std::size_t pi = 0; pi < source.energyFactors().size(); ++pi) {
@@ -1596,8 +1622,7 @@ void addDirection(const bng::compile::CompiledRule& rule,
                       "energy-modulated state change requires one weighted reactant molecule per energy pattern");
                 return;
             }
-            double ignored = 0.0;
-            if (!signedCenterEnergy(pi, ignored)) {
+            if (!signedCenterContribution(pi).has_center) {
                 issue(result, BngLoweringSeverity::Error, entity,
                       "energy-modulated state change requires a reaction-center state constraint in relevant energy patterns");
                 return;
@@ -1627,10 +1652,19 @@ void addDirection(const bng::compile::CompiledRule& rule,
         }
 
         double baseEnergy = 0.0;
+        std::vector<std::string> baseDynamicTerms;
         for (int pi : always) {
-            double c = 0.0;
-            signedCenterEnergy(static_cast<std::size_t>(pi), c);
-            baseEnergy += c;
+            const auto center = signedCenterContribution(static_cast<std::size_t>(pi));
+            const auto& ep = source.energyFactors()[static_cast<std::size_t>(pi)];
+            if (isDynamicEnergyFactor(ep, source)) {
+                if (!appendDynamicEnergyTerm(center.coefficient, ep, baseDynamicTerms)) {
+                    issue(result, BngLoweringSeverity::Error, entity,
+                          "dynamic energy expression could not be resolved to NFIR arithmetic");
+                    return;
+                }
+            } else {
+                baseEnergy += static_cast<double>(center.coefficient) * energyFactorValue(ep, source);
+            }
         }
 
         double barrierContribution = 0.0;
@@ -1697,11 +1731,20 @@ void addDirection(const bng::compile::CompiledRule& rule,
                 }
             }
             double deltaG = baseEnergy;
+            std::vector<std::string> dynamicTerms = baseDynamicTerms;
             for (int pi : active) {
                 if (std::find(always.begin(), always.end(), pi) != always.end()) continue;
-                double c = 0.0;
-                signedCenterEnergy(static_cast<std::size_t>(pi), c);
-                deltaG += c;
+                const auto center = signedCenterContribution(static_cast<std::size_t>(pi));
+                const auto& ep = source.energyFactors()[static_cast<std::size_t>(pi)];
+                if (isDynamicEnergyFactor(ep, source)) {
+                    if (!appendDynamicEnergyTerm(center.coefficient, ep, dynamicTerms)) {
+                        issue(result, BngLoweringSeverity::Error, entity,
+                              "dynamic energy expression could not be resolved to NFIR arithmetic");
+                        return;
+                    }
+                } else {
+                    deltaG += static_cast<double>(center.coefficient) * energyFactorValue(ep, source);
+                }
             }
             const double work = drivingWorkValue ? *drivingWorkValue : 0.0;
             // deltaG is computed for this direction's state change. For the
@@ -1710,18 +1753,39 @@ void addDirection(const bng::compile::CompiledRule& rule,
             // k_rev = exp(-(Ea+B + (phi-1)*(deltaG_forward-W)))
             //       = exp(-(Ea+B + (1-phi)*deltaG_dir + (1-phi)*W)).
             const double phiEff = reverseDirection ? (1.0 - *phi) : *phi;
-            const double rate = std::exp(-(*ea + barrierContribution +
-                                           phiEff * deltaG +
-                                           (reverseDirection ? phiEff * work : -phiEff * work)));
-            if (!std::isfinite(rate) || rate < 0.0) {
+            const double constantPart = *ea + barrierContribution + phiEff * deltaG +
+                                         (reverseDirection ? phiEff * work : -phiEff * work);
+            if (!std::isfinite(constantPart)) {
                 issue(result, BngLoweringSeverity::Error, entity, "expanded energy-modulated rate is invalid");
                 return;
             }
-            variant.rate = rate;
-            std::ostringstream rateText;
-            rateText.precision(17);
-            rateText << rate;
-            variant.rate_law.expression = rateText.str();
+            if (dynamicTerms.empty()) {
+                const double rate = std::exp(-constantPart);
+                if (!std::isfinite(rate) || rate < 0.0) {
+                    issue(result, BngLoweringSeverity::Error, entity, "expanded energy-modulated rate is invalid");
+                    return;
+                }
+                variant.rate = rate;
+                std::ostringstream rateText;
+                rateText.precision(17);
+                rateText << rate;
+                variant.rate_law.expression = rateText.str();
+            } else {
+                // Dynamic energy factors are evaluated from current observables
+                // by the same Function rate machinery used for dynamic rates.
+                std::ostringstream dynamicDelta;
+                for (std::size_t i = 0; i < dynamicTerms.size(); ++i) {
+                    if (i != 0) dynamicDelta << '+';
+                    dynamicDelta << dynamicTerms[i];
+                }
+                std::ostringstream rateText;
+                rateText.precision(17);
+                rateText << "exp(-(" << constantPart << " + (" << phiEff
+                         << ")*(" << dynamicDelta.str() << ")))";
+                variant.rate = 0.0;
+                variant.rate_law.kind = RateLawKind::Function;
+                variant.rate_law.expression = rateText.str();
+            }
             result.model.expanded_rules.push_back(std::move(variant));
         }
         return;
@@ -1879,13 +1943,13 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
             } else {
                 // A dynamic energy expression is representable as source text
                 // in `expression`; only the static `energy` field is unset.
-                // Record that fact as a warning rather than rejecting the whole
-                // model. Rate expansion already refuses dynamic Arrhenius
-                // modulation, so this never claims dynamic energy execution.
+                // For an energy-modulated Arrhenius rate the expansion composes
+                // the expression into a runtime Function rate law; energy
+                // patterns with no modulating rule remain representation-only.
                 irEnergy.energy = 0.0;
                 issue(result, BngLoweringSeverity::Warning, factor.label,
                       "dynamic energy pattern has no static value; represented "
-                      "by expression and deferred to rate expansion for execution");
+                      "by expression and evaluated at runtime when it modulates a rule");
             }
             BngLoweringResult patternValidation;
             const auto pattern = flattenReactants({factor.pattern}, patternValidation, factor.label);
@@ -1898,9 +1962,20 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
             result.model.energy_patterns.push_back(std::move(irEnergy));
         }
     }
-    // Lower population maps into NFIR. Population maps define the mapping
-    // between particle-level species and population-level species for hybrid
-    // particle-population simulation.
+    // Lower population maps into NFIR. A map is always retained as metadata for
+    // representation consumers. For the supported simple shape we additionally
+    // synthesize an executable ExpandedRuleIR so NFnext can run the map
+    // directly; anything outside that shape remains fail-closed at execution.
+    struct ExecutablePopulationMap {
+        std::size_t index{0};
+        std::string name;
+        PatternIR pattern;
+        TypeId product_type{0};
+        bool rate_is_static{false};
+        double static_rate{0.0};
+        std::string rate_expression;
+    };
+    std::vector<ExecutablePopulationMap> executableMaps;
     if (!source.populationMaps().empty()) {
         result.model.population_maps.reserve(source.populationMaps().size());
         for (const auto& popMap : source.populationMaps()) {
@@ -1919,17 +1994,87 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
             if (rateValue) {
                 irPopMap.rate = *rateValue;
             } else {
-                // A dynamic population-map rate is representable losslessly as
-                // an expression: `rate_expression` already carries the source
-                // text and the cache/canonical forms preserve it. Record that
-                // the static `rate` field is unset and defer execution to the
-                // hybrid generator. `executeFromBioNetGen` still refuses every
-                // population map, so this improves representation only and
-                // never claims dynamic execution support.
                 irPopMap.rate = 0.0;
                 issue(result, BngLoweringSeverity::Warning, popMap.populationName,
-                      "dynamic population map rate has no static value; represented "
-                      "by rate_expression and deferred to generate_hybrid_model for execution");
+                      "dynamic population map rate has no static value; lowered to a "
+                      "runtime observable-dependent rate law when its dependency is supported");
+            }
+
+            // Decide whether this map has an exactly representable shape that
+            // NFnext can execute. All other shapes stay fail-closed.
+            std::string unsupported;
+            if (!pattern || !patternValidation.ok()) {
+                unsupported = "population map pattern could not be lowered";
+            } else {
+                for (const auto& node : pattern->pattern.nodes) {
+                    const auto* molType = source.moleculeType(
+                        bng::compile::MoleculeTypeId::fromDenseIndex(
+                            static_cast<std::size_t>(node.molecule_type)));
+                    if (!molType) {
+                        unsupported = "population map reactant references an unknown molecule type";
+                        break;
+                    }
+                    if (molType->population) {
+                        // A map reactant must be a particle pattern; bonds to
+                        // population nodes are therefore outside this shape.
+                        unsupported = "population map reactants must be particle molecules";
+                        break;
+                    }
+                }
+            }
+            // The product must be a declared population type with no components.
+            TypeId productType{0};
+            if (unsupported.empty()) {
+                bool found = false;
+                for (const auto& molType : source.moleculeTypes()) {
+                    if (!molType.population || molType.name != popMap.populationName) continue;
+                    if (!molType.components.empty()) {
+                        unsupported = "population map product must have no components";
+                    } else {
+                        productType = static_cast<TypeId>(molType.id.value());
+                        found = true;
+                    }
+                    break;
+                }
+                if (unsupported.empty() && !found)
+                    unsupported = "population map product is not a declared population type";
+            }
+            // The rate is either a finite non-negative constant or an
+            // observable-only arithmetic expression evaluated at runtime.
+            ExecutablePopulationMap executable;
+            if (unsupported.empty()) {
+                executable.index = popMap.index;
+                executable.name = popMap.populationName;
+                executable.pattern = pattern->pattern;
+                executable.product_type = productType;
+                if (rateValue) {
+                    if (!std::isfinite(*rateValue) || *rateValue < 0.0) {
+                        unsupported = "population map rate is not finite and non-negative";
+                    } else {
+                        executable.rate_is_static = true;
+                        executable.static_rate = *rateValue;
+                        std::ostringstream rateText;
+                        rateText.precision(17);
+                        rateText << *rateValue;
+                        executable.rate_expression = rateText.str();
+                    }
+                } else {
+                    std::set<std::size_t> observableIds;
+                    const auto expression = observableRateExpression(
+                        popMap.rate, source, observableIds);
+                    if (!expression) {
+                        unsupported = "population map rate depends on state that is not a Molecules observable";
+                    } else {
+                        executable.rate_is_static = false;
+                        executable.rate_expression = *expression;
+                    }
+                }
+            }
+            if (!unsupported.empty()) {
+                issue(result, BngLoweringSeverity::Warning, popMap.populationName,
+                      "population map is not executable in NFnext (" + unsupported + ")");
+            } else {
+                executableMaps.push_back(std::move(executable));
             }
             result.model.population_maps.push_back(std::move(irPopMap));
         }
@@ -1952,6 +2097,43 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
     for (const auto& rule : source.rules()) {
         addDirection(rule, rule.forward(), nextRule++, "", false, source, result);
         if (rule.reverse()) addDirection(rule, *rule.reverse(), nextRule++, "__reverse", true, source, result);
+    }
+
+    // Synthesize one executable rule per accepted population map. It behaves
+    // like an elementary rule whose reactant is the map pattern and whose only
+    // product is the lumped population type: the SSA loop's population-aware
+    // action path consumes the matched particles and increments the population
+    // count. The map index annotation lets execution fail closed on any map
+    // that was not accepted.
+    for (const auto& accepted : executableMaps) {
+        ExpandedRuleIR mapRule;
+        mapRule.id = nextRule++;
+        mapRule.name = "population_map_" + std::to_string(accepted.index) + ":" + accepted.name;
+        mapRule.pattern = accepted.pattern;
+        addPredicates(mapRule.pattern, mapRule.predicates);
+        mapRule.rate = accepted.rate_is_static ? accepted.static_rate : 0.0;
+        mapRule.rate_law.kind = accepted.rate_is_static
+            ? RateLawKind::Elementary : RateLawKind::Function;
+        mapRule.rate_law.expression = accepted.rate_expression;
+
+        // Destroy each matched particle reactant and create one lumped product.
+        // Created nodes live in a second namespace starting after the matched
+        // reactant nodes, matching ExpandedRuleIR action conventions.
+        for (std::size_t node = 0; node < mapRule.pattern.nodes.size(); ++node) {
+            ActionIR destroy;
+            destroy.kind = ActionKind::Destroy;
+            destroy.target_node = static_cast<PatternNodeId>(node);
+            destroy.molecule_type = mapRule.pattern.nodes[node].molecule_type;
+            mapRule.actions.push_back(destroy);
+        }
+        ActionIR create;
+        create.kind = ActionKind::Create;
+        create.molecule_type = accepted.product_type;
+        create.target_node = static_cast<PatternNodeId>(mapRule.pattern.nodes.size());
+        mapRule.actions.push_back(create);
+
+        mapRule.annotations["bng.population_map_index"] = std::to_string(accepted.index);
+        result.model.expanded_rules.push_back(std::move(mapRule));
     }
 
     if (!result.ok()) {
@@ -1987,8 +2169,8 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
             refuse("compartment dimensions must be 1, 2, or 3");
         }
     }
-    if (!source.populationMaps().empty())
-        refuse("un-lowered population maps require generate_hybrid_model");
+    // Population-map support is decided after lowering, once the synthesized
+    // executable map rules (if any) are known; see the check below.
     for (const auto& rule : source.rules()) {
         const auto checkRate = [&](const bng::compile::CompiledRuleDirection& direction) {
             if (!direction.rateLaw) refuse("missing rate law");
@@ -2033,7 +2215,24 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
     // Physical rate units are converted during lowering for supported
     // constant elementary forms; execution refuses only if conversion failed.
 
-    if (!model.population_maps.empty()) refuse("un-lowered population maps require generate_hybrid_model");
+    // A population map executes only when lowering synthesized an explicit
+    // rule for it. Any map outside the supported simple shape (bonds to
+    // population nodes, unresolvable or non-Molecules-observable or
+    // time-dependent rates, undeclared product types, ...) remains a
+    // fail-closed refusal rather than an approximation.
+    if (!source.populationMaps().empty()) {
+        std::unordered_set<std::string> executableMapIndices;
+        for (const auto& rule : model.expanded_rules) {
+            const auto found = rule.annotations.find("bng.population_map_index");
+            if (found != rule.annotations.end()) executableMapIndices.insert(found->second);
+        }
+        for (const auto& popMap : source.populationMaps()) {
+            if (!executableMapIndices.count(std::to_string(popMap.index))) {
+                refuse("un-lowered population maps: map '" + popMap.populationName +
+                       "' has an unsupported shape or rate for NFnext execution");
+            }
+        }
+    }
     bool has_energy_modulated_rate = false;
     for (const auto& rule : source.rules()) {
         auto check = [&](const bng::compile::CompiledRuleDirection& d) {
@@ -2047,7 +2246,10 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
     if (has_energy_modulated_rate) {
         bool all_expanded = !model.expanded_rules.empty();
         for (const auto& er : model.expanded_rules) {
-            if (er.rate_law.kind != RateLawKind::Elementary) { all_expanded = false; break; }
+            // Dynamic energy factors lower to Function rate laws that the
+            // observable-dependent rate executor evaluates at runtime.
+            if (er.rate_law.kind != RateLawKind::Elementary &&
+                er.rate_law.kind != RateLawKind::Function) { all_expanded = false; break; }
         }
         for (const auto& rule : source.rules()) {
             auto check = [&](const bng::compile::CompiledRuleDirection& d) {

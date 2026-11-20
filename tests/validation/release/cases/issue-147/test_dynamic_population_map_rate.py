@@ -1,21 +1,23 @@
-"""Diagnostic: a dynamic population-map rate is valid BNG2 input that BNG3 refuses.
+"""Dynamic population-map rate: pinned BNG2 lowering and independent NFnext parity.
 
-Refusal characterisation, NOT support evidence. Pinned BNG2 lowers a dynamic
-population-map rate into an observable-dependent rate law on the generated map
-rule; BNG3's NFIR lowering fails closed with an explicit refusal instead of
-silently approximating it. This records the concrete unmet clause for #147/#150:
-representation -> propensity -> conversion -> observables of a dynamic
-population map is not yet lowered/executed. No expected value or tolerance is
+Pinned BNG2 lowers ``k_gather * U()`` into an observable-dependent rate law on
+the generated map rule. NFnext now executes that rule: the observable is
+re-evaluated after every conversion, so the converted count follows a pure-death
+CTMC with ``lambda(n) = k_gather * n**2`` (the rate times n embeddings).
+
+The expected mean comes from an independently written Gillespie SSA with its own
+RNG, not from BNG3 output. A frozen-observable law (rate sampled once at its
+initial value) is rejected as a discriminator. No expected value or tolerance is
 normalised to BNG3 output.
 """
 
 from __future__ import annotations
 
+import math
 import os
 from pathlib import Path
+import random
 import subprocess
-
-import pytest
 
 from tests.validation import oracle_perl
 from tests.validation.strict import require_oracle
@@ -85,18 +87,65 @@ def test_bng2_lowers_dynamic_population_map_rate(tmp_path):
     assert "_MapRule0:  A(x~u) -> A_pop()  _rateLaw1()" in text
 
 
-def test_bng3_fails_closed_on_dynamic_population_map_rate():
-    """BNG3 refuses the construct explicitly; it is never silently approximated.
+# Same source plus a population observable so conversions can be counted.
+EXEC_MODEL = MODEL.replace(
+    "  Molecules U A(x~u)\n", "  Molecules U A(x~u)\n  Molecules P A_pop()\n"
+)
+K = 0.01
+N0 = 100
+T = 1.0
+RUNS = 512
+SEED_BASE = 20261119
 
-    The public entry point refuses un-lowered population maps. The dedicated
-    dynamic-rate refusal lives in the NFIR lowering bridge
-    (`cpp/nfnext/src/from_bng.cpp`: "dynamic population map rates with
-    unresolvable static evaluation are not supported in NFIR lowering") and is
-    covered by the native lowering-bridge architecture contract. What this check
-    pins is that the valid BNG2 input above is not silently executed as an
-    approximation: it fails closed with a population-map diagnostic.
-    """
-    model = cpp.parse_string(MODEL)
+
+def _independent_ssa_mean():
+    """Exact pure-death SSA for lambda(n) = K*n**2, written without BNG3 code."""
+    rng = random.Random(0xC0FFEE)
+    total = 0
+    for _ in range(RUNS):
+        n = N0
+        t = 0.0
+        while n > 0:
+            rate = K * n * n
+            t += rng.expovariate(rate)
+            if t > T:
+                break
+            n -= 1
+        total += n
+    return total / RUNS
+
+
+def _nfnext_ensemble():
+    model = cpp.parse_string(EXEC_MODEL)
     assert model is not None
-    with pytest.raises(RuntimeError, match="population map"):
-        cpp.simulate_nfnext(model, [0.0, 1.0], seed=42)
+    values = []
+    for i in range(RUNS):
+        result = cpp.simulate_nfnext(model, [0.0, T], seed=SEED_BASE + i)
+        assert result["engine"] == "nfnext"
+        obs = result["observables"]
+        u = float(obs["U"][-1])
+        p = float(obs["P"][-1])
+        # Whole-complex conversion conserves the converted material.
+        assert abs(u + p - N0) < 1e-9, (u, p)
+        values.append(u)
+    mean = sum(values) / RUNS
+    var = sum((v - mean) ** 2 for v in values) / (RUNS - 1)
+    return mean, math.sqrt(var / RUNS)
+
+
+def test_nfnext_dynamic_population_map_matches_independent_pure_death_ssa():
+    """NFnext re-evaluates the map rate on every conversion."""
+    nf_mean, nf_se = _nfnext_ensemble()
+    ssa_mean = _independent_ssa_mean()
+    # Fixed seeds make this reproducible; the independent SSA oracle has its
+    # own small Monte-Carlo error, and a 4-sigma band on the NFnext ensemble
+    # mean still separates the two laws at this budget.
+    assert abs(nf_mean - ssa_mean) <= 4.0 * nf_se, (
+        f"NFnext U(T)={nf_mean:.3f} vs independent SSA {ssa_mean:.3f} (se={nf_se:.3f})"
+    )
+    # Frozen-observable wrong law: U0 * exp(-k*U0*T) ~ 36.8, far below the
+    # state-dependent pure-death law.
+    frozen = N0 * math.exp(-K * N0 * T)
+    assert nf_mean - frozen > 4.0 * nf_se, (
+        f"NFnext {nf_mean:.3f} not separated from frozen-rate law {frozen:.3f}"
+    )
