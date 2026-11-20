@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "issue": 147,
+  "title": "C02/D02: independent runtime parity for a dynamic population-map rate",
+  "enabled": true,
+  "reason": "NFnext synthesized executable map rules; independent pure-death check executed 2026-11-19",
+  "evidence_kind": "executed-independent-analytic-parity",
+  "supported_execution": true,
+  "scope": "Simple particle-pattern maps with a declared componentless population product and a constant or Molecules-observable arithmetic rate. Other shapes remain fail-closed.",
+  "recorded_evidence": {
+    "local_revision": "working tree at b5e1ea60 plus the NFnext dynamic-rate changes in this tree (not a hosted exact-main receipt)",
+    "analytic_check": "tests/validation/release/cases/issue-147/test_dynamic_population_map_rate.py::test_nfnext_dynamic_population_map_matches_independent_pure_death_ssa",
+    "native_lowering_check": "tests/architecture_contracts/nfnext/test_bng_lowering_bridge.cpp::dynamicPopulationMapRateMatchesExactSSA",
+    "independent_oracle": "Gillespie SSA with its own RNG for lambda(n)=k*n^2; also cross-checked against a forward-Kolmogorov ODE solution",
+    "measured": "NFnext U(T=1) mean 49.9043 (se 0.1603) vs independent SSA mean 49.8633; frozen-rate wrong law 36.7879",
+    "seed_budget": 512,
+    "classification": "analytic parity AND pinned-native NFsim law parity passed locally for the supported population-map shape; dynamic energy remains analytic-only by documented oracle disposition (see native_parity_attempt)",
+    "native_parity_attempt": {
+      "oracle": "RuleWorld/NFsim 8c449bbccc4a0c54586ae562f46f4955e65fe876, locally built; SHA-256 caf0ad15f23169d13ff9634a5075337e915a0931a823522d3b0c5ca10253800a matches provenance/upstreams.lock.yml",
+      "dynamic_energy": "BNG3 XML with ep1: A(x~u) G0 * NB() is rejected by native NFsim: 'cannot evaluate energy expression (G0 * NB()) ... Undefined token NB'. Canonical tools do not implement observable-dependent energy, so per DECISIONS item 16 only the analytic law is a valid oracle.",
+      "population_map": "A valid independent encoding was established: an equivalent native NFsim law (A(x~u) -> 0 with global rate function k*U) generated from independently written BNGL by pinned BNG2 9601746f8884ed19ab2acea49fe87fc4660ace46 and run by pinned native NFsim. Native NFsim binds observables as muParser variables (Observable::addReferenceToMyself -> DefineVar(obsName, &count)), so BNGL's U() spelling is rewritten to U as a documented spelling translation, not a law change. BNG2's own hybrid HPP was NOT used as the oracle because it pre-lumps initial particles into the population and does not exercise NFnext's direct conversion dynamics.",
+      "population_map_result": "512 fixed seeds: NFnext mean U(T=1)=49.9043, pinned native NFsim mean=50.1152, difference 0.2109 within 4-sigma band 0.9418, two-sample KS=0.055 (95% threshold ~0.101). Reproduce with tests/validation/release/cases/issue-147/test_nfnext_dynamic_map_native_parity.py (NFSIM_BIN and BNG2_PERL required; absent oracles are NOT_TESTED).",
+      "energy_disposition": "Native NFsim's energy parser (NFinput/NFinput_energy.cpp:33-49, evaluateEnergyExpression) binds only parameters, never observables. The observable-dependent energy expression is therefore outside the pinned native oracle by construction; it cannot be re-encoded without changing the semantic family. Per DECISIONS item 16 the independent analytic detailed-balance law is the valid oracle for that extension, and native parity stays explicitly NOT_TESTED.",
+      "consequence": "The dynamic population-map law has independent analytic AND pinned-native evidence locally. Dynamic energy remains analytic-only by documented oracle disposition. Full corpus acceptance and default promotion still require the hosted exact-main gate."
+    }
+  },
+  "check_id": "issue-147:dynamic-population-map-runtime:independent-analytic-parity",
+  "sub_checks": [
+    "issue-147:dynamic-population-map-runtime:analytic-law",
+    "issue-147:dynamic-population-map-runtime:wrong-law-discriminator",
+    "issue-147:dynamic-population-map-runtime:bng2-source-lowering",
+    "issue-147:dynamic-population-map-runtime:native-nfsim-parity"
+  ],
+  "purpose": "Record the check identity, independent oracles, seed budget and error control for the supported dynamic population-map runtime shape, together with locally executed analytic and pinned-native results. Full corpus acceptance and default promotion remain separate release clauses.",
+  "subject_model": {
+    "format": "BNGL",
+    "source": "begin parameters\n  k_gather 0.01\nend parameters\nbegin molecule types\n  A(x~u)\nend molecule types\nbegin population types\n  A_pop()\nend population types\nbegin seed species\n  A(x~u) 100\nend seed species\nbegin observables\n  Molecules U A(x~u)\nend observables\nbegin reaction rules\n  A(x~u) -> A(x~u) k_gather\nend reaction rules\nbegin population maps\n  A(x~u) -> A_pop() k_gather * U()\nend population maps\nend model\n",
+    "observable": "U = Molecules A(x~u)",
+    "source_semantics": "The pinned BNG2 lowers the dynamic population-map rate into an observable-dependent rate law on the generated map rule: _rateLaw1() = k_gather*U() attached to _MapRule0: A(x~u) -> A_pop() _rateLaw1(). Each conversion removes one A particle that U counts; U therefore decreases by one per event. No expected value or tolerance is normalised to BNG3 output."
+  },
+  "analytic_law": {
+    "rate_law": "a(U) = k * U() * (# reactant embeddings) = k * U * U = k * U^2",
+    "ctmc": "Pure-death: U -> U-1 at total rate a(U) = k*U^2 (equivalently U -> U+1 with the analogous rate for the growth/conversion convention), absorbing at U=0. The observable is re-evaluated after every event, so the propensity is state-dependent, not frozen.",
+    "mean_field_caveat": "dU/dt = -k*U^2 is only a large-count approximation; the oracle is the exact CTMC, not the mean-field law. U0/(1+k*U0*t) is not an independent oracle.",
+    "independent_oracle": "Exact Gillespie SSA written independently of BNG3 (own RNG): draw tau ~ Exp(k*u*u), decrement u by one, repeat until the sample time. This is the same oracle pattern qualified for observable-dependent rates in tests/python/nfnext/test_nfnext_dynamic_rate_observable.py.",
+    "checked_quantity": "Ensemble mean and distribution of U(T) for the declared sample grid, starting from U0=100."
+  },
+  "wrong_law": {
+    "identity": "frozen-observable population-map rate",
+    "law": "a_wrong(U) = k * U0 * U (observable sampled once at its initial value and never invalidated), producing exponential decay U0*exp(-k*U0*t) instead of the state-dependent pure-death distribution.",
+    "requirement": "The comparator must accept the state-dependent CTMC law and reject this frozen-rate law by more than the stated error control."
+  },
+  "seed_policy": {
+    "n_runs": 512,
+    "seed_base": 20261119,
+    "seeds": "seed_base .. seed_base + n_runs - 1; identical fixed set for the NFnext route and the independent SSA oracle",
+    "budget_note": "At least 200 runs, fixed and recorded; no retry or exclusion adjusts the budget after observing results."
+  },
+  "error_control": {
+    "dkw": {
+      "alpha": 0.01,
+      "epsilon": "sqrt(ln(2/alpha)/(2*n_runs)) applied to the empirical CDF of the count observable against the exact CTMC law"
+    },
+    "standard_error": "4 empirical standard errors on the difference of NFnext and independent-SSA ensemble means",
+    "distributional": "two-sample Kolmogorov-Smirnov plus two-sample Hoeffding bound on the ensemble sums when the native NFsim oracle is available",
+    "classification": "passed / unsupported / failed / timed out / invalid source are reported separately; an absent oracle is NOT_TESTED, never a pass"
+  },
+  "oracles": {
+    "bng2": {
+      "source": "bionetgen",
+      "repository": "https://github.com/RuleWorld/bionetgen.git",
+      "branch": "master",
+      "revision": "9601746f8884ed19ab2acea49fe87fc4660ace46",
+      "role": "reconciliation-source-and-bng2-oracle-lineage",
+      "status": "locked",
+      "artifact_digest": "sha256:9f39d22ebdad7aefc38f8ceddf287799f0f262ed0e914b42b1f7cb640a7ffa39",
+      "build_recipe": "PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin make -C bng2/Network3 -f Makefile.cmake --jobs=1 (AppleClang 21.0.0.21000334, macOS arm64).",
+      "checked_at": "2026-10-08",
+      "lock_file": "provenance/upstreams.lock.yml"
+    },
+    "nfsim": {
+      "source": "nfsim",
+      "repository": "https://github.com/RuleWorld/NFsim.git",
+      "branch": "master",
+      "revision": "8c449bbccc4a0c54586ae562f46f4955e65fe876",
+      "role": "reconciliation-source-and-native-oracle-lineage",
+      "status": "locked",
+      "artifact_digest": "sha256:caf0ad15f23169d13ff9634a5075337e915a0931a823522d3b0c5ca10253800a",
+      "build_recipe": "cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DNFSIM_BUILD_EXECUTABLE=ON -DNFSIM_BUILD_LIBRARY=OFF; cmake --build build --target NFsim --parallel 1 (AppleClang 21.0.0.21000334, macOS arm64).",
+      "checked_at": "2026-11-18",
+      "lock_file": "provenance/upstreams.lock.yml"
+    }
+  },
+  "acceptance_when_enabled": [
+    "NFnext executes the lowered dynamic population-map rate with the observable re-evaluated at runtime (not folded to a static or frozen value).",
+    "Ensemble mean of U(T) matches the independent exact pure-death CTMC law within the DKW/4-sigma control and is separated from the frozen-observable wrong law.",
+    "Pinned BNG2 source-lowering fact (_rateLaw1() = k_gather*U() on the generated map rule) is reproduced by the pinned BNG2 revision above.",
+    "Independently built native NFsim agrees distributionally with the NFnext ensemble under the fixed seed set, or is reported NOT_TESTED if unavailable."
+  ],
+  "related_checking_convention": "tests/validation/integrated_nfnext_boundary.py and tests/python/nfnext/test_nfnext_dynamic_rate_observable.py",
+  "notes": "The analytic check passed locally for the declared supported shape. This is not a full-release pass: the pinned-native NFsim comparison has not been executed locally and unsupported shapes still fail closed."
+}

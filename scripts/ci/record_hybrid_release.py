@@ -5,9 +5,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
+from tempfile import TemporaryDirectory
 import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -94,7 +96,25 @@ def verify_junit_xml(path: Path) -> None:
             _fail(f"JUnit XML missing expected testcase: {fragment}")
 
 
-def verify_evidence_directory(evidence_dir: Path) -> dict:
+def complete_inventory_coverage(report: dict, root: Path) -> bool:
+    if report.get("issue_150_acceptance") != "complete":
+        return False
+    matrix = json.loads(
+        (root / "provenance/capability-matrix.yml").read_text(encoding="utf-8")
+    )
+    required_ids = {row["id"] for row in matrix["rows"] if row["issue"] == 150}
+    cases = report.get("inventory_cases", {})
+    if not isinstance(cases, dict):
+        return False
+    return bool(required_ids) and all(
+        isinstance(cases.get(identity), dict) and cases[identity].get("passed") is True
+        for identity in required_ids
+    )
+
+
+def verify_evidence_directory(
+    evidence_dir: Path, revision: str, root: Path = ROOT
+) -> set[str]:
     if not evidence_dir.is_dir():
         _fail(f"missing evidence directory: {evidence_dir}")
     qual_file = evidence_dir / "qualification.json"
@@ -103,17 +123,35 @@ def verify_evidence_directory(evidence_dir: Path) -> dict:
         dist = qual.get("distributional_comparison", {})
         if dist.get("passed") is not True:
             _fail(f"distributional comparison failed: {dist}")
+
     cov_file = evidence_dir / "capability-coverage-150.json"
-    if cov_file.is_file():
-        cov = json.loads(cov_file.read_text(encoding="utf-8"))
-        sem = cov.get("semantic_checks", {})
-        for name, entry in sem.items():
-            if isinstance(entry, dict) and entry.get("passed") is False:
-                _fail(f"semantic check {name} failed in capability-coverage-150.json")
-    return {"evidence_verified": True}
+    if not cov_file.is_file():
+        return set()
+    cov = json.loads(cov_file.read_text(encoding="utf-8"))
+    source = cov.get("source", {})
+    if (
+        not isinstance(source, dict)
+        or source.get("revision") != revision
+        or source.get("dirty") is not False
+    ):
+        _fail("stale or dirty hybrid capability evidence")
+    passed_checks = set()
+    for name, entry in cov.get("semantic_checks", {}).items():
+        if not isinstance(entry, dict):
+            continue
+        if entry.get("passed") is False:
+            _fail(f"semantic check {name} failed in capability-coverage-150.json")
+        if entry.get("passed") is True:
+            passed_checks.add(name)
+    if (
+        "release-capability-coverage-150" in passed_checks
+        and not complete_inventory_coverage(cov, root)
+    ):
+        passed_checks.remove("release-capability-coverage-150")
+    return passed_checks
 
 
-def run_tests(root: Path = ROOT) -> None:
+def run_tests(root: Path, evidence_dir: Path) -> None:
     test_path = root / "tests/validation/test_hybrid_execution.py"
     if not test_path.is_file():
         _fail(f"missing test file: {test_path}")
@@ -127,7 +165,13 @@ def run_tests(root: Path = ROOT) -> None:
         "-ra",
         str(test_path),
     ]
-    result = subprocess.run(cmd, cwd=str(root), capture_output=True, text=True)
+    result = subprocess.run(
+        cmd,
+        cwd=root,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "BNG3_HYBRID_EVIDENCE_DIR": str(evidence_dir)},
+    )
     if result.returncode != 0:
         _fail(
             f"Issue 150 release tests failed (code {result.returncode}):\n{result.stdout}\n{result.stderr}"
@@ -166,13 +210,19 @@ def build_release_record(
 
     manifest_checks = verify_manifest(root)
 
+    passed_checks: set[str] = set()
     if not skip_tests:
         if junit_xml:
             verify_junit_xml(junit_xml)
         if evidence_dir:
-            verify_evidence_directory(evidence_dir)
+            passed_checks = verify_evidence_directory(evidence_dir, revision, root)
         if not junit_xml and not evidence_dir:
-            run_tests(root)
+            with TemporaryDirectory(prefix="bng3-hybrid-evidence-") as temp_dir:
+                generated_evidence = Path(temp_dir)
+                run_tests(root, generated_evidence)
+                passed_checks = verify_evidence_directory(
+                    generated_evidence, revision, root
+                )
 
     results = [
         {
@@ -207,20 +257,23 @@ def build_release_record(
             "related_issues": [150],
             "stage": "hybrid-capability-coverage",
             "detail": (
-                "all 8 assigned inventory cases execute against their row's named independent "
+                "all assigned inventory cases execute against their row's named independent "
                 "oracle (pinned BNG2 options and native NFsim) and pass on main."
             ),
         },
     ]
 
-    if skip_tests:
-        for row in results:
-            row["status"] = "NOT_TESTED"
-            row["supported_execution"] = False
-            row["evidence_kind"] = "not-tested"
-            row["detail"] = (
-                "Execution was skipped; no scientific acceptance evidence was collected."
-            )
+    for row in results:
+        if row["id"] in passed_checks:
+            continue
+        row["status"] = "NOT_TESTED"
+        row["supported_execution"] = False
+        row["evidence_kind"] = "not-tested"
+        row["detail"] = (
+            "Execution was skipped; no scientific acceptance evidence was collected."
+            if skip_tests
+            else "The capability report lacks affirmative evidence for the full check."
+        )
 
     return {
         "schema_version": 1,

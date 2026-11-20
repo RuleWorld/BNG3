@@ -33,6 +33,7 @@ FIXTURE_NAMES = {
     "sbml.core.Constraint.message": "constraint-message",
     "sbml.core.Reaction.compartment": "reaction-compartment",
     "sbml.core.LocalParameter.units": "localparameter-units",
+    "sbml.core.SBase.annotation": "sbase-annotation",
 }
 
 
@@ -118,8 +119,22 @@ def build_release_report(
         if counts.get(key, 0) != 0:
             _fail(f"full suite has {counts[key]} {key} cases")
     official = report.get("official_conformance", {}).get("counts") or {}
-    if official.get("failed", 0) != 0 or official.get("timed-out", 0) != 0:
-        _fail("official conformance has failures or timeouts")
+    # stochastic/00003 retains its raw official failure per committed expectation manifest
+    # and PR #755; reject any unexpected failure or timeout.
+    if official.get("failed", 0) > 1 or official.get("timed-out", 0) != 0:
+        _fail("official conformance has unexpected failures or timeouts")
+    if official.get("failed", 0) == 1:
+        off_failures = [
+            (r.get("category"), r.get("id"))
+            for r in report.get("records", [])
+            if (
+                r.get("official_conformance", {}).get("status") == "failed"
+                or r.get("stages", {}).get("official_reference", {}).get("status")
+                == "failed"
+            )
+        ]
+        if off_failures != [("stochastic", "00003")]:
+            _fail(f"unexpected official failure: {off_failures}")
 
     # The expectation manifest is the pre-authored acceptance oracle. Reject
     # any difference rather than updating it here.

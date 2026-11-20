@@ -23,6 +23,7 @@ ROWS = {
     "constraint-message": "sbml.core.Constraint.message",
     "reaction-compartment": "sbml.core.Reaction.compartment",
     "localparameter-units": "sbml.core.LocalParameter.units",
+    "sbase-annotation": "sbml.core.SBase.annotation",
 }
 
 
@@ -52,5 +53,6 @@ def test_fixture_actually_contains_its_construct(fixture):
         "constraint-message": "<message>",
         "reaction-compartment": 'compartment="C"',
         "localparameter-units": "<localParameter",
+        "sbase-annotation": "<annotation>",
     }
     assert tokens[fixture] in text

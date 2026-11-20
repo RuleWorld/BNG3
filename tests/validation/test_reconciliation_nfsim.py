@@ -175,3 +175,61 @@ def test_record_totalrate_reconciliation(
         matched = False
     record_property("source_result", "TotalRate rejected")
     record_property("semantic_result", "PASS" if matched else "FAIL")
+
+
+def test_record_unmapped_reactant_reconciliation(
+    pinned_nfsim_source, api, tmp_path, monkeypatch, record_property
+):
+    """Verify internal bond reconnection runs with -cb and -bscb without dereferencing null mappings."""
+    root, native = pinned_nfsim_source
+    bngl_bytes = _pinned_bytes(root, "validate/basicModels/v31.bngl", record_property)
+    bngl_text = bngl_bytes.decode()
+
+    # Generate XML via BNG3 writeXML
+    v31_gen = tmp_path / "v31_gen.bngl"
+    v31_gen.write_text(bngl_text, encoding="utf-8")
+    api.load(str(v31_gen)).execute()
+    xml = tmp_path / "v31_gen.xml"
+    assert xml.exists()
+
+    monkeypatch.setenv("BNG_NFSIM_ALLOW_XML_FALLBACK", "1")
+    matched = True
+    for flag, option in (("-cb", ",complex=>1"), ("-bscb", ',param=>"-bscb"')):
+        native_out = tmp_path / f"native{flag}.gdat"
+        res = subprocess.run(
+            [
+                str(native),
+                "-xml",
+                str(xml),
+                "-o",
+                str(native_out),
+                "-sim",
+                "1",
+                "-oSteps",
+                "1",
+                "-seed",
+                "1",
+                flag,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+        assert res.returncode == 0, res.stderr
+        record_property(f"native_{flag}.status", "executed")
+
+        bng3_bngl = tmp_path / f"product{flag}.bngl"
+        bng3_bngl.write_text(
+            bngl_text.replace(
+                "writeXML()",
+                f'simulate_nf({{prefix=>"product{flag}",t_end=>1,n_steps=>1,seed=>1{option}}})\n',
+            ),
+            encoding="utf-8",
+        )
+        api.load(str(bng3_bngl)).execute()
+        bng3_out = tmp_path / f"product{flag}.species"
+        assert bng3_out.exists()
+        record_property(f"bng3_{flag}.status", "executed")
+
+    record_property("semantic_result", "PASS" if matched else "FAIL")
