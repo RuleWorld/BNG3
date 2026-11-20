@@ -616,6 +616,48 @@ def test_delay_release_receipt_is_recorded_and_consumed_in_parity_queue():
     )
 
 
+def test_hybrid_execution_step_runs_full_suite_with_locked_oracles():
+    """The #150 execution step must not silently lose oracles or narrow its suite.
+
+    The receipt/consumer guard below proves the report is recorded and replayed.
+    It does not prove the producing step actually ran the complete hybrid suite
+    against the pinned independent oracles. A dropped env var, a removed
+    ``-c tests/validation/pytest.ini``, an added ``-k``/``--deselect`` filter or a
+    missing junit artifact would all still leave the receipt step green while
+    the scientific evidence was reduced. Assert on the parsed step structure.
+    """
+    workflow = _parse_workflow()
+    steps = workflow["jobs"]["nfsim-parity"]["steps"]
+    step = next(
+        item
+        for item in steps
+        if item.get("name") == "Run hybrid particle-population parity and conservation"
+    )
+    run = step["run"]
+    assert "tests/validation/test_hybrid_execution.py" in run
+    assert "-c tests/validation/pytest.ini" in run
+    assert "--junitxml=" in run
+    tokens = shlex.split(run)
+    assert not {"-k", "--deselect", "--runxfail"} & set(tokens)
+    assert step.get("continue-on-error", False) is False
+
+    env = step.get("env", {})
+    assert env.get("BNG2_PERL", "").endswith("/oracle-bionetgen/bng2/BNG2.pl")
+    assert env.get("NFSIM_BIN", "").endswith("/oracle-nfsim/build/NFsim")
+    assert env.get("BNG3_CI_STRICT_ORACLES") == "1"
+    assert env.get("BNG3_HYBRID_EVIDENCE_DIR", "").endswith("/release-hybrid-evidence")
+
+    upload = next(
+        item
+        for item in steps
+        if item.get("name") == "Upload hybrid particle-population evidence"
+    )
+    assert upload["uses"].startswith("actions/upload-artifact@")
+    assert upload["if"] == "always()"
+    assert upload["with"].get("if-no-files-found") == "error"
+    assert "release-hybrid-evidence" in upload["with"]["path"]
+
+
 def test_hybrid_release_receipt_is_recorded_and_consumed_in_parity_queue():
     workflow = _parse_workflow()
     nfsim_parity = workflow["jobs"]["nfsim-parity"]
