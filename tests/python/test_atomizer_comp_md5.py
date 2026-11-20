@@ -1,6 +1,7 @@
 """External comp checksum handling, SBML comp V1R3 section 3.3.2."""
 
 import hashlib
+from pathlib import Path
 
 import pytest
 
@@ -72,7 +73,7 @@ def test_nested_external_checksum_is_reported_before_flattening(tmp_path):
     leaf_dir.mkdir()
     (leaf_dir / "child.xml").write_bytes(CHILD)
     inner = PARENT.format(checksum="0" * 32).replace('id="parent"', 'id="middle"')
-    (leaf_dir / "middle.xml").write_text(inner)
+    (leaf_dir / "middle.xml").write_bytes(inner.encode("utf-8"))
     outer = PARENT.format(checksum=hashlib.md5(inner.encode()).hexdigest())
     outer = outer.replace('comp:source="child.xml"', 'comp:source="nested/middle.xml"')
     outer = outer.replace('comp:modelRef="childModel"', 'comp:modelRef="middle"')
@@ -83,5 +84,5 @@ def test_nested_external_checksum_is_reported_before_flattening(tmp_path):
     assert model.parameters["child__child__p"].value == 2
     warnings = [w for w in model.import_warnings if w.category == "compChecksum"]
     assert len(warnings) == 1
-    assert "nested/child.xml" in warnings[0].message
+    assert repr(str(Path("nested") / "child.xml")) in warnings[0].message
     assert hashlib.md5(CHILD).hexdigest() in warnings[0].message
