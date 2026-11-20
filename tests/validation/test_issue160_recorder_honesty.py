@@ -165,3 +165,23 @@ def test_passing_trajectory_cannot_hide_roundtrip_loss_warning(tmp_path):
         recorder.build_receipt(
             report, CAPABILITY_MAPPING, REVISION, _write_fixtures(tmp_path)
         )
+
+
+def test_valid_fast_variants_remain_required_in_both_case_maps():
+    for filename in (
+        "sbml-core-case-mapping.json",
+        "sbml-capability-case-mapping.json",
+    ):
+        mapping = json.loads((ROOT / "provenance" / filename).read_text())
+        assert {"00988", "01398", "01539"} <= set(
+            mapping["sbml.core.Reaction.fast-L3V1"]
+        )
+
+
+def test_conversion_factor_with_dynamic_events_remains_required():
+    mapping = _mapping()
+    for row in (
+        "sbml.core.Model.conversionFactor",
+        "sbml.core.Species.conversionFactor",
+    ):
+        assert "01000" in mapping[row]
