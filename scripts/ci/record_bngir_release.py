@@ -8,10 +8,13 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from tests.validation.junit import require_passing_junit
 
 EXPECTED_CHECKS = (
     "release-bngir-schema",
@@ -59,10 +62,25 @@ def run_tests(root: Path = ROOT) -> None:
         "--confcutdir=tests/validation/release/cases/issue-156",
         str(test_path),
     ]
-    result = subprocess.run(cmd, cwd=str(root), capture_output=True, text=True)
-    if result.returncode != 0:
-        _fail(
-            f"Issue 156 release tests failed (code {result.returncode}):\n{result.stdout}\n{result.stderr}"
+    with TemporaryDirectory() as directory:
+        junit = Path(directory) / "pytest.xml"
+        result = subprocess.run(
+            [*cmd, "--junitxml", str(junit)],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            _fail(
+                f"Issue 156 release tests failed (code {result.returncode}):\n{result.stdout}\n{result.stderr}"
+            )
+        require_passing_junit(
+            junit,
+            [
+                "test_release_bngir_schema",
+                "test_release_semantic_equality",
+                "test_release_capability_coverage_156",
+            ],
         )
 
 
@@ -106,12 +124,12 @@ def build_release_record(
         ),
         "release-semantic-equality": (
             "Exact process equality certificates for renaming, split/merge and "
-            "observables; numerical similarity returns False; unbounded models "
-            "return EqualityUndecided instead of hanging."
+            "observables are tested. The full design catalog still lacks "
+            "qualifying evidence for energy, delays and hybrid semantics."
         ),
         "release-capability-coverage-156": (
-            "Contract, inventory rows and live acceptance obligations verify "
-            "against the exact-revision provenance catalogs."
+            "Bounded schema and equality checks ran. Full inventory "
+            "qualification still lacks case evidence."
         ),
     }
     results = [
@@ -127,14 +145,15 @@ def build_release_record(
         for check_id in EXPECTED_CHECKS
     ]
 
-    if skip_tests:
-        for row in results:
+    for row in results:
+        if skip_tests or row["id"] != "release-bngir-schema":
             row["status"] = "NOT_TESTED"
             row["supported_execution"] = False
             row["evidence_kind"] = "not-tested"
-            row["detail"] = (
-                "Execution was skipped; no scientific acceptance evidence was collected."
-            )
+            if skip_tests:
+                row["detail"] = (
+                    "Execution was skipped; no scientific acceptance evidence was collected."
+                )
 
     return {
         "schema_version": 1,

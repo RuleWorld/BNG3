@@ -101,3 +101,14 @@ def test_bngir_roundtrip_record_cli(tmp_path):
     assert summary_file.is_file()
     data = json.loads(out_file.read_text(encoding="utf-8"))
     assert data["acceptance_check"] == "release-obligation-154"
+
+
+def test_bounded_native_roundtrip_cannot_qualify_all_constructs(monkeypatch):
+    monkeypatch.setattr(record_bngir_roundtrip_release, "run_tests", lambda root: None)
+    report = record_bngir_roundtrip_release.build_release_record(
+        root=ROOT, allow_dirty=True
+    )
+    results = {row["id"]: row for row in report["results"]}
+    assert results["release-bngir-roundtrip"]["status"] == "NOT_TESTED"
+    assert not results["release-bngir-roundtrip"]["supported_execution"]
+    assert results["release-bngir-version"]["status"] == "PASS"

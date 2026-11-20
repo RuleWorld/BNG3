@@ -8,10 +8,13 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from tests.validation.junit import require_passing_junit
 
 EXPECTED_CHECKS = (
     "release-delay-ode",
@@ -62,10 +65,26 @@ def run_tests(root: Path = ROOT) -> None:
         "--confcutdir=tests/validation/release/cases/issue-475",
         str(test_path),
     ]
-    result = subprocess.run(cmd, cwd=str(root), capture_output=True, text=True)
-    if result.returncode != 0:
-        _fail(
-            f"Issue 475 release tests failed (code {result.returncode}):\n{result.stdout}\n{result.stderr}"
+    with TemporaryDirectory() as directory:
+        junit = Path(directory) / "pytest.xml"
+        result = subprocess.run(
+            [*cmd, "--junitxml", str(junit)],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            _fail(
+                f"Issue 475 release tests failed (code {result.returncode}):\n{result.stdout}\n{result.stderr}"
+            )
+        require_passing_junit(
+            junit,
+            [
+                "test_release_delay_ode",
+                "test_release_delay_ssa",
+                "test_release_delay_formats",
+                "test_release_capability_coverage_475",
+            ],
         )
 
 
@@ -135,8 +154,9 @@ def build_release_record(
             "related_issues": [475],
             "stage": "delay-formats",
             "detail": (
-                "both BNGIR versions and all applicable formats preserve delay semantics "
-                "through actual consumers."
+                "BNGIR v0.1/v0.2 and SBML L3V2 delayed-rule examples execute "
+                "through native ODE consumers. Refusal controls for other backends "
+                "establish diagnostics only."
             ),
         },
     ]
@@ -163,6 +183,9 @@ def build_release_record(
             "stochastic_jump": "independent delayed jump-process reference and continuation state recovery",
             "formats": "BNGIR v0.1/v0.2 lossless roundtrip and SBML L3V2 delay csymbol export/re-import",
         },
+        "scope_limits": [
+            "Network-free and optional backend delayed execution is unqualified."
+        ],
         "results": results,
         "manifest_check_ids": sorted(manifest_checks.keys()),
     }

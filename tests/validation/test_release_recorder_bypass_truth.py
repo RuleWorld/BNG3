@@ -77,3 +77,13 @@ def test_untracked_source_is_reported_dirty(recorder, monkeypatch):
     monkeypatch.setattr(recorder.subprocess, "run", run)
     report = recorder.build_release_record(skip_tests=True, allow_dirty=True)
     assert report["source"]["dirty"] is True
+
+
+def test_bounded_semantic_equality_cannot_qualify_the_full_catalog(monkeypatch):
+    from scripts.ci import record_bngir_release
+
+    monkeypatch.setattr(record_bngir_release, "run_tests", lambda root: None)
+    report = record_bngir_release.build_release_record(allow_dirty=True)
+    results = {row["id"]: row for row in report["results"]}
+    assert results["release-semantic-equality"]["status"] == "NOT_TESTED"
+    assert not results["release-capability-coverage-156"]["supported_execution"]

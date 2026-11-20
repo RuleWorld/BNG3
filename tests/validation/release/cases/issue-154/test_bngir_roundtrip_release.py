@@ -264,7 +264,9 @@ end model
 }
 
 NATIVE_ELIGIBLE_CASES = {
+    "parameters_and_dependencies",
     "states_and_bonds",
+    "functions_and_dependent_rate",
     "delayed_rules_consuming",
 }
 
@@ -289,8 +291,8 @@ def test_release_bngir_roundtrip():
         try:
             assert semantic_equal(model, restored_v02, version="0.2") is True
         except EqualityUndecided:
-            # Reconstructed model exists and generates valid compiled structure
-            pass
+            # Verify the wire facts when exact process equality is undecided.
+            assert json.loads(to_bngir(restored_v02, version="0.2")) == doc_v02
 
         # 2. Round-trip through BNGIR v0.1
         doc_v01_str = to_bngir(model, version="0.1")
@@ -303,7 +305,7 @@ def test_release_bngir_roundtrip():
         try:
             assert semantic_equal(model, restored_v01, version="0.1") is True
         except EqualityUndecided:
-            pass
+            assert json.loads(to_bngir(restored_v01, version="0.1")) == doc_v01
 
         # 3. Native reconstruction for supported slices
         if name in NATIVE_ELIGIBLE_CASES:
@@ -330,6 +332,28 @@ def test_release_bngir_roundtrip():
         )
         assert conc_a == pytest.approx(expected_a, abs=1e-6)
         assert conc_b == pytest.approx(expected_b, abs=1e-6)
+
+    # Completion by t=3 requires initiation by t=1. The resulting B count is
+    # Binomial(10, 1-exp(-0.5)). Check all CDF thresholds at a fixed 1% error
+    # bound using Dvoretzky–Kiefer–Wolfowitz.
+    completions = []
+    first_seed, runs = 2800, 256
+    for seed in range(first_seed, first_seed + runs):
+        trajectory = from_bngir(doc_delayed, native=True).simulate(
+            method="ssa", t_end=3.0, n_steps=3, seed=seed
+        )
+        assert trajectory.concentrations[1][1] == 0
+        b = trajectory.concentrations[-1][1]
+        assert b == int(b) and 0 <= b <= 10
+        completions.append(b)
+
+    p = 1.0 - math.exp(-0.5)
+    expected_cdf = 0.0
+    bound = math.sqrt(math.log(2 / 0.01) / (2 * runs))
+    for b in range(11):
+        expected_cdf += math.comb(10, b) * p**b * (1 - p) ** (10 - b)
+        observed_cdf = sum(sample <= b for sample in completions) / runs
+        assert abs(observed_cdf - expected_cdf) <= bound
 
     # 5. Wire mutation sensitivity: mutating tau on wire alters trajectory and is detected
     mutated_doc = copy.deepcopy(doc_delayed)
