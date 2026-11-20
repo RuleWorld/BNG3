@@ -96,6 +96,7 @@ jobs:
             tests/validation/test_release_recorder_bypass_truth.py \
             tests/validation/test_issue_147_release_record.py \
             tests/validation/test_issue_150_release_record.py \
+            tests/validation/test_issue_154_release_record.py \
             tests/validation/test_issue_473_475_release_records.py \
             tests/validation/test_s6_simulate_receipt_consumer.py \
             tests/validation/test_nfsim_sweep_gate.py \
@@ -733,6 +734,16 @@ jobs:
           --source-revision "${{ github.event.pull_request.head.sha || github.sha }}"
           --summary-file "$GITHUB_STEP_SUMMARY"
 
+      - name: Validate independent issue-154 BNGIR round trip release acceptance
+        if: always() && steps.candidate_identity.outcome == 'success'
+        env:
+          BNG3_PYTHON_TEST_MODE: installed
+        run: >-
+          python scripts/ci/record_bngir_roundtrip_release.py
+          --output "$RUNNER_TEMP/bng3-bngir-roundtrip-release/report.json"
+          --source-revision "${{ github.event.pull_request.head.sha || github.sha }}"
+          --summary-file "$GITHUB_STEP_SUMMARY"
+
       - name: Run integrated cross-component cases
         id: integrated_cases
         run: |
@@ -846,6 +857,7 @@ jobs:
           delay_args=()
           bngir_args=()
           bngir153_args=()
+          bngir154_args=()
           hybrid_args=()
           issue147_args=()
           if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
@@ -876,6 +888,9 @@ jobs:
           if [[ -s "$RUNNER_TEMP/bng3-bngir-native-release/report.json" ]]; then
             bngir153_args+=(--report "$RUNNER_TEMP/bng3-bngir-native-release/report.json")
           fi
+          if [[ -s "$RUNNER_TEMP/bng3-bngir-roundtrip-release/report.json" ]]; then
+            bngir154_args+=(--report "$RUNNER_TEMP/bng3-bngir-roundtrip-release/report.json")
+          fi
           if [[ -s "$RUNNER_TEMP/bng3-hybrid-release/issue-150-release-report.json" ]]; then
             hybrid_args+=(--report "$RUNNER_TEMP/bng3-hybrid-release/issue-150-release-report.json")
           elif [[ -s "$RUNNER_TEMP/bng3-hybrid-release/release-hybrid-evidence/issue-150-release-report.json" ]]; then
@@ -897,6 +912,7 @@ jobs:
             "${delay_args[@]}" \
             "${bngir_args[@]}" \
             "${bngir153_args[@]}" \
+            "${bngir154_args[@]}" \
             "${hybrid_args[@]}" \
             "${issue147_args[@]}" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \

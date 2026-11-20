@@ -1,7 +1,14 @@
 {
   "schema_version": 1,
   "approved_dependency_scope": {
-    "issues": [138, 140, 142, 143, 150, 156],
+    "issues": [
+      138,
+      140,
+      142,
+      143,
+      150,
+      156
+    ],
     "decision": "docs/DECISIONS.md#18",
     "decision_marker": "Dependencies #138, #140, #142, #143, #150 and #156 for downstream release qualification",
     "reason": "Maintainer decision item 18 records that the reviewed scope for these dependency issues is authoritative for downstream exact-revision closure dry runs despite later live-body edits. This resolves stale dependency status only; dependent issues must still pass all of their own acceptance checks."
@@ -7520,7 +7527,7 @@
     },
     {
       "number": 154,
-      "body_sha256": "326363a249d76925dc0e7882fc0c16368de2d2ed94917dcb046396dfdbf59f37",
+      "body_sha256": "e927be5af71551feff5eb044045fdb3a3ed06d37cc0c578f87a555a6fe0111b6",
       "obligations": [
         {
           "id": "issue:154:cover-declarations-ids-reversible-directions-mutations-scopes-fi",
@@ -7807,14 +7814,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-bngir-roundtrip.",
-                "No revision-locked consuming receipt producer is declared for required live check release-bngir-roundtrip."
-              ]
+              "selector": "tests/validation/release/cases/issue-154/test_bngir_roundtrip_release.py::test_release_bngir_roundtrip",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#Validate independent issue-154 BNGIR round trip release acceptance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -7840,14 +7844,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-bngir-version.",
-                "No revision-locked consuming receipt producer is declared for required live check release-bngir-version."
-              ]
+              "selector": "tests/validation/release/cases/issue-154/test_bngir_roundtrip_release.py::test_release_bngir_version",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#Validate independent issue-154 BNGIR round trip release acceptance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -7873,14 +7874,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-154.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-154."
-              ]
+              "selector": "tests/validation/release/cases/issue-154/test_bngir_roundtrip_release.py::test_release_obligation_154",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#Validate independent issue-154 BNGIR round trip release acceptance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -10056,8 +10054,100 @@
     },
     {
       "number": 159,
-      "body_sha256": "d6d7ec14e8a1a0af97017982e0f2c0d7be3b8c76e1ad00e777bc00f5b4e3e087",
+      "body_sha256": "e5e2187dae25826d690d144c2d2c3654ec0ce2b979d5f6b2e5f29ab6cdcb7d60",
       "obligations": [
+        {
+          "id": "issue:159:live-acceptance:release-ssts",
+          "criterion": "`release-ssts`: all required valid Core cases pass against official expected outputs with recorded suite/toolchain pins.",
+          "scope": "`release-ssts`: all required valid Core cases pass against official expected outputs with recorded suite/toolchain pins.",
+          "live_body_sha256": "e5e2187dae25826d690d144c2d2c3654ec0ce2b979d5f6b2e5f29ab6cdcb7d60",
+          "dependencies": [
+            157,
+            160
+          ],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "release-ssts",
+              "evidence_kind": "supported-execution",
+              "expectation": "all required valid Core cases pass against official expected outputs with recorded suite/toolchain pins.",
+              "identity_requirements": [
+                "source.revision"
+              ],
+              "selector": "tests/validation/release/cases/issue-159/test_ssts_full_execution.py::test_release_ssts_exact_full_run",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/sbml-conformance.yml#conformance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:159:live-acceptance:release-ssts-coverage",
+          "criterion": "`release-ssts-coverage`: every Core row has an independent case and failed or refused valid cases block release.",
+          "scope": "`release-ssts-coverage`: every Core row has an independent case and failed or refused valid cases block release.",
+          "live_body_sha256": "e5e2187dae25826d690d144c2d2c3654ec0ce2b979d5f6b2e5f29ab6cdcb7d60",
+          "dependencies": [
+            157,
+            160
+          ],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "release-ssts-coverage",
+              "evidence_kind": "supported-execution",
+              "expectation": "every Core row has an independent case and failed or refused valid cases block release.",
+              "identity_requirements": [
+                "source.revision"
+              ],
+              "selector": "tests/validation/release/cases/issue-159/test_ssts_full_execution.py::test_release_ssts_coverage",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/sbml-conformance.yml#conformance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
+          "decisions": [],
+          "unmapped_scope": []
+        },
+        {
+          "id": "issue:159:live-acceptance:release-obligation-159",
+          "criterion": "`release-obligation-159`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
+          "scope": "`release-obligation-159`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
+          "live_body_sha256": "e5e2187dae25826d690d144c2d2c3654ec0ce2b979d5f6b2e5f29ab6cdcb7d60",
+          "dependencies": [
+            157,
+            160
+          ],
+          "boundaries": [],
+          "required_checks": [
+            {
+              "id": "release-obligation-159",
+              "evidence_kind": "supported-execution",
+              "expectation": "each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
+              "identity_requirements": [
+                "source.revision"
+              ],
+              "selector": "tests/validation/release/cases/issue-159/test_ssts_full_execution.py::test_release_obligation_159_receipt",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/sbml-conformance.yml#conformance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
+            }
+          ],
+          "test_references": [],
+          "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
+          "decisions": [],
+          "unmapped_scope": []
+        }
+      ],
+      "historical_obligations": [
         {
           "id": "issue:159:run-the-existing-locked-suite-runner-on-an-identified-final-bng3",
           "criterion": "Run the existing locked-suite runner on an identified final BNG3 build and retain durable per-case artifacts.",
@@ -10200,102 +10290,12 @@
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           }
-        },
-        {
-          "id": "issue:159:live-acceptance:release-ssts",
-          "criterion": "`release-ssts`: all required valid Core cases pass against official expected outputs with recorded suite/toolchain pins.",
-          "scope": "`release-ssts`: all required valid Core cases pass against official expected outputs with recorded suite/toolchain pins.",
-          "live_body_sha256": "d6d7ec14e8a1a0af97017982e0f2c0d7be3b8c76e1ad00e777bc00f5b4e3e087",
-          "dependencies": [
-            157,
-            160
-          ],
-          "boundaries": [],
-          "required_checks": [
-            {
-              "id": "release-ssts",
-              "evidence_kind": "supported-execution",
-              "expectation": "all required valid Core cases pass against official expected outputs with recorded suite/toolchain pins.",
-              "identity_requirements": [
-                "source.revision"
-              ],
-              "selector": "tests/validation/release/cases/issue-159/test_ssts_full_execution.py::test_release_ssts_exact_full_run",
-              "selector_status": "COLLECTED",
-              "receipt_producer": ".github/workflows/sbml-conformance.yml#conformance",
-              "receipt_producer_status": "CONSUMER_READY",
-              "missing_evidence": []
-            }
-          ],
-          "test_references": [],
-          "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
-          "decisions": [],
-          "unmapped_scope": []
-        },
-        {
-          "id": "issue:159:live-acceptance:release-ssts-coverage",
-          "criterion": "`release-ssts-coverage`: every Core row has an independent case and failed or refused valid cases block release.",
-          "scope": "`release-ssts-coverage`: every Core row has an independent case and failed or refused valid cases block release.",
-          "live_body_sha256": "e5e2187dae25826d690d144c2d2c3654ec0ce2b979d5f6b2e5f29ab6cdcb7d60",
-          "dependencies": [
-            157,
-            160
-          ],
-          "boundaries": [],
-          "required_checks": [
-            {
-              "id": "release-ssts-coverage",
-              "evidence_kind": "supported-execution",
-              "expectation": "every Core row has an independent case and failed or refused valid cases block release.",
-              "identity_requirements": [
-                "source.revision"
-              ],
-              "selector": "tests/validation/release/cases/issue-159/test_ssts_full_execution.py::test_release_ssts_coverage",
-              "selector_status": "COLLECTED",
-              "receipt_producer": ".github/workflows/sbml-conformance.yml#conformance",
-              "receipt_producer_status": "CONSUMER_READY",
-              "missing_evidence": []
-            }
-          ],
-          "test_references": [],
-          "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
-          "decisions": [],
-          "unmapped_scope": []
-        },
-        {
-          "id": "issue:159:live-acceptance:release-obligation-159",
-          "criterion": "`release-obligation-159`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
-          "scope": "`release-obligation-159`: each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
-          "live_body_sha256": "d6d7ec14e8a1a0af97017982e0f2c0d7be3b8c76e1ad00e777bc00f5b4e3e087",
-          "dependencies": [
-            157,
-            160
-          ],
-          "boundaries": [],
-          "required_checks": [
-            {
-              "id": "release-obligation-159",
-              "evidence_kind": "supported-execution",
-              "expectation": "each task above has its named check result, source/oracle identity and main commit recorded. For architectural/process work, compare the actual implementation/configuration with the recorded contract, including negative fixtures.",
-              "identity_requirements": [
-                "source.revision"
-              ],
-              "selector": "tests/validation/release/cases/issue-159/test_ssts_full_execution.py::test_release_obligation_159_receipt",
-              "selector_status": "COLLECTED",
-              "receipt_producer": ".github/workflows/sbml-conformance.yml#conformance",
-              "receipt_producer_status": "CONSUMER_READY",
-              "missing_evidence": []
-            }
-          ],
-          "test_references": [],
-          "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
-          "decisions": [],
-          "unmapped_scope": []
         }
       ]
     },
     {
       "number": 160,
-      "body_sha256": "6492b9d29c9e65311e240e283c332a92fedcf1a6f488f0e76d92edda20a6e0c4",
+      "body_sha256": "70141b629d80219f8e6a0deef18d2bb0aabd0975217213435df926238542c8b1",
       "obligations": [
         {
           "id": "issue:160:release-sbml-core-comp",
@@ -10338,14 +10338,14 @@
               "id": "issue:160:acceptance:1",
               "check_id": "release-sbml-core-comp",
               "text": "`release-sbml-core-comp`: every assigned Core/comp row passes official expected values, independent flattening or analytic DAE/DDE checks.",
-              "live_body_sha256": "6492b9d29c9e65311e240e283c332a92fedcf1a6f488f0e76d92edda20a6e0c4",
+              "live_body_sha256": "70141b629d80219f8e6a0deef18d2bb0aabd0975217213435df926238542c8b1",
               "dependencies": [
                 143,
                 157
               ]
             }
           ],
-          "live_body_sha256": "6492b9d29c9e65311e240e283c332a92fedcf1a6f488f0e76d92edda20a6e0c4"
+          "live_body_sha256": "70141b629d80219f8e6a0deef18d2bb0aabd0975217213435df926238542c8b1"
         },
         {
           "id": "issue:160:release-sbml-source-fidelity",
@@ -10388,14 +10388,14 @@
               "id": "issue:160:acceptance:2",
               "check_id": "release-sbml-source-fidelity",
               "text": "`release-sbml-source-fidelity`: no valid required construct is omitted, frozen dynamically, approximated, or reported as successful execution after refusal.",
-              "live_body_sha256": "6492b9d29c9e65311e240e283c332a92fedcf1a6f488f0e76d92edda20a6e0c4",
+              "live_body_sha256": "70141b629d80219f8e6a0deef18d2bb0aabd0975217213435df926238542c8b1",
               "dependencies": [
                 143,
                 157
               ]
             }
           ],
-          "live_body_sha256": "6492b9d29c9e65311e240e283c332a92fedcf1a6f488f0e76d92edda20a6e0c4"
+          "live_body_sha256": "70141b629d80219f8e6a0deef18d2bb0aabd0975217213435df926238542c8b1"
         },
         {
           "id": "issue:160:release-capability-coverage-160",
@@ -12310,14 +12310,14 @@
               "id": "issue:160:acceptance:3",
               "check_id": "release-capability-coverage-160",
               "text": "`release-capability-coverage-160`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
-              "live_body_sha256": "6492b9d29c9e65311e240e283c332a92fedcf1a6f488f0e76d92edda20a6e0c4",
+              "live_body_sha256": "70141b629d80219f8e6a0deef18d2bb0aabd0975217213435df926238542c8b1",
               "dependencies": [
                 143,
                 157
               ]
             }
           ],
-          "live_body_sha256": "6492b9d29c9e65311e240e283c332a92fedcf1a6f488f0e76d92edda20a6e0c4"
+          "live_body_sha256": "70141b629d80219f8e6a0deef18d2bb0aabd0975217213435df926238542c8b1"
         }
       ],
       "historical_obligations": [
@@ -12519,7 +12519,7 @@
     },
     {
       "number": 161,
-      "body_sha256": "c8057e0ac330a6958a8f8c46f9adf713cfddb457b1ff41013104cb6f0e8f9bb3",
+      "body_sha256": "4fbbe5c259e1645a933e3642e2b42aba4e9c19be469a6aac5f213c3e26172b57",
       "obligations": [
         {
           "id": "issue:161:cover-reconstruction-reaction-bond-changes-compartments-quantiti",
@@ -12928,7 +12928,7 @@
     },
     {
       "number": 162,
-      "body_sha256": "25d744064d2c8db1c8f064ca927a23ef5cfe7cc2a40f9850053de26b00c734f9",
+      "body_sha256": "d77d9c3585d600d4bdb4f6f1aa32e67c84662624875989690cc445f3084ae204",
       "obligations": [
         {
           "id": "issue:162:keep-the-existing-full-biomodels-stop-in-effect-until-the-user-e",
@@ -18341,7 +18341,7 @@
     },
     {
       "number": 180,
-      "body_sha256": "4c771a7de970319505e0e158c74cb14619d372a55b6da923f983b33e58adef35",
+      "body_sha256": "c70bb4819b3bfc39358d20d24f96ef83fef7232bbd0265f6d504bf645f47d89a",
       "obligations": [
         {
           "id": "issue:180:review-source-drift-since-recorded-cutoffs-and-assign-reconcilia",

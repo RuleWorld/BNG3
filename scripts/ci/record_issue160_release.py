@@ -25,6 +25,7 @@ FIXTURE_NAMES = {
     "sbml.core.Constraint.message": "constraint-message",
     "sbml.core.Reaction.compartment": "reaction-compartment",
     "sbml.core.LocalParameter.units": "localparameter-units",
+    "sbml.core.SBase.annotation": "sbase-annotation",
 }
 
 
