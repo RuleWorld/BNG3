@@ -1,5 +1,66 @@
 # BNG3 current progress
 
+## NFnext dynamic energy execution — 2026-11-19
+
+`cpp/nfnext/src/from_bng.cpp` no longer folds a dynamic energy expression to
+zero when expanding an energy-modulated Arrhenius state change. The signed
+reaction-centre coefficient is now separated from the energy value; observable
+dependent energy expressions are translated with `observableRateExpression`
+and composed into a runtime `RateLawKind::Function` rate (the same executor and
+observable refresh path already qualified for dynamic observable rates in
+#746). Static energy patterns keep the existing Elementary folded-rate path.
+Time-dependent or otherwise untranslatable energy expressions remain fail-closed
+lowering errors. A focused regression in
+`tests/architecture_contracts/nfnext/test_bng_lowering_bridge.cpp` checks the
+lowering invariant, the compiled forward/reverse rates and an analytic two-state
+law; the full CTest suite (830 tests) passes locally. The same model run through
+the public Python route (`cpp.simulate_nfnext`) gave empirical
+`P_p(T=2)=0.620` versus analytic `0.592` over 200 fixed seeds (DKW bound
+`0.115`), after rebuilding the Python extension: a stale
+`build/cpp/_bionetgen_cpp*.so` silently reproduced the old zeroed-energy
+behavior and must be relinked before accepting Python-route evidence.
+
+Dynamic population-map rates now also execute for the supported simple shape
+(particle reactant pattern, declared componentless population product, constant
+or Molecules-observable arithmetic rate). Lowering synthesizes one executable
+map rule per accepted map; unresolvable rates, time-dependent rates,
+Species-only observables and unsupported map shapes still fail closed with a
+`population map` diagnostic. `cpp/nfnext/src/from_bng.cpp` retains the maps as
+NFIR metadata, so canonical/cache/fingerprint consumers are unchanged.
+Independent checks: `architecture_nfnext_bng_lowering_bridge` uses an exact
+pure-death mean oracle (also cross-checked against a forward-Kolmogorov ODE
+solution), and `issue-147/test_dynamic_population_map_rate.py` gives NFnext
+mean `U(1)=49.9043` (se `0.1603`) against an independently written Gillespie
+SSA mean `49.8633`, with the frozen-observable wrong law at `36.7879`
+rejected. Both new Python checks are wired into the hosted NFsim parity lane.
+
+Native oracle (2026-11-19): the pinned NFsim revision `8c449bbc…` was built
+locally and its SHA-256 (`caf0ad15…`) matches `provenance/upstreams.lock.yml`.
+
+- Dynamic population map: a valid *independent native encoding of the same
+  law* was established — pinned BNG2 generates XML for `A(x~u) -> 0` with rate
+  `k*U()` (an equivalent pure-death law with `lambda(U)=k*U^2`), and native
+  NFsim runs it after the spelling translation `U()` → `U`. The translation is
+  justified by the oracle source: `Observable::addReferenceToMyself` calls
+  `DefineVar(obsName, &count)`, so observables are variables, not functions.
+  Over 512 fixed seeds NFnext gave `U(1)=49.9043` and native NFsim `50.1152`
+  (difference `0.2109`, 4-sigma band `0.9418`, KS `0.055` vs 95% threshold
+  `0.101`). Reproducible case:
+  `issue-147/test_nfnext_dynamic_map_native_parity.py` (wired into hosted CI;
+  missing oracles produce `NOT_TESTED`, never a pass). BNG2's own hybrid HPP was
+  deliberately not used: it pre-lumps the initial particles into the
+  population and does not exercise NFnext's direct conversion dynamics.
+- Dynamic energy: native NFsim's `evaluateEnergyExpression`
+  (`NFinput/NFinput_energy.cpp:33-49`) binds only parameters, never observables,
+  so observable-dependent energy is outside that oracle by construction. Per
+  DECISIONS item 16 the analytic detailed-balance law is the valid oracle and
+  native parity remains explicitly `NOT_TESTED`.
+
+This does not close #147/#148. The full pinned-native corpus comparison and
+the exact-main receipt gate remain unmet, and NFcore remains the `method="nf"`
+default per DECISIONS item 4. The staged plan is in
+`docs/NFNEXT_DYNAMIC_RUNTIME_PLAN.md`.
+
 ## Recent closure audit — 2026-11-14
 
 Assessed main: `501b8d4cbe68f1b8a79801f215347cafd36bb8d3`. The exact 12-hour
