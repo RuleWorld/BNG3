@@ -72,6 +72,7 @@ from gpu import (  # noqa: E402
     judge,
     shape_grid,
     single_precision_device_note,
+    source_identity,
     summarise,
     write_trace,
 )
@@ -506,6 +507,7 @@ def run_one(
     capabilities: dict[str, Any],
 ) -> tuple[dict[str, Any], int]:
     """Measure one model and return (report, exit status)."""
+    identity = source_identity(repo_root(), cpp)
     cfg = BatchConfig(
         batch_size=args.batch,
         t_end=info["t_end"],
@@ -518,6 +520,11 @@ def run_one(
     _p(f"batch          : {cfg.batch_size} trajectories")
     _p(f"horizon        : t_end={cfg.t_end:g}  n_steps={cfg.n_steps}")
     _p(f"seed           : {cfg.base_seed} (identical for every arm)")
+    _p(
+        f"source revision: {identity['revision']} "
+        f"(dirty={identity['source_dirty']})"
+    )
+    _p(f"native SHA256  : {identity['native_binary_sha256'] or 'unavailable'}")
     if info.get("calibration"):
         cal = info["calibration"]
         _p(
@@ -637,6 +644,7 @@ def run_one(
     result_b = last.get(arm_b.label)
     payload = {
         "harness_version": __import__("gpu").HARNESS_VERSION,
+        "source_identity": identity,
         "host": finish_host_facts(host_facts()),
         "capabilities": capabilities,
         "model": info,

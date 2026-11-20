@@ -82,6 +82,7 @@ from .measure import (
     host_facts,
     judge,
     summarise,
+    source_identity,
 )
 from .models import (
     CalibrationResult,
@@ -111,6 +112,7 @@ __all__ = [
     "summarise",
     "host_facts",
     "finish_host_facts",
+    "source_identity",
     # arms
     "AcceleratorArm",
     "CpuPoolArm",

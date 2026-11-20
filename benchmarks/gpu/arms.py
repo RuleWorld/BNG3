@@ -35,7 +35,6 @@ from . import device as device_mod
 from .measure import TimingSample
 from .precision import PrecisionClaim, describe_dtype
 
-
 _NATIVE_METRIC_KEYS = (
     "total_events",
     "model_prep_time_ms",

@@ -36,6 +36,7 @@ leaving them to the discipline of whoever runs the benchmark:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -681,6 +682,38 @@ def finish_host_facts(facts: dict[str, Any]) -> dict[str, Any]:
     except (TypeError, IndexError):
         facts["loadavg_drift_1min"] = float("nan")
     return facts
+
+
+def source_identity(repo_dir: str, native_module: Any) -> dict[str, Any]:
+    """Identify the checkout and loaded extension used for a benchmark report."""
+    revision = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=repo_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.strip()
+    status = subprocess.run(
+        ["git", "status", "--porcelain", "--untracked-files=normal"],
+        cwd=repo_dir,
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout
+    binary_path = getattr(native_module, "__file__", None)
+    binary_sha256 = None
+    if binary_path:
+        digest = hashlib.sha256()
+        with open(binary_path, "rb") as binary:
+            for block in iter(lambda: binary.read(1024 * 1024), b""):
+                digest.update(block)
+        binary_sha256 = digest.hexdigest()
+    return {
+        "revision": revision,
+        "source_dirty": bool(status.strip()),
+        "native_binary_path": binary_path,
+        "native_binary_sha256": binary_sha256,
+    }
 
 
 def emit(payload: dict[str, Any], path: str | None) -> None:

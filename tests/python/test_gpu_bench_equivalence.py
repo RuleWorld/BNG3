@@ -3,9 +3,7 @@
 import sys
 from pathlib import Path
 
-sys.path.insert(
-    0, str(Path(__file__).resolve().parents[2] / "benchmarks")
-)
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "benchmarks"))
 
 from gpu.equivalence import compare_runs
 
