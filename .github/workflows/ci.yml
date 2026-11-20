@@ -570,6 +570,24 @@ jobs:
       - name: Batch SSA CPU pool matches exact analytical results
         run: python tests/test_batch_ssa_statistical_parity.py --mode cpu
 
+      - name: Native CPU batch-SSA immigration-death ensemble baseline
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          BNG3_REPLAY_COMMAND: >-
+            python analysis/cpu-batch-ssa-baseline/run_case.py --json
+            $RUNNER_TEMP/cpu-batch-ssa-baseline/case.json
+        run: |
+          python analysis/cpu-batch-ssa-baseline/run_case.py \
+            --json "$RUNNER_TEMP/cpu-batch-ssa-baseline/case.json"
+
+      - name: Retain CPU batch-SSA baseline measurement artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpu-batch-ssa-baseline
+          path: ${{ runner.temp }}/cpu-batch-ssa-baseline/case.json
+          if-no-files-found: warn
+
       - name: Summarise the batch SSA reference result
         if: always()
         env:
