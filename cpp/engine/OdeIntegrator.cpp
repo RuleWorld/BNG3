@@ -2581,6 +2581,152 @@ void OdeIntegrator::pruneDiscreteEventRoots() {
     nativeEventRoots_ = std::move(continuousRoots);
 }
 
+bool OdeIntegrator::isProvablyStrictlyPositiveInvariant(
+    const ast::Expression& expression) const {
+    if (nSpecies_ == 0) return false;
+    std::vector<double> speciesWeights(nSpecies_, 0.0);
+    double constantOffset = 0.0;
+
+    std::function<bool(const ast::Expression&, double)> flatten =
+        [&](const ast::Expression& node, double factor) -> bool {
+            if (node.kind() == ast::ExpressionKind::Number) {
+                constantOffset += factor * node.numberValue();
+                return true;
+            }
+            if (node.kind() == ast::ExpressionKind::Identifier ||
+                node.kind() == ast::ExpressionKind::ObservableRef) {
+                if (node.name() == "time" || node.name() == "t") return false;
+                const auto obs = observableIndex_.find(node.name());
+                if (obs != observableIndex_.end()) {
+                    if (obs->second >= compiledGroups_.size()) return false;
+                    for (const auto& entry : compiledGroups_[obs->second].entries) {
+                        if (entry.first < nSpecies_) {
+                            speciesWeights[entry.first] += factor * entry.second;
+                        }
+                    }
+                    return true;
+                }
+                const auto& parameters = model_.getParameters();
+                if (parameters.contains(node.name()) &&
+                    !eventDependentParameterNames_.count(node.name()) &&
+                    !parameters.isTimeDependent(node.name())) {
+                    try {
+                        constantOffset += factor * parameters.evaluate(node.name());
+                        return true;
+                    } catch (...) {
+                        return false;
+                    }
+                }
+                return false;
+            }
+            if (node.kind() == ast::ExpressionKind::Unary) {
+                if (node.name() == "+") return flatten(node.args().front(), factor);
+                if (node.name() == "-") return flatten(node.args().front(), -factor);
+                return false;
+            }
+            if (node.kind() == ast::ExpressionKind::Binary) {
+                const auto& op = node.name();
+                if (op == "+") {
+                    return flatten(node.args()[0], factor) &&
+                           flatten(node.args()[1], factor);
+                }
+                if (op == "-") {
+                    return flatten(node.args()[0], factor) &&
+                           flatten(node.args()[1], -factor);
+                }
+                if (op == "*") {
+                    const auto evaluateStatic = [&](const ast::Expression& expr, double& val) -> bool {
+                        if (expr.kind() == ast::ExpressionKind::Number) {
+                            val = expr.numberValue();
+                            return true;
+                        }
+                        if (expr.kind() == ast::ExpressionKind::Identifier) {
+                            const auto& parameters = model_.getParameters();
+                            if (parameters.contains(expr.name()) &&
+                                !eventDependentParameterNames_.count(expr.name()) &&
+                                !parameters.isTimeDependent(expr.name())) {
+                                try {
+                                    val = parameters.evaluate(expr.name());
+                                    return true;
+                                } catch (...) { return false; }
+                            }
+                        }
+                        return false;
+                    };
+                    double c = 0.0;
+                    if (evaluateStatic(node.args()[0], c)) {
+                        return flatten(node.args()[1], factor * c);
+                    }
+                    if (evaluateStatic(node.args()[1], c)) {
+                        return flatten(node.args()[0], factor * c);
+                    }
+                    return false;
+                }
+            }
+            return false;
+        };
+
+    const auto expanded = functionEvaluator_.expandFunctions(expression);
+    if (!flatten(expanded, 1.0)) return false;
+
+    bool hasDynamic = false;
+    for (double w : speciesWeights) {
+        if (std::abs(w) > 1e-12) {
+            hasDynamic = true;
+            break;
+        }
+    }
+
+    if (!hasDynamic) {
+        return constantOffset > 0.0 && std::isfinite(constantOffset);
+    }
+
+    // 1. Stoichiometric conservation across every reaction in the network.
+    for (const auto& rxn : network_.reactions.all()) {
+        double netChange = 0.0;
+        for (const auto prod : rxn.getProducts()) {
+            if (prod < nSpecies_) netChange += speciesWeights[prod];
+        }
+        for (const auto react : rxn.getReactants()) {
+            if (react < nSpecies_) netChange -= speciesWeights[react];
+        }
+        if (std::abs(netChange) > 1e-12) {
+            return false;
+        }
+    }
+
+    // 2. Invariance across discrete event assignments.
+    for (const auto& event : nativeEvents_) {
+        for (const auto& assignment : event.assignments) {
+            const auto obs = observableIndex_.find(assignment.target);
+            if (obs != observableIndex_.end()) {
+                if (obs->second < compiledGroups_.size()) {
+                    for (const auto& entry : compiledGroups_[obs->second].entries) {
+                        if (entry.first < nSpecies_ &&
+                            std::abs(speciesWeights[entry.first]) > 1e-12) {
+                            return false;
+                        }
+                    }
+                }
+            }
+            if (eventDependentParameterNames_.count(assignment.target)) {
+                return false;
+            }
+        }
+    }
+
+    // 3. Initial value positivity across the initial state.
+    double initialVal = constantOffset;
+    for (std::size_t i = 0; i < nSpecies_; ++i) {
+        const double amt = activeSimulationSession_ &&
+                activeSimulationSession_->state.size() == nSpecies_
+            ? activeSimulationSession_->state[i]
+            : network_.species.get(i).getAmount();
+        initialVal += speciesWeights[i] * amt;
+    }
+    return initialVal > 0.0 && std::isfinite(initialVal);
+}
+
 void OdeIntegrator::validateEventRootSurface() {
     if (nativeEvents_.empty()) return;
     // Classify sums and constant multiples of the supported dynamic atoms.
@@ -2606,8 +2752,68 @@ void OdeIntegrator::validateEventRootSurface() {
             const auto& op = value.name();
             if (value.kind() == ast::ExpressionKind::Unary && (op == "+" || op == "-"))
                 return classify(value.args().front());
-            if (value.kind() != ast::ExpressionKind::Binary ||
-                (op != "+" && op != "-" && op != "*")) return RootTerm::Unsupported;
+            if (value.kind() != ast::ExpressionKind::Binary) return RootTerm::Unsupported;
+            if (op == "/") {
+                if (isProvablyStrictlyPositiveInvariant(value.args()[1])) {
+                    return classify(value.args()[0]);
+                }
+                return RootTerm::Unsupported;
+            }
+            if (op == "*") {
+                const auto isMinusOne = [](const ast::Expression& expr) -> bool {
+                    if (expr.kind() == ast::ExpressionKind::Number) {
+                        return expr.numberValue() == -1.0;
+                    }
+                    if (expr.kind() == ast::ExpressionKind::Unary && expr.name() == "-" &&
+                        expr.args().size() == 1 &&
+                        expr.args()[0].kind() == ast::ExpressionKind::Number) {
+                        return expr.args()[0].numberValue() == 1.0;
+                    }
+                    return false;
+                };
+                const auto isInverse = [&](const ast::Expression& expr) -> const ast::Expression* {
+                    if (expr.kind() == ast::ExpressionKind::Binary &&
+                        (expr.name() == "**" || expr.name() == "^") &&
+                        expr.args().size() == 2 &&
+                        isMinusOne(expr.args()[1])) {
+                        return &expr.args()[0];
+                    }
+                    return nullptr;
+                };
+                if (const auto* denom = isInverse(value.args()[1])) {
+                    if (isProvablyStrictlyPositiveInvariant(*denom)) {
+                        return classify(value.args()[0]);
+                    }
+                    return RootTerm::Unsupported;
+                }
+                if (const auto* denom = isInverse(value.args()[0])) {
+                    if (isProvablyStrictlyPositiveInvariant(*denom)) {
+                        return classify(value.args()[1]);
+                    }
+                    return RootTerm::Unsupported;
+                }
+            }
+            if ((op == "**" || op == "^") &&
+                value.args().size() == 2) {
+                const auto isMinusOne = [](const ast::Expression& expr) -> bool {
+                    if (expr.kind() == ast::ExpressionKind::Number) {
+                        return expr.numberValue() == -1.0;
+                    }
+                    if (expr.kind() == ast::ExpressionKind::Unary && expr.name() == "-" &&
+                        expr.args().size() == 1 &&
+                        expr.args()[0].kind() == ast::ExpressionKind::Number) {
+                        return expr.args()[0].numberValue() == 1.0;
+                    }
+                    return false;
+                };
+                if (isMinusOne(value.args()[1])) {
+                    if (isProvablyStrictlyPositiveInvariant(value.args()[0])) {
+                        return RootTerm::Dynamic;
+                    }
+                    return RootTerm::Unsupported;
+                }
+            }
+            if (op != "+" && op != "-" && op != "*") return RootTerm::Unsupported;
             const auto left = classify(value.args()[0]);
             const auto right = classify(value.args()[1]);
             if (left == RootTerm::Unsupported || right == RootTerm::Unsupported ||
@@ -3077,6 +3283,25 @@ double OdeIntegrator::eventSideDerivative(const ast::Expression& expression,
         if (expression.name() == "*") {
             return left * eventValue(rhs, time, state) +
                    eventValue(lhs, time, state) * right;
+        }
+        if (expression.name() == "/") {
+            const double rVal = eventValue(rhs, time, state);
+            return (left * rVal - eventValue(lhs, time, state) * right) / (rVal * rVal);
+        }
+        if ((expression.name() == "**" || expression.name() == "^") &&
+            expression.args().size() == 2) {
+            double exponent = 0.0;
+            if (rhs.kind() == ast::ExpressionKind::Number) {
+                exponent = rhs.numberValue();
+            } else if (rhs.kind() == ast::ExpressionKind::Unary && rhs.name() == "-" &&
+                       rhs.args().size() == 1 &&
+                       rhs.args()[0].kind() == ast::ExpressionKind::Number) {
+                exponent = -rhs.args()[0].numberValue();
+            } else {
+                return 0.0;
+            }
+            const double lVal = eventValue(lhs, time, state);
+            return exponent * std::pow(lVal, exponent - 1.0) * left;
         }
         return 0.0;
     }
