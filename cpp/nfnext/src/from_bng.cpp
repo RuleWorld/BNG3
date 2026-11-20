@@ -454,6 +454,43 @@ std::optional<std::string> observableRateExpression(
         if (!left || !right) return std::nullopt;
         return "(" + *left + operation + *right + ")";
     }
+    case Kind::BuiltinCall: {
+        if (!expression.builtin) return std::nullopt;
+        const char* name = nullptr;
+        std::size_t arity = 0;
+        switch (*expression.builtin) {
+        case bng::compile::BuiltinFunction::Exp: name = "exp"; arity = 1; break;
+        case bng::compile::BuiltinFunction::Ln: name = "log"; arity = 1; break;
+        case bng::compile::BuiltinFunction::Sqrt: name = "sqrt"; arity = 1; break;
+        case bng::compile::BuiltinFunction::Sin: name = "sin"; arity = 1; break;
+        case bng::compile::BuiltinFunction::Cos: name = "cos"; arity = 1; break;
+        case bng::compile::BuiltinFunction::Tan: name = "tan"; arity = 1; break;
+        case bng::compile::BuiltinFunction::Abs: name = "abs"; arity = 1; break;
+        case bng::compile::BuiltinFunction::Min: name = "min"; arity = 2; break;
+        case bng::compile::BuiltinFunction::Max: name = "max"; arity = 2; break;
+        default:
+            // Builtins without a FunctionVM counterpart (time, delay, tables,
+            // variadic reductions) stay unrepresentable rather than being
+            // approximated.
+            return std::nullopt;
+        }
+        if (expression.arguments.size() != arity) return std::nullopt;
+        std::vector<std::string> arguments;
+        arguments.reserve(arity);
+        for (const auto& argument : expression.arguments) {
+            const auto child = observableRateExpression(argument, model, observableIds);
+            if (!child) return std::nullopt;
+            arguments.push_back(*child);
+        }
+        std::ostringstream out;
+        out << name << '(';
+        for (std::size_t i = 0; i < arguments.size(); ++i) {
+            if (i != 0) out << ',';
+            out << arguments[i];
+        }
+        out << ')';
+        return out.str();
+    }
     default:
         return std::nullopt;
     }
@@ -2302,7 +2339,11 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
     };
     for (const auto& seed : source.seeds()) {
         const auto amount = constantExpression(seed.amount, source);
-        if (seed.constant || seed.declaredUnit ||
+        // A constant seed species only marks the species as immutable for
+        // setConcentration-style actions; it still initializes particles
+        // exactly like an ordinary seed. BNG3 models such as localfunc use a
+        // zero-count constant seed for a degradation sink.
+        if (seed.declaredUnit ||
             !amount || !std::isfinite(*amount) || *amount < 0.0 ||
             std::floor(*amount) != *amount)
             refuse("seeds require bounded static integer particle counts");

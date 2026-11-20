@@ -927,8 +927,6 @@ void refusesUnsupportedExecution() {
         "begin seed species\n A(x~u) 1.5\nend seed species\n",
         // Seed amount outside the native population-count range
         "begin seed species\n A(x~u) 1e300\nend seed species\n",
-        // Constant seed species
-        "begin seed species\n $A(x~u) 2\nend seed species\n",
         // Uninitialized stateful site in seed
         "begin seed species\n A(x) 2\nend seed species\n",
         // Compartments with invalid volume
@@ -950,6 +948,91 @@ void refusesUnsupportedExecution() {
         }
         assert(refused);
     }
+}
+
+void lowersBuiltinFunctionDynamicRate() {
+    // A dynamic rate containing a builtin (the flagellar motor uses exp(...))
+    // must lower to a Function rate law, not be refused or frozen.
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin parameters
+ k 0.1
+end parameters
+begin molecule types
+ A(x~u~p)
+ B()
+end molecule types
+begin observables
+ Molecules NB B()
+ Molecules P_count A(x~p)
+end observables
+begin seed species
+ A(x~u) 1
+ B() 10
+end seed species
+begin reaction rules
+ R: A(x~u) -> A(x~p) exp(-k*NB())
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(lowered.ok());
+    assert(lowered.model.expanded_rules.size() == 1);
+    const auto& rule = lowered.model.expanded_rules.front();
+    assert(rule.rate_law.kind == nfnext::RateLawKind::Function);
+    assert(rule.rate_law.expression.find("exp(") != std::string::npos);
+    assert(rule.rate_law.expression.find("observable_") != std::string::npos);
+
+    // Independent first-event law: the only rule fires at rate exp(-1), so
+    // P(P at T) = 1 - exp(-exp(-1) * T) over fixed seeds.
+    const double rate = std::exp(-1.0);
+    const double T = 2.0;
+    const double expected = 1.0 - std::exp(-rate * T);
+    constexpr std::size_t runs = 200;
+    std::size_t converted = 0;
+    nfnext::BngExecutionRequest request;
+    request.sample_times = {0.0, T};
+    for (std::size_t i = 0; i < runs; ++i) {
+        request.seed = 60613 + i;
+        const auto result = nfnext::executeFromBioNetGen(semantic, request);
+        assert(result.rows.back()[2] == 0.0 || result.rows.back()[2] == 1.0);
+        if (result.rows.back()[2] > 0.5) ++converted;
+    }
+    const double empirical = static_cast<double>(converted) / runs;
+    const double epsilon = std::sqrt(std::log(2.0 / 0.01) / (2.0 * runs));
+    assert(std::abs(empirical - expected) <= epsilon);
+}
+
+void executesConstantSeedSpecies() {
+    // A constant seed is immutable for setConcentration actions, not a
+    // different initialization rule. A zero-count constant sink seed must
+    // therefore behave exactly like an absent seed (the localfunc corpus).
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin molecule types
+ A(x~u~p)
+ Trash()
+end molecule types
+begin seed species
+ $A(x~u) 2
+ $Trash() 0
+end seed species
+begin observables
+ Molecules U A(x~u)
+ Molecules T Trash()
+end observables
+begin reaction rules
+ R: A(x~u) -> A(x~p) 0.5
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    nfnext::BngExecutionRequest request;
+    request.sample_times = {0.0, 1.0};
+    request.seed = 42;
+    const auto result = nfnext::executeFromBioNetGen(semantic, request);
+    assert((result.columns == std::vector<std::string>{"time", "U", "T"}));
+    assert(result.rows[0][1] == 2.0 && result.rows[0][2] == 0.0);
+    assert(result.rows[1][2] == 0.0);
 }
 
 void rejectsUnrepresentablePackedSiteIndex() {
@@ -2461,6 +2544,8 @@ end reaction rules
     executesSynthesisAndComplexDegradation();
     executesComplexSeedModel();
     refusesUnsupportedExecution();
+    executesConstantSeedSpecies();
+    lowersBuiltinFunctionDynamicRate();
     refusesClockDependentParameterRates();
     lowersStaticallyResolvableUserFunctionRate();
     representsNestedObservableDependentFunctionRate();
