@@ -950,6 +950,36 @@ void refusesUnsupportedExecution() {
     }
 }
 
+void weightsSymmetricObservableCountsByAutomorphisms() {
+    // BNG2/native NFsim weight an observable pattern by the number of
+    // permutations of identically specified sites: A(b,b,b) has 3! = 6
+    // match automorphisms, while the unconstrained A() pattern has 1.
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin molecule types
+ A(b,b,b)
+end molecule types
+begin seed species
+ A(b,b,b) 2
+end seed species
+begin observables
+ Molecules Atot A()
+ Molecules Bfree A(b,b,b)
+end observables
+begin reaction rules
+ R: A(b,b,b) -> A(b,b,b) 0.1
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    nfnext::BngExecutionRequest request;
+    request.sample_times = {0.0, 1.0};
+    request.seed = 42;
+    const auto result = nfnext::executeFromBioNetGen(semantic, request);
+    assert((result.columns == std::vector<std::string>{"time", "Atot", "Bfree"}));
+    assert(result.rows[0][1] == 2.0);
+    assert(result.rows[0][2] == 12.0);
+}
+
 void lowersBuiltinFunctionDynamicRate() {
     // A dynamic rate containing a builtin (the flagellar motor uses exp(...))
     // must lower to a Function rate law, not be refused or frozen.
@@ -2546,6 +2576,7 @@ end reaction rules
     refusesUnsupportedExecution();
     executesConstantSeedSpecies();
     lowersBuiltinFunctionDynamicRate();
+    weightsSymmetricObservableCountsByAutomorphisms();
     refusesClockDependentParameterRates();
     lowersStaticallyResolvableUserFunctionRate();
     representsNestedObservableDependentFunctionRate();

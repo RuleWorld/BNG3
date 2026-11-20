@@ -5,6 +5,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -66,6 +67,13 @@ private:
 MatchPlan compileMatchPlan(const PatternIR& pattern, const ModelIR& model);
 std::size_t bruteForceAutomorphismCount(const PatternIR& pattern, const ModelIR& model);
 
+// Exact embedding count for patterns that factor into disconnected,
+// unconstrained single-molecule components with distinct molecule types.
+struct IndependentMatchCount {
+    std::size_t count{0};
+    std::vector<std::vector<ParticleId>> candidates;
+};
+
 class GenericMatcher {
 public:
     explicit GenericMatcher(const ModelIR& model) : model_(&model) {}
@@ -73,6 +81,11 @@ public:
     std::vector<Embedding> enumerate(const PatternIR& pattern,
                                      const GenericGraphState& state,
                                      MatchMode mode = MatchMode::CompiledPlan) const;
+
+    // Returns nullopt when the pattern is not an independent product; callers
+    // then fall back to full enumeration. No approximation is made here.
+    std::optional<IndependentMatchCount> countIndependent(
+        const PatternIR& pattern, const GenericGraphState& state) const;
     std::vector<Embedding> canonicalEmbeddings(const PatternIR& pattern,
                                                const GenericGraphState& state) const;
     std::vector<Embedding> canonicalize(const std::vector<Embedding>& embeddings) const;
