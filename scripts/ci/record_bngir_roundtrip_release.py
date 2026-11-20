@@ -8,10 +8,13 @@ import json
 from pathlib import Path
 import subprocess
 import sys
+from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from tests.validation.junit import require_passing_junit
 
 EXPECTED_CHECKS = (
     "release-bngir-roundtrip",
@@ -62,10 +65,25 @@ def run_tests(root: Path = ROOT) -> None:
         "--confcutdir=tests/validation/release/cases/issue-154",
         str(test_path),
     ]
-    result = subprocess.run(cmd, cwd=str(root), capture_output=True, text=True)
-    if result.returncode != 0:
-        _fail(
-            f"Issue 154 release tests failed (code {result.returncode}):\n{result.stdout}\n{result.stderr}"
+    with TemporaryDirectory() as directory:
+        junit = Path(directory) / "pytest.xml"
+        result = subprocess.run(
+            [*cmd, "--junitxml", str(junit)],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            _fail(
+                f"Issue 154 release tests failed (code {result.returncode}):\n{result.stdout}\n{result.stderr}"
+            )
+        require_passing_junit(
+            junit,
+            [
+                "test_release_bngir_roundtrip",
+                "test_release_bngir_version",
+                "test_release_obligation_154",
+            ],
         )
 
 
@@ -104,15 +122,15 @@ def build_release_record(
 
     details = {
         "release-bngir-roundtrip": (
-            "Every inventory construct preserves source facts and independent "
-            "downstream execution across BNGL -> v0.2 -> BNGL and native reconstruction."
+            "The fixture suite checks wire preservation and selected native round trips. "
+            "Independent execution of every inventory construct is unverified."
         ),
         "release-bngir-version": (
             "BNGIR v0.2 represents every v0.1 field plus the complete new schema with no data loss."
         ),
         "release-obligation-154": (
-            "Contract, inventory rows and live acceptance obligations verify against "
-            "the exact-revision provenance catalogs, with negative fixtures rejected."
+            "Contract and negative fixture checks ran. The full round-trip work "
+            "clause still lacks consuming evidence."
         ),
     }
     results = [
@@ -128,14 +146,15 @@ def build_release_record(
         for check_id in EXPECTED_CHECKS
     ]
 
-    if skip_tests:
-        for row in results:
+    for row in results:
+        if skip_tests or row["id"] != "release-bngir-version":
             row["status"] = "NOT_TESTED"
             row["supported_execution"] = False
             row["evidence_kind"] = "not-tested"
-            row["detail"] = (
-                "Execution was skipped; no scientific acceptance evidence was collected."
-            )
+            if skip_tests:
+                row["detail"] = (
+                    "Execution was skipped; no scientific acceptance evidence was collected."
+                )
 
     return {
         "schema_version": 1,

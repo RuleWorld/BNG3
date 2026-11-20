@@ -25,6 +25,8 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from tests.validation.junit import require_passing_junit
+
 TEST_DIR = ROOT / "tests/validation/release/cases/issue-157"
 _THRESHOLD = "tests/validation/release/cases/issue-157/test_dynamic_threshold.py"
 _ORACLE = "tests/validation/release/cases/issue-157/test_00966_oracle.py"
@@ -65,37 +67,6 @@ EXPECTED_CHECKS = tuple(sorted(CHECK_TESTS))
 
 def _fail(message: str) -> None:
     raise ValueError(message)
-
-
-def _check_junit(path: Path, required: list[str]) -> None:
-    if not path.is_file():
-        _fail(f"missing JUnit report {path}")
-    root = ET.parse(path).getroot()
-    suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
-    cases = {}
-    for suite in suites:
-        for case in suite.findall("testcase"):
-            classname = case.get("classname", "")
-            name = case.get("name", "").split("[", 1)[0]
-            node = f"{classname}::{name}"
-            problem = any(
-                case.find(tag) is not None for tag in ("failure", "error", "skipped")
-            )
-            cases.setdefault(node, []).append(not problem)
-    for node in required:
-        # JUnit node ids use dotted module paths and parametrized suffixes;
-        # match by the base function name so parametrized tests still count.
-        fn = node.split("::")[-1]
-        hits = [
-            v
-            for k, values in cases.items()
-            for v in values
-            if k.endswith(fn) or k == node
-        ]
-        if not hits:
-            _fail(f"required test did not execute: {node}")
-        if not all(hits):
-            _fail(f"required test was skipped or failed: {node}")
 
 
 def _check_stochastic_run(path: Path | None, expected_revision: str) -> dict:
@@ -178,13 +149,13 @@ def build_release_record(
     )
     if test_result.returncode != 0:
         _fail("Issue 157 event tests failed:\n" + test_result.stdout[-2000:])
-    _check_junit(junit, all_tests)
+    require_passing_junit(junit, all_tests)
 
     stochastic_evidence = _check_stochastic_run(stochastic_run, expected_revision)
     results = []
     for check_id in EXPECTED_CHECKS:
         required = CHECK_TESTS[check_id] or all_tests
-        _check_junit(junit, required)
+        require_passing_junit(junit, required)
         row = {
             "id": check_id,
             "status": "PASS",
