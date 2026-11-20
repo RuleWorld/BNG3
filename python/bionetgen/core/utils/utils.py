@@ -509,7 +509,7 @@ class ActionList:
             pp.nums + "." + "+" + "-" + "e" + "E" + "(" + ")" + "/" + "*" + "^"
         )
         arg_type_list = (
-            "[" + pp.Optional(pp.delimitedList((quote_word ^ arg_type_float))) + "]"
+            "[" + pp.Optional(pp.delimitedList(quote_word ^ arg_type_expr)) + "]"
         )
         arg_type_string = quote_word
         #
