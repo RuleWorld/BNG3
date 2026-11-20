@@ -1959,6 +1959,140 @@ end reaction rules
     std::filesystem::remove(cachePath, ec);
 }
 
+void lowersStateChangeWithContextualSiteAndObservable() {
+    // Issue #166: Lowering correspondence for a bounded state-change rule
+    // with a non-unit rate, an unchanged contextual site, and state-sensitive observables.
+    const auto parsed = bng::parser::parseModel(R"BNGL(
+begin parameters
+  k 0.5
+end parameters
+begin molecule types
+  A(x~u~p,c~off~on)
+end molecule types
+begin seed species
+  A(x~u,c~off) 1
+end seed species
+begin observables
+  Molecules U A(x~u,c~off)
+  Molecules P A(x~p,c~off)
+end observables
+begin reaction rules
+  state_change_context: A(x~u,c~off) -> A(x~p,c~off) k
+end reaction rules
+)BNGL");
+    assert(parsed);
+    const bng::compile::CompiledModel semantic(*parsed);
+    assert(semantic.valid());
+
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(lowered.ok());
+    assert(lowered.model.molecule_types.size() == 1);
+    assert(lowered.model.molecule_types[0].name == "A");
+    assert(lowered.model.molecule_types[0].sites.size() == 2);
+    assert(lowered.model.molecule_types[0].sites[0].name == "x");
+    assert(lowered.model.molecule_types[0].sites[1].name == "c");
+
+    assert(lowered.model.expanded_rules.size() == 1);
+    const auto& rule = lowered.model.expanded_rules.front();
+    assert(!rule.name.empty());
+    assert(std::abs(rule.rate - 0.5) < 1e-12); // non-unit rate preserved
+
+    // Pattern: 1 node of type 0
+    assert(rule.pattern.nodes.size() == 1);
+    assert(rule.pattern.nodes[0].molecule_type == 0);
+
+    // Predicates: 4 predicates (both target site x and contextual site c constrained and free)
+    assert(rule.predicates.size() == 4);
+    // Site 0 (x~u)
+    assert(rule.predicates[0].kind == nfnext::PredicateKind::SiteStateEq);
+    assert(rule.predicates[0].molecule_type == 0);
+    assert(rule.predicates[0].site == 0);
+    assert(rule.predicates[0].value == 0); // x~u
+    assert(rule.predicates[1].kind == nfnext::PredicateKind::SiteFree);
+    assert(rule.predicates[1].site == 0);
+    // Site 1 (c~off) - unchanged contextual site
+    assert(rule.predicates[2].kind == nfnext::PredicateKind::SiteStateEq);
+    assert(rule.predicates[2].molecule_type == 0);
+    assert(rule.predicates[2].site == 1);
+    assert(rule.predicates[2].value == 0); // c~off
+    assert(rule.predicates[3].kind == nfnext::PredicateKind::SiteFree);
+    assert(rule.predicates[3].site == 1);
+
+    // Actions: exactly 1 action editing target site x; NO action on contextual site c!
+    assert(rule.actions.size() == 1);
+    assert(rule.actions[0].kind == nfnext::ActionKind::SetSiteState);
+    assert(rule.actions[0].molecule_type == 0);
+    assert(rule.actions[0].site == 0); // target site x
+    assert(rule.actions[0].value == 1); // x~p
+
+    // Execution check: evaluate observables before and after firing
+    nfnext::BngExecutionRequest request;
+    request.sample_times = {0.0, 1.0};
+    request.seed = 42;
+    const auto result = nfnext::executeFromBioNetGen(semantic, request);
+    assert((result.columns == std::vector<std::string>{"time", "U", "P"}));
+    assert(result.rows.size() == 2);
+    // Initial state: U = 1, P = 0
+    assert(result.rows[0][1] == 1.0);
+    assert(result.rows[0][2] == 0.0);
+    // After firing: U + P == 1 (conservation)
+    assert(result.rows[1][1] + result.rows[1][2] == 1.0);
+
+    // Negative case 1: Mutated target state (rule sets x to u instead of p)
+    const auto badTargetParsed = bng::parser::parseModel(R"BNGL(
+begin parameters
+  k 0.5
+end parameters
+begin molecule types
+  A(x~u~p,c~off~on)
+end molecule types
+begin seed species
+  A(x~u,c~off) 1
+end seed species
+begin observables
+  Molecules U A(x~u,c~off)
+  Molecules P A(x~p,c~off)
+end observables
+begin reaction rules
+  bad_target: A(x~u,c~off) -> A(x~u,c~off) k
+end reaction rules
+)BNGL");
+    const bng::compile::CompiledModel badTargetSemantic(*badTargetParsed);
+    const auto badTargetLowered = nfnext::lowerFromBioNetGen(badTargetSemantic);
+    assert(badTargetLowered.ok());
+    assert(badTargetLowered.model.expanded_rules.size() == 1);
+    // Actions are empty because product is identical to reactant
+    assert(badTargetLowered.model.expanded_rules[0].actions.empty());
+
+    // Negative case 2: Wrong site unchanged (rule edits c to on, leaves x unchanged)
+    const auto wrongSiteParsed = bng::parser::parseModel(R"BNGL(
+begin parameters
+  k 0.5
+end parameters
+begin molecule types
+  A(x~u~p,c~off~on)
+end molecule types
+begin seed species
+  A(x~u,c~off) 1
+end seed species
+begin observables
+  Molecules U A(x~u,c~off)
+  Molecules P A(x~p,c~off)
+end observables
+begin reaction rules
+  wrong_site: A(x~u,c~off) -> A(x~u,c~on) k
+end reaction rules
+)BNGL");
+    const bng::compile::CompiledModel wrongSiteSemantic(*wrongSiteParsed);
+    const auto wrongSiteLowered = nfnext::lowerFromBioNetGen(wrongSiteSemantic);
+    assert(wrongSiteLowered.ok());
+    assert(wrongSiteLowered.model.expanded_rules.size() == 1);
+    const auto& wsRule = wrongSiteLowered.model.expanded_rules[0];
+    assert(wsRule.actions.size() == 1);
+    // Discriminator: Action is on site 1 (c), NOT site 0 (x)!
+    assert(wsRule.actions[0].site == 1); // Divergence detected!
+}
+
 } // namespace
 
 int main() {
@@ -2085,6 +2219,7 @@ end reaction rules
     lowersModifierFlags();
     lowersFilterPatterns();
     cacheRoundTripsNewModelFields();
+    lowersStateChangeWithContextualSiteAndObservable();
 
     std::cout << "BNG -> NFnext lowering bridge: PASS\n";
     return 0;

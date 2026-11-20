@@ -68,4 +68,23 @@ theorem backend_rule_step_refines_semantics
     d.executeLoweredAt? mix matched = d.applyAt? mix matched := by
   exact execute_lowered_rule_eq_reference d mix matched
 
+/--
+Setting a site state preserves all mixture bonds.
+-/
+theorem state_change_preserves_bonds
+    (mix : Mixture) (e : ConcreteEndpoint) (newState : StateId)
+    (mix' : Mixture) (h : mix.setState? e newState = some mix') :
+    mix'.bonds = mix.bonds := by
+  exact setState?_preserves_bonds mix e newState mix' h
+
+/--
+Lowered backend execution of a state change preserves all mixture bonds.
+-/
+theorem lowered_state_change_preserves_bonds
+    (d : RuleDirection) (target : ComponentTarget) (newState : StateId)
+    (env : ExecutionEnv) (mix mix' : Mixture) (env' : ExecutionEnv)
+    (h : d.executeBackendAction (.setState target newState) env mix = some (mix', env')) :
+    mix'.bonds = mix.bonds := by
+  exact lowered_setState_preserves_bonds d target newState env mix mix' env' h
+
 end BNG
