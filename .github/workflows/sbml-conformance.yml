@@ -468,6 +468,7 @@ jobs:
             python -m pytest -q --noconftest \
               tests/validation/release/cases/issue-159/test_ssts_full_execution.py \
               tests/validation/release/cases/issue-160/test_core_capability_rows.py::test_release_source_fidelity \
+              tests/validation/release/cases/issue-160/test_core_capability_rows.py::test_reimport_event_diagnostic_uses_executed_lowering \
               --junitxml="$RUNNER_TEMP/ssts-artifacts/release-selectors.xml"
 
       - name: Aggregate release-consumer verdicts and finalize evidence digests

@@ -99,3 +99,20 @@ def test_release_capability_coverage():
     fixtures = set(mapping["_meta"]["fixture_rows"])
     assert len(rows) == 117
     assert all(mapping[row] or row in fixtures for row in rows)
+
+
+def test_reimport_event_diagnostic_uses_executed_lowering():
+    """The pinned dynamic event control round-trips through a native consumer."""
+    record = next(
+        row
+        for row in _report()["records"]
+        if row["category"] == "semantic" and row["id"] == "00374"
+    )
+    assert record["official_conformance"]["status"] == "passed"
+    assert record["simulation_comparison"]["passed"] is True
+    warnings = [
+        warning
+        for warning in record["reimport_model"]["warnings"]
+        if warning["category"] == "event"
+    ]
+    assert warnings and {warning["severity"] for warning in warnings} == {"info"}
