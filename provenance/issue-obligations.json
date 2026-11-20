@@ -5270,7 +5270,7 @@
     },
     {
       "number": 148,
-      "body_sha256": "4617d4866d92e230d47f5bdc874d59e76bdb468b3654b6ecf8e16bec8fd4cda2",
+      "body_sha256": "50db182650abed61ebbff12b358d666e8e2b9c2ba087606d9473ebd701f238de",
       "obligations": [
         {
           "id": "issue:148:carry-and-initialize-the-supported-seeds-observables-parameter-f",
@@ -5454,14 +5454,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-nfnext-execution.",
-                "No revision-locked consuming receipt producer is declared for required live check release-nfnext-execution."
-              ]
+              "selector": "tests/validation/release/cases/issue-148/test_nfnext_full_corpus_native_parity.py::test_release_nfnext_full_corpus_native_parity",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue148_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -5487,14 +5484,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-nfnext-routes.",
-                "No revision-locked consuming receipt producer is declared for required live check release-nfnext-routes."
-              ]
+              "selector": "tests/validation/release/cases/issue-148/test_nfnext_full_corpus_native_parity.py::test_release_nfnext_routes_single_engine",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue148_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -5520,14 +5514,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-capability-coverage-148.",
-                "No revision-locked consuming receipt producer is declared for required live check release-capability-coverage-148."
-              ]
+              "selector": "tests/validation/release/cases/issue-148/test_nfnext_execution.py::test_release_capability_coverage_148",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue148_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],

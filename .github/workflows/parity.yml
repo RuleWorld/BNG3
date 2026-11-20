@@ -846,12 +846,21 @@ jobs:
           JAX_PLATFORMS: cpu
           JAX_ENABLE_X64: "true"
 
+      - name: Download Issue 148 NFnext corpus release record
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: issue148-release-record-${{ github.run_id }}
+          path: ${{ runner.temp }}/bng3-issue-148-release
+
       - name: Build exact-revision issue and provenance evidence queue
         if: always()
         run: |
           head_args=()
           issue138_args=()
           issue142_args=()
+          issue148_args=()
           issue473_args=()
           s6_args=()
           delay_args=()
@@ -901,6 +910,9 @@ jobs:
           elif [[ -s "$RUNNER_TEMP/bng3-issue-147-release/release-issue-147-evidence/issue-147-release-report.json" ]]; then
             issue147_args+=(--issue147-release-record "$RUNNER_TEMP/bng3-issue-147-release/release-issue-147-evidence/issue-147-release-report.json")
           fi
+          if [[ -s "$RUNNER_TEMP/bng3-issue-148-release/report.json" ]]; then
+            issue148_args+=(--report "$RUNNER_TEMP/bng3-issue-148-release/report.json")
+          fi
           python -m tests.validation.issue_queue \
             --issues-json "$RUNNER_TEMP/bng3-issues.json" \
             --report "$RUNNER_TEMP/bng3-integrated-validation/report.json" \
@@ -915,6 +927,7 @@ jobs:
             "${bngir154_args[@]}" \
             "${hybrid_args[@]}" \
             "${issue147_args[@]}" \
+            "${issue148_args[@]}" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --output-dir "$RUNNER_TEMP/bng3-issue-queue" "${head_args[@]}"
           cat "$RUNNER_TEMP/bng3-issue-queue/issue-queue.md" >> "$GITHUB_STEP_SUMMARY"
@@ -1123,6 +1136,28 @@ jobs:
         with:
           name: issue148-nfnext-corpus-${{ github.run_id }}
           path: ${{ runner.temp }}/bng3-nfnext-corpus-report.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Record Issue 148 NFnext corpus release acceptance
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/ci/record_issue148_release.py \
+            --report "$RUNNER_TEMP/bng3-nfnext-corpus-report.json" \
+            --source-revision "$BNG3_SOURCE_REVISION" \
+            --output "$RUNNER_TEMP/bng3-issue-148-release/report.json" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Upload Issue 148 release record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue148-release-record-${{ github.run_id }}
+          path: ${{ runner.temp }}/bng3-issue-148-release/report.json
           if-no-files-found: error
           retention-days: 30
 
