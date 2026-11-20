@@ -1,5 +1,5 @@
 import os, subprocess
-from bionetgen.core.exc import BNGPerlError
+from bionetgen.core.exc import BNGParseError, BNGPerlError
 import shutil as spawn
 
 from bionetgen.core.utils.logging import BNGLogger
@@ -105,6 +105,7 @@ class ActionList:
             "max_agg",
             "max_iter",
             "max_stoich",
+            "check_iso",
             "TextReaction",
             "TextSpecies",
         ]
@@ -483,6 +484,60 @@ class ActionList:
         self.irregular_args["blocks"] = "list"
         self.irregular_args["opts"] = "list"
 
+        self.positional_arity = {
+            "quit": (0, 0),
+            "setModelName": (1, 1),
+            "substanceUnits": (0, 1),
+            "version": (0, 1),
+            "setOption": (2, 2),
+            "setConcentration": (2, 2),
+            "addConcentration": (2, 2),
+            "setParameter": (2, 2),
+        }
+
+    def validate_action(self, action_type, action_args):
+        """Validate the legacy dictionary accepted by the model API."""
+        if action_type not in self.possible_types:
+            raise BNGParseError(message=f"Action type {action_type} not recognized!")
+        if not isinstance(action_args, dict):
+            raise BNGParseError(
+                message=f"Action {action_type} arguments must be a dict, "
+                f"got {type(action_args).__name__}"
+            )
+        if action_type in self.normal_types:
+            allowed = self.arg_dict.get(action_type)
+            if allowed is None and action_args:
+                raise BNGParseError(
+                    message=f"Action {action_type} does not take arguments"
+                )
+            for argument in action_args:
+                if allowed and argument not in allowed:
+                    raise BNGParseError(
+                        message=f"Action argument {argument} not recognized for action {action_type}!"
+                    )
+            return
+
+        for argument, value in action_args.items():
+            if value is not None:
+                raise BNGParseError(
+                    message=f"Action {action_type} is positional; pass each value as a "
+                    f"dict key mapped to None (got {argument!r}={value!r}). "
+                    """For example: {'"A()"': None, '100': None}."""
+                )
+        if action_type not in self.positional_arity:
+            return
+        minimum, maximum = self.positional_arity[action_type]
+        count = len(action_args)
+        if not minimum <= count <= maximum:
+            expected = (
+                f"exactly {minimum}"
+                if minimum == maximum
+                else f"between {minimum} and {maximum}"
+            )
+            raise BNGParseError(
+                message=f"Action {action_type} expects {expected} positional argument(s); got {count}."
+            )
+
     def is_before_model(self, action_name):
         if action_name in self.before_model:
             return True
@@ -509,7 +564,7 @@ class ActionList:
             pp.nums + "." + "+" + "-" + "e" + "E" + "(" + ")" + "/" + "*" + "^"
         )
         arg_type_list = (
-            "[" + pp.Optional(pp.delimitedList((quote_word ^ arg_type_float))) + "]"
+            "[" + pp.Optional(pp.delimitedList(quote_word ^ arg_type_expr)) + "]"
         )
         arg_type_string = quote_word
         #
