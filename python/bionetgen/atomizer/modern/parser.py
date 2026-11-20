@@ -8,6 +8,7 @@ optional and platform-sensitive libSBML SWIG bindings.
 from __future__ import annotations
 
 import math
+import hashlib
 import re
 import base64
 import ast
@@ -795,6 +796,80 @@ def _has_unflattened_external_submodel_deletions(sbml_string: str) -> bool:
         and any(child.tag == comp_tag("listOfDeletions") for child in list(element))
         for element in root.iter(comp_tag("submodel"))
     )
+
+
+def _comp_checksum_warnings(
+    sbml_string: str, source_path: Optional[Path]
+) -> list[dict]:
+    """Check local external documents before flattening removes comp metadata."""
+    if source_path is None:
+        return []
+    root_dir = Path(source_path).expanduser().resolve().parent
+    visited: set[Path] = set()
+    warnings: list[dict] = []
+
+    def inspect_document(content: str | bytes, directory: Path) -> None:
+        try:
+            root = ET.fromstring(content)
+        except ET.ParseError:
+            return
+        # External definitions are document children, never annotation payloads.
+        definitions = (
+            element
+            for container in root
+            if _local_name(str(container.tag)) == "listOfExternalModelDefinitions"
+            for element in container
+            if str(element.tag).startswith("{")
+            and _local_name(str(element.tag)) == "externalModelDefinition"
+            and str(container.tag).partition("}")[0]
+            == str(element.tag).partition("}")[0]
+        )
+        for element in definitions:
+            tag = str(element.tag)
+            namespace = tag[1:].split("}", 1)[0]
+            if not re.fullmatch(
+                r"https?://www\.sbml\.org/sbml/level3/version\d+/comp/version\d+",
+                namespace,
+                re.IGNORECASE,
+            ):
+                continue
+            prefix = f"{{{namespace}}}"
+            source = element.get(prefix + "source", "")
+            parsed = urlsplit(source)
+            if parsed.scheme not in {"", "file"} or parsed.netloc not in {
+                "",
+                "localhost",
+            }:
+                continue
+            if not parsed.path:
+                continue
+            path = (directory / unquote(parsed.path)).resolve()
+            if not path.is_relative_to(root_dir):
+                continue
+            try:
+                data = path.read_bytes()
+            except OSError:
+                continue  # The flattening path reports unavailable sources.
+            expected = element.get(prefix + "md5")
+            if expected is not None:
+                actual = hashlib.md5(data, usedforsecurity=False).hexdigest()
+                if expected.strip().lower() != actual:
+                    warnings.append(
+                        {
+                            "category": "compChecksum",
+                            "message": f"comp external source {str(path.relative_to(root_dir))!r} MD5 mismatch: "
+                            f"expected {expected!r}, calculated {actual}; "
+                            "the referenced document may have changed.",
+                            "count": 1,
+                            "severity": "info",
+                        }
+                    )
+            if path not in visited:
+                visited.add(path)
+                inspect_document(data, path.parent)
+
+    inspect_document(sbml_string, root_dir)
+    return warnings
 
 
 def _flatten_comp_package(
@@ -3312,6 +3387,11 @@ class SBMLParser:
     ) -> SBMLModel:
         original_packages = _declared_package_uris(sbml_string)
         original_comp_constructs = _has_comp_constructs(sbml_string)
+        checksum_warnings = (
+            _comp_checksum_warnings(sbml_string, source_path)
+            if original_comp_constructs
+            else []
+        )
         sbml_string, comp_failure = _flatten_comp_package(sbml_string, source_path)
         try:
             root = ET.fromstring(sbml_string)
@@ -3372,6 +3452,9 @@ class SBMLParser:
             declared_packages,
             native_dae_runtime=native_dae_runtime,
         )
+        result.import_warnings.extend(checksum_warnings)
+        for warning in checksum_warnings:
+            logger.warning("SBM022", f"[compChecksum] {warning['message']}")
         if "comp" in original_packages and original_comp_constructs:
             if comp_failure is None:
                 result.import_warnings.append(
