@@ -1118,3 +1118,25 @@ def test_literal_python_fixture_ids_still_rejected(tmp_path, declaration):
     )
     _change(root, "python/runtime.py", 'if name == "oracle_decay_42": return 42\n')
     assert checker.check_product_fixture_names(root, base)
+
+
+def test_fixture_names_ignore_python_argument_names_and_action_options(tmp_path):
+    checker = _load_policy()
+    root, base = _repo(
+        tmp_path,
+        {
+            "tests/test_runtime.py": (
+                '@pytest.mark.parametrize("model_name", ["alpha"])\n'
+                "def test_options(model_name):\n"
+                '    assert {"check_iso": 1}\n'
+            ),
+            "python/runtime.py": "VALUE = 1\n",
+        },
+    )
+    _change(
+        root,
+        "python/runtime.py",
+        'def write(model_name):\n    return model_name, {"check_iso": 1}\n',
+    )
+
+    assert checker.check_product_fixture_names(root, base) == []
