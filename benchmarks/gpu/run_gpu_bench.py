@@ -613,6 +613,7 @@ def run_one(
         if claim is not None:
             entry = claim.as_dict()
             entry["fail_closed_probe"] = getattr(arm, "fail_closed_probe", None)
+            entry["first_gpu_call"] = getattr(arm, "first_gpu_call", None)
             device_reports.append(entry)
     if arm_b.device_claim is not None:
         try:
@@ -668,6 +669,16 @@ def run_one(
         if result_b and result_b.precision is not None:
             payload["device_precision"] = result_b.precision.comparability()
     payload["contention"] = trace.summary()
+    payload["memory_accounting"] = {
+        "host_process_peak_rss_bytes": (
+            "process lifetime peak resident set size at report end; includes the "
+            "Python runtime and all benchmark arms"
+        ),
+        "memory_usage_bytes": (
+            "backend-reported buffer allocation estimate, not an OS measurement "
+            "of peak physical GPU memory; Metal shares unified memory with the host"
+        ),
+    }
 
     print_null_band(report)
     print_effect(report)
