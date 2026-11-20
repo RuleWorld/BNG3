@@ -4612,6 +4612,22 @@ def _selected_surface_passed(records: list[dict[str, Any]]) -> bool:
     )
 
 
+def _report_gate_field(args: argparse.Namespace) -> str:
+    """Select the aggregate field that gates the harness exit code.
+
+    Bounded selections gate the executed official-reference surface. A full
+    run intentionally retains explicit unsupported verdicts and
+    committed-expected official failures (for example stochastic/00003), so it
+    gates raw execution integrity here; the committed-expectation comparison
+    and the release consumers validate every individual official verdict.
+    """
+    if args.gate_selected_cases:
+        return "selected_surface_passed"
+    if args.gate_supported_surface:
+        return "supported_surface_passed"
+    return "core_passed"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--suite-dir", type=Path, required=True)
@@ -4639,6 +4655,15 @@ def main() -> int:
         "--gate-selected-cases",
         action="store_true",
         help="gate executed selected cases; never claim full-suite conformance",
+    )
+    parser.add_argument(
+        "--gate-supported-surface",
+        action="store_true",
+        help=(
+            "gate a full run on zero raw failures/timeouts/invalid sources; "
+            "official-reference verdicts are validated against the committed "
+            "expectation manifest by a separate consumer"
+        ),
     )
     parser.add_argument("--only-case", help="validate one case as CATEGORY/ID")
     parser.add_argument(
@@ -5072,8 +5097,7 @@ def main() -> int:
         f"package={runtime_info['bionetgen_package_path']} "
         f"extension_sha256={runtime_info['native_extension_sha256']}"
     )
-    gate = "selected_surface_passed" if args.gate_selected_cases else "core_passed"
-    return 0 if report[gate] else 1
+    return 0 if report[_report_gate_field(args)] else 1
 
 
 if __name__ == "__main__":

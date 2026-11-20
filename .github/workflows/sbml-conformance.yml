@@ -250,8 +250,14 @@ jobs:
           # budget. Scheduled/manual runs remain full and retain unsupported
           # cases as separate outcomes.
           selection=(--categories semantic --max-cases 128 --selection-strategy feature-cover)
+          gate=(--gate-selected-cases)
           if [[ "${{ github.event_name }}" == "schedule" || ( "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.bounded }}" != "true" ) ]]; then
             selection=(--categories semantic stochastic)
+            # Full runs retain unsupported verdicts and committed-expected
+            # official failures. Gate raw execution integrity here; the next
+            # step compares every verdict to the committed expectation
+            # manifest, and the release consumers validate the named checks.
+            gate=(--gate-supported-surface)
           fi
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "$SSTS_ONLY_CASE" ]]; then
             if [[ "${{ inputs.bounded }}" == "true" ]]; then
@@ -268,7 +274,7 @@ jobs:
             --isolate-cases --case-timeout 60 --jobs 4 \
             --lock-file "$RUNNER_TEMP/sbml-verification.lock" --lock-wait 1800 \
             --artifacts-dir "$RUNNER_TEMP/ssts-artifacts/cases" \
-            --gate-selected-cases \
+            "${gate[@]}" \
             --json "$RUNNER_TEMP/ssts-artifacts/report.json" \
             2>&1 | tee "$RUNNER_TEMP/ssts-artifacts/execution.log"
 
