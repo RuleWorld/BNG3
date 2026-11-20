@@ -250,3 +250,46 @@ def test_nested_external_model_defaults_survive_flattening(tmp_path):
     rr = roadrunner.RoadRunner(flat)
     rr.timeCourseSelections = ["time", "[child__inner__A]"]
     assert rr.simulate(0, 1, 2)[-1, 1] == pytest.approx(6)
+
+
+def test_child_core_factor_and_comp_time_extent_conversion(tmp_path):
+    """Core factor 3 and extent/time factors 4/2 scale rate 2 once each."""
+    import bionetgen
+    from bionetgen.atomizer.modern import Atomizer
+
+    libsbml = pytest.importorskip("libsbml")
+    roadrunner = pytest.importorskip("roadrunner")
+    source = (
+        SOURCE.read_text()
+        .replace(
+            '<model id="parent">',
+            '<model id="parent"><listOfParameters>'
+            '<parameter id="tc" value="2" constant="true"/>'
+            '<parameter id="ec" value="4" constant="true"/></listOfParameters>',
+        )
+        .replace(
+            'comp:id="child" comp:modelRef="childModel"',
+            'comp:id="child" comp:modelRef="childModel" '
+            'comp:timeConversionFactor="tc" comp:extentConversionFactor="ec"',
+        )
+    )
+    document = libsbml.readSBMLFromString(source)
+    document.checkConsistency()
+    assert not [
+        document.getError(i).getMessage()
+        for i in range(document.getNumErrors())
+        if document.getError(i).getSeverity() >= libsbml.LIBSBML_SEV_ERROR
+    ]
+    flat, failure = _flatten_comp_package(source)
+    assert failure is None
+    rr = roadrunner.RoadRunner(flat)
+    rr.timeCourseSelections = ["time", "[child__A]"]
+    assert rr.simulate(0, 1, 2)[-1, 1] == pytest.approx(12)
+    result = Atomizer(atomize=False, quiet_mode=True, t_end=1, n_steps=10).atomize(
+        source
+    )
+    assert result.success, result.error
+    path = tmp_path / "converted.bngl"
+    path.write_text(result.bngl)
+    trajectory = bionetgen.run(str(path), "ode", 1, 10)
+    assert trajectory.observables["child__A_amt"][-1] == pytest.approx(12, rel=2e-6)
