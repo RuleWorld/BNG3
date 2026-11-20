@@ -2340,9 +2340,8 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
     for (const auto& seed : source.seeds()) {
         const auto amount = constantExpression(seed.amount, source);
         // A constant seed species only marks the species as immutable for
-        // setConcentration-style actions; it still initializes particles
-        // exactly like an ordinary seed. BNG3 models such as localfunc use a
-        // zero-count constant seed for a degradation sink.
+        // concentration-assignment actions; it still initializes particles
+        // exactly like a non-constant seed, including a zero-count sink.
         if (seed.declaredUnit ||
             !amount || !std::isfinite(*amount) || *amount < 0.0 ||
             std::floor(*amount) != *amount)
