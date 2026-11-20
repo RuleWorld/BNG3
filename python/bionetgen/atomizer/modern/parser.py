@@ -383,7 +383,7 @@ def _flatten_simple_inline_comp(sbml_string: str) -> Optional[str]:
     ):
         return None
 
-    # Model-level conversionFactor is the default for each species in the
+    # The child model conversionFactor is the default for each species in the
     # child. Once flattened, that Model no longer exists; carry the default
     # onto species that do not override it before renaming identifiers.
     child_conversion = definition.get("conversionFactor")
