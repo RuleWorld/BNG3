@@ -182,9 +182,7 @@ def test_record_unmapped_reactant_reconciliation(
 ):
     """Verify internal bond reconnection runs with -cb and -bscb without dereferencing null mappings."""
     root, native = pinned_nfsim_source
-    bngl_bytes = _pinned_bytes(
-        root, "validate/basicModels/v31.bngl", record_property
-    )
+    bngl_bytes = _pinned_bytes(root, "validate/basicModels/v31.bngl", record_property)
     bngl_text = bngl_bytes.decode()
 
     # Generate XML via BNG3 writeXML
@@ -235,4 +233,3 @@ def test_record_unmapped_reactant_reconciliation(
         record_property(f"bng3_{flag}.status", "executed")
 
     record_property("semantic_result", "PASS" if matched else "FAIL")
-

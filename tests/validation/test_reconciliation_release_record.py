@@ -101,4 +101,3 @@ def test_unmatched_source_reference_revision_is_ignored():
     result = coverage_report(ROWS, LOCK, [mismatched_record], REVISION)
     assert result["observed_rows"] == {}
     assert result["missing_rows"] == ["action.simulate", "action.visualize"]
-
