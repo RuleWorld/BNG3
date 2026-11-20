@@ -958,7 +958,25 @@ void bind_engine(py::module_& m) {
             out.append(entry);
         }
         return out;
-    }, "Report every batched-SSA GPU backend: whether it was compiled in and whether a usable device is present");
+    }, "Report every finite-network batched-SSA GPU backend: whether it was compiled in and whether a usable device is present");
+
+    m.def("gpu_backend_capabilities", []() {
+        py::list out;
+        for (const auto& status : gpuBackendInventory()) {
+            py::dict entry;
+            entry["name"] = status.name;
+            entry["compiled"] = status.compiled;
+            entry["available"] = status.available;
+            entry["detail"] = status.detail;
+            std::vector<std::string> routes;
+            if (status.compiled) routes.emplace_back("finite_batch_ssa");
+            if (status.compiled && status.kind == GpuBackendKind::Metal)
+                routes.emplace_back("nfnext_unary_state_change");
+            entry["implemented_routes"] = py::cast(routes);
+            out.append(entry);
+        }
+        return out;
+    }, "Report compiled GPU execution routes and actual device availability.");
 
     m.def("default_gpu_backend", []() {
         return std::string(gpuBackendName(defaultGpuBackend()));

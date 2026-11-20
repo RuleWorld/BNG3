@@ -19,11 +19,25 @@ else:
         CRNRateLaw,
         CRNReaction,
         CRNSpecies,
+        _cpp as _native_cpp,
         load,
         run as _modern_run,
     )
 
     _MODERN_METHODS = frozenset({"ode", "ssa", "nf", "pla", "psa"})
+
+    def gpu_backend_capabilities():
+        """Report compiled GPU routes and whether their devices are available.
+
+        The returned route names distinguish finite-network batch SSA from
+        the currently narrower NFnext unary state-change GPU implementation.
+        """
+        if _native_cpp is None or not hasattr(
+            _native_cpp, "gpu_backend_capabilities"
+        ):
+            raise RuntimeError("this installation does not include GPU backend metadata")
+        return _native_cpp.gpu_backend_capabilities()
+
     _RUN_OUT_MISSING = object()
     _LEGACY_RUN_POSITIONALS = (
         "suppress",
@@ -162,7 +176,7 @@ else:
         )
 
 
-from bionetgen.result import SimResult
+from bionetgen.result import GpuBatchSimResult, SimResult
 from bionetgen.bngir import EqualityUndecided, from_bngir, semantic_equal, to_bngir
 from bionetgen.scan import ScanResult, ScanResult2D, parameter_scan, parameter_scan_2d
 from bionetgen.sensitivity import SensitivityResult, sensitivity_analysis
@@ -271,4 +285,13 @@ __all__ = [
 ]
 
 if not _USE_LEGACY:
-    __all__.extend(["CRNSpecies", "CRNComplex", "CRNRateLaw", "CRNReaction"])
+    __all__.extend(
+        [
+            "CRNSpecies",
+            "CRNComplex",
+            "CRNRateLaw",
+            "CRNReaction",
+            "GpuBatchSimResult",
+            "gpu_backend_capabilities",
+        ]
+    )
