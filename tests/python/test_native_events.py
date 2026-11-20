@@ -145,7 +145,7 @@ def test_affine_scaled_state_combination_trigger_executes(tmp_path):
     "trigger",
     [
         "X*Y <= 25",
-        "X/Y <= 5",
+        "Y/X <= 5",
         "abs(X) <= 5",
         "(X+Y)*(X-Y) >= 0",
         "X + X*X <= 25",
@@ -153,8 +153,9 @@ def test_affine_scaled_state_combination_trigger_executes(tmp_path):
     ],
 )
 def test_nonlinear_arithmetic_root_surfaces_stay_refused(tmp_path, trigger):
-    """Admitting affine surfaces must not broaden the guard to products,
-    quotients or nonlinear functions, whose roots can be tangential or multiple.
+    """Admitting affine surfaces and invariant rational roots must not broaden
+    the guard to non-conserved quotients, products, or nonlinear functions,
+    whose roots can be tangential or multiple.
     """
     with pytest.raises(
         RuntimeError,
@@ -164,6 +165,127 @@ def test_nonlinear_arithmetic_root_surfaces_stay_refused(tmp_path, trigger):
         ),
     ):
         model(tmp_path, trigger, "X = 0").simulate(method="ode", t_end=2, n_steps=1)
+
+
+@pytest.mark.parametrize(
+    "syntax",
+    [
+        "X / (X + Y) <= 0.5",
+        "X * (X + Y)^(-1) <= 0.5",
+        "X * (X + Y)**(-1) <= 0.5",
+    ],
+)
+@pytest.mark.parametrize("steps", [1, 7, 33])
+def test_rational_trigger_with_provably_positive_conserved_denominator_executes_analytically(
+    tmp_path, syntax, steps
+):
+    """Exact rational triggers whose denominator is provably positive and
+    invariant across continuous reaction steps and discrete event jumps execute
+    at the exact analytic crossing time.
+    Here A() -> B() with k=1, X=A, Y=B, Z=C.
+    X(t) = 10*exp(-t), Y(t) = 12 - 10*exp(-t).
+    X(t)/(X(t) + Y(t)) = 10*exp(-t)/12 crosses 0.5 at t = ln(5/3), where
+    X = 6.0 identically.  The event assignment Z = X records this state.
+    """
+    path = tmp_path / f"events_rational_{steps}.bngl"
+    path.write_text(f"""begin model
+begin parameters
+ k 1
+end parameters
+begin molecule types
+ A()
+ B()
+ C()
+end molecule types
+begin seed species
+ A() 10
+ B() 2
+ C() 0
+end seed species
+begin observables
+ Molecules X A()
+ Molecules Y B()
+ Molecules Z C()
+end observables
+begin reaction rules
+ A() -> B() k
+end reaction rules
+begin bng3_events version 1
+ event "rational_crossing"
+ trigger: {syntax}
+ initial_value: false
+ persistent: true
+ use_values_from_trigger_time: true
+ assignment: Z = X
+ end event
+end bng3_events
+end model
+""")
+    loaded = bionetgen.load(str(path))
+    result = loaded.simulate(method="ode", t_end=2.0, n_steps=steps)
+    assert result.observables["Z"][-1] == pytest.approx(6.0, abs=1e-5)
+
+
+@pytest.mark.parametrize(
+    "trigger,assignment",
+    [
+        # Denominator crosses zero: X(t) decays from 10 to 0, so X - 5 crosses 0 at t = ln(2)
+        ("Y / (X - 5) <= 1", "Z = 1"),
+        # Denominator is modified by an event assignment: X is in the denominator
+        ("X / (X + Y) <= 0.5", "X = 1"),
+        # Denominator is initially negative: X(0) + Y(0) - 20 = -8 < 0
+        ("Y / (X + Y - 20) <= 1", "Z = 1"),
+        # Denominator depends on time: time is dynamic and not invariant
+        ("X / (time + 1) <= 2", "Z = 1"),
+    ],
+)
+def test_rational_trigger_noninvariant_or_crossing_denominators_are_refused(
+    tmp_path, trigger, assignment
+):
+    """Denominators that cross zero, depend on time, are initially non-positive,
+    or are modified by event assignments cannot certify global positivity and
+    must be strictly refused.
+    """
+    path = tmp_path / "events_rational_refusal.bngl"
+    path.write_text(f"""begin model
+begin parameters
+ k 1
+end parameters
+begin molecule types
+ A()
+ B()
+ C()
+end molecule types
+begin seed species
+ A() 10
+ B() 2
+ C() 0
+end seed species
+begin observables
+ Molecules X A()
+ Molecules Y B()
+ Molecules Z C()
+end observables
+begin reaction rules
+ A() -> B() k
+end reaction rules
+begin bng3_events version 1
+ event "refusal_test"
+ trigger: {trigger}
+ initial_value: false
+ persistent: true
+ use_values_from_trigger_time: true
+ assignment: {assignment}
+ end event
+end bng3_events
+end model
+""")
+    loaded = bionetgen.load(str(path))
+    with pytest.raises(
+        RuntimeError,
+        match="trigger requires one time or species observable",
+    ):
+        loaded.simulate(method="ode", t_end=2.0, n_steps=1)
 
 
 def test_delayed_assignment_that_reevaluates_the_trigger_triggers_the_event_again(
