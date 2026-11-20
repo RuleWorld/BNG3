@@ -72,6 +72,7 @@ jobs:
           python -m pytest \
             tests/test_ci_contract.py \
             tests/validation/test_parity_workflow_wiring.py \
+            tests/validation/test_nfnext_corpus_wiring.py \
             tests/validation/test_reconciliation_evidence.py \
             tests/validation/test_integrated_wiring.py \
             tests/validation/test_integrated.py \
@@ -1107,6 +1108,24 @@ jobs:
         run: >-
           python -m pytest --noconftest -q
           tests/validation/release/cases/issue-147/test_nfnext_dynamic_map_native_parity.py
+
+      - name: Check NFnext full-corpus native NFsim parity (issue-148)
+        env:
+          NFSIM_BIN: ${{ runner.temp }}/oracle-nfsim/build/NFsim
+          BNG2_PERL: ${{ runner.temp }}/oracle-bionetgen/bng2/BNG2.pl
+          BNG3_NFNEXT_CORPUS_REPORT: ${{ runner.temp }}/bng3-nfnext-corpus-report.json
+        run: >-
+          python -m pytest --noconftest -q
+          tests/validation/release/cases/issue-148/test_nfnext_full_corpus_native_parity.py
+
+      - name: Upload NFnext full-corpus native parity report (issue-148)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue148-nfnext-full-corpus-${{ github.run_id }}
+          path: ${{ runner.temp }}/bng3-nfnext-corpus-report.json
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Check NFnext identical-reactant combinatorial factor
         run: >-
