@@ -47,7 +47,7 @@ and [`docs/migration_guide.md`](docs/migration_guide.md) for API changes.
 - **Network engine** — native reaction-network generation, ODE, SSA, CVODE,
   isolated batch execution, and file/API exporters are available through the
   in-process C++ backend.
-- **NFcore2 / NFSim path** — the direct network-free adapter maps canonical
+- **NFcore / NFsim path** — the direct network-free adapter maps canonical
   model constructs into NFcore, including molecule mappings, observables,
   functions, energy metadata, and rule execution semantics.
 - **NFnext** — the next-generation surface defines NFIR, rule families,
@@ -71,11 +71,12 @@ tracked separately in
 
 ## Install
 
-```bash
-pip install bionetgen
-```
-
-No Perl runtime is required for the default workflow.
+This checkout is the BNG3 alpha. Install a BNG3 pre-release wheel, or run
+`python -m pip install .` from a BNG3 checkout. The stable package name
+after the release transition is `bionetgen`. Use `bionetgen<3` to stay on
+PyBioNetGen during the transition. The default BNG3 workflow requires no Perl.
+See the [migration guide](docs/migration_guide.md#install-and-choose-a-backend)
+for backend selection and optional dependencies.
 
 ## Quickstart
 
