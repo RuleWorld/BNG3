@@ -657,7 +657,7 @@ def check_device_result(result, backend, batch_size, expected_times):
 
 def validate_immigration_death_gpu(backend, *, receipt=None):
     """Qualify zero- and first-order device propensities against a Poisson law."""
-    model_path = Path("models/gpu_immigration_death.bngl")
+    model_path = Path("tests/fixtures/gpu_batch_ssa/gpu_immigration_death.bngl")
     immigration_rate = 4.0
     death_rate = 0.7
     t_end = 2.0
