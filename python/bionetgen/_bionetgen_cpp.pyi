@@ -555,6 +555,40 @@ def simulate_nf(
     """
     ...
 
+def simulate_nfnext(
+    model: Model,
+    sample_times: List[float],
+    seed: int = 0,
+    max_events: int = 1000000,
+    max_particles: int = 1000000,
+) -> Dict[str, object]:
+    """Run the current NFnext production-boundary model simulation."""
+    ...
+
+def simulate_nfnext_gpu(
+    model: Model,
+    sample_times: List[float],
+    seed: int = 0,
+    batch_size: int = 1024,
+    backend: str = "metal",
+    max_events: int = 1000000,
+    max_particles: int = 1000000,
+) -> Dict[str, object]:
+    """Run the bounded NFnext unary state-change family on an explicit GPU."""
+    ...
+
+def gpu_backends() -> List[Dict[str, object]]:
+    """Report finite-network batched-SSA GPU backend status."""
+    ...
+
+def gpu_backend_capabilities() -> List[Dict[str, object]]:
+    """Report compiled GPU execution routes and device availability."""
+    ...
+
+def default_gpu_backend() -> str:
+    """Name the default finite-network batched-SSA GPU backend, if any."""
+    ...
+
 def execute(
     model: Model,
     source_path: str,
