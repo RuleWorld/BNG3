@@ -581,9 +581,16 @@ def test_cuda_device_workflow_is_manual_and_retains_receipts():
     workflow = parse_workflow(path)
     triggers = workflow.get("on", workflow.get(True))
     job = workflow["jobs"]["cuda-device"]
+    dependency_install = next(
+        step for step in job["steps"] if "pip install" in step.get("run", "")
+    )
 
     assert list(triggers) == ["workflow_dispatch"]
     assert job["runs-on"] == ["self-hosted", "linux", "x64", "cuda"]
+    assert all(
+        package in dependency_install["run"].split()
+        for package in ("numpy", "scipy", "pytest")
+    )
     upload = next(
         step
         for step in job["steps"]
