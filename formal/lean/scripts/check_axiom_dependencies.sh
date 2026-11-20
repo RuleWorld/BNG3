@@ -77,6 +77,12 @@ open BNG
 #print axioms BNG.execute_lowered_mutation_eq_reference
 #print axioms BNG.execute_lowered_program_eq_reference
 #print axioms BNG.execute_lowered_rule_eq_reference
+#print axioms BNG.setState?_preserves_bonds
+#print axioms BNG.setState?_preserves_nextMoleculeId
+#print axioms BNG.changeState_mutation_preserves_bonds
+#print axioms BNG.lowered_setState_preserves_bonds
+#print axioms BNG.state_change_preserves_bonds
+#print axioms BNG.lowered_state_change_preserves_bonds
 #print axioms BNG.connectedFrom_empty
 #print axioms BNG.empty_molecule_observable_zero
 #print axioms BNG.structural_roundtrip

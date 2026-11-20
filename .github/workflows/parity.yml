@@ -1183,6 +1183,28 @@ jobs:
         env:
           BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
 
+      - name: Run exported BNG-XML fixed-seed consumer detector (#163)
+        shell: bash
+        env:
+          NFSIM_BIN: ${{ runner.temp }}/oracle-nfsim/build/NFsim
+          BNG3_XML_CONSUMER_EVIDENCE_DIR: ${{ runner.temp }}/issue163-xml-consumer
+        run: |
+          set -euo pipefail
+          mkdir -p "$BNG3_XML_CONSUMER_EVIDENCE_DIR"
+          pytest -c tests/validation/pytest.ini \
+            tests/validation/test_xml_export_fixed_seed_nfsim_consumer.py \
+            -q -ra -o junit_family=xunit1 \
+            --junitxml="$BNG3_XML_CONSUMER_EVIDENCE_DIR/xml-consumer-junit.xml"
+
+      - name: Retain exported BNG-XML consumer evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue163-xml-consumer-${{ github.run_id }}
+          path: ${{ runner.temp }}/issue163-xml-consumer
+          if-no-files-found: warn
+          retention-days: 14
+
       - name: Run physical NFsim source-law controls
         shell: bash
         env:

@@ -57,6 +57,37 @@ def proc167 : Process :=
 -- Kernel-checked (decide, not native_decide) numeric contracts.
 example : homodimer.multiplicity fourA = 6 := by decide
 example : (unimolecular.applyStateUpdate initialState).map (fun s => s.count 0) = some 4 := by decide
+example : (homodimer.applyStateUpdate fourA).map (fun s => (s.count 0, s.count 1)) = some (2, 1) := by decide
+
+-- Delayed channel defers state update and enqueues completion.
+def delayedUnimol : Channel := { unimolecular with delay := some 1 }
+example : (proc167.fire delayedUnimol).state = proc167.state :=
+  fire_delayed_preserves_state proc167 delayedUnimol 1 rfl
+example : (proc167.fire delayedUnimol).state = proc167.state ∧ (proc167.fire delayedUnimol).pending.length = proc167.pending.length + 1 :=
+  delayed_channel_defers_update proc167 delayedUnimol 1 rfl
+
+-- Intervention / disabled channel yields zero propensity.
+def disabledUnimol : Channel := { unimolecular with gated := false }
+example : disabledUnimol.exactPropensity initialState = 0 :=
+  propensity_disabled_is_zero disabledUnimol initialState rfl
+
+-- Energy multiplier scales propensity.
+def energyUnimol : Channel := { unimolecular with energyFactor := some 3 }
+#eval energyUnimol.exactPropensity initialState
+example : ({ unimolecular with energyFactor := some unimolecular.energyMultiplier } : Channel).exactPropensity initialState = unimolecular.exactPropensity initialState :=
+  energy_factor_restores_propensity unimolecular initialState
+
+-- Hybrid regime preserves exact total propensity.
+def procHybrid : Process := { proc167 with hybrid := { particleSpecies := [0], populationSpecies := [1] } }
+example : proc167.total = procHybrid.total :=
+  hybrid_regime_does_not_change_propensity proc167 procHybrid rfl rfl
+
+-- Semantic equality is an equivalence relation and implies total propensity equality.
+example : processSemanticEqual proc167 proc167 := processSemanticEqual_refl proc167
+example (h : processSemanticEqual proc167 procHybrid) : processSemanticEqual procHybrid proc167 :=
+  processSemanticEqual_symm proc167 procHybrid h
+example (p q r : Process) (hpq : processSemanticEqual p q) (hqr : processSemanticEqual q r) : processSemanticEqual p r :=
+  processSemanticEqual_trans p q r hpq hqr
 
 -- The exact Rat propensities are printed by the #eval lines above (12, 10, 1).
 -- Their values are also pinned by the theorem applications below, which are

@@ -16,7 +16,7 @@ import yaml
 from datetime import datetime, timezone
 from pathlib import Path
 
-from . import campaign, inventory, reporting
+from . import campaign, corpus_resume, inventory, reporting
 
 ROOT = Path(__file__).resolve().parents[2]
 TIERS = ("smoke", "integration", "full", "performance", "platform")
@@ -596,6 +596,56 @@ def _model(name, source, args, directory, reference, env):
     return rows
 
 
+def _resume_case(
+    name: str,
+    source: Path,
+    args,
+    directory: Path,
+    references: dict,
+    env: dict,
+    *,
+    source_sha256: str,
+    candidate_sha256: str | None,
+    expected_contract_ids: list[str],
+    resume_configuration: dict,
+) -> tuple[list[dict], str]:
+    """Execute one corpus case or reuse its identity-matched artifact."""
+
+    def run_case():
+        model_rows = _model(
+            name, source, args, directory, references.get("bionetgen"), env
+        )
+        case_rows = list(model_rows)
+        if args.simulate:
+            from .simulation_contract import run_simulation
+
+            for route in (["bngl", "net-reload"] if args.net_reload else ["bngl"]):
+                case_rows.extend(
+                    run_simulation(
+                        name,
+                        directory / "models" / name,
+                        references.get("bionetgen"),
+                        args,
+                        env,
+                        [r for r in model_rows if not r.get("aggregate")],
+                        route=route,
+                    )
+                )
+        return case_rows
+
+    identity = corpus_resume.case_identity(
+        name,
+        source_sha256=source_sha256,
+        candidate_sha256=candidate_sha256,
+        oracle_identity=references,
+        configuration=resume_configuration,
+        expected_contract_ids=expected_contract_ids,
+    )
+    return corpus_resume.reuse_or_execute(
+        directory, identity, run_case, enabled=args.resume
+    )
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tier", action="append", choices=TIERS, default=[])
@@ -655,6 +705,14 @@ def main(argv=None):
         action="store_true",
         help="preserve unsuccessful results but return zero (new CI coverage only)",
     )
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help=(
+            "reuse per-case artifacts in a non-empty report directory when their "
+            "full identity matches; stale or partial artifacts are re-executed"
+        ),
+    )
     args = parser.parse_args(argv)
     if args.net_reload and not args.simulate:
         parser.error("--net-reload requires --simulate")
@@ -669,8 +727,11 @@ def main(argv=None):
     ):
         parser.error("budgets must be positive")
     directory = args.report_dir.resolve()
-    if directory.exists() and any(directory.iterdir()):
-        parser.error("report directory must be empty; stale outputs cannot be evidence")
+    if directory.exists() and any(directory.iterdir()) and not args.resume:
+        parser.error(
+            "report directory must be empty; stale outputs cannot be evidence "
+            "(use --resume for identity-checked per-case reuse)"
+        )
     directory.mkdir(parents=True, exist_ok=True)
     issue_snapshot = None
     issue_inventory = {"scope": "mapped-only"}
@@ -720,6 +781,7 @@ def main(argv=None):
     subject_digest = inventory.sha256(args.bng_cpp) if args.bng_cpp.is_file() else None
     references, results = {}, []
     expected_contract_ids = []
+    resume_actions = []
     if not args.inventory_only:
         args.tier = args.tier or ["smoke"]
         performance_only = set(args.tier) == {"performance"} and not args.suite
@@ -890,10 +952,30 @@ def main(argv=None):
                         )
                     )
         if "performance" not in args.tier or len(args.tier) > 1:
+            source_digests = {r["id"]: r["sha256"] for r in selection["records"]}
+            resume_configuration = {
+                "tiers": list(args.tier),
+                "models": list(args.models or []),
+                "corpus_tier": args.corpus_tier,
+                "simulate": args.simulate,
+                "net_reload": args.net_reload,
+                "simulation_protocol": {
+                    "t_start": 0,
+                    "t_end": args.simulation_end,
+                    "n_steps": args.simulation_steps,
+                    "rtol": 1e-8,
+                    "atol": 1e-12,
+                },
+                "case_timeout": args.case_timeout,
+                "network_iterations": args.network_iterations,
+                "max_aggregate": args.max_aggregate,
+                "shard": [args.shard_index, args.shard_count],
+                "package_mode": args.package_mode,
+            }
             try:
                 for name, source in _models(args, selection):
                     print("Checking model:", name, flush=True)
-                    expected_contract_ids += [name + ":parse"] + [
+                    case_expected = [name + ":parse"] + [
                         name + ":network:" + check
                         for check in (
                             "artifact-validity",
@@ -909,34 +991,30 @@ def main(argv=None):
                         )
                     ]
                     if args.simulate:
-                        expected_contract_ids += [
+                        case_expected += [
                             name + ":simulation-" + route + ":" + kind
                             for route in (
                                 ["bngl", "net-reload"] if args.net_reload else ["bngl"]
                             )
                             for kind in ("cdat", "gdat")
                         ]
-                    model_rows = _model(
-                        name, source, args, directory, references.get("bionetgen"), env
-                    )
-                    results.extend(model_rows)
-                    if args.simulate:
-                        from .simulation_contract import run_simulation
+                    expected_contract_ids += case_expected
 
-                        for route in (
-                            ["bngl", "net-reload"] if args.net_reload else ["bngl"]
-                        ):
-                            results.extend(
-                                run_simulation(
-                                    name,
-                                    directory / "models" / name,
-                                    references.get("bionetgen"),
-                                    args,
-                                    env,
-                                    [r for r in model_rows if not r.get("aggregate")],
-                                    route=route,
-                                )
-                            )
+                    case_rows, action = _resume_case(
+                        name,
+                        source,
+                        args,
+                        directory,
+                        references,
+                        env,
+                        source_sha256=source_digests[name],
+                        candidate_sha256=subject_digest,
+                        expected_contract_ids=case_expected,
+                        resume_configuration=resume_configuration,
+                    )
+                    resume_actions.append({"case_id": name, "action": action})
+                    print(f"  {name}: {action}", flush=True)
+                    results.extend(case_rows)
             except (ValueError, OSError, KeyError) as exc:
                 results.append(
                     _result("corpus", "selection", "HARNESS_ERROR", str(exc))
@@ -1008,6 +1086,7 @@ def main(argv=None):
         "network_iterations": args.network_iterations,
         "max_aggregate": args.max_aggregate,
         "shard": [args.shard_index, args.shard_count],
+        "resume": args.resume,
     }
     environment = {
         "system": platform.platform(),
@@ -1057,6 +1136,7 @@ def main(argv=None):
         "corpus": inventory.discover_models(ROOT),
         "results": results,
         "expected_contract_ids": expected_contract_ids,
+        "resume_actions": resume_actions,
         "source_policy_rows": matrix["rows"],
         "reconciliation": {
             p.stem: json.loads(p.read_text())

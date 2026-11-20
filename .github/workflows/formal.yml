@@ -138,10 +138,24 @@ jobs:
           .venv/bin/python -m pytest -q tests/validation/release/cases/issue-167/ \
             --junitxml="$RUNNER_TEMP/issue167-results.xml"
 
+      - name: Record Issue 167 formal stochastic release acceptance
+        run: |
+          .venv/bin/python scripts/ci/record_issue167_release.py \
+            --source-revision "${{ github.event.pull_request.head.sha || github.sha }}" \
+            --output "$RUNNER_TEMP/issue-167-release-report.json"
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: issue167-comparisons-${{ github.event.pull_request.head.sha || github.sha }}
           path: ${{ runner.temp }}/issue167-results.xml
+          if-no-files-found: error
+          retention-days: 30
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: issue167-release-report-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/issue-167-release-report.json
           if-no-files-found: error
           retention-days: 30

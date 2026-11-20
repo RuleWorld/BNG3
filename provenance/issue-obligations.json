@@ -1,9 +1,9 @@
 {
   "schema_version": 1,
   "approved_dependency_scope": {
-    "issues": [138, 140, 142, 143],
+    "issues": [138, 140, 142, 143, 150, 156],
     "decision": "docs/DECISIONS.md#18",
-    "decision_marker": "Dependencies #138, #140, #142 and #143 for downstream release qualification",
+    "decision_marker": "Dependencies #138, #140, #142, #143, #150 and #156 for downstream release qualification",
     "reason": "Maintainer decision item 18 records that the reviewed scope for these dependency issues is authoritative for downstream exact-revision closure dry runs despite later live-body edits. This resolves stale dependency status only; dependent issues must still pass all of their own acceptance checks."
   },
   "issues": [
@@ -14619,7 +14619,7 @@
     },
     {
       "number": 167,
-      "body_sha256": "a31fae73ec10631d512c6b2c24ed92128f13a6bd83ad17c465351b78797d3c6e",
+      "body_sha256": "dbfc87ae5791b34faf9dbfc884690880e30ba0feb9e7e64148b56f91c7ad1059",
       "obligations": [
         {
           "id": "issue:167:encode-the-exact-supported-special-rate-local-function-tfun-and",
@@ -15028,14 +15028,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-stochastic-proof.",
-                "No revision-locked consuming receipt producer is declared for required live check release-stochastic-proof."
-              ]
+              "selector": "tests/validation/release/cases/issue-167/test_stochastic_semantics.py::test_release_stochastic_proof",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue167_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -15062,14 +15059,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-stochastic-correspondence.",
-                "No revision-locked consuming receipt producer is declared for required live check release-stochastic-correspondence."
-              ]
+              "selector": "tests/validation/release/cases/issue-167/test_stochastic_semantics.py::test_release_stochastic_correspondence",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue167_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -15096,14 +15090,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-167.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-167."
-              ]
+              "selector": "tests/validation/release/cases/issue-167/test_stochastic_semantics.py::test_release_obligation_167",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue167_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],

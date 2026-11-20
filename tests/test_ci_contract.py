@@ -1454,6 +1454,23 @@ def test_wheel_and_sdist_python_tests_prove_installed_package_identity():
     assert "pytest tests/test_workflow_contract.py" in integration_job
 
 
+def test_wheel_job_runs_installed_migration_example():
+    """The wheel job must execute the guide's example against the install."""
+    wheel_job = _workflow_job("wheels")
+    assert "BNG3_PYTHON_TEST_MODE: installed" in wheel_job
+    assert (
+        "pytest {project}/tests/python/test_migration_guide_installed_example.py "
+        "-v --tb=short" in wheel_job
+    )
+    guide = REPO / "docs" / "migration_guide.md"
+    assert (
+        REPO / "tests" / "python" / "test_migration_guide_installed_example.py"
+    ).is_file()
+    assert "test_migration_guide_installed_example.py" in guide.read_text(
+        encoding="utf-8"
+    )
+
+
 def test_python_integration_installs_jsonschema_for_bridge_test_collection():
     """The integration job must collect tests with their direct imports.
 
