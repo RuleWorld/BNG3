@@ -85,13 +85,11 @@ def test_release_core_comp():
 
 
 def test_release_source_fidelity():
-    """release-sbml-source-fidelity: no loss diagnostics on passing cases."""
-    report = _report()
-    for record in report["records"]:
-        if record["status"] != "passed":
-            continue
-        detail = str(record.get("simulation_comparison") or {})
-        assert "loss" not in detail.lower() or record.get("supported_execution", True)
+    """release-sbml-source-fidelity: preserve metadata and reject reported loss."""
+    from scripts.ci.record_issue160_release import source_fidelity_gaps
+
+    gaps = source_fidelity_gaps(_report()["records"])
+    assert not gaps, gaps[:12]
 
 
 def test_release_capability_coverage():

@@ -250,8 +250,12 @@ jobs:
           # budget. Scheduled/manual runs remain full and retain unsupported
           # cases as separate outcomes.
           selection=(--categories semantic --max-cases 128 --selection-strategy feature-cover)
+          gate=(--gate-selected-cases)
           if [[ "${{ github.event_name }}" == "schedule" || ( "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.bounded }}" != "true" ) ]]; then
             selection=(--categories semantic stochastic)
+            # The full report includes raw official verdicts. The pinned
+            # expectation comparison and release consumers gate those results.
+            gate=(--report-only)
           fi
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "$SSTS_ONLY_CASE" ]]; then
             if [[ "${{ inputs.bounded }}" == "true" ]]; then
@@ -259,6 +263,7 @@ jobs:
               exit 2
             fi
             selection=(--categories semantic stochastic --only-case "$SSTS_ONLY_CASE")
+            gate=(--gate-selected-cases)
           fi
           python scripts/ci/validate_sbml_test_suite.py \
             --suite-dir "$RUNNER_TEMP/official-ssts" \
@@ -268,7 +273,7 @@ jobs:
             --isolate-cases --case-timeout 60 --jobs 4 \
             --lock-file "$RUNNER_TEMP/sbml-verification.lock" --lock-wait 1800 \
             --artifacts-dir "$RUNNER_TEMP/ssts-artifacts/cases" \
-            --gate-selected-cases \
+            "${gate[@]}" \
             --json "$RUNNER_TEMP/ssts-artifacts/report.json" \
             2>&1 | tee "$RUNNER_TEMP/ssts-artifacts/execution.log"
 
@@ -363,7 +368,7 @@ jobs:
 
       - name: Execute four Issue 159 Core analytic fixtures
         id: core_fixtures
-        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true))
+        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true && inputs.only_case == ''))
         shell: bash
         run: |
           set -euo pipefail
@@ -401,7 +406,7 @@ jobs:
 
       - name: Record Issue 159 release receipt from full suite
         id: issue159_receipt
-        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true))
+        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true && inputs.only_case == ''))
         shell: bash
         run: |
           set +e
@@ -421,7 +426,7 @@ jobs:
 
       - name: Record Issue 160 capability receipt from full suite
         id: issue160_receipt
-        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true))
+        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true && inputs.only_case == ''))
         shell: bash
         run: |
           set +e
@@ -440,7 +445,7 @@ jobs:
 
       - name: Execute Issue 159 release selectors
         id: release_selectors
-        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true))
+        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true && inputs.only_case == ''))
         shell: bash
         env:
           BNG3_EXACT_REVISION: ${{ inputs.product_revision || github.event.pull_request.head.sha || github.sha }}
@@ -456,11 +461,12 @@ jobs:
           BNG3_EXACT_REVISION="$BNG3_EXACT_REVISION" \
             python -m pytest -q --noconftest \
               tests/validation/release/cases/issue-159/test_ssts_full_execution.py \
+              tests/validation/release/cases/issue-160/test_core_capability_rows.py::test_release_source_fidelity \
               --junitxml="$RUNNER_TEMP/ssts-artifacts/release-selectors.xml"
 
       - name: Aggregate release-consumer verdicts and finalize evidence digests
         id: release_consumers_gate
-        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true))
+        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true && inputs.only_case == ''))
         shell: bash
         env:
           FIXTURES_OUTCOME: ${{ steps.core_fixtures.outcome }}
@@ -529,7 +535,7 @@ jobs:
           retention-days: 90
 
       - uses: actions/upload-artifact@v4
-        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true))
+        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true && inputs.only_case == ''))
         with:
           name: ssts-release-consumers-${{ github.sha }}-${{ github.run_attempt }}
           path: |

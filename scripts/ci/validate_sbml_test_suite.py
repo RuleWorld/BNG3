@@ -4635,10 +4635,16 @@ def main() -> int:
         default="prefix",
         help="bounded selection policy; feature-cover uses official model metadata",
     )
-    parser.add_argument(
+    verdict = parser.add_mutually_exclusive_group()
+    verdict.add_argument(
         "--gate-selected-cases",
         action="store_true",
         help="gate executed selected cases; never claim full-suite conformance",
+    )
+    verdict.add_argument(
+        "--report-only",
+        action="store_true",
+        help="write raw case verdicts for a separate release evidence consumer",
     )
     parser.add_argument("--only-case", help="validate one case as CATEGORY/ID")
     parser.add_argument(
@@ -5072,6 +5078,8 @@ def main() -> int:
         f"package={runtime_info['bionetgen_package_path']} "
         f"extension_sha256={runtime_info['native_extension_sha256']}"
     )
+    if args.report_only:
+        return 0
     gate = "selected_surface_passed" if args.gate_selected_cases else "core_passed"
     return 0 if report[gate] else 1
 

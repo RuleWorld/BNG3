@@ -235,7 +235,9 @@ def test_ssts_workflow_bounds_execution_and_preserves_failure_artifacts():
         for step in steps
         if step.get("name") == "Run bounded official conformance"
     )
-    assert "--gate-selected-cases" in run
+    assert "gate=(--gate-selected-cases)" in run
+    assert "gate=(--report-only)" in run
+    assert '"${gate[@]}"' in run
     assert (
         "selection=(--categories semantic --max-cases 128 "
         "--selection-strategy feature-cover)"
