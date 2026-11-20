@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "issue": 154,
+  "title": "D02: Qualify BNGIR round trips across the supported semantic surface",
+  "source": {
+    "repository": "RuleWorld/BNG3",
+    "contract": "Verify lossless BNGIR round trips for all BNGL constructs across BNGL→v0.2→BNGL, v0.1→v0.2, and native reconstruction routes; preserve metadata, units, observables, actions, delays and dependencies across versions with exact certificates and independent downstream execution."
+  },
+  "oracle": {
+    "identity": "Independent analytic continuous-time laws (delayed reaction differential equations, first-order decay, pure death CTMC), pinned BNG2, and semantic equality certificate engine.",
+    "law": "Reconstructed models must match source facts and exact analytic execution trajectories (decay A(t)=A0*exp(-kt), delayed completion B(t)=A0*(1-exp(-k(t-tau))) for t>=tau, 0 for t<tau); all v0.1 fields are losslessly representable in v0.2; wire mutations produce detectable semantic differences or fail closed."
+  },
+  "acceptance_checks": [
+    "release-bngir-roundtrip",
+    "release-bngir-version",
+    "release-obligation-154"
+  ],
+  "inventory_rows": [
+    "bngir.v02",
+    "bngir.native",
+    "bngir.equality"
+  ],
+  "obligations": [
+    "issue:154:live-acceptance:release-bngir-roundtrip",
+    "issue:154:live-acceptance:release-bngir-version",
+    "issue:154:live-acceptance:release-obligation-154"
+  ]
+}
