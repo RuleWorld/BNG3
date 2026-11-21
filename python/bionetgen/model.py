@@ -1099,6 +1099,7 @@ class BioNetGenModel:
         traversal_limit: int = -1,
         backend: Optional[str] = None,
         continue_simulation: bool = False,
+        population_threshold: int = 0,
     ) -> SimResult:
         """Run a simulation using the specified method.
 
@@ -1339,53 +1340,51 @@ class BioNetGenModel:
                     raise ValueError(
                         f"backend='bngsim' is not valid for method={method!r}"
                     )
-            if method in {"nf", "nfnext"}:
-                # DECISIONS.md item 4: after full network-free corpus parity,
-                # method="nf" defaults to NFnext. NFcore remains explicitly
-                # selectable via method="nfcore".
-                times = normalized_sample_times
-                if not times:
-                    dt = (t_end - t_start) / float(n_steps)
-                    times = [t_start + i * dt for i in range(n_steps)] + [t_end]
-                requested_count = len(times)
-                if retain_nf_state and times[-1] < t_end:
-                    times = [*times, t_end]
-                raw = _cpp.simulate_nfnext(
-                    self._model,
-                    sample_times=times,
-                    seed=seed,
-                    max_events=max_sim_steps if max_sim_steps > 0 else 1_000_000,
-                    t_start=t_start,
-                    continuation=nf_state,
-                    retain_state=retain_nf_state,
-                )
-                if len(times) != requested_count:
-                    raw["time"] = raw["time"][:requested_count]
-                    raw["observables"] = {
-                        name: values[:requested_count]
-                        for name, values in raw["observables"].items()
-                    }
-                if isinstance(raw, dict) and "backend" not in raw:
-                    raw["backend"] = "nfnext"
-            else:
-                raw = _cpp.simulate_nf(
-                    self._model,
-                    t_end=t_end,
-                    n_steps=n_steps,
-                    t_start=t_start,
-                    seed=seed,
-                    verbose=verbose,
-                    equilibrate=equilibrate,
-                    source_path=self._source_path or "",
-                    sample_times=normalized_sample_times,
-                    traversal_limit=traversal_limit,
-                    require_direct=getattr(self, "_native_bngir_v02_only", False),
-                    continuation=nf_state,
-                    retain_state=retain_nf_state,
-                )
-                # NFsim path remains independent; annotate backend for diagnostics.
-                if isinstance(raw, dict) and "backend" not in raw:
-                    raw["backend"] = "nfsim"
+            raw = _cpp.simulate_nf(
+                self._model,
+                t_end=t_end,
+                n_steps=n_steps,
+                t_start=t_start,
+                seed=seed,
+                verbose=verbose,
+                equilibrate=equilibrate,
+                source_path=self._source_path or "",
+                sample_times=normalized_sample_times,
+                traversal_limit=traversal_limit,
+                require_direct=getattr(self, "_native_bngir_v02_only", False),
+                continuation=nf_state,
+                retain_state=retain_nf_state,
+                population_threshold=population_threshold,
+            )
+            # NFsim path remains independent; annotate backend for diagnostics.
+            if isinstance(raw, dict) and "backend" not in raw:
+                raw["backend"] = "nfsim"
+        elif method == "nfnext":
+            times = normalized_sample_times
+            if not times:
+                dt = (t_end - t_start) / float(n_steps)
+                times = [t_start + i * dt for i in range(n_steps)] + [t_end]
+            requested_count = len(times)
+            if retain_nf_state and times[-1] < t_end:
+                times = [*times, t_end]
+            raw = _cpp.simulate_nfnext(
+                self._model,
+                sample_times=times,
+                seed=seed,
+                max_events=max_sim_steps if max_sim_steps > 0 else 1_000_000,
+                t_start=t_start,
+                continuation=nf_state,
+                retain_state=retain_nf_state,
+                population_threshold=population_threshold,
+            )
+            if len(times) != requested_count:
+                raw["time"] = raw["time"][:requested_count]
+                raw["observables"] = {
+                    name: values[:requested_count]
+                    for name, values in raw["observables"].items()
+                }
+            if isinstance(raw, dict) and "backend" not in raw:
+                raw["backend"] = "nfnext"
         else:
             # Finite-network backend dispatch (ADR 0003).
             # Default is "auto" -> native during migration; explicit "bngsim"
