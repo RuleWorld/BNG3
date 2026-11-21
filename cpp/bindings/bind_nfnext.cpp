@@ -21,13 +21,15 @@ void bind_nfnext(py::module_& m) {
                                 std::size_t max_particles,
                                 double t_start,
                                 const py::object& continuation,
-                                bool retain_state) -> py::dict {
+                                bool retain_state,
+                                std::uint64_t population_threshold) -> py::dict {
         bng::compile::CompiledModel compiled(model);
         nfnext::BngExecutionRequest req;
         req.sample_times = sample_times;
         req.seed = seed;
         req.start_time = t_start;
         req.retain_state = retain_state;
+        req.population_threshold = population_threshold;
         if (!continuation.is_none()) {
             auto* pointer = PyCapsule_GetPointer(continuation.ptr(), kStageState);
             if (!pointer) throw py::error_already_set();
@@ -80,5 +82,6 @@ void bind_nfnext(py::module_& m) {
     py::arg("t_start") = 0.0,
     py::arg("continuation") = py::none(),
     py::arg("retain_state") = false,
+    py::arg("population_threshold") = 0,
     "Run NFnext simulation directly from CompiledModel.");
 }
