@@ -1174,6 +1174,11 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Check NFnext ensemble RNG and state isolation (#176)
+        run: >-
+          python -m pytest --noconftest -q
+          tests/python/nfnext/test_nfnext_ensemble_rng_isolation.py
+
       - name: Check NFnext identical-reactant combinatorial factor
         run: >-
           python -m pytest --noconftest -q
