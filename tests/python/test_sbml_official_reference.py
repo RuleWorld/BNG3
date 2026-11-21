@@ -599,10 +599,13 @@ def test_the_action_phase_budget_admits_the_legitimate_official_cases():
     """The phase budget must not exclude a case the source itself implies."""
 
     validator = _load_validator("validate_sbml_test_suite")
-    # semantic/00963 and semantic/00967 have source events that fire every
-    # 0.01 s over the official horizon, so their action blocks carry 1001
-    # phases.  semantic/01588 carries 10,000 and is refused for the cost.
-    assert validator.ACTION_MAX_PHASES > 1001
+    # semantic/00963 and semantic/00967 contain source events on a fine grid
+    # and currently lower to 3,000 and 2,101 phases respectively; the committed
+    # expectation manifest records both as official-reference passes.  A
+    # budget below either count silently downgrades a required case.
+    # semantic/01588 carries 10,000 phases and is refused for the cost.
+    assert validator.ACTION_MAX_PHASES >= 3000
+    assert validator.ACTION_MAX_PHASES >= 2101
     assert validator.ACTION_MAX_PHASES < 10_000
 
 

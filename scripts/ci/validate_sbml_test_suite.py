@@ -2184,15 +2184,19 @@ def _compare_action_case_to_reference(
 #: the per-phase cost depends on the model and the runner's load, so a time
 #: limit would make the verdict of a case depend on where it ran, while the
 #: phase count is the same everywhere.  The limit is set above the largest
-#: phase count the pinned suite's models legitimately imply -- 1,001 phases for
-#: ``semantic/00963`` and ``semantic/00967``, whose source events fire every
-#: 0.01 s over the official horizon -- and below the 10,000 phases of
-#: ``semantic/01588``, whose action execution alone does not fit the gate's
-#: per-case budget.
+#: phase count the pinned suite's models legitimately imply -- currently 3,000
+#: phases for ``semantic/00963`` and 2,101 for ``semantic/00967``, whose source
+#: events fire on a fine grid over the official horizon -- and below the
+#: 10,000 phases of ``semantic/01588``, whose action execution alone does not
+#: fit the gate's per-case budget.  The committed expectation manifest records
+#: 00963 and 00967 as official-reference passes, so a budget below their
+#: phase counts is a harness regression that silently downgrades a required
+#: case; 4,096 leaves headroom for the whole pinned suite while preserving the
+#: 10,000-phase exclusion.
 #:
 #: A case that exceeds the budget is reported as unsupported with that reason,
 #: never as a pass.
-ACTION_MAX_PHASES = 2000
+ACTION_MAX_PHASES = 4096
 
 #: Documented ensemble budget (number of trajectories) for the official
 #: stochastic conformance comparison.  The SBML discrete stochastic model test
