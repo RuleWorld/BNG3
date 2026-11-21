@@ -854,6 +854,14 @@ jobs:
           name: issue148-release-record-${{ github.run_id }}
           path: ${{ runner.temp }}/bng3-issue-148-release
 
+      - name: Download Issue 149 NFcore consolidation release record
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: issue149-release-record-${{ github.run_id }}
+          path: ${{ runner.temp }}/bng3-issue-149-release
+
       - name: Build exact-revision issue and provenance evidence queue
         if: always()
         run: |
@@ -861,6 +869,7 @@ jobs:
           issue138_args=()
           issue142_args=()
           issue148_args=()
+          issue149_args=()
           issue473_args=()
           s6_args=()
           delay_args=()
@@ -913,6 +922,9 @@ jobs:
           if [[ -s "$RUNNER_TEMP/bng3-issue-148-release/report.json" ]]; then
             issue148_args+=(--report "$RUNNER_TEMP/bng3-issue-148-release/report.json")
           fi
+          if [[ -s "$RUNNER_TEMP/bng3-issue-149-release/report.json" ]]; then
+            issue149_args+=(--report "$RUNNER_TEMP/bng3-issue-149-release/report.json")
+          fi
           python -m tests.validation.issue_queue \
             --issues-json "$RUNNER_TEMP/bng3-issues.json" \
             --report "$RUNNER_TEMP/bng3-integrated-validation/report.json" \
@@ -928,6 +940,7 @@ jobs:
             "${hybrid_args[@]}" \
             "${issue147_args[@]}" \
             "${issue148_args[@]}" \
+            "${issue149_args[@]}" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --output-dir "$RUNNER_TEMP/bng3-issue-queue" "${head_args[@]}"
           cat "$RUNNER_TEMP/bng3-issue-queue/issue-queue.md" >> "$GITHUB_STEP_SUMMARY"
@@ -1377,10 +1390,22 @@ jobs:
             -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
             -DBUILD_TESTS=ON
           cmake --build build --target \
+            test_nfcore2_parity \
+            bng3_nfnext_reference_tests \
             bng3_nfnext_bng_lowering_bridge \
-            bng3_nfnext_canonicalization_contract \
-            bng3_nfnext_cache_contract \
             bng3_nfnext_execution_boundary \
+            bng3_nfnext_canonicalization_contract \
+            bng3_nfnext_dependency_scheduler_contract \
+            bng3_nfnext_generic_matcher_contract \
+            bng3_nfnext_transformations_contract \
+            bng3_nfnext_memory_arena_contract \
+            bng3_nfnext_cache_contract \
+            bng3_nfnext_observable_function_contract \
+            bng3_nfnext_lattice_interval_contract \
+            bng3_nfnext_compartment_rate_contract \
+            bng3_nfnext_population_hybrid_contract \
+            bng3_nfnext_rng_replay_contract \
+            bng3_nfnext_future_contract \
             --parallel 2
 
       - name: Run Issue 147 NFnext lowering release suite
@@ -1411,6 +1436,31 @@ jobs:
             ${{ runner.temp }}/release-issue-147.xml
             ${{ runner.temp }}/release-issue-147-evidence/
           if-no-files-found: error
+
+      - name: Record Issue 149 NFcore consolidation release acceptance
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pytest --noconftest -q \
+            tests/validation/release/cases/issue-149/test_nfcore_consolidation.py \
+            --junitxml="$RUNNER_TEMP/issue149.xml"
+          python scripts/ci/record_issue149_release.py \
+            --junit "$RUNNER_TEMP/issue149.xml" \
+            --source-revision "$BNG3_SOURCE_REVISION" \
+            --output "$RUNNER_TEMP/bng3-issue-149-release/report.json" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - name: Upload Issue 149 release record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue149-release-record-${{ github.run_id }}
+          path: ${{ runner.temp }}/bng3-issue-149-release/report.json
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Run all Tier-NF native ensembles (scheduled)
         if: (success() || failure()) && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch')

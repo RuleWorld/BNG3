@@ -5530,7 +5530,7 @@
     },
     {
       "number": 149,
-      "body_sha256": "f225e39fe3fe28407e0b89a9b691a539334b9351ad47b9ba6f3064fa42a064e3",
+      "body_sha256": "3a3029adf1f12626b2fcfe1d79f5a6205510bc79c398689ca6fb6b85bcfcdff5",
       "obligations": [
         {
           "id": "issue:149:document-which-engine-owns-each-supported-workload-and-whether-n",
@@ -5669,14 +5669,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-engine-consolidation.",
-                "No revision-locked consuming receipt producer is declared for required live check release-engine-consolidation."
-              ]
+              "selector": "tests/validation/release/cases/issue-149/test_nfcore_consolidation.py::test_release_engine_consolidation",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue149_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -5704,14 +5701,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-nf-default.",
-                "No revision-locked consuming receipt producer is declared for required live check release-nf-default."
-              ]
+              "selector": "tests/validation/release/cases/issue-149/test_nfcore_consolidation.py::test_release_nf_default",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue149_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -5739,14 +5733,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-149.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-149."
-              ]
+              "selector": "tests/validation/release/cases/issue-149/test_nfcore_consolidation.py::test_release_obligation_149",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue149_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
