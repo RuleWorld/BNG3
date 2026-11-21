@@ -72,6 +72,7 @@ jobs:
           python -m pytest \
             tests/test_ci_contract.py \
             tests/validation/test_parity_workflow_wiring.py \
+            tests/validation/test_shared_decision_ownership.py \
             tests/validation/test_reconciliation_evidence.py \
             tests/validation/test_integrated_wiring.py \
             tests/validation/test_integrated.py \
