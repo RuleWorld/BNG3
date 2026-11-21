@@ -116,6 +116,17 @@ def test_hybrid_model_generation_executes_population_trajectory_with_nfsim(
     assert int(population_rows[0][1]) > 0
 
 
+def test_generated_hybrid_model_runs_through_public_nfcore(tmp_path, monkeypatch):
+    monkeypatch.delenv("BNG_NFSIM_ALLOW_XML_FALLBACK", raising=False)
+    _model(tmp_path, "generate_hybrid_model({overwrite=>1, execute=>0})").execute()
+    hybrid = bionetgen.load(tmp_path / "model_hpp.bngl")
+    result = hybrid.simulate(method="nfcore", t_end=0.2, n_steps=4, seed=7)
+
+    assert result.backend == "nfsim"
+    assert result.observables["A_total"][-1] > 0
+    assert (result.observables["A_total"] + result.observables["B_total"] == 20).all()
+
+
 def test_hybrid_model_generation_still_refuses_finite_network_simulation(tmp_path):
     model = _model(
         tmp_path,

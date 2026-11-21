@@ -2,6 +2,7 @@
 #include <pybind11/stl.h>
 #include <pybind11/numpy.h>
 
+#include <algorithm>
 #include <cstdio>
 #include <cmath>
 #include <cstdlib>
@@ -90,10 +91,9 @@ void bind_nfsim(py::module_& m) {
             }
         }
 
-        // The direct adapter is deliberately fail-closed.  XML compatibility
-        // construction is available only when the caller explicitly opts in;
-        // unsupported direct semantics must not silently change execution
-        // paths.
+        // Refined hybrid models use NFcore's population-aware XML path when
+        // direct construction declines, just as the action dispatcher does.
+        // Other models retain the explicit compatibility opt-in.
         TempFileGuard tmp_guard;
         int suggestedTraversalLimit = -1;
         std::unique_ptr<NFcore::System> system;
@@ -101,6 +101,10 @@ void bind_nfsim(py::module_& m) {
         bool direct_semantics_unsupported = false;
         const bool model_uses_units =
             bng::compile::featuresUsed(model).contains(bng::compile::Feature::Units);
+        const bool model_has_refined_population =
+            model.getPopulationMaps().empty() &&
+            std::any_of(model.getMoleculeTypes().begin(), model.getMoleculeTypes().end(),
+                [](const bng::ast::MoleculeType& type) { return type.isPopulation(); });
         // Carries the precise reason the direct adapter declined, so the
         // fail-closed error names the failing stage instead of only saying
         // that construction was "unavailable".
@@ -135,7 +139,8 @@ void bind_nfsim(py::module_& m) {
                         "NFsim direct AST initialization required but unavailable" +
                         because);
                 }
-                if (std::getenv("BNG_NFSIM_ALLOW_XML_FALLBACK") == nullptr) {
+                if (!model_has_refined_population &&
+                    std::getenv("BNG_NFSIM_ALLOW_XML_FALLBACK") == nullptr) {
                     throw std::runtime_error(
                         "NFsim direct AST initialization unavailable" + because +
                         "; XML fallback disabled "
