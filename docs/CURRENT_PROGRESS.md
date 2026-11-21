@@ -38,11 +38,12 @@ summary: all_models_pass=true, release_check_satisfied=true,
          routes_single_engine=true, negatives_reject_wrong_law=true
 ```
 
-This satisfies the DECISIONS item 4 precondition (NFnext matches pinned
-native NFsim on the full network-free corpus) for considering default
-promotion. NFcore remains the default until the #149 acceptance contract is
-updated by the independent validation framework; no default change is made by
-this record.
+This satisfied the DECISIONS item 4 precondition (NFnext matches pinned
+native NFsim on the full network-free corpus) for default promotion. The
+promotion was subsequently made in #832: `method="nf"` now routes to NFnext,
+while `method="nfcore"` remains explicitly selectable. This record predates
+that change and preserves the evidence that qualified it; the current default
+is documented in `docs/migration_guide.md`.
 
 ## NFnext dynamic energy execution — 2026-11-19
 
@@ -119,7 +120,7 @@ implemented by it. A missing report alone is not proof of a product defect.
 | --- | --- | --- |
 | [#147](https://github.com/RuleWorld/BNG3/issues/147) | NFIR representation and selected dynamic-rate, modifier/filter and compartment execution improved in #656/#657. | Energy/barrier execution and physical units still refuse in from_bng.cpp; unresolved dynamic energy/population rates refuse during lowering. The complete required family contract is not fulfilled by refusal controls. |
 | [#148](https://github.com/RuleWorld/BNG3/issues/148) | The production route now includes modifier/filter and compartment support; scaffold/genome examples were added. | Energy, units and unlowered populations still refuse; added scaffold/genome examples do not replace full pinned-native corpus comparisons and shared population/lattice/protocol semantics. Contract membership is not execution coverage. |
-| [#149](https://github.com/RuleWorld/BNG3/issues/149) | NFcore2 was unlinked from bionetgen_core in #660 and selected transferred behaviors have production NFnext examples. | NFcore remains method="nf" default and closure explicitly preserves it. That is correct pending qualification, but default promotion and complete capability transfer/full native corpus required by the live contract remain unfinished. |
+| [#149](https://github.com/RuleWorld/BNG3/issues/149) | NFcore2 was unlinked from bionetgen_core in #660; selected transferred behaviors have production NFnext examples; the full TIER_NF native-NFsim/NFcore corpus passed on main and `method="nf"` was promoted to NFnext in #832. | Complete capability transfer/full native corpus is qualified; explicit NFcore selection and the remaining #149 named checks must still be recorded before closure. The default decision is settled and synchronized in `docs/migration_guide.md`. |
 | [#150](https://github.com/RuleWorld/BNG3/issues/150) | Generated NFcore HPP has independent native-NFsim ensembles. #658 replaces several formula-only checks with sampled trajectories. | The cited run 43568894380 is pull_request head 99b392cb, not main 843aa9f0. Its aggregate says partial and excludes dynamic thresholds; the compartment receipt separately states oracle limits. NFnext still refuses unlowered population maps; its generic graph path does not demonstrate the required population/threshold executor. |
 | [#152](https://github.com/RuleWorld/BNG3/issues/152) | Five canonical source-linked fixtures run BNG3; motor/TQSSA have bounded analytic checks and others have initial-state/invariant checks. | real_model_fixtures.py runs only the product, not a pinned native-NFsim comparison for each canonical fixture. Three fixture families have no trajectory law beyond invariants. test_energy_protocols.py Ising checks conservation; theoretical affinity arithmetic is separate from product rates. This does not establish the complete canonical behavior required by release-energy-protocols. |
 | [#159](https://github.com/RuleWorld/BNG3/issues/159) | The new suite tests selected-gate logic, one analytic stochastic calibration and inventory/expectation registration. | test_ssts_release.py does not execute the full official suite or consume full-run results. A fabricated _passed_case and 104 row IDs are not all valid Core outputs passing. Current PR subset workflows do not establish the full release contract. |
@@ -159,9 +160,10 @@ No new scientific simulation or full-corpus run was performed for this audit.
   populations, energy, units, MatchOnce, TotalRate, MoveConnected and filters.
   `nfnext.full` is incomplete; full-corpus acceptance has not been established.
 - **#149 / #650:** Explicit NFcore selection and prototype containment are useful
-  interim behavior. NFcore2 is still linked into the default combined core,
-  NFcore remains the default, and mapped unit-test filenames do not demonstrate
-  production capability transfer. Retirement/promotion obligations remain open.
+  interim behavior. NFcore2 is still linked into the default combined core and
+  mapped unit-test filenames alone do not demonstrate production capability
+  transfer. The default was later promoted to NFnext in #832 after corpus
+  parity; NFcore retirement and the remaining #149 obligations are still open.
 - **#150 / #648:** Existing generated NFcore HPP ensembles use independent native
   NFsim and analytic laws. Preserve those results with their declared limits.
   The newer formula-only checks add no product execution evidence; NFnext hybrid
