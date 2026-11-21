@@ -2222,10 +2222,13 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         throw std::runtime_error("NFnext execution unsupported: " + reason);
     };
     if (request.sample_times.empty()) refuse("sample_times must not be empty");
+    if (!std::isfinite(request.start_time) || request.start_time < 0.0)
+        refuse("start_time must be finite and nonnegative");
     double previous = -1.0;
     for (double time : request.sample_times) {
         if (!std::isfinite(time) || time < 0.0 || time <= previous)
             refuse("sample_times must be finite, nonnegative and strictly increasing");
+        if (time < request.start_time) refuse("sample_times must be at or after start_time");
         previous = time;
     }
     for (const auto& comp : source.compartments()) {
@@ -2780,7 +2783,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
     };
 
     const auto layout = RngLayout::exactSSA();
-    double time = 0.0;
+    double time = request.start_time;
     double next_time = std::numeric_limits<double>::infinity();
     std::size_t selected_rule = 0;
     Embedding selected_match;

@@ -127,6 +127,17 @@ def test_generated_hybrid_model_runs_through_public_nfcore(tmp_path, monkeypatch
     assert (result.observables["A_total"] + result.observables["B_total"] == 20).all()
 
 
+@pytest.mark.parametrize("method", ["nfcore", "nfnext"])
+def test_hybrid_clock_initializes_at_requested_start(tmp_path, method):
+    _model(tmp_path, "generate_hybrid_model({overwrite=>1, execute=>0})").execute()
+    hybrid = bionetgen.load(tmp_path / "model_hpp.bngl")
+    result = hybrid.simulate(method=method, t_start=2, t_end=2.1, n_steps=1, seed=42)
+    assert result.time.tolist() == [2.0, 2.1]
+    assert result.observables["A_total"][0] == 0
+    assert result.observables["B_total"][0] == 20
+    assert (result.observables["A_total"] + result.observables["B_total"] == 20).all()
+
+
 def test_population_map_total_rate_survives_generation_and_execution(tmp_path):
     source = tmp_path / "total_rate.bngl"
     source.write_text(
