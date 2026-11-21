@@ -9,7 +9,7 @@ the accepted pin from ``provenance/upstreams.lock.yml``:
 * baseline / upstream: the independently built native NFsim CLI on the frozen
   reduced XML, with explicit ``-xml/-o/-sim/-oSteps/-seed`` flags;
 * candidate / product: the BNG3 public ``bionetgen.load(...).simulate``
-  route with ``method="nf"`` and an explicit fixed seed on the reduced BNGL.
+  route with ``method="nfcore"`` and an explicit fixed seed on the reduced BNGL.
 
 The reduced XML is byte-identical to the output of BNG3's XML writer for the
 reduced BNGL at the recorded revision; it is frozen here so the native CLI's
@@ -142,7 +142,7 @@ def test_totalrate_local_function_source_rejects_product_executes(
     candidate_detail = ""
     try:
         trajectory = api.load(str(BNGL)).simulate(
-            method="nf", t_end=1, n_steps=1, seed=1
+            method="nfcore", t_end=1, n_steps=1, seed=1
         )
     except (RuntimeError, ValueError) as error:  # pragma: no cover - diff branch
         candidate_detail = str(error)[:2000]
@@ -154,7 +154,7 @@ def test_totalrate_local_function_source_rejects_product_executes(
         record_property("candidate_construction_path", route)
     record_property(
         "candidate_command",
-        f"bionetgen.load({BNGL}).simulate(method='nf', t_end=1, n_steps=1, seed=1)",
+        f"bionetgen.load({BNGL}).simulate(method='nfcore', t_end=1, n_steps=1, seed=1)",
     )
     if candidate_detail:
         record_property("candidate_detail", candidate_detail)

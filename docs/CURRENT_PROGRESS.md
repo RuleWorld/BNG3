@@ -1,5 +1,20 @@
 # BNG3 current progress
 
+## NFnext promoted to the network-free default — 2026-11-21
+
+DECISIONS item 4 gate is satisfied (full TIER_NF corpus parity at exact main
+`c95aa65c`). `method="nf"` now routes to NFnext through the Python API and
+reports `backend="nfnext"`; `method="nfcore"` remains the explicit NFcore route
+(`backend="nfsim"`), and `method="nfnext"` is unchanged. NFcore-only options
+(`equilibrate`, `traversal_limit`) are accepted only by explicit `method="nfcore"`,
+and `backend="bngsim"` remains invalid for all network-free methods. Tests that
+pin NFcore/NFsim-specific behavior were moved to explicit `method="nfcore"`;
+the #149 default test now validates the promoted contract.
+
+Remaining limitation: the C++ BNGL action path still dispatches
+`simulate({method=>"nf"})` to NFcore and does not accept `method=>"nfcore"`;
+this is documented rather than silently changed.
+
 ## Full network-free corpus parity — 2026-11-20
 
 PR #815 (merged at `c95aa65ce77487757c35a78fba525d2db56a3962`) closes the

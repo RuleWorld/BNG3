@@ -274,7 +274,7 @@ def test_fixed_seed_reproduces_the_same_trajectory_on_both_legs(
     )
 
     direct = runner.run_api(
-        model_name, method="nf", seed=SEED, t_end=T_END, n_steps=N_STEPS
+        model_name, method="nfcore", seed=SEED, t_end=T_END, n_steps=N_STEPS
     )
     assert (
         direct.construction_path == "direct"
@@ -313,10 +313,10 @@ def test_fixed_seed_is_deterministic_within_bng3(api, work_dir):
     seed that perturbs everything.
     """
     first = runner.run_api(
-        "simple_system", method="nf", seed=SEED, t_end=T_END, n_steps=N_STEPS
+        "simple_system", method="nfcore", seed=SEED, t_end=T_END, n_steps=N_STEPS
     )
     second = runner.run_api(
-        "simple_system", method="nf", seed=SEED, t_end=T_END, n_steps=N_STEPS
+        "simple_system", method="nfcore", seed=SEED, t_end=T_END, n_steps=N_STEPS
     )
     report = _identity_report(
         (first.data, first.columns), (second.data, second.columns)
@@ -339,10 +339,10 @@ def test_different_seeds_produce_different_trajectories_on_both_legs(api, work_d
     )
 
     base = runner.run_api(
-        "simple_system", method="nf", seed=SEED, t_end=T_END, n_steps=N_STEPS
+        "simple_system", method="nfcore", seed=SEED, t_end=T_END, n_steps=N_STEPS
     )
     other = runner.run_api(
-        "simple_system", method="nf", seed=SEED + 1, t_end=T_END, n_steps=N_STEPS
+        "simple_system", method="nfcore", seed=SEED + 1, t_end=T_END, n_steps=N_STEPS
     )
     report = _identity_report((base.data, base.columns), (other.data, other.columns))
     assert (
@@ -415,7 +415,7 @@ def test_seed_state_order_matches_native_nfsim(block_order, api, work_dir, monke
     monkeypatch.delenv("BNG_NFSIM_FORCE_XML", raising=False)
     monkeypatch.delenv("BNG_NFSIM_ALLOW_XML_FALLBACK", raising=False)
     direct_result = api.load(str(source)).simulate(
-        method="nf", seed=SEED, t_end=SHORT_T_END, n_steps=SHORT_N_STEPS
+        method="nfcore", seed=SEED, t_end=SHORT_T_END, n_steps=SHORT_N_STEPS
     )
     assert direct_result.construction_path == "direct", (
         "the direct path declined a model the XML path accepts: "
@@ -474,7 +474,7 @@ def test_an_family_seed_state_order_matches_native_nfsim(model_name, api, work_d
     require_oracle(source is not None, f"{model_name} is not on disk")
 
     direct = runner.run_api(
-        model_name, method="nf", seed=7, t_end=SHORT_T_END, n_steps=SHORT_N_STEPS
+        model_name, method="nfcore", seed=7, t_end=SHORT_T_END, n_steps=SHORT_N_STEPS
     )
     assert (
         direct.construction_path == "direct"

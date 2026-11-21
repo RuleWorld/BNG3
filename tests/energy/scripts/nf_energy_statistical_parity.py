@@ -249,7 +249,7 @@ def run_gate(
         model.write_xml(str(xml_path))
         for seed in seeds:
             direct = bionetgen.load(model_path).simulate(
-                method="nf", t_end=t_end, n_steps=n_steps, seed=int(seed)
+                method="nfcore", t_end=t_end, n_steps=n_steps, seed=int(seed)
             )
             direct_paths.add(direct.construction_path or "")
             if direct.construction_path != "direct":

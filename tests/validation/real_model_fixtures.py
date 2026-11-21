@@ -102,7 +102,7 @@ def _expectations() -> dict:
     """The independent expectation of every fixture, keyed by fixture id."""
     return {
         "rna-uorf-rna-synthesis3": dict(
-            route="nf",
+            route="nfcore",
             initial={
                 "RNA_A": 6.0,
                 "RNA_T": 6.0,
@@ -436,7 +436,7 @@ def _compare_invariant(invariant, series, exact):
 
 def _assess(fixture, times, series):
     """Compare one fixture with its independent expectation."""
-    exact = fixture["route"] == "nf"
+    exact = fixture["route"] == "nfcore"
     rows = []
     initial = []
     for name, expected in sorted(fixture["initial"].items()):

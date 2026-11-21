@@ -1134,7 +1134,7 @@ end model
 
         model = bionetgen.load(str(bngl))
         with pytest.raises(ValueError, match="R1.*negative propensity"):
-            model.simulate(method="nf", t_end=0.0, n_steps=1, seed=1)
+            model.simulate(method="nfcore", t_end=0.0, n_steps=1, seed=1)
 
     def test_nf_simulation_honors_absolute_start_time(self, tmp_path):
         # Source-derived from NFsim test/Issue78/issue78.bngl and afad408:
@@ -1162,7 +1162,7 @@ end model
 """)
         model = bionetgen.load(str(bngl))
         result = model.simulate(
-            method="nf",
+            method="nfcore",
             t_start=100.0,
             t_end=102.0,
             n_steps=0,
@@ -1174,7 +1174,7 @@ end model
         assert result.observables["Xtot"][-1] > 100.0
 
         uniform = model.simulate(
-            method="nf", t_start=100.0, t_end=102.0, n_steps=20, seed=1
+            method="nfcore", t_start=100.0, t_end=102.0, n_steps=20, seed=1
         )
         assert uniform.time[0] == 100.0
         assert uniform.time[-1] == 102.0
@@ -1287,7 +1287,7 @@ end model
 
         monkeypatch.chdir(tmp_path.parent)
         model = bionetgen.load(str(bngl))
-        result = model.simulate(method="nf", t_end=1.0, n_steps=2, seed=1)
+        result = model.simulate(method="nfcore", t_end=1.0, n_steps=2, seed=1)
 
         assert result.time[-1] == pytest.approx(1.0)
         assert result.observables["A_total"][0] == pytest.approx(1.0)
@@ -1331,7 +1331,7 @@ end model
             monkeypatch.delenv("BNG_NFSIM_FORCE_XML", raising=False)
             monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
         result = bionetgen.load(str(bngl)).simulate(
-            method="nf", t_end=1.0, n_steps=2, seed=1
+            method="nfcore", t_end=1.0, n_steps=2, seed=1
         )
 
         assert result.construction_path == ("in-memory-xml" if force_xml else "direct")
@@ -1366,7 +1366,7 @@ end model
 
         monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
         result = bionetgen.load(str(bngl)).simulate(
-            method="nf", t_end=0.0, n_steps=1, seed=1
+            method="nfcore", t_end=0.0, n_steps=1, seed=1
         )
 
         assert result.time.tolist() == [0.0, 0.0]
@@ -2323,10 +2323,10 @@ end model
         with pytest.raises(
             ValueError, match="equilibrate must be finite and non-negative"
         ):
-            model.simulate(method="nf", t_end=1.0, n_steps=1, equilibrate=-0.1)
+            model.simulate(method="nfcore", t_end=1.0, n_steps=1, equilibrate=-0.1)
 
         result = model.simulate(
-            method="nf", t_end=1.0, n_steps=1, seed=1, equilibrate=0.1
+            method="nfcore", t_end=1.0, n_steps=1, seed=1, equilibrate=0.1
         )
         assert result.time.tolist() == pytest.approx([0.0, 1.0])
 
