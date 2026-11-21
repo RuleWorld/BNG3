@@ -833,3 +833,24 @@ def test_issue152_energy_protocol_case_runs_with_locked_strict_oracles():
     assert upload["uses"].startswith("actions/upload-artifact@")
     assert upload["if"] == "always()"
     assert upload["with"].get("if-no-files-found") == "error"
+
+
+def test_nfnext_ensemble_rng_isolation_step_is_wired():
+    """The #176 bounded ensemble-isolation check must not silently disappear."""
+    workflow = _parse_workflow()
+    steps = workflow["jobs"]["nfsim-parity"]["steps"]
+    step = next(
+        (
+            item
+            for item in steps
+            if item.get("name")
+            == "Check NFnext ensemble RNG and state isolation (#176)"
+        ),
+        None,
+    )
+    assert step is not None
+    run = step["run"]
+    assert "tests/python/nfnext/test_nfnext_ensemble_rng_isolation.py" in run
+    tokens = shlex.split(run)
+    assert "--noconftest" in tokens
+    assert not {"-k", "--deselect", "--runxfail"} & set(tokens)
