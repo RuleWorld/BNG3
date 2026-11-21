@@ -3,6 +3,10 @@
 Scope: the open gap recorded in `docs/CAPABILITY_UNION_INVENTORY.md` and
 `docs/CURRENT_PROGRESS.md` for issues #147, #148, #149 and #150.
 
+> **Status note (post-#832):** `method="nf"` now defaults to NFnext; NFcore
+> remains explicitly selectable. The statements below describe the increment as
+> it was recorded and are retained for history, not as the current default.
+>
 > NFnext has made concrete progress and NFcore remains the default. Dynamic
 > energy expressions and dynamic population-map rates can be represented in
 > NFIR, but their runtime coverage and full independent NFsim parity remain
