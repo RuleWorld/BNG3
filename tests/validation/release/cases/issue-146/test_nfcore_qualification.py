@@ -100,7 +100,7 @@ def test_release_nfcore_dual_route_equivalence(monkeypatch):
         monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
         monkeypatch.setenv("BNG_NFSIM_ALLOW_XML_FALLBACK", "1")
         xml_traj = runner.run_api(
-            model_name, method="nf", seed=seed, t_end=t_end, n_steps=n_steps
+            model_name, method="nfcore", seed=seed, t_end=t_end, n_steps=n_steps
         )
         assert xml_traj.construction_path == "in-memory-xml"
 
@@ -108,7 +108,7 @@ def test_release_nfcore_dual_route_equivalence(monkeypatch):
         monkeypatch.delenv("BNG_NFSIM_FORCE_XML", raising=False)
         monkeypatch.delenv("BNG_NFSIM_ALLOW_XML_FALLBACK", raising=False)
         direct_traj = runner.run_api(
-            model_name, method="nf", seed=seed, t_end=t_end, n_steps=n_steps
+            model_name, method="nfcore", seed=seed, t_end=t_end, n_steps=n_steps
         )
         assert direct_traj.construction_path == "direct"
 
@@ -156,7 +156,7 @@ end reaction rules
 end model"""
 
     model = BioNetGenModel(cpp.parse_string(src))
-    res = model.simulate(method="nf", t_end=1.0, n_steps=1, seed=123)
+    res = model.simulate(method="nfcore", t_end=1.0, n_steps=1, seed=123)
 
     # In seed: 5 dimers A(b!1).A(b!1) (10 A molecules in 5 species complexes)
     # plus 10 monomers A(b) (10 A molecules in 10 species complexes)
@@ -182,7 +182,7 @@ def test_release_nfcore_local_function_scopes():
     assert model_src is not None and model_src.is_file()
 
     model = bionetgen.load(str(model_src))
-    res = model.simulate(method="nf", t_end=1.0, n_steps=2, seed=777)
+    res = model.simulate(method="nfcore", t_end=1.0, n_steps=2, seed=777)
     assert len(res.time) == 3
     expected_observables = [
         "Atot",
@@ -225,7 +225,7 @@ end model"""
     model = BioNetGenModel(cpp.parse_string(src))
 
     # Valid option combinations via simulate()
-    res1 = model.simulate(method="nf", t_end=2.0, n_steps=5, seed=101)
+    res1 = model.simulate(method="nfcore", t_end=2.0, n_steps=5, seed=101)
     assert len(res1.time) == 6
     assert res1.observables["A_obs"][-1] <= 50.0
 
@@ -366,7 +366,9 @@ end model"""
 
     counts = []
     for i in range(n_runs):
-        res = model.simulate(method="nf", t_end=t_end, n_steps=1, seed=base_seed + i)
+        res = model.simulate(
+            method="nfcore", t_end=t_end, n_steps=1, seed=base_seed + i
+        )
         counts.append(int(res.observables["A_obs"][-1]))
 
     # Analytical Binomial(100, exp(-0.5)) CDF

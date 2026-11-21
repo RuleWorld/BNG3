@@ -341,11 +341,11 @@ def _ensemble(backend: str) -> list[float]:
 #: corresponding law with and without the statistical factor.
 BACKENDS = {
     "ssa": _discrete_hazard,
-    "nf": _discrete_hazard,
+    "nfcore": _discrete_hazard,
 }
 
 
-@pytest.mark.parametrize("backend", ["ssa", "nf"])
+@pytest.mark.parametrize("backend", ["ssa", "nfcore"])
 def test_every_stochastic_backend_carries_the_statistical_factor(backend):
     values = _ensemble(backend)
     mean = sum(values) / len(values)
@@ -370,14 +370,14 @@ def test_every_stochastic_backend_carries_the_statistical_factor(backend):
 def test_the_two_stochastic_backends_carry_the_same_statistical_factor():
     """The two backends implement the same stochastic count law and factor."""
     summaries = {}
-    for backend in ("ssa", "nf"):
+    for backend in ("ssa", "nfcore"):
         values = _ensemble(backend)
         mean = sum(values) / len(values)
         variance = sum((value - mean) ** 2 for value in values) / (len(values) - 1)
         summaries[backend] = (mean, math.sqrt(variance / len(values)))
 
-    observed = abs(summaries["ssa"][0] - summaries["nf"][0])
-    pooled_stderr = math.hypot(summaries["ssa"][1], summaries["nf"][1])
+    observed = abs(summaries["ssa"][0] - summaries["nfcore"][0])
+    pooled_stderr = math.hypot(summaries["ssa"][1], summaries["nfcore"][1])
     assert observed <= 4.0 * pooled_stderr, (
         f"the backends differ by {observed:.4f} events, more than four pooled "
         f"standard errors ({4.0 * pooled_stderr:.4f})"

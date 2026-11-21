@@ -243,7 +243,7 @@ def test_release_nf_units(tmp_path, monkeypatch):
     zero_counts = []
     for offset in range(ZERO_ORDER_RUNS):
         res = zero_model.simulate(
-            method="nf",
+            method="nfcore",
             t_end=ZERO_ORDER_END_TIME,
             n_steps=1,
             seed=ZERO_ORDER_BASE_SEED + offset,
@@ -264,7 +264,7 @@ def test_release_nf_units(tmp_path, monkeypatch):
     uni_counts = []
     for offset in range(RUNS):
         res = uni_model.simulate(
-            method="nf", t_end=END_TIME, n_steps=1, seed=BASE_SEED + offset
+            method="nfcore", t_end=END_TIME, n_steps=1, seed=BASE_SEED + offset
         )
         traj = runner._result_to_trajectory(res)
         assert traj.construction_path == "direct"
@@ -281,7 +281,7 @@ def test_release_nf_units(tmp_path, monkeypatch):
     bi_counts = []
     for offset in range(RUNS):
         res = bi_model.simulate(
-            method="nf", t_end=END_TIME, n_steps=1, seed=BASE_SEED + offset
+            method="nfcore", t_end=END_TIME, n_steps=1, seed=BASE_SEED + offset
         )
         traj = runner._result_to_trajectory(res)
         assert traj.construction_path == "direct"
@@ -300,7 +300,7 @@ def test_release_nf_units(tmp_path, monkeypatch):
     trans_counts = []
     for offset in range(RUNS):
         res = trans_model.simulate(
-            method="nf", t_end=END_TIME, n_steps=1, seed=BASE_SEED + offset
+            method="nfcore", t_end=END_TIME, n_steps=1, seed=BASE_SEED + offset
         )
         traj = runner._result_to_trajectory(res)
         assert traj.construction_path == "direct"
@@ -558,7 +558,7 @@ end model"""
         RuntimeError,
         match="unimolecular physical rates require a positive static declared 3D compartment",
     ):
-        m_tn.simulate(method="nf", t_end=1.0)
+        m_tn.simulate(method="nfcore", t_end=1.0)
 
     # Check 3: Refusal of unsupported dimensions (e.g. 2D membrane destination)
     src_trans_2d = """begin model
@@ -587,4 +587,4 @@ end model"""
     with pytest.raises(
         RuntimeError, match="NFsim cannot execute physical-unit annotations"
     ):
-        m_2d.simulate(method="nf", t_end=1.0)
+        m_2d.simulate(method="nfcore", t_end=1.0)
