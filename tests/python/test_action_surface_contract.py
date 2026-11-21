@@ -487,16 +487,13 @@ def test_hybrid_continuation_uses_final_state_and_updated_rate(tmp_path, method)
 def test_hybrid_nf_actions_continue_from_final_state(tmp_path):
     _model(tmp_path, "generate_hybrid_model({overwrite=>1, execute=>0})").execute()
     path = tmp_path / "model_hpp.bngl"
-    path.write_text(
-        path.read_text().split("## model actions ##")[0]
-        + """
+    path.write_text(path.read_text().split("## model actions ##")[0] + """
 begin actions
   simulate_nf({t_end=>0.1, n_steps=>1, seed=>42, suffix=>"before"})
   setParameter("k_make",0)
   simulate_nf({t_end=>1, n_steps=>2, suffix=>"after"})
 end actions
-"""
-    )
+""")
     bionetgen.load(path).execute()
     before = (tmp_path / "model_hpp_before.gdat").read_text().splitlines()
     after = (tmp_path / "model_hpp_after.gdat").read_text().splitlines()

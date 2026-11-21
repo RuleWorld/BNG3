@@ -698,9 +698,9 @@ def _run_native_protocol_ensemble(xml: Path, tmp_path: Path):
         )
         assert path is not None, f"native NFsim protocol seed {seed}: {error}"
         data, columns = compare.parse_gdat(path)
-        assert data is not None, (
-            f"native NFsim protocol seed {seed}: malformed trajectory"
-        )
+        assert (
+            data is not None
+        ), f"native NFsim protocol seed {seed}: malformed trajectory"
         runs.append((data, columns))
     return runs
 
@@ -818,9 +818,9 @@ def _check_hybrid_model_action_options(
             "overwrite=>1, actions=>[]",
         )
         if engine == "bng2":
-            assert empty_result is not None and empty_result.returncode == 0, (
-                empty_result
-            )
+            assert (
+                empty_result is not None and empty_result.returncode == 0
+            ), empty_result
         empty_hpp = tmp_path / f"empty-actions-{engine}" / engine / "model_hpp.bngl"
         assert empty_hpp.is_file()
         assert "## model actions ##" not in empty_hpp.read_text()
@@ -1375,9 +1375,9 @@ def test_release_hybrid_conservation_and_analytic_conversion_law(hybrid_ensemble
         for data, columns in runs:
             a = data[:, columns.index("A_total")]
             b = data[:, columns.index("B_total")]
-            assert np.array_equal(a + b, np.full_like(a, INITIAL_B)), (
-                f"{label}: A/B molecule conservation violated"
-            )
+            assert np.array_equal(
+                a + b, np.full_like(a, INITIAL_B)
+            ), f"{label}: A/B molecule conservation violated"
 
 
 @pytest.mark.nf
@@ -1424,9 +1424,9 @@ def test_release_hybrid_population_particle_conversion_cycle(
         for data, columns in runs:
             a = data[:, columns.index("A_total")]
             b = data[:, columns.index("B_total")]
-            assert np.array_equal(a + b, np.full_like(a, INITIAL_B)), (
-                f"{label}: population/particle conservation violated"
-            )
+            assert np.array_equal(
+                a + b, np.full_like(a, INITIAL_B)
+            ), f"{label}: population/particle conservation violated"
 
     evidence_target = os.environ.get("BNG3_HYBRID_EVIDENCE_DIR")
     if evidence_target:
@@ -1661,9 +1661,9 @@ def test_release_hybrid_whole_dimer_conversion_and_multiplicity(
         for data, columns in runs:
             dimers = data[:, columns.index("Dimer_species")]
             units = data[:, columns.index("A_units")]
-            assert np.array_equal(units, np.full_like(units, 2 * INITIAL_DIMERS)), (
-                f"{label}: whole-complex conversion lost molecule multiplicity"
-            )
+            assert np.array_equal(
+                units, np.full_like(units, 2 * INITIAL_DIMERS)
+            ), f"{label}: whole-complex conversion lost molecule multiplicity"
             assert np.all(dimers >= 0)
 
     evidence_target = os.environ.get("BNG3_HYBRID_EVIDENCE_DIR")
@@ -1997,9 +1997,9 @@ def _hybrid_rate_evidence(root, *, total_rate):
         )
         assert output is not None, error
         data, names = compare.parse_gdat(output)
-        assert data is not None, (
-            f"native NFsim seed {seed}: malformed {name} trajectory"
-        )
+        assert (
+            data is not None
+        ), f"native NFsim seed {seed}: malformed {name} trajectory"
         native.append((data, names))
     hpp = _generate_for_backend_comparison(root / f"{name}.bngl", source, "bng3")
     direct = root / "direct.bngl"
@@ -2756,9 +2756,11 @@ def test_release_capability_coverage_150(
         runtime_cases = {
             label: {
                 "passed": True,
-                "oracle": "native-and-analytic"
-                if label == "compartments"
-                else "bng2-native-and-analytic",
+                "oracle": (
+                    "native-and-analytic"
+                    if label == "compartments"
+                    else "bng2-native-and-analytic"
+                ),
                 "backend_comparison": nfnext_hybrid_cases[label]["comparison"],
                 "artifacts": {
                     **replay(*files),
