@@ -293,9 +293,9 @@ def test_parity_workflow_env_still_pins_the_strict_oracle_flag():
     strict-mode behaviour being reachable.
     """
     text = PARITY_WORKFLOW.read_text(encoding="utf-8")
-    assert re.search(
-        r'^\s*BNG3_CI_STRICT_ORACLES:\s*"1"\s*$', text, re.MULTILINE
-    ), "parity.yml no longer sets BNG3_CI_STRICT_ORACLES=1; oracle-gated parity steps would skip instead of failing"
+    assert re.search(r'^\s*BNG3_CI_STRICT_ORACLES:\s*"1"\s*$', text, re.MULTILINE), (
+        "parity.yml no longer sets BNG3_CI_STRICT_ORACLES=1; oracle-gated parity steps would skip instead of failing"
+    )
 
 
 def test_orchestrated_steps_keep_their_shell_before_their_run():
@@ -667,6 +667,7 @@ def test_hybrid_release_receipt_is_recorded_and_consumed_in_parity_queue():
         if step.get("name")
         == "Validate independent issue-150 hybrid release acceptance"
     )
+    assert "--require-complete" in record_step["run"]
     assert "scripts/ci/record_hybrid_release.py" in record_step["run"]
     assert (
         '--output "${{ runner.temp }}/release-hybrid-evidence/issue-150-release-report.json"'

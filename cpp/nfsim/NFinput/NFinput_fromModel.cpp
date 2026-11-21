@@ -68,7 +68,7 @@ System* initializeFromModel(
 
     std::string xmlStr;
     try {
-        xmlStr = bng::io::XmlWriter::write(*model);
+        xmlStr = bng::io::XmlWriter::write(*model, nullptr, /*retainRateExpressions=*/true);
     } catch (const std::exception& e) {
         cerr << "[nfsim] initializeFromModel: XmlWriter threw: " << e.what()
              << " — falling back to XML path.\n";

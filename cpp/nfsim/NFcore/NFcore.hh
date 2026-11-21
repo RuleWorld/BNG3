@@ -8,6 +8,7 @@
 #include <memory>
 #include <iostream>
 #include <fstream>
+#include <functional>
 #include <cstdint>
 #include <string>
 
@@ -2532,6 +2533,12 @@ namespace NFcore
             TransformationSet* getTransformationSet() const { return transformationSet; }
 
 			void setBaseRate(double newBaseRate,string newBaseRateName);
+            void setBaseRateExpression(std::function<double()> expression) {
+                baseRateExpression = std::move(expression);
+            }
+            bool hasLiveBaseRate() const {
+                return !baseRateParameterName.empty() || static_cast<bool>(baseRateExpression);
+            }
 			// Scale the existing base rate in place without re-applying the
 			// reaction-center symmetry factor that the constructor already
 			// folded into baseRate. Used by the NFsim compartment count-rate
@@ -2843,6 +2850,7 @@ namespace NFcore
 
 			double baseRate;
 			string baseRateParameterName;
+            std::function<double()> baseRateExpression;
 			double baseRateParameterConversionFactor = 1.0;
 			bool usesBaseRateParameterConversion = false;
 			Compartment* zeroOrderCompartment = nullptr;

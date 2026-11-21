@@ -2,6 +2,7 @@
 
 #include "nfnext/nfir.hpp"
 
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -35,18 +36,23 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& model);
 
 // Execute one trajectory initialized at start_time. Sample times are absolute
 // and the output rows contain time followed by declared observables.
+struct BngExecutionState;
+
 struct BngExecutionRequest {
     std::vector<double> sample_times;
     std::uint64_t seed{0};
     std::uint64_t max_events{1'000'000};
     std::size_t max_particles{1'000'000};
     double start_time{0.0};
+    std::shared_ptr<const BngExecutionState> continuation;
+    bool retain_state{false};
 };
 
 struct BngExecutionResult {
     std::vector<std::string> columns;
     std::vector<std::vector<double>> rows;
     std::uint64_t event_count{0};
+    std::shared_ptr<BngExecutionState> final_state;
 };
 
 // Execute through the network-free NFIR runtime with explicit diagnostics
