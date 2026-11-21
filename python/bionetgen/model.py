@@ -1099,6 +1099,7 @@ class BioNetGenModel:
         traversal_limit: int = -1,
         backend: Optional[str] = None,
         continue_simulation: bool = False,
+        population_threshold: int = 0,
     ) -> SimResult:
         """Run a simulation using the specified method.
 
@@ -1358,6 +1359,7 @@ class BioNetGenModel:
                     t_start=t_start,
                     continuation=nf_state,
                     retain_state=retain_nf_state,
+                    population_threshold=population_threshold,
                 )
                 if len(times) != requested_count:
                     raw["time"] = raw["time"][:requested_count]
