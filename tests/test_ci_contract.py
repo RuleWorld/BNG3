@@ -1227,9 +1227,7 @@ def test_release_workflow_uses_the_classified_prerelease_flag():
 
     release = parse_workflow(RELEASE_WORKFLOW)
     steps = release["jobs"]["release"]["steps"]
-    classify = next(
-        step for step in steps if step.get("id") == "tag"
-    )
+    classify = next(step for step in steps if step.get("id") == "tag")
     assert "scripts/ci/release_tag.py" in classify["run"]
     assert "$GITHUB_OUTPUT" in classify["run"]
     assert classify["env"]["RELEASE_TAG"] == "${{ github.ref_name }}"
@@ -1239,8 +1237,7 @@ def test_release_workflow_uses_the_classified_prerelease_flag():
         if step.get("uses", "").startswith("softprops/action-gh-release@")
     )
     assert (
-        create["with"]["prerelease"]
-        == "${{ steps.tag.outputs.prerelease == 'true' }}"
+        create["with"]["prerelease"] == "${{ steps.tag.outputs.prerelease == 'true' }}"
     )
     assert "contains(github.ref" not in create["with"]["prerelease"]
 
