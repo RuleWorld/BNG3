@@ -2966,3 +2966,88 @@ def test_release_capability_coverage_150(
         (evidence_dir / "capability-coverage-150.json").write_text(
             json.dumps(report, indent=2) + "\n"
         )
+
+
+def test_nfnext_mixed_conversion_cycle_analytic_law():
+    """Qualify NFnext's particle/population conversion cycle against an exact law.
+
+    The generated-HPP suite above exercises this cycle through NFcore and the
+    pinned native NFsim oracle. The production NFnext entry point lowers a
+    forward population map plus a reverse population reactant rule; no public
+    test checks that combined route. This case drives ``simulate_nfnext`` with
+    fixed seeds and verifies exact particle+population conservation and the
+    closed-form two-state CTMC binomial marginal
+
+        P[population](t) = kf/(kf+kr) * (1 - exp(-(kf+kr) t)).
+
+    It is an independent analytic control, not a BNG3 artifact used as its own
+    oracle.
+    """
+    # Reuse the extension the harness already loaded. Loading the shared object
+    # a second time under a fresh module name double-registers pybind11 types
+    # ("Expression is already registered") and breaks the whole session.
+    try:
+        from bionetgen.model import _cpp as cpp  # type: ignore
+    except (ImportError, AttributeError):
+        try:
+            import bionetgen._bionetgen_cpp as cpp  # type: ignore
+        except ImportError:
+            pytest.skip("no native NFnext extension available")
+
+    n_particles = 40
+    k_forward = 2.0
+    k_reverse = 1.0
+    times = [0.0, 0.25, 0.5, 1.0]
+    source = f"""begin model
+begin parameters
+  kf {k_forward}
+  kr {k_reverse}
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin population types
+  Apop()
+end population types
+begin seed species
+  A() {n_particles}
+end seed species
+begin observables
+  Molecules A_total A()
+  Molecules Apop_total Apop()
+end observables
+begin population maps
+  A() -> Apop() kf
+end population maps
+begin reaction rules
+  Apop() -> A() kr
+end reaction rules
+end model
+"""
+    model = cpp.parse_string(source)
+    runs = []
+    for seed in range(BASE_SEED, BASE_SEED + 32):
+        result = cpp.simulate_nfnext(model, times, seed=seed)
+        assert result["engine"] == "nfnext"
+        grid = np.asarray([float(value) for value in result["time"]])
+        particles = np.asarray(result["observables"]["A_total"], dtype=float)
+        population = np.asarray(result["observables"]["Apop_total"], dtype=float)
+        assert np.allclose(grid, times, rtol=0.0, atol=1e-12)
+        assert np.array_equal(particles + population, np.full(len(times), n_particles))
+        runs.append(
+            (
+                np.column_stack([grid, particles, population]),
+                ["time", "A_total", "Apop_total"],
+            )
+        )
+
+    probability = lambda grid: (k_forward / (k_forward + k_reverse)) * (
+        1.0 - np.exp(-(k_forward + k_reverse) * grid)
+    )
+    compare.qualify_binomial_marginal(
+        runs,
+        "Apop_total",
+        population=n_particles,
+        probability=probability,
+        label="NFnext mixed conversion cycle",
+    )
