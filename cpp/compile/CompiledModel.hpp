@@ -224,6 +224,7 @@ struct CompiledPopulationMap {
     std::vector<std::string> populationArguments;
     std::string sourceRate;
     ResolvedExpression rate;
+    bool totalRate = false;
 
     // Compatibility projection for older consumers that treated the RHS
     // population species as a function. New code must use populationName/rate.

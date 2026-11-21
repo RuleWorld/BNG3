@@ -19,6 +19,16 @@ def passed_case():
     }
 
 
+def test_report_gate_field_selects_supported_surface_for_full_runs():
+    """A full run gates raw execution integrity, not the selected surface."""
+    bounded = argparse.Namespace(gate_selected_cases=True, gate_supported_surface=False)
+    full = argparse.Namespace(gate_selected_cases=False, gate_supported_surface=True)
+    plain = argparse.Namespace(gate_selected_cases=False, gate_supported_surface=False)
+    assert runner._report_gate_field(bounded) == "selected_surface_passed"
+    assert runner._report_gate_field(full) == "supported_surface_passed"
+    assert runner._report_gate_field(plain) == "core_passed"
+
+
 def test_selected_gate_accepts_executed_reference_and_explicit_unsupported():
     records = [
         passed_case(),
@@ -236,8 +246,8 @@ def test_ssts_workflow_bounds_execution_and_preserves_failure_artifacts():
         if step.get("name") == "Run bounded official conformance"
     )
     assert "gate=(--gate-selected-cases)" in run
-    assert "gate=(--report-only)" in run
     assert '"${gate[@]}"' in run
+    assert "gate=(--gate-supported-surface)" in run
     assert (
         "selection=(--categories semantic --max-cases 128 "
         "--selection-strategy feature-cover)"

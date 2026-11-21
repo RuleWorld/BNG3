@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -91,10 +92,11 @@ def test_hybrid_release_record_verifies_junit_xml(tmp_path):
     valid_xml.write_text(
         """<?xml version="1.0" encoding="utf-8"?>
 <testsuites>
-  <testsuite name="pytest" errors="0" failures="0" skipped="0" tests="3">
+  <testsuite name="pytest" errors="0" failures="0" skipped="0" tests="4">
     <testcase classname="tests.validation.test_hybrid_execution" name="test_release_hybrid_bng2_native_nfsim_and_bng3_trajectories" time="1.0"/>
     <testcase classname="tests.validation.test_hybrid_execution" name="test_release_hybrid_conservation_and_analytic_conversion_law" time="1.0"/>
     <testcase classname="tests.validation.test_hybrid_execution" name="test_release_capability_coverage_150" time="1.0"/>
+    <testcase classname="tests.validation.test_hybrid_execution" name="test_release_hybrid_stage_continuation" time="1.0"/>
   </testsuite>
 </testsuites>
 """,
@@ -175,18 +177,20 @@ def test_hybrid_release_record_verifies_evidence_directory(tmp_path):
 
 
 @pytest.mark.parametrize(
-    ("scope", "include_coverage_check", "omit_row", "expected_status"),
+    "defect",
     [
-        ("partial", False, False, "NOT_TESTED"),
-        ("partial", True, False, "NOT_TESTED"),
-        ("complete", False, False, "NOT_TESTED"),
-        ("complete", True, True, "NOT_TESTED"),
-        ("complete", True, False, "PASS"),
+        "partial",
+        "absent_summary",
+        "missing_row",
+        "missing_case",
+        "failed_case",
+        "wrong_oracle",
+        "wrong_pin",
+        "corrupt_replay",
+        None,
     ],
 )
-def test_hybrid_release_record_requires_affirmative_complete_coverage(
-    tmp_path, scope, include_coverage_check, omit_row, expected_status
-):
+def test_hybrid_release_record_requires_affirmative_complete_coverage(tmp_path, defect):
     revision = subprocess.check_output(
         ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
     ).strip()
@@ -194,22 +198,52 @@ def test_hybrid_release_record_requires_affirmative_complete_coverage(
         "release-hybrid": {"passed": True},
         "release-hybrid-conservation": {"passed": True},
     }
-    if include_coverage_check:
+    if defect != "absent_summary":
         checks["release-capability-coverage-150"] = {"passed": True}
-    matrix = json.loads(
-        (ROOT / "provenance/capability-matrix.yml").read_text(encoding="utf-8")
+    contract = json.loads(
+        (ROOT / "tests/validation/release/cases/issue-150/contract.json").read_text()
     )
+    artifact = tmp_path / "replay.csv"
+    artifact.write_text("time,A,B\n0,5,0\n")
+    replay = {artifact.name: hashlib.sha256(artifact.read_bytes()).hexdigest()}
+    if defect == "corrupt_replay":
+        artifact.write_text("corrupt")
     cases = {
-        row["id"]: {"passed": True} for row in matrix["rows"] if row["issue"] == 150
+        identity: {"passed": True, "oracle": "bng2-options", "artifacts": replay}
+        for identity in contract["inventory_rows"]
     }
-    if omit_row:
+    execution = {
+        name: {"passed": True, "oracle": oracle, "artifacts": replay}
+        for name, oracle in contract["hybrid_execution_cases"].items()
+    }
+    cases["hybrid.execution"] = {"passed": True, "cases": execution}
+    if defect == "missing_row":
         del cases["hybrid.execution"]
+    elif defect == "missing_case":
+        del execution["stage_compartment_graph_and_counts"]
+    elif defect == "failed_case":
+        execution["stage_bngl_protocol"]["passed"] = False
+    elif defect == "wrong_oracle":
+        execution["stage_native_rate_change"]["oracle"] = "bng3"
+    pins = json.loads((ROOT / "provenance/upstreams.lock.yml").read_text())["sources"]
+    oracles = {
+        "bng2": {"revision": pins["bionetgen"]["revision"], "script_sha256": "a" * 64},
+        "native_nfsim": {
+            "revision": pins["nfsim"]["revision"],
+            "binary_sha256": "b" * 64,
+        },
+    }
+    if defect == "wrong_pin":
+        oracles["native_nfsim"]["revision"] = "0" * 40
     (tmp_path / "capability-coverage-150.json").write_text(
         json.dumps(
             {
                 "source": {"revision": revision, "dirty": False},
-                "issue_150_acceptance": scope,
+                "issue_150_acceptance": "partial"
+                if defect == "partial"
+                else "complete",
                 "semantic_checks": checks,
+                "oracles": oracles,
                 "inventory_cases": cases,
             }
         ),
@@ -224,8 +258,8 @@ def test_hybrid_release_record_requires_affirmative_complete_coverage(
     assert results["release-hybrid"]["status"] == "PASS"
     assert results["release-hybrid-conservation"]["status"] == "PASS"
     coverage = results["release-capability-coverage-150"]
-    assert coverage["status"] == expected_status
-    assert coverage["supported_execution"] is (expected_status == "PASS")
+    assert coverage["status"] == ("PASS" if defect is None else "NOT_TESTED")
+    assert coverage["supported_execution"] is (defect is None)
 
 
 def test_hybrid_record_cli(tmp_path):
@@ -246,3 +280,22 @@ def test_hybrid_record_cli(tmp_path):
     assert summary_file.is_file()
     data = json.loads(out_file.read_text(encoding="utf-8"))
     assert data["acceptance_check"] == "release-obligation-150"
+
+
+def test_hybrid_record_require_complete_writes_partial_report_but_fails(tmp_path):
+    out = tmp_path / "report.json"
+    assert (
+        record_hybrid_release.main(
+            [
+                "--output",
+                str(out),
+                "--skip-tests",
+                "--allow-dirty",
+                "--require-complete",
+            ]
+        )
+        == 1
+    )
+    assert {result["status"] for result in json.loads(out.read_text())["results"]} == {
+        "NOT_TESTED"
+    }

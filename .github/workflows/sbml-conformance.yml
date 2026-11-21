@@ -259,9 +259,11 @@ jobs:
           gate=(--gate-selected-cases)
           if [[ "${{ github.event_name }}" == "schedule" || ( "${{ github.event_name }}" == "workflow_dispatch" && "${{ inputs.bounded }}" != "true" ) ]]; then
             selection=(--categories semantic stochastic)
-            # The full report includes raw official verdicts. The pinned
-            # expectation comparison and release consumers gate those results.
-            gate=(--report-only)
+            # Full runs retain unsupported verdicts and committed-expected
+            # official failures. Gate raw execution integrity here; the next
+            # step compares every verdict to the committed expectation
+            # manifest, and the release consumers validate the named checks.
+            gate=(--gate-supported-surface)
           fi
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && -n "$SSTS_ONLY_CASE" ]]; then
             if [[ "${{ inputs.bounded }}" == "true" ]]; then

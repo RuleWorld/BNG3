@@ -22,6 +22,7 @@ struct SiteBond {
 class GenericGraphState {
 public:
     explicit GenericGraphState(const ModelIR& model);
+    GenericGraphState(const ModelIR& model, const GenericGraphState& previous);
 
     ParticleId create(TypeId type, CompartmentId comp = 0);
     void destroy(ParticleId id);

@@ -1,8 +1,7 @@
-import re
 from tempfile import TemporaryFile
 
 from bionetgen.core.exc import BNGParseError, BNGModelError
-from .bngfile import BNGFile
+from .bngfile import BNGFile, _compact_action
 from .xmlparsers import ParameterBlockXML, CompartmentBlockXML, ObservableBlockXML
 from .xmlparsers import SpeciesBlockXML, MoleculeTypeBlockXML, FunctionBlockXML
 from .xmlparsers import RuleBlockXML, EnergyPatternBlockXML, PopulationMapBlockXML
@@ -161,10 +160,7 @@ class BNGParser:
                 "pyparsing is required to parse actions in model API input",
             )
         for action in action_strings:
-            # some cleanup, first we remove comments
-            action = re.sub(r"\#.*", "", action)
-            # now we remove whitespaces
-            action = re.sub(r"\s", "", action)
+            action = _compact_action(action)
             # if we don't have anything left, move on
             if len(action) == 0:
                 continue

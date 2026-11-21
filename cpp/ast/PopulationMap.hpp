@@ -30,6 +30,7 @@ struct PopulationMap {
     Expression rateExpression = Expression::number(0.0);
     std::string rateText;
     bool hasExplicitRate = false;
+    bool totalRate = false;
 
     // Compatibility aliases retained for older callers while they migrate.
     std::string populationFunction;

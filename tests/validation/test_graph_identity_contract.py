@@ -257,3 +257,25 @@ def test_a_native_refusal_is_not_a_pass(tmp_path, monkeypatch):
 def test_an_unknown_relation_is_refused(relation):
     with pytest.raises(ValueError):
         contract.relation_text("A(x!1)", relation)
+
+
+def test_formal_workflow_retains_graph_bridge_with_actual_native_consumer():
+    from tests.workflow_yaml import parse_workflow
+
+    workflow = parse_workflow(ROOT / ".github/workflows/formal.yml")
+    steps = workflow["jobs"]["issue167-correspondence"]["steps"]
+    step = next(
+        (step for step in steps if step.get("name") == "Record native graph bridge"),
+        None,
+    )
+    assert step is not None
+    run = step["run"]
+    assert "git rev-parse HEAD" in run
+    assert ".venv/bin/python formal/lean/scripts/check_graph_identity_bridge.py" in run
+    assert "--require-native" in run
+    assert "issue168-native-graph-bridge.txt" in run
+    assert any(
+        step.get("uses", "").startswith("actions/upload-artifact@")
+        and "issue168-native-graph-bridge.txt" in step["with"]["path"]
+        for step in steps
+    )

@@ -579,6 +579,7 @@ py::dict compiledSnapshot(const bng::ast::Model& astModel) {
         if (mapping.population.has_value()) item["population_id"] = mapping.population->value();
         item["arguments"] = mapping.populationArguments;
         item["rate"] = expressionSnapshot(mapping.rate);
+        if (mapping.totalRate) item["total_rate"] = true;
         populationMaps.append(std::move(item));
     }
     root["population_maps"] = std::move(populationMaps);

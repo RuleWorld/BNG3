@@ -7,6 +7,22 @@ import tempfile
 from bionetgen.core.exc import BNGFileError
 from bionetgen.core.utils.utils import find_BNG_path, run_command, ActionList
 
+_ACTION_CHUNK = re.compile(
+    r"""(?P<quoted>"(?:\\.|[^"\\])*"|'(?:\\.|[^'\\])*')|(?P<comment>\#.*)|\s+"""
+)
+
+
+def _compact_action(text: str, *, keep_comment: bool = False) -> str:
+    """Remove unquoted spacing without changing the contents of action values."""
+    return _ACTION_CHUNK.sub(
+        lambda chunk: (
+            chunk[0]
+            if chunk["quoted"] is not None or (keep_comment and chunk["comment"])
+            else ""
+        ),
+        text,
+    )
+
 
 def _default_bng_path():
     try:
@@ -216,14 +232,14 @@ class BNGFile:
                 if in_protocol:
                     # protocol contains actions; collect them for modelapi protocol block
                     if not self._not_action(line) or line.strip():
-                        cleaned = line.replace(" ", "")
+                        cleaned = _compact_action(line, keep_comment=True)
                         if cleaned:
                             self.parsed_protocol_actions.append(cleaned)
                     continue
                 if self._not_action(line):
                     stripped_lines.append(line)
                 else:
-                    self.parsed_actions.append(line.replace(" ", ""))
+                    self.parsed_actions.append(_compact_action(line, keep_comment=True))
 
             # let's remove begin/end actions, rarely used but should be removed
             remove_from = -1

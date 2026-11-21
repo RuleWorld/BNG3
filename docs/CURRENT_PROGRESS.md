@@ -1,5 +1,34 @@
 # BNG3 current progress
 
+## Full network-free corpus parity — 2026-11-20
+
+PR #815 (merged at `c95aa65ce77487757c35a78fba525d2db56a3962`) closes the
+remaining execution gaps found by the full TIER_NF comparison: constant seed
+species now execute, supported builtin functions in dynamic rates lower to
+FunctionVM calls, disconnected reactant patterns use an exact count-and-sample
+fast path instead of materializing the Cartesian product of embeddings, and
+observable counts are weighted by specified-site automorphism multiplicity to
+match BNG2/native NFsim XML.
+
+Exact-main hosted evidence (Cross-tool parity run `44814871639`, artifact
+`issue148-nfnext-corpus-44814871639/bng3-nfnext-corpus-report.json`, source
+revision `c95aa65c…`, clean):
+
+```
+localfunc  PASS  seeds 32
+motor      PASS  seeds 32
+simple_system PASS seeds 32
+tlbr       PASS  seeds 32
+summary: all_models_pass=true, release_check_satisfied=true,
+         routes_single_engine=true, negatives_reject_wrong_law=true
+```
+
+This satisfies the DECISIONS item 4 precondition (NFnext matches pinned
+native NFsim on the full network-free corpus) for considering default
+promotion. NFcore remains the default until the #149 acceptance contract is
+updated by the independent validation framework; no default change is made by
+this record.
+
 ## NFnext dynamic energy execution — 2026-11-19
 
 `cpp/nfnext/src/from_bng.cpp` no longer folds a dynamic energy expression to

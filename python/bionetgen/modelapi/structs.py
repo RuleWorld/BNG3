@@ -1,7 +1,6 @@
 from bionetgen.modelapi.pattern import Molecule, Pattern
 from bionetgen.modelapi.rulemod import RuleMod
 from bionetgen.core.utils.utils import ActionList
-from bionetgen.core.exc import BNGParseError
 
 
 class ModelObj:
@@ -313,31 +312,7 @@ class Action(ModelObj):
         self.name = action_type
         self.type = action_type
         self.args = action_args
-        # check type
-        if self.type not in self.possible_types:
-            raise BNGParseError(message=f"Action type {self.type} not recognized!")
-        seen_args = []
-        for arg in action_args:
-            arg_name, arg_value = arg, action_args[arg]
-            valid_arg_list = AList.arg_dict[self.type]
-            # TODO: actions that don't take argument names should be parsed separately to check validity of arg-val tuples
-            # TODO: currently not type checking arguments
-            if valid_arg_list is None:
-                raise BNGParseError(
-                    message=f"Argument {arg_name} is given, but action {self.type} does not take arguments"
-                )
-            if len(valid_arg_list) > 0:
-                if arg_name not in AList.arg_dict[self.type]:
-                    raise BNGParseError(
-                        message=f"Action argument {arg_name} not recognized!\nCheck to make sure action is correctly formatted"
-                    )
-                # TODO: If arg_value is the correct type
-            if arg_name in seen_args:
-                print(
-                    f"Warning: argument {arg_name} already given, using latter value {arg_value}"
-                )
-            else:
-                seen_args.append(arg_name)
+        AList.validate_action(self.type, self.args)
 
     def gen_string(self) -> str:
         # TODO: figure out every argument that has special

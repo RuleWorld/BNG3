@@ -144,6 +144,30 @@ jobs:
             --source-revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --output "$RUNNER_TEMP/issue-167-release-report.json"
 
+      - name: Record native graph bridge
+        env:
+          SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          revision="$(git rev-parse HEAD)"
+          [[ "$revision" == "$SOURCE_REVISION" ]]
+          [[ -z "$(git status --porcelain --untracked-files=no)" ]]
+          extension="$(.venv/bin/python -c 'import bionetgen._bionetgen_cpp as cpp; print(cpp.__file__)')"
+          {
+            printf 'Source revision %s\n' "$revision"
+            printf 'Scope: named graph identity and NET species cases\n'
+            sha256sum "$extension" formal/lean/lean-toolchain
+            .venv/bin/python formal/lean/scripts/check_graph_identity_bridge.py --require-native
+          } 2>&1 | tee "$RUNNER_TEMP/issue168-native-graph-bridge.txt"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: issue168-native-graph-bridge-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/issue168-native-graph-bridge.txt
+          if-no-files-found: warn
+          retention-days: 30
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:

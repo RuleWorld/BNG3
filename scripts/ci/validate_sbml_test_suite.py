@@ -2184,15 +2184,19 @@ def _compare_action_case_to_reference(
 #: the per-phase cost depends on the model and the runner's load, so a time
 #: limit would make the verdict of a case depend on where it ran, while the
 #: phase count is the same everywhere.  The limit is set above the largest
-#: phase count the pinned suite's models legitimately imply -- 1,001 phases for
-#: ``semantic/00963`` and ``semantic/00967``, whose source events fire every
-#: 0.01 s over the official horizon -- and below the 10,000 phases of
-#: ``semantic/01588``, whose action execution alone does not fit the gate's
-#: per-case budget.
+#: phase count the pinned suite's models legitimately imply -- currently 3,000
+#: phases for ``semantic/00963`` and 2,101 for ``semantic/00967``, whose source
+#: events fire on a fine grid over the official horizon -- and below the
+#: 10,000 phases of ``semantic/01588``, whose action execution alone does not
+#: fit the gate's per-case budget.  The committed expectation manifest records
+#: 00963 and 00967 as official-reference passes, so a budget below their
+#: phase counts is a harness regression that silently downgrades a required
+#: case; 4,096 leaves headroom for the whole pinned suite while preserving the
+#: 10,000-phase exclusion.
 #:
 #: A case that exceeds the budget is reported as unsupported with that reason,
 #: never as a pass.
-ACTION_MAX_PHASES = 2000
+ACTION_MAX_PHASES = 4096
 
 #: Documented ensemble budget (number of trajectories) for the official
 #: stochastic conformance comparison.  The SBML discrete stochastic model test
@@ -4616,6 +4620,22 @@ def _selected_surface_passed(records: list[dict[str, Any]]) -> bool:
     )
 
 
+def _report_gate_field(args: argparse.Namespace) -> str:
+    """Select the aggregate field that gates the harness exit code.
+
+    Bounded selections gate the executed official-reference surface. A full
+    run intentionally retains explicit unsupported verdicts and
+    committed-expected official failures (for example stochastic/00003), so it
+    gates raw execution integrity here; the committed-expectation comparison
+    and the release consumers validate every individual official verdict.
+    """
+    if args.gate_selected_cases:
+        return "selected_surface_passed"
+    if args.gate_supported_surface:
+        return "supported_surface_passed"
+    return "core_passed"
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--suite-dir", type=Path, required=True)
@@ -4645,10 +4665,14 @@ def main() -> int:
         action="store_true",
         help="gate executed selected cases; never claim full-suite conformance",
     )
-    verdict.add_argument(
-        "--report-only",
+    parser.add_argument(
+        "--gate-supported-surface",
         action="store_true",
-        help="write raw case verdicts for a separate release evidence consumer",
+        help=(
+            "gate a full run on zero raw failures/timeouts/invalid sources; "
+            "official-reference verdicts are validated against the committed "
+            "expectation manifest by a separate consumer"
+        ),
     )
     parser.add_argument("--only-case", help="validate one case as CATEGORY/ID")
     parser.add_argument(
@@ -5082,10 +5106,7 @@ def main() -> int:
         f"package={runtime_info['bionetgen_package_path']} "
         f"extension_sha256={runtime_info['native_extension_sha256']}"
     )
-    if args.report_only:
-        return 0
-    gate = "selected_surface_passed" if args.gate_selected_cases else "core_passed"
-    return 0 if report[gate] else 1
+    return 0 if report[_report_gate_field(args)] else 1
 
 
 if __name__ == "__main__":

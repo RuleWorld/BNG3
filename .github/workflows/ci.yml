@@ -138,6 +138,7 @@ jobs:
             tests/validation/test_atomizer_limitations.py \
             tests/validation/test_corpus_expectations.py \
             tests/validation/test_corpus_resume.py \
+            tests/validation/release/cases/issue-181/test_corpus_release_contract.py \
             tests/test_biomodels_report_comparison.py
 
       - name: Check the Atomizer limitations document against the manifest

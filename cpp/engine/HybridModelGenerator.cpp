@@ -610,7 +610,7 @@ HybridModelGenerator::generate(const std::filesystem::path& sourcePath, const Op
             {pm.patternText},
             {populationPattern},
             {pm.hasExplicitRate ? pm.rateExpression : ast::Expression::number(0)},
-            {},
+            pm.totalRate ? std::vector<std::string>{"TotalRate"} : std::vector<std::string>{},
             false));
     }
     result.nPopulationMaps = model_.getPopulationMaps().size();

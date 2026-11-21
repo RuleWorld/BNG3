@@ -8,6 +8,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import numpy as np
@@ -1188,3 +1189,60 @@ def test_latex_written(model_name, written_exports):
     assert "\\end{document}" in tex, f"LaTeX document is unterminated [{model_name}]"
     for section in ("\\section{Parameters}", "\\section{Reactions}"):
         assert section in tex, f"LaTeX missing {section} [{model_name}]"
+
+
+@pytest.mark.export
+def test_python_consumer_executes_exported_decay(bng_cpp, tmp_path):
+    """Run the exported Python artifact with SciPy against the source law."""
+    source = tmp_path / "consumer_decay.bngl"
+    source.write_text(
+        """begin model
+begin parameters
+  k 0.4
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 12
+end seed species
+begin observables
+  Molecules A_total A()
+end observables
+begin reaction rules
+  A() -> 0 k
+end reaction rules
+end model
+generate_network({overwrite=>1})
+writeCPYfile({suffix=>"analysis",t_start=>0.25,t_end=>1.75,n_steps=>5,rtol=>1e-9,atol=>1e-11})
+""",
+        encoding="utf-8",
+    )
+    outputs = tmp_path / "export"
+    net, _, error = runner.run_cli_path(bng_cpp, source, outputs)
+    assert net is not None, error
+    program = outputs / "consumer_decay_analysis_pyode.py"
+    assert program.is_file()
+    consumer = tmp_path / "consumer"
+    consumer.mkdir()
+    result = subprocess.run(
+        [sys.executable, str(program)],
+        cwd=consumer,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    observables, columns = compare.parse_gdat(consumer / "consumer_decay_analysis.gdat")
+    assert columns == ["time", "A_total"]
+    assert observables is not None
+    expected_times = np.linspace(0.25, 1.75, 6)
+    expected_amounts = 12.0 * np.exp(-0.4 * (expected_times - expected_times[0]))
+    np.testing.assert_allclose(observables[:, 0], expected_times, rtol=0, atol=1e-12)
+    np.testing.assert_allclose(observables[:, 1], expected_amounts, rtol=1e-7)
+    species, species_columns = compare.parse_gdat(
+        consumer / "consumer_decay_analysis.cdat"
+    )
+    assert species_columns == ["time", "A()"]
+    assert species is not None
+    np.testing.assert_allclose(species, observables, rtol=0, atol=1e-12)

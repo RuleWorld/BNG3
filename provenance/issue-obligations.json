@@ -5270,7 +5270,7 @@
     },
     {
       "number": 148,
-      "body_sha256": "4617d4866d92e230d47f5bdc874d59e76bdb468b3654b6ecf8e16bec8fd4cda2",
+      "body_sha256": "50db182650abed61ebbff12b358d666e8e2b9c2ba087606d9473ebd701f238de",
       "obligations": [
         {
           "id": "issue:148:carry-and-initialize-the-supported-seeds-observables-parameter-f",
@@ -5454,14 +5454,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-nfnext-execution.",
-                "No revision-locked consuming receipt producer is declared for required live check release-nfnext-execution."
-              ]
+              "selector": "tests/validation/release/cases/issue-148/test_nfnext_full_corpus_native_parity.py::test_release_nfnext_full_corpus_native_parity",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue148_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -5487,14 +5484,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-nfnext-routes.",
-                "No revision-locked consuming receipt producer is declared for required live check release-nfnext-routes."
-              ]
+              "selector": "tests/validation/release/cases/issue-148/test_nfnext_full_corpus_native_parity.py::test_release_nfnext_routes_single_engine",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue148_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -5520,14 +5514,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-capability-coverage-148.",
-                "No revision-locked consuming receipt producer is declared for required live check release-capability-coverage-148."
-              ]
+              "selector": "tests/validation/release/cases/issue-148/test_nfnext_execution.py::test_release_capability_coverage_148",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue148_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -5767,7 +5758,7 @@
     },
     {
       "number": 150,
-      "body_sha256": "d26905cc4840c5aba227f9ba8528f0d1d666fcc31128aa084468eb71801ae50e",
+      "body_sha256": "aa1729c996942567f48eedefe402f6d38ef29bb7a6d76053006304780b3c202a",
       "obligations": [
         {
           "id": "issue:150:distinguish-population-map-storage-and-hybrid-bngl-generation-fr",
@@ -5884,7 +5875,7 @@
           "id": "issue:150:live-acceptance:release-hybrid",
           "criterion": "`release-hybrid`: BNG2 hybrid output executed by native NFsim matches BNG3 hybrid distributions and observables.",
           "scope": "`release-hybrid`: BNG2 hybrid output executed by native NFsim matches BNG3 hybrid distributions and observables.",
-          "live_body_sha256": "d26905cc4840c5aba227f9ba8528f0d1d666fcc31128aa084468eb71801ae50e",
+          "live_body_sha256": "aa1729c996942567f48eedefe402f6d38ef29bb7a6d76053006304780b3c202a",
           "dependencies": [
             143,
             147
@@ -5914,7 +5905,7 @@
           "id": "issue:150:live-acceptance:release-hybrid-conservation",
           "criterion": "`release-hybrid-conservation`: independent analytic conversion/mass conservation and multiplicity laws hold in mixed particle/population cases.",
           "scope": "`release-hybrid-conservation`: independent analytic conversion/mass conservation and multiplicity laws hold in mixed particle/population cases.",
-          "live_body_sha256": "d26905cc4840c5aba227f9ba8528f0d1d666fcc31128aa084468eb71801ae50e",
+          "live_body_sha256": "aa1729c996942567f48eedefe402f6d38ef29bb7a6d76053006304780b3c202a",
           "dependencies": [
             143,
             147
@@ -5944,7 +5935,7 @@
           "id": "issue:150:live-acceptance:release-capability-coverage-150",
           "criterion": "`release-capability-coverage-150`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
           "scope": "`release-capability-coverage-150`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
-          "live_body_sha256": "d26905cc4840c5aba227f9ba8528f0d1d666fcc31128aa084468eb71801ae50e",
+          "live_body_sha256": "aa1729c996942567f48eedefe402f6d38ef29bb7a6d76053006304780b3c202a",
           "dependencies": [
             143,
             147

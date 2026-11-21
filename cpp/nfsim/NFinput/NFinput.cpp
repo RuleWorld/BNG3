@@ -1,4 +1,5 @@
 #include "NFinput.hh"
+#include "NFinput_fromAst.hh"
 #include "NFinput_energy.hh"
 #include "../NFcore/compartment.hh"
 #include "compartment_size_expression.hh"
@@ -3902,6 +3903,9 @@ static bool initReactionRulesBody(
 							}
 
 							r->setBaseRate(rate,rateValueParameterName);
+                            if (const char *expression = pRateConstant->Attribute("bng3Expression")) {
+                                bindStaticRateExpression(*r, *s, bng::parser::parseExpression(expression));
+                            }
 						}
 
 						pRateConstant = pRateConstant->NextSiblingElement("RateConstant");
@@ -4519,9 +4523,10 @@ static bool initReactionRulesBody(
 							r->setReactantVolumeCompartments(converted);
 						}
 
-					//Finally, add the completed rxn rule to the system only
-					//base rate is non-zero.
-					if (r->getBaseRate() > 0) {
+					// A parameter-backed zero rate can become positive after
+					// an intervention, so it must be registered from the start.
+					if (r->getBaseRate() > 0 ||
+					    (r->getBaseRate() == 0 && r->hasLiveBaseRate())) {
 						s->addReaction(r);
 						reaction_name_id_map[rxnName] = reaction_count;
 						reaction_count++;

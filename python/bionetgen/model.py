@@ -114,6 +114,7 @@ class BioNetGenModel:
         self._continuation_network: Optional[_cpp.GeneratedNetwork] = None
         self._network_from_continuation = False
         self._simulation_has_run = False
+        self._nf_continuation = None
         # Parameter values set through set_parameter, in the order they were
         # set, so a topology edit can rebuild the model and keep them.
         self._parameter_overrides: dict = {}
@@ -385,6 +386,7 @@ class BioNetGenModel:
         self._continuation_network = None
         self._network_from_continuation = False
         self._simulation_has_run = False
+        self._nf_continuation = None
 
     def parameter_scan(self, *args, **kwargs):
         from bionetgen.scan import parameter_scan as _parameter_scan
@@ -718,6 +720,7 @@ class BioNetGenModel:
         self._continuation_network = None
         self._network_from_continuation = False
         self._simulation_has_run = False
+        self._nf_continuation = None
 
     def add_parameter(self, name: str, value) -> None:
         """Add a parameter, as a line in the BNGL parameters block."""
@@ -1111,8 +1114,11 @@ class BioNetGenModel:
             Absolute start time for the simulation. NF uses this time for
             time-dependent functions and output coordinates.
         continue_simulation : bool
-            Continue the last successful native ODE/SSA trajectory from
-            ``t_start``. The default starts a fresh trajectory.
+            Continue the last successful native ODE/SSA or hybrid NF
+            trajectory from ``t_start``. Hybrid stages must use the same
+            engine and start at the previous endpoint. Parameter changes
+            between stages update rates while preserving the live state.
+            The default starts a fresh trajectory.
         rtol, atol : float
             Relative and absolute tolerances (ODE only).
         seed : int
@@ -1173,9 +1179,15 @@ class BioNetGenModel:
             )
         if self._algebraic_rules and method != "ode":
             raise ValueError("SBML algebraic rules require method='ode'")
-        if continue_simulation and method not in {"ode", "ssa"}:
+        nf_method = "nfcore" if method == "nf" else method
+        is_network_free = nf_method in {"nfcore", "nfnext"}
+        retain_nf_state = is_network_free and (
+            bool(self._model.population_maps)
+            or any(molecule.is_population for molecule in self.molecule_types)
+        )
+        if continue_simulation and method not in {"ode", "ssa"} and not retain_nf_state:
             raise ValueError(
-                "continue_simulation is supported only for native ODE and SSA"
+                "continue_simulation requires native ODE, SSA, or hybrid NF"
             )
         native_fresh_run = method in {"ode", "ssa"} and not continue_simulation
         if (
@@ -1302,6 +1314,19 @@ class BioNetGenModel:
                 "only for method='ode' or method='ssa'"
             )
 
+        nf_state = None
+        if is_network_free and continue_simulation:
+            previous = self._nf_continuation
+            if previous is None or previous[0] != nf_method:
+                raise ValueError(
+                    "hybrid continuation requires a previous stage on the same engine"
+                )
+            if previous[1] != t_start:
+                raise ValueError(
+                    "hybrid continuation must start at the previous endpoint"
+                )
+            nf_state = previous[2]
+
         use_bngsim = False
         if method in {"nf", "nfcore"}:
             # backend is not applicable to network-free; reject explicit bngsim
@@ -1328,6 +1353,8 @@ class BioNetGenModel:
                 sample_times=normalized_sample_times,
                 traversal_limit=traversal_limit,
                 require_direct=getattr(self, "_native_bngir_v02_only", False),
+                continuation=nf_state,
+                retain_state=retain_nf_state,
             )
             # NFsim path remains independent; annotate backend for diagnostics.
             if isinstance(raw, dict) and "backend" not in raw:
@@ -1336,13 +1363,25 @@ class BioNetGenModel:
             times = normalized_sample_times
             if not times:
                 dt = (t_end - t_start) / float(n_steps)
-                times = [t_start + i * dt for i in range(n_steps + 1)]
+                times = [t_start + i * dt for i in range(n_steps)] + [t_end]
+            requested_count = len(times)
+            if retain_nf_state and times[-1] < t_end:
+                times = [*times, t_end]
             raw = _cpp.simulate_nfnext(
                 self._model,
                 sample_times=times,
                 seed=seed,
                 max_events=max_sim_steps if max_sim_steps > 0 else 1_000_000,
+                t_start=t_start,
+                continuation=nf_state,
+                retain_state=retain_nf_state,
             )
+            if len(times) != requested_count:
+                raw["time"] = raw["time"][:requested_count]
+                raw["observables"] = {
+                    name: values[:requested_count]
+                    for name, values in raw["observables"].items()
+                }
             if isinstance(raw, dict) and "backend" not in raw:
                 raw["backend"] = "nfnext"
         else:
@@ -1592,12 +1631,16 @@ class BioNetGenModel:
 
         if method in {"ode", "ssa"} and not use_bngsim:
             self._simulation_has_run = True
-        return SimResult(raw)
+        result = SimResult(raw)
+        state = raw.pop("_continuation", None)
+        self._nf_continuation = (nf_method, t_end, state) if state is not None else None
+        return result
 
     def execute(self, verbose: bool = False) -> None:
         """Execute all actions defined in the model's action block."""
         self._require_export_supported("Action execution")
         source = self._source_path or "."
+        self._nf_continuation = None
         _cpp.execute(self._model, source, verbose=verbose)
 
     def write_xml(self, path: str) -> None:

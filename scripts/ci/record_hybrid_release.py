@@ -4,8 +4,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import sys
@@ -90,25 +92,87 @@ def verify_junit_xml(path: Path) -> None:
         "test_release_hybrid_bng2_native_nfsim_and_bng3_trajectories",
         "test_release_hybrid_conservation_and_analytic_conversion_law",
         "test_release_capability_coverage_150",
+        "test_release_hybrid_stage_continuation",
     )
     for fragment in expected_case_fragments:
         if not any(fragment in name for name in names):
             _fail(f"JUnit XML missing expected testcase: {fragment}")
 
 
-def complete_inventory_coverage(report: dict, root: Path) -> bool:
+def _case_passes(entry: object, oracle: str, evidence_dir: Path) -> bool:
+    if (
+        not isinstance(entry, dict)
+        or entry.get("passed") is not True
+        or entry.get("oracle") != oracle
+    ):
+        return False
+    artifacts = entry.get("artifacts")
+    if not isinstance(artifacts, dict) or not artifacts:
+        return False
+    for name, digest in artifacts.items():
+        if Path(name).name != name:
+            return False
+        path = evidence_dir / name
+        if (
+            not path.is_file()
+            or hashlib.sha256(path.read_bytes()).hexdigest() != digest
+        ):
+            return False
+    return True
+
+
+def complete_inventory_coverage(report: dict, root: Path, evidence_dir: Path) -> bool:
     if report.get("issue_150_acceptance") != "complete":
         return False
     matrix = json.loads(
         (root / "provenance/capability-matrix.yml").read_text(encoding="utf-8")
     )
-    required_ids = {row["id"] for row in matrix["rows"] if row["issue"] == 150}
-    cases = report.get("inventory_cases", {})
-    if not isinstance(cases, dict):
+    contract = json.loads(
+        (root / "tests/validation/release/cases/issue-150/contract.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    required = {row["id"] for row in matrix["rows"] if row["issue"] == 150}
+    if required != set(contract["inventory_rows"]):
         return False
-    return bool(required_ids) and all(
-        isinstance(cases.get(identity), dict) and cases[identity].get("passed") is True
-        for identity in required_ids
+
+    sources = json.loads(
+        (root / "provenance/upstreams.lock.yml").read_text(encoding="utf-8")
+    )["sources"]
+    oracles = report.get("oracles", {})
+    if not isinstance(oracles, dict):
+        return False
+    for name, pin, field in (
+        ("bng2", "bionetgen", "script_sha256"),
+        ("native_nfsim", "nfsim", "binary_sha256"),
+    ):
+        oracle = oracles.get(name)
+        if (
+            not isinstance(oracle, dict)
+            or oracle.get("revision") != sources[pin]["revision"]
+        ):
+            return False
+        if not re.fullmatch(r"[a-f0-9]{64}", str(oracle.get(field, ""))):
+            return False
+
+    rows = report.get("inventory_cases")
+    if not isinstance(rows, dict) or set(rows) != required:
+        return False
+    for identity in required - {"hybrid.execution"}:
+        if not _case_passes(rows[identity], "bng2-options", evidence_dir):
+            return False
+    execution = rows["hybrid.execution"]
+    if not isinstance(execution, dict) or execution.get("passed") is not True:
+        return False
+    cases = execution.get("cases")
+    case_oracles = contract["hybrid_execution_cases"]
+    return (
+        isinstance(cases, dict)
+        and set(cases) == set(case_oracles)
+        and all(
+            _case_passes(cases[name], oracle, evidence_dir)
+            for name, oracle in case_oracles.items()
+        )
     )
 
 
@@ -145,7 +209,7 @@ def verify_evidence_directory(
             passed_checks.add(name)
     if (
         "release-capability-coverage-150" in passed_checks
-        and not complete_inventory_coverage(cov, root)
+        and not complete_inventory_coverage(cov, root, evidence_dir)
     ):
         passed_checks.remove("release-capability-coverage-150")
     return passed_checks
@@ -258,7 +322,8 @@ def build_release_record(
             "stage": "hybrid-capability-coverage",
             "detail": (
                 "all assigned inventory cases execute against their row's named independent "
-                "oracle (pinned BNG2 options and native NFsim) and pass on main."
+                "oracle (pinned BNG2, native NFsim and analytic laws). The retained "
+                "capability-coverage-150.json identifies the executed cases and replay artifacts."
             ),
         },
     ]
@@ -305,6 +370,11 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--output", type=Path, required=True, help="Output JSON path")
     parser.add_argument("--summary-file", type=Path, help="GitHub step summary path")
     parser.add_argument(
+        "--require-complete",
+        action="store_true",
+        help="Fail unless all Issue 150 checks passed",
+    )
+    parser.add_argument(
         "--skip-tests",
         action="store_true",
         help="Skip executing tests (verification of manifest/revision only)",
@@ -345,6 +415,12 @@ def main(argv: list[str] | None = None) -> int:
                 stream.write("\n".join(summary))
         else:
             sys.stdout.write("\n".join(summary))
+        if args.require_complete:
+            missing = [
+                row["id"] for row in report["results"] if row["status"] != "PASS"
+            ]
+            if missing:
+                _fail("missing affirmative acceptance evidence: " + ", ".join(missing))
     except (OSError, ValueError, KeyError, TypeError, ET.ParseError) as exc:
         print(f"Issue 150 release record rejected: {exc}", file=sys.stderr)
         return 1
