@@ -5758,7 +5758,7 @@
     },
     {
       "number": 150,
-      "body_sha256": "d26905cc4840c5aba227f9ba8528f0d1d666fcc31128aa084468eb71801ae50e",
+      "body_sha256": "aa1729c996942567f48eedefe402f6d38ef29bb7a6d76053006304780b3c202a",
       "obligations": [
         {
           "id": "issue:150:distinguish-population-map-storage-and-hybrid-bngl-generation-fr",
@@ -5875,7 +5875,7 @@
           "id": "issue:150:live-acceptance:release-hybrid",
           "criterion": "`release-hybrid`: BNG2 hybrid output executed by native NFsim matches BNG3 hybrid distributions and observables.",
           "scope": "`release-hybrid`: BNG2 hybrid output executed by native NFsim matches BNG3 hybrid distributions and observables.",
-          "live_body_sha256": "d26905cc4840c5aba227f9ba8528f0d1d666fcc31128aa084468eb71801ae50e",
+          "live_body_sha256": "aa1729c996942567f48eedefe402f6d38ef29bb7a6d76053006304780b3c202a",
           "dependencies": [
             143,
             147
@@ -5905,7 +5905,7 @@
           "id": "issue:150:live-acceptance:release-hybrid-conservation",
           "criterion": "`release-hybrid-conservation`: independent analytic conversion/mass conservation and multiplicity laws hold in mixed particle/population cases.",
           "scope": "`release-hybrid-conservation`: independent analytic conversion/mass conservation and multiplicity laws hold in mixed particle/population cases.",
-          "live_body_sha256": "d26905cc4840c5aba227f9ba8528f0d1d666fcc31128aa084468eb71801ae50e",
+          "live_body_sha256": "aa1729c996942567f48eedefe402f6d38ef29bb7a6d76053006304780b3c202a",
           "dependencies": [
             143,
             147
@@ -5935,7 +5935,7 @@
           "id": "issue:150:live-acceptance:release-capability-coverage-150",
           "criterion": "`release-capability-coverage-150`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
           "scope": "`release-capability-coverage-150`: all assigned inventory cases below execute against their row's named independent oracle and pass on main. Missing cases, refusals of valid required input, timeouts and harness errors cannot count as passes.",
-          "live_body_sha256": "d26905cc4840c5aba227f9ba8528f0d1d666fcc31128aa084468eb71801ae50e",
+          "live_body_sha256": "aa1729c996942567f48eedefe402f6d38ef29bb7a6d76053006304780b3c202a",
           "dependencies": [
             143,
             147
