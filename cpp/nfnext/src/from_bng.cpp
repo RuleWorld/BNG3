@@ -419,7 +419,8 @@ std::optional<std::string> observableRateExpression(
         const auto* observable = model.observable(
             bng::compile::ObservableId::fromDenseIndex(index));
         if (!observable || observable->id.value() != index ||
-            observable->kind != bng::compile::ObservableKind::Molecules)
+            (observable->kind != bng::compile::ObservableKind::Molecules &&
+             observable->kind != bng::compile::ObservableKind::Species))
             return std::nullopt;
         observableIds.insert(index);
         return "observable_" + std::to_string(index);
@@ -445,6 +446,12 @@ std::optional<std::string> observableRateExpression(
         case Binary::Multiply: operation = "*"; break;
         case Binary::Divide: operation = "/"; break;
         case Binary::Power: operation = "^"; break;
+        case Binary::Less: operation = "<"; break;
+        case Binary::LessEqual: operation = "<="; break;
+        case Binary::Greater: operation = ">"; break;
+        case Binary::GreaterEqual: operation = ">="; break;
+        case Binary::Equal: operation = "=="; break;
+        case Binary::NotEqual: operation = "!="; break;
         default: return std::nullopt;
         }
         const auto left = observableRateExpression(
@@ -468,6 +475,7 @@ std::optional<std::string> observableRateExpression(
         case bng::compile::BuiltinFunction::Abs: name = "abs"; arity = 1; break;
         case bng::compile::BuiltinFunction::Min: name = "min"; arity = 2; break;
         case bng::compile::BuiltinFunction::Max: name = "max"; arity = 2; break;
+        case bng::compile::BuiltinFunction::If: name = "if"; arity = 3; break;
         default:
             // Builtins without a FunctionVM counterpart (time, delay, tables,
             // variadic reductions) stay unrepresentable rather than being
@@ -2008,6 +2016,8 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
         std::string name;
         PatternIR pattern;
         TypeId product_type{0};
+        std::optional<CompartmentId> product_compartment;
+        bool total_rate{false};
         bool rate_is_static{false};
         double static_rate{0.0};
         std::string rate_expression;
@@ -2018,7 +2028,7 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
         for (const auto& popMap : source.populationMaps()) {
             PopulationMapIR irPopMap;
             irPopMap.population_name = popMap.populationName;
-            irPopMap.rate_expression = popMap.sourceRate;
+            irPopMap.rate_expression = popMap.sourceRate + (popMap.totalRate ? " TotalRate" : "");
             BngLoweringResult patternValidation;
             const auto pattern = flattenReactants({popMap.pattern}, patternValidation, popMap.populationName);
             if (pattern && patternValidation.ok()) {
@@ -2027,7 +2037,11 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
                 issue(result, BngLoweringSeverity::Error, popMap.populationName,
                       "population map pattern could not be lowered to NFIR");
             }
-            const auto rateValue = constantExpression(popMap.rate, source);
+            std::set<std::size_t> activeRateFunctions;
+            const auto expandedRate = expandZeroArgumentRateFunctions(
+                source.expandFunctions(popMap.rate), source, activeRateFunctions);
+            const auto rateValue = expandedRate
+                ? constantExpression(*expandedRate, source) : std::nullopt;
             if (rateValue) {
                 irPopMap.rate = *rateValue;
             } else {
@@ -2042,6 +2056,8 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
             std::string unsupported;
             if (!pattern || !patternValidation.ok()) {
                 unsupported = "population map pattern could not be lowered";
+            } else if (!expandedRate) {
+                unsupported = "population map rate contains an unresolved function";
             } else {
                 for (const auto& node : pattern->pattern.nodes) {
                     const auto* molType = source.moleculeType(
@@ -2084,6 +2100,11 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
                 executable.name = popMap.populationName;
                 executable.pattern = pattern->pattern;
                 executable.product_type = productType;
+                executable.total_rate = popMap.totalRate;
+                if (const auto compartment = popMap.pattern.compartmentId()) {
+                    executable.product_compartment =
+                        static_cast<CompartmentId>(compartment->value());
+                }
                 if (rateValue) {
                     if (!std::isfinite(*rateValue) || *rateValue < 0.0) {
                         unsupported = "population map rate is not finite and non-negative";
@@ -2098,9 +2119,9 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
                 } else {
                     std::set<std::size_t> observableIds;
                     const auto expression = observableRateExpression(
-                        popMap.rate, source, observableIds);
+                        *expandedRate, source, observableIds);
                     if (!expression) {
-                        unsupported = "population map rate depends on state that is not a Molecules observable";
+                        unsupported = "population map rate cannot be evaluated from observables and static parameters";
                     } else {
                         executable.rate_is_static = false;
                         executable.rate_expression = *expression;
@@ -2147,6 +2168,7 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
         mapRule.id = nextRule++;
         mapRule.name = "population_map_" + std::to_string(accepted.index) + ":" + accepted.name;
         mapRule.pattern = accepted.pattern;
+        mapRule.total_rate = accepted.total_rate;
         addPredicates(mapRule.pattern, mapRule.predicates);
         mapRule.rate = accepted.rate_is_static ? accepted.static_rate : 0.0;
         mapRule.rate_law.kind = accepted.rate_is_static
@@ -2168,6 +2190,14 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
         create.molecule_type = accepted.product_type;
         create.target_node = static_cast<PatternNodeId>(mapRule.pattern.nodes.size());
         mapRule.actions.push_back(create);
+        if (accepted.product_compartment) {
+            ActionIR setCompartment;
+            setCompartment.kind = ActionKind::SetCompartment;
+            setCompartment.target_node = create.target_node;
+            setCompartment.molecule_type = create.molecule_type;
+            setCompartment.value = static_cast<std::int32_t>(*accepted.product_compartment);
+            mapRule.actions.push_back(setCompartment);
+        }
 
         mapRule.annotations["bng.population_map_index"] = std::to_string(accepted.index);
         result.model.expanded_rules.push_back(std::move(mapRule));
@@ -2254,8 +2284,8 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
 
     // A population map executes only when lowering synthesized an explicit
     // rule for it. Any map outside the supported simple shape (bonds to
-    // population nodes, unresolvable or non-Molecules-observable or
-    // time-dependent rates, undeclared product types, ...) remains a
+    // population nodes, unresolved or time-dependent rates, undeclared
+    // product types, ...) remains a
     // fail-closed refusal rather than an approximation.
     if (!source.populationMaps().empty()) {
         std::unordered_set<std::string> executableMapIndices;
@@ -2493,6 +2523,22 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
     }
 
     GenericMatcher matcher(model);
+    const auto coversWholeComplex = [&](const Embedding& match) {
+        const auto& particles = match.particles();
+        // The matcher already requires one connected complex. A bond to
+        // any particle outside the embedding makes the match incomplete.
+        for (const auto particle : particles) {
+            const auto siteCount = model.molecule_types.at(state.type(particle)).sites.size();
+            for (std::size_t site = 0; site < siteCount; ++site) {
+                const auto partner = state.bond(particle, static_cast<std::uint16_t>(site)).particle;
+                if (state.alive(partner) &&
+                    std::find(particles.begin(), particles.end(), partner) == particles.end()) {
+                    return false;
+                }
+            }
+        }
+        return !particles.empty();
+    };
 
     // BNG2/native NFsim multiply observable pattern counts by the pattern's
     // automorphism multiplicity. Node swaps are reported by MatchPlan; swaps
@@ -2856,7 +2902,8 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                     // per-molecule match counts. Sampling one embedding from
                     // that product preserves the propensity and the uniform
                     // event distribution without materializing every pair.
-                    if (!rule.total_rate && !rule.match_once && rule.filters.empty()) {
+                    const bool populationMap = rule.annotations.count("bng.population_map_index") != 0;
+                    if (!populationMap && !rule.total_rate && !rule.match_once && rule.filters.empty()) {
                         if (const auto independent = matcher.countIndependent(rule.pattern, state)) {
                             std::vector<Embedding> sampled;
                             if (independent->count > 0) {
@@ -2887,6 +2934,12 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
                         }
                     }
                     auto rawMatches = matcher.enumerate(rule.pattern, state);
+                    if (populationMap) {
+                        const auto firstPartialMatch = std::remove_if(
+                            rawMatches.begin(), rawMatches.end(),
+                            [&](const auto& match) { return !coversWholeComplex(match); });
+                        rawMatches.erase(firstPartialMatch, rawMatches.end());
+                    }
                     if (!rule.filters.empty()) {
                         std::vector<Embedding> passedMatches;
                         for (const auto& match : rawMatches) {

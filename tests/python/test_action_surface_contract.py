@@ -116,6 +116,51 @@ def test_hybrid_model_generation_executes_population_trajectory_with_nfsim(
     assert int(population_rows[0][1]) > 0
 
 
+def test_generated_hybrid_model_runs_through_public_nfcore(tmp_path, monkeypatch):
+    monkeypatch.delenv("BNG_NFSIM_ALLOW_XML_FALLBACK", raising=False)
+    _model(tmp_path, "generate_hybrid_model({overwrite=>1, execute=>0})").execute()
+    hybrid = bionetgen.load(tmp_path / "model_hpp.bngl")
+    result = hybrid.simulate(method="nfcore", t_end=0.2, n_steps=4, seed=7)
+
+    assert result.backend == "nfsim"
+    assert result.observables["A_total"][-1] > 0
+    assert (result.observables["A_total"] + result.observables["B_total"] == 20).all()
+
+
+def test_population_map_total_rate_survives_generation_and_execution(tmp_path):
+    source = tmp_path / "total_rate.bngl"
+    source.write_text(
+        MODEL.replace(
+            "begin seed species",
+            "begin population types\n  A_pop()\nend population types\nbegin seed species",
+        )
+        .replace("  B() N", "  A() N")
+        .replace("  Molecules B_total B()", "  Molecules Population A_pop()")
+        .replace("A() -> A_pop() k_map", "A() -> A_pop() 1 TotalRate")
+        + "\nbegin actions\ngenerate_hybrid_model({overwrite=>1, execute=>0})\nend actions\n"
+    )
+    model = bionetgen.load(source)
+    model.execute()
+    generated = (tmp_path / "total_rate_hpp.bngl").read_text()
+    assert "A() -> A_pop() 1 TotalRate" in generated
+
+    from bionetgen.bngir import from_bngir, to_bngir
+
+    round_trip = from_bngir(to_bngir(model, version="0.2"))
+    assert round_trip._model.population_maps[0].total_rate
+
+    # Each jump consumes one particle at absolute rate 1 while any remain.
+    # The 20-copy cutoff has negligible effect on the mean at T=1.
+    converted = []
+    for seed in range(100, 228):
+        result = model.simulate(method="nfnext", t_end=1, n_steps=1, seed=seed)
+        assert (
+            result.observables["A_total"] + result.observables["Population"] == 20
+        ).all()
+        converted.append(result.observables["Population"][-1])
+    assert sum(converted) / len(converted) == pytest.approx(1, abs=0.5)
+
+
 def test_hybrid_model_generation_still_refuses_finite_network_simulation(tmp_path):
     model = _model(
         tmp_path,

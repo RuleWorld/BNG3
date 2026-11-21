@@ -257,6 +257,8 @@ def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
                 item["rate"] = str(getattr(mapping, "rateText"))
             elif hasattr(mapping, "rate") and isinstance(getattr(mapping, "rate"), str):
                 item["rate"] = getattr(mapping, "rate")
+            if getattr(mapping, "total_rate", False):
+                item["total_rate"] = True
             population_maps.append(item)
 
     features = {"required": [], "used": []}
@@ -665,6 +667,8 @@ def _as_bngl_v01(root: Mapping[str, Any]) -> str:
             args = ",".join(item.get("args", []))
             rate = item["rate"]
             line = f"  {label}{item['pattern']} -> {item['function']}({args}) {rate}"
+            if item.get("total_rate", False):
+                line += " TotalRate"
             lines.append(line)
         lines += ["end population maps"]
 
@@ -1372,6 +1376,10 @@ def _validate_model_v02(model: Mapping[str, Any]) -> None:
             local_names=set(),
             where=f"model.population_maps[{i}].rate",
         )
+        if "total_rate" in mapping and type(mapping["total_rate"]) is not bool:
+            raise ValueError(
+                f"BNGIR model.population_maps[{i}].total_rate must be boolean"
+            )
 
     for i, rule in enumerate(model.get("rules", [])):
         rule = _require_mapping(rule, f"model.rules[{i}]")
@@ -3529,9 +3537,10 @@ def _as_bngl_v02(root: Mapping[str, Any]) -> str:
             label = f"{item['label']}: " if item.get("label") else ""
             args = ",".join(item.get("arguments", []))
             rate = _expression_v02(item["rate"], model)
+            modifier = " TotalRate" if item.get("total_rate", False) else ""
             lines.append(
                 f"  {label}{_pattern_v02(item['pattern'])} -> "
-                f"{item['population']}({args}) {rate}"
+                f"{item['population']}({args}) {rate}{modifier}"
             )
         lines.append("end population maps")
 

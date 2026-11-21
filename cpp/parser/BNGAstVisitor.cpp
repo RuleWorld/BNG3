@@ -2291,6 +2291,15 @@ std::any BNGAstVisitor::visitPopulation_map_def(BNGParser::Population_map_defCon
             const std::string text = token->getText();
             if (text.compare(0, kPopulationRateToken.size(), kPopulationRateToken) == 0) {
                 pm.rateText = hexDecode(text.substr(kPopulationRateToken.size()));
+                constexpr std::string_view modifier = "TotalRate";
+                if (pm.rateText.size() > modifier.size()) {
+                    const auto start = pm.rateText.size() - modifier.size();
+                    if (pm.rateText.compare(start, modifier.size(), modifier) == 0 &&
+                        std::isspace(static_cast<unsigned char>(pm.rateText[start - 1]))) {
+                        pm.rateText = trimCopy(pm.rateText.substr(0, start));
+                        pm.totalRate = true;
+                    }
+                }
                 pm.rateExpression = parseExpressionImpl(pm.rateText);
                 pm.hasExplicitRate = true;
             } else {

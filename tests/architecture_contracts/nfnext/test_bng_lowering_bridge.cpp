@@ -1899,6 +1899,141 @@ end population maps
     assert(std::abs(result.rows[1][1] + result.rows[1][2] - 100.0) < 1e-9);
 }
 
+void populationMapConvertsOnlyWholeComplexes() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin molecule types
+  A(x)
+  B(y)
+end molecule types
+begin population types
+  Pool()
+end population types
+begin seed species
+  A(x) 3
+  A(x!1).B(y!1) 2
+end seed species
+begin observables
+  Molecules Particles A()
+  Species Bound A(x!1).B(y!1)
+  Molecules Population Pool()
+end observables
+begin population maps
+  A(x) -> Pool() 100
+end population maps
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    nfnext::BngExecutionRequest request;
+    request.sample_times = {0.0, 1.0};
+    request.seed = 42;
+    const auto result = nfnext::executeFromBioNetGen(semantic, request);
+    assert((result.rows.front() == std::vector<double>{0.0, 5.0, 2.0, 0.0}));
+    assert((result.rows.back() == std::vector<double>{1.0, 2.0, 2.0, 3.0}));
+    assert(result.event_count == 3);
+}
+
+void compartmentPopulationMapsPreserveLocation() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin compartments
+  first 3 1
+  second 3 2
+end compartments
+begin molecule types
+  A(x)
+end molecule types
+begin population types
+  Pool()
+end population types
+begin seed species
+  @first:A(x) 3
+  @second:A(x) 2
+end seed species
+begin observables
+  Molecules First @first:Pool()
+  Molecules Second @second:Pool()
+  Molecules All Pool()
+end observables
+begin population maps
+  first_map: @first:A(x) -> Pool() 100
+  second_map: @second:A(x) -> Pool() 100
+end population maps
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    nfnext::BngExecutionRequest request;
+    request.sample_times = {0.0, 1.0};
+    request.seed = 42;
+    const auto result = nfnext::executeFromBioNetGen(semantic, request);
+    assert((result.rows.back() == std::vector<double>{1.0, 3.0, 2.0, 5.0}));
+    assert(result.event_count == 5);
+}
+
+void populationMapStopsAtObservableThreshold() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin molecule types
+  A()
+end molecule types
+begin population types
+  Pool()
+end population types
+begin seed species
+  A() 4
+end seed species
+begin observables
+  Molecules Left A()
+  Molecules Pooled Pool()
+end observables
+begin population maps
+  A() -> Pool() if(Left() > 1, 4 / (Left() - 1), 0)
+end population maps
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    nfnext::BngExecutionRequest request;
+    request.sample_times = {0.0, 1.0, 5.0};
+    request.seed = 42;
+    const auto result = nfnext::executeFromBioNetGen(semantic, request);
+    assert((result.rows.front() == std::vector<double>{0.0, 4.0, 0.0}));
+    assert((result.rows.back() == std::vector<double>{5.0, 1.0, 3.0}));
+    assert(result.event_count == 3);
+}
+
+void populationMapExecutesNamedSpeciesRate() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin molecule types
+  A(x)
+end molecule types
+begin population types
+  Pool()
+end population types
+begin seed species
+  A(x) 4
+end seed species
+begin observables
+  Species Free A(x)
+  Molecules Pooled Pool()
+end observables
+begin functions
+  Gate() = if(Free > 1, 4, 0)
+end functions
+begin population maps
+  A(x) -> Pool() Gate()
+end population maps
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    nfnext::BngExecutionRequest request;
+    request.sample_times = {0.0, 5.0};
+    request.seed = 42;
+    const auto result = nfnext::executeFromBioNetGen(semantic, request);
+    assert((result.rows.back() == std::vector<double>{5.0, 1.0, 3.0}));
+    assert(result.event_count == 3);
+}
+
 void dynamicPopulationMapRateMatchesExactSSA() {
     // Map propensity = rate * (# A(x~u) matches) = (k*U) * U with U = n.
     // Starting from n0=4 that is a pure death process with lambda_n = k*n^2,
@@ -1979,8 +2114,6 @@ void refusesUnsupportedPopulationMapRateShapes() {
     };
     // Time-dependent rate is not representable as a runtime observable rate.
     expectRefusal("k * time()");
-    // A Species observable cannot back a Function rate law.
-    expectRefusal("k * S()", "begin observables\n Species S A(x~u)\nend observables\n");
 }
 
 void lowersDynamicEnergyPatterns() {
@@ -2600,6 +2733,10 @@ end reaction rules
     lowersPopulationMaps();
     lowersDynamicPopulationMapRates();
     executesDynamicPopulationMapRate();
+    populationMapConvertsOnlyWholeComplexes();
+    compartmentPopulationMapsPreserveLocation();
+    populationMapStopsAtObservableThreshold();
+    populationMapExecutesNamedSpeciesRate();
     dynamicPopulationMapRateMatchesExactSSA();
     refusesUnsupportedPopulationMapRateShapes();
     lowersDynamicEnergyPatterns();
