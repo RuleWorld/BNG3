@@ -13,11 +13,13 @@ void bind_nfnext(py::module_& m) {
                                 const std::vector<double>& sample_times,
                                 std::uint64_t seed,
                                 std::uint64_t max_events,
-                                std::size_t max_particles) -> py::dict {
+                                std::size_t max_particles,
+                                double t_start) -> py::dict {
         bng::compile::CompiledModel compiled(model);
         nfnext::BngExecutionRequest req;
         req.sample_times = sample_times;
         req.seed = seed;
+        req.start_time = t_start;
         if (max_events > 0) req.max_events = max_events;
         if (max_particles > 0) req.max_particles = max_particles;
 
@@ -54,5 +56,6 @@ void bind_nfnext(py::module_& m) {
     py::arg("seed") = 0,
     py::arg("max_events") = 1000000,
     py::arg("max_particles") = 1000000,
+    py::arg("t_start") = 0.0,
     "Run NFnext simulation directly from CompiledModel.");
 }

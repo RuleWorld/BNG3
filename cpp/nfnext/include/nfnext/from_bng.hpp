@@ -33,14 +33,14 @@ struct BngLoweringResult {
 // error instead of being approximated.
 BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& model);
 
-// Explicit protocol for the opt-in unary site-state executor. Times are absolute
-// from initial time zero; rows include time followed by declared observables.
-// BNGL action sequences are not accepted or implicitly executed by this API.
+// Execute one trajectory initialized at start_time. Sample times are absolute
+// and the output rows contain time followed by declared observables.
 struct BngExecutionRequest {
     std::vector<double> sample_times;
     std::uint64_t seed{0};
     std::uint64_t max_events{1'000'000};
     std::size_t max_particles{1'000'000};
+    double start_time{0.0};
 };
 
 struct BngExecutionResult {
@@ -49,8 +49,8 @@ struct BngExecutionResult {
     std::uint64_t event_count{0};
 };
 
-// Executes only static-rate unary site-state rules, isolated integer seed
-// populations and unary Molecules observables. All other semantics throw.
+// Execute through the network-free NFIR runtime with explicit diagnostics
+// when the compiled model uses unsupported semantics.
 BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& model,
                                       const BngExecutionRequest& request);
 

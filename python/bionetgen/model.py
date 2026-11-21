@@ -1342,6 +1342,7 @@ class BioNetGenModel:
                 sample_times=times,
                 seed=seed,
                 max_events=max_sim_steps if max_sim_steps > 0 else 1_000_000,
+                t_start=t_start,
             )
             if isinstance(raw, dict) and "backend" not in raw:
                 raw["backend"] = "nfnext"
