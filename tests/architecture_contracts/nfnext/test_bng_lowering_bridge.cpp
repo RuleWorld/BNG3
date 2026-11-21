@@ -2001,6 +2001,39 @@ end population maps
     assert(result.event_count == 3);
 }
 
+void populationMapExecutesNamedSpeciesRate() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin molecule types
+  A(x)
+end molecule types
+begin population types
+  Pool()
+end population types
+begin seed species
+  A(x) 4
+end seed species
+begin observables
+  Species Free A(x)
+  Molecules Pooled Pool()
+end observables
+begin functions
+  Gate() = if(Free > 1, 4, 0)
+end functions
+begin population maps
+  A(x) -> Pool() Gate()
+end population maps
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    nfnext::BngExecutionRequest request;
+    request.sample_times = {0.0, 5.0};
+    request.seed = 42;
+    const auto result = nfnext::executeFromBioNetGen(semantic, request);
+    assert((result.rows.back() == std::vector<double>{5.0, 1.0, 3.0}));
+    assert(result.event_count == 3);
+}
+
 void dynamicPopulationMapRateMatchesExactSSA() {
     // Map propensity = rate * (# A(x~u) matches) = (k*U) * U with U = n.
     // Starting from n0=4 that is a pure death process with lambda_n = k*n^2,
@@ -2081,8 +2114,6 @@ void refusesUnsupportedPopulationMapRateShapes() {
     };
     // Time-dependent rate is not representable as a runtime observable rate.
     expectRefusal("k * time()");
-    // A Species observable cannot back a Function rate law.
-    expectRefusal("k * S()", "begin observables\n Species S A(x~u)\nend observables\n");
 }
 
 void lowersDynamicEnergyPatterns() {
@@ -2705,6 +2736,7 @@ end reaction rules
     populationMapConvertsOnlyWholeComplexes();
     compartmentPopulationMapsPreserveLocation();
     populationMapStopsAtObservableThreshold();
+    populationMapExecutesNamedSpeciesRate();
     dynamicPopulationMapRateMatchesExactSSA();
     refusesUnsupportedPopulationMapRateShapes();
     lowersDynamicEnergyPatterns();

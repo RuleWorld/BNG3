@@ -980,6 +980,7 @@ CompiledModel::CompiledModel(const ast::Model& model)
         compiled.functionName = compiled.populationName;
         compiled.arguments = compiled.populationArguments;
         compiled.sourceRate = mapping.hasExplicitRate ? mapping.rateText : "0";
+        compiled.totalRate = mapping.totalRate;
         const auto compiledRate = CompiledRateLaw::compile(
             mapping.hasExplicitRate ? mapping.rateExpression : ast::Expression::number(0.0),
             symbols_);

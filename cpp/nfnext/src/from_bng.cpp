@@ -419,7 +419,8 @@ std::optional<std::string> observableRateExpression(
         const auto* observable = model.observable(
             bng::compile::ObservableId::fromDenseIndex(index));
         if (!observable || observable->id.value() != index ||
-            observable->kind != bng::compile::ObservableKind::Molecules)
+            (observable->kind != bng::compile::ObservableKind::Molecules &&
+             observable->kind != bng::compile::ObservableKind::Species))
             return std::nullopt;
         observableIds.insert(index);
         return "observable_" + std::to_string(index);
@@ -2016,6 +2017,7 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
         PatternIR pattern;
         TypeId product_type{0};
         std::optional<CompartmentId> product_compartment;
+        bool total_rate{false};
         bool rate_is_static{false};
         double static_rate{0.0};
         std::string rate_expression;
@@ -2026,7 +2028,7 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
         for (const auto& popMap : source.populationMaps()) {
             PopulationMapIR irPopMap;
             irPopMap.population_name = popMap.populationName;
-            irPopMap.rate_expression = popMap.sourceRate;
+            irPopMap.rate_expression = popMap.sourceRate + (popMap.totalRate ? " TotalRate" : "");
             BngLoweringResult patternValidation;
             const auto pattern = flattenReactants({popMap.pattern}, patternValidation, popMap.populationName);
             if (pattern && patternValidation.ok()) {
@@ -2035,7 +2037,11 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
                 issue(result, BngLoweringSeverity::Error, popMap.populationName,
                       "population map pattern could not be lowered to NFIR");
             }
-            const auto rateValue = constantExpression(popMap.rate, source);
+            std::set<std::size_t> activeRateFunctions;
+            const auto expandedRate = expandZeroArgumentRateFunctions(
+                source.expandFunctions(popMap.rate), source, activeRateFunctions);
+            const auto rateValue = expandedRate
+                ? constantExpression(*expandedRate, source) : std::nullopt;
             if (rateValue) {
                 irPopMap.rate = *rateValue;
             } else {
@@ -2050,6 +2056,8 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
             std::string unsupported;
             if (!pattern || !patternValidation.ok()) {
                 unsupported = "population map pattern could not be lowered";
+            } else if (!expandedRate) {
+                unsupported = "population map rate contains an unresolved function";
             } else {
                 for (const auto& node : pattern->pattern.nodes) {
                     const auto* molType = source.moleculeType(
@@ -2092,6 +2100,7 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
                 executable.name = popMap.populationName;
                 executable.pattern = pattern->pattern;
                 executable.product_type = productType;
+                executable.total_rate = popMap.totalRate;
                 if (const auto compartment = popMap.pattern.compartmentId()) {
                     executable.product_compartment =
                         static_cast<CompartmentId>(compartment->value());
@@ -2110,9 +2119,9 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
                 } else {
                     std::set<std::size_t> observableIds;
                     const auto expression = observableRateExpression(
-                        popMap.rate, source, observableIds);
+                        *expandedRate, source, observableIds);
                     if (!expression) {
-                        unsupported = "population map rate depends on state that is not a Molecules observable";
+                        unsupported = "population map rate cannot be evaluated from observables and static parameters";
                     } else {
                         executable.rate_is_static = false;
                         executable.rate_expression = *expression;
@@ -2159,6 +2168,7 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
         mapRule.id = nextRule++;
         mapRule.name = "population_map_" + std::to_string(accepted.index) + ":" + accepted.name;
         mapRule.pattern = accepted.pattern;
+        mapRule.total_rate = accepted.total_rate;
         addPredicates(mapRule.pattern, mapRule.predicates);
         mapRule.rate = accepted.rate_is_static ? accepted.static_rate : 0.0;
         mapRule.rate_law.kind = accepted.rate_is_static
@@ -2274,8 +2284,8 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
 
     // A population map executes only when lowering synthesized an explicit
     // rule for it. Any map outside the supported simple shape (bonds to
-    // population nodes, unresolvable or non-Molecules-observable or
-    // time-dependent rates, undeclared product types, ...) remains a
+    // population nodes, unresolved or time-dependent rates, undeclared
+    // product types, ...) remains a
     // fail-closed refusal rather than an approximation.
     if (!source.populationMaps().empty()) {
         std::unordered_set<std::string> executableMapIndices;
