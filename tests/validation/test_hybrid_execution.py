@@ -2414,7 +2414,7 @@ def hybrid_stage_cases(tmp_path_factory):
             "end model",
             f"""begin protocol
   simulate_nf({{t_start=>{STAGE_START}, t_end=>{STAGE_START + STAGE_DURATION}, n_steps=>{STAGE_STEPS}, seed=>{BASE_SEED}, suffix=>"first"}})
-  setParameter("k_make", {STAGE_UPDATE})
+  setParameter("k_make", 0)
   simulate_nf({{t_end=>{STAGE_START + 2 * STAGE_DURATION}, n_steps=>{STAGE_STEPS}, suffix=>"second"}})
 end protocol
 end model""",
@@ -2431,7 +2431,9 @@ end model""",
     assert first is not None and second is not None and names == second_names
     np.testing.assert_array_equal(first[-1], second[0])
     assert 0 < second[0, names.index("B_total")] < INITIAL_B
-    assert second[-1, names.index("B_total")] < second[0, names.index("B_total")]
+    np.testing.assert_array_equal(
+        second[:, names.index("B_total")], second[0, names.index("B_total")]
+    )
     np.testing.assert_array_equal(
         second[:, names.index("A_total")] + second[:, names.index("B_total")],
         INITIAL_B,
@@ -2479,7 +2481,7 @@ end model""",
         "stage_bngl_protocol": {
             "passed": True,
             "oracle": "bng2-protocol-and-analytic",
-            "law": "BNG2 final-state protocol semantics and exact boundary and mass identities",
+            "law": "BNG2 final-state protocol semantics, zero hazard after intervention, and exact mass conservation",
             "artifacts": _write_hybrid_replay(
                 "stage-action",
                 {
