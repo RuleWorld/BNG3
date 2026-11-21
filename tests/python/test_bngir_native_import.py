@@ -1722,7 +1722,7 @@ def test_native_import_reconstructs_and_executes_without_source_parsing(monkeypa
     assert by_species["B()"] == pytest.approx(10.0)
     finite_result = restored.simulate(method="ode", t_end=0.1, n_steps=1)
     assert finite_result.time.tolist() == pytest.approx([0.0, 0.1])
-    nf_result = restored.simulate(method="nf", t_end=0.1, n_steps=1, seed=1)
+    nf_result = restored.simulate(method="nfcore", t_end=0.1, n_steps=1, seed=1)
     assert nf_result.time.tolist() == pytest.approx([0.0, 0.1])
     assert nf_result.construction_path == "direct"
     assert bionetgen.semantic_equal(source_model, restored, version="0.2")
@@ -2004,7 +2004,7 @@ def test_native_nf_simulation_does_not_use_forced_xml_fallback(monkeypatch):
         RuntimeError,
         match="direct AST initialization required but unavailable.*FORCE_XML",
     ):
-        model.simulate(method="nf", t_end=0.1, n_steps=1, seed=1)
+        model.simulate(method="nfcore", t_end=0.1, n_steps=1, seed=1)
 
 
 def test_native_import_surfaces_builder_failure_without_fallback(monkeypatch):

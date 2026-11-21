@@ -3,9 +3,10 @@
 Validates maintainer Decision 4 (C04):
 - release-engine-consolidation: Every NFcore2 capability maps to passing tests in
   NFcore2 parity and NFnext architecture contracts with preserved fixtures.
-- release-nf-default: Production default method="nf" selects NFcore; explicit
-  method="nfcore" is selectable through the common interface and produces identical
-  deterministic trajectories; both match analytical CTMC laws and native NFsim within 4-sigma.
+- release-nf-default: Production default method="nf" selects NFnext (backend
+  "nfnext"); method="nfnext" stays explicitly selectable; method="nfcore"
+  remains explicitly selectable (backend "nfsim") with NFcore-only options;
+  explicit NFcore still matches analytical CTMC laws within 4-sigma.
 - release-obligation-149: Obligation closure record, schema compliance, workload ownership
   matrix documentation, and negative containment (fail-closed refusal of unpromoted method="nfcore2").
 """
@@ -338,32 +339,65 @@ end model
 
 
 def test_release_nf_default(tmp_path: Path):
-    """Validate release-nf-default.
+    """Validate release-nf-default under the promoted DECISIONS item 4 contract.
 
-    1. method="nf" defaults to NFcore.
-    2. method="nfcore" explicitly selects NFcore through the common interface.
-    3. Both routes yield identical deterministic trajectories for the same seed.
-    4. Both match analytical continuous-time Markov chain laws within 4.0-sigma.
-    5. NFcore-specific options (equilibrate, traversal_limit) are supported.
+    1. Production default method="nf" selects NFnext with backend "nfnext".
+    2. method="nfnext" remains explicitly selectable with identical output.
+    3. method="nfcore" remains explicitly selectable with backend "nfsim" and
+       NFcore-specific options; NFcore-only options are refused by method="nf".
+    4. Explicit NFcore still matches analytical continuous-time Markov chain
+       laws within 4.0-sigma (reversible isomerization and pure death).
     """
     model_file = tmp_path / "reversible.bngl"
     model_file.write_text(REVERSIBLE_ISOMERIZATION_BNGL)
     m = bionetgen.load(str(model_file))
 
-    # Deterministic trajectory identity between method="nf" and method="nfcore"
+    # 1. Promoted default: method="nf" routes to NFnext, not NFcore.
     res_default = m.simulate(method="nf", t_end=5.0, n_steps=10, seed=42)
+    assert res_default.backend == "nfnext"
+    assert len(res_default.time) == 11
+    assert res_default.observables["A"][-1] + res_default.observables["B"][-1] == 300
+
+    # 2. Explicit NFnext stays selectable and agrees with the promoted default.
+    res_nfnext = m.simulate(method="nfnext", t_end=5.0, n_steps=10, seed=42)
+    assert res_nfnext.backend == "nfnext"
+    np.testing.assert_allclose(res_default.time, res_nfnext.time)
+    np.testing.assert_array_equal(
+        res_default.observables["A"], res_nfnext.observables["A"]
+    )
+    np.testing.assert_array_equal(
+        res_default.observables["B"], res_nfnext.observables["B"]
+    )
+
+    # 3. NFcore remains explicitly selectable and independent of NFnext.
     res_explicit = m.simulate(method="nfcore", t_end=5.0, n_steps=10, seed=42)
-
-    np.testing.assert_allclose(res_default.time, res_explicit.time)
-    np.testing.assert_array_equal(
-        res_default.observables["A"], res_explicit.observables["A"]
-    )
-    np.testing.assert_array_equal(
-        res_default.observables["B"], res_explicit.observables["B"]
-    )
-    assert res_default.backend == "nfsim"
     assert res_explicit.backend == "nfsim"
+    assert len(res_explicit.time) == 11
+    assert res_explicit.observables["A"][-1] + res_explicit.observables["B"][-1] == 300
 
+    # NFcore-only options belong to method="nfcore".
+    res_equil = m.simulate(
+        method="nfcore",
+        t_end=2.0,
+        n_steps=4,
+        seed=55,
+        equilibrate=0.5,
+        traversal_limit=2,
+    )
+    assert res_equil.backend == "nfsim"
+    assert len(res_equil.time) == 5
+
+    with pytest.raises(
+        ValueError, match="equilibrate is supported only for method='nfcore'"
+    ):
+        m.simulate(method="nf", t_end=1.0, n_steps=1, seed=55, equilibrate=0.5)
+
+    with pytest.raises(
+        ValueError, match="traversal_limit is supported only for method='nfcore'"
+    ):
+        m.simulate(method="nf", t_end=1.0, n_steps=1, seed=55, traversal_limit=2)
+
+    # 4. Explicit NFcore still matches analytical CTMC laws.
     # Analytical CTMC law parity: Reversible Isomerization A <-> B (kf=2.0, kr=1.0, N=300)
     # Steady state: p_A = kr / (kf + kr) = 1/3, E[A] = N * p_A = 100, Var[A] = N * p_A * (1 - p_A) = 66.67
     n_runs = 25
@@ -394,7 +428,7 @@ def test_release_nf_default(tmp_path: Path):
 
     final_x = []
     for s in range(2001, 2001 + n_runs):
-        res = m_death.simulate(method="nf", t_end=t_eval, n_steps=2, seed=s)
+        res = m_death.simulate(method="nfcore", t_end=t_eval, n_steps=2, seed=s)
         final_x.append(res.observables["X"][-1])
 
     sample_mean_death = float(np.mean(final_x))
@@ -402,17 +436,6 @@ def test_release_nf_default(tmp_path: Path):
     assert (
         z_death < 4.0
     ), f"Pure death CTMC mean outside 4-sigma: mean={sample_mean_death}, z={z_death}"
-
-    # Option preservation: equilibrate and traversal_limit on method="nfcore"
-    res_equil = m.simulate(
-        method="nfcore",
-        t_end=2.0,
-        n_steps=4,
-        seed=55,
-        equilibrate=0.5,
-        traversal_limit=2,
-    )
-    assert len(res_equil.time) == 5
 
 
 def test_release_obligation_149(tmp_path: Path):

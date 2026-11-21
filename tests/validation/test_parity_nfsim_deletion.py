@@ -74,13 +74,13 @@ def test_direct_and_xml_preserve_deletion_scope(name, api, tmp_path, monkeypatch
     monkeypatch.delenv("BNG_NFSIM_FORCE_XML", raising=False)
     monkeypatch.delenv("BNG_NFSIM_ALLOW_XML_FALLBACK", raising=False)
     direct = runner._result_to_trajectory(
-        bionetgen.load(source).simulate(method="nf", t_end=2, n_steps=20, seed=7)
+        bionetgen.load(source).simulate(method="nfcore", t_end=2, n_steps=20, seed=7)
     )
     assert direct.construction_path == "direct"
     monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
     monkeypatch.setenv("BNG_NFSIM_ALLOW_XML_FALLBACK", "1")
     xml = runner._result_to_trajectory(
-        bionetgen.load(source).simulate(method="nf", t_end=2, n_steps=20, seed=7)
+        bionetgen.load(source).simulate(method="nfcore", t_end=2, n_steps=20, seed=7)
     )
     assert xml.construction_path == "in-memory-xml"
     assert direct.columns == xml.columns
@@ -100,7 +100,7 @@ def test_conditional_partial_deletion_declines_direct_construction(
     with pytest.raises(
         RuntimeError, match="stage 'reaction rules'.*XML fallback disabled"
     ):
-        bionetgen.load(source).simulate(method="nf", t_end=2, n_steps=20, seed=7)
+        bionetgen.load(source).simulate(method="nfcore", t_end=2, n_steps=20, seed=7)
     assert (
         "conditional partial pattern deletion is unsupported; requires DeleteMolecules"
         in capfd.readouterr().err
