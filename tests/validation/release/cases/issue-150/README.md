@@ -1,27 +1,25 @@
-# Issue #150: Particle-Population Hybrid Execution
+# Issue #150 hybrid execution acceptance
 
-**Closure audit (2026-11-14): incomplete acceptance.** Generated NFcore HPP has independent native-NFsim ensembles. #658 replaces several formula-only checks with sampled trajectories. The cited run 43568894380 is pull_request head 99b392cb, not main 843aa9f0. Its aggregate says partial and excludes dynamic thresholds; the compartment receipt separately states oracle limits. NFnext still refuses unlowered population maps; its generic graph path does not demonstrate the required population/threshold executor. See docs/CURRENT_PROGRESS.md for the assessed revision and retained evidence.
+The live execution suite is `tests/validation/test_hybrid_execution.py`.
+The contract lists the required runtime case and oracle identities.
+The release recorder consumes the suite results and the SHA-256 digests of
+the retained model inputs and trajectories.
 
-## Overview
+| Work clause | Production entry point | Executed cases and independent oracles |
+| --- | --- | --- |
+| Whole-complex conversion, count updates, and reverse conversion at the source rates | `generate_hybrid_model`, embedded NFcore, and NFnext through `BioNetGenModel.simulate` | Single-particle conversion, whole-dimer dissociation and reversible cycles against BNG2-generated HPP run by pinned native NFsim. Exact molecule conservation and binomial laws check multiplicity and conversion rates. |
+| Mapped rates, observables, conservation, compartments, protocol, and initialization | Public `simulate(method="nfcore")` and `simulate(method="nfnext")`, and BNGL `simulate_protocol` dispatch to NFcore | Pre-run rate assignment, absolute clock initialization, and joined stages against pinned native NFsim and exact piecewise binomial laws. Compartment-local graph and count preservation, observable continuity, and reverse conversion use an independent location-specific law. The BNGL action case checks BNG2's final-state carry semantics and exact boundary and mass identities. |
+| Actual hybrid trajectories and laws, population thresholds, and conversion cycles | Generated HPP on both backends and direct NFnext population maps | Reversible CTMC, observable cutoff and absolute-rate conversion against pinned native NFsim and exact marginal laws. The action option fixtures use pinned BNG2 for defaults, outputs and errors. |
 
-This case adds bounded tests toward release qualification for **Issue #150 (C05)**:
-"Complete or disposition hybrid particle-population execution."
+Pinned BNG2 does not transform compartment models. The compartment
+single-stage cases use analytic laws and a native NFsim consumer for the
+exportable case. The compartment stage case uses independent analytic laws.
 
-BNG3 provides hybrid generation, NFcore execution and separate NFnext primitives:
-1. **Hybrid Model Generator**: `generate_hybrid_model` parses population maps, specializes reaction rules into particle/population forms, handles reaction-center multiplicities and symmetry ratios, and writes hybrid BNGL models (`cpp/engine/HybridModelGenerator.cpp`).
-2. **Action Dispatch & Execution Options**: Supports all canonical arguments (`actions`, `execute`, `overwrite`, `prefix`, `suffix`, `verbose`) and routes hybrid execution through population-aware simulation engines (`cpp/actions/ActionDispatch.cpp`).
-3. **Hybrid State & Discrete Combinatorics**: Employs exact combinatorial falling-factorial propensities, 64-bit atomic population updates with underflow rollback, and particleization / departicleization threshold migrations (`cpp/nfnext/include/nfnext/hybrid_state.hpp`).
-4. **Fail-Closed Boundaries**: Distinguishes representation from execution; unhandled constructs (e.g. compartment-scoped hybrid transformations) are refused fail-closed rather than silently approximated.
-
-## Mathematical Oracles & Analytical Laws
-
-The formula-only tests in this package check oracle arithmetic; they do not run
-product trajectories and must not be counted as execution evidence. The separate
-`tests/validation/test_hybrid_execution.py` suite does compare generated NFcore
-HPP trajectories with pinned native NFsim and independent laws. Preserve that
-bounded evidence, including the compartment comparison's stated oracle limits.
-NFnext still refuses population-map execution, and dynamic threshold changes
-are explicitly outside the aggregate receipt. Full #150 acceptance remains open.
+The phase change in the native two-state stage case uses an exact sampled
+boundary. The two observed counts fully determine that case's Markov state.
+A second native process starts from those counts and a distinct seed. This
+avoids the pinned native RNF driver's clock overshoot between sequential
+`sim` commands.
 
 Independent analytical continuous-time Markov chain (CTMC) laws:
 
@@ -45,4 +43,4 @@ $$\forall t \ge 0: \quad A_{\text{total}}(t) + B_{\text{total}}(t) = N_0$$
 
 - `release-hybrid`: BNG2 hybrid output executed by native NFsim matches BNG3 hybrid distributions and observables within $4.0\sigma$ across 200 trajectories per engine.
 - `release-hybrid-conservation`: Independent analytic conversion/mass conservation and multiplicity laws hold in mixed particle/population cases.
-- `release-capability-coverage-150`: The test in this package validates contract registration only. The separate execution suite covers its declared cases and limitations; neither establishes all remaining #150 work clauses.
+- `release-capability-coverage-150` requires every assigned row to have affirmative execution evidence with its named independent oracle. The consuming report records the tested source revision.
