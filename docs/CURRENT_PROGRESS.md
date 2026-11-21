@@ -1,5 +1,34 @@
 # BNG3 current progress
 
+## Full network-free corpus parity — 2026-11-20
+
+PR #815 (merged at `c95aa65ce77487757c35a78fba525d2db56a3962`) closes the
+remaining execution gaps found by the full TIER_NF comparison: constant seed
+species now execute, supported builtin functions in dynamic rates lower to
+FunctionVM calls, disconnected reactant patterns use an exact count-and-sample
+fast path instead of materializing the Cartesian product of embeddings, and
+observable counts are weighted by specified-site automorphism multiplicity to
+match BNG2/native NFsim XML.
+
+Exact-main hosted evidence (Cross-tool parity run `44814871639`, artifact
+`issue148-nfnext-corpus-44814871639/bng3-nfnext-corpus-report.json`, source
+revision `c95aa65c…`, clean):
+
+```
+localfunc  PASS  seeds 32
+motor      PASS  seeds 32
+simple_system PASS seeds 32
+tlbr       PASS  seeds 32
+summary: all_models_pass=true, release_check_satisfied=true,
+         routes_single_engine=true, negatives_reject_wrong_law=true
+```
+
+This satisfies the DECISIONS item 4 precondition (NFnext matches pinned
+native NFsim on the full network-free corpus) for considering default
+promotion. NFcore remains the default until the #149 acceptance contract is
+updated by the independent validation framework; no default change is made by
+this record.
+
 ## NFnext dynamic energy execution — 2026-11-19
 
 `cpp/nfnext/src/from_bng.cpp` no longer folds a dynamic energy expression to
@@ -216,7 +245,7 @@ Issue-keyed evidence index assessed at main SHA `3ef3ac00645dc894133a8755a1499ca
 | [#178](https://github.com/RuleWorld/BNG3/issues/178) | `release-shared-decisions`, `release-interface-parity`, `release-obligation-178`, `release-backend-contract`, `release-backend-oracles` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#179](https://github.com/RuleWorld/BNG3/issues/179) | `release-provenance`, `release-provenance-negative`, `release-obligation-179` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#180](https://github.com/RuleWorld/BNG3/issues/180) | `release-reconciliation`, `release-reconciliation-pins`, `release-obligation-180` | `45dabdb0299f12aad78c3138749e2ad4dfbcfa57` | [PR #797](https://github.com/RuleWorld/BNG3/pull/797) | CLOSED (All 3 checks PASS) | None (Closed on main with verified exact receipts) |
-| [#181](https://github.com/RuleWorld/BNG3/issues/181) | `release-corpus-coverage`, `release-corpus-results`, `release-obligation-181` | `3ef3ac00645dc894133a8755a1499ca86711d286` | [PR #791](https://github.com/RuleWorld/BNG3/pull/791) (merge `c89211f8`), [PR #798](https://github.com/RuleWorld/BNG3/pull/798) (merge `0c7d5f60`) | Scoped evidence, issue open | Scoped `release-corpus-results` evidence for the locked tier-S shard: product revision `51c4502f`, candidate `7bd6c46c`, BNG2 pin `9601746f`, independently built `run_network` `337f437a`; clean `PASS=569 / FAIL=0 / NOT_TESTED=1 / HARNESS_ERROR=0`, resume with one withheld case artifact reused 9 cases and executed 1 with identical scientific rows, stale artifact rejected. Named checks and remaining obligations are declared in `tests/validation/release/cases/issue-181/`. Full corpus coverage, all-case results and exact-main closure receipts remain unverified; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
+| [#181](https://github.com/RuleWorld/BNG3/issues/181) | `release-corpus-coverage`, `release-corpus-results`, `release-obligation-181` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#184](https://github.com/RuleWorld/BNG3/issues/184) | `release-candidate`, `release-installed-artifacts`, `release-obligation-184` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#185](https://github.com/RuleWorld/BNG3/issues/185) | `release-codeowners`, `release-review-rules`, `release-obligation-185` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#186](https://github.com/RuleWorld/BNG3/issues/186) | `release-migration-docs`, `release-maintenance-docs`, `release-obligation-186` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
