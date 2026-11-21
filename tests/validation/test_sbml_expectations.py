@@ -976,3 +976,40 @@ def test_the_failure_clusters_follow_the_official_feature_tags():
     assert cluster_for(["RateRule", "Reaction", "Species"]) == "RateRule"
     assert cluster_for(["AlgebraicRule", "Parameter"]) == "AlgebraicRule"
     assert cluster_for(["Compartment", "Reaction", "Species"]) == "other"
+
+
+def test_stochastic_failure_is_preserved_against_a_different_seed_campaign():
+    """A seed change is not a semantic improvement.
+
+    A newer full campaign ran the batched SSA ensemble with seed base 2000000
+    and observed ``stochastic/00003`` passing. The pinned campaign uses
+    1000000, where that case failed. The manifest must keep the pinned
+    disposition and record why the newer verdict was not adopted, so a future
+    regeneration cannot silently change the stochastic seed contract or count
+    a fluctuation as a scientific improvement.
+    """
+
+    manifest = _manifest()
+    suite = manifest["provenance"]["sbml_test_suite"]
+    assert suite["stochastic_seed_base"] == 1000000
+
+    reconciliation = manifest["provenance"]["reconciliation"]
+    campaign = reconciliation["campaign"]
+    assert campaign["stochastic_seed_base"] != suite["stochastic_seed_base"]
+    assert re.fullmatch(r"[0-9a-f]{40}", campaign["bng3_commit"])
+    assert re.fullmatch(r"[0-9a-f]{64}", campaign["report_sha256"])
+    assert "only differing verdict is stochastic/00003" in reconciliation["comparison"]
+
+    assert manifest["cases"]["stochastic/00003"]["official_reference"] == "failed"
+    improvements = json.loads(IMPROVEMENTS.read_text(encoding="utf-8"))
+    for measurement in improvements["measurements"]:
+        assert "stochastic/00003" not in measurement["cases"]
+
+    # Unsupported verdicts are gaps, not support. Reconciliation must not
+    # advance any of them on the strength of a different-seed campaign.
+    unsupported = [
+        identity
+        for identity, entry in manifest["cases"].items()
+        if entry["official_reference"] == "unsupported"
+    ]
+    assert len(unsupported) == 123
