@@ -29,6 +29,13 @@ using namespace bng::ast;
 
 namespace {
 
+constexpr const char* kStageSystem = "bionetgen.nfcore.stage";
+struct StageSystem {
+    std::unique_ptr<NFcore::System> system;
+    std::string construction_path;
+    std::string direct_unavailable_reason;
+};
+
 struct TempFileGuard {
     std::string path;
     ~TempFileGuard() { if (!path.empty()) std::remove(path.c_str()); }
@@ -51,7 +58,8 @@ void bind_nfsim(py::module_& m) {
                             const std::string& source_path,
                             const std::vector<double>& sample_times,
                             int traversal_limit, double t_start,
-                            bool require_direct) -> py::dict {
+                            bool require_direct, const py::object& continuation,
+                            bool retain_state) -> py::dict {
         if (model.getEventFormatVersion().has_value()) {
             throw std::runtime_error(bng::ast::kUnsupportedEventExecutionMessage);
         }
@@ -96,7 +104,9 @@ void bind_nfsim(py::module_& m) {
         // Other models retain the explicit compatibility opt-in.
         TempFileGuard tmp_guard;
         int suggestedTraversalLimit = -1;
-        std::unique_ptr<NFcore::System> system;
+        const bool resuming = !continuation.is_none();
+        std::unique_ptr<NFcore::System> owner;
+        NFcore::System* system = nullptr;
         std::string construction_path = "direct";
         bool direct_semantics_unsupported = false;
         const bool model_uses_units =
@@ -110,9 +120,22 @@ void bind_nfsim(py::module_& m) {
         // that construction was "unavailable".
         std::string direct_unavailable_reason;
 
-        {
+        if (resuming) {
+            auto* pointer = PyCapsule_GetPointer(continuation.ptr(), kStageSystem);
+            if (!pointer) throw py::error_already_set();
+            auto* previous = static_cast<StageSystem*>(pointer);
+            if (!previous->system)
+                throw std::invalid_argument("NFcore continuation has already been consumed");
+            if (previous->system->getCurrentTime() != t_start)
+                throw std::invalid_argument("NFcore continuation start time must equal the previous end time");
+            if (equilibrate != 0 || traversal_limit != -1)
+                throw std::invalid_argument("NFcore continuation uses the original traversal limit and cannot equilibrate");
+            construction_path = previous->construction_path;
+            direct_unavailable_reason = previous->direct_unavailable_reason;
+            owner = std::move(previous->system);
+        } else {
             py::gil_scoped_release release;
-            system.reset(NFinput::buildSystemFromAst(
+            owner.reset(NFinput::buildSystemFromAst(
                 model,
                 true,     // strict molecularity
                 -1,       // globalMoleculeLimit (unlimited)
@@ -123,7 +146,7 @@ void bind_nfsim(py::module_& m) {
                 &direct_semantics_unsupported
             ));
 
-            if (!system) {
+            if (!owner) {
                 const std::string because =
                     direct_unavailable_reason.empty()
                         ? std::string()
@@ -159,7 +182,7 @@ void bind_nfsim(py::module_& m) {
                 // not touch the filesystem.  Keep it as the first fallback so
                 // migration builds remain usable without granting the direct
                 // adapter any unproven semantics.
-                system.reset(NFinput::initializeFromModel(
+                owner.reset(NFinput::initializeFromModel(
                     &model,
                     true,     // strict molecularity
                     -1,       // globalMoleculeLimit (unlimited)
@@ -168,7 +191,7 @@ void bind_nfsim(py::module_& m) {
                 ));
             }
 
-            if (!system) {
+            if (!owner) {
                 if (model_uses_units) {
                     throw std::runtime_error(
                         "NFsim on-disk XML fallback cannot preserve physical units; refusing model");
@@ -181,7 +204,7 @@ void bind_nfsim(py::module_& m) {
                     std::cerr << "[bind_nfsim] In-memory XML initialization failed; "
                                  "using on-disk XML fallback...\n";
                 }
-                const std::string xml_content = bng::io::XmlWriter::write(model);
+                const std::string xml_content = bng::io::XmlWriter::write(model, nullptr, /*retainRateExpressions=*/true);
                 tmp_guard.path = make_temp_xml_path();
                 {
                     std::ofstream out(tmp_guard.path);
@@ -193,7 +216,7 @@ void bind_nfsim(py::module_& m) {
                         throw std::runtime_error("Failed to write temp file for NFSim XML");
                     }
                 }
-                system.reset(NFinput::initializeFromXML(
+                owner.reset(NFinput::initializeFromXML(
                     tmp_guard.path,
                     true,     // strict molecularity
                     -1,       // globalMoleculeLimit (unlimited)
@@ -205,45 +228,56 @@ void bind_nfsim(py::module_& m) {
             }
         }
 
-        if (!system) {
+        if (!owner) {
             throw std::runtime_error("Failed to initialize NFSim system from model XML");
         }
 
-        // NFsim's XML entry point applies the parser's recommended traversal
-        // depth before preparing reactions.  The direct path must do the same
-        // or large complexes silently fall back to an unrestricted graph walk.
-        // A caller-supplied non-negative value retains the native -utl escape
-        // hatch; -1 uses the recommendation computed while building the system.
-        const int automaticTraversalLimit = system->needsWholeComplexTraversal()
-            ? NFcore::ReactionClass::NO_LIMIT : suggestedTraversalLimit;
-        const int effectiveTraversalLimit =
-            traversal_limit >= 0 ? traversal_limit : automaticTraversalLimit;
-        system->setUniversalTraversalLimit(effectiveTraversalLimit);
-        if (verbose) {
-            std::cerr << "[bind_nfsim] Universal traversal limit = "
-                      << effectiveTraversalLimit << "\n";
-        }
-
-        // NFsim evaluates time-dependent functions against the system clock.
-        // Set the absolute API start before preparation so initial propensities
-        // and later output checkpoints use the same time origin.
-        system->setCurrentTime(t_start);
-
-        // Step 5: Seed per-instance RNG (after system creation, before prepareForSimulation)
-        if (seed > 0) {
-            system->seedRNG(static_cast<unsigned long>(seed));
-        }
-
-        // Step 6: Prepare the system before any equilibration or simulation.
-        {
+        system = owner.get();
+        if (resuming) {
             py::gil_scoped_release release;
-            system->prepareForSimulation();
-        }
+            NFinput::refreshSystemParameters(*system, model);
+            if (seed > 0) {
+                system->setCurrentTime(t_start);
+                system->seedRNG(static_cast<unsigned long>(seed));
+            }
+        } else {
+            // NFsim's XML entry point applies the parser's recommended traversal
+            // depth before preparing reactions.  The direct path must do the same
+            // or large complexes silently fall back to an unrestricted graph walk.
+            // A caller-supplied non-negative value retains the native -utl escape
+            // hatch; -1 uses the recommendation computed while building the system.
+            const int automaticTraversalLimit = system->needsWholeComplexTraversal()
+                ? NFcore::ReactionClass::NO_LIMIT : suggestedTraversalLimit;
+            const int effectiveTraversalLimit =
+                traversal_limit >= 0 ? traversal_limit : automaticTraversalLimit;
+            system->setUniversalTraversalLimit(effectiveTraversalLimit);
+            if (verbose) {
+                std::cerr << "[bind_nfsim] Universal traversal limit = "
+                          << effectiveTraversalLimit << "\n";
+            }
 
-        // Step 6: Run equilibration if requested
-        if (equilibrate > 0) {
-            py::gil_scoped_release release;
-            system->equilibrate(equilibrate);
+            // NFsim evaluates time-dependent functions against the system clock.
+            // Set the absolute API start before preparation so initial propensities
+            // and later output checkpoints use the same time origin.
+            system->setCurrentTime(t_start);
+
+            // Step 5: Seed per-instance RNG (after system creation, before prepareForSimulation)
+            if (seed > 0) {
+                system->seedRNG(static_cast<unsigned long>(seed));
+            }
+
+            // Step 6: Prepare the system before any equilibration or simulation.
+            {
+                py::gil_scoped_release release;
+                system->prepareForSimulation();
+            }
+
+            // Step 6: Run equilibration if requested
+            if (equilibrate > 0) {
+                py::gil_scoped_release release;
+                system->equilibrate(equilibrate);
+            }
+
         }
 
         // Step 7: Collect observable names
@@ -320,6 +354,15 @@ void bind_nfsim(py::module_& m) {
         // Empty on the direct path; set whenever a compatibility path was used
         // so validation harnesses can assert *why* rather than just *that*.
         result["direct_unavailable_reason"] = direct_unavailable_reason;
+        if (retain_state) {
+            auto stage = std::make_unique<StageSystem>(StageSystem{
+                std::move(owner), construction_path, direct_unavailable_reason});
+            auto capsule = py::capsule(stage.get(), kStageSystem, [](void* pointer) {
+                delete static_cast<StageSystem*>(pointer);
+            });
+            stage.release();
+            result["_continuation"] = std::move(capsule);
+        }
 
         return result;
     },
@@ -334,6 +377,8 @@ void bind_nfsim(py::module_& m) {
         py::arg("traversal_limit") = -1,
         py::arg("t_start") = 0.0,
         py::arg("require_direct") = false,
+        py::arg("continuation") = py::none(),
+        py::arg("retain_state") = false,
         "Run network-free (NFSim) simulation on a model.\n\n"
         "Returns a dict with 'time' (numpy array of time points) and\n"
         "'observables' (dict of name -> numpy array of values at each time point).");

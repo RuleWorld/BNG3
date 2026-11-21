@@ -1463,7 +1463,8 @@ bool needsTotalRateFunctionWrapper(const ast::Model& model,
 
 } // anonymous namespace
 
-std::string XmlWriter::write(const ast::Model& model, const engine::GeneratedNetwork* network) {
+std::string XmlWriter::write(const ast::Model& model, const engine::GeneratedNetwork* network,
+                             bool retainRateExpressions) {
     if (network) {
         engine::requireNoDelayedSemantics(model, *network, "BNG-XML export");
     } else {
@@ -1486,7 +1487,7 @@ std::string XmlWriter::write(const ast::Model& model, const engine::GeneratedNet
     xml << writeMoleculeTypes(model);
     xml << writeCompartments(model);
     xml << writeSpecies(model, network);
-    xml << writeReactionRules(model);
+    xml << writeReactionRules(model, retainRateExpressions);
     xml << writeObservables(model);
     xml << writeFunctions(model);
     xml << writeEnergyPatterns(model);
@@ -1519,7 +1520,7 @@ std::string XmlWriter::writeStructural(const ast::Model& model, const engine::Ge
     xml << writeMoleculeTypes(model);
     xml << writeCompartments(model);
     xml << writeSpecies(model, network);
-    xml << writeReactionRules(model);
+    xml << writeReactionRules(model, false);
     xml << writeObservables(model);
     xml << writeFunctions(model);
     xml << writeEnergyPatterns(model);
@@ -1724,7 +1725,7 @@ std::string XmlWriter::writeSpecies(const ast::Model& model, const engine::Gener
     return xml.str();
 }
 
-std::string XmlWriter::writeReactionRules(const ast::Model& model) {
+std::string XmlWriter::writeReactionRules(const ast::Model& model, bool retainRateExpressions) {
     std::ostringstream xml;
     xml << "    <ListOfReactionRules>\n";
 
@@ -1928,10 +1929,13 @@ std::string XmlWriter::writeReactionRules(const ast::Model& model) {
                 value = numeric.str();
             }
 
-            // Keep the source rate expression intact. NFsim applies the
-            // compartment count-rate conversion at runtime so parameter-backed
-            // compartment sizes can be refreshed without losing the base rate.
-            xml << "            <RateConstant value=\"" << escapeXml(value) << "\"/>\n";
+            // Native NFsim reads the numeric snapshot. Embedded NFcore
+            // also retains parameter-dependent expressions for stage updates.
+            xml << "            <RateConstant value=\"" << escapeXml(value) << "\"";
+            if (retainRateExpressions && numericConstant && !rate.getDependencies().empty()) {
+                xml << " bng3Expression=\"" << escapeXml(rate.toString()) << "\"";
+            }
+            xml << "/>\n";
         }
         xml << "          </ListOfRateConstants>\n";
         xml << "        </RateLaw>\n";

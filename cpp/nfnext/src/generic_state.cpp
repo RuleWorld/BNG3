@@ -24,6 +24,36 @@ std::uint16_t GenericGraphState::typeSiteCount(TypeId type) const {
     return type_site_counts_[type];
 }
 
+GenericGraphState::GenericGraphState(const ModelIR& model, const GenericGraphState& previous)
+    : GenericGraphState(previous) {
+    const auto& old = previous.model();
+    if (old.molecule_types.size() != model.molecule_types.size() ||
+        old.compartments.size() != model.compartments.size()) {
+        throw std::invalid_argument("NFnext continuation requires the same model topology");
+    }
+    for (std::size_t i = 0; i < model.molecule_types.size(); ++i) {
+        const auto& a = old.molecule_types[i];
+        const auto& b = model.molecule_types[i];
+        if (a.id != b.id || a.name != b.name || a.is_population != b.is_population ||
+            a.sites.size() != b.sites.size()) {
+            throw std::invalid_argument("NFnext continuation requires the same molecule types");
+        }
+        for (std::size_t j = 0; j < a.sites.size(); ++j) {
+            if (a.sites[j].name != b.sites[j].name || a.sites[j].states != b.sites[j].states) {
+                throw std::invalid_argument("NFnext continuation requires the same site layout");
+            }
+        }
+    }
+    for (std::size_t i = 0; i < model.compartments.size(); ++i) {
+        const auto& a = old.compartments[i];
+        const auto& b = model.compartments[i];
+        if (a.id != b.id || a.name != b.name || a.parent != b.parent || a.dimensions != b.dimensions) {
+            throw std::invalid_argument("NFnext continuation requires the same compartment layout");
+        }
+    }
+    model_ = &model;
+}
+
 ParticleId GenericGraphState::create(TypeId type, CompartmentId comp) {
     const auto sites = typeSiteCount(type);
     std::uint32_t slot;

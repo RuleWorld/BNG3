@@ -2216,6 +2216,19 @@ BngLoweringResult lowerFromBioNetGen(const bng::compile::CompiledModel& source) 
     return result;
 }
 
+using PopulationLocation = std::pair<TypeId, std::optional<CompartmentId>>;
+using PopulationCounts = std::map<PopulationLocation, std::uint64_t>;
+
+struct BngExecutionState {
+    std::shared_ptr<const ModelIR> model;
+    GenericGraphState graph;
+    PopulationCounts populations;
+    std::unordered_set<TypeId> compartmentalized_populations;
+    double time;
+    std::uint64_t seed;
+    std::uint64_t stream;
+};
+
 BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& source,
                                       const BngExecutionRequest& request) {
     const auto refuse = [](const std::string& reason) {
@@ -2224,6 +2237,9 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
     if (request.sample_times.empty()) refuse("sample_times must not be empty");
     if (!std::isfinite(request.start_time) || request.start_time < 0.0)
         refuse("start_time must be finite and nonnegative");
+    const auto& continuation = request.continuation;
+    if (continuation && continuation->time != request.start_time)
+        refuse("continuation start time must equal the previous end time");
     double previous = -1.0;
     for (double time : request.sample_times) {
         if (!std::isfinite(time) || time < 0.0 || time <= previous)
@@ -2281,7 +2297,12 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         for (const auto& issue : lowered.issues)
             if (issue.severity == BngLoweringSeverity::Error) refuse(issue.message);
     }
-    const auto& model = lowered.model;
+    // The graph stores a pointer to the model describing its layout.
+    // Keep that model alive for the returned state.
+    auto modelOwner = request.retain_state
+        ? std::make_shared<ModelIR>(std::move(lowered.model))
+        : nullptr;
+    const auto& model = modelOwner ? *modelOwner : lowered.model;
     // Physical rate units are converted during lowering for supported
     // constant elementary forms; execution refuses only if conversion failed.
 
@@ -2341,11 +2362,15 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         refuse("barrier rate modulation not yet implemented in NFnext execution");
     if (request.max_particles > std::numeric_limits<std::uint32_t>::max())
         refuse("particle budget exceeds native index capacity");
-    GenericGraphState state(model);
-    using PopulationLocation = std::pair<TypeId, std::optional<CompartmentId>>;
-    using PopulationCounts = std::map<PopulationLocation, std::uint64_t>;
-    PopulationCounts population_counts;
-    std::unordered_set<TypeId> compartmentalized_populations;
+    GenericGraphState state = continuation
+        ? GenericGraphState(model, continuation->graph)
+        : GenericGraphState(model);
+    PopulationCounts population_counts = continuation
+        ? continuation->populations : PopulationCounts{};
+    auto compartmentalized_populations = continuation
+        ? continuation->compartmentalized_populations : std::unordered_set<TypeId>{};
+    if (state.liveCount() > request.max_particles)
+        refuse("particle budget exceeded by the previous stage");
     const auto location = [](const PatternIR::Node& node) -> PopulationLocation {
         return {node.molecule_type, node.compartment};
     };
@@ -2370,7 +2395,8 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         }
         return total;
     };
-    for (const auto& seed : source.seeds()) {
+    const std::vector<bng::compile::CompiledSeed> noSeeds;
+    for (const auto& seed : continuation ? noSeeds : source.seeds()) {
         const auto amount = constantExpression(seed.amount, source);
         // A constant seed species only marks the species as immutable for
         // concentration-assignment actions; it still initializes particles
@@ -2621,7 +2647,11 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         return value;
     };
 
-    CounterRng rng(request.seed, 0);
+    const auto seed = continuation && request.seed == 0 ? continuation->seed : request.seed;
+    // Resample the waiting time after a stage boundary. Use a new stream
+    // even if the previous waiting time was censored before any event fired.
+    const auto stream = continuation ? continuation->stream + 1 : 0;
+    CounterRng rng(seed, stream);
     auto isSimpleLumpedPopulationReactant = [&](const PatternIR& pattern, std::size_t nodeIndex) {
         const auto& node = pattern.nodes.at(nodeIndex);
         if (!model.molecule_types.at(node.molecule_type).is_population) return false;
@@ -3599,6 +3629,11 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         for (const auto& obs : observables)
             row.push_back(evaluateObservable(obs));
         output.rows.push_back(std::move(row));
+    }
+    if (modelOwner) {
+        output.final_state = std::make_shared<BngExecutionState>(BngExecutionState{
+            std::move(modelOwner), std::move(state), std::move(population_counts),
+            std::move(compartmentalized_populations), request.sample_times.back(), seed, stream});
     }
     return output;
 }

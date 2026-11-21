@@ -23,7 +23,8 @@ class XmlWriter {
 public:
     static std::string write(
         const ast::Model& model,
-        const engine::GeneratedNetwork* network = nullptr
+        const engine::GeneratedNetwork* network = nullptr,
+        bool retainRateExpressions = false
     );
 
     // Structural export for Python/modelapi consumers that need BNG-XML shape
@@ -40,7 +41,7 @@ private:
     static std::string writeMoleculeTypes(const ast::Model& model);
     static std::string writeCompartments(const ast::Model& model);
     static std::string writeSpecies(const ast::Model& model, const engine::GeneratedNetwork* network);
-    static std::string writeReactionRules(const ast::Model& model);
+    static std::string writeReactionRules(const ast::Model& model, bool retainRateExpressions);
     static std::string writeObservables(const ast::Model& model);
     static std::string writeFunctions(const ast::Model& model);
     static std::string writeEnergyPatterns(const ast::Model& model);

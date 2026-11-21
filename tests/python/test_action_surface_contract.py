@@ -458,3 +458,51 @@ end actions
         match="hybrid population execution refinement is not supported",
     ):
         bionetgen.load(unsupported).execute()
+
+
+@pytest.mark.parametrize("method", ["nfcore", "nfnext"])
+def test_hybrid_continuation_uses_final_state_and_updated_rate(tmp_path, method):
+    _model(tmp_path, "generate_hybrid_model({overwrite=>1, execute=>0})").execute()
+    path = tmp_path / "model_hpp.bngl"
+    path.write_text(
+        path.read_text().replace("B() -> A_pop() k_make", "B() -> A_pop() 2*k_make")
+    )
+    hybrid = bionetgen.load(path)
+    before = hybrid.simulate(method=method, t_end=0.1, n_steps=1, seed=42)
+    at_boundary = before.observables["B_total"][-1]
+    assert 0 < at_boundary < 20
+
+    hybrid.set_parameter("k_make", 0)
+    after = hybrid.simulate(
+        method=method, t_start=0.1, t_end=1, n_steps=2, continue_simulation=True
+    )
+    assert after.time.tolist() == [0.1, 0.55, 1.0]
+    assert after.observables["B_total"].tolist() == [at_boundary] * 3
+    assert after.observables["A_total"].tolist() == [20 - at_boundary] * 3
+
+    fresh = hybrid.simulate(method=method, t_start=1, t_end=2, n_steps=1)
+    assert fresh.observables["B_total"].tolist() == [20, 20]
+
+
+def test_hybrid_nf_actions_continue_from_final_state(tmp_path):
+    _model(tmp_path, "generate_hybrid_model({overwrite=>1, execute=>0})").execute()
+    path = tmp_path / "model_hpp.bngl"
+    path.write_text(
+        path.read_text().split("## model actions ##")[0]
+        + """
+begin actions
+  simulate_nf({t_end=>0.1, n_steps=>1, seed=>42, suffix=>"before"})
+  setParameter("k_make",0)
+  simulate_nf({t_end=>1, n_steps=>2, suffix=>"after"})
+end actions
+"""
+    )
+    bionetgen.load(path).execute()
+    before = (tmp_path / "model_hpp_before.gdat").read_text().splitlines()
+    after = (tmp_path / "model_hpp_after.gdat").read_text().splitlines()
+    boundary = [float(cell) for cell in before[-1].split()]
+    assert 0 < boundary[2] < 20
+    assert [float(cell) for cell in after[1].split()] == pytest.approx(boundary)
+    assert [float(cell) for cell in after[-1].split()] == pytest.approx(
+        [1.0, *boundary[1:]]
+    )
