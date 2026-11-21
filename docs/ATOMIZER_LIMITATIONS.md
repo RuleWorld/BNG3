@@ -10,13 +10,13 @@ A limitation is **not** a defect. It is a case the Atomizer refuses, and a refus
 
 | Field | Value |
 | --- | --- |
-| Generated on | 2026-10-28 |
-| Tree described | `31ae76c19fdd03c9d4af788f58dd5187726e14a1` |
-| Measured at commit | `31ae76c19fdd03c9d4af788f58dd5187726e14a1` |
+| Generated on | 2026-11-21 |
+| Tree described | `48fa89a01dd1e3619f7824254e2c6d9a5dff7b9a` |
+| Measured at commit | `48fa89a01dd1e3619f7824254e2c6d9a5dff7b9a` |
 | Official suite revision | `cf38585fac5de8e0e90112febb62851ee2181816` (https://github.com/sbmlteam/sbml-test-suite.git) |
-| Report SHA-256 | `49601d78bac943c536e111d575765e3823a808a1af11a66d9f88e83977a8833f` |
+| Report SHA-256 | `eb69228718054ed99e43fd6c2cf34fa0be0ff35d9f7643bdde837940469cd748` |
 | BNG3 version | 3.0.0a1 |
-| Native extension SHA-256 | `aa947dc7da940bf24605eda8f22914e16ccfc4efbe7cf04026468843dea78246` |
+| Native extension SHA-256 | `abc8f082338549a8e722673330e8a13f1d27f15c915a6cdd091842202aab5a05` |
 | Source tree of the measurement | `/home/runner/work/_temp/ssts-venv/lib/python3.12/site-packages/bionetgen/__init__.py` |
 
 The measurement is a full run of the pinned official SBML Test Suite; its per-case verdicts are recorded in the expectation manifest, which the campaign regenerates whenever a merge changes a verdict.
@@ -45,21 +45,17 @@ Every limitation below carries the date it was recorded. A limitation that is cl
 
 | Construct | Side | Cases | What it is | First recorded |
 | --- | --- | --- | --- | --- |
-| `events:untranslated` | atomizer | 57 | An event the Atomizer cannot lower, or cannot order | 2026-10-20 |
+| `events:untranslated` | atomizer | 62 | An event the Atomizer cannot lower, or cannot order | 2026-10-20 |
 | `package:fbc` | atomizer | 34 | The fbc package: a flux-balance model, not a time course | 2026-10-20 |
-| `sbml-writer:unrepresentable-function` | atomizer | 9 | A math function the engine cannot execute | 2026-10-20 |
-| `mathml:infinity` | atomizer | 8 | An infinite constant | 2026-10-20 |
-| `fast-reaction:no-fast-equilibrium-solve` | atomizer | 5 | A fast reaction whose pseudo steady state cannot be used | 2026-10-20 |
-| `mathml:non-finite-parameter-approximation` | atomizer | 5 | A non-finite parameter value is replaced by a finite diagnostic placeholder | 2026-10-22 |
-| `events:state-trigger-not-schedulable` | atomizer | 4 | A state trigger the runtime cannot schedule | 2026-10-20 |
-| `compartment:unsupported-spatial-dimensions` | atomizer | 1 | A compartment dimension the Atomizer cannot preserve | 2026-10-20 |
-| `mathml:not-a-number` | atomizer | 1 | A not-a-number constant | 2026-10-20 |
-| `harness:random-event-execution` | harness | 12 | The official reference is one draw of a random execution order | 2026-10-21 |
+| `fast-reaction:no-fast-equilibrium-solve` | atomizer | 4 | A fast reaction whose pseudo steady state cannot be used | 2026-10-20 |
+| `other` | atomizer | 3 | Refusals the cause taxonomy does not yet name | 2026-10-20 |
+| `events:state-trigger-not-schedulable` | atomizer | 2 | A state trigger the runtime cannot schedule | 2026-10-20 |
+| `harness:random-event-execution` | harness | 16 | The official reference is one draw of a random execution order | 2026-10-21 |
 | `harness:scheduled-action-phase-boundary` | harness | 2 | The official reference samples a scheduled-action phase boundary | 2026-10-22 |
 | `harness:stochastic-ensemble-budget-not-comparable` | harness | 2 | Projected stochastic work exceeds the comparison-planning threshold | 2026-10-22 |
 | `reference:not-applicable` | not-applicable | 34 | The suite says the case has no official time-course reference | 2026-10-20 |
 
-Cases with a recorded gap: 124 atomizer-side, 16 harness-side, 34 not-applicable-side. A case may carry a gap at more than one stage, so the counts above count distinct cases per construct.
+Cases with a recorded gap: 105 atomizer-side, 20 harness-side, 34 not-applicable-side. A case may carry a gap at more than one stage, so the counts above count distinct cases per construct.
 
 ## The Atomizer's limitations
 
@@ -68,7 +64,7 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 ### An event the Atomizer cannot lower, or cannot order
 
 - **Construct**: `events:untranslated`
-- **Cases**: 57 — semantic/00761 semantic/00965 semantic/00966 semantic/01000 semantic/01590 stochastic/00033 stochastic/00040 stochastic/00041 stochastic/00042 stochastic/00043 stochastic/00044 stochastic/00045 stochastic/00046 stochastic/00047 stochastic/00048 stochastic/00049 stochastic/00050 stochastic/00051 stochastic/00052 stochastic/00053 stochastic/00054 stochastic/00055 stochastic/00056 stochastic/00057 … (33 more)
+- **Cases**: 62 — semantic/01000 stochastic/00040 stochastic/00041 stochastic/00042 stochastic/00043 stochastic/00044 stochastic/00045 stochastic/00046 stochastic/00047 stochastic/00048 stochastic/00049 stochastic/00050 stochastic/00051 stochastic/00052 stochastic/00053 stochastic/00054 stochastic/00055 stochastic/00056 stochastic/00057 stochastic/00058 stochastic/00059 stochastic/00060 stochastic/00061 stochastic/00062 … (38 more)
 - **First recorded**: 2026-10-20
 - **What SBML requires**: SBML Level 3 Version 2 Core Sec. 4.12 defines an Event as a two-phase operation: a Trigger (Sec. 4.12.2) decides when the event may fire, and the execution phase applies the EventAssignments (Sec. 4.12.5). Sec. 4.12.7 says the order in which events occur is resolved, that this order can be significant for a simulation's outcome, and that an event may carry a special priority through a Priority subobject (Sec. 4.12.3).
 - **Citation**: SBML Level 3 Version 2 Core Sec. 4.12, Sec. 4.12.2, Sec. 4.12.3, Sec. 4.12.7
@@ -85,75 +81,35 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 - **What BNG3 does instead**: The Atomizer reports that the package is declared and that the affected structure is missing from the converted model, and it says why the model is out of scope: "This is a constraint-based flux-balance model, not a kinetic time-course model."
 - **Reducible?**: No, not as a time course. BNG3 has no flux-balance solver, so a flux-balance model is not convertible; the honest boundary is to refuse it and to say that it is a different kind of model.
 
-### A math function the engine cannot execute
-
-- **Construct**: `sbml-writer:unrepresentable-function`
-- **Cases**: 9 — semantic/00985 semantic/01142 semantic/01410 semantic/01411 semantic/01412 semantic/01480 semantic/01481 semantic/01535 semantic/01593
-- **First recorded**: 2026-10-20
-- **What SBML requires**: SBML Level 3 Version 2 Core Sec. 3.4.6 defines the delay and rateOf operators as csymbol elements with a fixed definitionURL, and requires a reader to give delay(x, d) the value x had at time t - d.
-- **Citation**: SBML Level 3 Version 2 Core Sec. 3.4.6
-- **What BNG3 does instead**: The C++ SBML writer serializes the call back out, but the engine cannot execute it: it reports "SBML math function \"delay\" is not losslessly representable in the BNG3 engine/libRoadRunner path: the C++ SBML writer serializes the call, but neither the BNG3 engine nor libRoadRunner can evaluate SBML delay semantics".
-- **Reducible?**: No, not in the engine. BNG3 has no delayed-history semantics and libRoadRunner rejects a model that uses delay at all, so a model that needs them cannot be executed by either engine; the writer boundary itself was already removed.
-
-### An infinite constant
-
-- **Construct**: `mathml:infinity`
-- **Cases**: 8 — semantic/00950 semantic/01811 stochastic/00069 stochastic/00070 stochastic/00071 stochastic/00072 stochastic/00077 stochastic/00078
-- **First recorded**: 2026-10-20
-- **What SBML requires**: SBML Level 3 Version 2 Core Sec. 3.4.1 permits the MathML infinity constant in a model's formulas, and Sec. 3.1.5 makes positive infinity a value of the double type.
-- **Citation**: SBML Level 3 Version 2 Core Sec. 3.1.5, Sec. 3.4.1
-- **What BNG3 does instead**: The Atomizer reports "<infinity> constant encountered in math; the source is valid SBML (validation rule 10202 permits <infinity>), but an infinite value cannot be represented in BNG3's finite-double model, so it is emitted as a large finite value and the model is not claimed to be supported".
-- **Reducible?**: Only by changing what BNG3's value domain is. The source is valid SBML and the boundary is BNG3's finite-double model, not a conversion defect; a large finite stand-in is an approximation, so the case is refused rather than claimed.
-
 ### A fast reaction whose pseudo steady state cannot be used
 
 - **Construct**: `fast-reaction:no-fast-equilibrium-solve`
-- **Cases**: 5 — semantic/00987 semantic/01398 semantic/01539 semantic/01568 semantic/01570
+- **Cases**: 4 — semantic/01398 semantic/01539 semantic/01568 semantic/01570
 - **First recorded**: 2026-10-20
 - **What SBML requires**: SBML Level 3 Version 1 Core Sec. 4.11 asks that software tools use a pseudo steady-state approximation for the set of reactions whose fast attribute is true. SBML Level 3 Version 2 removed the fast attribute (Sec. 4.11), so a Level 3 Version 2 model says nothing about fast reactions.
 - **Citation**: SBML Level 3 Version 1 Core Sec. 4.11; SBML Level 3 Version 2 Core Sec. 4.11
 - **What BNG3 does instead**: The Atomizer reduces a fast reaction to its pseudo steady state where it can (PR #370, 2026-10-21) and refuses the remainder, saying that it treats such a reaction as an ordinary reaction and that this changes the trajectory.
 - **Reducible?**: Largely reduced already: the reduction closed most of these cases. The remainder needs a fast reaction whose pseudo steady state cannot be written as a BNGL rule.
 
-### A non-finite parameter value is replaced by a finite diagnostic placeholder
+### Refusals the cause taxonomy does not yet name
 
-- **Construct**: `mathml:non-finite-parameter-approximation`
-- **Cases**: 5 — semantic/00951 stochastic/00096 stochastic/00097 stochastic/00098 stochastic/00099
-- **First recorded**: 2026-10-22
-- **What SBML requires**: The source values use non-finite numeric values, which are distinct from any finite value. A finite-double target cannot preserve them by substituting an arbitrary finite parameter.
-- **Citation**: SBML Level 3 Version 2 Core Sec. 3.1.4; MathML 2 Sec. 4.2.3
-- **What BNG3 does instead**: The case source validates with libSBML, but parameter values include infinity and NaN. The writer emits finite placeholder numbers to produce a diagnostic artifact and marks the conversion unsupported; these placeholders do not preserve the source values.
-- **Reducible?**: No within BNG3's finite numeric state; conversion must keep refusing rather than treating the emitted finite placeholder as equivalent.
+- **Construct**: `other`
+- **Cases**: 3 — semantic/00965 semantic/01590 stochastic/00033
+- **First recorded**: 2026-10-20
+- **What SBML requires**: No single construct: each case is refused for a reason the campaign's cause taxonomy has no label for yet.
+- **Citation**: SBML Level 3 Version 2 Core, the section the case's own reason names
+- **What BNG3 does instead**: The Atomizer refuses the case and reports the reason; the campaign's classification records it as "other" because no known construct class matches.
+- **Reducible?**: Unknown until each reason is read. This bucket is a request to extend the taxonomy, not a claim that the cases are alike.
 
 ### A state trigger the runtime cannot schedule
 
 - **Construct**: `events:state-trigger-not-schedulable`
-- **Cases**: 4 — semantic/00988 semantic/01466 semantic/01575 semantic/01576
+- **Cases**: 2 — semantic/00988 semantic/01466
 - **First recorded**: 2026-10-20
 - **What SBML requires**: SBML Level 3 Version 2 Core Sec. 4.12.2 requires the Trigger to be evaluated against the model's current state, and Sec. 4.12.7 requires the event to be executed when the trigger becomes true.
 - **Citation**: SBML Level 3 Version 2 Core Sec. 4.12.2, Sec. 4.12.7
 - **What BNG3 does instead**: The Atomizer refuses the event and says why: "trigger is not a simple time threshold (state-dependent triggers cannot be scheduled)", or, when the trigger names an identifier that is not a legal SBML SId, that the identifier "contains a character outside the SBML SId class and cannot be matched".
 - **Reducible?**: Yes, in two directions. A trigger the native event runtime can evaluate is lowered rather than refused (PR #328, 2026-10-21); an identifier that is not a legal SId is a source defect the user can fix by renaming it, and the diagnostic says so.
-
-### A compartment dimension the Atomizer cannot preserve
-
-- **Construct**: `compartment:unsupported-spatial-dimensions`
-- **Cases**: 1 — semantic/01197
-- **First recorded**: 2026-10-20
-- **What SBML requires**: SBML Level 3 Version 2 Core Sec. 4.5.2 lets a compartment declare any floating-point spatialDimensions value, and Sec. 4.5.4 uses that value to choose between the model's volumeUnits, areaUnits and lengthUnits.
-- **Citation**: SBML Level 3 Version 2 Core Sec. 4.5.2, Sec. 4.5.4
-- **What BNG3 does instead**: For SBML Level 3, BNG3 preserves integer spatialDimensions values above 3 and keeps reactions' explicit SBML flux. It still refuses non-integer values above 3 (for example, 3.5), negative or non-finite values, and Level 2 values outside 0 through 3.
-- **Reducible?**: Partly reduced: integer Level 3 dimensions above 3 are now preserved when reactions retain their explicit SBML flux. Non-integer values above 3 remain unsupported because BNGL compartment declarations store an integer dimension; Level 2 is limited by the specification to values 0 through 3.
-
-### A not-a-number constant
-
-- **Construct**: `mathml:not-a-number`
-- **Cases**: 1 — semantic/01813
-- **First recorded**: 2026-10-20
-- **What SBML requires**: SBML Level 3 Version 2 Core Sec. 3.4.1 permits the MathML notanumber constant in a model's formulas, and Sec. 3.1.5 makes not-a-number a value of the double type.
-- **Citation**: SBML Level 3 Version 2 Core Sec. 3.1.5, Sec. 3.4.1
-- **What BNG3 does instead**: The Atomizer reports "<notanumber> constant encountered in math; the source is valid SBML (validation rule 10202 permits <notanumber>), but a not-a-number value cannot be represented in BNG3's finite-double model, so the model is not claimed to be supported".
-- **Reducible?**: Only by changing BNG3's value domain. There is no finite value that stands for not-a-number, so no approximation is offered.
 
 ## The harness's measurement limits
 
@@ -162,7 +118,7 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 ### The official reference is one draw of a random execution order
 
 - **Construct**: `harness:random-event-execution`
-- **Cases**: 12 — semantic/00952 semantic/00953 semantic/00962 semantic/00964 semantic/01588 semantic/01589 semantic/01591 semantic/01592 semantic/01599 semantic/01605 semantic/01626 semantic/01627
+- **Cases**: 16 — semantic/00952 semantic/00953 semantic/00962 semantic/00964 semantic/00965 semantic/00966 semantic/01588 semantic/01589 semantic/01590 semantic/01591 semantic/01592 semantic/01593 semantic/01599 semantic/01605 semantic/01626 semantic/01627
 - **First recorded**: 2026-10-21
 - **What SBML requires**: SBML Level 3 Version 2 Core Sec. 4.12.3 and Sec. 4.12.7 define the order in which simultaneously triggered events are executed; a case that draws the events in a random order is a valid instance of that semantics.
 - **Citation**: SBML Level 3 Version 2 Core Sec. 4.12.3, Sec. 4.12.7

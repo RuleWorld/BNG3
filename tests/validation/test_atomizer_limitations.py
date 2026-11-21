@@ -135,28 +135,28 @@ def test_historical_unknown_causes_have_specific_owners_without_verdict_changes(
     """Known MathML and comparator limits are not generic Atomizer gaps."""
 
     manifest = _manifest()
-    infinity = manifest["cases"]["semantic/00950"]
-    assert infinity["conversion"] == "unsupported"
-    assert infinity["official_reference"] == "unsupported"
-    assert infinity["gap"]["conversion"] == {
-        "causes": ["mathml"],
-        "construct": "mathml:infinity",
-        "side": "atomizer",
+    # The dated baseline inventory is immutable history: it records the
+    # specific owner of each MathML limit. The exact-main manifest records both
+    # cases as resolved, so verify the named historical owner in the baseline
+    # and the achieved verdict in the current manifest. Freezing the old
+    # "unsupported" verdict here would reject a genuine improvement.
+    baseline_path = MANIFEST.parent / "current-2026-10-22.json"
+    baseline_rows = {
+        row["ref"]: row
+        for row in json.loads(baseline_path.read_text(encoding="utf-8"))[
+            "sbml_test_suite"
+        ]["cases"]
     }
-
-    nonfinite_parameter = manifest["cases"]["semantic/00951"]
-    assert nonfinite_parameter["conversion"] == "unsupported"
-    assert nonfinite_parameter["official_reference"] == "unsupported"
-    assert nonfinite_parameter["gap"]["conversion"] == {
-        "causes": ["mathml"],
-        "construct": "mathml:non-finite-parameter-approximation",
-        "side": "atomizer",
-    }
-    assert nonfinite_parameter["gap"]["official_reference"] == {
-        "causes": ["mathml"],
-        "construct": "mathml:non-finite-parameter-approximation",
-        "side": "atomizer",
-    }
+    for identity, construct in (
+        ("semantic/00950", "mathml:infinity"),
+        ("semantic/00951", "mathml:non-finite-parameter-approximation"),
+    ):
+        historical = baseline_rows[identity]
+        assert historical["causes"] == ["mathml"]
+        assert historical["reason_signature"] == construct
+        current = manifest["cases"][identity]
+        assert current["conversion"] == "passed"
+        assert current["official_reference"] == "passed"
 
     for identity in ("stochastic/00028", "stochastic/00032"):
         entry = manifest["cases"][identity]
