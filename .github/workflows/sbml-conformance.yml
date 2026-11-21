@@ -8,6 +8,8 @@ on:
       - 'provenance/ssts-ci-linux-py312.lock'
       - 'provenance/upstreams.lock.yml'
       - 'scripts/ci/validate_sbml_test_suite.py'
+      - 'scripts/ci/record_issue159_release.py'
+      - 'scripts/ci/record_issue160_release.py'
       - 'scripts/ci/validate_published_biomodels.py'
       - 'scripts/ci/install_biomodels_source_bundle.py'
       - 'scripts/ci/curated_biomodels_corpus_inventory.py'
@@ -15,6 +17,9 @@ on:
       - 'scripts/ci/sbml_campaign_inventory.py'
       - 'scripts/ci/ssts_selection.py'
       - 'provenance/sbml-campaign/expectations.json'
+      - 'provenance/core-fixtures/**'
+      - 'provenance/sbml-core-case-mapping.json'
+      - 'provenance/sbml-capability-case-mapping.json'
       - 'provenance/published-biomodels.json'
       - 'provenance/curated-biomodels-query-inventory.json'
       - 'provenance/curated-biomodels-query-inventory.provenance.json'
@@ -31,6 +36,7 @@ on:
       - 'tests/validation/test_conformance_ci_wiring.py'
       - 'tests/validation/release/cases/issue-159/test_core_analytic_fixtures.py'
       - 'tests/validation/release/cases/issue-159/test_ssts_full_execution.py'
+      - 'tests/validation/release/cases/issue-160/test_core_capability_rows.py'
       - 'tests/test_ssts_stage_reporting.py'
       - 'tests/python/test_native_events.py'
       - 'tests/python/test_species_rate_rule_amounts.py'
@@ -265,6 +271,7 @@ jobs:
               exit 2
             fi
             selection=(--categories semantic stochastic --only-case "$SSTS_ONLY_CASE")
+            gate=(--gate-selected-cases)
           fi
           python scripts/ci/validate_sbml_test_suite.py \
             --suite-dir "$RUNNER_TEMP/official-ssts" \
@@ -369,7 +376,7 @@ jobs:
 
       - name: Execute four Issue 159 Core analytic fixtures
         id: core_fixtures
-        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true))
+        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true && inputs.only_case == ''))
         shell: bash
         run: |
           set -euo pipefail
@@ -407,7 +414,7 @@ jobs:
 
       - name: Record Issue 159 release receipt from full suite
         id: issue159_receipt
-        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true))
+        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true && inputs.only_case == ''))
         shell: bash
         run: |
           set +e
@@ -427,7 +434,7 @@ jobs:
 
       - name: Record Issue 160 capability receipt from full suite
         id: issue160_receipt
-        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true))
+        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true && inputs.only_case == ''))
         shell: bash
         run: |
           set +e
@@ -446,7 +453,7 @@ jobs:
 
       - name: Execute Issue 159 release selectors
         id: release_selectors
-        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true))
+        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true && inputs.only_case == ''))
         shell: bash
         env:
           BNG3_EXACT_REVISION: ${{ inputs.product_revision || github.event.pull_request.head.sha || github.sha }}
@@ -462,11 +469,13 @@ jobs:
           BNG3_EXACT_REVISION="$BNG3_EXACT_REVISION" \
             python -m pytest -q --noconftest \
               tests/validation/release/cases/issue-159/test_ssts_full_execution.py \
+              tests/validation/release/cases/issue-160/test_core_capability_rows.py::test_release_source_fidelity \
+              tests/validation/release/cases/issue-160/test_core_capability_rows.py::test_reimport_event_diagnostic_uses_executed_lowering \
               --junitxml="$RUNNER_TEMP/ssts-artifacts/release-selectors.xml"
 
       - name: Aggregate release-consumer verdicts and finalize evidence digests
         id: release_consumers_gate
-        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true))
+        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true && inputs.only_case == ''))
         shell: bash
         env:
           FIXTURES_OUTCOME: ${{ steps.core_fixtures.outcome }}
@@ -535,7 +544,7 @@ jobs:
           retention-days: 90
 
       - uses: actions/upload-artifact@v4
-        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true))
+        if: always() && (github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.bounded != true && inputs.only_case == ''))
         with:
           name: ssts-release-consumers-${{ github.sha }}-${{ github.run_attempt }}
           path: |
