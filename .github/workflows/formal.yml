@@ -144,6 +144,26 @@ jobs:
             --source-revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --output "$RUNNER_TEMP/issue-167-release-report.json"
 
+      - name: Run Issue 166 production lowering correspondence
+        run: |
+          set -euo pipefail
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DBUILD_TESTS=ON -DBUILD_CLI=ON
+          cmake --build build --target bng3_nfnext_bng_lowering_bridge --parallel 2
+          BNG3_ARCH_TESTS_DIR="$GITHUB_WORKSPACE/build/tests/architecture_contracts" \
+            .venv/bin/python -m pytest -q tests/validation/release/cases/issue-166/ \
+            --junitxml="$RUNNER_TEMP/issue166-results.xml"
+
+      - name: Retain Issue 166 lowering correspondence evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue166-lowering-correspondence-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/issue166-results.xml
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Record native graph bridge
         env:
           SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
