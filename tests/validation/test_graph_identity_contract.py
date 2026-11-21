@@ -279,3 +279,36 @@ def test_formal_workflow_retains_graph_bridge_with_actual_native_consumer():
         and "issue168-native-graph-bridge.txt" in step["with"]["path"]
         for step in steps
     )
+
+
+def test_formal_workflow_runs_issue166_lowering_correspondence():
+    """The #166 release case must stay wired into a job with Lean and native build tooling.
+
+    Its checks compare a compiled-model/NFIR artifact to the formal Lean
+    evaluator and an independent reference; if the step loses the arch-test
+    binary build, the native-contract case silently skips and the bridge case
+    cannot run at all. Assert on the parsed workflow so a dropped step, env var
+    or narrowing filter fails visibly.
+    """
+    from tests.workflow_yaml import parse_workflow
+
+    workflow = parse_workflow(ROOT / ".github/workflows/formal.yml")
+    steps = workflow["jobs"]["issue167-correspondence"]["steps"]
+    step = next(
+        (
+            item
+            for item in steps
+            if item.get("name") == "Run Issue 166 production lowering correspondence"
+        ),
+        None,
+    )
+    assert step is not None
+    run = step["run"]
+    assert "bng3_nfnext_bng_lowering_bridge" in run
+    assert "tests/validation/release/cases/issue-166/" in run
+    assert "-k" not in run and "--deselect" not in run
+    assert any(
+        item.get("uses", "").startswith("actions/upload-artifact@")
+        and "issue166-results.xml" in item.get("with", {}).get("path", "")
+        for item in steps
+    )
