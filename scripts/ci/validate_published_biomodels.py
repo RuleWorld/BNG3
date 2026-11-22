@@ -81,24 +81,36 @@ def _mode_stage(result: dict[str, Any], name: str):
 
     @contextmanager
     def stage():
+        outcome = {"name": name, "status": "passed"}
         try:
             with case_phase_scope(BIOMODELS_CASE_PHASE_PREFIX, name):
-                yield
+                yield outcome
         except BaseException as exc:
-            result.setdefault("stage_results", []).append(
-                {
-                    "name": name,
-                    "status": "failed",
-                    "error": f"{type(exc).__name__}: {exc}",
-                }
-            )
+            outcome.update(status="failed", error=f"{type(exc).__name__}: {exc}")
             raise
-        else:
-            result.setdefault("stage_results", []).append(
-                {"name": name, "status": "passed"}
-            )
+        finally:
+            result.setdefault("stage_results", []).append(outcome)
 
     return stage()
+
+
+def _set_comparison_stage_outcome(
+    stage: dict[str, str], comparison: dict[str, Any] | None
+) -> None:
+    """Make a completed comparison stage reflect its scientific verdict."""
+
+    passed = bool(comparison and comparison.get("passed", False))
+    if passed:
+        stage["status"] = "passed"
+        stage.pop("error", None)
+    elif comparison and comparison.get("not_comparable"):
+        stage["status"] = "not_comparable"
+    elif comparison and comparison.get("harness_error"):
+        stage["status"] = "harness_error"
+    else:
+        stage["status"] = "failed"
+    if not passed and comparison and comparison.get("error"):
+        stage["error"] = str(comparison["error"])
 
 
 def _failed_mode_result(mode: str, prior: dict[str, Any], exc: BaseException):
@@ -2572,7 +2584,7 @@ def _validate_mode(
     initial_runtime_error: RuntimeError | None = None
     oracle_error: OracleIntegrationError | None = None
     try:
-        with _mode_stage(result, "cross-engine-comparison"):
+        with _mode_stage(result, "cross-engine-comparison") as comparison_stage:
             comparison = _simulate_and_compare(
                 cpp_model,
                 model_type,
@@ -2592,6 +2604,7 @@ def _validate_mode(
                     if assignment.symbol
                 },
             )
+            _set_comparison_stage_outcome(comparison_stage, comparison)
     except OracleIntegrationError as exc:
         oracle_error = exc
     except RuntimeError as exc:
@@ -2616,7 +2629,9 @@ def _validate_mode(
         last_comparison = comparison
         for retry_max_step in retries:
             try:
-                with _mode_stage(result, "cross-engine-comparison-retry"):
+                with _mode_stage(
+                    result, "cross-engine-comparison-retry"
+                ) as retry_stage:
                     stabilized = _simulate_and_compare(
                         cpp_model,
                         model_type,
@@ -2627,6 +2642,7 @@ def _validate_mode(
                         atol=simulation_atol,
                         max_step=retry_max_step,
                     )
+                    _set_comparison_stage_outcome(retry_stage, stabilized)
             except RuntimeError:
                 continue
             last_comparison = stabilized
@@ -2686,6 +2702,8 @@ def _validate_mode(
         }
     result["source_simulation_comparison"] = source_comparison
     result["source_comparison_scope"] = SOURCE_COMPARISON_SCOPE
+    source_stage = result["stage_results"][-1]
+    _set_comparison_stage_outcome(source_stage, source_comparison)
     _write_mode_checkpoint(result, checkpoint_path)
     if source_comparison is not None and source_comparison.get("failed_observables"):
         source_comparison = _retry_numerical_comparison(
@@ -2707,6 +2725,7 @@ def _validate_mode(
             max_step=float(source_comparison.get("max_step") or 0.0),
         )
         result["source_simulation_comparison"] = source_comparison
+        _set_comparison_stage_outcome(source_stage, source_comparison)
     if comparison is None and oracle_error is not None:
         comparison = {
             "passed": False,
