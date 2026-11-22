@@ -46,6 +46,11 @@ struct BngExecutionRequest {
     double start_time{0.0};
     std::shared_ptr<const BngExecutionState> continuation;
     bool retain_state{false};
+    // When nonzero, keep at most this many particle molecules of each mapped
+    // type in the graph and hold the remainder in its lumped population.
+    // Representation changes conserve total copies exactly. Zero disables the
+    // reconcile step and preserves the prior execution semantics.
+    std::uint64_t population_threshold{0};
 };
 
 struct BngExecutionResult {

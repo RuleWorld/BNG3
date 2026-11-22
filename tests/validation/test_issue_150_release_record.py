@@ -239,9 +239,9 @@ def test_hybrid_release_record_requires_affirmative_complete_coverage(tmp_path, 
         json.dumps(
             {
                 "source": {"revision": revision, "dirty": False},
-                "issue_150_acceptance": "partial"
-                if defect == "partial"
-                else "complete",
+                "issue_150_acceptance": (
+                    "partial" if defect == "partial" else "complete"
+                ),
                 "semantic_checks": checks,
                 "oracles": oracles,
                 "inventory_cases": cases,

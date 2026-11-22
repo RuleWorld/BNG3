@@ -414,7 +414,7 @@ def test_physical_unimolecular_rate_matches_independent_native_count_law(
     for offset in range(RUNS):
         seed = BASE_SEED + offset
         result = api.load(str(physical_source)).simulate(
-            method="nf", t_end=END_TIME, n_steps=1, seed=seed
+            method="nfcore", t_end=END_TIME, n_steps=1, seed=seed
         )
         trajectory = runner._result_to_trajectory(result)
         assert trajectory.construction_path == "direct"
@@ -472,7 +472,7 @@ def test_physical_bimolecular_rate_matches_independent_native_count_law(
     for offset in range(RUNS):
         seed = BASE_SEED + offset
         result = api.load(str(physical_source)).simulate(
-            method="nf", t_end=END_TIME, n_steps=1, seed=seed
+            method="nfcore", t_end=END_TIME, n_steps=1, seed=seed
         )
         trajectory = runner._result_to_trajectory(result)
         assert trajectory.construction_path == "direct"
@@ -532,7 +532,7 @@ def test_physical_zero_order_rate_matches_independent_native_count_law(
     for offset in range(ZERO_ORDER_RUNS):
         seed = ZERO_ORDER_BASE_SEED + offset
         result = api.load(str(physical_source)).simulate(
-            method="nf", t_end=ZERO_ORDER_END_TIME, n_steps=1, seed=seed
+            method="nfcore", t_end=ZERO_ORDER_END_TIME, n_steps=1, seed=seed
         )
         trajectory = runner._result_to_trajectory(result)
         assert trajectory.construction_path == "direct"
@@ -576,7 +576,7 @@ def test_physical_unimolecular_transport_matches_analytic_law(
     for offset in range(RUNS):
         seed = BASE_SEED + offset
         result = api.load(str(transport_source)).simulate(
-            method="nf", t_end=END_TIME, n_steps=1, seed=seed
+            method="nfcore", t_end=END_TIME, n_steps=1, seed=seed
         )
         trajectory = runner._result_to_trajectory(result)
         assert trajectory.construction_path == "direct"
@@ -609,7 +609,7 @@ def test_release_nf_units(api, tmp_path, monkeypatch, record_property):
     zero_counts = []
     for offset in range(ZERO_ORDER_RUNS):
         res = zero_model.simulate(
-            method="nf",
+            method="nfcore",
             t_end=ZERO_ORDER_END_TIME,
             n_steps=1,
             seed=ZERO_ORDER_BASE_SEED + offset,
@@ -630,7 +630,7 @@ def test_release_nf_units(api, tmp_path, monkeypatch, record_property):
     uni_counts = []
     for offset in range(RUNS):
         res = uni_model.simulate(
-            method="nf", t_end=END_TIME, n_steps=1, seed=BASE_SEED + offset
+            method="nfcore", t_end=END_TIME, n_steps=1, seed=BASE_SEED + offset
         )
         traj = runner._result_to_trajectory(res)
         assert traj.construction_path == "direct"
@@ -644,7 +644,7 @@ def test_release_nf_units(api, tmp_path, monkeypatch, record_property):
     bi_counts = []
     for offset in range(RUNS):
         res = bi_model.simulate(
-            method="nf", t_end=END_TIME, n_steps=1, seed=BASE_SEED + offset
+            method="nfcore", t_end=END_TIME, n_steps=1, seed=BASE_SEED + offset
         )
         traj = runner._result_to_trajectory(res)
         assert traj.construction_path == "direct"
@@ -658,7 +658,7 @@ def test_release_nf_units(api, tmp_path, monkeypatch, record_property):
     trans_counts = []
     for offset in range(RUNS):
         res = trans_model.simulate(
-            method="nf", t_end=END_TIME, n_steps=1, seed=BASE_SEED + offset
+            method="nfcore", t_end=END_TIME, n_steps=1, seed=BASE_SEED + offset
         )
         traj = runner._result_to_trajectory(res)
         assert traj.construction_path == "direct"

@@ -2395,6 +2395,63 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
         }
         return total;
     };
+    // Dynamic threshold transitions. When a population map declares a simple
+    // particle<->population pair, keep at most ``population_threshold``
+    // particles in the graph; the remainder is held in the lumped population.
+    // Moving a copy between representations changes no reaction rate and
+    // conserves total copies exactly. Shapes with sites, bonds, compartments or
+    // filters are refused rather than approximated: silently dropping a bound
+    // particle would lose complex state.
+    const auto reconcilePopulationThresholds = [&]() {
+        const std::uint64_t threshold = request.population_threshold;
+        if (threshold == 0) return;
+        for (const auto& map : model.population_maps) {
+            const auto& pattern = map.pattern;
+            bool simple = pattern.nodes.size() == 1 && pattern.bonds.empty() &&
+                          pattern.molecularity.empty() && pattern.aliases.empty() &&
+                          pattern.connected_to.empty() && pattern.interchangeable.empty();
+            if (simple) {
+                const auto& node = pattern.nodes.front();
+                if (node.compartment || !node.constraints.empty()) simple = false;
+                if (node.molecule_type >= model.molecule_types.size()) simple = false;
+                if (simple && !model.molecule_types.at(node.molecule_type).sites.empty())
+                    simple = false;
+            }
+            TypeId population_type = 0;
+            bool found = false;
+            for (const auto& type : model.molecule_types) {
+                if (type.is_population && type.name == map.population_name) {
+                    population_type = type.id;
+                    found = true;
+                    if (!type.sites.empty()) simple = false;
+                    break;
+                }
+            }
+            if (!simple || !found)
+                refuse("population threshold requires a site-free, unbound particle map");
+            const TypeId particle_type = pattern.nodes.front().molecule_type;
+            std::vector<ParticleId> particles;
+            for (const ParticleId id : state.liveParticles())
+                if (state.type(id) == particle_type) particles.push_back(id);
+            const PopulationLocation key{population_type, std::nullopt};
+            if (particles.size() > threshold) {
+                const std::uint64_t excess =
+                    static_cast<std::uint64_t>(particles.size() - threshold);
+                for (std::uint64_t i = 0; i < excess; ++i) state.destroy(particles[i]);
+                incrementPopulation(key, excess);
+            } else if (particles.size() < threshold) {
+                const std::uint64_t available = populationCount(key);
+                const std::uint64_t missing =
+                    static_cast<std::uint64_t>(threshold - particles.size());
+                const std::uint64_t moved = std::min(available, missing);
+                if (moved > 0) {
+                    population_counts.at(key) -= moved;
+                    for (std::uint64_t i = 0; i < moved; ++i) state.create(particle_type, 0);
+                }
+            }
+        }
+    };
+    reconcilePopulationThresholds();
     const std::vector<bng::compile::CompiledSeed> noSeeds;
     for (const auto& seed : continuation ? noSeeds : source.seeds()) {
         const auto amount = constantExpression(seed.amount, source);
@@ -2822,6 +2879,7 @@ BngExecutionResult executeFromBioNetGen(const bng::compile::CompiledModel& sourc
     bool pending = false;
     for (const double sample : request.sample_times) {
         for (;;) {
+            if (!pending) reconcilePopulationThresholds();
             if (!pending) {
                 std::vector<std::vector<Embedding>> matches;
                 std::vector<double> rulePropensities(model.expanded_rules.size(), 0.0);

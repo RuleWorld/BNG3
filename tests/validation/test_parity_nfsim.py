@@ -108,7 +108,7 @@ def run(model):
     if source is None:
         raise FileNotFoundError(f"model {model!r} not found on disk")
     return bionetgen.load(str(source)).simulate(
-        method="nf", seed=seed, t_end=t_end, n_steps=n_steps
+        method="nfcore", seed=seed, t_end=t_end, n_steps=n_steps
     )
 
 def trajectory(result):
@@ -272,7 +272,7 @@ def test_nf_vs_native(model_name, api, work_dir):
 
     test = runner.run_api_ensemble(
         model_name,
-        method="nf",
+        method="nfcore",
         n_runs=n_runs,
         t_end=t_end,
         n_steps=n_steps,
@@ -319,7 +319,7 @@ def test_nf_fixed_seed_direct_matches_native_at_final_endpoint(api, work_dir):
 
     direct = runner.run_api(
         model_name,
-        method="nf",
+        method="nfcore",
         seed=seed,
         t_end=t_end,
         n_steps=n_steps,
@@ -348,7 +348,7 @@ def test_nf_ast_direct_matches_xml(model_name, api, work_dir, monkeypatch):
     monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
     monkeypatch.setenv("BNG_NFSIM_ALLOW_XML_FALLBACK", "1")
     xml_traj = runner.run_api(
-        model_name, method="nf", seed=seed, t_end=t_end, n_steps=n_steps
+        model_name, method="nfcore", seed=seed, t_end=t_end, n_steps=n_steps
     )
 
     monkeypatch.delenv("BNG_NFSIM_FORCE_XML", raising=False)
@@ -357,7 +357,7 @@ def test_nf_ast_direct_matches_xml(model_name, api, work_dir, monkeypatch):
     # direct construction regresses.
     monkeypatch.delenv("BNG_NFSIM_ALLOW_XML_FALLBACK", raising=False)
     direct_traj = runner.run_api(
-        model_name, method="nf", seed=seed, t_end=t_end, n_steps=n_steps
+        model_name, method="nfcore", seed=seed, t_end=t_end, n_steps=n_steps
     )
 
     assert xml_traj.construction_path == "in-memory-xml"
@@ -455,14 +455,14 @@ def test_nf_seed_site_state_is_resolved_by_name(
     monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
     monkeypatch.setenv("BNG_NFSIM_ALLOW_XML_FALLBACK", "1")
     xml_result = api.load(str(source)).simulate(
-        method="nf", seed=7, t_end=0.1, n_steps=10
+        method="nfcore", seed=7, t_end=0.1, n_steps=10
     )
     assert xml_result.construction_path == "in-memory-xml"
 
     monkeypatch.delenv("BNG_NFSIM_FORCE_XML", raising=False)
     monkeypatch.delenv("BNG_NFSIM_ALLOW_XML_FALLBACK", raising=False)
     direct_result = api.load(str(source)).simulate(
-        method="nf", seed=7, t_end=0.1, n_steps=10
+        method="nfcore", seed=7, t_end=0.1, n_steps=10
     )
     assert direct_result.construction_path == "direct", (
         "the direct path declined a model the XML path accepts; a decline is "
@@ -760,7 +760,7 @@ end model
     n_runs, horizon = 1024, 2.0
     zero_products = 0
     for seed in range(31000, 31000 + n_runs):
-        result = model.simulate(method="nf", seed=seed, t_end=horizon, n_steps=1)
+        result = model.simulate(method="nfcore", seed=seed, t_end=horizon, n_steps=1)
         assert result.construction_path == "direct"
         zero_products += result.observables["Pcount"][-1] == 0
     observed = zero_products / n_runs

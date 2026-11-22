@@ -1,35 +1,406 @@
 {
-  "schema_version": 1,
-  "measurements": [
-    {
-      "suite_revision": "cf38585fac5de8e0e90112febb62851ee2181816",
-      "tested_commit": "9c15f03040f09a01c8103d226115d99349772377",
-      "report_sha256": "a6ddd99fab38ec2406bee99ec4b6777a7f4794eee9bbb291fde3ddcda0cabd40",
-      "workflow_run_id": 40735871040,
-      "job_id": 122984131768,
-      "artifact_id": 12837957591,
-      "cases": {
-        "semantic/01133": {
-          "stages": {
-            "conversion": {
-              "from": "unsupported",
-              "to": "passed"
-            },
-            "roundtrip_structure": {
-              "from": "not_tested",
-              "to": "passed"
-            },
-            "independent_comparison": {
-              "from": "not_tested",
-              "to": "passed"
-            },
-            "official_reference": {
-              "from": "unsupported",
-              "to": "passed"
-            }
-          }
-        }
+ "schema_version": 1,
+ "measurements": [
+  {
+   "suite_revision": "cf38585fac5de8e0e90112febb62851ee2181816",
+   "tested_commit": "9c15f03040f09a01c8103d226115d99349772377",
+   "report_sha256": "a6ddd99fab38ec2406bee99ec4b6777a7f4794eee9bbb291fde3ddcda0cabd40",
+   "workflow_run_id": 40735871040,
+   "job_id": 122984131768,
+   "artifact_id": 12837957591,
+   "cases": {
+    "semantic/01133": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "independent_comparison": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
       }
+     }
     }
-  ]
+   }
+  },
+  {
+   "suite_revision": "cf38585fac5de8e0e90112febb62851ee2181816",
+   "tested_commit": "48fa89a01dd1e3619f7824254e2c6d9a5dff7b9a",
+   "report_sha256": "eb69228718054ed99e43fd6c2cf34fa0be0ff35d9f7643bdde837940469cd748",
+   "workflow_run_id": 44785628922,
+   "job_id": 136459612621,
+   "artifact_id": 14656841373,
+   "note": "Exact-main full SSTS campaign; 68 genuine improvements plus semantic/00963 and semantic/00967 restored to passed official_reference by focused re-runs after raising ACTION_MAX_PHASES 2000->4096. stochastic/00003 official failure preserved.",
+   "cases": {
+    "semantic/00761": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "independent_comparison": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/00950": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "independent_comparison": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/00951": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "independent_comparison": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/00965": {
+     "stages": {
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/00966": {
+     "stages": {
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/00985": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/00987": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "independent_comparison": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/01142": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "independent_comparison": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/01197": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "independent_comparison": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/01410": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/01411": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/01412": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/01480": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/01481": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/01535": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/01575": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "independent_comparison": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/01576": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "independent_comparison": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/01590": {
+     "stages": {
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/01593": {
+     "stages": {
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/01811": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "independent_comparison": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/01813": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "independent_comparison": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "stochastic/00033": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "independent_comparison": {
+       "from": "not_tested",
+       "to": "passed"
+      }
+     }
+    }
+   }
+  }
+ ]
 }

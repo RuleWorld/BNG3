@@ -17,8 +17,8 @@ Check the resolved version with `bionetgen --version`.
 | Backend | Selection and qualification |
 | --- | --- |
 | Native finite-network | The default for `ode`, `ssa`, `pla`, and `psa`. |
-| NFcore | The default for `method="nf"`. |
-| NFnext | Explicit `method="nfnext"`. Default promotion requires the full independent checks in [#149](https://github.com/RuleWorld/BNG3/issues/149). |
+| NFnext | The default for `method="nf"` (promoted in #832 after the full pinned-native NFsim and NFcore corpus parity passed; see [#149](https://github.com/RuleWorld/BNG3/issues/149) and `docs/DECISIONS.md` item 4). `method="nfnext"` remains explicitly selectable. |
+| NFcore | Still selectable explicitly with `method="nfcore"` through the common backend interface. |
 | BNGsim | Optional finite-network backend selected with `backend="bngsim"` in a build that includes the adapter. See [ADR 0003](adr/0003-bngsim-canonical-finite-backend.md). |
 | JAX CPU | The `jax` extra installs the dependencies for the separate [JAX ODE](../python/bionetgen/jax_ode.py) and [JAX SSA](../python/bionetgen/jax_ssa.py). See [#473](https://github.com/RuleWorld/BNG3/issues/473) for the qualified surface. |
 | Metal and CUDA | Actual device qualification is tracked separately in [#474](https://github.com/RuleWorld/BNG3/issues/474). |

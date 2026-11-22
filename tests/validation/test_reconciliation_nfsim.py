@@ -209,7 +209,7 @@ def test_record_totalrate_reconciliation(
     monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
     try:
         trajectory = api.load(str(product)).simulate(
-            method="nf", t_end=1, n_steps=1, seed=1
+            method="nfcore", t_end=1, n_steps=1, seed=1
         )
     except (RuntimeError, ValueError) as error:
         captured = capfd.readouterr()

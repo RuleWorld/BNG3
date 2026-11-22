@@ -961,7 +961,7 @@ def main():
         write_legacy_result(result)
     elif args.operation == "nf":
         model = bionetgen.load(str(args.input))
-        result = model.simulate(method="nf", t_end=2, n_steps=10, seed=7)
+        result = model.simulate(method="nfcore", t_end=2, n_steps=10, seed=7)
         if result.construction_path != "direct":
             raise RuntimeError(f"NFsim path changed: {result.construction_path}")
         write_result(result, "nf.gdat")
