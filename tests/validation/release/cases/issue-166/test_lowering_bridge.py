@@ -72,3 +72,5 @@ def test_release_lowering_bridge():
     assert "[formal] multiplicity=1 enabled=True rate=0.5" in proc.stdout
     assert "mutated_target_state: divergence detected" in proc.stdout
     assert "wrong_site_unchanged: divergence detected" in proc.stdout
+    assert "substituted_rate: divergence detected" in proc.stdout
+    assert "rate = 1.5" in proc.stdout
