@@ -13218,7 +13218,11 @@
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
-          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55",
+          "discharged_scope": [
+            "Missing required qualification ID: qualification:issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum. Discharged by the exact-revision export-format tier receipt, which records the inventory and closure scope.",
+            "Missing required qualification ID: qualification:issue:163:closure-record. Discharged by the exact-revision receipt recorder and gate report at the candidate revision."
+          ]
         },
         {
           "id": "issue:163:populate-a-nonempty-format-tier-and-verify-semantic-round-trips",
@@ -13518,7 +13522,11 @@
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
-          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55",
+          "discharged_scope": [
+            "Missing required qualification ID: qualification:issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum. Discharged by the exact-revision export-format tier receipt, which records the inventory and closure scope.",
+            "Missing required qualification ID: qualification:issue:163:closure-record. Discharged by the exact-revision receipt recorder and gate report at the candidate revision."
+          ]
         },
         {
           "id": "issue:163:executed-slice:reconstruction-molecule-id-permutation",
@@ -13752,7 +13760,7 @@
     },
     {
       "number": 164,
-      "body_sha256": "d52aae7a36b7cac6e7af297465f2fdaa032fbbd3c75358f2ad3e7b68d62c3ce4",
+      "body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2",
       "obligations": [
         {
           "id": "issue:164:establish-characterization-tests-around-symbol-resolution-featur",
@@ -13763,131 +13771,211 @@
           "required_checks": [
             {
               "id": "atomizer-symbol-resolution:global-parameter-k:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:global-parameter-kf:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:global-parameter-rate_1:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:reaction-local-parameter-lr:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:reaction-local-parameter-k_local:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:reaction-local-out-of-scope-lr:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:reaction-local-out-of-scope-k_local:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:species-S1:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:species-S2:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:compartment-cell:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:compartment-cytosol:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:function-twice:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:function-lin:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:rate-rule-S1:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:conversion-factor-cf:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:conversion-factor-scale_2:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [
@@ -13909,7 +13997,8 @@
             "tests/python/test_modern_atomizer_scope.py",
             "tests/validation/test_atomizer_symbol_resolution.py",
             "tests/validation/atomizer_symbol_resolution.py"
-          ]
+          ],
+          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2"
         },
         {
           "id": "issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo",
@@ -13925,27 +14014,42 @@
           "required_checks": [
             {
               "id": "boundary-extraction:seam-ownership",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'boundary-extraction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "boundary-extraction:caller-agreement",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'boundary-extraction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "boundary-extraction:semantics-unchanged",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'boundary-extraction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo",
@@ -13953,7 +14057,12 @@
               "expectation": "The extracted boundary is one named seam, the callers that used to duplicate the decision agree on its outcome, and the existing qualified checks that cover the affected surface pass unchanged.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [
@@ -13982,7 +14091,8 @@
           "not_reapplied_from_recorded_revision": [
             "tests/validation/test_boundary_extraction.py",
             "tests/validation/boundary_extraction.py"
-          ]
+          ],
+          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2"
         },
         {
           "id": "issue:164:closure-record",
@@ -13997,7 +14107,12 @@
               "expectation": "Execute a retained exact-revision check for this scope.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -14011,7 +14126,8 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2"
         },
         {
           "id": "issue:164:live-acceptance:release-atomizer-modules",
@@ -14031,14 +14147,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-atomizer-modules.",
-                "No revision-locked consuming receipt producer is declared for required live check release-atomizer-modules."
-              ]
+              "selector": "tests/validation/test_atomizer_characterization.py::test_characterization_declares_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -14064,14 +14177,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-atomizer-refactor.",
-                "No revision-locked consuming receipt producer is declared for required live check release-atomizer-refactor."
-              ]
+              "selector": "tests/validation/test_atomizer_characterization.py::test_characterization_declares_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -14097,14 +14207,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-164.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-164."
-              ]
+              "selector": "tests/validation/test_atomizer_characterization.py::test_characterization_declares_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
