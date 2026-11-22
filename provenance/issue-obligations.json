@@ -7098,14 +7098,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-energy-protocols.",
-                "No revision-locked consuming receipt producer is declared for required live check release-energy-protocols."
-              ]
+              "selector": "tests/validation/release/cases/issue-152/test_energy_protocols.py::test_release_energy_protocols",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue152_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -7132,14 +7128,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-extension-protocols.",
-                "No revision-locked consuming receipt producer is declared for required live check release-extension-protocols."
-              ]
+              "selector": "tests/validation/release/cases/issue-152/test_energy_protocols.py::test_release_extension_protocols",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue152_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -7166,14 +7158,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-152.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-152."
-              ]
+              "selector": "tests/validation/release/cases/issue-152/test_energy_protocols.py::test_release_obligation_152",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue152_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],

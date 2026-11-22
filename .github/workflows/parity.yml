@@ -78,6 +78,7 @@ jobs:
             tests/validation/test_option_decision_owner.py \
             tests/validation/test_record_issue176_release.py \
             tests/validation/test_record_issue166_release.py \
+            tests/validation/test_record_issue152_release.py \
             tests/validation/test_reconciliation_evidence.py \
             tests/validation/test_integrated_wiring.py \
             tests/validation/test_integrated.py \
@@ -1421,6 +1422,25 @@ jobs:
         with:
           name: issue152-energy-protocols-${{ github.event.pull_request.head.sha || github.sha }}
           path: ${{ runner.temp }}/issue152-results.xml
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Record Issue 152 energy and protocol release acceptance
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          python scripts/ci/record_issue152_release.py \
+            --source-revision "$BNG3_SOURCE_REVISION" \
+            --output "$RUNNER_TEMP/issue-152-release-report.json" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Issue 152 energy and protocol evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue152-energy-protocol-release-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/issue-152-release-report.json
           if-no-files-found: error
           retention-days: 30
 
