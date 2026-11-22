@@ -2213,8 +2213,8 @@ void runSimulation(
         }
         const auto poplevelText = readArgument(action, "poplevel", std::to_string(defaultPoplevel));
         const double poplevel = parseScalarValue(poplevelText, model);
-        if (!std::isfinite(poplevel) || poplevel < 0.0) {
-            throw std::runtime_error("poplevel must be finite and non-negative");
+        if (const auto decision = bng::compile::poplevelDecisionError(poplevel)) {
+            throw std::runtime_error(*decision);
         }
         engine::PsaSimulator simulator(model, network);
         result = simulator.simulate(opts, poplevel);
