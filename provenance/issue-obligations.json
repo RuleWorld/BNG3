@@ -13191,7 +13191,7 @@
     },
     {
       "number": 163,
-      "body_sha256": "e0fb5a318372bbb58f449dc2bf29ec97830ce076cdf584985e02828fa2be3342",
+      "body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55",
       "obligations": [
         {
           "id": "issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum",
@@ -13206,7 +13206,11 @@
               "expectation": "Execute a retained exact-revision check for this scope.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [
@@ -13214,15 +13218,13 @@
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
+          "unmapped_scope": [],
           "evidence_on_this_tree": {
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
         },
         {
           "id": "issue:163:populate-a-nonempty-format-tier-and-verify-semantic-round-trips",
@@ -13490,7 +13492,8 @@
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
         },
         {
           "id": "issue:163:closure-record",
@@ -13505,21 +13508,23 @@
               "expectation": "Execute a retained exact-revision check for this scope.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:163:closure-record.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
+          "unmapped_scope": [],
           "evidence_on_this_tree": {
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
         },
         {
           "id": "issue:163:executed-slice:reconstruction-molecule-id-permutation",
@@ -13551,7 +13556,8 @@
             "executable_named_checks": 1,
             "disposition_named_checks": 0,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
         },
         {
           "id": "issue:163:executed-slice:reconstruction-compartment-suffix",
@@ -13583,7 +13589,8 @@
             "executable_named_checks": 1,
             "disposition_named_checks": 0,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
         },
         {
           "id": "issue:163:executed-slice:reconstruction-compartment-prefix",
@@ -13615,7 +13622,8 @@
             "executable_named_checks": 1,
             "disposition_named_checks": 0,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
         },
         {
           "id": "issue:163:executed-slice:reconstruction-molecule-compartment",
@@ -13647,7 +13655,8 @@
             "executable_named_checks": 1,
             "disposition_named_checks": 0,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
         },
         {
           "id": "issue:163:live-acceptance:release-formats",
@@ -13669,14 +13678,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-formats.",
-                "No revision-locked consuming receipt producer is declared for required live check release-formats."
-              ]
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_declares_a_nonempty_format_tier_with_named_checks",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -13704,14 +13710,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-format-semantics.",
-                "No revision-locked consuming receipt producer is declared for required live check release-format-semantics."
-              ]
+              "selector": "tests/validation/test_export_format_tier.py::test_roundtrip_formats_reproduce_the_closed_form_law",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -13739,14 +13742,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-capability-coverage-163.",
-                "No revision-locked consuming receipt producer is declared for required live check release-capability-coverage-163."
-              ]
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
