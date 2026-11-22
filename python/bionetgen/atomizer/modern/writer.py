@@ -4942,7 +4942,10 @@ def _substitute_seed_symbols(
             changed = changed or bool(call_count or bare_count)
         if not changed:
             break
-    return _evaluate_arithmetic(result)
+    value = _evaluate_arithmetic(result)
+    if value is not None:
+        return value
+    return _safe_numeric_expression(result, {})
 
 
 def _species_reference_stoichiometry_symbols(
@@ -5048,7 +5051,7 @@ def _species_reference_stoichiometry_undefined_reason(
 
 def _seed_symbol_values(
     model: SBMLModel, seed_species: Sequence[SeedSpeciesEntry]
-) -> Dict[str, float]:
+) -> tuple[Dict[str, float], Dict[str, float]]:
     """Resolve numeric SBML values needed by expression-valued seed species.
 
     Initial values are established in SBML specification order (Sec. 3.4.8,
@@ -5294,7 +5297,33 @@ def _seed_symbol_values(
         if not changed:
             break
 
-    return resolved_values()
+    return resolved_values(), ia_values
+
+
+def _freeze_initial_only_parameters(
+    model: SBMLModel, initial_values: Mapping[str, float]
+) -> None:
+    """Emit solved time-zero values of parameters with no runtime controller."""
+    controlled = {
+        standardize_name(rule.variable) for rule in model.rules if rule.variable
+    }
+    controlled.update(
+        standardize_name(assignment.variable)
+        for event in model.events
+        for assignment in event.assignments
+    )
+    retained = []
+    for assignment in model.initial_assignments:
+        symbol = str(assignment.symbol or "")
+        target = standardize_name(symbol)
+        parameter = model.parameters.get(target)
+        value = initial_values.get(symbol)
+        if parameter is None or value is None or target in controlled:
+            retained.append(assignment)
+            continue
+        parameter.value = value
+        parameter.value_set = True
+    model.initial_assignments = retained
 
 
 def _map_seed_identifiers(expression: str, model: SBMLModel) -> str:
@@ -5347,7 +5376,7 @@ def write_seed_species(
     # Playground writeSeedSpecies coalesces identical patterns while retaining
     # separate fixed and dynamic seed declarations.
     grouped: "OrderedDict[Tuple[bool, str], Tuple[str, object]]" = OrderedDict()
-    seed_symbols = _seed_symbol_values(model, seed_species)
+    seed_symbols, _ = _seed_symbol_values(model, seed_species)
     rate_rule_targets = {
         str(getattr(rule, "variable", "") or "")
         for rule in model.rules
@@ -7947,15 +7976,6 @@ def generate_bngl(
                         "severity": "dropped",
                     }
                 )
-    assignment_variables = {
-        standardize_name(rule.variable)
-        for rule in _assignment_rules_for_writer(model)
-        if rule.variable and str(rule.variable) not in species_assignment_variables
-    }
-    assignment_variables.update(
-        standardize_name(variable) for variable in promoted_event_parameters
-    )
-
     # SBML rate rules may target a parameter or another model variable that
     # has no listOfSpecies entry.  BNGL can only evolve molecule populations,
     # so follow the Playground contract and materialize such targets as
@@ -7970,7 +7990,31 @@ def generate_bngl(
     )
     augmented_molecule_types = list(molecule_types)
     augmented_seed_species = list(seed_species)
-    seed_symbol_values = _seed_symbol_values(model, seed_species)
+    seed_symbol_values, initial_values = _seed_symbol_values(model, seed_species)
+    # Parameter-only ODE models can read changing state in an initial
+    # assignment. After t=0, a parameter with no controller keeps that value.
+    # Retain initialization history when a delay can observe t < 0.
+    if (
+        initial_values
+        and not model.species
+        and not model.reactions
+        and not any(
+            _delay_arguments(expression)
+            for expression in (
+                *math_sources,
+                *(str(event.delay or "") for event in model.events),
+            )
+        )
+    ):
+        _freeze_initial_only_parameters(model, initial_values)
+    assignment_variables = {
+        standardize_name(rule.variable)
+        for rule in _assignment_rules_for_writer(model)
+        if rule.variable and str(rule.variable) not in species_assignment_variables
+    }
+    assignment_variables.update(
+        standardize_name(variable) for variable in promoted_event_parameters
+    )
     # A compartment's ``size`` attribute is ignored when an initial assignment
     # or an assignment rule defines the size (SBML Level 3 Version 2 Core,
     # Sec. 4.8.5).  The resolved size has to be the one the generated model

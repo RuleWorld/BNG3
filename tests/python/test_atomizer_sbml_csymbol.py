@@ -184,6 +184,71 @@ def test_initial_assignment_that_depends_on_a_species_is_not_folded():
     assert model.parameters["p"].value == 0.0
 
 
+def test_initial_assignment_seeds_a_rate_rule_parameter():
+    import math
+
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    from bionetgen import BioNetGenModel
+
+    sbml = _model("""
+      <listOfParameters><parameter id="x" constant="false"/></listOfParameters>
+      <listOfInitialAssignments>
+        <initialAssignment symbol="x">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><tanh/><cn>1</cn></apply>
+          </math>
+        </initialAssignment>
+      </listOfInitialAssignments>
+      <listOfRules>
+        <rateRule variable="x">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>1</cn></math>
+        </rateRule>
+      </listOfRules>
+    """)
+    translated = Atomizer(atomize=False, quiet_mode=True).atomize(sbml)
+    assert translated.success, translated.error
+    result = BioNetGenModel(cpp.parse_string(translated.bngl)).simulate(
+        method="ode", t_end=1.0, n_steps=2
+    )
+    assert result.observables["x_amt"] == pytest.approx(
+        [math.tanh(1.0) + t for t in result.time], rel=1e-7
+    )
+
+
+def test_parameter_initial_assignment_reads_the_time_zero_state_once():
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    from bionetgen import BioNetGenModel
+
+    sbml = _model("""
+      <listOfParameters>
+        <parameter id="x" value="2" constant="false"/>
+        <parameter id="y" constant="false"/>
+        <parameter id="p" constant="true"/>
+      </listOfParameters>
+      <listOfInitialAssignments>
+        <initialAssignment symbol="p">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><ci>y</ci></math>
+        </initialAssignment>
+      </listOfInitialAssignments>
+      <listOfRules>
+        <rateRule variable="x">
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><ci>p</ci></math>
+        </rateRule>
+        <assignmentRule variable="y">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><cn>2</cn><ci>x</ci></apply>
+          </math>
+        </assignmentRule>
+      </listOfRules>
+    """)
+    translated = Atomizer(atomize=False, quiet_mode=True).atomize(sbml)
+    assert translated.success, translated.error
+    result = BioNetGenModel(cpp.parse_string(translated.bngl)).simulate(
+        method="ode", t_end=1.0, n_steps=2
+    )
+    assert result.observables["x_amt"] == pytest.approx([2, 4, 6], rel=1e-7)
+
+
 def test_chained_initial_assignments_resolve_in_dependency_order():
     # An initial assignment overrides the declared ``value`` attribute of its
     # target, so a chain must be resolved from the root of the chain, not
