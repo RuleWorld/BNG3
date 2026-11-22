@@ -75,6 +75,7 @@ jobs:
             tests/validation/test_shared_decision_ownership.py \
             tests/validation/test_cpu_baseline_publication.py \
             tests/validation/test_nf_default_docs_consistency.py \
+            tests/validation/test_option_decision_owner.py \
             tests/validation/test_reconciliation_evidence.py \
             tests/validation/test_integrated_wiring.py \
             tests/validation/test_integrated.py \
