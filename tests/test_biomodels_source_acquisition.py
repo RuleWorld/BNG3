@@ -679,6 +679,31 @@ def test_mode_checkpoint_retains_completed_comparison_without_claiming_pass(tmp_
     assert "core_passed" not in saved
 
 
+@pytest.mark.parametrize(
+    ("comparison", "expected_status"),
+    [
+        ({"passed": True}, "passed"),
+        ({"passed": False, "error": "observable mismatch"}, "failed"),
+        (
+            {"passed": False, "not_comparable": {"oracle": "solver error"}},
+            "not_comparable",
+        ),
+        ({"passed": False, "harness_error": "invalid output"}, "harness_error"),
+        (None, "failed"),
+    ],
+)
+def test_comparison_stage_status_matches_semantic_verdict(comparison, expected_status):
+    validator = _validator()
+    result = {}
+    with validator._mode_stage(result, "cross-engine-comparison") as outcome:
+        validator._set_comparison_stage_outcome(outcome, comparison)
+
+    stage = result["stage_results"][0]
+    assert stage["status"] == expected_status
+    if comparison and comparison.get("error"):
+        assert stage["error"] == "observable mismatch"
+
+
 def test_case_packet_error_does_not_replace_model_verdict(monkeypatch, tmp_path):
     import argparse
 
