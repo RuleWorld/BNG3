@@ -79,6 +79,25 @@ def test_time_root_and_simultaneous_pre_event_values(tmp_path):
     assert result.observables["X"][-1] == pytest.approx(2 * np.exp(-1.3), rel=2e-6)
 
 
+def test_action_parameter_change_preserves_pending_native_event(tmp_path):
+    model(tmp_path, "time >= 0.25", "X = 1", extra="delay: 0.5")
+    path = tmp_path / "events.bngl"
+    with path.open("a") as source:
+        source.write("""
+begin actions
+  simulate({method=>"ode",t_end=>0.5,n_steps=>2})
+  setParameter("k","2")
+  simulate({method=>"ode",continue=>1,t_start=>0.5,t_end=>1,n_steps=>2})
+end actions
+""")
+
+    bionetgen.load(str(path)).execute()
+    data = np.genfromtxt(path.with_suffix(".gdat"), names=True, deletechars="#")
+    assert data["time"][-1] == 1.0
+    assert data["X"][-1] == pytest.approx(math.exp(-0.5), rel=2e-6)
+    assert not path.with_suffix(".net").exists()
+
+
 def test_repeated_runs_do_not_share_event_history(tmp_path):
     instance = model(tmp_path, "X <= 5", "X = 10")
     first = instance.simulate(method="ode", t_end=2, n_steps=4)

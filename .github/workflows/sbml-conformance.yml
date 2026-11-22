@@ -1068,6 +1068,7 @@ jobs:
               --flat-report "$artifacts/flat-report.json" \
               --manifest provenance/published-biomodels.json \
               --expectations provenance/curated-biomodels-corpus-expectations.json \
+              --compare-baseline \
               --report-revision "$BNG3_SOURCE_REVISION"
           else
             echo 'One or both BioModels reports were not produced.'
