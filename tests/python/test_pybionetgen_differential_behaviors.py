@@ -76,6 +76,18 @@ def test_modelapi_runner_run_returns_bngresult_and_outputs(tmp_path):
     )
 
 
+@pytest.mark.parametrize("entry_point", ["public", "modelapi"])
+def test_file_runner_normalizes_explicit_format_like_pybionetgen(tmp_path, entry_point):
+    from bionetgen.modelapi.runner import run as mrun
+
+    model = _write_model(tmp_path, MODEL_WITH_ACTIONS)
+    run = bionetgen.run if entry_point == "public" else mrun
+    result = run(model, out=str(tmp_path / "upper-format"), format=" BNGL ")
+
+    assert type(result).__name__ == "BNGResult"
+    assert "m" in result.gdats
+
+
 def test_modelapi_runner_run_out_none_uses_temp_results(tmp_path, monkeypatch):
     from bionetgen.modelapi.runner import run as mrun
 

@@ -288,6 +288,8 @@ def run(
             f"simulator={simulator!r} is not supported by the BNG3 compatibility runner; "
             "use 'auto', 'native', or 'subprocess'"
         )
+    if format is not None:
+        format = str(format).lower().strip()
     if format not in (None, "bngl"):
         raise NotImplementedError(
             "only BNGL input is supported by the BNG3 compatibility runner"
