@@ -13,6 +13,12 @@
 
 namespace bng::compile {
 
+std::optional<std::string> poplevelDecisionError(double value) {
+    if (!std::isfinite(value) || value < 0.0)
+        return std::string("poplevel must be finite and non-negative");
+    return std::nullopt;
+}
+
 namespace {
 
 using GenerateNetworkOptions = ProtocolAction::GenerateNetworkOptions;
@@ -1125,13 +1131,13 @@ SimulationOptions compileSimulationOptions(
                                      d.message = "invalid poplevel '" + poplevelFound->second + "': " + reason;
                                      return d;
                                  })) {
-            if (val < 0.0) {
+            if (const auto decision = poplevelDecisionError(val)) {
                 Diagnostic d;
                 d.code = DiagnosticCode::InvalidModel;
                 d.severity = Severity::Error;
                 d.category = ValidationCategory::Expressions;
                 d.entity = "simulation.poplevel";
-                d.message = "poplevel must be finite and non-negative";
+                d.message = *decision;
                 options.poplevelDiagnostic = d;
             } else {
                 options.poplevel = val;
