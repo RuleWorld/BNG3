@@ -1184,6 +1184,22 @@ jobs:
           python -m pytest --noconftest -q
           tests/python/nfnext/test_nfnext_ensemble_rng_isolation.py
 
+      - name: Measure NFnext CPU startup memory and throughput (#176)
+        env:
+          BNG3_NFNEXT_MEASUREMENT_REPORT: ${{ runner.temp }}/issue176-measurement.json
+        run: >-
+          python -m pytest --noconftest -q
+          tests/validation/release/cases/issue-176/test_nf_performance_measurement.py
+
+      - name: Retain Issue 176 CPU measurement
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue176-cpu-measurement-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/issue176-measurement.json
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Record Issue 176 CPU ensemble release acceptance
         env:
           BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
