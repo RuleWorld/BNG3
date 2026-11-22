@@ -12609,7 +12609,8 @@
           "not_reapplied_from_recorded_revision": [
             "tests/validation/test_atomizer_reconstruction.py",
             "tests/validation/atomizer_reconstruction.py"
-          ]
+          ],
+          "live_body_sha256": "4fbbe5c259e1645a933e3642e2b42aba4e9c19be469a6aac5f213c3e26172b57"
         },
         {
           "id": "issue:161:compare-full-execution-and-semantic-round-trips-with-independent",
@@ -12764,7 +12765,8 @@
           "not_reapplied_from_recorded_revision": [
             "tests/validation/test_atomizer_reconstruction.py",
             "tests/validation/atomizer_reconstruction.py"
-          ]
+          ],
+          "live_body_sha256": "4fbbe5c259e1645a933e3642e2b42aba4e9c19be469a6aac5f213c3e26172b57"
         },
         {
           "id": "issue:161:closure-record",
@@ -12793,7 +12795,8 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "live_body_sha256": "4fbbe5c259e1645a933e3642e2b42aba4e9c19be469a6aac5f213c3e26172b57"
         },
         {
           "id": "issue:161:live-acceptance:release-sbml-multi",
@@ -12813,14 +12816,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-sbml-multi.",
-                "No revision-locked consuming receipt producer is declared for required live check release-sbml-multi."
-              ]
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -12846,14 +12846,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-atomizer-structure.",
-                "No revision-locked consuming receipt producer is declared for required live check release-atomizer-structure."
-              ]
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_atomizer_structure",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -12879,14 +12876,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-capability-coverage-161.",
-                "No revision-locked consuming receipt producer is declared for required live check release-capability-coverage-161."
-              ]
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_capability_coverage_161",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
