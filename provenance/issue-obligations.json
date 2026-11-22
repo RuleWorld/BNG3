@@ -17328,7 +17328,7 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": "tests/python/nfnext/test_nfnext_ensemble_rng_isolation.py::test_ensemble_mean_matches_analytic_law",
+              "selector": "tests/validation/release/cases/issue-176/test_nf_performance_measurement.py::test_nfnext_startup_memory_throughput_with_analytic_correctness",
               "selector_status": "COLLECTED",
               "receipt_producer": "scripts/ci/record_issue176_release.py",
               "receipt_producer_status": "CONSUMER_READY"

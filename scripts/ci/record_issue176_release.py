@@ -24,7 +24,10 @@ EXPECTED_CHECKS = (
     "release-nf-ensemble",
     "release-capability-coverage-176",
 )
-TEST_FILE = "tests/python/nfnext/test_nfnext_ensemble_rng_isolation.py"
+TEST_FILES = (
+    "tests/python/nfnext/test_nfnext_ensemble_rng_isolation.py",
+    "tests/validation/release/cases/issue-176/test_nf_performance_measurement.py",
+)
 
 
 def _fail(message: str) -> None:
@@ -58,20 +61,23 @@ def verify_manifest(root: Path = ROOT) -> dict[str, dict]:
 
 
 def run_tests(root: Path = ROOT) -> None:
-    path = root / TEST_FILE
-    if not path.is_file():
-        _fail(f"missing test file: {path}")
-    result = subprocess.run(
-        [sys.executable, "-m", "pytest", "--noconftest", "-q", str(path)],
-        cwd=str(root),
-        capture_output=True,
-        text=True,
-    )
-    if result.returncode != 0:
-        _fail(
-            f"Issue 176 ensemble tests failed (code {result.returncode}):\n"
-            f"{result.stdout}\n{result.stderr}"
+    for rel in TEST_FILES:
+        path = root / rel
+        if not path.is_file():
+            _fail(f"missing test file: {path}")
+        # Each leaf file loads the native extension independently; running them
+        # in one process double-registers pybind11 types.
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", "--noconftest", "-q", str(path)],
+            cwd=str(root),
+            capture_output=True,
+            text=True,
         )
+        if result.returncode != 0:
+            _fail(
+                f"Issue 176 test {rel} failed (code {result.returncode}):\n"
+                f"{result.stdout}\n{result.stderr}"
+            )
 
 
 def build_release_record(
@@ -110,8 +116,8 @@ def build_release_record(
             "seeds, keeps seeds independent and does not leak state between calls."
         ),
         "release-capability-coverage-176": (
-            "Ensemble mean matches an independently derived immigration-death "
-            "analytic law with declared seed budget and error control."
+            "Measured NFnext startup, peak memory and events/second on a declared "
+            "immigration-death workload with the analytic mean as correctness control."
         ),
     }
     results = [
@@ -142,7 +148,7 @@ def build_release_record(
         "case": "issue-176-cpu-ensemble-release",
         "source": {"revision": revision, "dirty": bool(dirty)},
         "references": {
-            "leaf_tests": TEST_FILE,
+            "leaf_tests": list(TEST_FILES),
             "analytic_oracle": "immigration-death mean N0 + (lambda/mu)(1 - exp(-mu t))",
             "provenance": "provenance/issue-obligations.json",
         },
