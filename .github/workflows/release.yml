@@ -100,6 +100,7 @@ jobs:
             --runs-json "$RUNNER_TEMP/push-workflow-runs.json" \
             --sbml-runs-json "$RUNNER_TEMP/sbml-workflow-runs.json" \
             --sbml-evidence-dir "$evidence" \
+            --biomodels-inventory provenance/curated-biomodels-query-inventory.json \
             --sha "$GITHUB_SHA"
 
   # ═══════════════════════════════════════════════════════════════════════════

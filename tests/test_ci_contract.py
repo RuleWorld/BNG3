@@ -1186,6 +1186,10 @@ def test_release_workflow_requires_exact_main_sha_qualification():
     assert "event=workflow_dispatch" in qualify
     assert "--sbml-runs-json" in qualify
     assert "--sbml-evidence-dir" in qualify
+    assert (
+        "--biomodels-inventory provenance/curated-biomodels-query-inventory.json"
+        in qualify
+    )
     assert "ssts-release-consumers-" in qualify
     assert "curated-biomodels-" in qualify
 
@@ -1284,7 +1288,15 @@ def test_release_run_qualification_requires_official_sbml_manual_run(
 
 
 @pytest.mark.parametrize(
-    "scenario", ["complete", "no-artifacts", "bounded", "wrong-product", "failed-mode"]
+    "scenario",
+    [
+        "complete",
+        "no-artifacts",
+        "bounded",
+        "wrong-product",
+        "failed-mode",
+        "different-biomodels-cohorts",
+    ],
 )
 def test_release_qualification_cli_requires_both_full_sbml_artifacts(
     tmp_path, scenario
@@ -1321,9 +1333,11 @@ def test_release_qualification_cli_requires_both_full_sbml_artifacts(
 
     push_path = tmp_path / "push.json"
     sbml_path = tmp_path / "sbml.json"
+    inventory_path = tmp_path / "biomodels-inventory.json"
     artifacts = tmp_path / "evidence"
     write_json(push_path, {"workflow_runs": push_runs})
     write_json(sbml_path, {"workflow_runs": [run]})
+    write_json(inventory_path, {"matches": 2, "models": [{"id": "A"}, {"id": "B"}]})
     if scenario != "no-artifacts":
         ssts = artifacts / "42" / "2" / "ssts"
         biomodels = artifacts / "42" / "2" / "biomodels"
@@ -1392,7 +1406,17 @@ def test_release_qualification_cli_requires_both_full_sbml_artifacts(
                         mode == "atomized" and scenario == "failed-mode"
                     ),
                     "simulation_comparison_is_required": True,
-                    "records": [{"id": "A"}, {"id": "B"}],
+                    "records": [
+                        {"id": "A"},
+                        {
+                            "id": (
+                                "C"
+                                if mode == "atomized"
+                                and scenario == "different-biomodels-cohorts"
+                                else "B"
+                            )
+                        },
+                    ],
                 },
             )
             reports[mode] = {"sha256": digest}
@@ -1413,6 +1437,8 @@ def test_release_qualification_cli_requires_both_full_sbml_artifacts(
         str(sbml_path),
         "--sbml-evidence-dir",
         str(artifacts),
+        "--biomodels-inventory",
+        str(inventory_path),
         "--sha",
         sha,
     ]

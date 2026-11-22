@@ -78,7 +78,7 @@ def _read_artifact(directory: Path, name: str) -> tuple[dict, str]:
     return json.loads(raw), hashlib.sha256(raw).hexdigest()
 
 
-def verify_sbml_evidence(directory: Path, sha: str) -> None:
+def verify_sbml_evidence(directory: Path, sha: str, biomodels_ids: set[str]) -> None:
     """Require the two full scientific lanes from the same workflow attempt."""
     ssts = directory / "ssts"
     suite, suite_hash = _read_artifact(ssts, "report.json")
@@ -124,7 +124,8 @@ def verify_sbml_evidence(directory: Path, sha: str) -> None:
     measurement = corpus["measurement"]
     if measurement["base_commit"] != sha:
         raise ValueError("BioModels inventory revision does not match the candidate")
-    expected_count = corpus["corpus"]["expected_total_records"]
+    if corpus["corpus"]["expected_total_records"] != len(biomodels_ids):
+        raise ValueError("BioModels inventory size does not match the pinned corpus")
     for mode in ("flat", "atomized"):
         report, report_hash = _read_artifact(biomodels, f"{mode}-report.json")
         completeness = report["completeness"]
@@ -136,15 +137,16 @@ def verify_sbml_evidence(directory: Path, sha: str) -> None:
             or report["simulation_comparison_is_required"] is not True
             or completeness["counts_match"] is not True
             or completeness["partial_run"] is not False
-            or not ids
             or len(set(ids)) != len(ids)
-            or len(ids) != expected_count
+            or set(ids) != biomodels_ids
             or len(ids) != completeness["expected_records"]
         ):
             raise ValueError(f"BioModels {mode} evidence is incomplete or not passing")
 
 
-def qualify_sbml_runs(payload: Any, evidence_dir: Path, sha: str) -> None:
+def qualify_sbml_runs(
+    payload: Any, evidence_dir: Path, sha: str, biomodels_ids: set[str]
+) -> None:
     for run in _workflow_runs(payload):
         if qualify_workflow_runs(
             {"workflow_runs": [run]}, sha, [SBML_WORKFLOW], event="workflow_dispatch"
@@ -154,7 +156,9 @@ def qualify_sbml_runs(payload: Any, evidence_dir: Path, sha: str) -> None:
         if type(run_id) is not int or type(attempt) is not int:
             continue
         try:
-            verify_sbml_evidence(evidence_dir / str(run_id) / str(attempt), sha)
+            verify_sbml_evidence(
+                evidence_dir / str(run_id) / str(attempt), sha, biomodels_ids
+            )
         except (OSError, ValueError, KeyError, TypeError) as exc:
             print(f"SBML run {run_id}, attempt {attempt}: {exc}", file=sys.stderr)
             continue
@@ -167,6 +171,7 @@ def main() -> int:
     parser.add_argument("--runs-json", type=Path, required=True)
     parser.add_argument("--sbml-runs-json", type=Path, required=True)
     parser.add_argument("--sbml-evidence-dir", type=Path, required=True)
+    parser.add_argument("--biomodels-inventory", type=Path, required=True)
     parser.add_argument("--sha", required=True)
     args = parser.parse_args()
 
@@ -188,8 +193,16 @@ def main() -> int:
         )
         return 1
     try:
-        qualify_sbml_runs(sbml_payload, args.sbml_evidence_dir, args.sha)
-    except ValueError as exc:
+        inventory = json.loads(args.biomodels_inventory.read_text(encoding="utf-8"))
+        model_ids = {row["id"] for row in inventory["models"]}
+        if (
+            not model_ids
+            or len(model_ids) != inventory["matches"]
+            or len(model_ids) != len(inventory["models"])
+        ):
+            raise ValueError("invalid pinned BioModels membership")
+        qualify_sbml_runs(sbml_payload, args.sbml_evidence_dir, args.sha, model_ids)
+    except (OSError, ValueError, KeyError, TypeError) as exc:
         print(f"Release blocked: {exc}.", file=sys.stderr)
         return 1
     print(
