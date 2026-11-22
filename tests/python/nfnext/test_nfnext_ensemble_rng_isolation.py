@@ -16,13 +16,9 @@ import importlib.util
 import math
 from pathlib import Path
 
-build_so = (
-    Path(__file__).resolve().parents[3]
-    / "build"
-    / "cpp"
-    / "_bionetgen_cpp.cpython-314-darwin.so"
-)
-if build_so.exists():
+build_cpp = Path(__file__).resolve().parents[3] / "build" / "cpp"
+build_so = next(iter(sorted(build_cpp.glob("_bionetgen_cpp*.so"))), None)
+if build_so is not None:
     spec = importlib.util.spec_from_file_location("_bionetgen_cpp", str(build_so))
     cpp = importlib.util.module_from_spec(spec)
     assert spec.loader is not None

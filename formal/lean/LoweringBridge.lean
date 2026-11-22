@@ -107,6 +107,16 @@ def dirWrongSiteUnchanged : RuleDirection :=
     mutations := [.changeState contextC sOn]
     moleculeMap := [{ reactant := rA, product := pA }] }
 
+-- Negative rule 3: correct graph edit but a substituted (wrong) rate. A rate is
+-- part of the lowered contract; changing it must be detected even when the
+-- transformed complex and observables look identical.
+def dirSubstitutedRate : RuleDirection :=
+  { reactants := [patReactant]
+    products := [patProduct]
+    rate := { expression := .number 1.5 }
+    mutations := [.changeState targetX sP]
+    moleculeMap := [{ reactant := rA, product := pA }] }
+
 -- Observables
 def obsU : ObservableDecl :=
   { id := obsUId, name := "U", kind := .molecules, patterns := [patReactant] }
@@ -221,6 +231,31 @@ def evaluateNegativeWrongSiteUnchanged : Option NegativeCaseReport :=
             obsUAfter := uPost
           }
 
+structure RateCaseReport where
+  name : String
+  rate : Float
+  divergenceDetected : Bool
+  obsPAfter : Nat
+  deriving Repr
+
+def evaluateNegativeSubstitutedRate : Option RateCaseReport :=
+  match firstMatch? dirSubstitutedRate mixInitial with
+  | none => none
+  | some matched =>
+      match dirSubstitutedRate.applyAt? mixInitial matched with
+      | none => none
+      | some postMix =>
+          let pPost := obsP.evaluate? postMix |>.getD 0
+          let rv := match dirSubstitutedRate.rate.expression with
+                    | .number value => some value
+                    | _ => none
+          some {
+            name := "negative_substituted_rate"
+            rate := rv.getD 0.0
+            divergenceDetected := match rv with | some value => value != 0.5 | none => true
+            obsPAfter := pPost
+          }
+
 def main : IO Unit := do
   match evaluateCanonical with
   | none => IO.println "case=canonical\terror=evaluation_failed"
@@ -234,6 +269,10 @@ def main : IO Unit := do
   | none => IO.println "case=negative_wrong_site_unchanged\terror=evaluation_failed"
   | some r =>
       IO.println s!"case={r.name}\tdivergence_detected={r.divergenceDetected}\tobs_p_after={r.obsPAfter}\tobs_u_after={r.obsUAfter}\texpected_p=1"
+  match evaluateNegativeSubstitutedRate with
+  | none => IO.println "case=negative_substituted_rate\terror=evaluation_failed"
+  | some r =>
+      IO.println s!"case={r.name}\tdivergence_detected={r.divergenceDetected}\trate={r.rate}\tobs_p_after={r.obsPAfter}\texpected_rate=0.5"
 
 end BNG.LoweringBridge
 

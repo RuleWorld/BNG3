@@ -293,9 +293,9 @@ def test_parity_workflow_env_still_pins_the_strict_oracle_flag():
     strict-mode behaviour being reachable.
     """
     text = PARITY_WORKFLOW.read_text(encoding="utf-8")
-    assert re.search(r'^\s*BNG3_CI_STRICT_ORACLES:\s*"1"\s*$', text, re.MULTILINE), (
-        "parity.yml no longer sets BNG3_CI_STRICT_ORACLES=1; oracle-gated parity steps would skip instead of failing"
-    )
+    assert re.search(
+        r'^\s*BNG3_CI_STRICT_ORACLES:\s*"1"\s*$', text, re.MULTILINE
+    ), "parity.yml no longer sets BNG3_CI_STRICT_ORACLES=1; oracle-gated parity steps would skip instead of failing"
 
 
 def test_orchestrated_steps_keep_their_shell_before_their_run():
@@ -792,3 +792,65 @@ def test_upstream_history_job_checks_all_pins_and_retains_the_report():
     assert "--history-report" in command
     assert upload["if"] == "always()"
     assert upload["with"]["path"] == "${{ runner.temp }}/reconciliation-history.json"
+
+
+def test_issue152_energy_protocol_case_runs_with_locked_strict_oracles():
+    """The #152 release case must stay wired into the nfsim-parity job.
+
+    Its checks cover source-linked real-model fixtures, canonical energy and
+    fail-closed extension refusals. A dropped step, relaxed strict-oracle mode
+    or a narrowing filter would leave the case green having tested less.
+    """
+    workflow = _parse_workflow()
+    steps = workflow["jobs"]["nfsim-parity"]["steps"]
+    step = next(
+        (
+            item
+            for item in steps
+            if item.get("name")
+            == "Run Issue 152 energy and protocol release acceptance"
+        ),
+        None,
+    )
+    assert step is not None
+    run = step["run"]
+    assert "tests/validation/release/cases/issue-152/" in run
+    assert "--junitxml=" in run
+    tokens = shlex.split(run)
+    assert not {"-k", "--deselect", "--runxfail"} & set(tokens)
+    assert step.get("continue-on-error", False) is False
+    assert step.get("env", {}).get("BNG3_CI_STRICT_ORACLES") == "1"
+
+    upload = next(
+        (
+            item
+            for item in steps
+            if item.get("name") == "Retain Issue 152 energy and protocol evidence"
+        ),
+        None,
+    )
+    assert upload is not None
+    assert upload["uses"].startswith("actions/upload-artifact@")
+    assert upload["if"] == "always()"
+    assert upload["with"].get("if-no-files-found") == "error"
+
+
+def test_nfnext_ensemble_rng_isolation_step_is_wired():
+    """The #176 bounded ensemble-isolation check must not silently disappear."""
+    workflow = _parse_workflow()
+    steps = workflow["jobs"]["nfsim-parity"]["steps"]
+    step = next(
+        (
+            item
+            for item in steps
+            if item.get("name")
+            == "Check NFnext ensemble RNG and state isolation (#176)"
+        ),
+        None,
+    )
+    assert step is not None
+    run = step["run"]
+    assert "tests/python/nfnext/test_nfnext_ensemble_rng_isolation.py" in run
+    tokens = shlex.split(run)
+    assert "--noconftest" in tokens
+    assert not {"-k", "--deselect", "--runxfail"} & set(tokens)

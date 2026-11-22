@@ -698,9 +698,9 @@ def _run_native_protocol_ensemble(xml: Path, tmp_path: Path):
         )
         assert path is not None, f"native NFsim protocol seed {seed}: {error}"
         data, columns = compare.parse_gdat(path)
-        assert data is not None, (
-            f"native NFsim protocol seed {seed}: malformed trajectory"
-        )
+        assert (
+            data is not None
+        ), f"native NFsim protocol seed {seed}: malformed trajectory"
         runs.append((data, columns))
     return runs
 
@@ -818,9 +818,9 @@ def _check_hybrid_model_action_options(
             "overwrite=>1, actions=>[]",
         )
         if engine == "bng2":
-            assert empty_result is not None and empty_result.returncode == 0, (
-                empty_result
-            )
+            assert (
+                empty_result is not None and empty_result.returncode == 0
+            ), empty_result
         empty_hpp = tmp_path / f"empty-actions-{engine}" / engine / "model_hpp.bngl"
         assert empty_hpp.is_file()
         assert "## model actions ##" not in empty_hpp.read_text()
@@ -1375,9 +1375,9 @@ def test_release_hybrid_conservation_and_analytic_conversion_law(hybrid_ensemble
         for data, columns in runs:
             a = data[:, columns.index("A_total")]
             b = data[:, columns.index("B_total")]
-            assert np.array_equal(a + b, np.full_like(a, INITIAL_B)), (
-                f"{label}: A/B molecule conservation violated"
-            )
+            assert np.array_equal(
+                a + b, np.full_like(a, INITIAL_B)
+            ), f"{label}: A/B molecule conservation violated"
 
 
 @pytest.mark.nf
@@ -1424,9 +1424,9 @@ def test_release_hybrid_population_particle_conversion_cycle(
         for data, columns in runs:
             a = data[:, columns.index("A_total")]
             b = data[:, columns.index("B_total")]
-            assert np.array_equal(a + b, np.full_like(a, INITIAL_B)), (
-                f"{label}: population/particle conservation violated"
-            )
+            assert np.array_equal(
+                a + b, np.full_like(a, INITIAL_B)
+            ), f"{label}: population/particle conservation violated"
 
     evidence_target = os.environ.get("BNG3_HYBRID_EVIDENCE_DIR")
     if evidence_target:
@@ -1661,9 +1661,9 @@ def test_release_hybrid_whole_dimer_conversion_and_multiplicity(
         for data, columns in runs:
             dimers = data[:, columns.index("Dimer_species")]
             units = data[:, columns.index("A_units")]
-            assert np.array_equal(units, np.full_like(units, 2 * INITIAL_DIMERS)), (
-                f"{label}: whole-complex conversion lost molecule multiplicity"
-            )
+            assert np.array_equal(
+                units, np.full_like(units, 2 * INITIAL_DIMERS)
+            ), f"{label}: whole-complex conversion lost molecule multiplicity"
             assert np.all(dimers >= 0)
 
     evidence_target = os.environ.get("BNG3_HYBRID_EVIDENCE_DIR")
@@ -1997,9 +1997,9 @@ def _hybrid_rate_evidence(root, *, total_rate):
         )
         assert output is not None, error
         data, names = compare.parse_gdat(output)
-        assert data is not None, (
-            f"native NFsim seed {seed}: malformed {name} trajectory"
-        )
+        assert (
+            data is not None
+        ), f"native NFsim seed {seed}: malformed {name} trajectory"
         native.append((data, names))
     hpp = _generate_for_backend_comparison(root / f"{name}.bngl", source, "bng3")
     direct = root / "direct.bngl"
@@ -2756,9 +2756,11 @@ def test_release_capability_coverage_150(
         runtime_cases = {
             label: {
                 "passed": True,
-                "oracle": "native-and-analytic"
-                if label == "compartments"
-                else "bng2-native-and-analytic",
+                "oracle": (
+                    "native-and-analytic"
+                    if label == "compartments"
+                    else "bng2-native-and-analytic"
+                ),
                 "backend_comparison": nfnext_hybrid_cases[label]["comparison"],
                 "artifacts": {
                     **replay(*files),
@@ -2964,3 +2966,151 @@ def test_release_capability_coverage_150(
         (evidence_dir / "capability-coverage-150.json").write_text(
             json.dumps(report, indent=2) + "\n"
         )
+
+
+def test_nfnext_mixed_conversion_cycle_analytic_law():
+    """Qualify NFnext's particle/population conversion cycle against an exact law.
+
+    The generated-HPP suite above exercises this cycle through NFcore and the
+    pinned native NFsim oracle. The production NFnext entry point lowers a
+    forward population map plus a reverse population reactant rule; no public
+    test checks that combined route. This case drives ``simulate_nfnext`` with
+    fixed seeds and verifies exact particle+population conservation and the
+    closed-form two-state CTMC binomial marginal
+
+        P[population](t) = kf/(kf+kr) * (1 - exp(-(kf+kr) t)).
+
+    It is an independent analytic control, not a BNG3 artifact used as its own
+    oracle.
+    """
+    # Reuse the extension the harness already loaded. Loading the shared object
+    # a second time under a fresh module name double-registers pybind11 types
+    # ("Expression is already registered") and breaks the whole session.
+    try:
+        from bionetgen.model import _cpp as cpp  # type: ignore
+    except (ImportError, AttributeError):
+        try:
+            import bionetgen._bionetgen_cpp as cpp  # type: ignore
+        except ImportError:
+            pytest.skip("no native NFnext extension available")
+
+    n_particles = 40
+    k_forward = 2.0
+    k_reverse = 1.0
+    times = [0.0, 0.25, 0.5, 1.0]
+    source = f"""begin model
+begin parameters
+  kf {k_forward}
+  kr {k_reverse}
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin population types
+  Apop()
+end population types
+begin seed species
+  A() {n_particles}
+end seed species
+begin observables
+  Molecules A_total A()
+  Molecules Apop_total Apop()
+end observables
+begin population maps
+  A() -> Apop() kf
+end population maps
+begin reaction rules
+  Apop() -> A() kr
+end reaction rules
+end model
+"""
+    model = cpp.parse_string(source)
+    runs = []
+    for seed in range(BASE_SEED, BASE_SEED + 32):
+        result = cpp.simulate_nfnext(model, times, seed=seed)
+        assert result["engine"] == "nfnext"
+        grid = np.asarray([float(value) for value in result["time"]])
+        particles = np.asarray(result["observables"]["A_total"], dtype=float)
+        population = np.asarray(result["observables"]["Apop_total"], dtype=float)
+        assert np.allclose(grid, times, rtol=0.0, atol=1e-12)
+        assert np.array_equal(particles + population, np.full(len(times), n_particles))
+        runs.append(
+            (
+                np.column_stack([grid, particles, population]),
+                ["time", "A_total", "Apop_total"],
+            )
+        )
+
+    probability = lambda grid: (k_forward / (k_forward + k_reverse)) * (
+        1.0 - np.exp(-(k_forward + k_reverse) * grid)
+    )
+    compare.qualify_binomial_marginal(
+        runs,
+        "Apop_total",
+        population=n_particles,
+        probability=probability,
+        label="NFnext mixed conversion cycle",
+    )
+
+
+def test_nfnext_dynamic_threshold_transition_invariants():
+    """Dynamic particle/population threshold transitions conserve total copies.
+
+    With ``population_threshold=T`` the NFnext runtime keeps at most T particles
+    of a mapped type in the graph and holds the rest in the declared population.
+    The reverse population rule replenishes particles, so the representation is
+    re-reconciled after every event. Two exact analytic facts are checked at
+    every sample: total copies ``A_total + Apop_total == N`` and the threshold
+    invariant ``A_total == min(N, T)``. T=0 keeps the prior no-reconcile route.
+    """
+    try:
+        from bionetgen.model import _cpp as cpp  # type: ignore
+    except (ImportError, AttributeError):
+        try:
+            import bionetgen._bionetgen_cpp as cpp  # type: ignore
+        except ImportError:
+            pytest.skip("no native NFnext extension available")
+
+    n_particles = 40
+    source = f"""begin model
+begin parameters
+  kf 2
+  kr 1
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin population types
+  Apop()
+end population types
+begin seed species
+  A() {n_particles}
+end seed species
+begin observables
+  Molecules A_total A()
+  Molecules Apop_total Apop()
+end observables
+begin population maps
+  A() -> Apop() kf
+end population maps
+begin reaction rules
+  Apop() -> A() kr
+end reaction rules
+end model
+"""
+    model = cpp.parse_string(source)
+    times = [0.0, 0.1, 0.25, 0.5, 1.0]
+    for threshold in (0, 5, 10):
+        result = cpp.simulate_nfnext(
+            model, times, seed=23, population_threshold=threshold
+        )
+        assert result["engine"] == "nfnext"
+        particles = np.asarray(result["observables"]["A_total"], dtype=float)
+        population = np.asarray(result["observables"]["Apop_total"], dtype=float)
+        assert np.array_equal(
+            particles + population, np.full(len(times), n_particles)
+        ), f"threshold {threshold}: total copies were not conserved"
+        if threshold:
+            assert np.array_equal(
+                particles, np.full(len(times), min(n_particles, threshold))
+            ), f"threshold {threshold}: particle count left the declared bound"

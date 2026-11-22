@@ -4,11 +4,11 @@
   "title": "C04: Decide maintained roles for NFcore, NFcore2 and NFnext",
   "source": {
     "repository": "RuleWorld/BNG3",
-    "contract": "Consolidate NFcore2 capabilities into NFnext while retaining NFcore as production default (method='nf' and selectable method='nfcore'), lowerPatternToNFsim for NFcore input, and containing unpromoted NFcore2 as an in-tree test oracle."
+    "contract": "Consolidate NFcore2 capabilities into NFnext while promoting NFnext as the production default (method='nf' and selectable method='nfnext'), retaining NFcore as explicitly selectable method='nfcore', lowerPatternToNFsim for NFcore input, and containing unpromoted NFcore2 as an in-tree test oracle."
   },
   "oracle": {
     "identity": "Native NFsim at the revision in provenance/upstreams.lock.yml, in-repo NFcore comparator, analytical continuous-time Markov chain laws, and Catch2 architecture contracts",
-    "law": "Detailed balance for reversible isomerization, exponential decay for pure death, exact trajectory parity between method='nf' and method='nfcore' on deterministic seeds, and fail-closed refusal of unpromoted method='nfcore2'."
+    "law": "Detailed balance for reversible isomerization, exponential decay for pure death, backend identity (method='nf' and method='nfnext' select NFnext with backend 'nfnext'; method='nfcore' selects NFcore with backend 'nfsim'), NFcore-only option containment (equilibrate and traversal_limit require method='nfcore'), and fail-closed refusal of unpromoted method='nfcore2'."
   },
   "acceptance_checks": [
     "release-engine-consolidation",

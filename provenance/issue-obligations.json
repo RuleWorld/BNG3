@@ -5530,7 +5530,7 @@
     },
     {
       "number": 149,
-      "body_sha256": "f225e39fe3fe28407e0b89a9b691a539334b9351ad47b9ba6f3064fa42a064e3",
+      "body_sha256": "3a3029adf1f12626b2fcfe1d79f5a6205510bc79c398689ca6fb6b85bcfcdff5",
       "obligations": [
         {
           "id": "issue:149:document-which-engine-owns-each-supported-workload-and-whether-n",
@@ -5669,14 +5669,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-engine-consolidation.",
-                "No revision-locked consuming receipt producer is declared for required live check release-engine-consolidation."
-              ]
+              "selector": "tests/validation/release/cases/issue-149/test_nfcore_consolidation.py::test_release_engine_consolidation",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue149_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -5704,14 +5701,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-nf-default.",
-                "No revision-locked consuming receipt producer is declared for required live check release-nf-default."
-              ]
+              "selector": "tests/validation/release/cases/issue-149/test_nfcore_consolidation.py::test_release_nf_default",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue149_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -5739,14 +5733,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-149.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-149."
-              ]
+              "selector": "tests/validation/release/cases/issue-149/test_nfcore_consolidation.py::test_release_obligation_149",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue149_release.py",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -7107,14 +7098,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-energy-protocols.",
-                "No revision-locked consuming receipt producer is declared for required live check release-energy-protocols."
-              ]
+              "selector": "tests/validation/release/cases/issue-152/test_energy_protocols.py::test_release_energy_protocols",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue152_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -7141,14 +7128,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-extension-protocols.",
-                "No revision-locked consuming receipt producer is declared for required live check release-extension-protocols."
-              ]
+              "selector": "tests/validation/release/cases/issue-152/test_energy_protocols.py::test_release_extension_protocols",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue152_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -7175,14 +7158,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-152.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-152."
-              ]
+              "selector": "tests/validation/release/cases/issue-152/test_energy_protocols.py::test_release_obligation_152",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue152_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -14525,14 +14504,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-lowering-proof.",
-                "No revision-locked consuming receipt producer is declared for required live check release-lowering-proof."
-              ]
+              "selector": "tests/validation/release/cases/issue-166/test_lowering_bridge.py::test_release_lowering_proof",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue166_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -14558,14 +14533,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-lowering-bridge.",
-                "No revision-locked consuming receipt producer is declared for required live check release-lowering-bridge."
-              ]
+              "selector": "tests/validation/release/cases/issue-166/test_lowering_bridge.py::test_release_lowering_bridge",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue166_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -14591,14 +14562,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-166.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-166."
-              ]
+              "selector": "tests/validation/release/cases/issue-166/test_lowering_bridge.py::test_release_obligation_166",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue166_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -17263,13 +17230,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
-              ]
+              "selector": "tests/python/nfnext/test_nfnext_ensemble_rng_isolation.py::test_same_seed_is_reproducible",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue176_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -17340,13 +17304,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
-              ]
+              "selector": "tests/validation/release/cases/issue-176/test_nf_performance_measurement.py::test_nfnext_startup_memory_throughput_with_analytic_correctness",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue176_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
