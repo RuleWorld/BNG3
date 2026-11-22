@@ -17254,13 +17254,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
-              ]
+              "selector": "tests/python/nfnext/test_nfnext_ensemble_rng_isolation.py::test_same_seed_is_reproducible",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue176_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -17331,13 +17328,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
-              ]
+              "selector": "tests/python/nfnext/test_nfnext_ensemble_rng_isolation.py::test_ensemble_mean_matches_analytic_law",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue176_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
