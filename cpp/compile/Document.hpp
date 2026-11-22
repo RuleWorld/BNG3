@@ -19,6 +19,12 @@ namespace bng::compile {
 // the two layers disagree about what a valid threshold is.
 std::optional<std::string> poplevelDecisionError(double value);
 
+// Compile-owned validation of numeric simulation options. The action layer and
+// the API must apply one rule per option domain rather than a local copy of the
+// finite/positive test with a hand-written message.
+std::optional<std::string> positiveToleranceError(double value);
+std::optional<std::string> nonNegativeOptionError(double value, const char* name);
+
 enum class ActionScope {
     Model,
     SimulationProtocol,

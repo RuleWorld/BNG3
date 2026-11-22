@@ -1926,18 +1926,19 @@ void runSimulation(
     // that is not finite and positive, so the action surface refuses the
     // same values instead of accepting an option the caller cannot use
     // through the API.
-    if (!std::isfinite(opts.atol) || opts.atol <= 0.0) {
-        throw std::runtime_error("atol must be finite and positive");
+    if (const auto decision = bng::compile::positiveToleranceError(opts.atol)) {
+        throw std::runtime_error("atol " + *decision);
     }
-    if (!std::isfinite(opts.rtol) || opts.rtol <= 0.0) {
-        throw std::runtime_error("rtol must be finite and positive");
+    if (const auto decision = bng::compile::positiveToleranceError(opts.rtol)) {
+        throw std::runtime_error("rtol " + *decision);
     }
 
     const auto maxStepText = readArgument(action, "max_step", "");
     if (!maxStepText.empty()) {
         opts.maxStep = parseScalarValue(maxStepText, model);
-        if (!std::isfinite(opts.maxStep) || opts.maxStep < 0.0) {
-            throw std::runtime_error("max_step must be finite and non-negative");
+        if (const auto decision =
+                bng::compile::nonNegativeOptionError(opts.maxStep, "max_step")) {
+            throw std::runtime_error(*decision);
         }
     }
 

@@ -19,6 +19,18 @@ std::optional<std::string> poplevelDecisionError(double value) {
     return std::nullopt;
 }
 
+std::optional<std::string> positiveToleranceError(double value) {
+    if (!std::isfinite(value) || value <= 0.0)
+        return std::string("must be finite and positive");
+    return std::nullopt;
+}
+
+std::optional<std::string> nonNegativeOptionError(double value, const char* name) {
+    if (!std::isfinite(value) || value < 0.0)
+        return std::string(name) + " must be finite and non-negative";
+    return std::nullopt;
+}
+
 namespace {
 
 using GenerateNetworkOptions = ProtocolAction::GenerateNetworkOptions;
