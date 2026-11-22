@@ -1926,6 +1926,7 @@ def _simulate_and_compare(
 
 
 SOURCE_COMPARISON_SCOPE = "original_source_sbml_species_output_fidelity"
+SOURCE_PARAMETER_COMPARISON_SCOPE = "original_source_sbml_parameter_output_fidelity"
 
 
 def _source_species_unit_factors(
@@ -1974,9 +1975,13 @@ def _simulate_source_and_compare(
     max_step: float = 0.0,
     model_id: str,
 ) -> dict[str, Any]:
-    """Compare mapped BNG3 species with the original SBML in libRoadRunner."""
+    """Compare BNG3 outputs with the original SBML in libRoadRunner."""
 
     from bionetgen.atomizer.modern.types import standardize_name
+    from bionetgen.atomizer.modern.units import (
+        resolve_decimal_unit_factor,
+        resolve_unit_factor,
+    )
     from scripts.ci.validate_sbml_test_suite import (
         _reference_output_target,
         _with_reference_output_functions,
@@ -1989,6 +1994,12 @@ def _simulate_source_and_compare(
     selections: dict[str, str] = {}
     normalizations: dict[str, dict[str, Any]] = {}
     unmapped: list[str] = []
+    output_kind = "species" if source_model.species else "parameter"
+    scope = (
+        SOURCE_COMPARISON_SCOPE
+        if source_model.species
+        else SOURCE_PARAMETER_COMPARISON_SCOPE
+    )
     effective_factors = _source_species_unit_factors(source_model)
     for species_id, species in source_model.species.items():
         compartment = source_model.compartments.get(species.compartment)
@@ -2041,22 +2052,56 @@ def _simulate_source_and_compare(
             species_id if quantity_kind == "amount" else f"[{species_id}]"
         )
 
+    if not source_model.species:
+        dynamic_ids = {rule.variable for rule in source_model.rules if rule.variable}
+        dynamic_ids.update(
+            assignment.variable
+            for event in source_model.events
+            for assignment in event.assignments
+        )
+        for source_id in sorted(dynamic_ids):
+            parameter = source_model.parameters.get(standardize_name(source_id))
+            target = _reference_output_target(
+                source_id, default_units, source_model, observable_map, standardize_name
+            )
+            if parameter is None or target is None:
+                unmapped.append(source_id)
+                continue
+            factor = Decimal(1)
+            if source_model.substance_units or source_model.volume_units:
+                factor = resolve_decimal_unit_factor(
+                    parameter.units, source_model
+                ) or Decimal(str(resolve_unit_factor(parameter.units, source_model)))
+            to_source_factor = Decimal(1) / factor
+            if to_source_factor != 1:
+                target = f"({target}) * {format(to_source_factor.normalize(), 'f')}"
+            targets[source_id] = target
+            selections[source_id] = source_id
+            normalizations[source_id] = {
+                "normalized_to_source_factor": float(to_source_factor)
+            }
+
+    output_mapping = {
+        "source_comparison_surface": f"mapped_{output_kind}_outputs",
+        f"source_{output_kind}_targets": targets,
+        f"source_{output_kind}_normalization": normalizations,
+        f"source_{output_kind}_roadrunner_selections": selections,
+        f"unmapped_source_{output_kind}": unmapped,
+    }
+    mapping_key = f"source_{output_kind}_mapping"
     if not targets:
         return {
+            **output_mapping,
             "passed": False,
-            "comparison_scope": SOURCE_COMPARISON_SCOPE,
+            "comparison_scope": scope,
             "comparison_scale_scope": "per_observable",
             "source_time_units": source_model.time_units
             or "unspecified; source numeric time",
-            "source_comparison_surface": "mapped_species_outputs",
             "failed_observables": [],
             "not_comparable": {
-                "source_species_mapping": "no source species has an exact BNG3 output mapping"
+                mapping_key: f"no source {output_kind} has an exact BNG3 output mapping"
             },
-            "error": "original source comparison has no mapped source species",
-            "source_species_targets": targets,
-            "source_species_roadrunner_selections": selections,
-            "unmapped_source_species": unmapped,
+            "error": f"original source comparison has no mapped source {output_kind}",
         }
 
     dynamic_species = {
@@ -2120,7 +2165,7 @@ def _simulate_source_and_compare(
             action_bngl=reference_bngl if has_actions else None,
             action_model_parser=cpp.parse_string if has_actions else None,
             reference_selections=reference_selections,
-            comparison_scope=SOURCE_COMPARISON_SCOPE,
+            comparison_scope=scope,
             source_time_units=source_model.time_units
             or "unspecified; source numeric time",
         )
@@ -2173,7 +2218,7 @@ def _simulate_source_and_compare(
             if refined.get("passed", False):
                 comparison = refined
                 break
-    comparison["source_comparison_surface"] = "mapped_species_outputs"
+    comparison.update(output_mapping)
     comparison["initial_source_comparison_passed"] = initial_source_comparison_passed
     comparison["source_solver_attempts"] = solver_attempts
     alias_to_species = {alias: species_id for species_id, alias in aliases.items()}
@@ -2197,17 +2242,13 @@ def _simulate_source_and_compare(
             alias_to_species.get(alias, alias): reason
             for alias, reason in comparison["not_comparable"].items()
         }
-    comparison["source_species_targets"] = targets
-    comparison["source_species_normalization"] = normalizations
-    comparison["source_species_roadrunner_selections"] = selections
-    comparison["unmapped_source_species"] = unmapped
     if unmapped:
         comparison["passed"] = False
-        comparison.setdefault("not_comparable", {})["source_species_mapping"] = (
+        comparison.setdefault("not_comparable", {})[mapping_key] = (
             "no exact BNG3 output mapping for: " + ", ".join(unmapped[:10])
         )
         comparison["error"] = (
-            "original source comparison could not measure every species; "
+            f"original source comparison could not measure every source {output_kind}; "
             + ", ".join(unmapped[:10])
         )
     return comparison
@@ -2701,7 +2742,9 @@ def _validate_mode(
             "error": f"original source comparison harness error: {exc}",
         }
     result["source_simulation_comparison"] = source_comparison
-    result["source_comparison_scope"] = SOURCE_COMPARISON_SCOPE
+    result["source_comparison_scope"] = (source_comparison or {}).get(
+        "comparison_scope", SOURCE_COMPARISON_SCOPE
+    )
     source_stage = result["stage_results"][-1]
     _set_comparison_stage_outcome(source_stage, source_comparison)
     _write_mode_checkpoint(result, checkpoint_path)
@@ -2807,7 +2850,8 @@ def _run_isolated_model(
     """Run one model in a bounded subprocess and return its record."""
 
     record: dict[str, Any] = dict(entry)
-    worker_json = args.cache_dir / f".worker-{entry['id']}.json"
+    worker_directory = tempfile.TemporaryDirectory(prefix="biomodels-worker-")
+    worker_json = Path(worker_directory.name) / "report.json"
     command = [
         sys.executable,
         str(Path(__file__).resolve()),
@@ -2893,7 +2937,7 @@ def _run_isolated_model(
             error=f"{type(exc).__name__}: {exc}",
         )
     finally:
-        worker_json.unlink(missing_ok=True)
+        worker_directory.cleanup()
     return record
 
 

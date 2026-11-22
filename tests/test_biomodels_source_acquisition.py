@@ -318,11 +318,17 @@ def test_isolated_model_worker_receives_offline_flag(tmp_path, monkeypatch):
         model_timeout=30,
     )
 
+    output_paths = {}
+
     def worker(command, **kwargs):
         assert "--offline" in command
         output_path = Path(command[command.index("--json") + 1])
+        mode = command[command.index("--mode") + 1]
+        output_paths[mode] = output_path
         output_path.write_text(
-            json.dumps({"records": [{"id": entry["id"], "status": "passed"}]}),
+            json.dumps(
+                {"records": [{"id": entry["id"], "status": "passed", "mode": mode}]}
+            ),
             encoding="utf-8",
         )
         return SimpleNamespace(returncode=0, stderr="")
@@ -331,6 +337,12 @@ def test_isolated_model_worker_receives_offline_flag(tmp_path, monkeypatch):
     record = validator._run_isolated_model(entry, args)
     assert record["id"] == entry["id"]
     assert record["status"] == "passed"
+    assert record["mode"] == "flat"
+    assert validator._run_isolated_model(entry, args, mode="atomized")["mode"] == (
+        "atomized"
+    )
+    assert output_paths["flat"] != output_paths["atomized"]
+    assert not any(output_path.exists() for output_path in output_paths.values())
 
 
 def test_parent_timeout_retains_phase_source_hash_and_bounded_case_packet(

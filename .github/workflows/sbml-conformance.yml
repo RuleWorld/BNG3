@@ -33,6 +33,7 @@ on:
       - 'tests/validation/release/cases/issue-159/test_ssts_full_execution.py'
       - 'tests/test_ssts_stage_reporting.py'
       - 'tests/python/test_native_events.py'
+      - 'tests/python/test_corpus_harness_scope_boundaries.py'
       - 'tests/python/test_species_rate_rule_amounts.py'
       - 'tests/python/test_structural_multi_execution.py'
       - 'tests/python/test_sbml_function_forward_references.py'
@@ -187,6 +188,7 @@ jobs:
             _bng3_product/tests/python/test_native_events.py \
             _bng3_product/tests/python/test_sbml_function_forward_references.py \
             _bng3_product/tests/python/test_species_rate_rule_amounts.py \
+            _bng3_product/tests/python/test_corpus_harness_scope_boundaries.py::test_biomodels_source_comparison_checks_parameter_only_dynamics \
             -q \
             --junitxml "$RUNNER_TEMP/ssts-artifacts/product-smoke-tests.xml"
 
