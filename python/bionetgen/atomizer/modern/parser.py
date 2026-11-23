@@ -5088,6 +5088,47 @@ class SBMLParser:
             if math.isfinite(compartment.size):
                 symbols[str(compartment_id)] = compartment.size
                 symbols[standardize_name(str(compartment_id))] = compartment.size
+        # A species' declared initial amount/concentration is a t=0 value and
+        # may be read by a parameter's initial assignment.  Assignment rules
+        # likewise hold at t=0; fold the ones that reduce to numbers so a
+        # constant parameter is not emitted as a live function of a rule.
+        for _ in range(len(model.rules) + 1):
+            progressed = False
+            for rule in model.rules:
+                if getattr(rule, "type", "") != "assignment" or not rule.variable:
+                    continue
+                variable = str(rule.variable)
+                if variable in symbols or standardize_name(variable) in symbols:
+                    continue
+                # A species that is also an assignment-rule target carries its
+                # declared t=0 amount/concentration, which is the rule's value
+                # at the start of the simulation.
+                species = model.species.get(variable)
+                if species is not None:
+                    if bool(getattr(species, "has_only_substance_units", False)):
+                        value = float(getattr(species, "initial_amount", 0) or 0)
+                        is_set = bool(getattr(species, "initial_amount_set", False))
+                    else:
+                        value = float(getattr(species, "initial_concentration", 0) or 0)
+                        is_set = bool(
+                            getattr(species, "initial_concentration_set", False)
+                        )
+                    if is_set and math.isfinite(value):
+                        symbols[variable] = value
+                        symbols[standardize_name(variable)] = value
+                        progressed = True
+                        continue
+                value = _evaluate_static_arithmetic(
+                    str(getattr(rule, "math", "") or ""),
+                    symbols,
+                    model.function_definitions,
+                )
+                if value is not None and math.isfinite(value):
+                    symbols[variable] = value
+                    symbols[standardize_name(variable)] = value
+                    progressed = True
+            if not progressed:
+                break
         # SBML assumes a zero start time, so ``time`` is 0 while the initial
         # values are established.
         symbols["time"] = 0.0
