@@ -4819,9 +4819,15 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
         // A group whose value changed its sign since then crossed its trigger
         // in the meantime.
         lastRootValues_.clear();
-        for (const auto& group : nativeEventGroups_) {
-            lastRootValues_.push_back(
-                eventRootValue(group.trigger, opts.tStart, initialState.data()));
+        zeroRootStrictGroups_.assign(nativeEventGroups_.size(), false);
+        for (std::size_t groupIndex = 0; groupIndex < nativeEventGroups_.size();
+             ++groupIndex) {
+            const auto& group = nativeEventGroups_[groupIndex];
+            const double initialRoot =
+                eventRootValue(group.trigger, opts.tStart, initialState.data());
+            lastRootValues_.push_back(initialRoot);
+            zeroRootStrictGroups_[groupIndex] =
+                (initialRoot == 0.0 && isStrictTrigger(group.trigger));
         }
         for (std::size_t index = 0;
              !opts.continueSimulation && index < nativeEvents_.size(); ++index) {
@@ -5172,6 +5178,24 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                                  recordsHistory() ? CV_ONE_STEP : CV_NORMAL);
                 }
 
+                // A strict trigger whose root was exactly zero at t_start
+                // has no sign change for CVODE to localize. Poll those groups
+                // after the accepted step: once the root is positive, the
+                // trigger has risen and the group fires at this instant.
+                if (flag == CV_SUCCESS || flag == CV_ROOT_RETURN) {
+                    std::vector<double> pollState(nSpecies_);
+                    for (std::size_t i = 0; i < nSpecies_; ++i) {
+                        pollState[i] = NV_Ith_S(y, i) * cvodeStateScale_[i];
+                    }
+                    for (std::size_t groupIndex = 0;
+                         groupIndex < nativeEventGroups_.size(); ++groupIndex) {
+                        if (!zeroRootStrictGroups_[groupIndex]) continue;
+                        if (eventRootValue(nativeEventGroups_[groupIndex].trigger,
+                                           t, pollState.data()) <= 0.0) continue;
+                        queueTriggeredGroup(groupIndex, t, pollState);
+                        zeroRootStrictGroups_[groupIndex] = false;
+                    }
+                }
                 if (flag == CV_ROOT_RETURN) {
                     // CVodeGetRootInfo writes one entry per registered root
                     // function, not a single root index. Keep the buffer sized
