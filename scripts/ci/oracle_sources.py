@@ -16,7 +16,7 @@ from typing import Any
 
 REPO = Path(__file__).resolve().parents[2]
 DEFAULT_LOCK = REPO / "provenance" / "upstreams.lock.yml"
-ORACLE_NAMES = ("bionetgen", "nfsim", "pybionetgen")
+ORACLE_NAMES = ("bionetgen", "nfsim", "pybionetgen", "bngsim")
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REPOSITORY_RE = re.compile(r"^https://github\.com/[^/]+/[^/]+\.git$")
 
