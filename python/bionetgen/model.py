@@ -1086,7 +1086,7 @@ class BioNetGenModel:
     ) -> GpuBatchSimResult:
         """Run an explicit network-free GPU batch from this model.
 
-        The current GPU implementation supports one ordinary molecule type,
+        The current GPU implementation supports one molecule type,
         one stateful site, fixed integer seed populations, static elementary
         state-change rates, and one-term ``Molecules`` observables. It has no
         CPU fallback; ``backend`` must select a compiled GPU route with a

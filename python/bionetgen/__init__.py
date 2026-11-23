@@ -32,10 +32,10 @@ else:
         The returned route names distinguish finite-network batch SSA from
         the currently narrower NFnext unary state-change GPU implementation.
         """
-        if _native_cpp is None or not hasattr(
-            _native_cpp, "gpu_backend_capabilities"
-        ):
-            raise RuntimeError("this installation does not include GPU backend metadata")
+        if _native_cpp is None or not hasattr(_native_cpp, "gpu_backend_capabilities"):
+            raise RuntimeError(
+                "this installation does not include GPU backend metadata"
+            )
         return _native_cpp.gpu_backend_capabilities()
 
     _RUN_OUT_MISSING = object()

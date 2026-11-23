@@ -56,7 +56,7 @@ detail::NfnextUnaryStatePlan compileUnaryStatePlan(
     if (model.molecule_types.size() != 1 || model.molecule_types.front().is_population ||
         model.molecule_types.front().sites.size() != 1 ||
         model.molecule_types.front().sites.front().states.size() < 2) {
-        refuse("requires one ordinary molecule type with one stateful site and the unary single-site state-change family");
+        refuse("requires one molecule type with one stateful site and the unary single-site state-change family");
     }
 
     const auto moleculeType = model.molecule_types.front().id;

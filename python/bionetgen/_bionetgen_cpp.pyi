@@ -562,7 +562,7 @@ def simulate_nfnext(
     max_events: int = 1000000,
     max_particles: int = 1000000,
 ) -> Dict[str, object]:
-    """Run the current NFnext production-boundary model simulation."""
+    """Run the bounded NFnext GPU simulation."""
     ...
 
 def simulate_nfnext_gpu(

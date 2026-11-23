@@ -25,11 +25,10 @@ no arm caches, reorders or memoises work the other does not.
 
 from __future__ import annotations
 
-import os
 import resource
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from . import device as device_mod
 from .measure import TimingSample
