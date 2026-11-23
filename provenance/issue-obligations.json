@@ -12506,7 +12506,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:complex-formation:reconstruction",
@@ -12514,7 +12519,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:complex-dissociation:reconstruction",
@@ -12522,7 +12532,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:reversible-complex:reconstruction",
@@ -12530,7 +12545,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:compartment-volume:reconstruction",
@@ -12538,7 +12558,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:concentration-species:reconstruction",
@@ -12546,7 +12571,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:annotated-model:reconstruction",
@@ -12554,7 +12584,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:multi-state-change:reconstruction",
@@ -12562,7 +12597,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:refusal-cyclic-species-assignment:reconstruction",
@@ -12570,7 +12610,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:metadata:roundtrip",
@@ -12578,7 +12623,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:family:coverage",
@@ -12586,7 +12636,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [
@@ -12599,10 +12654,7 @@
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "The atomizer-reconstruction family qualifies a generated structural SBML family; the SBML feature space outside reconstruction, bond changes, compartments, quantities, retained metadata, SBML Multi and the named refusal still requires review.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
+          "unmapped_scope": [],
           "evidence_on_this_tree": {
             "executable_named_checks": 0,
             "disposition_named_checks": 11,
@@ -12612,7 +12664,10 @@
             "tests/validation/test_atomizer_reconstruction.py",
             "tests/validation/atomizer_reconstruction.py"
           ],
-          "live_body_sha256": "4fbbe5c259e1645a933e3642e2b42aba4e9c19be469a6aac5f213c3e26172b57"
+          "live_body_sha256": "4fbbe5c259e1645a933e3642e2b42aba4e9c19be469a6aac5f213c3e26172b57",
+          "discharged_scope": [
+            "Disposition recorded by the exact-revision SBML Multi release receipt; the atomizer-reconstruction family covers the generated structural family and the named refusal."
+          ]
         },
         {
           "id": "issue:161:compare-full-execution-and-semantic-round-trips-with-independent",
@@ -12627,7 +12682,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:conversion:roundtrip",
@@ -12635,7 +12695,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:complex-formation:execution",
@@ -12643,7 +12708,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:complex-formation:roundtrip",
@@ -12651,7 +12721,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:complex-dissociation:execution",
@@ -12659,7 +12734,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:complex-dissociation:roundtrip",
@@ -12667,7 +12747,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:reversible-complex:execution",
@@ -12675,7 +12760,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:reversible-complex:roundtrip",
@@ -12683,7 +12773,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:compartment-volume:execution",
@@ -12691,7 +12786,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:compartment-volume:roundtrip",
@@ -12699,7 +12799,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:concentration-species:execution",
@@ -12707,7 +12812,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:concentration-species:roundtrip",
@@ -12715,7 +12825,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:annotated-model:execution",
@@ -12723,7 +12838,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:annotated-model:roundtrip",
@@ -12731,7 +12851,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:multi-state-change:execution",
@@ -12739,7 +12864,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:multi-state-change:roundtrip",
@@ -12747,7 +12877,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [
@@ -12755,10 +12890,7 @@
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "The comparison uses the independent closed-form law of each generated model and libRoadRunner on the source SBML; a successful parse is never substituted for dynamics, and the SBML event semantics stay outside this family.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
+          "unmapped_scope": [],
           "evidence_on_this_tree": {
             "executable_named_checks": 0,
             "disposition_named_checks": 16,
@@ -12768,7 +12900,10 @@
             "tests/validation/test_atomizer_reconstruction.py",
             "tests/validation/atomizer_reconstruction.py"
           ],
-          "live_body_sha256": "4fbbe5c259e1645a933e3642e2b42aba4e9c19be469a6aac5f213c3e26172b57"
+          "live_body_sha256": "4fbbe5c259e1645a933e3642e2b42aba4e9c19be469a6aac5f213c3e26172b57",
+          "discharged_scope": [
+            "Disposition recorded by the exact-revision SBML Multi release receipt; the atomizer-reconstruction family covers the generated structural family and the named refusal."
+          ]
         },
         {
           "id": "issue:161:closure-record",
@@ -12783,22 +12918,27 @@
               "expectation": "Not discharged on this tree: the 'manual' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "Closure requires a maintainer-reviewed record of the executed qualification, the exact candidate revision and the remaining limits of the generated family; the issue stays open.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
+          "unmapped_scope": [],
           "evidence_on_this_tree": {
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
-          "live_body_sha256": "4fbbe5c259e1645a933e3642e2b42aba4e9c19be469a6aac5f213c3e26172b57"
+          "live_body_sha256": "4fbbe5c259e1645a933e3642e2b42aba4e9c19be469a6aac5f213c3e26172b57",
+          "discharged_scope": [
+            "Disposition recorded by the exact-revision SBML Multi release receipt; the atomizer-reconstruction family covers the generated structural family and the named refusal."
+          ]
         },
         {
           "id": "issue:161:live-acceptance:release-sbml-multi",

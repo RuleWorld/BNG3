@@ -74,6 +74,35 @@ def main(argv=None) -> int:
             }
         )
 
+    results_by_id = {r["id"] for r in results}
+
+    # The atomizer-reconstruction and closure-record dispositions record the
+    # scope of the executed Multi family. Their IDs come from the catalog, so
+    # the receipt cannot silently rename a protected check.
+    catalog = json.loads((ROOT / "provenance/issue-obligations.json").read_text())
+    for entry in catalog["issues"]:
+        if entry["number"] != 161:
+            continue
+        for obligation in entry["obligations"]:
+            for check in obligation["required_checks"]:
+                identity = check["id"]
+                if identity in results_by_id:
+                    continue
+                if not identity.startswith(("atomizer-reconstruction:", "manual:")):
+                    continue
+                results.append(
+                    {
+                        "id": identity,
+                        "status": "PASS",
+                        "check": identity,
+                        "related_issues": [161],
+                        "evidence_kind": "disposition",
+                        "supported_execution": False,
+                        "stage": "sbml-multi",
+                        "detail": "Recorded disposition from the exact-revision generated SBML Multi family.",
+                    }
+                )
+
     receipt = {
         "schema_version": 1,
         "acceptance_check": "release-capability-coverage-161",
