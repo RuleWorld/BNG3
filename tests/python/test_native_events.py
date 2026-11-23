@@ -79,6 +79,32 @@ def test_time_root_and_simultaneous_pre_event_values(tmp_path):
     assert result.observables["X"][-1] == pytest.approx(2 * np.exp(-1.3), rel=2e-6)
 
 
+def test_action_parameter_change_preserves_pending_native_event(tmp_path):
+    model(tmp_path, "time >= 0.25", "X = 1", extra="delay: 0.5")
+    path = tmp_path / "events.bngl"
+    with path.open("a") as source:
+        source.write("""
+begin actions
+  simulate({method=>"ode",t_end=>0.5,n_steps=>2})
+  setParameter("k","2")
+  simulate({method=>"ode",continue=>1,t_start=>0.5,t_end=>1,n_steps=>2})
+end actions
+""")
+
+    bionetgen.load(str(path)).execute()
+    data = np.genfromtxt(path.with_suffix(".gdat"), names=True, deletechars="#")
+    assert data["time"][-1] == 1.0
+    assert data["X"][-1] == pytest.approx(math.exp(-0.5), rel=2e-6)
+    assert not path.with_suffix(".net").exists()
+
+
+def test_native_event_evaluates_logarithm_at_trigger_state(tmp_path):
+    result = model(tmp_path, "X + Y <= 7", "Y = ln(X)").simulate(
+        method="ode", t_end=2, n_steps=3
+    )
+    assert result.observables["Y"][-1] == pytest.approx(math.log(5), rel=2e-6)
+
+
 def test_repeated_runs_do_not_share_event_history(tmp_path):
     instance = model(tmp_path, "X <= 5", "X = 10")
     first = instance.simulate(method="ode", t_end=2, n_steps=4)
@@ -591,3 +617,222 @@ def test_piecewise_assignment_does_not_sample_an_unselected_distribution(tmp_pat
     )
     actual = conditional.simulate(method="ode", t_end=1, n_steps=1, seed=17)
     np.testing.assert_array_equal(actual.concentrations, expected.concentrations)
+
+
+def test_cross_compartment_catalyst_product_keeps_declared_compartment(tmp_path):
+    """A catalyst product must not inherit the other reactant's compartment."""
+    import bionetgen._bionetgen_cpp as cpp
+
+    bngl = tmp_path / "comptest.bngl"
+    bngl.write_text("""begin model
+begin compartments
+  c1 3 1
+  c2 3 1
+end compartments
+begin molecule types
+  A()
+  B()
+  C()
+end molecule types
+begin seed species
+  @c1:A() 10
+  @c2:B() 5
+end seed species
+begin observables
+  Species Cc @c1:C()
+end observables
+begin reaction rules
+  r: @c1:A() + @c2:B() -> @c1:C() + @c2:B() 1
+end reaction rules
+end model
+""")
+    model = cpp.parse_file(str(bngl))
+    network = cpp.generate_network(model)
+    names = list(network.species_names)
+    assert any("c1" in n and "C()" in n for n in names), names
+    assert not any("c2" in n and "C()" in n for n in names), names
+
+
+def test_strict_trigger_at_zero_with_zero_initial_slope_does_not_refuse(tmp_path):
+    """A strict trigger false at t=0 with a zero initial slope is not an error.
+
+    The event may still rise later; CVODE's per-step crossing check detects
+    that. Refusing to simulate at initialization turns a valid model into an
+    unsupported one.
+    """
+    import bionetgen._bionetgen_cpp as cpp
+    from bionetgen.model import BioNetGenModel
+
+    bngl = tmp_path / "strict0.bngl"
+    bngl.write_text("""begin model
+begin parameters
+  k 0
+end parameters
+begin molecule types
+  X()
+  A()
+end molecule types
+begin seed species
+  X() 0
+  A() 10
+end seed species
+begin observables
+  Species Aobs A()
+  Species A_amt A()
+  Species X_amt X()
+end observables
+begin reaction rules
+  decay: A() -> 0 0.01
+end reaction rules
+begin bng3_events version 1
+  event "growth"
+    trigger: X_amt > 0
+    initial_value: true
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: A_amt = 0
+  end event
+end bng3_events
+end model
+""")
+    model = cpp.parse_file(str(bngl))
+    result = BioNetGenModel(model, source_path=str(bngl)).simulate(
+        method="ode", t_end=1.0, n_steps=5
+    )
+    assert len(result.observables["Aobs"]) == 6
+    assert result.observables["Aobs"][-1] < 10
+
+
+def test_single_reactant_catalyst_is_not_transported_by_new_product(tmp_path):
+    """A catalyst that is also the sole reactant stays in its compartment.
+
+    With one reactant and two products, index-based reactant→product pairing
+    would move the catalyst into the new product's compartment, turning a
+    nuclear catalyst that synthesizes a cytoplasmic product into a spurious
+    transport reaction.
+    """
+    import bionetgen._bionetgen_cpp as cpp
+
+    bngl = tmp_path / "catalyst_transport.bngl"
+    bngl.write_text("""begin model
+begin compartments
+  nucleus 3 1
+  cytoplasm 3 1 nucleus
+end compartments
+begin molecule types
+  D()
+  M()
+end molecule types
+begin seed species
+  @nucleus:D() 2
+  @cytoplasm:M() 0
+end seed species
+begin observables
+  Species Dnuc @nucleus:D()
+  Species Mcyt @cytoplasm:M()
+end observables
+begin reaction rules
+  tx: @nucleus:D() -> @cytoplasm:M() + @nucleus:D() 1
+end reaction rules
+end model
+""")
+    model = cpp.parse_file(str(bngl))
+    network = cpp.generate_network(model)
+    names = list(network.species_names)
+    assert not any("cytoplasm" in n and "D()" in n for n in names), names
+    assert any("nucleus" in n and "D()" in n for n in names), names
+
+
+def test_declared_function_named_e_shadows_euler_builtin(tmp_path):
+    """A user function E() must not be replaced by Euler's constant e.
+
+    Function names are lowercased on parse; the compiled rate-law resolver
+    must consult declared functions before builtins so E() keeps its dynamic
+    value instead of evaluating to 2.718... .
+    """
+    import bionetgen
+
+    bngl = tmp_path / "named_e.bngl"
+    bngl.write_text("""begin model
+begin parameters
+  k 1
+  Et 10
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 2
+end seed species
+begin observables
+  Species Aobs A()
+end observables
+begin functions
+  E() = Et - Aobs
+end functions
+begin reaction rules
+  r: 0 -> A() E() TotalRate
+end reaction rules
+end model
+""")
+    result = bionetgen.load(str(bngl)).simulate(method="ode", t_end=1, n_steps=2)
+    assert result.observables["Aobs"][0] == 2.0
+    # dA/dt = E() = 10 - A; A(1) = 10 - 8*exp(-1) ~= 7.057, not 2 + e ~= 4.718.
+    assert result.observables["Aobs"][-1] == pytest.approx(7.057, rel=1e-3)
+
+
+def test_strict_trigger_root_zero_fires_at_start_right_limit(tmp_path):
+    """A strict trigger at zero must fire at t_start+, not the first grid point.
+
+    CVODE sees a root that starts at exactly zero as having no crossing. The
+    engine probes the right limit with a tiny step and polls the trigger after
+    that step, including CV_TSTOP_RETURN, so the event fires before species
+    the event freezes can accumulate.
+    """
+    import bionetgen
+
+    bngl = tmp_path / "zero_root_right_limit.bngl"
+    bngl.write_text("""begin model
+begin parameters
+  k 1e9
+  alive 1
+end parameters
+begin molecule types
+  X()
+  Y()
+  A()
+end molecule types
+begin seed species
+  X() 0
+  Y() 0
+  A() 0
+end seed species
+begin observables
+  Species X_amt X()
+  Species Y_amt Y()
+  Species A_amt A()
+end observables
+begin functions
+  prod() = k * alive
+end functions
+begin reaction rules
+  grow: 0 -> A() prod() TotalRate
+  make_y: 0 -> Y() 0.1 TotalRate
+  raise_x: 0 -> X() 10 * Y_amt TotalRate
+end reaction rules
+begin bng3_events version 1
+  event "stop"
+    trigger: X_amt > 0
+    initial_value: true
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: alive = 0
+  end event
+end bng3_events
+end model
+""")
+    # A() production (k=1e9) starts immediately; the event fires as soon as
+    # X>0. If it fires at the first grid point (t=0.05), A reaches ~5e7; at
+    # the right limit it stays near zero.
+    result = bionetgen.load(str(bngl)).simulate(method="ode", t_end=0.1, n_steps=2)
+    assert result.observables["A_amt"][-1] < 1.0, list(result.observables["A_amt"])

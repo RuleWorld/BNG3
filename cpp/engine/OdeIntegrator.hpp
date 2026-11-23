@@ -323,6 +323,10 @@ private:
     // were processed.  A group whose value changed its sign since then
     // crossed its trigger in the meantime.
     std::vector<double> lastRootValues_;
+    // Groups whose strict trigger root was exactly zero at t_start. CVODE
+    // cannot report a sign change from an initially-zero root, so these are
+    // polled explicitly after each accepted step.
+    std::vector<bool> zeroRootStrictGroups_;
     // The instant at which each event's trigger last rose.
     std::vector<double> triggerRoseAt_;
     // Analytically scheduled time >= reset + h clocks. Only the same

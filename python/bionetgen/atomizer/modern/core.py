@@ -2198,6 +2198,16 @@ def reconcile_sct(
                     molecule.add_component(component)
 
 
+def _written_molecule_name(name: str) -> str:
+    """Return the molecule name as the BNGL writer will emit it."""
+    import re
+
+    value = name.replace("-", "_")
+    if "(" not in value and not value.startswith("M_"):
+        value = re.sub(r"^([A-Za-z_][A-Za-z0-9_]*)", r"M_\1", value)
+    return value
+
+
 def disambiguate_colliding_species(
     sct: SpeciesCompositionTable, model: SBMLModel
 ) -> int:
@@ -2210,8 +2220,16 @@ def disambiguate_colliding_species(
     for species_id, entry in sct.entries.items():
         if not entry.structure.molecules:
             continue
+        # Use the same BNGL-facing molecule names the writer emits. The
+        # writer prefixes "M_" to names that do not already start with it;
+        # comparing raw names misses collisions such as source species "C"
+        # (written M_C) and "M_C" (also written M_C), which then collapse into
+        # one pool and silently merge distinct kinetics.
         pattern = ".".join(
-            sorted(molecule.to_string(True) for molecule in entry.structure.molecules)
+            sorted(
+                _written_molecule_name(molecule.to_string(True).split("@", 1)[0])
+                for molecule in entry.structure.molecules
+            )
         )
         compartment = model.species.get(species_id, SBMLSpecies(species_id)).compartment
         groups.setdefault((compartment, pattern), []).append(species_id)
@@ -2223,7 +2241,13 @@ def disambiguate_colliding_species(
             entry = sct.entries[species_id]
             discriminator = Component("__sp", states=[standardize_name(species_id)])
             discriminator.set_active_state(standardize_name(species_id))
-            entry.structure.molecules[0].add_component(discriminator)
+            molecule = entry.structure.molecules[0]
+            molecule.add_component(discriminator)
+            # BNGL declares molecule types by name, so a component alone is
+            # not enough: two species whose names normalize to the same BNGL
+            # molecule (e.g. "C" -> M_C and "M_C" -> M_C) still need distinct
+            # type names or the writer emits a duplicate declaration.
+            molecule.name = f"{molecule.name}__{standardize_name(species_id)}"
             count += 1
     return count
 
@@ -2325,15 +2349,21 @@ def get_seed_species(
         if species_id in initial_assignments:
             expression = initial_assignments[species_id]
             if not item.has_only_substance_units:
-                expression = f"({expression} * __Avogadro__ * {volume})"
+                # The assignment value is a concentration; the whole value has
+                # to be multiplied by the compartment volume to get an amount.
+                # Parenthesize it first: an expression such as ``a - b`` then
+                # binds the subtraction before the volume multiplication.
+                expression = f"(({expression}) * __Avogadro__ * {volume})"
             else:
                 expression = f"({expression})"
         elif amount_set:
-            expression = (
-                str(item.initial_amount).rstrip("0").rstrip(".")
-                if "." in str(item.initial_amount)
-                else str(item.initial_amount)
-            )
+            # Trim trailing zeros only from a plain decimal literal. Applying
+            # rstrip("0") to scientific notation corrupts the exponent:
+            # "3.534e-10" becomes "3.534e-1", a factor of 10**9.
+            amount_text = str(item.initial_amount)
+            if "e" not in amount_text.lower() and "." in amount_text:
+                amount_text = amount_text.rstrip("0").rstrip(".")
+            expression = amount_text or "0"
         elif concentration_set:
             expression = f"({item.initial_concentration} * __Avogadro__ * {volume})"
         else:

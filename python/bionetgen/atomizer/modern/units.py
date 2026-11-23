@@ -13,7 +13,7 @@ import re
 from decimal import Decimal, InvalidOperation, localcontext
 from typing import Any, Dict, Iterable, Mapping, Optional
 
-from .types import SBMLModel
+from .types import SBMLModel, standardize_name
 
 # The number of significant digits used while a scaled value is computed.
 # A double carries at most seventeen, and a conversion factor adds a handful
@@ -545,14 +545,35 @@ def apply_unit_scaling(model: SBMLModel) -> list[Dict[str, Any]]:
             )
 
     for rule in model.rules:
-        result_factor = coordinate_factors.get(str(rule.variable), 1.0)
+        # A source symbol that collides with a BNGL lexer keyword is renamed
+        # (e.g. "abs" -> "abs_id") in the parameter map but the rule keeps its
+        # source identifier. Look up the factor under both spellings so the
+        # rule's result coordinate is scaled consistently with the kinetic
+        # laws that reference the renamed symbol.
+        result_factor = coordinate_factors.get(
+            str(rule.variable),
+            coordinate_factors.get(standardize_name(str(rule.variable)), 1.0),
+        )
         rewrite_owner(rule, "math", result_factor if rule.type != "algebraic" else 1.0)
     for assignment in model.initial_assignments:
-        rewrite_owner(
-            assignment,
-            "math",
-            coordinate_factors.get(str(assignment.symbol), 1.0),
-        )
+        symbol = str(assignment.symbol)
+        result_factor = coordinate_factors.get(symbol, 1.0)
+        # The writer turns a species initial assignment into a seed amount by
+        # multiplying the resolved expression by the compartment size.  For a
+        # unit-scaled model the rewrite already resolves species operands into
+        # normalized amounts, so divide the result factor by the compartment's
+        # unit factor to avoid applying that conversion twice.  An unscaled
+        # model has factor one and keeps the historical expression unchanged.
+        species = model.species.get(symbol)
+        if species is not None:
+            compartment = model.compartments.get(str(species.compartment or ""))
+            if compartment is not None:
+                volume_factor = compartment_factors.get(
+                    str(species.compartment or ""), 1.0
+                )
+                if math.isfinite(volume_factor) and volume_factor != 0:
+                    result_factor /= volume_factor
+        rewrite_owner(assignment, "math", result_factor)
     for event in model.events:
         rewrite_owner(event, "trigger", 1.0)
         rewrite_owner(event, "delay", 1.0)

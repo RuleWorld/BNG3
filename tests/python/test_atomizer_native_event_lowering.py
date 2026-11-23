@@ -76,12 +76,17 @@ def test_non_strict_time_threshold_stays_untranslated_for_ssa():
     assert "begin bng3_events version 1" not in bngl
 
 
-def test_native_engine_executes_the_non_strict_time_threshold(tmp_path, monkeypatch):
+@pytest.mark.parametrize("comparison", ["geq", "eq"])
+def test_native_engine_executes_the_fixed_time_event(tmp_path, monkeypatch, comparison):
     monkeypatch.chdir(tmp_path)
     import bionetgen
 
     # S1' = -p*S1 with p = 1 until t = 1.5, then p = 2*S2(1.5).
-    bngl = _convert(actions='simulate({method=>"ode", t_end=>3, n_steps=>6})')
+    bngl = _convert(
+        SOURCE.replace("<geq/>", f"<{comparison}/>"),
+        actions='simulate({method=>"ode", t_end=>3, n_steps=>6})',
+    )
+    assert "trigger: time >= 1.5" in bngl
     source = tmp_path / "model.bngl"
     source.write_text(bngl, encoding="utf-8")
     bionetgen.load(str(source)).execute()

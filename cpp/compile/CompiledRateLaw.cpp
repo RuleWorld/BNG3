@@ -73,7 +73,12 @@ BuiltinFunction builtinFunction(const std::string& rawName) {
     if (name == "sum") return BuiltinFunction::Sum;
     if (name == "tan") return BuiltinFunction::Tan;
     if (name == "tanh") return BuiltinFunction::Tanh;
-    if (name == "t" || name == "time") return BuiltinFunction::Time;
+    // Only the exact lower-case spellings are time operands.  The rest of the
+    // builtin dispatch is case-insensitive, but an SBML model may legitimately
+    // declare a parameter or function named ``T``; treating it as the time
+    // builtin would silently evaluate it to zero.
+    if (rawName == "t" || rawName == "time") return BuiltinFunction::Time;
+    if (name == "time") return BuiltinFunction::Time;
     if (name == "delay") return BuiltinFunction::Delay;
     if (name == "arrhenius") return BuiltinFunction::Arrhenius;
     if (name == "sat") return BuiltinFunction::Saturation;
@@ -227,18 +232,24 @@ ResolvedExpression resolveExpression(const ast::Expression& expression,
             resolved.localName = expression.name();
             return resolved;
         }
-        const auto builtin = builtinFunction(expression.name());
-        resolved.kind = builtin != BuiltinFunction::Unknown
-                            ? ResolvedExpressionKind::BuiltinCall
-                            : ResolvedExpressionKind::FunctionRef;
+        // A declared model function must win over a builtin of the same
+        // (lowercased) spelling.  The parser lowercases function names, so a
+        // model function named ``E()`` otherwise resolves to the builtin
+        // ``e`` (Euler's constant) before the symbol table is consulted, and
+        // its dynamic value is silently replaced by a constant.  The
+        // ObservableRef path below already gives declared functions priority;
+        // keep the call path consistent.
         resolved.operation = expression.name();
         resolved.call = true;
-        if (builtin != BuiltinFunction::Unknown) {
-            resolved.builtin = builtin;
+        if (const auto function = symbols.resolveFunction(expression.name())) {
+            resolved.kind = ResolvedExpressionKind::FunctionRef;
+            addReference(references, SymbolRef{SymbolKind::Function, function->value()});
+            resolved.symbol = SymbolRef{SymbolKind::Function, function->value()};
         } else {
-            if (const auto function = symbols.resolveFunction(expression.name())) {
-                addReference(references, SymbolRef{SymbolKind::Function, function->value()});
-                resolved.symbol = SymbolRef{SymbolKind::Function, function->value()};
+            const auto builtin = builtinFunction(expression.name());
+            if (builtin != BuiltinFunction::Unknown) {
+                resolved.kind = ResolvedExpressionKind::BuiltinCall;
+                resolved.builtin = builtin;
             } else {
                 unresolved(diagnostics, expression.name());
                 resolved.kind = ResolvedExpressionKind::Unresolved;
