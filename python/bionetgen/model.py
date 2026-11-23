@@ -1184,7 +1184,7 @@ class BioNetGenModel:
             )
         if self._algebraic_rules and method != "ode":
             raise ValueError("SBML algebraic rules require method='ode'")
-        nf_method = "nfcore" if method == "nf" else method
+        nf_method = "nfnext" if method == "nf" else method
         is_network_free = nf_method in {"nfcore", "nfnext"}
         retain_nf_state = is_network_free and (
             bool(self._model.population_maps)
@@ -1326,7 +1326,7 @@ class BioNetGenModel:
             nf_state = previous[2]
 
         use_bngsim = False
-        if method in {"nf", "nfnext", "nfcore"}:
+        if is_network_free:
             # backend is not applicable to network-free; reject explicit bngsim
             if backend is not None and str(backend).lower() not in (
                 "auto",
@@ -1340,7 +1340,7 @@ class BioNetGenModel:
                     raise ValueError(
                         f"backend='bngsim' is not valid for method={method!r}"
                     )
-            if method in {"nf", "nfnext"}:
+            if nf_method == "nfnext":
                 # DECISIONS.md item 4: after full network-free corpus parity,
                 # method="nf" defaults to NFnext. NFcore remains explicitly
                 # selectable via method="nfcore".
