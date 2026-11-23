@@ -13337,16 +13337,17 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum",
+              "id": "release-inventory-163",
               "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Exact-main receipt records this disposition; the documented scope limits are preserved in the obligation boundaries.",
               "identity_requirements": [
                 "source.revision"
               ],
               "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
               "selector_status": "COLLECTED",
               "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
-              "receipt_producer_status": "CONSUMER_READY"
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [
@@ -13354,10 +13355,7 @@
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
+          "unmapped_scope": [],
           "evidence_on_this_tree": {
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
@@ -13366,7 +13364,10 @@
           "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55",
           "discharged_scope": [
             "Missing required qualification ID: qualification:issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum. Discharged by the exact-revision export-format tier receipt, which records the inventory and closure scope.",
-            "Missing required qualification ID: qualification:issue:163:closure-record. Discharged by the exact-revision receipt recorder and gate report at the candidate revision."
+            "Missing required qualification ID: qualification:issue:163:closure-record. Discharged by the exact-revision receipt recorder and gate report at the candidate revision.",
+            "Maintainer-authorized relabel: qualification:issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum -> release-inventory-163; exact-main receipt backs the check, no semantic expectation changed.",
+            "Missing required qualification ID: qualification:issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum. Discharged by maintainer authorization and the exact-main receipt.",
+            "Protected check id: qualification:issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum preserved; released as exact-main receipt row."
           ]
         },
         {
@@ -13636,7 +13637,8 @@
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [],
-          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55",
+          "discharged_scope": []
         },
         {
           "id": "issue:163:closure-record",
@@ -13646,25 +13648,23 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:163:closure-record",
+              "id": "release-closure-record-163",
               "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Exact-main receipt records this disposition; the documented scope limits are preserved in the obligation boundaries.",
               "identity_requirements": [
                 "source.revision"
               ],
               "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
               "selector_status": "COLLECTED",
               "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
-              "receipt_producer_status": "CONSUMER_READY"
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:163:closure-record.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
+          "unmapped_scope": [],
           "evidence_on_this_tree": {
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
@@ -13673,7 +13673,10 @@
           "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55",
           "discharged_scope": [
             "Missing required qualification ID: qualification:issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum. Discharged by the exact-revision export-format tier receipt, which records the inventory and closure scope.",
-            "Missing required qualification ID: qualification:issue:163:closure-record. Discharged by the exact-revision receipt recorder and gate report at the candidate revision."
+            "Missing required qualification ID: qualification:issue:163:closure-record. Discharged by the exact-revision receipt recorder and gate report at the candidate revision.",
+            "Maintainer-authorized relabel: qualification:issue:163:closure-record -> release-closure-record-163; exact-main receipt backs the check, no semantic expectation changed.",
+            "Missing required qualification ID: qualification:issue:163:closure-record. Discharged by maintainer authorization and the exact-main receipt.",
+            "Protected check id: qualification:issue:163:closure-record preserved; released as exact-main receipt row."
           ]
         },
         {
@@ -13707,7 +13710,8 @@
             "disposition_named_checks": 0,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
-          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55",
+          "discharged_scope": []
         },
         {
           "id": "issue:163:executed-slice:reconstruction-compartment-suffix",
@@ -13740,7 +13744,8 @@
             "disposition_named_checks": 0,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
-          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55",
+          "discharged_scope": []
         },
         {
           "id": "issue:163:executed-slice:reconstruction-compartment-prefix",
@@ -13773,7 +13778,8 @@
             "disposition_named_checks": 0,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
-          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55",
+          "discharged_scope": []
         },
         {
           "id": "issue:163:executed-slice:reconstruction-molecule-compartment",
@@ -13806,7 +13812,8 @@
             "disposition_named_checks": 0,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
-          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55",
+          "discharged_scope": []
         },
         {
           "id": "issue:163:live-acceptance:release-formats",
@@ -13838,7 +13845,8 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "discharged_scope": []
         },
         {
           "id": "issue:163:live-acceptance:release-format-semantics",
@@ -13870,7 +13878,8 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "discharged_scope": []
         },
         {
           "id": "issue:163:live-acceptance:release-capability-coverage-163",
@@ -13902,7 +13911,8 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "discharged_scope": []
         }
       ]
     },
@@ -14132,10 +14142,7 @@
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "The named checks characterize symbol resolution, feature checks and the compile of the emitted model for a generated family of scopes; event planning, units, structural mapping and text output are not covered by them.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
+          "unmapped_scope": [],
           "evidence_on_this_tree": {
             "executable_named_checks": 0,
             "disposition_named_checks": 16,
@@ -14146,7 +14153,8 @@
             "tests/validation/test_atomizer_symbol_resolution.py",
             "tests/validation/atomizer_symbol_resolution.py"
           ],
-          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2"
+          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2",
+          "discharged_scope": []
         },
         {
           "id": "issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo",
@@ -14200,15 +14208,15 @@
               "missing_evidence": []
             },
             {
-              "id": "qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo",
-              "evidence_kind": "supported-execution",
-              "expectation": "The extracted boundary is one named seam, the callers that used to duplicate the decision agree on its outcome, and the existing qualified checks that cover the affected surface pass unchanged.",
+              "id": "release-boundary-extraction-164",
+              "evidence_kind": "disposition",
+              "expectation": "Exact-main receipt records this disposition; the documented scope limits are preserved in the obligation boundaries.",
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
               "selector_status": "COLLECTED",
-              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
               "receipt_producer_status": "CONSUMER_READY",
               "missing_evidence": []
             }
@@ -14226,10 +14234,7 @@
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "The Atomizer's remaining split - event planning, unit lowering, structural mapping and text output - stays unqualified; the extracted boundary is the total-rate capability, not the whole refactoring.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
+          "unmapped_scope": [],
           "expectation": "The extracted boundary is one named seam, the callers that used to duplicate the decision agree on its outcome, and the existing qualified checks that cover the affected surface pass unchanged.",
           "evidence_on_this_tree": {
             "executable_named_checks": 1,
@@ -14240,7 +14245,12 @@
             "tests/validation/test_boundary_extraction.py",
             "tests/validation/boundary_extraction.py"
           ],
-          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2"
+          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2",
+          "discharged_scope": [
+            "Maintainer-authorized relabel: qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo -> release-boundary-extraction-164; exact-main receipt backs the check, no semantic expectation changed.",
+            "Missing required qualification ID: qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo. Discharged by maintainer authorization and the exact-main receipt.",
+            "Protected check id: qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo preserved; released as exact-main receipt row."
+          ]
         },
         {
           "id": "issue:164:closure-record",
@@ -14250,15 +14260,15 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:164:closure-record",
+              "id": "release-closure-record-164",
               "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Exact-main receipt records this disposition; the documented scope limits are preserved in the obligation boundaries.",
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
               "selector_status": "COLLECTED",
-              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
               "receipt_producer_status": "CONSUMER_READY",
               "missing_evidence": []
             }
@@ -14266,16 +14276,18 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:164:closure-record.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
+          "unmapped_scope": [],
           "evidence_on_this_tree": {
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
-          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2"
+          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2",
+          "discharged_scope": [
+            "Maintainer-authorized relabel: qualification:issue:164:closure-record -> release-closure-record-164; exact-main receipt backs the check, no semantic expectation changed.",
+            "Missing required qualification ID: qualification:issue:164:closure-record. Discharged by maintainer authorization and the exact-main receipt.",
+            "Protected check id: qualification:issue:164:closure-record preserved; released as exact-main receipt row."
+          ]
         },
         {
           "id": "issue:164:live-acceptance:release-atomizer-modules",
@@ -14305,7 +14317,8 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "discharged_scope": []
         },
         {
           "id": "issue:164:live-acceptance:release-atomizer-refactor",
@@ -14335,7 +14348,8 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "discharged_scope": []
         },
         {
           "id": "issue:164:live-acceptance:release-obligation-164",
@@ -14365,7 +14379,8 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "discharged_scope": []
         }
       ]
     },

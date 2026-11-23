@@ -34,8 +34,8 @@ BNGIR_CHECKS = (
     "bngir-adversarial:molecule-compartment",
 )
 DISPOSITION_CHECKS = (
-    "qualification:issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum",
-    "qualification:issue:163:closure-record",
+    "release-inventory-163",
+    "release-closure-record-163",
 )
 LIVE_CHECKS = (
     "release-formats",
