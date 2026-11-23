@@ -460,8 +460,18 @@ end actions
         bionetgen.load(unsupported).execute()
 
 
-@pytest.mark.parametrize("method", ["nfcore", "nfnext"])
-def test_hybrid_continuation_uses_final_state_and_updated_rate(tmp_path, method):
+@pytest.mark.parametrize(
+    ("method", "resume_method"),
+    [
+        ("nfcore", "nfcore"),
+        ("nfnext", "nfnext"),
+        ("nf", "nfnext"),
+        ("nfnext", "nf"),
+    ],
+)
+def test_hybrid_continuation_uses_final_state_and_updated_rate(
+    tmp_path, method, resume_method
+):
     _model(tmp_path, "generate_hybrid_model({overwrite=>1, execute=>0})").execute()
     path = tmp_path / "model_hpp.bngl"
     path.write_text(
@@ -473,8 +483,17 @@ def test_hybrid_continuation_uses_final_state_and_updated_rate(tmp_path, method)
     assert 0 < at_boundary < 20
 
     hybrid.set_parameter("k_make", 0)
+    if method == "nf":
+        with pytest.raises(ValueError, match="previous stage on the same engine"):
+            hybrid.simulate(
+                method="nfcore",
+                t_start=0.1,
+                t_end=1,
+                n_steps=2,
+                continue_simulation=True,
+            )
     after = hybrid.simulate(
-        method=method, t_start=0.1, t_end=1, n_steps=2, continue_simulation=True
+        method=resume_method, t_start=0.1, t_end=1, n_steps=2, continue_simulation=True
     )
     assert after.time.tolist() == [0.1, 0.55, 1.0]
     assert after.observables["B_total"].tolist() == [at_boundary] * 3

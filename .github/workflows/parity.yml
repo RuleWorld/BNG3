@@ -79,6 +79,9 @@ jobs:
             tests/validation/test_record_issue176_release.py \
             tests/validation/test_record_issue166_release.py \
             tests/validation/test_record_issue152_release.py \
+            tests/validation/test_record_issue178_release.py \
+            tests/validation/test_release_recorder_scope.py \
+            tests/validation/test_record_issue174_release.py \
             tests/validation/test_reconciliation_evidence.py \
             tests/validation/test_integrated_wiring.py \
             tests/validation/test_integrated.py \
@@ -682,6 +685,22 @@ jobs:
       - name: Verify spawned scientific worker identity
         if: always() && steps.candidate_identity.outcome == 'success'
         run: python -m pytest -c tests/validation/pytest.ini tests/validation/test_worker_package_identity.py -q
+
+      - name: Check the export-format tier against independent consumers
+        if: always() && steps.candidate_identity.outcome == 'success'
+        run: |
+          python -m pytest -c tests/validation/pytest.ini \
+            tests/validation/test_export_format_tier.py \
+            --bng-cpp build/cpp/bng_cpp \
+            -q -ra
+
+      - name: Check Atomizer symbol resolution and seam ownership
+        if: always() && steps.candidate_identity.outcome == 'success'
+        run: |
+          python -m pytest -c tests/validation/pytest.ini \
+            tests/validation/test_atomizer_characterization.py \
+            --bng-cpp build/cpp/bng_cpp \
+            -q -ra
 
       - name: Run S6 simulate-option acceptance
         run: >-
@@ -1294,6 +1313,7 @@ jobs:
         env:
           NFSIM_BIN: ${{ runner.temp }}/oracle-nfsim/build/NFsim
           BNG3_RECONCILIATION_NFSIM_SOURCE: ${{ runner.temp }}/oracle-nfsim
+          BNG3_NFSIM_RECONCILIATION_REPORT: ${{ runner.temp }}/reconciliation-nfsim-options.json
         run: |
           pytest -c tests/validation/pytest.ini \
             tests/validation/test_reconciliation_nfsim.py \
@@ -1307,6 +1327,14 @@ jobs:
         with:
           name: reconciliation-nfsim-differences
           path: ${{ runner.temp }}/reconciliation-nfsim-differences.xml
+
+      - name: Retain executed NFsim option comparisons
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reconciliation-behavior-nfsim-options
+          path: ${{ runner.temp }}/reconciliation-nfsim-options.json
+          if-no-files-found: error
 
       - name: Run fixed-seed native NFsim parity
         shell: bash
@@ -1444,6 +1472,45 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Record Issue 178 shared decisions release acceptance
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          python scripts/ci/record_issue178_release.py \
+            --source-revision "$BNG3_SOURCE_REVISION" \
+            --output "$RUNNER_TEMP/issue-178-release-report.json" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Issue 178 shared decisions evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue178-shared-decisions-release-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/issue-178-release-report.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Record Issue 174 CPU benchmark release acceptance
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          BNG3_CPU_BENCHMARK_REPORT: ${{ runner.temp }}/issue174-benchmark-record.json
+        run: |
+          set -euo pipefail
+          python scripts/ci/record_issue174_release.py \
+            --source-revision "$BNG3_SOURCE_REVISION" \
+            --output "$BNG3_CPU_BENCHMARK_REPORT" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Issue 174 CPU benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue174-cpu-benchmark-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/issue174-benchmark-record.json
+          if-no-files-found: error
+          retention-days: 30
+
       - name: Validate independent issue-150 hybrid release acceptance
         shell: bash
         env:
@@ -1565,6 +1632,7 @@ jobs:
         run: |
           set -euo pipefail
           pytest -c tests/validation/pytest.ini \
+            tests/validation/test_parity_nfsim.py::test_tierp_direct_probe_refuses_refined_population \
             tests/validation/test_parity_nfsim.py::test_tierp_direct_path_outcome_is_measured_and_attributed \
             -q -ra --junitxml="$RUNNER_TEMP/nfsim-tier-p.xml"
 

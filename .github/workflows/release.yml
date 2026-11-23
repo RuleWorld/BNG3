@@ -78,9 +78,29 @@ jobs:
           gh api --paginate --slurp \
             "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${GITHUB_SHA}&branch=main&event=workflow_dispatch&per_page=100" \
             > "$RUNNER_TEMP/sbml-workflow-runs.json"
+          evidence="$RUNNER_TEMP/release-sbml-evidence"
+          mkdir -p "$evidence"
+          jq -r '.[].workflow_runs[]
+            | select(.name == "Official SBML conformance subset" and
+                     .status == "completed" and .conclusion == "success")
+            | [.id, .run_attempt] | @tsv' \
+            "$RUNNER_TEMP/sbml-workflow-runs.json" > "$RUNNER_TEMP/sbml-attempts.tsv"
+          while IFS=$'\t' read -r run attempt; do
+            destination="$evidence/$run/$attempt"
+            if ! gh run download "$run" --name "ssts-release-consumers-$GITHUB_SHA-$attempt" \
+                --dir "$destination/ssts"; then
+              continue
+            fi
+            if ! gh run download "$run" --name "curated-biomodels-$GITHUB_SHA-$attempt" \
+                --dir "$destination/biomodels"; then
+              continue
+            fi
+          done < "$RUNNER_TEMP/sbml-attempts.tsv"
           python scripts/ci/qualify_release_candidate.py \
             --runs-json "$RUNNER_TEMP/push-workflow-runs.json" \
             --sbml-runs-json "$RUNNER_TEMP/sbml-workflow-runs.json" \
+            --sbml-evidence-dir "$evidence" \
+            --biomodels-inventory provenance/curated-biomodels-query-inventory.json \
             --sha "$GITHUB_SHA"
 
   # ═══════════════════════════════════════════════════════════════════════════
@@ -274,6 +294,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install release tag parser dependency
+        run: python -m pip install packaging==26.3
+
+      - name: Classify release tag with PEP 440 rules
+        id: tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python scripts/ci/release_tag.py --tag "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -296,7 +329,7 @@ jobs:
           files: release-assets/*
           generate_release_notes: true
           draft: false
-          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+          prerelease: ${{ steps.tag.outputs.prerelease == 'true' }}
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Publish to PyPI

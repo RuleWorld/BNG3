@@ -33,6 +33,32 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def source_fidelity_gaps(records):
+    """Identify losses that a passing numerical comparison can miss."""
+    gaps = []
+    loss_severities = {"dropped", "approximated", "unsupported", "error"}
+    for record in records:
+        if record["status"] != "passed":
+            continue
+        case = f"{record['category']}/{record['id']}"
+        metadata = record.get("metadata_roundtrip") or {}
+        if not (
+            metadata.get("status") == "not_present"
+            or (
+                metadata.get("status") == "preserved"
+                and metadata.get("payloadMatch") is True
+            )
+        ):
+            gaps.append(f"{case}: missing or dropped round-trip metadata evidence")
+        for stage in ("source_model", "reimport_model"):
+            for warning in record.get(stage, {}).get("warnings", []):
+                if warning.get("severity") in loss_severities:
+                    gaps.append(
+                        f"{case}: {stage} {warning['severity']} {warning.get('category')}"
+                    )
+    return gaps
+
+
 def build_receipt(
     suite_report: Path,
     mapping_path: Path,
@@ -85,7 +111,7 @@ def build_receipt(
             or {}
         )
 
-    diagnostics: list[str] = []
+    diagnostics = source_fidelity_gaps(records.values())
     results = []
     for check in capability_checks:
         row_id = check["id"][len("release-capability[") : -1]
