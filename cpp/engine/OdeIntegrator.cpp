@@ -5099,7 +5099,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
 
     // A strict trigger that starts with root exactly zero needs a right-limit
     // probe: CVODE cannot localize a crossing out of a root that starts at
-    // zero, so the per-step poll would not run until the first ordinary output
+    // zero, so the per-step poll would not run until the first requested output
     // step.  Take one probe step at a time so small that any state an event
     // would freeze is numerically negligible (1e-30 is far below any
     // comparison absolute tolerance, yet large enough that polynomial root
