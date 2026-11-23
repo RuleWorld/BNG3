@@ -86,18 +86,50 @@ def test_release_python_consolidation(tmp_path: Path):
         bionetgen.run(str(m_file), method="unsupported_quantum_solver")
 
 
-def test_release_python_legacy():
-    """Verify complete pinned PyBioNetGen compatibility contracts pass."""
-    compat_suite = [
-        str(REPO_ROOT / "tests/python/test_compatibility_contract.py"),
-        str(
-            REPO_ROOT / "tests/python/test_pybionetgen_bngfile_strip_actions_compat.py"
-        ),
-        str(REPO_ROOT / "tests/python/test_pybionetgen_action_parser_compat.py"),
-        str(REPO_ROOT / "tests/python/test_pybionetgen_result_access_compat.py"),
+LEGACY_MODULES = (
+    "test_compatibility_contract",
+    "test_pybionetgen_bngfile_strip_actions_compat",
+    "test_pybionetgen_action_parser_compat",
+    "test_pybionetgen_result_access_compat",
+)
+LEGACY_EXPECTED_COUNT = 94
+
+
+def verify_legacy_junit(path, modules=LEGACY_MODULES, expected=LEGACY_EXPECTED_COUNT):
+    """Reject a green exit code that did not execute the named suite."""
+    import xml.etree.ElementTree as ET
+
+    if not path.is_file():
+        raise AssertionError("no JUnit report for the compatibility suite")
+    cases = list(ET.parse(path).getroot().iter("testcase"))
+    problems = [
+        case.get("name")
+        for case in cases
+        if any(case.find(tag) is not None for tag in ("failure", "error", "skipped"))
     ]
+    assert not problems, f"compatibility cases skipped or failed: {problems}"
+    assert len(cases) == expected, f"expected {expected} executed cases, found {len(cases)}"
+    classnames = {case.get("classname", "").split(".")[0] for case in cases}
+    assert classnames == set(modules), f"unexpected test modules: {classnames}"
+    return len(cases)
+
+
+def test_release_python_legacy(tmp_path):
+    """Verify the complete pinned compatibility suite actually executed."""
+    modules = LEGACY_MODULES
+    compat_suite = [str(REPO_ROOT / f"tests/python/{name}.py") for name in modules]
+    junit = tmp_path / "pybionetgen-compat.xml"
     proc = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "--noconftest", *compat_suite],
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            "-q",
+            "--noconftest",
+            *compat_suite,
+            "--junitxml",
+            str(junit),
+        ],
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,
@@ -106,6 +138,43 @@ def test_release_python_legacy():
         f"PyBioNetGen legacy compatibility suite failed:\n"
         f"STDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
     )
+    # The live check claims 94 tests; a green exit code alone cannot establish
+    # that those identities executed.
+    verify_legacy_junit(junit)
+
+
+def test_legacy_junit_rejects_partial_and_skipped_evidence(tmp_path):
+    """Negative control: partial, skipped and missing artifacts cannot pass."""
+    import xml.etree.ElementTree as ET
+
+    def report(path, count, skipped=()):
+        suite = ET.Element("testsuite")
+        for index in range(count):
+            module = LEGACY_MODULES[index % len(LEGACY_MODULES)]
+            case = ET.SubElement(
+                suite, "testcase", name=f"case_{index}", classname=f"{module}.C"
+            )
+            if index in skipped:
+                ET.SubElement(case, "skipped")
+        ET.ElementTree(suite).write(path)
+
+    partial = tmp_path / "partial.xml"
+    report(partial, LEGACY_EXPECTED_COUNT - 1)
+    with pytest.raises(AssertionError, match="expected 94"):
+        verify_legacy_junit(partial)
+
+    skipped = tmp_path / "skipped.xml"
+    report(skipped, LEGACY_EXPECTED_COUNT, skipped=(0,))
+    with pytest.raises(AssertionError, match="skipped or failed"):
+        verify_legacy_junit(skipped)
+
+    missing = tmp_path / "missing.xml"
+    with pytest.raises(AssertionError, match="no JUnit report"):
+        verify_legacy_junit(missing)
+
+    complete = tmp_path / "complete.xml"
+    report(complete, LEGACY_EXPECTED_COUNT)
+    assert verify_legacy_junit(complete) == LEGACY_EXPECTED_COUNT
 
 
 def test_release_obligation_172():
