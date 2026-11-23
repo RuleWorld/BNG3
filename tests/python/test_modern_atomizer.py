@@ -4565,3 +4565,34 @@ def test_parser_does_not_drop_empty_declared_dynamic_packages():
     )
     assert package_warning["severity"] == "info"
     assert "core kinetic model is unaffected" in package_warning["message"]
+
+
+def test_initial_assignment_seed_parenthesizes_concentration_before_volume():
+    """A subtraction in an initial assignment must be scaled as a whole."""
+    from bionetgen.atomizer.modern import Atomizer
+
+    model = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="paren_seed">
+        <listOfCompartments>
+          <compartment id="C" size="2" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="S" compartment="C" initialConcentration="0"
+                   hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="a" value="10" constant="true"/>
+          <parameter id="b" value="3" constant="true"/>
+        </listOfParameters>
+        <listOfInitialAssignments>
+          <initialAssignment symbol="S">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><minus/><ci> a </ci><ci> b </ci></apply>
+            </math>
+          </initialAssignment>
+        </listOfInitialAssignments>
+      </model>
+    </sbml>"""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
+    assert result.success, result.error
+    assert "@C:M_S() 14" in result.bngl, result.bngl[:400]

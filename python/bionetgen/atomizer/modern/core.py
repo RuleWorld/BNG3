@@ -2325,7 +2325,11 @@ def get_seed_species(
         if species_id in initial_assignments:
             expression = initial_assignments[species_id]
             if not item.has_only_substance_units:
-                expression = f"({expression} * __Avogadro__ * {volume})"
+                # The assignment value is a concentration; the whole value has
+                # to be multiplied by the compartment volume to get an amount.
+                # Parenthesize it first: an expression such as ``a - b`` then
+                # binds the subtraction before the volume multiplication.
+                expression = f"(({expression}) * __Avogadro__ * {volume})"
             else:
                 expression = f"({expression})"
         elif amount_set:
