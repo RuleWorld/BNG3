@@ -4497,9 +4497,13 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             sbmlOpts.startTime = parseScalarValue(
                 readArgument(action, "t_start", "0"), model);
 
+            const auto prefix = stripQuotes(
+                readArgument(action, "prefix", sourcePath.stem().string()));
             const auto suffix = stripQuotes(readArgument(action, "suffix", "sbml"));
+            const auto outputStem =
+                suffix.empty() ? prefix : prefix + "_" + suffix;
             const auto sbmlContent = io::SbmlWriter::write(model, &(*network), sbmlOpts);
-            const auto outputPath = sourcePath.parent_path() / (sourcePath.stem().string() + "_" + suffix + ".xml");
+            const auto outputPath = sourcePath.parent_path() / (outputStem + ".xml");
             std::ofstream outFile(outputPath);
             if (!outFile) {
                 throw std::runtime_error("Failed to open " + outputPath.string() + " for writing");
@@ -4512,10 +4516,14 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "writesbmlmulti") {
+            const auto prefix = stripQuotes(
+                readArgument(action, "prefix", sourcePath.stem().string()));
             const auto suffix = stripQuotes(readArgument(action, "suffix", "sbml_multi"));
+            const auto outputStem =
+                suffix.empty() ? prefix : prefix + "_" + suffix;
             io::SbmlMultiWriter::Options multiOpts;
             const auto multiContent = io::SbmlMultiWriter::write(model, multiOpts);
-            const auto outputPath = sourcePath.parent_path() / (sourcePath.stem().string() + "_" + suffix + ".xml");
+            const auto outputPath = sourcePath.parent_path() / (outputStem + ".xml");
             std::ofstream outFile(outputPath);
             if (!outFile) {
                 throw std::runtime_error("Failed to open " + outputPath.string() + " for writing");
