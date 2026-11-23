@@ -74,3 +74,15 @@ def test_release_lowering_bridge():
     assert "wrong_site_unchanged: divergence detected" in proc.stdout
     assert "substituted_rate: divergence detected" in proc.stdout
     assert "rate = 1.5" in proc.stdout
+
+
+def test_release_obligation_166():
+    """Verify Issue 166 release obligations, manifest, and contract consistency."""
+    from scripts.ci.record_issue166_release import verify_manifest
+
+    checks = verify_manifest(REPO_ROOT)
+    assert set(checks.keys()) == {
+        "release-lowering-proof",
+        "release-lowering-bridge",
+        "release-obligation-166",
+    }
