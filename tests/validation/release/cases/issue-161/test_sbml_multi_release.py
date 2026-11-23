@@ -414,17 +414,39 @@ def validate_multi_feature_row(row_id: str, tmp_path: Path) -> dict:
     if row_id == "sbml.multi.SpeciesTypeInstance.compartmentReference":
         _check_libsbml_validity(MULTI_COMP_INSTANCE_XML)
         parsed = parse_multi_package(MULTI_COMP_INSTANCE_XML)
-        assert any(
-            "cross-compartment" in w.message or "different compartment" in w.message
+        warnings = [
+            w.message
             for w in parsed.warnings
-        )
-        return {"row_id": row_id, "status": "PASS", "libsbml_valid": True}
+            if "cross-compartment" in w.message or "different compartment" in w.message
+        ]
+        assert warnings
+        # A dropped refusal is a diagnostic, not demonstrated support for the
+        # row. Keep the warning check as a diagnostic only.
+        assert parsed.executable is False
+        return {
+            "row_id": row_id,
+            "status": "UNSUPPORTED",
+            "libsbml_valid": True,
+            "diagnostic": warnings[0],
+        }
 
     if row_id == "sbml.multi.MultiSpecies.compartmentReference":
         _check_libsbml_validity(MULTI_COMP_SPECIES_XML)
         parsed = parse_multi_package(MULTI_COMP_SPECIES_XML)
-        assert any("compartmentReference" in w.message for w in parsed.warnings)
-        return {"row_id": row_id, "status": "PASS", "libsbml_valid": True}
+        warnings = [
+            w.message for w in parsed.warnings if "compartmentReference" in w.message
+        ]
+        assert warnings
+        # SBML Multi's MultiSpecies extension has no compartmentReference
+        # attribute (independent libSBML MultiSpeciesPlugin check); the
+        # warning is correct, but it does not qualify the row as supported.
+        assert parsed.executable is False
+        return {
+            "row_id": row_id,
+            "status": "UNSUPPORTED",
+            "libsbml_valid": True,
+            "diagnostic": warnings[0],
+        }
 
     # Model 5: SubListOfSpeciesFeatures (2 rows)
     sublist_rows = {
@@ -449,12 +471,24 @@ def validate_multi_feature_row(row_id: str, tmp_path: Path) -> dict:
     raise ValueError(f"Unmapped Multi inventory row: {row_id}")
 
 
+DIAGNOSTIC_ONLY_ROWS = {
+    "sbml.multi.SpeciesTypeInstance.compartmentReference",
+    "sbml.multi.MultiSpecies.compartmentReference",
+}
+
+
 @pytest.mark.parametrize("row_id", MULTI_45_FEATURE_ROWS)
 def test_multi_feature_row(row_id: str, tmp_path: Path):
     """Validate named row-level structural and execution results for Multi feature."""
     result = validate_multi_feature_row(row_id, tmp_path)
-    assert result["status"] == "PASS"
     assert result["libsbml_valid"] is True
+    if row_id in DIAGNOSTIC_ONLY_ROWS:
+        assert result["status"] == "UNSUPPORTED"
+        assert result["diagnostic"]
+        # xfail keeps the row out of the recorder's "all 45 rows passed" set:
+        # a refusal diagnostic must not certify supported execution.
+        pytest.xfail(f"{row_id} is explicitly unsupported: {result['diagnostic']}")
+    assert result["status"] == "PASS"
 
 
 def test_release_sbml_multi(tmp_path: Path):
@@ -545,8 +579,17 @@ def test_release_capability_coverage_161(tmp_path: Path):
             req_ob in declared_ob_ids
         ), f"Obligation {req_ob} not found in provenance for issue 161"
 
-    # Execute row-level verification for all 45 rows
+    # Execute row-level verification for all 45 rows. Two rows are explicit
+    # unsupported diagnostics and are deliberately not counted as supported
+    # execution; the remaining 43 must pass.
+    supported = 0
     for row_id in MULTI_45_FEATURE_ROWS:
         res = validate_multi_feature_row(row_id, tmp_path)
-        assert res["status"] == "PASS", f"Row {row_id} failed validation"
         assert res["libsbml_valid"] is True
+        if row_id in DIAGNOSTIC_ONLY_ROWS:
+            assert res["status"] == "UNSUPPORTED"
+            assert res["diagnostic"]
+        else:
+            assert res["status"] == "PASS", f"Row {row_id} failed validation"
+            supported += 1
+    assert supported == len(MULTI_45_FEATURE_ROWS) - len(DIAGNOSTIC_ONLY_ROWS)
