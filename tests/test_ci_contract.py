@@ -1228,6 +1228,15 @@ def test_release_workflow_uses_the_classified_prerelease_flag():
     release = parse_workflow(RELEASE_WORKFLOW)
     steps = release["jobs"]["release"]["steps"]
     classify = next(step for step in steps if step.get("id") == "tag")
+    python = next(
+        step
+        for step in steps
+        if step.get("uses", "").startswith("actions/setup-python@")
+    )
+    install = next(
+        step for step in steps if "install packaging==" in step.get("run", "")
+    )
+    assert steps.index(python) < steps.index(install) < steps.index(classify)
     assert "scripts/ci/release_tag.py" in classify["run"]
     assert "$GITHUB_OUTPUT" in classify["run"]
     assert classify["env"]["RELEASE_TAG"] == "${{ github.ref_name }}"
