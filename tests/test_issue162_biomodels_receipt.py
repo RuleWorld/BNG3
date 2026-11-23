@@ -12,7 +12,15 @@ def _write(path, document):
 
 
 @pytest.mark.parametrize(
-    "fault", [None, "missing-source", "valid-refusal", "wrong-binary"]
+    "fault",
+    [
+        None,
+        "missing-source",
+        "valid-refusal",
+        "wrong-binary",
+        "delay",
+        "unverified-delay",
+    ],
 )
 def test_receipt_consumes_the_two_source_comparisons(tmp_path, fault):
     from scripts.ci.record_issue162_release import build_release_record
@@ -69,10 +77,28 @@ def test_receipt_consumes_the_two_source_comparisons(tmp_path, fault):
             "source_species_targets": {"X": "X_amt"},
             "unmapped_source_species": [],
         }
+        if mode == "atomized" and fault in {"delay", "unverified-delay"}:
+            source.update(
+                method_sbml="sbmlsim-core CVODE",
+                delay_oracle={
+                    "version": "0.20.0",
+                    "original_sbml_sha256": model_hash,
+                    "converted_sbml_sha256": (
+                        "missing" if fault == "unverified-delay" else "e" * 64
+                    ),
+                    "libsbml_version": "5.21.2",
+                    "roadrunner_refusal": "Unable to support delay differential equations",
+                    "solver_attempts": [{"stiff": True, "passed": True}],
+                },
+            )
         results = {
             "mode": mode,
             "source_xml": {"passed": True, "validator": "libsbml"},
-            "simulation_comparison": {"passed": True},
+            "simulation_comparison": {
+                "passed": True,
+                "method_sbml": "libRoadRunner CVODE",
+                "roadrunner_version": "2.10.0",
+            },
             "source_simulation_comparison": source,
         }
         record = {
@@ -122,8 +148,8 @@ def test_receipt_consumes_the_two_source_comparisons(tmp_path, fault):
         "release-obligation-162",
     }
     assert {row["status"] for row in report["results"]} == {
-        "PASS" if fault is None else "FAIL"
+        "PASS" if fault in {None, "delay"} else "FAIL"
     }
     assert report["modes"]["atomized"]["unresolved"] == (
-        [] if fault is None else ["MODEL"]
+        [] if fault in {None, "delay"} else ["MODEL"]
     )

@@ -25,17 +25,40 @@ def _by_id(records, label: str) -> dict:
     return indexed
 
 
+def _independent_oracle_recorded(comparison: dict) -> bool:
+    method = comparison.get("method_sbml")
+    if method == "libRoadRunner CVODE":
+        return bool(comparison.get("roadrunner_version"))
+    if method != "sbmlsim-core CVODE":
+        return False
+    oracle = comparison.get("delay_oracle") or {}
+    attempts = oracle.get("solver_attempts") or []
+    return (
+        oracle.get("version") == "0.20.0"
+        and bool(oracle.get("libsbml_version"))
+        and "Unable to support delay differential equations"
+        in str(oracle.get("roadrunner_refusal"))
+        and all(
+            re.fullmatch(r"[0-9a-f]{64}", str(oracle.get(key)))
+            for key in ("original_sbml_sha256", "converted_sbml_sha256")
+        )
+        and bool(attempts)
+        and attempts[-1].get("passed") is True
+    )
+
+
 def _comparison_passed(mode: dict) -> bool:
     source_xml = mode.get("source_xml") or {}
+    written = mode.get("simulation_comparison") or {}
     original = mode.get("source_simulation_comparison") or {}
     observables = original.get("observables") or {}
     return (
         source_xml.get("validator") == "libsbml"
         and source_xml.get("passed") is True
-        and (mode.get("simulation_comparison") or {}).get("passed") is True
+        and written.get("passed") is True
+        and _independent_oracle_recorded(written)
         and original.get("passed") is True
-        and original.get("method_sbml") == "libRoadRunner CVODE"
-        and bool(original.get("roadrunner_version"))
+        and _independent_oracle_recorded(original)
         and any(
             original.get("comparison_scope")
             == f"original_source_sbml_{kind}_output_fidelity"
