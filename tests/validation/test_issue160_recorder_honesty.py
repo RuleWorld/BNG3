@@ -11,6 +11,8 @@ import importlib.util
 import json
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[2]
 _RECORDER = ROOT / "scripts/ci/record_issue160_release.py"
 _spec = importlib.util.spec_from_file_location(
@@ -53,6 +55,7 @@ def _write_report(tmp_path, overrides=None):
                 "category": "semantic",
                 "id": cid,
                 "status": overrides.get(cid, "passed"),
+                "metadata_roundtrip": {"status": "not_present"},
             }
             for cid in case_ids
         ],
@@ -134,3 +137,51 @@ def test_missing_fixture_artifact_fails_closed(tmp_path):
         assert "fixture" in str(exc).lower()
     else:
         raise AssertionError("capability PASS self-authored without fixture evidence")
+
+
+def test_passing_trajectory_cannot_hide_dropped_roundtrip_metadata(tmp_path):
+    report = _write_report(tmp_path)
+    document = json.loads(report.read_text())
+    record = document["records"][0]
+    record["metadata_roundtrip"] = {"status": "dropped", "payloadMatch": False}
+    report.write_text(json.dumps(document))
+
+    with pytest.raises(ValueError, match=rf"{record['id']}.*metadata"):
+        recorder.build_receipt(
+            report, CAPABILITY_MAPPING, REVISION, _write_fixtures(tmp_path)
+        )
+
+
+def test_passing_trajectory_cannot_hide_roundtrip_loss_warning(tmp_path):
+    report = _write_report(tmp_path)
+    document = json.loads(report.read_text())
+    record = document["records"][0]
+    record["reimport_model"] = {
+        "warnings": [{"category": "event", "severity": "dropped"}]
+    }
+    report.write_text(json.dumps(document))
+
+    with pytest.raises(ValueError, match=rf"{record['id']}.*dropped.*event"):
+        recorder.build_receipt(
+            report, CAPABILITY_MAPPING, REVISION, _write_fixtures(tmp_path)
+        )
+
+
+def test_valid_fast_variants_remain_required_in_both_case_maps():
+    for filename in (
+        "sbml-core-case-mapping.json",
+        "sbml-capability-case-mapping.json",
+    ):
+        mapping = json.loads((ROOT / "provenance" / filename).read_text())
+        assert {"00988", "01398", "01539"} <= set(
+            mapping["sbml.core.Reaction.fast-L3V1"]
+        )
+
+
+def test_conversion_factor_with_dynamic_events_remains_required():
+    mapping = _mapping()
+    for row in (
+        "sbml.core.Model.conversionFactor",
+        "sbml.core.Species.conversionFactor",
+    ):
+        assert "01000" in mapping[row]
