@@ -28,6 +28,8 @@ EXECUTED_ROUTES = {
     "action.writeSBML": "libSBML validation + libRoadRunner simulation",
     "action.writeXML": "native NFsim fixed-seed fact (one detector case)",
     "action.writeCPYfile": "Python/SciPy runtime (exported .py + .gdat)",
+    "action.writeFile": "BNG parser + engine (re-import exported .bngl, closed-form ODE)",
+    "action.writeModel": "BNG parser + engine (re-import exported .bngl, closed-form ODE)",
 }
 
 
