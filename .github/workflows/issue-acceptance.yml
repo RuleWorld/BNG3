@@ -228,6 +228,23 @@ jobs:
             tests/validation/release/cases/issue-161/test_multi_more_oracles.py \
             --junitxml="$RUNNER_TEMP/issue-161-artifacts/multi-math-core-oracle.xml"
 
+      - name: Run Multi release checks and record receipt
+        if: always() && steps.build_native.outcome == 'success'
+        env:
+          PYTHONPATH: python:build/cpp
+          BNG_CPP: ${{ github.workspace }}/build/cpp/bng_cpp
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/issue-161-artifacts"
+          .venv/bin/python -m pytest -q -p no:cacheprovider -c /dev/null \
+            --confcutdir=tests/validation/release/cases/issue-161 \
+            tests/validation/release/cases/issue-161/test_sbml_multi_release.py \
+            --junitxml="$RUNNER_TEMP/issue-161-artifacts/issue-161-release.xml"
+          .venv/bin/python scripts/ci/record_issue161_release.py \
+            --source-revision "$(git rev-parse HEAD)" \
+            --junit "$RUNNER_TEMP/issue-161-artifacts/issue-161-release.xml" \
+            --output "$RUNNER_TEMP/issue-161-artifacts/issue161-release-receipt.json"
+
       - name: Run authored Multi export and reimport acceptance
         id: acceptance
         if: always() && steps.build_native.outcome == 'success'
