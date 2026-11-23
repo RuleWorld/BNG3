@@ -4793,3 +4793,63 @@ def test_initial_assignment_reads_rate_ruled_compartment_initial_size():
     assert result.success, result.error
     assert "snapshot 0.0237" in result.bngl, result.bngl[:800]
     assert "snapshot()" not in result.bngl
+
+
+def test_keyword_renamed_assignment_rule_parameter_unit_scaling():
+    """A keyword-renamed assignment-rule parameter keeps its unit scale.
+
+    The parser renames "abs" to "abs_id" in the parameter map but the rule
+    keeps the source id. The rule's result factor must be looked up under the
+    renamed spelling, otherwise its function returns source coordinates while
+    the kinetic law divides by the scale again.
+    """
+    from bionetgen.atomizer.modern import Atomizer
+
+    model = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="double_scale" substanceUnits="substance" volumeUnits="volume" timeUnits="per_hour">
+        <listOfUnitDefinitions>
+          <unitDefinition id="substance">
+            <listOfUnits><unit kind="mole" exponent="1" scale="-3" multiplier="1"/></listOfUnits>
+          </unitDefinition>
+          <unitDefinition id="volume">
+            <listOfUnits><unit kind="litre" exponent="1" scale="0" multiplier="1"/></listOfUnits>
+          </unitDefinition>
+          <unitDefinition id="per_hour">
+            <listOfUnits><unit kind="second" exponent="-1" scale="0" multiplier="3600"/></listOfUnits>
+          </unitDefinition>
+        </listOfUnitDefinitions>
+        <listOfCompartments>
+          <compartment id="C" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfParameters>
+          <parameter id="k" value="1" constant="true" units="per_hour"/>
+          <parameter id="abs" value="1" constant="false" units="per_hour"/>
+        </listOfParameters>
+        <listOfSpecies>
+          <species id="S" compartment="C" initialAmount="1"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfRules>
+          <assignmentRule variable="abs">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><ci> k </ci></math>
+          </assignmentRule>
+        </listOfRules>
+        <listOfReactions>
+          <reaction id="r" reversible="false">
+            <listOfProducts><speciesReference species="S" stoichiometry="1"/></listOfProducts>
+            <kineticLaw>
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><times/><ci>abs</ci><ci>S</ci></apply>
+              </math>
+            </kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>"""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
+    assert result.success, result.error
+    rule_line = next(line for line in result.bngl.splitlines() if "abs_id() =" in line)
+    rate_line = next(line for line in result.bngl.splitlines() if line.strip().startswith("r:"))
+    # Rule function returns the scaled value; kinetic law divides it back.
+    assert rule_line.strip().startswith("abs_id() = (0.00027777777777777778) *"), (rule_line, rate_line)
+    assert "abs_id / 0.00027777777777777778" in rate_line, (rule_line, rate_line)
