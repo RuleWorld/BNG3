@@ -3840,14 +3840,18 @@ def _validate_case(
             ),
         }
         with _case_phase_scope("roundtrip-atomizer-translation"):
-            reimport = Atomizer(
+            reimport_atomizer = Atomizer(
                 atomize=False,
                 quiet_mode=True,
                 t_end=simulation_t_end,
                 n_steps=simulation_n_steps,
-            ).atomize(output_text)
+            )
+            reimport = reimport_atomizer.atomize(output_text)
         if not reimport.success:
             raise RuntimeError(reimport.error or "round-trip Atomizer returned failure")
+        record["reimport_model"]["warnings"] = _merge_generated_warnings(
+            record["reimport_model"]["warnings"], _warnings(reimport_atomizer.model)
+        )
         if artifacts_dir is not None:
             (work_dir / "reimported.bngl").write_text(reimport.bngl, encoding="utf-8")
         with _case_phase_scope("roundtrip-network-generation"):
@@ -4655,7 +4659,8 @@ def main() -> int:
         default="prefix",
         help="bounded selection policy; feature-cover uses official model metadata",
     )
-    parser.add_argument(
+    verdict = parser.add_mutually_exclusive_group()
+    verdict.add_argument(
         "--gate-selected-cases",
         action="store_true",
         help="gate executed selected cases; never claim full-suite conformance",

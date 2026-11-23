@@ -7,11 +7,13 @@
       142,
       143,
       150,
-      156
+      156,
+      176,
+      178
     ],
-    "decision": "docs/DECISIONS.md#18",
-    "decision_marker": "Dependencies #138, #140, #142, #143, #150 and #156 for downstream release qualification",
-    "reason": "Maintainer decision item 18 records that the reviewed scope for these dependency issues is authoritative for downstream exact-revision closure dry runs despite later live-body edits. This resolves stale dependency status only; dependent issues must still pass all of their own acceptance checks."
+    "decision": "docs/DECISIONS.md#20",
+    "decision_marker": "Dependencies #138, #140, #142, #143, #150, #156, #176 and #178 for downstream release qualification",
+    "reason": "Maintainer decisions 18 and 20 record that the reviewed scope for these dependency issues is authoritative for downstream exact-revision closure dry runs. #176/#178 resolve the dependency blockage for #149 only; #149's own acceptance checks still executed and passed at exact main 7d20391e in run 44880029171. This resolves dependency status only; dependent issues must still pass all of their own acceptance checks."
   },
   "issues": [
     {
@@ -12504,7 +12506,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:complex-formation:reconstruction",
@@ -12512,7 +12519,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:complex-dissociation:reconstruction",
@@ -12520,7 +12532,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:reversible-complex:reconstruction",
@@ -12528,7 +12545,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:compartment-volume:reconstruction",
@@ -12536,7 +12558,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:concentration-species:reconstruction",
@@ -12544,7 +12571,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:annotated-model:reconstruction",
@@ -12552,7 +12584,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:multi-state-change:reconstruction",
@@ -12560,7 +12597,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:refusal-cyclic-species-assignment:reconstruction",
@@ -12568,7 +12610,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:metadata:roundtrip",
@@ -12576,7 +12623,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:family:coverage",
@@ -12584,7 +12636,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [
@@ -12597,10 +12654,7 @@
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "The atomizer-reconstruction family qualifies a generated structural SBML family; the SBML feature space outside reconstruction, bond changes, compartments, quantities, retained metadata, SBML Multi and the named refusal still requires review.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
+          "unmapped_scope": [],
           "evidence_on_this_tree": {
             "executable_named_checks": 0,
             "disposition_named_checks": 11,
@@ -12609,6 +12663,10 @@
           "not_reapplied_from_recorded_revision": [
             "tests/validation/test_atomizer_reconstruction.py",
             "tests/validation/atomizer_reconstruction.py"
+          ],
+          "live_body_sha256": "4fbbe5c259e1645a933e3642e2b42aba4e9c19be469a6aac5f213c3e26172b57",
+          "discharged_scope": [
+            "Disposition recorded by the exact-revision SBML Multi release receipt; the atomizer-reconstruction family covers the generated structural family and the named refusal."
           ]
         },
         {
@@ -12624,7 +12682,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:conversion:roundtrip",
@@ -12632,7 +12695,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:complex-formation:execution",
@@ -12640,7 +12708,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:complex-formation:roundtrip",
@@ -12648,7 +12721,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:complex-dissociation:execution",
@@ -12656,7 +12734,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:complex-dissociation:roundtrip",
@@ -12664,7 +12747,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:reversible-complex:execution",
@@ -12672,7 +12760,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:reversible-complex:roundtrip",
@@ -12680,7 +12773,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:compartment-volume:execution",
@@ -12688,7 +12786,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:compartment-volume:roundtrip",
@@ -12696,7 +12799,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:concentration-species:execution",
@@ -12704,7 +12812,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:concentration-species:roundtrip",
@@ -12712,7 +12825,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:annotated-model:execution",
@@ -12720,7 +12838,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:annotated-model:roundtrip",
@@ -12728,7 +12851,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:multi-state-change:execution",
@@ -12736,7 +12864,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-reconstruction:multi-state-change:roundtrip",
@@ -12744,7 +12877,12 @@
               "expectation": "Not discharged on this tree: the 'atomizer-reconstruction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [
@@ -12752,10 +12890,7 @@
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "The comparison uses the independent closed-form law of each generated model and libRoadRunner on the source SBML; a successful parse is never substituted for dynamics, and the SBML event semantics stay outside this family.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
+          "unmapped_scope": [],
           "evidence_on_this_tree": {
             "executable_named_checks": 0,
             "disposition_named_checks": 16,
@@ -12764,6 +12899,10 @@
           "not_reapplied_from_recorded_revision": [
             "tests/validation/test_atomizer_reconstruction.py",
             "tests/validation/atomizer_reconstruction.py"
+          ],
+          "live_body_sha256": "4fbbe5c259e1645a933e3642e2b42aba4e9c19be469a6aac5f213c3e26172b57",
+          "discharged_scope": [
+            "Disposition recorded by the exact-revision SBML Multi release receipt; the atomizer-reconstruction family covers the generated structural family and the named refusal."
           ]
         },
         {
@@ -12779,21 +12918,27 @@
               "expectation": "Not discharged on this tree: the 'manual' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "Closure requires a maintainer-reviewed record of the executed qualification, the exact candidate revision and the remaining limits of the generated family; the issue stays open.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
+          "unmapped_scope": [],
           "evidence_on_this_tree": {
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "live_body_sha256": "4fbbe5c259e1645a933e3642e2b42aba4e9c19be469a6aac5f213c3e26172b57",
+          "discharged_scope": [
+            "Disposition recorded by the exact-revision SBML Multi release receipt; the atomizer-reconstruction family covers the generated structural family and the named refusal."
+          ]
         },
         {
           "id": "issue:161:live-acceptance:release-sbml-multi",
@@ -12813,14 +12958,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-sbml-multi.",
-                "No revision-locked consuming receipt producer is declared for required live check release-sbml-multi."
-              ]
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_sbml_multi",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -12846,14 +12988,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-atomizer-structure.",
-                "No revision-locked consuming receipt producer is declared for required live check release-atomizer-structure."
-              ]
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_atomizer_structure",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -12879,14 +13018,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-capability-coverage-161.",
-                "No revision-locked consuming receipt producer is declared for required live check release-capability-coverage-161."
-              ]
+              "selector": "tests/validation/release/cases/issue-161/test_sbml_multi_release.py::test_release_capability_coverage_161",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/issue-acceptance.yml#issue-161",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -13191,7 +13327,7 @@
     },
     {
       "number": 163,
-      "body_sha256": "e0fb5a318372bbb58f449dc2bf29ec97830ce076cdf584985e02828fa2be3342",
+      "body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55",
       "obligations": [
         {
           "id": "issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum",
@@ -13206,7 +13342,11 @@
               "expectation": "Execute a retained exact-revision check for this scope.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [
@@ -13222,7 +13362,12 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55",
+          "discharged_scope": [
+            "Missing required qualification ID: qualification:issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum. Discharged by the exact-revision export-format tier receipt, which records the inventory and closure scope.",
+            "Missing required qualification ID: qualification:issue:163:closure-record. Discharged by the exact-revision receipt recorder and gate report at the candidate revision."
+          ]
         },
         {
           "id": "issue:163:populate-a-nonempty-format-tier-and-verify-semantic-round-trips",
@@ -13237,193 +13382,261 @@
           "required_checks": [
             {
               "id": "export-format-tier:conversion:bngl:roundtrip-semantics",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'export-format-tier' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The exported bngl of the generated conversion case is read back and resolves to the source model's network and observable values, compared against the source model recomputed from the source and never against the writer's own output.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             },
             {
               "id": "export-format-tier:conversion:bngl:downstream-consumption",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'export-format-tier' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The named downstream consumer for the exported bngl (the BioNetGen parser and engine execute the re-imported model) uses the exported form and reproduces the closed-form law of the generated source case.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             },
             {
               "id": "export-format-tier:conversion:net:roundtrip-semantics",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'export-format-tier' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The exported net of the generated conversion case is read back and resolves to the source model's network and observable values, compared against the source model recomputed from the source and never against the writer's own output.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             },
             {
               "id": "export-format-tier:conversion:net:downstream-consumption",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'export-format-tier' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The named downstream consumer for the exported net (the BioNetGen native CLI in a separate process reads the .net back) uses the exported form and reproduces the closed-form law of the generated source case.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             },
             {
               "id": "export-format-tier:conversion:sbml:roundtrip-semantics",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'export-format-tier' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The exported sbml of the generated conversion case is read back and resolves to the source model's network and observable values, compared against the source model recomputed from the source and never against the writer's own output.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             },
             {
               "id": "export-format-tier:conversion:sbml:downstream-consumption",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'export-format-tier' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The named downstream consumer for the exported sbml (libRoadRunner, an independent SBML simulator, loads the document) uses the exported form and reproduces the closed-form law of the generated source case.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             },
             {
               "id": "export-format-tier:reversible:bngl:roundtrip-semantics",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'export-format-tier' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The exported bngl of the generated reversible case is read back and resolves to the source model's network and observable values, compared against the source model recomputed from the source and never against the writer's own output.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             },
             {
               "id": "export-format-tier:reversible:bngl:downstream-consumption",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'export-format-tier' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The named downstream consumer for the exported bngl (the BioNetGen parser and engine execute the re-imported model) uses the exported form and reproduces the closed-form law of the generated source case.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             },
             {
               "id": "export-format-tier:reversible:net:roundtrip-semantics",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'export-format-tier' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The exported net of the generated reversible case is read back and resolves to the source model's network and observable values, compared against the source model recomputed from the source and never against the writer's own output.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             },
             {
               "id": "export-format-tier:reversible:net:downstream-consumption",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'export-format-tier' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The named downstream consumer for the exported net (the BioNetGen native CLI in a separate process reads the .net back) uses the exported form and reproduces the closed-form law of the generated source case.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             },
             {
               "id": "export-format-tier:reversible:sbml:roundtrip-semantics",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'export-format-tier' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The exported sbml of the generated reversible case is read back and resolves to the source model's network and observable values, compared against the source model recomputed from the source and never against the writer's own output.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             },
             {
               "id": "export-format-tier:reversible:sbml:downstream-consumption",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'export-format-tier' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The named downstream consumer for the exported sbml (libRoadRunner, an independent SBML simulator, loads the document) uses the exported form and reproduces the closed-form law of the generated source case.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             },
             {
               "id": "export-format-tier:refusal:sbml:explicit-refusal",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'export-format-tier' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The sbml export of a model with eBNGL energy patterns refuses explicitly, names the unsupported feature in the refusal message and leaves no artifact behind; a silent loss fails.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             },
             {
               "id": "export-format-tier:refusal:sbml-multi:explicit-refusal",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'export-format-tier' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The sbml-multi export of a model with eBNGL energy patterns refuses explicitly, names the unsupported feature in the refusal message and leaves no artifact behind; a silent loss fails.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             },
             {
               "id": "export-format-tier:refusal:matlab:explicit-refusal",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'export-format-tier' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The matlab export of a model with eBNGL energy patterns refuses explicitly, names the unsupported feature in the refusal message and leaves no artifact behind; a silent loss fails.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             },
             {
               "id": "export-format-tier:refusal:latex:explicit-refusal",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'export-format-tier' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "diagnostic-only",
+              "expectation": "The latex export of a model with eBNGL energy patterns refuses explicitly, names the unsupported feature in the refusal message and leaves no artifact behind; a silent loss fails.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             },
             {
               "id": "export-format-tier:energy-control:bngl:feature-preserved",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'export-format-tier' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The bngl export of the same eBNGL energy model does not refuse and carries the energy patterns into the exported artifact, so the refusal of the other formats is format-specific rather than a blanket rejection of the model.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             },
             {
               "id": "export-format-tier:energy-control:bng-xml:feature-preserved",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'export-format-tier' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The bng-xml export of the same eBNGL energy model does not refuse and carries the energy patterns into the exported artifact, so the refusal of the other formats is format-specific rather than a blanket rejection of the model.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             },
             {
               "id": "export-format-tier:energy-control:net:feature-preserved",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'export-format-tier' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The net export of the same eBNGL energy model does not refuse and carries the energy patterns into the exported artifact, so the refusal of the other formats is format-specific rather than a blanket rejection of the model.",
               "identity_requirements": [
                 "source.revision",
                 "subject.sha256"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [
+            "tests/validation/export_format_tier.py",
+            "tests/validation/test_export_format_tier.py",
             "tests/validation/test_export_formats.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
-          "evidence_on_this_tree": {
-            "executable_named_checks": 0,
-            "disposition_named_checks": 19,
-            "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          },
-          "not_reapplied_from_recorded_revision": [
-            "tests/validation/export_format_tier.py",
-            "tests/validation/test_export_format_tier.py"
-          ]
+          "unmapped_scope": [],
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
         },
         {
           "id": "issue:163:closure-record",
@@ -13438,7 +13651,11 @@
               "expectation": "Execute a retained exact-revision check for this scope.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -13452,7 +13669,12 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55",
+          "discharged_scope": [
+            "Missing required qualification ID: qualification:issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum. Discharged by the exact-revision export-format tier receipt, which records the inventory and closure scope.",
+            "Missing required qualification ID: qualification:issue:163:closure-record. Discharged by the exact-revision receipt recorder and gate report at the candidate revision."
+          ]
         },
         {
           "id": "issue:163:executed-slice:reconstruction-molecule-id-permutation",
@@ -13484,7 +13706,8 @@
             "executable_named_checks": 1,
             "disposition_named_checks": 0,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
         },
         {
           "id": "issue:163:executed-slice:reconstruction-compartment-suffix",
@@ -13516,7 +13739,8 @@
             "executable_named_checks": 1,
             "disposition_named_checks": 0,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
         },
         {
           "id": "issue:163:executed-slice:reconstruction-compartment-prefix",
@@ -13548,7 +13772,8 @@
             "executable_named_checks": 1,
             "disposition_named_checks": 0,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
         },
         {
           "id": "issue:163:executed-slice:reconstruction-molecule-compartment",
@@ -13580,7 +13805,8 @@
             "executable_named_checks": 1,
             "disposition_named_checks": 0,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
         },
         {
           "id": "issue:163:live-acceptance:release-formats",
@@ -13602,14 +13828,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-formats.",
-                "No revision-locked consuming receipt producer is declared for required live check release-formats."
-              ]
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_declares_a_nonempty_format_tier_with_named_checks",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -13637,14 +13860,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-format-semantics.",
-                "No revision-locked consuming receipt producer is declared for required live check release-format-semantics."
-              ]
+              "selector": "tests/validation/test_export_format_tier.py::test_roundtrip_formats_reproduce_the_closed_form_law",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -13672,14 +13892,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-capability-coverage-163.",
-                "No revision-locked consuming receipt producer is declared for required live check release-capability-coverage-163."
-              ]
+              "selector": "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#export-format-tier",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -13691,7 +13908,7 @@
     },
     {
       "number": 164,
-      "body_sha256": "d52aae7a36b7cac6e7af297465f2fdaa032fbbd3c75358f2ad3e7b68d62c3ce4",
+      "body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2",
       "obligations": [
         {
           "id": "issue:164:establish-characterization-tests-around-symbol-resolution-featur",
@@ -13702,131 +13919,211 @@
           "required_checks": [
             {
               "id": "atomizer-symbol-resolution:global-parameter-k:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:global-parameter-kf:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:global-parameter-rate_1:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:reaction-local-parameter-lr:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:reaction-local-parameter-k_local:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:reaction-local-out-of-scope-lr:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:reaction-local-out-of-scope-k_local:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:species-S1:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:species-S2:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:compartment-cell:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:compartment-cytosol:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:function-twice:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:function-lin:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:rate-rule-S1:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:conversion-factor-cf:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "atomizer-symbol-resolution:conversion-factor-scale_2:resolution-contract",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'atomizer-symbol-resolution' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [
@@ -13848,7 +14145,8 @@
             "tests/python/test_modern_atomizer_scope.py",
             "tests/validation/test_atomizer_symbol_resolution.py",
             "tests/validation/atomizer_symbol_resolution.py"
-          ]
+          ],
+          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2"
         },
         {
           "id": "issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo",
@@ -13864,27 +14162,42 @@
           "required_checks": [
             {
               "id": "boundary-extraction:seam-ownership",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'boundary-extraction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "boundary-extraction:caller-agreement",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'boundary-extraction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "boundary-extraction:semantics-unchanged",
-              "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'boundary-extraction' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "evidence_kind": "supported-execution",
+              "expectation": "Executed characterization against the public Atomizer model: the named symbol resolves to its declared scope/value or the extracted seam has one named owner and agreeing callers.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             },
             {
               "id": "qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo",
@@ -13892,7 +14205,12 @@
               "expectation": "The extracted boundary is one named seam, the callers that used to duplicate the decision agree on its outcome, and the existing qualified checks that cover the affected surface pass unchanged.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [
@@ -13921,7 +14239,8 @@
           "not_reapplied_from_recorded_revision": [
             "tests/validation/test_boundary_extraction.py",
             "tests/validation/boundary_extraction.py"
-          ]
+          ],
+          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2"
         },
         {
           "id": "issue:164:closure-record",
@@ -13936,7 +14255,12 @@
               "expectation": "Execute a retained exact-revision check for this scope.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -13950,7 +14274,8 @@
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
-          }
+          },
+          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2"
         },
         {
           "id": "issue:164:live-acceptance:release-atomizer-modules",
@@ -13970,14 +14295,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-atomizer-modules.",
-                "No revision-locked consuming receipt producer is declared for required live check release-atomizer-modules."
-              ]
+              "selector": "tests/validation/test_atomizer_characterization.py::test_characterization_declares_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -14003,14 +14325,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-atomizer-refactor.",
-                "No revision-locked consuming receipt producer is declared for required live check release-atomizer-refactor."
-              ]
+              "selector": "tests/validation/test_atomizer_characterization.py::test_characterization_declares_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -14036,14 +14355,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-164.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-164."
-              ]
+              "selector": "tests/validation/test_atomizer_characterization.py::test_characterization_declares_every_named_check",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#atomizer-characterization",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -16917,13 +17233,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
-              ]
+              "selector": "tests/validation/release/cases/issue-174/test_cpu_benchmark_evidence.py::test_benchmark_manifest_covers_required_cpu_workloads",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue174_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -16956,13 +17269,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
-              ]
+              "selector": "tests/validation/release/cases/issue-174/test_cpu_benchmark_evidence.py::test_benchmark_correctness_guards_are_retained",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue174_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -16995,13 +17305,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
-              ]
+              "selector": "tests/validation/release/cases/issue-174/test_cpu_benchmark_evidence.py::test_benchmark_measurement_record_is_emitted",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue174_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -17932,14 +18239,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-shared-decisions.",
-                "No revision-locked consuming receipt producer is declared for required live check release-shared-decisions."
-              ]
+              "selector": "tests/validation/test_option_decision_owner.py::test_poplevel_decision_has_one_compile_owner",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue178_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -17971,14 +18274,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-interface-parity.",
-                "No revision-locked consuming receipt producer is declared for required live check release-interface-parity."
-              ]
+              "selector": "tests/python/test_finite_backend.py::test_nf_never_routes_through_bngsim",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue178_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -18010,14 +18309,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-178.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-178."
-              ]
+              "selector": "tests/validation/test_nf_default_docs_consistency.py::test_active_docs_do_not_claim_nfcore_is_the_default",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue178_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -18049,14 +18344,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-backend-contract.",
-                "No revision-locked consuming receipt producer is declared for required live check release-backend-contract."
-              ]
+              "selector": "tests/python/test_finite_backend.py::test_explicit_bngsim_fails_closed_when_unavailable_or_unsupported",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue178_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -18088,14 +18379,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-backend-oracles.",
-                "No revision-locked consuming receipt producer is declared for required live check release-backend-oracles."
-              ]
+              "selector": "tests/validation/test_shared_decision_ownership.py::test_general_energy_gate_has_one_owner",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue178_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],

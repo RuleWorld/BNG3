@@ -1582,6 +1582,21 @@ def select_campaign(obligations, *, findings=(), max_families=3, active_issues=N
     )
     from .integrated_marginals import source_law_check_ids
     from .integrated_cases import source_law_cases
+    from .export_format_tier import check_ids as export_format_tier_check_ids
+
+    families.append(
+        dict(
+            id="export-format-tier",
+            case_ids=[],
+            check_ids=export_format_tier_check_ids(),
+            runner="tests.validation.integrated",
+            budget=dict(
+                checks=len(export_format_tier_check_ids()),
+                stage_timeout_seconds=300,
+            ),
+            limits="Bounded generated export-format tier: BNGL/NET/SBML round trips with independent consumers and the eBNGL energy refusal boundary; no exhaustive format matrix and no structural/graph exporter qualification.",
+        )
+    )
 
     families.append(
         dict(

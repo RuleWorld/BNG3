@@ -78,9 +78,29 @@ jobs:
           gh api --paginate --slurp \
             "repos/${GITHUB_REPOSITORY}/actions/runs?head_sha=${GITHUB_SHA}&branch=main&event=workflow_dispatch&per_page=100" \
             > "$RUNNER_TEMP/sbml-workflow-runs.json"
+          evidence="$RUNNER_TEMP/release-sbml-evidence"
+          mkdir -p "$evidence"
+          jq -r '.[].workflow_runs[]
+            | select(.name == "Official SBML conformance subset" and
+                     .status == "completed" and .conclusion == "success")
+            | [.id, .run_attempt] | @tsv' \
+            "$RUNNER_TEMP/sbml-workflow-runs.json" > "$RUNNER_TEMP/sbml-attempts.tsv"
+          while IFS=$'\t' read -r run attempt; do
+            destination="$evidence/$run/$attempt"
+            if ! gh run download "$run" --name "ssts-release-consumers-$GITHUB_SHA-$attempt" \
+                --dir "$destination/ssts"; then
+              continue
+            fi
+            if ! gh run download "$run" --name "curated-biomodels-$GITHUB_SHA-$attempt" \
+                --dir "$destination/biomodels"; then
+              continue
+            fi
+          done < "$RUNNER_TEMP/sbml-attempts.tsv"
           python scripts/ci/qualify_release_candidate.py \
             --runs-json "$RUNNER_TEMP/push-workflow-runs.json" \
             --sbml-runs-json "$RUNNER_TEMP/sbml-workflow-runs.json" \
+            --sbml-evidence-dir "$evidence" \
+            --biomodels-inventory provenance/curated-biomodels-query-inventory.json \
             --sha "$GITHUB_SHA"
 
   # ═══════════════════════════════════════════════════════════════════════════
