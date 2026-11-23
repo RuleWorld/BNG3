@@ -2676,6 +2676,10 @@ def _rate_for_reaction(
         _ENABLE_MASS_ACTION_CHECK
         and not functional
         and not has_saturation
+        # A rational law is not a mass-action law: the probe's fixed sample
+        # values can make a saturating denominator look like a constant when
+        # the model's own concentrations are near the half-saturation value.
+        and "/" not in converted_for_check
         and not has_nonreactant_species
         and not (preserved_compartment_flux and nonlinear)
         and not requires_explicit_compartment_flux
