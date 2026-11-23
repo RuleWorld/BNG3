@@ -13334,12 +13334,14 @@
           "criterion": "Inventory supported BNGL/XML/NET/SBML/Multi and code/graph/document exporters; map existing tests before adding coverage.",
           "scope": "Inventory supported BNGL/XML/NET/SBML/Multi and code/graph/document exporters; map existing tests before adding coverage.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "First-order BNGL, NET and SBML cases and eBNGL energy refusal controls. Structural exports and graph consumers require separate evidence."
+          ],
           "required_checks": [
             {
               "id": "release-inventory-163",
               "evidence_kind": "disposition",
-              "expectation": "Exact-main receipt records this disposition; the documented scope limits are preserved in the obligation boundaries.",
+              "expectation": "Record the bounded export-format disposition at the measured revision. Full format and consumer coverage requires its own execution.",
               "identity_requirements": [
                 "source.revision"
               ],
@@ -13363,11 +13365,7 @@
           },
           "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55",
           "discharged_scope": [
-            "Missing required qualification ID: qualification:issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum. Discharged by the exact-revision export-format tier receipt, which records the inventory and closure scope.",
-            "Missing required qualification ID: qualification:issue:163:closure-record. Discharged by the exact-revision receipt recorder and gate report at the candidate revision.",
-            "Maintainer-authorized relabel: qualification:issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum -> release-inventory-163; exact-main receipt backs the check, no semantic expectation changed.",
-            "Missing required qualification ID: qualification:issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum. Discharged by maintainer authorization and the exact-main receipt.",
-            "Protected check id: qualification:issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum preserved; released as exact-main receipt row."
+            "qualification:issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum is retained as the historical ID for this bounded disposition."
           ]
         },
         {
@@ -13637,20 +13635,21 @@
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
           "unmapped_scope": [],
-          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55",
-          "discharged_scope": []
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
         },
         {
           "id": "issue:163:closure-record",
           "criterion": "Record the implementation or disposition, exact revision, validation commands/results and remaining limits before closing.",
           "scope": "Record implementation or disposition, exact revision, validation commands and results, and remaining limits.",
           "dependencies": [],
-          "boundaries": [],
+          "boundaries": [
+            "First-order BNGL, NET and SBML cases and eBNGL energy refusal controls. Structural exports and graph consumers require separate evidence."
+          ],
           "required_checks": [
             {
               "id": "release-closure-record-163",
               "evidence_kind": "disposition",
-              "expectation": "Exact-main receipt records this disposition; the documented scope limits are preserved in the obligation boundaries.",
+              "expectation": "Record the bounded export-format disposition at the measured revision. Full format and consumer coverage requires its own execution.",
               "identity_requirements": [
                 "source.revision"
               ],
@@ -13672,11 +13671,7 @@
           },
           "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55",
           "discharged_scope": [
-            "Missing required qualification ID: qualification:issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum. Discharged by the exact-revision export-format tier receipt, which records the inventory and closure scope.",
-            "Missing required qualification ID: qualification:issue:163:closure-record. Discharged by the exact-revision receipt recorder and gate report at the candidate revision.",
-            "Maintainer-authorized relabel: qualification:issue:163:closure-record -> release-closure-record-163; exact-main receipt backs the check, no semantic expectation changed.",
-            "Missing required qualification ID: qualification:issue:163:closure-record. Discharged by maintainer authorization and the exact-main receipt.",
-            "Protected check id: qualification:issue:163:closure-record preserved; released as exact-main receipt row."
+            "qualification:issue:163:closure-record is retained as the historical ID for this bounded disposition."
           ]
         },
         {
@@ -13710,8 +13705,7 @@
             "disposition_named_checks": 0,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
-          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55",
-          "discharged_scope": []
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
         },
         {
           "id": "issue:163:executed-slice:reconstruction-compartment-suffix",
@@ -13744,8 +13738,7 @@
             "disposition_named_checks": 0,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
-          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55",
-          "discharged_scope": []
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
         },
         {
           "id": "issue:163:executed-slice:reconstruction-compartment-prefix",
@@ -13778,8 +13771,7 @@
             "disposition_named_checks": 0,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
-          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55",
-          "discharged_scope": []
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
         },
         {
           "id": "issue:163:executed-slice:reconstruction-molecule-compartment",
@@ -13812,8 +13804,7 @@
             "disposition_named_checks": 0,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
-          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55",
-          "discharged_scope": []
+          "live_body_sha256": "03aed5de064229cc46602c08024ad67589170521426951b92354c73b53280e55"
         },
         {
           "id": "issue:163:live-acceptance:release-formats",
@@ -13845,8 +13836,7 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": [],
-          "discharged_scope": []
+          "unmapped_scope": []
         },
         {
           "id": "issue:163:live-acceptance:release-format-semantics",
@@ -13878,8 +13868,7 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": [],
-          "discharged_scope": []
+          "unmapped_scope": []
         },
         {
           "id": "issue:163:live-acceptance:release-capability-coverage-163",
@@ -13911,8 +13900,7 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": [],
-          "discharged_scope": []
+          "unmapped_scope": []
         }
       ]
     },

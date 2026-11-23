@@ -14,13 +14,14 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "python"))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 SELECTOR = (
     "tests/validation/test_export_format_tier.py::test_tier_executes_every_named_check"
@@ -44,10 +45,10 @@ LIVE_CHECKS = (
 )
 
 
-def _row(identity, kind, detail, *, supported=True):
+def _row(identity, kind, detail, *, supported=True, status="PASS"):
     return {
         "id": identity,
-        "status": "PASS",
+        "status": status,
         "check": identity,
         "related_issues": [163],
         "evidence_kind": kind,
@@ -68,6 +69,14 @@ def main(argv=None) -> int:
         help="exact-revision integrated bngir-adversarial report.json",
     )
     args = parser.parse_args(argv)
+
+    head = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+    ).strip()
+    if head != args.source_revision:
+        raise SystemExit(f"requested source revision does not match checkout: {head}")
+    if subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True):
+        raise SystemExit("Issue 163 receipt requires a clean checkout")
 
     from tests.validation import export_format_tier as tier
 
@@ -140,14 +149,16 @@ def main(argv=None) -> int:
             )
         )
 
-    # Live checks are the same executed tier, summarised per named identity.
+    # The first-order cases establish the bounded routes recorded above.
     for identity in LIVE_CHECKS:
         results.append(
             _row(
                 identity,
-                "supported-execution",
-                "All named export-format-tier checks executed and passed against "
-                "their independent consumers (native CLI, libRoadRunner).",
+                "not-tested",
+                "The first-order BNGL, NET and SBML cases have separate results. "
+                "The complete format, action and structural consumer matrix remains unmeasured.",
+                supported=False,
+                status="NOT_TESTED",
             )
         )
 
@@ -155,7 +166,7 @@ def main(argv=None) -> int:
         "schema_version": 1,
         "acceptance_check": "release-format-semantics",
         "case": "issue-163/export-format-tier",
-        "source": {"revision": args.source_revision, "dirty": False},
+        "source": {"revision": head, "dirty": False},
         "subject": {
             "binary": str(args.bng_cpp),
             "sha256": hashlib.sha256(args.bng_cpp.read_bytes()).hexdigest(),
