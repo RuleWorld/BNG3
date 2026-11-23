@@ -77,11 +77,16 @@ jobs:
             tests/validation/test_nf_default_docs_consistency.py \
             tests/validation/test_option_decision_owner.py \
             tests/validation/test_record_issue176_release.py \
+            tests/validation/test_record_issue176_honesty.py \
             tests/validation/test_record_issue166_release.py \
             tests/validation/test_record_issue152_release.py \
+            tests/validation/test_record_issue152_honesty.py \
             tests/validation/test_record_issue178_release.py \
+            tests/validation/test_record_issue178_honesty.py \
+            tests/validation/release/cases/issue-178/test_backend_route_contract.py \
             tests/validation/test_release_recorder_scope.py \
             tests/validation/test_record_issue174_release.py \
+            tests/validation/test_record_issue174_honesty.py \
             tests/validation/test_reconciliation_evidence.py \
             tests/validation/test_integrated_wiring.py \
             tests/validation/test_integrated.py \
@@ -1220,8 +1225,22 @@ jobs:
           python -m pytest --noconftest -q
           tests/python/nfnext/test_nfnext_ensemble_rng_isolation.py
 
+      - name: Concurrent NFnext trajectories vs pinned native NFsim (#176)
+        env:
+          NFSIM_BIN: ${{ runner.temp }}/oracle-nfsim/build/NFsim
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          BNG3_NF_CONCURRENT_REPORT: ${{ runner.temp }}/issue176-concurrent-native.json
+        shell: bash
+        run: |
+          set -euo pipefail
+          NFSIM_REVISION=$(python -c 'import json; print(json.load(open("provenance/upstreams.lock.yml"))["sources"]["nfsim"]["revision"])')
+          export NFSIM_REVISION
+          python -m pytest --noconftest -q \
+            tests/validation/release/cases/issue-176/test_nfnext_concurrent_ensemble.py
+
       - name: Measure NFnext CPU startup memory and throughput (#176)
         env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
           BNG3_NFNEXT_MEASUREMENT_REPORT: ${{ runner.temp }}/issue176-measurement.json
         run: >-
           python -m pytest --noconftest -q
@@ -1232,7 +1251,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: issue176-cpu-measurement-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/issue176-measurement.json
+          path: |
+            ${{ runner.temp }}/issue176-measurement.json
+            ${{ runner.temp }}/issue176-concurrent-native.json
           if-no-files-found: error
           retention-days: 30
 
@@ -1243,6 +1264,8 @@ jobs:
           set -euo pipefail
           python scripts/ci/record_issue176_release.py \
             --source-revision "$BNG3_SOURCE_REVISION" \
+            --report release-nf-ensemble="$RUNNER_TEMP/issue176-concurrent-native.json" \
+            --report release-capability-coverage-176="$RUNNER_TEMP/issue176-measurement.json" \
             --output "$RUNNER_TEMP/issue-176-release-report.json" \
             --summary-file "$GITHUB_STEP_SUMMARY"
 
@@ -1506,6 +1529,14 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Measure current CPU benchmark with identity and correctness (#174)
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          BNG3_CURRENT_BENCHMARK_REPORT: ${{ runner.temp }}/issue174-current-benchmark.json
+        run: >-
+          python -m pytest --noconftest -q
+          tests/validation/release/cases/issue-174/test_cpu_benchmark_current.py
+
       - name: Record Issue 174 CPU benchmark release acceptance
         env:
           BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -1514,6 +1545,8 @@ jobs:
           set -euo pipefail
           python scripts/ci/record_issue174_release.py \
             --source-revision "$BNG3_SOURCE_REVISION" \
+            --current-report "$RUNNER_TEMP/issue174-current-benchmark.json" \
+            --issue176-report "$RUNNER_TEMP/issue-176-release-report.json" \
             --output "$BNG3_CPU_BENCHMARK_REPORT" \
             --summary-file "$GITHUB_STEP_SUMMARY"
 
@@ -1522,7 +1555,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: issue174-cpu-benchmark-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/issue174-benchmark-record.json
+          path: |
+            ${{ runner.temp }}/issue174-benchmark-record.json
+            ${{ runner.temp }}/issue174-current-benchmark.json
           if-no-files-found: error
           retention-days: 30
 
