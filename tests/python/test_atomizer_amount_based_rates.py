@@ -676,5 +676,66 @@ def test_cross_compartment_reversible_flux_keeps_both_volumes():
     ]
     assert len(rules) == 1
     assert "TotalRate" in rules[0], rules[0]
-    assert "_c_X()" in rules[0] and "_c_Y()" in rules[0], rules[0]
+    assert "_rate()" in rules[0], rules[0]
+    fn = [
+        l for l in result.bngl.splitlines() if l.strip().startswith("exchange_rate()")
+    ]
+    assert fn and "_c_X()" in fn[0] and "_c_Y()" in fn[0], fn
     assert "<->" not in rules[0], rules[0]
+
+
+_CROSS_COMPARTMENT_IRREVERSIBLE = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+  <model id="cross_irreversible">
+    <listOfCompartments>
+      <compartment id="a" size="0.25" constant="true"/>
+      <compartment id="b" size="5" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="X" compartment="a" initialConcentration="10"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="Y" compartment="b" initialConcentration="2"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="Z" compartment="b" initialConcentration="0"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k" value="600" constant="true"/>
+    </listOfParameters>
+    <listOfReactions>
+      <reaction id="conversion" reversible="false" fast="false">
+        <listOfReactants>
+          <speciesReference species="X" stoichiometry="1"/>
+          <speciesReference species="Y" stoichiometry="1"/>
+        </listOfReactants>
+        <listOfProducts><speciesReference species="Z" stoichiometry="1"/></listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><apply><times/><ci> k </ci><ci> X </ci></apply><ci> Y </ci></apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>"""
+
+
+def test_cross_compartment_irreversible_flux_keeps_both_volumes():
+    """An irreversible cross-compartment law also needs the complete flux."""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(
+        _CROSS_COMPARTMENT_IRREVERSIBLE
+    )
+    assert result.success, result.error
+    rules = [
+        line
+        for line in result.bngl.splitlines()
+        if line.strip().startswith("conversion:")
+    ]
+    assert len(rules) == 1
+    assert "TotalRate" in rules[0], rules[0]
+    assert "_rate()" in rules[0], rules[0]
+    fn = [
+        line
+        for line in result.bngl.splitlines()
+        if line.strip().startswith("conversion_rate()")
+    ]
+    assert fn and "_c_X()" in fn[0] and "_c_Y()" in fn[0], fn
