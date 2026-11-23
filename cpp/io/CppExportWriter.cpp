@@ -127,11 +127,77 @@ std::string CppExportWriter::write(const ast::Model& model, const engine::Genera
     out << "#include <math.h>\n";
     out << "#include <iostream>\n";
     out << "#include <vector>\n\n";
-    out << "#include <cvode/cvode.h>             /* prototypes for CVODE  */\n";
-    out << "#include <nvector/nvector_serial.h>  /* serial N_Vector       */\n";
-    out << "#include <cvode/cvode_dense.h>       /* prototype for CVDense */\n";
-    out << "#include <cvode/cvode_spgmr.h>       /* prototype for CVSpgmr */\n\n";
-    out << "using namespace std;\n\n";
+    out << R"(#include <cvode/cvode.h>             /* prototypes for CVODE  */
+#include <nvector/nvector_serial.h>  /* serial N_Vector       */
+#include <sundials/sundials_iterative.h>
+#include <sundials/sundials_linearsolver.h>
+#include <sunmatrix/sunmatrix_dense.h>
+#include <sunlinsol/sunlinsol_dense.h>
+#include <sunlinsol/sunlinsol_spgmr.h>
+
+/* SUNDIALS v7 compatibility for the historical v2-style calls in this
+   template. The solver body below is unchanged; these wrappers map its calls
+   onto the pinned v7 API with one shared context and explicit matrix/linear
+   solver objects. */
+#ifndef CV_NEWTON
+#define CV_NEWTON 0
+#endif
+#ifndef CV_FUNCTIONAL
+#define CV_FUNCTIONAL 1
+#endif
+#ifndef realtype
+#define realtype sunrealtype
+#endif
+
+static SUNContext bng_sunctx_ = nullptr;
+static SUNMatrix bng_matrix_ = nullptr;
+static SUNLinearSolver bng_linsol_ = nullptr;
+
+static inline void bng_ensure_context_() {
+    if (!bng_sunctx_) {
+        SUNContext_Create(SUN_COMM_NULL, &bng_sunctx_);
+    }
+}
+
+static inline N_Vector bng_new_serial_(sunindextype length) {
+    bng_ensure_context_();
+    return N_VNew_Serial(length, bng_sunctx_);
+}
+#define N_VNew_Serial(length) bng_new_serial_(length)
+
+static inline void* bng_cvode_create_(int lmm) {
+    bng_ensure_context_();
+    return CVodeCreate(lmm, bng_sunctx_);
+}
+#define CVodeCreate(lmm, nonlinear) bng_cvode_create_(lmm)
+
+static inline int bng_set_linear_solver_(void* mem, N_Vector y, sunindextype n,
+                                         bool sparse) {
+    bng_ensure_context_();
+    bng_matrix_ = SUNDenseMatrix(n, n, bng_sunctx_);
+    if (!bng_matrix_) return -1;
+    if (sparse) {
+        bng_linsol_ = SUNLinSol_SPGMR(y, SUN_PREC_NONE, 0, bng_sunctx_);
+    } else {
+        bng_linsol_ = SUNLinSol_Dense(y, bng_matrix_, bng_sunctx_);
+    }
+    if (!bng_linsol_) return -1;
+    return CVodeSetLinearSolver(mem, bng_linsol_, bng_matrix_);
+}
+#define CVDense(mem, n) bng_set_linear_solver_((mem), species, (n), false)
+#define CVSpgmr(mem, prec, maxl) bng_set_linear_solver_((mem), species, __N_SPECIES__, true)
+
+static inline void bng_cvode_free_(void** mem) {
+    CVodeFree(mem);
+    if (bng_linsol_) { SUNLinSolFree(bng_linsol_); bng_linsol_ = nullptr; }
+    if (bng_matrix_) { SUNMatDestroy(bng_matrix_); bng_matrix_ = nullptr; }
+    if (bng_sunctx_) { SUNContext_Free(&bng_sunctx_); bng_sunctx_ = nullptr; }
+}
+#define CVodeFree(mem) bng_cvode_free_(mem)
+
+using namespace std;
+
+)";
 
     // ===== Problem dimensions =====
     out << "/* Problem Dimensions */\n";
@@ -399,7 +465,7 @@ std::string CppExportWriter::write(const ast::Model& model, const engine::Genera
     out << "    n_timepoints = timepoints.size();\n";
     out << "\n";
     out << "    /* Create output arrays */\n";
-    out << "    int return_status;\n";
+    out << "    int return_status = 0;\n";
     out << "    vector< vector<double> > species_out( __N_SPECIES__ , vector<double> (n_timepoints, 0));\n";
     out << "    vector< vector<double> > observables_out( __N_OBSERVABLES__ , vector<double> (n_timepoints, 0));\n";
     out << "\n";
