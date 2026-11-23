@@ -97,6 +97,9 @@ def test_issue164_characterization_cannot_certify_corpora(
     )
     assert all(rows[check]["status"] == "NOT_TESTED" for check in atomizer.LIVE_CHECKS)
     assert all(not rows[check]["supported_execution"] for check in atomizer.LIVE_CHECKS)
+    assert rows["release-boundary-extraction-164"]["status"] == "NOT_TESTED"
+    assert rows["release-closure-record-164"]["evidence_kind"] == "disposition"
+    assert not rows["release-closure-record-164"]["supported_execution"]
 
 
 def test_issue163_first_order_cases_cannot_certify_every_format(

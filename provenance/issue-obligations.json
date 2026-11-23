@@ -14186,7 +14186,7 @@
               "missing_evidence": []
             },
             {
-              "id": "qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo",
+              "id": "release-boundary-extraction-164",
               "evidence_kind": "supported-execution",
               "expectation": "The extracted boundary is one named seam, the callers that used to duplicate the decision agree on its outcome, and the existing qualified checks that cover the affected surface pass unchanged.",
               "identity_requirements": [
@@ -14226,7 +14226,10 @@
             "tests/validation/test_boundary_extraction.py",
             "tests/validation/boundary_extraction.py"
           ],
-          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2"
+          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2",
+          "discharged_scope": [
+            "qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo is the historical ID of this check. Unmeasured extraction scope remains open."
+          ]
         },
         {
           "id": "issue:164:closure-record",
@@ -14236,9 +14239,9 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:164:closure-record",
+              "id": "release-closure-record-164",
               "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Record the measured characterization scope and its limits at the stated revision.",
               "identity_requirements": [
                 "source.revision"
               ],
@@ -14252,16 +14255,16 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:164:closure-record.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
+          "unmapped_scope": [],
           "evidence_on_this_tree": {
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
-          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2"
+          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2",
+          "discharged_scope": [
+            "qualification:issue:164:closure-record is the historical ID of this disposition."
+          ]
         },
         {
           "id": "issue:164:live-acceptance:release-atomizer-modules",

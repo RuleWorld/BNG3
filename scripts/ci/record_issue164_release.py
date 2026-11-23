@@ -83,9 +83,9 @@ def main(argv=None) -> int:
 
     results.append(
         {
-            "id": "qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo",
+            "id": "release-boundary-extraction-164",
             "status": "NOT_TESTED",
-            "check": "qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo",
+            "check": "release-boundary-extraction-164",
             "related_issues": [164],
             "evidence_kind": "not-tested",
             "supported_execution": False,
@@ -97,9 +97,9 @@ def main(argv=None) -> int:
     # Disposition closure record.
     results.append(
         {
-            "id": "qualification:issue:164:closure-record",
+            "id": "release-closure-record-164",
             "status": "PASS",
-            "check": "qualification:issue:164:closure-record",
+            "check": "release-closure-record-164",
             "related_issues": [164],
             "evidence_kind": "disposition",
             "supported_execution": False,
