@@ -776,6 +776,8 @@ BNGL_LEXER_KEYWORDS = frozenset(
     {
         "_e",
         "_pi",
+        "exponentiale",
+        "pi",
         "abs",
         "acos",
         "acosh",

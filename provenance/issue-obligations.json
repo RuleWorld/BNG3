@@ -13106,14 +13106,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-biomodels.",
-                "No revision-locked consuming receipt producer is declared for required live check release-biomodels."
-              ]
+              "selector": "scripts/ci/record_issue162_release.py",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue162_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -13140,14 +13136,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-biomodels-triage.",
-                "No revision-locked consuming receipt producer is declared for required live check release-biomodels-triage."
-              ]
+              "selector": "scripts/ci/record_issue162_release.py",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue162_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -13174,14 +13166,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-162.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-162."
-              ]
+              "selector": "scripts/ci/record_issue162_release.py",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue162_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],

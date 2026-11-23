@@ -4851,9 +4851,13 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                     triggerRoseAt_[index] = opts.tStart;
                     pendingEvents_.push_back(std::move(pending));
                 } else if (surface.derivative == 0.0) {
-                    throw std::runtime_error(
-                        std::string(ast::kUnsupportedEventExecutionMessage) +
-                        ": strict trigger direction is unresolved at the initial time");
+                    // The strict trigger is exactly at its threshold and not
+                    // yet rising. CVODE will not report this initial zero as a
+                    // root, but the per-step crossing check compares the root
+                    // function against its value at the last processed instant
+                    // (zero here), so a later positive value is still detected.
+                    // Do not refuse to simulate a model whose trigger simply
+                    // has not risen yet.
                 }
             }
             if (!event.initialValue &&

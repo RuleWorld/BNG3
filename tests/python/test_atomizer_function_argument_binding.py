@@ -171,3 +171,59 @@ def test_official_01493_trajectory():
 
     expected = [2, 2, 2, 1, 1, 1, 1, 1, 0, 0, 0]
     np.testing.assert_allclose(result.functions["z"], expected, rtol=0, atol=1e-12)
+
+
+_GLOBAL_NAME_SHADOWING = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+  <model id="formal_vs_parameter_name">
+    <listOfFunctionDefinitions>
+      <functionDefinition id="mass_action">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <lambda>
+            <bvar><ci> k1 </ci></bvar>
+            <bvar><ci> S1 </ci></bvar>
+            <apply><times/><ci> k1 </ci><ci> S1 </ci></apply>
+          </lambda>
+        </math>
+      </functionDefinition>
+    </listOfFunctionDefinitions>
+    <listOfParameters>
+      <parameter id="k1_1" name="k1" value="0.1" constant="true"/>
+      <parameter id="kminus1_1" name="kminus1" value="0.001" constant="true"/>
+    </listOfParameters>
+    <listOfCompartments>
+      <compartment id="c" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="S" compartment="c" initialAmount="1000"
+               hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+      <species id="P" compartment="c" initialAmount="0"
+               hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfReactions>
+      <reaction id="decay" reversible="false" fast="false">
+        <listOfReactants><speciesReference species="S" stoichiometry="1"/></listOfReactants>
+        <listOfProducts><speciesReference species="P" stoichiometry="1"/></listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><ci> mass_action </ci><ci> kminus1_1 </ci><ci> S </ci></apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>"""
+
+
+def test_global_parameter_display_name_does_not_capture_a_formal():
+    """A global named ``k1`` must not replace a function's ``k1`` bvar.
+
+    ``k1_1`` has display name ``k1``.  The function body ``k1 * S1`` binds
+    ``k1`` locally, so a call with actual ``kminus1_1`` must use that actual,
+    not the same-named global parameter.
+    """
+    from bionetgen.atomizer.modern import SBMLParser
+
+    model = SBMLParser().parse(_GLOBAL_NAME_SHADOWING)
+    body = model.function_definitions["mass_action"].math
+    assert "k1_1" not in body, body
+    assert "k1" in body
