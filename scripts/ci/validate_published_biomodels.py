@@ -1249,6 +1249,46 @@ def _simulate_oracle_trajectory(
             dtype=float,
         )
     except Exception as exc:
+        # A stiff but otherwise valid source can exhaust the oracle's own
+        # internal step budget at the requested tolerances. Relax the oracle's
+        # solver controls only to obtain a trajectory; the comparison
+        # predicate and tolerance are applied unchanged to both engines.
+        if "CV_TOO_MUCH_WORK" in str(exc):
+            base_rtol = float(rr.integrator.getValue("relative_tolerance"))
+            base_atol = float(rr.integrator.getValue("absolute_tolerance"))
+            for factor in (10.0, 100.0, 1000.0):
+                rr.resetAll()
+                rr.integrator.relative_tolerance = min(base_rtol * factor, 1e-3)
+                rr.integrator.absolute_tolerance = min(base_atol * factor, 1e-6)
+                attempts.append(
+                    {
+                        "stiff": stiff,
+                        "passed": False,
+                        "relaxed_rtol": float(
+                            rr.integrator.getValue("relative_tolerance")
+                        ),
+                        "relaxed_atol": float(
+                            rr.integrator.getValue("absolute_tolerance")
+                        ),
+                        "error": f"{type(exc).__name__}: {exc}",
+                    }
+                )
+                try:
+                    values = np.asarray(
+                        (
+                            rr.simulate(times=sample_times)
+                            if sample_times is not None
+                            else rr.simulate(0.0, t_end, n_steps + 1)
+                        ),
+                        dtype=float,
+                    )
+                    break
+                except Exception:
+                    continue
+            else:
+                raise
+            attempts[-1]["passed"] = True
+            return values, attempts
         if not stiff or "CV_CONV_FAILURE" not in str(exc):
             raise
         # Diagnose at the initial state, not at a partially advanced failed step.
@@ -1738,6 +1778,14 @@ def _simulate_and_compare(
                     raise OracleIntegrationError(
                         "mapped native absolute tolerance is zero or non-finite"
                     )
+                # libRoadRunner scales its per-state absolute tolerances by each
+                # state's magnitude. A single near-zero state can drive the
+                # vector minimum many orders below the requested tolerance;
+                # using that minimum as the native solver's global atol forces
+                # an unusable step count without improving the comparison.
+                # Keep the conservative-minima mapping but floor the derived
+                # value at a small fraction of the requested tolerance.
+                derived_native_atol = max(derived_native_atol, atol * 1e-6)
                 actual_native_atol = min(atol, derived_native_atol)
                 tolerance_mapping = "conservative_minima"
             else:
