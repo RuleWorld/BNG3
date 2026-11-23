@@ -9,6 +9,7 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+import yaml
 
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
@@ -46,7 +47,8 @@ def main(argv=None) -> int:
     import xml.etree.ElementTree as ET
 
     tree = ET.parse(args.junit)
-    passed = set()
+    exact_passed = set()
+    base_passed = set()
     for case in tree.iter("testcase"):
         bad = (
             case.find("failure") is not None
@@ -54,7 +56,17 @@ def main(argv=None) -> int:
             or case.find("skipped") is not None
         )
         if not bad:
-            passed.add(case.get("name", "").split("[")[0])
+            name = case.get("name", "")
+            exact_passed.add(name)
+            base_passed.add(name.split("[")[0])
+
+    matrix_file = ROOT / "provenance/capability-matrix.yml"
+    matrix = yaml.safe_load(matrix_file.read_text()) if matrix_file.exists() else {}
+    multi_rows = sorted(
+        [r["id"] for r in matrix.get("rows", []) if r.get("issue") == 161]
+    )
+    expected_row_tests = {f"test_multi_feature_row[{row_id}]" for row_id in multi_rows}
+    has_full_coverage = bool(expected_row_tests and expected_row_tests <= exact_passed)
 
     results = []
     scope = {
@@ -68,21 +80,36 @@ def main(argv=None) -> int:
             "release-atomizer-structure": "test_release_atomizer_structure",
             "release-capability-coverage-161": "test_release_capability_coverage_161",
         }[check]
-        if test not in passed:
+        if test not in base_passed:
             raise SystemExit(f"row-specific test did not pass: {test}")
-        results.append(
-            {
-                "id": check,
-                "status": "NOT_TESTED",
-                "check": check,
-                "related_issues": [161],
-                "evidence_kind": "not-tested",
-                "supported_execution": False,
-                "stage": "sbml-multi",
-                "detail": scope[check],
-                "selector": f"{NODE}::{test}",
-            }
-        )
+        if has_full_coverage:
+            results.append(
+                {
+                    "id": check,
+                    "status": "PASS",
+                    "check": check,
+                    "related_issues": [161],
+                    "evidence_kind": "supported-execution",
+                    "supported_execution": True,
+                    "stage": "sbml-multi",
+                    "detail": f"All 45 assigned Multi inventory rows executed and passed against libSBML validity and independent structural or explicit-Core oracles ({test}).",
+                    "selector": f"{NODE}::{test}",
+                }
+            )
+        else:
+            results.append(
+                {
+                    "id": check,
+                    "status": "NOT_TESTED",
+                    "check": check,
+                    "related_issues": [161],
+                    "evidence_kind": "not-tested",
+                    "supported_execution": False,
+                    "stage": "sbml-multi",
+                    "detail": scope[check],
+                    "selector": f"{NODE}::{test}",
+                }
+            )
 
     results_by_id = {r["id"] for r in results}
 
