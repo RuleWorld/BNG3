@@ -323,16 +323,16 @@
       "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "unassessed",
-      "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "execution_class": "consumer-executed",
+      "executed_route": "g++ compile + execute generated MEX C with mxArray ABI shim"
     },
     {
       "row": "action.writeMexfile",
       "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "unassessed",
-      "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "execution_class": "consumer-executed",
+      "executed_route": "g++ compile + execute generated MEX C with mxArray ABI shim"
     },
     {
       "row": "action.writeMexfile.atol",
@@ -761,7 +761,7 @@
   ],
   "summary": {
     "total_rows": 94,
-    "consumer_executed_rows": 8,
-    "missing_consumer_rows": 86
+    "consumer_executed_rows": 10,
+    "missing_consumer_rows": 84
   }
 }

@@ -30,6 +30,8 @@ EXECUTED_ROUTES = {
     "action.writeCPYfile": "Python/SciPy runtime (exported .py + .gdat)",
     "action.writeFile": "BNG parser + engine (re-import exported .bngl, closed-form ODE)",
     "action.writeModel": "BNG parser + engine (re-import exported .bngl, closed-form ODE)",
+    "action.writeMEXfile": "g++ compile + execute generated MEX C with mxArray ABI shim",
+    "action.writeMexfile": "g++ compile + execute generated MEX C with mxArray ABI shim",
 }
 
 
