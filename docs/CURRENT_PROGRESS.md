@@ -1,5 +1,21 @@
 # BNG3 current progress
 
+## #148/#149 acceptance evidence — 2026-11-21
+
+Exact-main Cross-tool parity run `44880029171` at `7d20391e` produced
+`issue148-release-record` and `issue149-release-record`, each with all three
+release checks `PASS` and `supported_execution=true`. The closure dry run shows
+#148's three acceptance criteria `PASS` with no gaps. #149's three checks are
+also `PASS`, but the gate marks them `BLOCKED` because the live issue still
+depends on #176 and #178, which remain OPEN with unmet obligations. The two
+older #149 disposition obligations (`nfcore2-route:*`) also have no receipts.
+
+Per AGENTS.md the closure gate is necessary but not sufficient; I do not close
+#148/#149 in GitHub from a product PR, and #149's dependency blockers require
+the owners of #176/#178 to complete their own acceptance. NFcore/NFnext roles
+are recorded factually: NFnext is the `method="nf"` default, NFcore remains
+selectable via `method="nfcore"`.
+
 ## NFnext promoted to the network-free default — 2026-11-21
 
 DECISIONS item 4 gate is satisfied (full TIER_NF corpus parity at exact main
