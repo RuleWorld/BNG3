@@ -331,3 +331,46 @@ def test_species_initial_assignment_seed_is_a_normalized_amount(scaled):
     )
     assert result.success
     assert _seed_amount(result.bngl, "S") == pytest.approx(9979999, rel=1e-12)
+
+
+_MODEL_PI_SYMBOL = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+  <model id="pi_symbol">
+    <listOfCompartments>
+      <compartment id="c" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="E" compartment="c" initialConcentration="10"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="V" compartment="c" initialConcentration="0"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="pi" value="300" constant="true"/>
+    </listOfParameters>
+    <listOfReactions>
+      <reaction id="creation" reversible="false" fast="false">
+        <listOfProducts><speciesReference species="V" stoichiometry="1"/></listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci> pi </ci><ci> E </ci></apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>"""
+
+
+def test_declared_parameter_named_pi_is_not_the_math_constant():
+    """A model symbol ``pi`` must keep its declared value in emitted rates."""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(_MODEL_PI_SYMBOL)
+    assert result.success, result.error
+    assert "pi_id 300" in result.bngl, result.bngl[:500]
+    rules = [
+        line
+        for line in result.bngl.splitlines()
+        if line.strip().startswith("creation:")
+    ]
+    assert len(rules) == 1
+    assert "pi_id" in rules[0], rules[0]
+    assert "3.14159" not in rules[0], rules[0]
