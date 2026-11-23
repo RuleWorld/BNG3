@@ -1264,22 +1264,16 @@ end model
     assert values[:, 1] == pytest.approx(10 * np.exp(-0.1 * values[:, 0]), rel=1e-4)
 
 
-def test_biomodels_atol_floor_covers_assignment_rule_cancellation():
-    """A cancellation-prone observable's round-off stays within the floor.
-
-    BIOMD0000000943's Bad_phosphorylated_Fourteen33_complex is a difference of
-    ~60000-sized amounts yielding ~1e-7. Independent CVODE wrappers differ by
-    ~5e-11 there, which a 5e-12 floor wrongly rejects as ~9x tolerance even
-    though the mass balance is preserved to ~1e-15 relative.
-    """
+def test_biomodels_global_floor_preserves_small_observable_sensitivity():
+    """A cancellation discrepancy cannot widen the floor for every observable."""
     from scripts.ci.validate_published_biomodels import (
         NUMERICAL_COMPARISON_ATOL_FLOOR,
         NUMERICAL_COMPARISON_RTOL_FLOOR,
     )
 
-    scale = 8.960396788647e-08
-    max_abs_difference = 5.195749186702531e-11
+    scale = 1e-7
+    max_abs_difference = 5e-11
     tolerance = (
         NUMERICAL_COMPARISON_ATOL_FLOOR + NUMERICAL_COMPARISON_RTOL_FLOOR * scale
     )
-    assert max_abs_difference <= tolerance
+    assert max_abs_difference > tolerance

@@ -49,18 +49,9 @@ from scripts.ci.imported_package_guard import (
 )
 
 USER_AGENT = "BNG3-curated-BioModels-roundtrip-validator/2"
-# libRoadRunner and BNG3 use independent CVODE builds and Jacobian paths, so
-# per-state values agree only to solver-level accuracy (~1e-15 relative).  An
-# SBML assignment rule that is a difference of large amounts (for example
-# BIOMD0000000943's Bad_tot - BclXL_Bad_complex - Bad_0__free -
-# Bad_phosphorylated__free, ~60000 minus ~60000 yielding ~1e-7) amplifies that
-# round-off into a ~5e-11 absolute difference in a ~1e-7 observable.  A 5e-12
-# floor rejects that as ~9x tolerance even though the source mass balance is
-# preserved to ~1e-15 relative.  The floor is therefore 1e-10: still far below
-# any model-scale quantity, but wide enough to cover round-off in
-# cancellation-prone assignment-rule observables.  Relative tolerance still
-# governs ordinary observables via the term below.
-NUMERICAL_COMPARISON_ATOL_FLOOR = 1e-10
+# Retain the established floor for cross-engine dense-output differences.
+# Cancellation in assignment rules needs an observable-specific diagnosis.
+NUMERICAL_COMPARISON_ATOL_FLOOR = 5e-12
 NUMERICAL_COMPARISON_RTOL_FLOOR = 1e-5
 BIOMODELS_CASE_PHASE_PREFIX = "@@BIOMODELS_CASE_PHASE@@"
 MAX_CASE_PACKET_BYTES = 4 * 1024 * 1024

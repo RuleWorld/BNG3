@@ -80,6 +80,7 @@ jobs:
             tests/validation/test_record_issue166_release.py \
             tests/validation/test_record_issue152_release.py \
             tests/validation/test_record_issue178_release.py \
+            tests/validation/test_release_recorder_scope.py \
             tests/validation/test_record_issue174_release.py \
             tests/validation/test_reconciliation_evidence.py \
             tests/validation/test_integrated_wiring.py \
@@ -1631,6 +1632,7 @@ jobs:
         run: |
           set -euo pipefail
           pytest -c tests/validation/pytest.ini \
+            tests/validation/test_parity_nfsim.py::test_tierp_direct_probe_refuses_refined_population \
             tests/validation/test_parity_nfsim.py::test_tierp_direct_path_outcome_is_measured_and_attributed \
             -q -ra --junitxml="$RUNNER_TEMP/nfsim-tier-p.xml"
 
