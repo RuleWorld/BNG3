@@ -4752,3 +4752,44 @@ def test_tiny_fractional_stoichiometry_is_not_dropped():
     result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
     assert result.success, result.error
     assert "tiny_consume_S" in result.bngl, result.bngl[:800]
+
+
+def test_initial_assignment_reads_rate_ruled_compartment_initial_size():
+    """An initial assignment reading a rate-ruled compartment folds at t=0.
+
+    A rate rule governs the compartment's derivative, not its initial value.
+    The declared size is still the compartment's value at t=0, so a parameter
+    initial assignment reading it must fold to that constant rather than
+    becoming a live function that tracks the compartment over time.
+    """
+    from bionetgen.atomizer.modern import Atomizer
+
+    model = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="rate_ruled_compartment_initial">
+        <listOfCompartments>
+          <compartment id="C" size="0.0237" constant="false"/>
+        </listOfCompartments>
+        <listOfParameters>
+          <parameter id="rate" value="0.001" constant="true"/>
+          <parameter id="snapshot" value="0" constant="true"/>
+        </listOfParameters>
+        <listOfSpecies>
+          <species id="S" compartment="C" initialAmount="1"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfInitialAssignments>
+          <initialAssignment symbol="snapshot">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><ci> C </ci></math>
+          </initialAssignment>
+        </listOfInitialAssignments>
+        <listOfRules>
+          <rateRule variable="C">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><ci> rate </ci></math>
+          </rateRule>
+        </listOfRules>
+      </model>
+    </sbml>"""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
+    assert result.success, result.error
+    assert "snapshot 0.0237" in result.bngl, result.bngl[:800]
+    assert "snapshot()" not in result.bngl

@@ -5134,6 +5134,15 @@ class SBMLParser:
 
         species_ids = set(model.species)
         rule_targets = {str(rule.variable) for rule in model.rules if rule.variable}
+        # An assignment rule replaces a compartment's declared size at every
+        # time including t=0, but a rate rule only governs the derivative: the
+        # compartment's initial size is still its t=0 value and may be read by
+        # a parameter's initial assignment.
+        assignment_rule_targets = {
+            str(rule.variable)
+            for rule in model.rules
+            if rule.variable and getattr(rule, "type", "") == "assignment"
+        }
         event_targets = {
             str(assignment.variable)
             for event in model.events
@@ -5160,7 +5169,11 @@ class SBMLParser:
                 symbols[str(parameter_id)] = parameter.value
                 symbols[standardize_name(str(parameter_id))] = parameter.value
         for compartment_id, compartment in model.compartments.items():
-            if not compartment.constant or str(compartment_id) in rule_targets:
+            # A non-constant (rate-ruled or event-targeted) compartment still
+            # has a declared size that is its value at t=0, so initial
+            # assignments may read it.  Only an assignment rule replaces the
+            # declared size at every time including the start.
+            if str(compartment_id) in assignment_rule_targets:
                 continue
             if math.isfinite(compartment.size):
                 symbols[str(compartment_id)] = compartment.size
