@@ -258,19 +258,20 @@ CASES: tuple[EqCase, ...] = (
         EQUAL,
         (
             _model(
-                "  @cell:A() -> @cell:B() k\n",
+                "  @cell:A() + @cell:A() -> @cell:B() k\n",
                 molecules="  A()\n  B()\n",
                 seed="  @cell:A() 4\n",
                 extra="begin compartments\n  cell 3 2\nend compartments\n",
             ),
             _model(
-                "  @cell:A() -> @cell:B() k\n",
+                "  @cell:A() + @cell:A() -> @cell:B() k\n",
                 molecules="  A()\n  B()\n",
                 seed="  @cell:A() 4\n",
                 extra="begin compartments\n  cell 3 4\nend compartments\n",
             ),
         ),
-        UNDECIDED,
+        DIFFERENT,
+        "Independent compartment law: doubling volume halves a bimolecular propensity; the initial ODE RHS differs.",
     ),
     EqCase(
         "EQ-energy",
