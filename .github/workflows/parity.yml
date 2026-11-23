@@ -1120,13 +1120,29 @@ jobs:
             -DNFSIM_BUILD_LIBRARY=OFF
           cmake --build "$RUNNER_TEMP/oracle-nfsim/build" --target NFsim --parallel 2
 
+      - name: Checkout and build locked BNGSIM oracle
+        run: |
+          python scripts/ci/checkout_oracle.py \
+            --name bngsim \
+            --destination "$RUNNER_TEMP/oracle-bngsim" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+          cmake -S "$RUNNER_TEMP/oracle-bngsim" \
+            -B "$RUNNER_TEMP/oracle-bngsim/build" \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DBNGSIM_BUILD_PYTHON=OFF
+          cmake --build "$RUNNER_TEMP/oracle-bngsim/build" --target bngsim --parallel 2
+          BNGSIM_LIBRARY_PATH=$(find "$RUNNER_TEMP/oracle-bngsim/build" -maxdepth 1 -name 'libbngsim.so*' | head -1)
+          test -f "$BNGSIM_LIBRARY_PATH"
+          echo "BNGSIM_LIBRARY_PATH=$BNGSIM_LIBRARY_PATH" >> "$GITHUB_ENV"
+
       - name: Install BNG3 Python API as a regular package
         run: |
           python -m pip install scikit-build-core pybind11
           python -m pip install ".[full,dev]"
         env:
           SKBUILD_BUILD_DIR: build
-          CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=ON -DBUILD_NFSIM_CLI=ON"
+          CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=ON -DBUILD_NFSIM_CLI=ON -DBUILD_BNGSIM_ADAPTER=ON -DBNGSIM_INCLUDE_DIR=${{ runner.temp }}/oracle-bngsim/include -DBNGSIM_LIBRARY=${{ env.BNGSIM_LIBRARY_PATH }}"
 
       - name: Replay upstream NFsim XML and molecularity regressions
         env:
@@ -1522,6 +1538,16 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Emit backend and format route reports (#178)
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          BNG3_ISSUE178_RELEASE_INTERFACE_PARITY_REPORT: ${{ runner.temp }}/issue178-parity.json
+          BNG3_ISSUE178_RELEASE_BACKEND_CONTRACT_REPORT: ${{ runner.temp }}/issue178-contract.json
+          BNG3_ISSUE178_RELEASE_BACKEND_ORACLES_REPORT: ${{ runner.temp }}/issue178-oracles.json
+        run: >-
+          python -m pytest --noconftest -q
+          tests/validation/release/cases/issue-178/test_backend_route_report.py
+
       - name: Record Issue 178 shared decisions release acceptance
         env:
           BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -1529,6 +1555,9 @@ jobs:
           set -euo pipefail
           python scripts/ci/record_issue178_release.py \
             --source-revision "$BNG3_SOURCE_REVISION" \
+            --route-report release-interface-parity="$RUNNER_TEMP/issue178-parity.json" \
+            --route-report release-backend-contract="$RUNNER_TEMP/issue178-contract.json" \
+            --route-report release-backend-oracles="$RUNNER_TEMP/issue178-oracles.json" \
             --output "$RUNNER_TEMP/issue-178-release-report.json" \
             --summary-file "$GITHUB_STEP_SUMMARY"
 
@@ -1537,7 +1566,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: issue178-shared-decisions-release-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/issue-178-release-report.json
+          path: |
+            ${{ runner.temp }}/issue-178-release-report.json
+            ${{ runner.temp }}/issue178-parity.json
+            ${{ runner.temp }}/issue178-contract.json
+            ${{ runner.temp }}/issue178-oracles.json
           if-no-files-found: error
           retention-days: 30
 
