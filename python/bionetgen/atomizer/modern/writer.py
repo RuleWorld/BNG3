@@ -3058,6 +3058,43 @@ def process_reaction_rate(
         reaction_id=reaction_id,
     )
     structures = reactant_structures or {}
+    # A law whose reactants draw from different compartments cannot be
+    # represented by one folded BNGL mass-action constant: SBML concentrations
+    # carry each compartment's own volume, and a single directional constant
+    # loses that geometry.  Keep the complete flux as an absolute TotalRate
+    # rule instead.  This applies to irreversible and reversible laws alike.
+    reactant_compartments = {
+        str(model.species.get(getattr(reference, "species", ""), None).compartment)
+        for reference in reaction.reactants
+        if model.species.get(getattr(reference, "species", ""), None) is not None
+    }
+    if len(reactant_compartments) > 1:
+        # write_functions has already emitted the full extent-rate expression
+        # as a zero-argument function.  Reference it so the rule keeps the
+        # source law instead of a folded compartment-blind mass-action value.
+        rate_functions = getattr(model, "reaction_rate_functions", {}) or {}
+        rate_name = rate_functions.get(str(getattr(reaction, "id", "")))
+        full_rate = (
+            f"{rate_name}()"
+            if rate_name
+            else _rate_for_reaction(
+                reaction,
+                model,
+                conversion_factor,
+                observable_converted_rules,
+                structures,
+                prepared_math=prepared_math,
+                replace_loc_params=replace_loc_params,
+                synthetic_rate_rule_variables=synthetic_rate_rule_variables,
+            )
+        )
+        return ProcessedRate(
+            full_rate,
+            force_irreversible=True,
+            is_split_rxn=True,
+            is_total_rate=True,
+        )
+
     if not prepared_math or not str(prepared_math).strip():
         rate = _rate_for_reaction(
             reaction,
@@ -3108,34 +3145,6 @@ def process_reaction_rate(
                 _reaction_species_ids(reaction.reactants),
                 prepared_math,
             ),
-        )
-
-    # A reversible law whose forward or reverse term draws reactants from
-    # different compartments cannot be represented by one folded BNGL
-    # mass-action constant: SBML's concentrations carry each compartment's
-    # own volume, and the single directional constant loses that geometry.
-    # Keep the complete net flux as an absolute TotalRate rule instead.
-    reactant_compartments = {
-        str(model.species.get(getattr(reference, "species", ""), None).compartment)
-        for reference in reaction.reactants
-        if model.species.get(getattr(reference, "species", ""), None) is not None
-    }
-    if len(reactant_compartments) > 1:
-        full_rate = _rate_for_reaction(
-            reaction,
-            model,
-            conversion_factor,
-            observable_converted_rules,
-            structures,
-            prepared_math=prepared_math,
-            replace_loc_params=replace_loc_params,
-            synthetic_rate_rule_variables=synthetic_rate_rule_variables,
-        )
-        return ProcessedRate(
-            full_rate,
-            force_irreversible=True,
-            is_split_rxn=True,
-            is_total_rate=True,
         )
 
     reverse_ids = _reaction_species_ids(reaction.products)
