@@ -583,3 +583,35 @@ None of these are BNG3 product defects:
 ### 4. Policy and issue #471 status
 
 - **Issue #471 remains OPEN:** Passing the static 13-workflow upload-retention topology audit (`test_release_ci_topology_all_maintained_workflows` in PR #620) is a necessary prerequisite, but does not satisfy release receipt closure. In `provenance/capability-matrix.yml`, 978 of 994 capability rows have verified named external/analytic oracles; 16 rows retain ungrounded `"as appropriate"` descriptions that fail `release-oracle-independence`. Issue #471 cannot be closed until fresh exact-main downstream runtime receipts are executed and verified for all 994 capability rows.
+
+## 5. BNGIR / PyBioNetGen release-contract audit (session 2026-11-23)
+
+Reopened #154, #155, #156, #171, #172 and #186: exact-main receipts and
+single-issue CLOSED snapshot gates at `2de79884e2f43ff36df3b382cd3ad3bb1d6af259`
+pass locally, but hosted checks on that SHA remain `queued`/`conclusion=null`
+and no hosted consuming reports or green CI run are linked. Reopening is not a
+change to the merged code or to any expected value, tolerance, seed, skip or
+exclusion.
+
+Merged product/evidence work: PR #918 (honest recorders with negative controls,
+native BNGIR bonded-complex reconstruction, #156 EQ catalogue, #171 row map),
+#920 (RuleMod/XMLObj parity), #923/#926 (CI + obligations wiring), #927/#928
+(stale expectations and population-map mutation coverage), #929/#932 (all eight
+BNGL construct families with independent analytic laws), #933/#934/#935/#937/
+#938/#939/#941/#943/#944/#945/#946/#947 (#156 EQ certificates and sound
+inequality witnesses, plus lossless v0.1 compartment transport), #948/#951
+(pinned atomizer CLI options and SCT emission), #949/#952/#953 (#172 executed
+test identities), #950 (#186 fresh-wheel install examples).
+
+Evidence retained locally: `/tmp/final-verify/` (receipts and gate reports for
+#154/#155/#156/#171/#186 at `2de79884…`), `/tmp/final17-rec172.json` and
+`/tmp/final17-gate172/` (installed-wheel run for #172), `/tmp/final15-py.json`
+(385/385 py.* rows, package `3.0.0a1`, oracle `28bf351a…`), `/tmp/final-verify/eq.json`
+(23 families / 54 rows, 54 pass). Hosted runs on this SHA: CI 45275941127,
+dispatched rerun 45285051071, CodeQL 45275941133, Cross-tool parity 45275941121,
+Lean 45275941122 — all queued at last check.
+
+Remaining step when hosted capacity clears: consume the wired EQ catalogue,
+py-row map, install matrix and migration-docs artifacts into hosted consuming
+reports, rerun all six CLOSED gates with a linked green run ID, and fix or
+reopen any issue whose gate then fails.
