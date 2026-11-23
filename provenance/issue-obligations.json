@@ -17932,14 +17932,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-shared-decisions.",
-                "No revision-locked consuming receipt producer is declared for required live check release-shared-decisions."
-              ]
+              "selector": "tests/validation/test_option_decision_owner.py::test_poplevel_decision_has_one_compile_owner",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue178_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -17971,14 +17967,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-interface-parity.",
-                "No revision-locked consuming receipt producer is declared for required live check release-interface-parity."
-              ]
+              "selector": "tests/python/test_finite_backend.py::test_nf_never_routes_through_bngsim",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue178_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -18010,14 +18002,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-178.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-178."
-              ]
+              "selector": "tests/validation/test_nf_default_docs_consistency.py::test_active_docs_do_not_claim_nfcore_is_the_default",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue178_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -18049,14 +18037,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-backend-contract.",
-                "No revision-locked consuming receipt producer is declared for required live check release-backend-contract."
-              ]
+              "selector": "tests/python/test_finite_backend.py::test_explicit_bngsim_fails_closed_when_unavailable_or_unsupported",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue178_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -18088,14 +18072,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-backend-oracles.",
-                "No revision-locked consuming receipt producer is declared for required live check release-backend-oracles."
-              ]
+              "selector": "tests/validation/test_shared_decision_ownership.py::test_general_energy_gate_has_one_owner",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue178_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
