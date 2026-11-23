@@ -2397,12 +2397,14 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         evaluateParametersAndRefresh();
     };
 
+    // Implicit generation and refresh must keep native events in memory.
+    // Explicit NET export still checks whether the format can preserve them.
+    const auto implicitNetworkPath = [&]() {
+        return model.getEvents().empty() ? sourcePath : std::filesystem::path{};
+    };
     const auto ensureNetwork = [&]() {
         if (!network.has_value()) {
-            // Native events remain in the compiled model. Implicit generation
-            // for simulation must not export a .net file that loses them.
-            network = generator.generate(
-                model.getEvents().empty() ? sourcePath : std::filesystem::path{});
+            network = generator.generate(implicitNetworkPath());
         }
     };
 
@@ -3439,7 +3441,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             // Parameter changes affect rate constants but must not reset the
             // species amounts the network currently holds.
-            regeneratePreservingAmounts(generator, sourcePath, network);
+            regeneratePreservingAmounts(generator, implicitNetworkPath(), network);
             continue;
         }
 
@@ -3519,7 +3521,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             // Regenerate network if one exists, since volume affects rate constants
             // Regenerate network if one exists, since volume affects rate
             // constants.
-            regeneratePreservingAmounts(generator, sourcePath, network);
+            regeneratePreservingAmounts(generator, implicitNetworkPath(), network);
             if (verbose) {
                 std::cerr << "[bng_cpp] Set volume of compartment '" << target << "' to " << value << "\n";
             }
@@ -3549,7 +3551,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 replaceParameter(ast::Parameter(name, ast::Expression::number(value)));
             }
             evaluateParametersAndRefresh();
-            regeneratePreservingAmounts(generator, sourcePath, network);
+            regeneratePreservingAmounts(generator, implicitNetworkPath(), network);
             if (verbose) {
                 std::cerr << "[bng_cpp] Reset parameters from label '" << label << "'\n";
             }

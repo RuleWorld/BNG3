@@ -9,6 +9,7 @@ on:
       - 'provenance/upstreams.lock.yml'
       - 'scripts/ci/validate_sbml_test_suite.py'
       - 'scripts/ci/validate_published_biomodels.py'
+      - 'scripts/ci/record_issue162_release.py'
       - 'scripts/ci/install_biomodels_source_bundle.py'
       - 'scripts/ci/curated_biomodels_corpus_inventory.py'
       - 'scripts/ci/imported_package_guard.py'
@@ -24,6 +25,7 @@ on:
       - 'tests/test_ci_contract.py'
       - 'tests/test_harness_contracts.py'
       - 'tests/test_biomodels_source_bundle.py'
+      - 'tests/test_issue162_biomodels_receipt.py'
       - 'tests/test_ssts_selected_gate.py'
       - 'tests/test_ssts_feature_selection.py'
       - 'tests/test_ssts_isolation.py'
@@ -33,6 +35,7 @@ on:
       - 'tests/validation/release/cases/issue-159/test_ssts_full_execution.py'
       - 'tests/test_ssts_stage_reporting.py'
       - 'tests/python/test_native_events.py'
+      - 'tests/python/test_corpus_harness_scope_boundaries.py'
       - 'tests/python/test_species_rate_rule_amounts.py'
       - 'tests/python/test_structural_multi_execution.py'
       - 'tests/python/test_sbml_function_forward_references.py'
@@ -187,6 +190,7 @@ jobs:
             _bng3_product/tests/python/test_native_events.py \
             _bng3_product/tests/python/test_sbml_function_forward_references.py \
             _bng3_product/tests/python/test_species_rate_rule_amounts.py \
+            _bng3_product/tests/python/test_corpus_harness_scope_boundaries.py::test_biomodels_source_comparison_checks_parameter_only_dynamics \
             -q \
             --junitxml "$RUNNER_TEMP/ssts-artifacts/product-smoke-tests.xml"
 
@@ -596,6 +600,31 @@ jobs:
           "$RUNNER_TEMP/biomodels-venv/bin/python" -m pip check
           "$RUNNER_TEMP/biomodels-venv/bin/python" -m pip freeze \
             > "$RUNNER_TEMP/biomodels-runtime.txt"
+
+      - uses: actions/setup-python@v5
+        id: delay-python
+        with:
+          python-version: '3.14'
+          update-environment: false
+
+      - name: Install and check the independent delay oracle
+        shell: bash
+        env:
+          ORACLE_SETUP_PYTHON: ${{ steps.delay-python.outputs.python-path }}
+        run: |
+          set -euo pipefail
+          "$ORACLE_SETUP_PYTHON" -m venv "$RUNNER_TEMP/biomodels-delay-venv"
+          delay_python="$RUNNER_TEMP/biomodels-delay-venv/bin/python"
+          "$delay_python" -m pip install --require-hashes --only-binary=:all: \
+            -r provenance/biomodels-delay-ci-linux-py314.lock
+          "$delay_python" -m pip check
+          {
+            "$delay_python" -V
+            "$delay_python" -m pip freeze
+          } > "$RUNNER_TEMP/biomodels-delay-runtime.txt"
+          export BNG3_BIOMODELS_DELAY_PYTHON="$delay_python"
+          echo "BNG3_BIOMODELS_DELAY_PYTHON=$delay_python" >> "$GITHUB_ENV"
+          python -m pytest --noconftest -q tests/test_biomodels_delay_oracle.py
 
       - name: Verify package and native extension identity
         run: |
@@ -1066,11 +1095,29 @@ jobs:
               --flat-report "$artifacts/flat-report.json" \
               --manifest provenance/published-biomodels.json \
               --expectations provenance/curated-biomodels-corpus-expectations.json \
+              --compare-baseline \
               --report-revision "$BNG3_SOURCE_REVISION"
           else
             echo 'One or both BioModels reports were not produced.'
             exit 1
           fi
+
+      - name: Consume the full BioModels release evidence
+        if: always() && inputs.biomodels_only_id == '' && !inputs.biomodels_stage_replay
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$BNG3_SOURCE_REVISION"
+          test -z "$(git status --porcelain --untracked-files=no)"
+          artifacts="$RUNNER_TEMP/biomodels-artifacts"
+          python scripts/ci/record_issue162_release.py \
+            --revision "$BNG3_SOURCE_REVISION" \
+            --inventory provenance/curated-biomodels-query-inventory.json \
+            --bundle-manifest provenance/curated-biomodels-source-bundle.json \
+            --bundle-receipt "$artifacts/source-bundle-receipt.json" \
+            --package-identity "$RUNNER_TEMP/biomodels-package-identity.json" \
+            --flat-report "$artifacts/flat-report.json" \
+            --atomized-report "$artifacts/atomized-report.json" \
+            --output "$artifacts/issue162-release-receipt.json"
 
       - name: Upload BioModels reports and provenance
         if: always()
@@ -1080,6 +1127,7 @@ jobs:
           path: |
             ${{ runner.temp }}/biomodels-artifacts/
             ${{ runner.temp }}/biomodels-runtime.txt
+            ${{ runner.temp }}/biomodels-delay-runtime.txt
             ${{ runner.temp }}/biomodels-package-identity.json
             ${{ runner.temp }}/biomodels-inventory.sha256
             provenance/curated-biomodels-query-inventory.json

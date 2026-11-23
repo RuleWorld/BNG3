@@ -214,7 +214,7 @@ def _inventory() -> ModuleType:
 
 
 def test_an_observable_without_a_value_is_not_a_disagreement(tmp_path):
-    """A record whose own observable is undefined at t=0 is not comparable."""
+    """A source-undefined sample is excluded, not scored as a disagreement."""
 
     harness = _harness()
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
@@ -234,17 +234,18 @@ def test_an_observable_without_a_value_is_not_a_disagreement(tmp_path):
         1e-12,
     )
 
-    assert result["status"] == "not_comparable", result.get("error")
-    reason = str(result["not_comparable_reason"])
-    assert "undefined at t=0" in reason, reason
+    assert result["core_passed"] is True, result.get("error")
+    assert "not_comparable_reason" not in result
     comparison = result["simulation_comparison"]
-    assert comparison["passed"] is False
+    assert comparison["passed"] is True
     assert comparison["failed_observables"] == []
-    assert "obs" in comparison["not_comparable"]
-    # The two engines agree at every point where the observable has a value.
+    assert "not_comparable" not in comparison
+    # The two engines agree at every point where the observable has a value,
+    # and the undefined sample is retained as evidence rather than concealed.
     entry = comparison["observables"]["obs"]
     assert entry["undefined"] is True
     assert entry["undefined_at"][0] == 0.0
+    assert entry["passed"] is True
     assert entry["max_abs_difference"] <= entry["tolerance"]
 
 
@@ -474,6 +475,65 @@ def test_source_comparison_uses_original_sbml_and_species_quantity_units(monkeyp
             2,
         )
     ]
+
+
+def test_biomodels_source_comparison_checks_parameter_only_dynamics():
+    pytest.importorskip("roadrunner")
+    cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
+    from bionetgen import BioNetGenModel
+    from bionetgen.atomizer.modern import Atomizer, SBMLParser
+
+    sbml = """
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="parameter_only">
+    <listOfParameters>
+      <parameter id="x" value="2" constant="false"/>
+      <parameter id="y" constant="false"/>
+    </listOfParameters>
+    <listOfRules>
+      <rateRule variable="x">
+        <math xmlns="http://www.w3.org/1998/Math/MathML"><cn> 1 </cn></math>
+      </rateRule>
+      <assignmentRule variable="y">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><times/><cn> 2 </cn><ci> x </ci></apply>
+        </math>
+      </assignmentRule>
+    </listOfRules>
+  </model>
+</sbml>
+""".strip()
+    parsed = SBMLParser().parse(sbml)
+    atomized = Atomizer(atomize=False, quiet_mode=True).atomize(sbml)
+    assert atomized.success, atomized.error
+    harness = _harness()
+
+    def compare(bngl):
+        return harness._simulate_source_and_compare(
+            cpp,
+            bngl,
+            BioNetGenModel,
+            sbml,
+            parsed,
+            dict(atomized.observable_map),
+            t_end=1.0,
+            n_steps=2,
+            rtol=1e-7,
+            atol=1e-12,
+            model_id="parameter_only",
+        )
+
+    result = compare(atomized.bngl)
+    assert result["passed"], result.get("error")
+    assert result["sbml_observable_ids"] == {"x": "x", "y": "y"}
+    assert result["source_parameter_targets"] == {"x": "x_amt", "y": "y"}
+
+    # Changing the generated rate must disagree with the untouched source.
+    wrong_rate = atomized.bngl.replace("__rate_rule__x() = 1", "__rate_rule__x() = 2")
+    assert wrong_rate != atomized.bngl
+    result = compare(wrong_rate)
+    assert not result["passed"]
+    assert set(result["failed_observables"]) == {"x", "y"}
 
 
 def test_source_comparison_executes_normalized_amount_and_concentration_targets():

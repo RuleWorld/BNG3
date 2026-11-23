@@ -73,7 +73,12 @@ BuiltinFunction builtinFunction(const std::string& rawName) {
     if (name == "sum") return BuiltinFunction::Sum;
     if (name == "tan") return BuiltinFunction::Tan;
     if (name == "tanh") return BuiltinFunction::Tanh;
-    if (name == "t" || name == "time") return BuiltinFunction::Time;
+    // Only the exact lower-case spellings are time operands.  The rest of the
+    // builtin dispatch is case-insensitive, but an SBML model may legitimately
+    // declare a parameter or function named ``T``; treating it as the time
+    // builtin would silently evaluate it to zero.
+    if (rawName == "t" || rawName == "time") return BuiltinFunction::Time;
+    if (name == "time") return BuiltinFunction::Time;
     if (name == "delay") return BuiltinFunction::Delay;
     if (name == "arrhenius") return BuiltinFunction::Arrhenius;
     if (name == "sat") return BuiltinFunction::Saturation;
