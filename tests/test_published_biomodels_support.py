@@ -43,6 +43,74 @@ def test_complete_compared_surface_passes_and_hard_nonpasses_do_not():
         assert not _supported_surface_passed(**altered)
 
 
+@pytest.mark.parametrize("relation", ["gt", "geq"])
+def test_action_comparison_uses_source_truth_at_event_boundary(relation):
+    sbml = f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+        level="3" version="1">
+      <model id="boundary">
+        <listOfCompartments>
+          <compartment id="cell" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="cell" initialAmount="10"
+            hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfEvents>
+          <event id="switch" useValuesFromTriggerTime="true">
+            <trigger initialValue="false" persistent="true">
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><{relation}/><csymbol encoding="text"
+                  definitionURL="http://www.sbml.org/sbml/symbols/time">time</csymbol>
+                  <cn>1</cn></apply>
+              </math>
+            </trigger>
+            <listOfEventAssignments>
+              <eventAssignment variable="A">
+                <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>5</cn></math>
+              </eventAssignment>
+            </listOfEventAssignments>
+          </event>
+        </listOfEvents>
+      </model>
+    </sbml>"""
+    actions = """
+begin model
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin observables
+  Molecules A A()
+end observables
+end model
+simulate({method=>"ode",t_end=>1.0,n_steps=>2})
+setConcentration("A()", 5.0)
+simulate({method=>"ode",t_start=>1.0,t_end=>1.0,n_steps=>1,continue=>1})
+simulate({method=>"ode",t_start=>1.0,t_end=>2.0,n_steps=>2,continue=>1})
+"""
+
+    def compare(action_bngl):
+        return _simulate_and_compare(
+            None,
+            BioNetGenModel,
+            Path("test.sbml"),
+            t_end=2.0,
+            n_steps=4,
+            rtol=1e-4,
+            atol=1e-6,
+            reference_model=sbml,
+            action_bngl=action_bngl,
+            action_model_parser=cpp.parse_string,
+            reference_selections={"A": "A"},
+        )
+
+    result = compare(actions)
+    assert result["passed"], result
+    assert not compare(actions.replace('"A()", 5.0', '"A()", 6.0'))["passed"]
+
+
 def test_action_trajectory_beyond_t_end_is_sliced_to_requested_horizon():
     sbml = """<?xml version="1.0" encoding="UTF-8"?>
 <sbml xmlns="http://www.sbml.org/sbml/level3/version1/core" level="3" version="1">

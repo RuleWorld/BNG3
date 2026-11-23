@@ -2759,6 +2759,28 @@ bool ReactionRule::buildReaction(
             const auto& compP = (pi < productPatterns_.size()) ? productPatterns_[pi].getCompartment() : std::string();
             if (compR.empty() || compP.empty() || compR == compP) continue;
 
+            // The index-based pairing below is only valid when reactant pi is
+            // actually transported into product pi.  A catalyst that is also a
+            // product in its original compartment must stay there.  For
+            // example, `@nucleus:D() -> @cytoplasm:M() + @nucleus:D()`
+            // synthesizes a cytoplasmic M while D remains nuclear; pairing
+            // reactant 0 with product 0 would wrongly move D to cytoplasm.
+            // Detect that case structurally before building the compartment
+            // map so the catalyst is left untouched.
+            bool catalystStays = false;
+            for (const auto& productPattern : productPatterns_) {
+                if (productPattern.getCompartment() != compR) continue;
+                BNGcore::UllmannSGIso matcher(
+                    reactantPatterns_[pi].getGraph(), productPattern.getGraph());
+                BNGcore::List<BNGcore::Map> maps;
+                matcher.find_maps(maps);
+                if (maps.begin() != maps.end()) {
+                    catalystStays = true;
+                    break;
+                }
+            }
+            if (catalystStays) continue;
+
             auto dimRIt = lastDimRIt;
             if (lastCompR != compR) {
                 dimRIt = g_compartmentDimensions.find(compR);
@@ -3144,9 +3166,45 @@ bool ReactionRule::buildReaction(
             }
             return false;
         } else {
-            // All product patterns correspond to product graphs in order
-            for (std::size_t i = 0; i < productPatterns_.size(); ++i) {
-                productPatternIndices.push_back(i);
+            // splitIntoSpeciesGraphs returns components in traversal order,
+            // which need not match the declared product pattern order. A
+            // catalyst that is also a reactant is emitted first even when a
+            // different product is declared first; assuming identity order
+            // then gives each product graph the wrong species-level
+            // compartment. Match patterns to graphs by isomorphism instead.
+            std::vector<SpeciesGraph> orderedProducts;
+            std::vector<bool> used(productGraphs.size(), false);
+            for (std::size_t pi = 0; pi < productPatterns_.size(); ++pi) {
+                const auto& prodPat = productPatterns_[pi];
+                bool found = false;
+                for (std::size_t gi = 0; gi < productGraphs.size(); ++gi) {
+                    if (used[gi]) continue;
+                    BNGcore::UllmannSGIso matcher(prodPat.getGraph(), productGraphs[gi].getGraph());
+                    BNGcore::List<BNGcore::Map> maps;
+                    matcher.find_maps(maps);
+                    if (maps.begin() != maps.end()) {
+                        orderedProducts.push_back(std::move(productGraphs[gi]));
+                        productPatternIndices.push_back(pi);
+                        used[gi] = true;
+                        found = true;
+                        break;
+                    }
+                }
+                if (!found) {
+                    for (std::size_t i = 0; i < productPatterns_.size(); ++i) {
+                        productPatternIndices.push_back(i);
+                    }
+                    orderedProducts.clear();
+                    break;
+                }
+            }
+            if (orderedProducts.size() == productPatterns_.size()) {
+                productGraphs = std::move(orderedProducts);
+            } else {
+                productPatternIndices.clear();
+                for (std::size_t i = 0; i < productPatterns_.size(); ++i) {
+                    productPatternIndices.push_back(i);
+                }
             }
         }
 
@@ -3307,7 +3365,13 @@ bool ReactionRule::buildReaction(
     //
     // For all other rules, the reaction center signature and/or the normal
     // RxnList dedup already handle symmetry correctly.
-    double factor = identicalReactantPatternPermutationFactor(reactantPatterns_);
+    // An absolute-flux (TotalRate) rule states the complete extent rate in its
+    // rate expression.  SBML's kinetic law already accounts for repeated
+    // reactants, so applying the identical-reactant permutation factor here
+    // would divide the source flux by the multiplicity factorial.
+    double factor = absoluteFlux_
+                        ? 1.0
+                        : identicalReactantPatternPermutationFactor(reactantPatterns_);
     // NOTE: For -> 0 DeleteMolecules rules (operations_ empty, productPatterns_
     // empty), we intentionally do NOT apply the embedding multiplicity as a stat
     // factor.  The multiplicity counts automorphic embeddings that map the pattern

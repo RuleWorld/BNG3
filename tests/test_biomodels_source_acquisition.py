@@ -318,11 +318,17 @@ def test_isolated_model_worker_receives_offline_flag(tmp_path, monkeypatch):
         model_timeout=30,
     )
 
+    output_paths = {}
+
     def worker(command, **kwargs):
         assert "--offline" in command
         output_path = Path(command[command.index("--json") + 1])
+        mode = command[command.index("--mode") + 1]
+        output_paths[mode] = output_path
         output_path.write_text(
-            json.dumps({"records": [{"id": entry["id"], "status": "passed"}]}),
+            json.dumps(
+                {"records": [{"id": entry["id"], "status": "passed", "mode": mode}]}
+            ),
             encoding="utf-8",
         )
         return SimpleNamespace(returncode=0, stderr="")
@@ -331,6 +337,12 @@ def test_isolated_model_worker_receives_offline_flag(tmp_path, monkeypatch):
     record = validator._run_isolated_model(entry, args)
     assert record["id"] == entry["id"]
     assert record["status"] == "passed"
+    assert record["mode"] == "flat"
+    assert validator._run_isolated_model(entry, args, mode="atomized")["mode"] == (
+        "atomized"
+    )
+    assert output_paths["flat"] != output_paths["atomized"]
+    assert not any(output_path.exists() for output_path in output_paths.values())
 
 
 def test_parent_timeout_retains_phase_source_hash_and_bounded_case_packet(
@@ -679,6 +691,31 @@ def test_mode_checkpoint_retains_completed_comparison_without_claiming_pass(tmp_
     assert "core_passed" not in saved
 
 
+@pytest.mark.parametrize(
+    ("comparison", "expected_status"),
+    [
+        ({"passed": True}, "passed"),
+        ({"passed": False, "error": "observable mismatch"}, "failed"),
+        (
+            {"passed": False, "not_comparable": {"oracle": "solver error"}},
+            "not_comparable",
+        ),
+        ({"passed": False, "harness_error": "invalid output"}, "harness_error"),
+        (None, "failed"),
+    ],
+)
+def test_comparison_stage_status_matches_semantic_verdict(comparison, expected_status):
+    validator = _validator()
+    result = {}
+    with validator._mode_stage(result, "cross-engine-comparison") as outcome:
+        validator._set_comparison_stage_outcome(outcome, comparison)
+
+    stage = result["stage_results"][0]
+    assert stage["status"] == expected_status
+    if comparison and comparison.get("error"):
+        assert stage["error"] == "observable mismatch"
+
+
 def test_case_packet_error_does_not_replace_model_verdict(monkeypatch, tmp_path):
     import argparse
 
@@ -932,3 +969,29 @@ def test_source_action_comparison_refuses_stochastic_protocol():
             t_end=1.0,
             n_steps=10,
         )
+
+
+def test_source_action_bngl_truncates_events_beyond_the_horizon():
+    """A long event schedule beyond the comparison horizon is not integrated."""
+    from scripts.ci.validate_published_biomodels import _source_action_bngl
+
+    bngl = """begin model
+begin molecule types
+  A()
+end molecule types
+begin observables
+  Species A_obs A()
+end observables
+begin actions
+  simulate({method=>"ode", t_start=>0, t_end=>60000, n_steps=>1})
+  setParameter("k", "1")
+  simulate({continue=>1, method=>"ode", t_start=>60000, t_end=>90001, n_steps=>1})
+end actions
+end model
+"""
+    result = _source_action_bngl(
+        bngl, rtol=1e-7, atol=1e-12, max_step=0.0, t_end=1.0, n_steps=10
+    )
+    assert "t_end=>60000" not in result
+    assert "setParameter" not in result
+    assert "t_end=>1," in result or "t_end=>1}" in result

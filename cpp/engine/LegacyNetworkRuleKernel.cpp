@@ -82,6 +82,7 @@ struct LegacyNetworkRuleKernel::Impl {
               compile::lowerPatternsToSpeciesGraphs(direction.reactantPatterns, context),
               compile::lowerPatternsToSpeciesGraphs(direction.productPatterns, context)),
           state(rule.createExecutionState()) {
+        rule.setAbsoluteFlux(compiledRule.isAbsoluteFlux());
         if (compiledRule.delayExpression()) {
             rule.setDelay(*compiledRule.delayExpression(), compiledRule.isNonConsuming());
         }

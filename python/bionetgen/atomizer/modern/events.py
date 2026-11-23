@@ -1145,6 +1145,35 @@ def _balanced_inner(value: str) -> str:
     return value.strip()
 
 
+def _is_strict_time_trigger(trigger: str) -> bool:
+    """Whether a fixed-time trigger is strict (``time > T`` or ``time < T``).
+
+    A strict comparison is false at the threshold itself and only becomes
+    true immediately afterwards.  A scheduled action placed exactly at ``T``
+    would therefore fire one instant too early relative to an independent
+    continuous-time simulator, which observes the left limit at ``T``.
+    """
+
+    value = str(trigger or "").strip()
+    comparison = _match_comparison_call(value)
+    if comparison is not None:
+        operator, arguments_text = comparison
+        parts = [part.strip() for part in arguments_text.split(",")]
+        if len(parts) == 2:
+            left, right = parts[0].strip().lower(), parts[1].strip().lower()
+            if operator in {"gt", "lt"}:
+                return (operator == "gt" and left == "time") or (
+                    operator == "lt" and right == "time"
+                )
+            return False
+    lowered = value.lower()
+    if re.match(r"^\(?\s*time\s*>\s*(?!=)", lowered):
+        return True
+    if re.search(r"(?<![<>=])<\s*time\s*\)?\s*$", lowered):
+        return True
+    return False
+
+
 def parse_time_threshold(trigger: str) -> Optional[str]:
     """Return the threshold from a trigger that crosses a time boundary."""
 
@@ -3450,16 +3479,34 @@ def _native_conjunction_expression(
 
 
 def _native_trigger_expression(
-    event: SBMLEvent, context: EventTranslationContext
+    event: SBMLEvent, context: EventTranslationContext, *, instantaneous: bool
 ) -> Optional[str]:
     """Lower a state-dependent SBML trigger to a native BNGL inequality."""
     conjunction = _native_conjunction_expression(event.trigger, event, context)
     if conjunction is not None:
         return conjunction
-    comparison = _match_comparison_call(event.trigger)
+    comparison = _match_comparison_call(event.trigger) or _match_equality_call(
+        event.trigger
+    )
     if comparison is None:
         return None
     operator, arguments_text = comparison
+    arguments = _split_arguments(arguments_text)
+    if arguments is None or len(arguments) != 2:
+        return None
+    left_text, right_text = (_strip_outer_parens(arg) for arg in arguments)
+    if operator == "eq":
+        # A positive, fixed clock instant produces one rising edge. With
+        # immediate execution its subsequent falling edge cannot cancel work.
+        if not instantaneous or not _native_time_against_static(
+            left_text, right_text, context
+        ):
+            return None
+        threshold = right_text if left_text.lower() in {"time", "t"} else left_text
+        instant = _native_fold_term_text(threshold, context)
+        if instant is not None and math.isfinite(instant) and instant > 0.0:
+            return f"time >= {_format_number(instant)}"
+        return None
     # A standalone non-strict inequality can fire on a tangential contact,
     # which the root finder cannot distinguish from a crossing.  Keep those
     # on the analytic path.  Inside a conjunction the other continuous
@@ -3467,10 +3514,6 @@ def _native_trigger_expression(
     # state gate.
     if operator not in _NATIVE_COMPARISON_OPERATORS:
         return None
-    arguments = _split_arguments(arguments_text)
-    if arguments is None or len(arguments) != 2:
-        return None
-    left_text, right_text = (_strip_outer_parens(arg) for arg in arguments)
     if operator == "geq":
         try:
             left_node = ast.parse(context.expand_functions(left_text), mode="eval").body
@@ -3811,7 +3854,7 @@ def _lower_native_event(
             if dynamic_delay is None:
                 return None
             delay = dynamic_delay[0]
-    trigger = _native_trigger_expression(event, context)
+    trigger = _native_trigger_expression(event, context, instantaneous=delay is None)
     if trigger is None:
         return None
     assignments: List[Tuple[str, str]] = []
@@ -8825,6 +8868,11 @@ def synthesize_event_actions(
                 min(window_end, upper_bound) if window_end is not None else upper_bound
             )
         execution_time = trigger_time
+        if _is_strict_time_trigger(event.trigger):
+            # ``time > T`` is false at T; schedule the action at the first
+            # representable instant after T so the left limit at T stays the
+            # pre-event state, matching continuous-time readers.
+            execution_time = trigger_time + max(1e-9, abs(trigger_time) * 1e-9)
         delay = 0.0
         if event.delay:
             delay = fold_at_state(event.delay, trigger_time, event_context=event)
@@ -9074,7 +9122,7 @@ def synthesize_event_actions(
                 event.priority or "", execution_time, event_context=event
             )
             if folded_priority is None and simultaneous_priority_group_eligible(
-                event, trigger_time, execution_time, delay
+                event, trigger_time, trigger_time + delay, delay
             ):
                 state_priority = fold_at_state(
                     event.priority or "",
@@ -9372,6 +9420,15 @@ def synthesize_event_actions(
 
     merged: List[Tuple[float, List[Tuple[str, str, float]]]] = []
     for time, sets, _priority, _event, _dynamic_priority, _values in ordered_scheduled:
+        if (
+            _event is not None
+            and _is_strict_time_trigger(_event.trigger)
+            and time == 0.0
+        ):
+            # ``time > 0`` is false at the start of the simulation.  Keep the
+            # assignment out of the initial state so the first output row is
+            # still the pre-event value; schedule it one instant later.
+            time = 1e-9
         if merged and abs(merged[-1][0] - time) < 1e-12:
             merged[-1][1].extend(sets)
         else:

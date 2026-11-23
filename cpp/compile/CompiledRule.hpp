@@ -170,6 +170,7 @@ public:
     const std::optional<ast::Expression>& delayExpression() const { return delayExpression_; }
     const std::optional<ResolvedExpression>& resolvedDelayExpression() const { return resolvedDelayExpression_; }
     bool isNonConsuming() const { return nonConsuming_; }
+    bool isAbsoluteFlux() const { return absoluteFlux_; }
 
     // Signed reservoir work from a `driven_by(W)` annotation.
     //
@@ -214,6 +215,7 @@ private:
     std::optional<ast::Expression> delayExpression_;
     std::optional<ResolvedExpression> resolvedDelayExpression_;
     bool nonConsuming_ = false;
+    bool absoluteFlux_ = false;
     bool hasDrivingWork_ = false;
     std::string drivingWorkExpression_;
     std::optional<double> drivingWorkValue_;
