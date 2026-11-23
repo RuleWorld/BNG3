@@ -572,3 +572,51 @@ def test_partially_stripped_autocatalytic_law_keeps_mass_action():
     assert len(rules) == 1
     assert "TotalRate" not in rules[0], rules[0]
     assert "A_amt" in rules[0], rules[0]
+
+
+_ASSIGNMENT_CONSTANT_CLEARANCE = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+  <model id="assignment_constant_clearance">
+    <listOfCompartments>
+      <compartment id="C" size="0.5" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="S" compartment="C" initialConcentration="10"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k0" value="2" constant="true"/>
+      <parameter id="f" value="0.5" constant="true"/>
+    </listOfParameters>
+    <listOfRules>
+      <assignmentRule variable="k">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><times/><ci> k0 </ci><ci> f </ci></apply>
+        </math>
+      </assignmentRule>
+    </listOfRules>
+    <listOfReactions>
+      <reaction id="decay" reversible="false" fast="false">
+        <listOfReactants><speciesReference species="S" stoichiometry="1"/></listOfReactants>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci> k </ci><ci> S </ci></apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>"""
+
+
+def test_assignment_rule_rate_constant_carries_the_volume_exponent():
+    """A function-valued mass-action constant keeps its compartment factor."""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(
+        _ASSIGNMENT_CONSTANT_CLEARANCE
+    )
+    assert result.success, result.error
+    rules = [
+        line for line in result.bngl.splitlines() if line.strip().startswith("decay:")
+    ]
+    assert len(rules) == 1
+    assert "__compartment_C__" in rules[0], rules[0]
+    assert "**-1" in rules[0], rules[0]
