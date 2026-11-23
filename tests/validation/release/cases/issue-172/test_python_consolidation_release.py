@@ -109,7 +109,7 @@ def verify_legacy_junit(path, modules=LEGACY_MODULES, expected=LEGACY_EXPECTED_C
     ]
     assert not problems, f"compatibility cases skipped or failed: {problems}"
     assert len(cases) == expected, f"expected {expected} executed cases, found {len(cases)}"
-    classnames = {case.get("classname", "").split(".")[0] for case in cases}
+    classnames = {case.get("classname", "").split(".")[-2] for case in cases}
     assert classnames == set(modules), f"unexpected test modules: {classnames}"
     return len(cases)
 
