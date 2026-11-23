@@ -15,14 +15,16 @@
           "tests.python.test_get_rule_mod",
           "tests.python.test_modelapi_runner_explicit_options",
           "tests.python.test_pybionetgen_action_parser_compat",
-        "tests.python.test_pybionetgen_api_compat",
+          "tests.python.test_pybionetgen_api_compat",
           "tests.python.test_pybionetgen_bngfile_strip_actions_compat",
           "tests.python.test_pybionetgen_differential_behaviors",
           "tests.python.test_pybionetgen_runner_result_compat",
           "tests.python.test_regression",
           "tests.python.test_runner",
           "tests.python.test_sympy_odes",
-          "tests.validation.integrated_worker"
+          "tests.validation.integrated_worker",
+          "tests.validation.release.cases.issue-171.test_pybionetgen_api_release",
+          "tests.validation.release.cases.issue-172.test_python_consolidation_release"
         ]
       },
       "key": "modelapi",
@@ -42,7 +44,8 @@
       "dependents": {
         "product": [],
         "tests": [
-          "tests.python.test_pybionetgen_differential_behaviors"
+          "tests.python.test_pybionetgen_differential_behaviors",
+          "tests.validation.release.cases.issue-171.test_pybionetgen_api_release"
         ]
       },
       "key": "network",
@@ -63,7 +66,10 @@
           "bionetgen"
         ],
         "tests": [
-          "tests.python.test_csimulator_input_preservation"
+          "tests.python.test_csimulator_input_preservation",
+          "tests.validation.release.cases.issue-171.test_pybionetgen_api_release",
+          "tests.validation.release.cases.issue-172.test_python_consolidation_release",
+          "tests.validation.release.cases.issue-186.test_migration_docs_release"
         ]
       },
       "key": "simulator",
@@ -98,7 +104,9 @@
           "tests.python.test_bng_visualization",
           "tests.python.test_compatibility_contract",
           "tests.python.test_pybionetgen_differential_behaviors",
-          "tests.validation.integrated_worker"
+          "tests.validation.integrated_worker",
+          "tests.validation.release.cases.issue-171.test_pybionetgen_api_release",
+          "tests.validation.release.cases.issue-172.test_python_consolidation_release"
         ]
       },
       "key": "cement",
