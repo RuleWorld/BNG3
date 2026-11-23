@@ -1067,15 +1067,12 @@ def _flatten_type(
                             "dropped",
                         )
                     )
-                elif effective_compartment and resolved != effective_compartment:
-                    warnings.append(
-                        _warning(
-                            "A binding-site component resolves to a different "
-                            "compartment than its containing BNGL molecule; this "
-                            "Multi structure is not executable.",
-                            "dropped",
-                        )
-                    )
+                # A compartmentReference declared by the containing compartment
+                # names a sub-compartment of that composite (SBML Multi L3V1
+                # sections 3.6 and 3.11.3). The resolved compartment is therefore
+                # inside the molecule's compartment, not an unrelated one. An
+                # unknown reference is still refused above; a valid one is
+                # representable with the molecule kept in its parent compartment.
             target_compartment = target.compartment
             if (
                 not instance.compartment_reference
