@@ -217,11 +217,9 @@ def _scaled_compartment_model(body: str, *, scaled: bool) -> str:
     compartment_units = ""
     if scaled:
         units = """<listOfUnitDefinitions>
-          <unitDefinition id="volume">
-            <listOfUnits>
-              <unit kind="dimensionless" scale="-3" exponent="1"/>
-            </listOfUnits>
-          </unitDefinition>
+          <unitDefinition id="volume"><listOfUnits>
+            <unit kind="dimensionless" scale="-3" exponent="1"/>
+          </listOfUnits></unitDefinition>
         </listOfUnitDefinitions>"""
         compartment_units = ' units="volume"'
     return f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
@@ -262,9 +260,7 @@ def _seed_amount(bngl: str, species: str) -> float:
 
 @pytest.mark.parametrize("scaled", [False, True])
 def test_species_initial_assignment_seed_is_a_normalized_amount(scaled):
-    # The initial assignment is a sum of concentrations.  After unit scaling
-    # the seed must remain the source amount: 10,000,000 - 20,000 - 1.  A
-    # non-unit compartment factor must not shrink it by that factor.
+    """The seed is the source amount whether or not units are scaled."""
     result = Atomizer(atomize=False, quiet_mode=True).atomize(
         _scaled_compartment_model("", scaled=scaled)
     )
