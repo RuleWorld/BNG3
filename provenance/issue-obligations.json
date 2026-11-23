@@ -17,12 +17,14 @@
       171,
       172,
       176,
+      177,
       178,
+      180,
       473
     ],
-    "decision": "docs/DECISIONS.md#25",
-    "decision_marker": "Dependencies #138, #140, #142, #143, #144, #147, #148, #149, #150, #153, #156, #160, #171, #172, #176, #178 and #473 for downstream release qualification",
-    "reason": "Maintainer decisions 18, 20, 21, 22, 23, 24 and 25 record that the reviewed scope for these dependency issues is authoritative for downstream exact-revision closure dry runs. #144, #149 and #172 are closed. This resolves dependency status only; dependent issues must still pass all of their own acceptance checks."
+    "decision": "docs/DECISIONS.md#26",
+    "decision_marker": "Dependencies #138, #140, #142, #143, #144, #147, #148, #149, #150, #153, #156, #160, #171, #172, #176, #177, #178, #180 and #473 for downstream release qualification",
+    "reason": "Maintainer decisions 18, 20, 21, 22, 23, 24, 25 and 26 record that the reviewed scope for these dependency issues is authoritative for downstream exact-revision closure dry runs. #177 is closed and #180 options are audited under item 19. This resolves dependency status only; dependent issues must still pass all of their own acceptance checks."
   },
   "issues": [
     {
