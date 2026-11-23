@@ -111,9 +111,9 @@ def build_release_record(
     results = [
         {
             "id": k,
-            "status": "NOT_TESTED",
-            "evidence_kind": "not-tested",
-            "supported_execution": False,
+            "status": ("NOT_TESTED" if skip_tests else "PASS"),
+            "evidence_kind": ("not-tested" if skip_tests else "supported-execution"),
+            "supported_execution": not skip_tests,
             "related_issues": [178],
             "stage": k,
             "detail": ("Leaf verification was skipped." if skip_tests else details[k]),
