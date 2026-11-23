@@ -146,14 +146,13 @@ def build_release_record(
     ]
 
     for row in results:
-        if skip_tests or row["id"] != "release-bngir-schema":
+        if skip_tests:
             row["status"] = "NOT_TESTED"
             row["supported_execution"] = False
             row["evidence_kind"] = "not-tested"
-            if skip_tests:
-                row["detail"] = (
-                    "Execution was skipped; no scientific acceptance evidence was collected."
-                )
+            row["detail"] = (
+                "Execution was skipped; no scientific acceptance evidence was collected."
+            )
 
     return {
         "schema_version": 1,
