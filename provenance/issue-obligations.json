@@ -16917,13 +16917,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
-              ]
+              "selector": "tests/validation/release/cases/issue-174/test_cpu_benchmark_evidence.py::test_benchmark_manifest_covers_required_cpu_workloads",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue174_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -16956,13 +16953,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
-              ]
+              "selector": "tests/validation/release/cases/issue-174/test_cpu_benchmark_evidence.py::test_benchmark_correctness_guards_are_retained",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue174_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
@@ -16995,13 +16989,10 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
-              ]
+              "selector": "tests/validation/release/cases/issue-174/test_cpu_benchmark_evidence.py::test_benchmark_measurement_record_is_emitted",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue174_release.py",
+              "receipt_producer_status": "CONSUMER_READY"
             }
           ],
           "test_references": [],
