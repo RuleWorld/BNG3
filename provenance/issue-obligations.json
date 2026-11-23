@@ -14130,7 +14130,10 @@
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [],
+          "unmapped_scope": [
+            "The named checks characterize symbol resolution, feature checks and the compile of the emitted model for a generated family of scopes; event planning, units, structural mapping and text output are not covered by them.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ],
           "evidence_on_this_tree": {
             "executable_named_checks": 0,
             "disposition_named_checks": 16,
@@ -14196,8 +14199,8 @@
             },
             {
               "id": "release-boundary-extraction-164",
-              "evidence_kind": "disposition",
-              "expectation": "Exact-main receipt records this disposition; documented scope limits preserved in obligation boundaries.",
+              "evidence_kind": "supported-execution",
+              "expectation": "The extracted boundary is one named seam, the callers that used to duplicate the decision agree on its outcome, and the existing qualified checks that cover the affected surface pass unchanged.",
               "identity_requirements": [
                 "source.revision"
               ],
@@ -14221,7 +14224,10 @@
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [],
+          "unmapped_scope": [
+            "The Atomizer's remaining split - event planning, unit lowering, structural mapping and text output - stays unqualified; the extracted boundary is the total-rate capability, not the whole refactoring.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ],
           "expectation": "The extracted boundary is one named seam, the callers that used to duplicate the decision agree on its outcome, and the existing qualified checks that cover the affected surface pass unchanged.",
           "evidence_on_this_tree": {
             "executable_named_checks": 1,
@@ -14234,8 +14240,7 @@
           ],
           "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2",
           "discharged_scope": [
-            "Maintainer-authorized relabel: id: qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo -> release-boundary-extraction-164; exact-main receipt backs the check.",
-            "Protected check id: qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo preserved; released as exact-main receipt row."
+            "qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo is the historical ID of this check. Unmeasured extraction scope remains open."
           ]
         },
         {
@@ -14248,7 +14253,7 @@
             {
               "id": "release-closure-record-164",
               "evidence_kind": "disposition",
-              "expectation": "Exact-main receipt records this disposition; documented scope limits preserved in obligation boundaries.",
+              "expectation": "Record the measured characterization scope and its limits at the stated revision.",
               "identity_requirements": [
                 "source.revision"
               ],
@@ -14270,8 +14275,7 @@
           },
           "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2",
           "discharged_scope": [
-            "Maintainer-authorized relabel: id: qualification:issue:164:closure-record -> release-closure-record-164; exact-main receipt backs the check.",
-            "Protected check id: qualification:issue:164:closure-record preserved; released as exact-main receipt row."
+            "qualification:issue:164:closure-record is the historical ID of this disposition."
           ]
         },
         {
