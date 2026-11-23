@@ -361,7 +361,12 @@ def test_synthesize_event_actions_preserves_short_sampling_grids():
         for action in simulate_actions
         if (match := re.search(r"t_start=>([^,]+), t_end=>([^,]+)", action))
     ]
-    assert intervals == [(0.0, 1.0), (1.0, 1.0), (1.0, 1.25), (1.25, 2.5)]
+    assert intervals == [
+        (0.0, 1.000000001),
+        (1.000000001, 1.000000001),
+        (1.000000001, 1.25),
+        (1.25, 2.5),
+    ]
 
 
 _STRICT_TIME_EVENT = """<?xml version="1.0" encoding="UTF-8"?>
@@ -400,7 +405,7 @@ def test_strict_time_event_is_scheduled_after_the_threshold():
     block = result.bngl.split("begin actions", 1)[1]
     simulate = [line for line in block.splitlines() if "simulate(" in line]
     assert simulate
-    assert "t_end=>0.500000000001" in simulate[0], simulate[0]
+    assert "t_end=>0.500000001" in simulate[0], simulate[0]
     assert "t_end=>0.5," not in simulate[0], simulate[0]
 
 
