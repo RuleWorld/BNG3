@@ -779,3 +779,60 @@ end model
     assert result.observables["Aobs"][0] == 2.0
     # dA/dt = E() = 10 - A; A(1) = 10 - 8*exp(-1) ~= 7.057, not 2 + e ~= 4.718.
     assert result.observables["Aobs"][-1] == pytest.approx(7.057, rel=1e-3)
+
+
+def test_strict_trigger_root_zero_fires_at_start_right_limit(tmp_path):
+    """A strict trigger at zero must fire at t_start+, not the first grid point.
+
+    CVODE sees a root that starts at exactly zero as having no crossing. The
+    engine probes the right limit with a tiny step and polls the trigger after
+    that step, including CV_TSTOP_RETURN, so the event fires before species
+    the event freezes can accumulate.
+    """
+    import bionetgen
+
+    bngl = tmp_path / "zero_root_right_limit.bngl"
+    bngl.write_text("""begin model
+begin parameters
+  k 1e9
+  alive 1
+end parameters
+begin molecule types
+  X()
+  Y()
+  A()
+end molecule types
+begin seed species
+  X() 0
+  Y() 0
+  A() 0
+end seed species
+begin observables
+  Species X_amt X()
+  Species Y_amt Y()
+  Species A_amt A()
+end observables
+begin functions
+  prod() = k * alive
+end functions
+begin reaction rules
+  grow: 0 -> A() prod() TotalRate
+  make_y: 0 -> Y() 0.1 TotalRate
+  raise_x: 0 -> X() 10 * Y_amt TotalRate
+end reaction rules
+begin bng3_events version 1
+  event "stop"
+    trigger: X_amt > 0
+    initial_value: true
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: alive = 0
+  end event
+end bng3_events
+end model
+""")
+    # A() production (k=1e9) starts immediately; the event fires as soon as
+    # X>0. If it fires at the first grid point (t=0.05), A reaches ~5e7; at
+    # the right limit it stays near zero.
+    result = bionetgen.load(str(bngl)).simulate(method="ode", t_end=0.1, n_steps=2)
+    assert result.observables["A_amt"][-1] < 1.0, list(result.observables["A_amt"])
