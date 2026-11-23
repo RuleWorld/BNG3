@@ -98,6 +98,13 @@ end actions
     assert not path.with_suffix(".net").exists()
 
 
+def test_native_event_evaluates_logarithm_at_trigger_state(tmp_path):
+    result = model(tmp_path, "X + Y <= 7", "Y = ln(X)").simulate(
+        method="ode", t_end=2, n_steps=3
+    )
+    assert result.observables["Y"][-1] == pytest.approx(math.log(5), rel=2e-6)
+
+
 def test_repeated_runs_do_not_share_event_history(tmp_path):
     instance = model(tmp_path, "X <= 5", "X = 10")
     first = instance.simulate(method="ode", t_end=2, n_steps=4)
