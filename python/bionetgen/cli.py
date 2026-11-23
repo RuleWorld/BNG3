@@ -489,6 +489,8 @@ def graphdiff(input_path, input2_path, output_path, output2_path, mode, colors_p
 @click.option("--bionetgen-analysis", type=click.Path(), default=None)
 @click.option("--convert-units", is_flag=True, default=False)
 @click.option("--pathwaycommons", "use_pathwaycommons", is_flag=True, default=False)
+@click.option("--write-scts", is_flag=True, default=False)
+@click.option("--write-sct-graphs", is_flag=True, default=False)
 def atomize(
     input_path,
     output_path,
@@ -512,6 +514,8 @@ def atomize(
     bionetgen_analysis,
     convert_units,
     use_pathwaycommons,
+    write_scts,
+    write_sct_graphs,
 ):
     """Translate an SBML file to BNGL through the Python atomizer."""
     from bionetgen import sbml_to_bngl
@@ -558,7 +562,34 @@ def atomize(
         options["atomizer_backend"] = "legacy"
 
     try:
-        text = sbml_to_bngl(source, atomize=atomize, **options)
+        if write_scts:
+            from bionetgen.sbml import atomize_sbml_with_sct
+
+            text, sct_tables = atomize_sbml_with_sct(
+                source, atomize=atomize, annotation=annotation, quiet_mode=quiet_mode
+            )
+            stem = Path(input_path or input_file or source).stem
+            sct_path = (Path(output_path or output_file or source).parent) / f"{stem}_scts.json"
+            sct_path.write_text(json.dumps(sct_tables, indent=2) + "\n", encoding="utf-8")
+            click.echo(f"SCT tables written to {sct_path}")
+            if write_sct_graphs:
+                try:
+                    import networkx as nx
+                except ImportError as exc:
+                    raise click.ClickException(
+                        "graphml SCT output requires the networkx extra"
+                    ) from exc
+                for graph_name, nodes in sct_tables.items():
+                    graph = nx.Graph()
+                    for node, neighbours in nodes.items():
+                        graph.add_node(node)
+                        for neighbour in neighbours:
+                            graph.add_edge(node, neighbour)
+                    graph_path = sct_path.with_name(f"{stem}_{graph_name}.graphml")
+                    nx.write_graphml(graph, graph_path)
+                    click.echo(f"SCT graph written to {graph_path}")
+        else:
+            text = sbml_to_bngl(source, atomize=atomize, **options)
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
     if output_path is None:
