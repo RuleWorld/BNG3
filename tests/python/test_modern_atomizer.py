@@ -4712,3 +4712,43 @@ def test_volume_inside_membrane_compartment_parent_is_preserved():
     result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
     assert result.success, result.error
     assert "cyto 3 1 membrane" in result.bngl, result.bngl[:600]
+
+
+def test_tiny_fractional_stoichiometry_is_not_dropped():
+    """A nonzero stoichiometry that rounds to zero must be flux-lowered.
+
+    With stoichiometry 1.666e-18 and a flux of ~1e17, the product is a
+    meaningful derivative. Rounding the coefficient to an integer count of
+    zero (or filtering |coefficient| <= 1e-12) silently drops the reaction.
+    """
+    from bionetgen.atomizer.modern import Atomizer
+
+    model = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="tiny_stoich">
+        <listOfCompartments>
+          <compartment id="C" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfParameters>
+          <parameter id="NA" value="602200000000" constant="true"/>
+        </listOfParameters>
+        <listOfSpecies>
+          <species id="S" compartment="C" initialAmount="0.48"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfReactions>
+          <reaction id="tiny" reversible="false">
+            <listOfReactants>
+              <speciesReference species="S" stoichiometry="1.666111296e-18"/>
+            </listOfReactants>
+            <kineticLaw>
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><times/><ci> S </ci><ci> NA </ci></apply>
+              </math>
+            </kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>"""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
+    assert result.success, result.error
+    assert "tiny_consume_S" in result.bngl, result.bngl[:800]

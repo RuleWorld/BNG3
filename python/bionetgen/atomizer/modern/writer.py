@@ -7118,11 +7118,24 @@ def write_reaction_rules(
             and reference.stoichiometry < 0
             for reference in [*reaction.reactants, *reaction.products]
         )
+        # A nonzero fixed stoichiometry that rounds to zero (for example
+        # 1.666e-18) cannot be spelled as a BNGL pattern count: emitting a
+        # count of zero would silently drop the reaction.  The absolute
+        # 1e-9 integer tolerance also misclassifies such tiny coefficients as
+        # integral, so detect the rounds-to-zero case explicitly and lower it
+        # to a deterministic TotalRate flux that carries the coefficient.
         fractional_stoichiometry = any(
             reference.species != "EmptySet"
             and not reference.variable_stoichiometry
             and math.isfinite(reference.stoichiometry)
-            and abs(reference.stoichiometry - round(reference.stoichiometry)) > 1e-9
+            and (
+                (
+                    round(reference.stoichiometry) == 0
+                    and reference.stoichiometry != 0
+                )
+                or abs(reference.stoichiometry - round(reference.stoichiometry))
+                > 1e-9
+            )
             for reference in [*reaction.reactants, *reaction.products]
         )
         non_pattern_stoichiometry = negative_stoichiometry or fractional_stoichiometry
@@ -7498,7 +7511,7 @@ def write_reaction_rules(
                 species = model.species.get(species_id)
                 if (
                     species_id in non_reaction_state_species
-                    or abs(coefficient) <= 1e-12
+                    or coefficient == 0
                     or species is None
                     or getattr(species, "boundary_condition", False)
                     or getattr(species, "constant", False)
