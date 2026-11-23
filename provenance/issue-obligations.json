@@ -6,17 +6,20 @@
       140,
       142,
       143,
+      147,
+      148,
       150,
       153,
       156,
       160,
+      171,
       176,
       178,
       473
     ],
-    "decision": "docs/DECISIONS.md#22",
-    "decision_marker": "Dependencies #138, #140, #142, #143, #150, #153, #156, #160, #176, #178 and #473 for downstream release qualification",
-    "reason": "Maintainer decisions 18, 20, 21 and 22 record that the reviewed scope for these dependency issues is authoritative for downstream exact-revision closure dry runs. #153 and #473 resolved native BNGIR deserialization and JAX backends and are closed. This resolves dependency status only; dependent issues must still pass all of their own acceptance checks."
+    "decision": "docs/DECISIONS.md#23",
+    "decision_marker": "Dependencies #138, #140, #142, #143, #147, #148, #150, #153, #156, #160, #171, #176, #178 and #473 for downstream release qualification",
+    "reason": "Maintainer decisions 18, 20, 21, 22 and 23 record that the reviewed scope for these dependency issues is authoritative for downstream exact-revision closure dry runs. #147, #148 and #171 are closed. This resolves dependency status only; dependent issues must still pass all of their own acceptance checks."
   },
   "issues": [
     {
@@ -14355,7 +14358,7 @@
     },
     {
       "number": 166,
-      "body_sha256": "ddfcf0e91f5eda8b053ce9236865e72fb4463432a2763f37652e41bff15e89b0",
+      "body_sha256": "8965efb8fd18cb07ab8efe0c425c2c3e84f7113cd2f8f8bba0f2f1eef679e468",
       "obligations": [
         {
           "id": "issue:166:specify-correspondence-between-the-resolved-c-model-serialized-s",
