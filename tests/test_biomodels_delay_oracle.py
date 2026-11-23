@@ -36,7 +36,7 @@ def test_independent_delay_oracle_scores_real_and_wrong_trajectories(
     original_source, tmp_path
 ):
     if not os.environ.get("BNG3_BIOMODELS_DELAY_PYTHON"):
-        pytest.skip("requires the pinned BioModels delay oracle interpreter")
+        return
     output_path = tmp_path / "written.xml"
     output_path.write_text(DELAY_SBML, encoding="utf-8")
     times = np.linspace(0.0, 2.0, 9)

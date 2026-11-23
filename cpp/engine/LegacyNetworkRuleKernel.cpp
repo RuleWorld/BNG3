@@ -84,14 +84,8 @@ struct LegacyNetworkRuleKernel::Impl {
           state(rule.createExecutionState()) {
         // The lowered execution rule is reconstructed from compiled data, so
         // the AST-level absolute-flux marker is not carried over.  Restore it
-        // from the compiled TotalRate modifier: an absolute flux states the
-        // complete extent rate and must not receive a reactant permutation
-        // factor during network expansion.
-        if (std::any_of(
-                compiledRule.modifiers().begin(), compiledRule.modifiers().end(),
-                [](const compile::CompiledModifier& modifier) {
-                    return modifier.source == "TotalRate";
-                })) {
+        // from the compiled rule.
+        if (compiledRule.isAbsoluteFlux()) {
             rule.setAbsoluteFlux(true);
         }
         if (compiledRule.delayExpression()) {
