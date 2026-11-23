@@ -87,6 +87,11 @@ def main(argv=None) -> int:
         type=Path,
         help="JSON artifact recording executed disposition checks at this revision",
     )
+    parser.add_argument(
+        "--py-row-map",
+        type=Path,
+        help="JSON artifact mapping every py.* row to pinned-oracle evidence",
+    )
     args = parser.parse_args(argv)
 
     head = subprocess.check_output(
@@ -138,6 +143,25 @@ def main(argv=None) -> int:
             "Issue 171 named acceptance tests did not execute: "
             + ", ".join(sorted(missing))
         )
+
+    py_row_map = None
+    if args.py_row_map:
+        if not args.py_row_map.is_file():
+            raise SystemExit("Issue 171 py.* row map artifact is missing")
+        py_row_map = json.loads(args.py_row_map.read_text())
+        if py_row_map.get("package", {}).get("source_revision") != head:
+            raise SystemExit("Issue 171 py.* row map has a stale package revision")
+        if py_row_map.get("oracle", {}).get("source_revision") != py_row_map.get(
+            "oracle", {}
+        ).get("pinned_revision"):
+            raise SystemExit("Issue 171 py.* row map oracle does not match its pin")
+        failed = [
+            row["id"] for row in py_row_map.get("results", []) if row.get("status") != "PASS"
+        ]
+        if failed:
+            raise SystemExit(
+                "Issue 171 py.* row map has unresolved rows: " + ", ".join(sorted(failed))
+            )
 
     disposition_evidence: dict[str, dict] = {}
     if args.disposition_evidence:
@@ -234,6 +258,17 @@ def main(argv=None) -> int:
                 ).hexdigest(),
             }
             if args.disposition_evidence
+            else None
+        ),
+        "py_row_map": (
+            {
+                "path": str(args.py_row_map),
+                "sha256": hashlib.sha256(args.py_row_map.read_bytes()).hexdigest(),
+                "row_count": py_row_map["row_count"],
+                "package": py_row_map["package"],
+                "oracle": py_row_map["oracle"],
+            }
+            if py_row_map is not None
             else None
         ),
     }
