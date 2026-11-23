@@ -1145,6 +1145,35 @@ def _balanced_inner(value: str) -> str:
     return value.strip()
 
 
+def _is_strict_time_trigger(trigger: str) -> bool:
+    """Whether a fixed-time trigger is strict (``time > T`` or ``time < T``).
+
+    A strict comparison is false at the threshold itself and only becomes
+    true immediately afterwards.  A scheduled action placed exactly at ``T``
+    would therefore fire one instant too early relative to an independent
+    continuous-time simulator, which observes the left limit at ``T``.
+    """
+
+    value = str(trigger or "").strip()
+    comparison = _match_comparison_call(value)
+    if comparison is not None:
+        operator, arguments_text = comparison
+        parts = [part.strip() for part in arguments_text.split(",")]
+        if len(parts) == 2:
+            left, right = parts[0].strip().lower(), parts[1].strip().lower()
+            if operator in {"gt", "lt"}:
+                return (operator == "gt" and left == "time") or (
+                    operator == "lt" and right == "time"
+                )
+            return False
+    lowered = value.lower()
+    if re.match(r"^\(?\s*time\s*>\s*(?!=)", lowered):
+        return True
+    if re.search(r"(?<![<>=])<\s*time\s*\)?\s*$", lowered):
+        return True
+    return False
+
+
 def parse_time_threshold(trigger: str) -> Optional[str]:
     """Return the threshold from a trigger that crosses a time boundary."""
 
@@ -8839,6 +8868,15 @@ def synthesize_event_actions(
                 min(window_end, upper_bound) if window_end is not None else upper_bound
             )
         execution_time = trigger_time
+        if (
+            _is_strict_time_trigger(event.trigger)
+            and not event.trigger_initial_value
+            and trigger_time > 0.0
+        ):
+            # ``time > T`` is false at T; schedule the action at the first
+            # representable instant after T so the left limit at T stays the
+            # pre-event state, matching continuous-time readers.
+            execution_time = trigger_time + max(1e-12, abs(trigger_time) * 1e-12)
         delay = 0.0
         if event.delay:
             delay = fold_at_state(event.delay, trigger_time, event_context=event)
@@ -9088,7 +9126,7 @@ def synthesize_event_actions(
                 event.priority or "", execution_time, event_context=event
             )
             if folded_priority is None and simultaneous_priority_group_eligible(
-                event, trigger_time, execution_time, delay
+                event, trigger_time, trigger_time + delay, delay
             ):
                 state_priority = fold_at_state(
                     event.priority or "",
