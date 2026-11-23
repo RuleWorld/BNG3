@@ -1476,8 +1476,15 @@ jobs:
       - name: Run Issue 152 energy and protocol release acceptance
         env:
           BNG3_CI_STRICT_ORACLES: "1"
+          NFSIM_BIN: ${{ runner.temp }}/oracle-nfsim/build/NFsim
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          BNG3_ISSUE152_NATIVE_REPORT: ${{ runner.temp }}/issue152-native.json
+          BNG3_ISSUE152_EXTENSION_REPORT: ${{ runner.temp }}/issue152-extension.json
+        shell: bash
         run: |
           set -euo pipefail
+          NFSIM_REVISION=$(python -c 'import json; print(json.load(open("provenance/upstreams.lock.yml"))["sources"]["nfsim"]["revision"])')
+          export NFSIM_REVISION
           python -m pytest --noconftest -q \
             tests/validation/release/cases/issue-152/ \
             --junitxml="$RUNNER_TEMP/issue152-results.xml"
@@ -1487,7 +1494,10 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: issue152-energy-protocols-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/issue152-results.xml
+          path: |
+            ${{ runner.temp }}/issue152-results.xml
+            ${{ runner.temp }}/issue152-native.json
+            ${{ runner.temp }}/issue152-extension.json
           if-no-files-found: error
           retention-days: 30
 
@@ -1498,6 +1508,8 @@ jobs:
           set -euo pipefail
           python scripts/ci/record_issue152_release.py \
             --source-revision "$BNG3_SOURCE_REVISION" \
+            --report release-energy-protocols="$RUNNER_TEMP/issue152-native.json" \
+            --report release-extension-protocols="$RUNNER_TEMP/issue152-extension.json" \
             --output "$RUNNER_TEMP/issue-152-release-report.json" \
             --summary-file "$GITHUB_STEP_SUMMARY"
 
