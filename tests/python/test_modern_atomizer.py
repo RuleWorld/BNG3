@@ -4616,3 +4616,42 @@ def test_scientific_notation_seed_amount_is_not_trimmed():
     result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
     assert result.success, result.error
     assert "@C:M_S() 3.534e-10" in result.bngl, result.bngl[:500]
+
+
+def test_negative_state_dependent_flux_is_not_folded_to_constant_source():
+    """A negative flux -n*S must keep its S dependence, not become a source n.
+
+    Folding -n*S by dividing out the reactant gives a negative constant.  The
+    old writer reversed the reaction sides and emitted the magnitude as a
+    state-independent source, so S grew linearly instead of staying at zero.
+    """
+    from bionetgen.atomizer.modern import Atomizer
+
+    model = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="neg_flux">
+        <listOfCompartments>
+          <compartment id="C" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfParameters>
+          <parameter id="n" value="0.277" constant="true"/>
+        </listOfParameters>
+        <listOfSpecies>
+          <species id="S" compartment="C" initialAmount="0"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfReactions>
+          <reaction id="decay" reversible="false">
+            <listOfReactants><speciesReference species="S" stoichiometry="1"/></listOfReactants>
+            <kineticLaw>
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><times/><apply><minus/><ci> n </ci></apply><ci> S </ci></apply>
+              </math>
+            </kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>"""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
+    assert result.success, result.error
+    assert "0 -> @C:M_S() 0.277" not in result.bngl, result.bngl[:800]
+    assert "_c_S()" in result.bngl, result.bngl[:800]

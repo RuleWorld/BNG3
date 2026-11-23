@@ -2733,7 +2733,15 @@ def _rate_for_reaction(
             assignment_variables,
             reaction_order=concentration_order,
         )
-        if mass_action_constant is not None:
+        # A negative mass-action coefficient cannot be emitted as a BNGL rate.
+        # Folding a state-dependent negative SBML flux (for example -n*S) by
+        # dividing out the reactant gives a *negative constant*, and reversing
+        # the reaction with its magnitude turns the law into a constant source
+        # that loses the species dependence. Keep the complete flux instead:
+        # a TotalRate rule with a negative value is exactly the SBML signed
+        # flux, which BNG3 evaluates correctly (negative consumption =
+        # production).
+        if mass_action_constant is not None and mass_action_constant >= 0:
             return apply_conversion(
                 _volume_scaled_mass_action_constant(
                     mass_action_constant,
@@ -2835,7 +2843,10 @@ def _rate_for_reaction(
             assignment_variables,
             reaction_order=concentration_order,
         )
-        if mass_action_constant is not None:
+        # See the first mass-action guard: a negative coefficient must keep
+        # the complete signed flux rather than being folded and reverse-
+        # lowered into a state-independent source.
+        if mass_action_constant is not None and mass_action_constant >= 0:
             return apply_conversion(
                 _volume_scaled_mass_action_constant(
                     mass_action_constant,
