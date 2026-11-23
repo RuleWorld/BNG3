@@ -16,15 +16,18 @@ import importlib.util
 import math
 from pathlib import Path
 
-build_cpp = Path(__file__).resolve().parents[3] / "build" / "cpp"
-build_so = next(iter(sorted(build_cpp.glob("_bionetgen_cpp*.so"))), None)
-if build_so is not None:
-    spec = importlib.util.spec_from_file_location("_bionetgen_cpp", str(build_so))
-    cpp = importlib.util.module_from_spec(spec)
-    assert spec.loader is not None
-    spec.loader.exec_module(cpp)
-else:
-    import bionetgen._bionetgen_cpp as cpp
+try:
+    import bionetgen._bionetgen_cpp as cpp  # type: ignore
+except ImportError:
+    build_cpp = Path(__file__).resolve().parents[3] / "build" / "cpp"
+    build_so = next(iter(sorted(build_cpp.glob("_bionetgen_cpp*.so"))), None)
+    if build_so is not None:
+        spec = importlib.util.spec_from_file_location("_bionetgen_cpp", str(build_so))
+        cpp = importlib.util.module_from_spec(spec)
+        assert spec.loader is not None
+        spec.loader.exec_module(cpp)
+    else:
+        raise
 
 MODEL = """begin model
 begin parameters
