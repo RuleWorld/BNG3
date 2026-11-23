@@ -8854,11 +8854,11 @@ def synthesize_event_actions(
                 min(window_end, upper_bound) if window_end is not None else upper_bound
             )
         execution_time = trigger_time
-        if _is_strict_time_trigger(event.trigger) and not event.trigger_initial_value:
+        if _is_strict_time_trigger(event.trigger):
             # ``time > T`` is false at T; schedule the action at the first
             # representable instant after T so the left limit at T stays the
             # pre-event state, matching continuous-time readers.
-            execution_time = trigger_time + max(1e-12, abs(trigger_time) * 1e-12)
+            execution_time = trigger_time + max(1e-9, abs(trigger_time) * 1e-9)
         delay = 0.0
         if event.delay:
             delay = fold_at_state(event.delay, trigger_time, event_context=event)
@@ -9414,7 +9414,7 @@ def synthesize_event_actions(
             # ``time > 0`` is false at the start of the simulation.  Keep the
             # assignment out of the initial state so the first output row is
             # still the pre-event value; schedule it one instant later.
-            time = 1e-12
+            time = 1e-9
         if merged and abs(merged[-1][0] - time) < 1e-12:
             merged[-1][1].extend(sets)
         else:
