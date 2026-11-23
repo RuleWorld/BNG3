@@ -2329,11 +2329,13 @@ def get_seed_species(
             else:
                 expression = f"({expression})"
         elif amount_set:
-            expression = (
-                str(item.initial_amount).rstrip("0").rstrip(".")
-                if "." in str(item.initial_amount)
-                else str(item.initial_amount)
-            )
+            # Trim trailing zeros only from a plain decimal literal. Applying
+            # rstrip("0") to scientific notation corrupts the exponent:
+            # "3.534e-10" becomes "3.534e-1", a factor of 10**9.
+            amount_text = str(item.initial_amount)
+            if "e" not in amount_text.lower() and "." in amount_text:
+                amount_text = amount_text.rstrip("0").rstrip(".")
+            expression = amount_text or "0"
         elif concentration_set:
             expression = f"({item.initial_concentration} * __Avogadro__ * {volume})"
         else:

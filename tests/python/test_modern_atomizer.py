@@ -4565,3 +4565,23 @@ def test_parser_does_not_drop_empty_declared_dynamic_packages():
     )
     assert package_warning["severity"] == "info"
     assert "core kinetic model is unaffected" in package_warning["message"]
+
+
+def test_scientific_notation_seed_amount_is_not_trimmed():
+    """Trailing-zero trimming must not corrupt a scientific-notation exponent."""
+    from bionetgen.atomizer.modern import Atomizer
+
+    model = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="sci_seed">
+        <listOfCompartments>
+          <compartment id="C" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="S" compartment="C" initialAmount="3.534e-10"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+      </model>
+    </sbml>"""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
+    assert result.success, result.error
+    assert "@C:M_S() 3.534e-10" in result.bngl, result.bngl[:500]
