@@ -10,7 +10,7 @@
 > [issue-keyed status](CURRENT_PROGRESS.md), [capability inventory](CAPABILITY_UNION_INVENTORY.md),
 > and exact-head CI receipts before claiming a work package complete.
 
-BNG3 will deliver the entire 994-row capability inventory with the source semantics of BNG2, NFsim and PyBioNetGen and the BNG3 additions. Exact-main independent checks determine release readiness.
+BNG3 will deliver the entire [capability inventory](CAPABILITY_UNION_INVENTORY.md) with the source semantics of BNG2, NFsim and PyBioNetGen and the BNG3 additions. Exact-main independent checks determine release readiness.
 
 The five largest obstacles are unverified inventory statuses; incomplete independent acceptance and expected outputs; shared compiled-model and backend semantics; SBML and network-free semantic coverage; and CI latency with incomplete per-case evidence. Consolidate the two capability lists, duplicated workflow-property checks, status reporting and backend decisions without removing evidence or weakening distinct checks.
 

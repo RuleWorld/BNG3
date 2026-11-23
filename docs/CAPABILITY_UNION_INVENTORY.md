@@ -39,6 +39,12 @@ consuming evidence. A declared identity, a collected test and a passing
 independent execution are distinct. See [current progress](CURRENT_PROGRESS.md)
 and the linked release issues for qualification records.
 
+## Inventory reconciliation on 2026-11-23
+
+At `3beac785`, the matrix records 997 distinct rows: 92 implemented,
+172 partial, 732 unassessed, and one deferred. These are inventory labels.
+Each release claim still requires the consuming evidence for its named check.
+
 ## Main status review on 2026-11-18
 
 As reviewed on 2026-11-18, the 994 rows include 92 implemented,
