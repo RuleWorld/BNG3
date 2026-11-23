@@ -93,7 +93,9 @@ def _obs(result):
 
 def _invalid_option(route, model):
     method, _backend = METHODS[route]
-    bad = "__invalid_backend__"
+    # Network-free routes explicitly reject the finite-network backend; all
+    # finite routes reject an unknown backend name.
+    bad = "bngsim" if method in ("nfnext", "nfcore") else "__invalid_backend__"
     try:
         model.simulate(method=method, t_end=1.0, n_steps=2, backend=bad)
     except (RuntimeError, ValueError):
