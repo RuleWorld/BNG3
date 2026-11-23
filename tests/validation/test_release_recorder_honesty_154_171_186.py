@@ -29,7 +29,9 @@ from scripts.ci import (
 REV = "a" * 40
 
 
-def _junit(path: Path, names: tuple[str, ...], *, skipped: tuple[str, ...] = ()) -> Path:
+def _junit(
+    path: Path, names: tuple[str, ...], *, skipped: tuple[str, ...] = ()
+) -> Path:
     suite = ET.Element("testsuite")
     for name in names:
         case = ET.SubElement(suite, "testcase", name=name)
@@ -46,6 +48,7 @@ def _checkout_stub(argv, **_kwargs):
 
 
 # --- 154/155/156: per-check execution is derived from the JUnit report. -------
+
 
 @pytest.mark.parametrize(
     "recorder,checks",
@@ -102,7 +105,9 @@ def test_partial_or_skipped_junit_cannot_certify_full_check(tmp_path, recorder, 
 
 def test_issue154_version_cannot_pass_with_zero_executed_cases():
     """Regression for the unconditional PASS on release-bngir-version."""
-    with mock.patch.object(record_bngir_roundtrip_release, "run_tests", lambda root: []):
+    with mock.patch.object(
+        record_bngir_roundtrip_release, "run_tests", lambda root: []
+    ):
         report = record_bngir_roundtrip_release.build_release_record(allow_dirty=True)
     rows = {row["id"]: row for row in report["results"]}
     assert all(row["status"] == "NOT_TESTED" for row in rows.values())
@@ -270,6 +275,7 @@ def test_disposition_needs_exact_revision_evidence(
 
 
 # --- #156: inventory membership cannot certify per-row EQ outcomes. ----------
+
 
 def test_membership_only_eq_evidence_is_rejected():
     membership_only = {

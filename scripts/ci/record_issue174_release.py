@@ -27,13 +27,19 @@ EXPECTED_CHECKS = (
     "release-benchmark-correctness",
     "release-obligation-174",
 )
-TEST_FILES = ("tests/validation/release/cases/issue-174/test_cpu_benchmark_evidence.py",)
-REQUIRED_WORKLOADS = (
-    "parse_compile", "netgen", "ode", "ssa", "nfnext", "scan"
+TEST_FILES = (
+    "tests/validation/release/cases/issue-174/test_cpu_benchmark_evidence.py",
 )
+REQUIRED_WORKLOADS = ("parse_compile", "netgen", "ode", "ssa", "nfnext", "scan")
 REQUIRED_IDENTITY = (
-    "source_revision", "host", "machine", "python", "compiler",
-    "extension_sha256", "platform_family", "historical_baseline_revision",
+    "source_revision",
+    "host",
+    "machine",
+    "python",
+    "compiler",
+    "extension_sha256",
+    "platform_family",
+    "historical_baseline_revision",
     "historical_baseline_sha256",
 )
 
@@ -94,7 +100,9 @@ def run_tests(root: Path = ROOT) -> dict[str, dict]:
             _fail(f"missing test file: {path}")
         result = subprocess.run(
             [sys.executable, "-m", "pytest", "--noconftest", "-q", str(path)],
-            cwd=str(root), capture_output=True, text=True,
+            cwd=str(root),
+            capture_output=True,
+            text=True,
         )
         if result.returncode != 0:
             _fail(
@@ -171,21 +179,31 @@ def build_release_record(
 ) -> dict:
     head = subprocess.run(
         ["git", "-C", str(root), "rev-parse", "HEAD"],
-        check=True, capture_output=True, text=True, timeout=10,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
     ).stdout.strip()
     if expected_revision and head != expected_revision:
         _fail(f"stale Issue 174 evidence: HEAD {head} != {expected_revision}")
     revision = expected_revision or head
     dirty = subprocess.run(
         ["git", "-C", str(root), "status", "--porcelain"],
-        check=True, capture_output=True, text=True, timeout=10,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
     ).stdout.strip()
     if dirty and not allow_dirty:
         _fail(f"Issue 174 evidence checkout is dirty: {dirty}")
 
     manifest = verify_manifest(root)
     executed = (run_tests(root) if not skip_tests else {}) or {}
-    current = verify_current_report(Path(current_report), revision) if current_report else None
+    current = (
+        verify_current_report(Path(current_report), revision)
+        if current_report
+        else None
+    )
     prior = verify_issue176_report(Path(issue176_report)) if issue176_report else None
 
     results = []

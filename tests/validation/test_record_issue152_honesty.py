@@ -15,21 +15,23 @@ import pytest
 from scripts.ci import record_issue152_release as rec
 
 ROOT = Path(__file__).resolve().parents[2]
-REV = subprocess.check_output(
-    ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
-).strip()
+REV = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
 NATIVE_REV = "9b00d42f734dcc3e695205600f12cae5b44d1daa"
 
 
 def _native(revision=REV, native_rev=NATIVE_REV, families=None):
-    families = families if families is not None else {
-        family: {
-            "native_comparison": True,
-            "seed_budget": 64,
-            "independent_oracle": "native-NFsim@" + native_rev,
+    families = (
+        families
+        if families is not None
+        else {
+            family: {
+                "native_comparison": True,
+                "seed_budget": 64,
+                "independent_oracle": "native-NFsim@" + native_rev,
+            }
+            for family in rec.REQUIRED_FAMILIES
         }
-        for family in rec.REQUIRED_FAMILIES
-    }
+    )
     return {
         "check": "release-energy-protocols",
         "status": "PASS",
@@ -42,10 +44,18 @@ def _native(revision=REV, native_rev=NATIVE_REV, families=None):
 
 
 def _extension(rows=None):
-    rows = rows if rows is not None else {
-        key: {"product_linked": True, "independent_expectation": "analytic"}
-        for key in ("cycle_affinity", "driven_monotonicity", "barrier_detailed_balance")
-    }
+    rows = (
+        rows
+        if rows is not None
+        else {
+            key: {"product_linked": True, "independent_expectation": "analytic"}
+            for key in (
+                "cycle_affinity",
+                "driven_monotonicity",
+                "barrier_detailed_balance",
+            )
+        }
+    )
     return {
         "check": "release-extension-protocols",
         "status": "PASS",
@@ -65,7 +75,11 @@ def _build(executed=None, reports=None, **kwargs):
     mp.setattr(rec, "run_tests", fake)
     try:
         record = rec.build_release_record(
-            expected_revision=REV, allow_dirty=True, root=ROOT, reports=reports or {}, **kwargs
+            expected_revision=REV,
+            allow_dirty=True,
+            root=ROOT,
+            reports=reports or {},
+            **kwargs,
         )
     finally:
         mp.undo()

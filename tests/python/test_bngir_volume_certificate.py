@@ -12,9 +12,7 @@ from bionetgen.model import _cpp
 
 def _model(volume: float, bimolecular: bool):
     rule = (
-        "A()@cell + A()@cell -> B()@cell k"
-        if bimolecular
-        else "A()@cell -> B()@cell k"
+        "A()@cell + A()@cell -> B()@cell k" if bimolecular else "A()@cell -> B()@cell k"
     )
     return bionetgen.BioNetGenModel(
         _cpp.parse_string(

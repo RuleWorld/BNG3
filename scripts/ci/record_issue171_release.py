@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tests.validation.junit import executed_test_names
+
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -156,11 +157,14 @@ def main(argv=None) -> int:
         ).get("pinned_revision"):
             raise SystemExit("Issue 171 py.* row map oracle does not match its pin")
         failed = [
-            row["id"] for row in py_row_map.get("results", []) if row.get("status") != "PASS"
+            row["id"]
+            for row in py_row_map.get("results", [])
+            if row.get("status") != "PASS"
         ]
         if failed:
             raise SystemExit(
-                "Issue 171 py.* row map has unresolved rows: " + ", ".join(sorted(failed))
+                "Issue 171 py.* row map has unresolved rows: "
+                + ", ".join(sorted(failed))
             )
 
     disposition_evidence: dict[str, dict] = {}
@@ -219,7 +223,8 @@ def main(argv=None) -> int:
                     check,
                     "disposition",
                     record.get(
-                        "detail", "Exact-revision disposition recorded in evidence artifact."
+                        "detail",
+                        "Exact-revision disposition recorded in evidence artifact.",
                     ),
                     supported=False,
                     status="PASS",

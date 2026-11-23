@@ -4007,8 +4007,7 @@ def _initial_state_counterexample(left_model: Any, right_model: Any) -> dict | N
 
     def enabled(key, init) -> bool:
         return all(
-            init.get(species, 0) >= count
-            for species, count in Counter(key[0]).items()
+            init.get(species, 0) >= count for species, count in Counter(key[0]).items()
         )
 
     if set(left_species) != set(right_species):
@@ -4233,10 +4232,7 @@ def exact_process_equal(
         # volume scaling (e.g. a bimolecular propensity in that compartment).
         non_volume_keys = set(left_unlowered) - {"compartments"}
         if (
-            all(
-                left_unlowered[key] == right_unlowered[key]
-                for key in non_volume_keys
-            )
+            all(left_unlowered[key] == right_unlowered[key] for key in non_volume_keys)
             and _volume_rhs_counterexample(left_model, right_model) is not None
         ):
             return False

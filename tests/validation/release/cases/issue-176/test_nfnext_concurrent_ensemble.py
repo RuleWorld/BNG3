@@ -116,11 +116,16 @@ def _native_final_counts(work_dir: Path, seeds) -> np.ndarray | None:
         out = work_dir / f"native_{seed}.gdat"
         cmd = [
             str(binary),
-            "-xml", str(xml),
-            "-o", str(out),
-            "-sim", str(T_END),
-            "-oSteps", str(N_STEPS),
-            "-seed", str(int(seed)),
+            "-xml",
+            str(xml),
+            "-o",
+            str(out),
+            "-sim",
+            str(T_END),
+            "-oSteps",
+            str(N_STEPS),
+            "-seed",
+            str(int(seed)),
         ]
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         if proc.returncode != 0 or not out.is_file():
@@ -152,9 +157,9 @@ def test_concurrent_distribution_matches_pinned_native_nfsim(tmp_path):
     se = math.sqrt((var_b + var_n) / len(seeds))
     assert se > 0.0
     diff = abs(float(bng3.mean()) - float(native.mean()))
-    assert diff <= Z_CONTROL * se, (
-        f"distribution mismatch: diff={diff:.3f} > {Z_CONTROL}*SE={Z_CONTROL*se:.3f}"
-    )
+    assert (
+        diff <= Z_CONTROL * se
+    ), f"distribution mismatch: diff={diff:.3f} > {Z_CONTROL}*SE={Z_CONTROL*se:.3f}"
 
     report = {
         "check": "release-nf-ensemble",

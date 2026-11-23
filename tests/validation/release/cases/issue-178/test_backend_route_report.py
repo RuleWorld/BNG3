@@ -47,14 +47,28 @@ end model
 
 CHECKS = {
     "release-interface-parity": (
-        "ode:native", "ssa:native", "nf:nfnext", "format:bngl", "format:net",
+        "ode:native",
+        "ssa:native",
+        "nf:nfnext",
+        "format:bngl",
+        "format:net",
     ),
     "release-backend-contract": (
-        "ode:native", "ssa:native", "pla:native", "psa:native",
-        "nf:nfnext", "nf:nfcore", "ode:bngsim", "ssa:bngsim",
+        "ode:native",
+        "ssa:native",
+        "pla:native",
+        "psa:native",
+        "nf:nfnext",
+        "nf:nfcore",
+        "ode:bngsim",
+        "ssa:bngsim",
     ),
     "release-backend-oracles": (
-        "ode:native", "ssa:native", "nf:nfnext", "ode:bngsim", "ssa:bngsim",
+        "ode:native",
+        "ssa:native",
+        "nf:nfnext",
+        "ode:bngsim",
+        "ssa:bngsim",
     ),
 }
 
@@ -123,7 +137,8 @@ def _route_row(route, model, digest):
         return {
             "scope": "unsupported-optional-install",
             "reason": "BNGSIM library not built; explicit selection fails closed",
-            "compiled_input": False, "result_schema": False,
+            "compiled_input": False,
+            "result_schema": False,
             "invalid_options": _invalid_option(route, model),
             "independent_output": False,
         }
@@ -169,17 +184,28 @@ def test_emit_all_route_reports(tmp_path):
     for check_id, required in CHECKS.items():
         report = {
             "check": check_id,
-            "status": "PASS" if all(
-                all(routes[name].get(k) is True for k in
-                    ("compiled_input", "result_schema", "invalid_options",
-                     "independent_output"))
-                for name in required
-            ) else "PARTIAL",
+            "status": (
+                "PASS"
+                if all(
+                    all(
+                        routes[name].get(k) is True
+                        for k in (
+                            "compiled_input",
+                            "result_schema",
+                            "invalid_options",
+                            "independent_output",
+                        )
+                    )
+                    for name in required
+                )
+                else "PARTIAL"
+            ),
             "source_revision": os.environ.get("BNG3_SOURCE_REVISION", ""),
             "source_dirty": False,
             "routes": {name: routes[name] for name in required},
             "unsupported_routes": sorted(
-                name for name in required
+                name
+                for name in required
                 if routes[name]["scope"] == "unsupported-optional-install"
             ),
             "gpu_scope": "#474 device execution out of scope",

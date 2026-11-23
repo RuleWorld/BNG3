@@ -82,7 +82,9 @@ def _translate_modern_with_model(
     return result.bngl, atomizer.get_model()
 
 
-def atomize_sbml_with_sct(sbml_path: str, atomize: bool = False, **options) -> tuple[str, dict]:
+def atomize_sbml_with_sct(
+    sbml_path: str, atomize: bool = False, **options
+) -> tuple[str, dict]:
     """Translate SBML and return BNG3's native species-composition tables.
 
     The JSON shape is BNG3's own SCT representation (graph name -> node ->
@@ -102,7 +104,9 @@ def atomize_sbml_with_sct(sbml_path: str, atomize: bool = False, **options) -> t
         n_steps=options.get("n_steps", 100),
         native_dae_runtime=False,
     )
-    result = atomizer.atomize(source.read_text(encoding="utf-8-sig"), source_path=source)
+    result = atomizer.atomize(
+        source.read_text(encoding="utf-8-sig"), source_path=source
+    )
     if not result.success or not result.bngl:
         raise BioNetGenError(
             f"Modern SBML atomization failed for {source}: {result.error or 'no BNGL output'}"

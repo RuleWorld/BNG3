@@ -17,22 +17,24 @@ import pytest
 from scripts.ci import record_issue178_release as rec
 
 ROOT = Path(__file__).resolve().parents[2]
-REV = subprocess.check_output(
-    ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
-).strip()
+REV = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
 
 
 def _route_report(check_id, *, revision=REV, routes=None, dirty=False, status="PASS"):
-    routes = routes if routes is not None else {
-        name: {
-            "compiled_input": True,
-            "result_schema": True,
-            "invalid_options": True,
-            "independent_output": True,
-            "scope": "cpu-execution",
+    routes = (
+        routes
+        if routes is not None
+        else {
+            name: {
+                "compiled_input": True,
+                "result_schema": True,
+                "invalid_options": True,
+                "independent_output": True,
+                "scope": "cpu-execution",
+            }
+            for name in rec.REQUIRED_ROUTES[check_id]
         }
-        for name in rec.REQUIRED_ROUTES[check_id]
-    }
+    )
     return {
         "check": check_id,
         "status": status,

@@ -16,6 +16,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from tests.validation.junit import executed_test_names
+
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
@@ -167,7 +168,8 @@ def main(argv=None) -> int:
                     check,
                     "disposition",
                     record.get(
-                        "detail", "Exact-revision disposition recorded in evidence artifact."
+                        "detail",
+                        "Exact-revision disposition recorded in evidence artifact.",
                     ),
                     supported=False,
                     status="PASS",

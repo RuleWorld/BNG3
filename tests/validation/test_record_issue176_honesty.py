@@ -16,9 +16,7 @@ import pytest
 from scripts.ci import record_issue176_release as rec
 
 ROOT = Path(__file__).resolve().parents[2]
-REV = subprocess.check_output(
-    ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
-).strip()
+REV = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
 
 
 def _ensemble(revision=REV, **overrides):
@@ -38,18 +36,22 @@ def _ensemble(revision=REV, **overrides):
 
 
 def _measurement(revision=REV, workloads=None):
-    workloads = workloads if workloads is not None else {
-        name: {
-            "status": "PASS",
-            "startup_seconds": 0.01,
-            "ensemble_seconds": 0.5,
-            "events": 1000,
-            "events_per_second": 2000.0,
-            "peak_rss_kib": 100000,
-            "correctness": {"invariant": "independent control"},
+    workloads = (
+        workloads
+        if workloads is not None
+        else {
+            name: {
+                "status": "PASS",
+                "startup_seconds": 0.01,
+                "ensemble_seconds": 0.5,
+                "events": 1000,
+                "events_per_second": 2000.0,
+                "peak_rss_kib": 100000,
+                "correctness": {"invariant": "independent control"},
+            }
+            for name in rec.REQUIRED_WORKLOADS
         }
-        for name in rec.REQUIRED_WORKLOADS
-    }
+    )
     return {
         "check": "release-capability-coverage-176",
         "status": "PASS",
@@ -69,8 +71,11 @@ def _build(reports=None, executed=None, **kwargs):
     mp.setattr(rec, "run_tests", fake)
     try:
         record = rec.build_release_record(
-            expected_revision=REV, allow_dirty=True, root=ROOT,
-            reports=reports or {}, **kwargs
+            expected_revision=REV,
+            allow_dirty=True,
+            root=ROOT,
+            reports=reports or {},
+            **kwargs,
         )
     finally:
         mp.undo()

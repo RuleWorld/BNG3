@@ -101,9 +101,7 @@ def test_wrong_bond_control_detects_reconstructed_behaviour_change():
 
 
 def test_malformed_bond_fails_before_a_model_is_returned():
-    case = next(
-        c for c in adversarial.CASES if c["id"] == "unpaired-exact-bond-group"
-    )
+    case = next(c for c in adversarial.CASES if c["id"] == "unpaired-exact-bond-group")
     document = copy.deepcopy(case["document"])
     before = json.dumps(document, sort_keys=True)
     with pytest.raises(Exception, match="exact bond group"):

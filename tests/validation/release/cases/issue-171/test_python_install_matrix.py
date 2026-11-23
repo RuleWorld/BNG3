@@ -28,7 +28,9 @@ DIST_DIR = Path(
 )
 EXTRAS = ("legacy", "plotting", "jax", "notebook", "full", "dev")
 SELECTED_EXTRAS = tuple(
-    part for part in os.environ.get("BNG3_INSTALL_EXTRAS", ",".join(EXTRAS)).split(",") if part
+    part
+    for part in os.environ.get("BNG3_INSTALL_EXTRAS", ",".join(EXTRAS)).split(",")
+    if part
 )
 SMOKE = (
     "import bionetgen, importlib.metadata as m; "
@@ -49,7 +51,9 @@ def _build(outdir: Path) -> dict:
     if not use_isolation:
         cmd.append("--no-isolation")
     result = _run(cmd, cwd=REPO_ROOT)
-    assert result.returncode == 0, f"distribution build failed:\n{result.stderr[-4000:]}"
+    assert (
+        result.returncode == 0
+    ), f"distribution build failed:\n{result.stderr[-4000:]}"
     wheel = next(outdir.glob("*.whl"), None)
     sdist = next(outdir.glob("*.tar.gz"), None)
     assert wheel is not None and sdist is not None, "wheel and sdist must both be built"
@@ -66,16 +70,24 @@ def _fresh_env(path: Path) -> Path:
 
 def _install(binary: Path, target: str) -> None:
     result = _run([str(binary), "-m", "pip", "install", "-q", target])
-    assert result.returncode == 0, f"install of {target} failed:\n{result.stderr[-4000:]}"
+    assert (
+        result.returncode == 0
+    ), f"install of {target} failed:\n{result.stderr[-4000:]}"
 
 
 def _verify(binary: Path, extra: str | None = None) -> dict:
     result = _run([str(binary), "-c", SMOKE])
-    assert result.returncode == 0, f"API smoke failed for {extra or 'base'}:\n{result.stderr}"
+    assert (
+        result.returncode == 0
+    ), f"API smoke failed for {extra or 'base'}:\n{result.stderr}"
     cli = _run([str(binary), "-m", "bionetgen.cli", "--version"])
     assert cli.returncode == 0, f"CLI smoke failed for {extra or 'base'}:\n{cli.stderr}"
     version = _run(
-        [str(binary), "-c", "import importlib.metadata as m;print(m.version('bionetgen'))"]
+        [
+            str(binary),
+            "-c",
+            "import importlib.metadata as m;print(m.version('bionetgen'))",
+        ]
     )
     return {
         "extra": extra or "base",
@@ -126,7 +138,9 @@ def test_wheel_and_sdist_install_in_fresh_environments(install_report):
 
 def test_required_extras_are_tested_separately(install_report):
     extra_rows = {
-        row["extra"] for row in install_report["rows"] if row["artifact"].startswith("wheel[")
+        row["extra"]
+        for row in install_report["rows"]
+        if row["artifact"].startswith("wheel[")
     }
     assert set(install_report["selected_extras"]) == extra_rows
     assert all(

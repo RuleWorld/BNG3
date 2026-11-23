@@ -138,7 +138,9 @@ def test_extension_product_linked_report(tmp_path):
     # A_cycle = W is checked separately by test_energy_protocols.py; this
     # check adds product linkage instead of restating that arithmetic.
     assert abs(affinities[0]) < 1e-3
-    assert all(affinities[i] > affinities[i - 1] for i in range(1, len(affinities))), affinities
+    assert all(
+        affinities[i] > affinities[i - 1] for i in range(1, len(affinities))
+    ), affinities
 
     # 2. Barrier: equilibrium occupancy ratio from product final states.
     ratios = []

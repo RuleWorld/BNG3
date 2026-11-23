@@ -67,14 +67,17 @@ def _platform_family() -> str:
 def _identity():
     head = subprocess.run(
         ["git", "-C", str(ROOT), "rev-parse", "HEAD"],
-        check=True, capture_output=True, text=True, timeout=10,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
     ).stdout.strip()
     ext = Path(cpp.__file__).resolve()
     # Fail closed if the extension under test is not the one built from this
     # checkout; timing a different tree would be a misleading measurement.
-    assert str(ext).startswith(str(ROOT.resolve())), (
-        f"extension under test {ext} is outside checkout {ROOT}"
-    )
+    assert str(ext).startswith(
+        str(ROOT.resolve())
+    ), f"extension under test {ext} is outside checkout {ROOT}"
     digest = hashlib.sha256(ext.read_bytes()).hexdigest() if ext.is_file() else ""
     baseline = json.loads(BASELINE.read_text())
     return {
@@ -106,7 +109,11 @@ def _correct(method, result):
         total = [float(x) + float(y) for x, y in zip(a, obs["Bobs"])]
         assert all(abs(t - 100.0) < 1e-9 for t in total), "mass conservation"
         assert a[0] >= a[-1] >= 0.0, "stochastic decay sanity"
-        return {"law": "mass conservation + monotone decay", "initial": a[0], "final": a[-1]}
+        return {
+            "law": "mass conservation + monotone decay",
+            "initial": a[0],
+            "final": a[-1],
+        }
     raise AssertionError(method)
 
 
@@ -126,11 +133,19 @@ def test_current_cpu_benchmark_record(tmp_path):
         model_file.write_text(MODEL_TEXT)
         out = subprocess.run(
             [sys.executable, "-c", code, str(model_file)],
-            capture_output=True, text=True, check=True,
-            env={**os.environ, "PYTHONPATH": os.pathsep.join(
-                [os.environ.get("PYTHONPATH", ""), str(ROOT / "python"),
-                 str(ROOT / "build" / "cpp")]
-            )},
+            capture_output=True,
+            text=True,
+            check=True,
+            env={
+                **os.environ,
+                "PYTHONPATH": os.pathsep.join(
+                    [
+                        os.environ.get("PYTHONPATH", ""),
+                        str(ROOT / "python"),
+                        str(ROOT / "build" / "cpp"),
+                    ]
+                ),
+            },
         )
         cold.append(float(out.stdout.strip()))
     rows["cold_startup"] = {
@@ -156,11 +171,15 @@ def test_current_cpu_benchmark_record(tmp_path):
         model.write_net(str(net_file))
         net_digest = hashlib.sha256(net_file.read_bytes()).hexdigest()
     rows["parse_compile"] = {
-        "reps": warm_parse, "median": statistics.median(warm_parse), "status": "PASS",
+        "reps": warm_parse,
+        "median": statistics.median(warm_parse),
+        "status": "PASS",
         "control": "netgen_sha=" + net_digest[:16],
     }
     rows["netgen"] = {
-        "reps": warm_net, "median": statistics.median(warm_net), "status": "PASS",
+        "reps": warm_net,
+        "median": statistics.median(warm_net),
+        "status": "PASS",
         "control": "netgen_sha=" + net_digest[:16],
     }
 
@@ -175,7 +194,9 @@ def test_current_cpu_benchmark_record(tmp_path):
             times.append(time.perf_counter() - t)
             control = _correct(method, result)
         rows[method] = {
-            "reps": times, "median": statistics.median(times), "status": "PASS",
+            "reps": times,
+            "median": statistics.median(times),
+            "status": "PASS",
             "control": control,
         }
     times = []
@@ -187,8 +208,11 @@ def test_current_cpu_benchmark_record(tmp_path):
         times.append(time.perf_counter() - t)
         control = _correct("nfnext", result)
     rows["nfnext"] = {
-        "reps": times, "median": statistics.median(times), "status": "PASS",
-        "control": control, "events": int(result["event_count"]),
+        "reps": times,
+        "median": statistics.median(times),
+        "status": "PASS",
+        "control": control,
+        "events": int(result["event_count"]),
     }
 
     # Bounded parameter sweep (three k values through the production API).
@@ -203,8 +227,11 @@ def test_current_cpu_benchmark_record(tmp_path):
     sweep.append(time.perf_counter() - t)
     assert all(controls)
     rows["scan"] = {
-        "reps": sweep, "median": statistics.median(sweep), "status": "PASS",
-        "control": "bounded k-sweep monotone bound", "scope": "parameter-sweep-via-simulate",
+        "reps": sweep,
+        "median": statistics.median(sweep),
+        "status": "PASS",
+        "control": "bounded k-sweep monotone bound",
+        "scope": "parameter-sweep-via-simulate",
     }
 
     record = {

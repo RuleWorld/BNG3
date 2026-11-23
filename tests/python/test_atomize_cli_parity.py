@@ -36,7 +36,14 @@ def test_input_file_alias_performs_a_real_translation(tmp_path):
     destination = tmp_path / "translated.bngl"
     result = CliRunner().invoke(
         main,
-        ["atomize", "--input-file", source, "--output-file", str(destination), "--annotation"],
+        [
+            "atomize",
+            "--input-file",
+            source,
+            "--output-file",
+            str(destination),
+            "--annotation",
+        ],
     )
     assert result.exit_code == 0, result.output
     text = destination.read_text()
