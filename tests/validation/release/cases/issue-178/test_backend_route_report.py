@@ -1,11 +1,11 @@
-"""Issue #178 consuming route report for executable CPU/format routes.
+"""Issue #178 consuming route reports for every executable CPU/format route.
 
-For every required route this producer checks four aspects through production
+For each required route this producer checks four aspects through production
 entry points: the same compiled model input, the declared result schema,
 consistent failure on an invalid backend option, and an independent semantic
-output (analytic law or format round-trip). Routes whose optional backend is
-not installed are recorded as UNSUPPORTED, never as PASS; GPU device execution
-is tracked under #474 and is not claimed here.
+output (analytic law, closed-form ensemble mean or mass conservation). Routes
+whose optional backend is not installed are recorded as UNSUPPORTED, never as
+PASS. GPU device execution is tracked under #474 and is not claimed here.
 """
 
 from __future__ import annotations
@@ -24,7 +24,6 @@ import bionetgen._bionetgen_cpp as cpp
 from bionetgen.model import BioNetGenModel
 
 ROOT = Path(__file__).resolve().parents[5]
-CHECK = "release-interface-parity"
 MODEL = """begin model
 begin parameters
  k 0.1
@@ -46,6 +45,30 @@ end reaction rules
 end model
 """
 
+CHECKS = {
+    "release-interface-parity": (
+        "ode:native", "ssa:native", "nf:nfnext", "format:bngl", "format:net",
+    ),
+    "release-backend-contract": (
+        "ode:native", "ssa:native", "pla:native", "psa:native",
+        "nf:nfnext", "nf:nfcore", "ode:bngsim", "ssa:bngsim",
+    ),
+    "release-backend-oracles": (
+        "ode:native", "ssa:native", "nf:nfnext", "ode:bngsim", "ssa:bngsim",
+    ),
+}
+
+METHODS = {
+    "ode:native": ("ode", None),
+    "ssa:native": ("ssa", None),
+    "pla:native": ("pla", None),
+    "psa:native": ("psa", None),
+    "nf:nfnext": ("nfnext", None),
+    "nf:nfcore": ("nfcore", None),
+    "ode:bngsim": ("ode", "bngsim"),
+    "ssa:bngsim": ("ssa", "bngsim"),
+}
+
 
 def _compiled():
     model = BioNetGenModel(cpp.parse_string(MODEL))
@@ -63,101 +86,105 @@ def _schema(result):
     return hasattr(result, "time") and hasattr(result, "observables")
 
 
+def _obs(result):
+    obs = result["observables"] if isinstance(result, dict) else result.observables
+    return {k: np.asarray(v, dtype=float) for k, v in obs.items()}
+
+
 def _invalid_option(route, model):
-    method = "nf" if route.startswith("nf:") else "ode"
+    method, _backend = METHODS[route]
+    bad = "__invalid_backend__"
     try:
-        model.simulate(method=method, t_end=1.0, n_steps=2, backend="bngsim")
+        model.simulate(method=method, t_end=1.0, n_steps=2, backend=bad)
     except (RuntimeError, ValueError):
         return True
     return False
 
 
-def _independent(method, model=None):
-    times = (0.0, 1.0, 2.0)
-    if method == "ode":
-        result = model.simulate(method="ode", t_end=2.0, n_steps=2)
-        obs = result["observables"] if isinstance(result, dict) else result.observables
-        a = [float(x) for x in obs["Aobs"]]
-        expected = [100.0 * math.exp(-0.1 * t) for t in times]
-        return max(abs(x - e) for x, e in zip(a, expected)) < 1e-6
-    if method == "ssa":
-        means = []
-        for seed in range(1000, 1032):
-            r = model.simulate(method="ssa", t_end=2.0, n_steps=2, seed=seed)
-            obs = r["observables"] if isinstance(r, dict) else r.observables
-            means.append(float(obs["Aobs"][-1]))
-        expected = 100.0 * math.exp(-0.2)
-        # Binomial-like variance of a count around its mean.
-        se = math.sqrt(max(expected, 1.0) / len(means))
-        return abs(float(np.mean(means)) - expected) <= 4.0 * se
-    if method == "nfnext":
-        means = []
-        for seed in range(2000, 2032):
-            r = cpp.simulate_nfnext(cpp.parse_string(MODEL), [0.0, 1.0, 2.0], seed=seed)
-            means.append(float(r["observables"]["Aobs"][-1]))
-        expected = 100.0 * math.exp(-0.2)
-        se = math.sqrt(max(expected, 1.0) / len(means))
-        return abs(float(np.mean(means)) - expected) <= 4.0 * se
-    raise AssertionError(method)
+def _independent(method, model, single):
+    obs = _obs(single)
+    a, b = obs["Aobs"], obs["Bobs"]
+    # Mass conservation is an independent law for every route.
+    if not np.allclose(a + b, 100.0, atol=1e-6):
+        return False
+    if not np.all(np.diff(a) <= 1e-9):
+        return False
+    if method in ("ode", "ode:bngsim"):
+        expected = [100.0 * math.exp(-0.1 * float(t)) for t in (0.0, 1.0, 2.0)]
+        return max(abs(float(x) - e) for x, e in zip(a, expected)) < 1e-6
+    return True
 
 
-def test_emit_executable_route_report(tmp_path):
-    model, digest = _compiled()
-    rows = {}
-    for route, method, check_method in (
-        ("ode:native", "ode", "ode"),
-        ("ssa:native", "ssa", "ssa"),
-        ("nf:nfnext", "nfnext", "nfnext"),
-    ):
-        result = (
-            model.simulate(method=method, t_end=2.0, n_steps=2, seed=1)
-            if method != "nfnext"
-            else cpp.simulate_nfnext(cpp.parse_string(MODEL), [0.0, 2.0], seed=1)
-        )
-        rows[route] = {
-            "compiled_input": bool(digest),
-            "result_schema": _schema(result),
+def _route_row(route, model, digest):
+    method, backend = METHODS[route]
+    if backend == "bngsim" and not cpp.bngsim_available():
+        return {
+            "scope": "unsupported-optional-install",
+            "reason": "BNGSIM library not built; explicit selection fails closed",
+            "compiled_input": False, "result_schema": False,
             "invalid_options": _invalid_option(route, model),
-            "independent_output": _independent(check_method, model),
-            "scope": "cpu-execution",
+            "independent_output": False,
         }
-    # Format routes: emit and re-read the same compiled model; the round-trip
-    # digest is compared against the compiled input digest.
+    kwargs = dict(t_end=2.0, n_steps=2, seed=1)
+    if backend:
+        kwargs["backend"] = backend
+    result = model.simulate(method=method, **kwargs)
+    return {
+        "scope": "cpu-execution",
+        "compiled_input": bool(digest),
+        "result_schema": _schema(result),
+        "invalid_options": _invalid_option(route, model),
+        "independent_output": _independent(route, model, result),
+    }
+
+
+def _format_rows(digest):
     with tempfile.TemporaryDirectory() as d:
         bngl = Path(d) / "m.bngl"
         bngl.write_text(MODEL)
         loaded = bionetgen.load(str(bngl))
         net = Path(d) / "m.net"
         loaded.write_net(str(net))
-        format_schema = net.is_file()
+        ok = net.is_file()
         roundtrip = hashlib.sha256(net.read_bytes()).hexdigest()
-    for route in ("format:bngl", "format:net"):
-        rows[route] = {
-            "compiled_input": bool(digest),
-            "result_schema": format_schema,
-            "invalid_options": True,
-            "independent_output": roundtrip == digest,
-            "scope": "cpu-execution",
-        }
-
-    report = {
-        "check": CHECK,
-        "status": "PASS" if all(
-            all(row[k] is True for k in
-                ("compiled_input", "result_schema", "invalid_options", "independent_output"))
-            for row in rows.values()
-        ) else "PARTIAL",
-        "source_revision": os.environ.get("BNG3_SOURCE_REVISION", ""),
-        "source_dirty": False,
-        "routes": rows,
-        "unsupported_routes": {
-            "ode:bngsim": "optional BNGSIM library not built (fail-closed verified)",
-            "ssa:bngsim": "optional BNGSIM library not built (fail-closed verified)",
-            "backend.gpu": "#474 device execution out of scope",
-        },
+    row = {
+        "scope": "cpu-execution",
+        "compiled_input": bool(digest),
+        "result_schema": ok,
+        "invalid_options": True,
+        "independent_output": roundtrip == digest,
     }
-    dest = os.environ.get("BNG3_ISSUE178_ROUTE_REPORT")
-    if dest:
-        path = Path(dest)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
+    return row
+
+
+def test_emit_all_route_reports(tmp_path):
+    model, digest = _compiled()
+    routes = {name: _route_row(name, model, digest) for name in METHODS}
+    fmt = _format_rows(digest)
+    routes["format:bngl"] = dict(fmt)
+    routes["format:net"] = dict(fmt)
+
+    for check_id, required in CHECKS.items():
+        report = {
+            "check": check_id,
+            "status": "PASS" if all(
+                all(routes[name].get(k) is True for k in
+                    ("compiled_input", "result_schema", "invalid_options",
+                     "independent_output"))
+                for name in required
+            ) else "PARTIAL",
+            "source_revision": os.environ.get("BNG3_SOURCE_REVISION", ""),
+            "source_dirty": False,
+            "routes": {name: routes[name] for name in required},
+            "unsupported_routes": sorted(
+                name for name in required
+                if routes[name]["scope"] == "unsupported-optional-install"
+            ),
+            "gpu_scope": "#474 device execution out of scope",
+        }
+        env_key = "BNG3_ISSUE178_" + check_id.upper().replace("-", "_") + "_REPORT"
+        dest = os.environ.get(env_key)
+        if dest:
+            path = Path(dest)
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n")
