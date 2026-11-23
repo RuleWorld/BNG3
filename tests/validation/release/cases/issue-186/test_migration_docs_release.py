@@ -44,16 +44,53 @@ end model
 
 def test_release_migration_docs(tmp_path: Path):
     """Verify that installed-package examples and all migration-table targets execute successfully."""
-    # 1. First run the existing installed example suite
-    installed_suite = REPO_ROOT / "tests/python/test_migration_guide_installed_example.py"
-    proc = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "--noconftest", str(installed_suite)],
+    # 1. Run the installed-package examples against a wheel installed into a
+    # fresh environment, not against the ambient checkout.
+    import os
+    import venv
+
+    dist_dir = tmp_path / "dist"
+    dist_dir.mkdir()
+    build = subprocess.run(
+        [sys.executable, "-m", "build", "--wheel", "--no-isolation", "--outdir", str(dist_dir)],
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,
     )
+    assert build.returncode == 0, f"wheel build failed:\n{build.stderr[-2000:]}"
+    wheel = next(dist_dir.glob("*.whl"), None)
+    assert wheel is not None, "no wheel was built"
+
+    env_dir = tmp_path / "installed-env"
+    venv.EnvBuilder(with_pip=True, system_site_packages=True).create(env_dir)
+    # Shared machines can carry a stale editable finder; neutralise it inside
+    # the fresh environment so the installed wheel is the subject.
+    site_packages = next(env_dir.glob("lib/python*/site-packages"))
+    (site_packages / "sitecustomize.py").write_text(
+        "import sys\n"
+        "sys.meta_path[:] = [f for f in sys.meta_path "
+        "if type(f).__module__ != '_editable_skbc_bionetgen']\n"
+    )
+    env_python = env_dir / "bin" / "python"
+    install = subprocess.run(
+        [str(env_python), "-m", "pip", "install", "--no-deps", "--force-reinstall", str(wheel)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+    )
+    assert install.returncode == 0, f"wheel install failed:\n{install.stderr[-2000:]}"
+    installed_suite = REPO_ROOT / "tests/python/test_migration_guide_installed_example.py"
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    proc = subprocess.run(
+        [str(env_python), "-m", "pytest", "-q", "--noconftest", str(installed_suite)],
+        cwd=str(REPO_ROOT),
+        capture_output=True,
+        text=True,
+        env=env,
+    )
     assert proc.returncode == 0, (
-        f"test_migration_guide_installed_example failed:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
+        f"installed migration examples failed:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
     )
 
     # 2. Test every row of the migration table systematically
