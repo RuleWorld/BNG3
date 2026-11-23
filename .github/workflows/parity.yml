@@ -1312,6 +1312,7 @@ jobs:
         env:
           NFSIM_BIN: ${{ runner.temp }}/oracle-nfsim/build/NFsim
           BNG3_RECONCILIATION_NFSIM_SOURCE: ${{ runner.temp }}/oracle-nfsim
+          BNG3_NFSIM_RECONCILIATION_REPORT: ${{ runner.temp }}/reconciliation-nfsim-options.json
         run: |
           pytest -c tests/validation/pytest.ini \
             tests/validation/test_reconciliation_nfsim.py \
@@ -1325,6 +1326,14 @@ jobs:
         with:
           name: reconciliation-nfsim-differences
           path: ${{ runner.temp }}/reconciliation-nfsim-differences.xml
+
+      - name: Retain executed NFsim option comparisons
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reconciliation-behavior-nfsim-options
+          path: ${{ runner.temp }}/reconciliation-nfsim-options.json
+          if-no-files-found: error
 
       - name: Run fixed-seed native NFsim parity
         shell: bash
