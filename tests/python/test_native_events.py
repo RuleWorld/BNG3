@@ -701,3 +701,43 @@ end model
     )
     assert len(result.observables["Aobs"]) == 6
     assert result.observables["Aobs"][-1] < 10
+
+
+def test_single_reactant_catalyst_is_not_transported_by_new_product(tmp_path):
+    """A catalyst that is also the sole reactant stays in its compartment.
+
+    With one reactant and two products, index-based reactant→product pairing
+    would move the catalyst into the new product's compartment, turning a
+    nuclear catalyst that synthesizes a cytoplasmic product into a spurious
+    transport reaction.
+    """
+    import bionetgen._bionetgen_cpp as cpp
+
+    bngl = tmp_path / "catalyst_transport.bngl"
+    bngl.write_text("""begin model
+begin compartments
+  nucleus 3 1
+  cytoplasm 3 1 nucleus
+end compartments
+begin molecule types
+  D()
+  M()
+end molecule types
+begin seed species
+  @nucleus:D() 2
+  @cytoplasm:M() 0
+end seed species
+begin observables
+  Species Dnuc @nucleus:D()
+  Species Mcyt @cytoplasm:M()
+end observables
+begin reaction rules
+  tx: @nucleus:D() -> @cytoplasm:M() + @nucleus:D() 1
+end reaction rules
+end model
+""")
+    model = cpp.parse_file(str(bngl))
+    network = cpp.generate_network(model)
+    names = list(network.species_names)
+    assert not any("cytoplasm" in n and "D()" in n for n in names), names
+    assert any("nucleus" in n and "D()" in n for n in names), names
