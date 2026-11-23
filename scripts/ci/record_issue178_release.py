@@ -20,7 +20,7 @@ EXPECTED_CHECKS = (
     "release-backend-contract",
     "release-backend-oracles",
 )
-# Each named check maps to one real leaf test; each runs in its own process so
+# Each named check has a bounded leaf test. Each runs in its own process so
 # native-extension loading is isolated.
 LEAF_TESTS = {
     "release-shared-decisions": "tests/validation/test_option_decision_owner.py::test_poplevel_decision_has_one_compile_owner",
@@ -102,34 +102,26 @@ def build_release_record(
     if not skip_tests:
         run_tests(root)
     details = {
-        "release-shared-decisions": "One compile-owned implementation per option/rate/capability decision with negative fixtures.",
-        "release-interface-parity": "Backend and format consumers agree with independent expected semantics.",
-        "release-obligation-178": "Named check identities, source revision and exact main commit recorded with the settled default docs synchronized.",
-        "release-backend-contract": "Invalid backend options fail closed consistently through the common interface.",
-        "release-backend-oracles": "Capability decisions stay single-owned with negative containment.",
+        "release-shared-decisions": "The compile-owned poplevel decision has a single-owner check. Other option and rate decisions require their own evidence.",
+        "release-interface-parity": "The leaf checks BNGsim bypass for network-free methods. Independent cross-backend and format parity remains unmeasured.",
+        "release-obligation-178": "The leaf compares the documented NF default. The full obligation requires evidence for the remaining work clauses.",
+        "release-backend-contract": "The leaf checks explicit BNGsim refusal. The shared result schema and option behavior across all backends remain unmeasured.",
+        "release-backend-oracles": "The leaf checks ownership of the energy gate. Backend execution against independent oracles remains unmeasured.",
     }
     results = [
         {
             "id": k,
-            "status": "PASS",
-            "evidence_kind": "supported-execution",
-            "supported_execution": True,
+            "status": "NOT_TESTED",
+            "evidence_kind": "not-tested",
+            "supported_execution": False,
             "related_issues": [178],
             "stage": k,
-            "detail": details[k],
+            "detail": ("Leaf verification was skipped." if skip_tests else details[k]),
             "source_revision": revision,
             "selector": manifest[k]["selector"],
         }
         for k in EXPECTED_CHECKS
     ]
-    if skip_tests:
-        for row in results:
-            row.update(
-                status="NOT_TESTED",
-                supported_execution=False,
-                evidence_kind="not-tested",
-                detail="Execution was skipped; no scientific acceptance evidence was collected.",
-            )
     return {
         "schema_version": 1,
         "acceptance_check": "release-obligation-178",
