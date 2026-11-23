@@ -9,13 +9,16 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import subprocess
 
 import pytest
 
 from scripts.ci import record_issue176_release as rec
 
 ROOT = Path(__file__).resolve().parents[2]
-REV = "12dace48a92bd70d08f2f76bebb7dac3d6206b60"
+REV = subprocess.check_output(
+    ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+).strip()
 
 
 def _ensemble(revision=REV, **overrides):
