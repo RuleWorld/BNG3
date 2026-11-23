@@ -5734,8 +5734,26 @@ class SBMLParser:
                     if _local_name(child.tag) != "bvar"
                 ]
                 body = children[-1] if children else None
+            # A function's bvars are local binders.  A global parameter whose
+            # display name equals a formal (for example parameter id ``k1_1``
+            # named ``k1`` alongside ``lambda(k1, S1, ...)``) must not hijack
+            # that formal inside the function body: SBML resolves the bvar
+            # first, so the call's actual argument, not the same-named global,
+            # supplies the value.  Drop both the raw and standardized formal
+            # spellings from the alias map before normalizing the body.
+            bound = {str(name) for name in arguments}
+            bound.update(standardize_name(str(name)) for name in arguments)
+            function_aliases = (
+                {
+                    alias: canonical
+                    for alias, canonical in (parameter_aliases or {}).items()
+                    if str(alias) not in bound
+                }
+                if parameter_aliases
+                else None
+            )
             math = SBMLParser._normalize_formula_identifiers(
-                _mathml_to_formula(body), parameter_aliases
+                _mathml_to_formula(body), function_aliases
             )
             if not math.strip():
                 called = SBMLParser._function_is_called(
