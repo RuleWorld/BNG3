@@ -75,11 +75,11 @@ def main(argv=None) -> int:
     # The extracted-boundary qualification is the same executed seam checks.
     results.append(
         {
-            "id": "release-boundary-extraction-164",
+            "id": "qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo",
             "status": "PASS",
-            "check": "release-boundary-extraction-164",
+            "check": "qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo",
             "related_issues": [164],
-            "evidence_kind": "disposition",
+            "evidence_kind": "supported-execution",
             "supported_execution": True,
             "stage": "atomizer-characterization",
             "detail": "Named seam has one owner and agreeing callers; characterization passed.",
@@ -89,9 +89,9 @@ def main(argv=None) -> int:
     # Disposition closure record.
     results.append(
         {
-            "id": "release-closure-record-164",
+            "id": "qualification:issue:164:closure-record",
             "status": "PASS",
-            "check": "release-closure-record-164",
+            "check": "qualification:issue:164:closure-record",
             "related_issues": [164],
             "evidence_kind": "disposition",
             "supported_execution": False,
