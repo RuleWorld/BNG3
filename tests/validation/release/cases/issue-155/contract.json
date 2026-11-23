@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "issue": 155,
+  "title": "D03: Add independent native BNGIR contracts and adversarial fixtures",
+  "source": {
+    "repository": "RuleWorld/BNG3",
+    "contract": "Author source-independent valid and invalid JSON cases for every structural field and cross-reference; execute valid reconstructions natively and assert malformed inputs fail before partial model mutation; detect dropped units, reversed rules, wrong bonds, population maps and observable relations."
+  },
+  "oracle": {
+    "identity": "Independent analytic continuous-time laws, hand-authored adversarial BNGIR v0.2 fixture suite, and native importer refusal controls.",
+    "law": "Native BNGIR importer must accept valid hand-authored v0.2 documents matching exact continuous-time trajectories (A(t)=A0*exp(-kt), A(t)=A0*exp(-2*base*t)); malformed inputs fail closed with NativeRefusal before partial model state mutation; semantic mutations produce observable trajectory deviations or are decidably inequivalent."
+  },
+  "acceptance_checks": [
+    "release-bngir-adversarial",
+    "release-bngir-consumer",
+    "release-obligation-155"
+  ],
+  "inventory_rows": [
+    "bngir.native",
+    "bngir.v02"
+  ],
+  "obligations": [
+    "issue:155:live-acceptance:release-bngir-adversarial",
+    "issue:155:live-acceptance:release-bngir-consumer",
+    "issue:155:live-acceptance:release-obligation-155"
+  ]
+}

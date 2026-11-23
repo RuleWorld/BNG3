@@ -9185,14 +9185,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-bngir-adversarial.",
-                "No revision-locked consuming receipt producer is declared for required live check release-bngir-adversarial."
-              ]
+              "selector": "tests/validation/release/cases/issue-155/test_bngir_adversarial_release.py::test_release_bngir_adversarial",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#Validate independent issue-155 BNGIR adversarial release acceptance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -9217,14 +9214,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-bngir-consumer.",
-                "No revision-locked consuming receipt producer is declared for required live check release-bngir-consumer."
-              ]
+              "selector": "tests/validation/release/cases/issue-155/test_bngir_adversarial_release.py::test_release_bngir_consumer",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#Validate independent issue-155 BNGIR adversarial release acceptance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -9249,14 +9243,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-155.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-155."
-              ]
+              "selector": "tests/validation/release/cases/issue-155/test_bngir_adversarial_release.py::test_release_obligation_155",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#Validate independent issue-155 BNGIR adversarial release acceptance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
