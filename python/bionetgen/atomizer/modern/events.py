@@ -3450,16 +3450,34 @@ def _native_conjunction_expression(
 
 
 def _native_trigger_expression(
-    event: SBMLEvent, context: EventTranslationContext
+    event: SBMLEvent, context: EventTranslationContext, *, instantaneous: bool
 ) -> Optional[str]:
     """Lower a state-dependent SBML trigger to a native BNGL inequality."""
     conjunction = _native_conjunction_expression(event.trigger, event, context)
     if conjunction is not None:
         return conjunction
-    comparison = _match_comparison_call(event.trigger)
+    comparison = _match_comparison_call(event.trigger) or _match_equality_call(
+        event.trigger
+    )
     if comparison is None:
         return None
     operator, arguments_text = comparison
+    arguments = _split_arguments(arguments_text)
+    if arguments is None or len(arguments) != 2:
+        return None
+    left_text, right_text = (_strip_outer_parens(arg) for arg in arguments)
+    if operator == "eq":
+        # A positive, fixed clock instant produces one rising edge. With
+        # immediate execution its subsequent falling edge cannot cancel work.
+        if not instantaneous or not _native_time_against_static(
+            left_text, right_text, context
+        ):
+            return None
+        threshold = right_text if left_text.lower() in {"time", "t"} else left_text
+        instant = _native_fold_term_text(threshold, context)
+        if instant is not None and math.isfinite(instant) and instant > 0.0:
+            return f"time >= {_format_number(instant)}"
+        return None
     # A standalone non-strict inequality can fire on a tangential contact,
     # which the root finder cannot distinguish from a crossing.  Keep those
     # on the analytic path.  Inside a conjunction the other continuous
@@ -3467,10 +3485,6 @@ def _native_trigger_expression(
     # state gate.
     if operator not in _NATIVE_COMPARISON_OPERATORS:
         return None
-    arguments = _split_arguments(arguments_text)
-    if arguments is None or len(arguments) != 2:
-        return None
-    left_text, right_text = (_strip_outer_parens(arg) for arg in arguments)
     if operator == "geq":
         try:
             left_node = ast.parse(context.expand_functions(left_text), mode="eval").body
@@ -3811,7 +3825,7 @@ def _lower_native_event(
             if dynamic_delay is None:
                 return None
             delay = dynamic_delay[0]
-    trigger = _native_trigger_expression(event, context)
+    trigger = _native_trigger_expression(event, context, instantaneous=delay is None)
     if trigger is None:
         return None
     assignments: List[Tuple[str, str]] = []
