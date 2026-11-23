@@ -23,3 +23,18 @@ def test_checker_rejects_a_second_inline_decision():
     from tests.validation.option_decision_owner import DIRECT_TEST
 
     assert DIRECT_TEST.search("if (poplevel < 0.0) throw;") is not None
+
+
+def test_simulation_options_have_single_compile_owners():
+    """Verify atol, rtol, and max_step decisions are single-owned in compile module."""
+    header = (ROOT / "cpp" / "compile" / "Document.hpp").read_text(encoding="utf-8")
+    source = (ROOT / "cpp" / "compile" / "Document.cpp").read_text(encoding="utf-8")
+    action = (ROOT / "cpp" / "actions" / "ActionDispatch.cpp").read_text(encoding="utf-8")
+
+    assert "positiveToleranceError" in header
+    assert "positiveToleranceError(" in source
+    assert "bng::compile::positiveToleranceError" in action
+
+    assert "nonNegativeOptionError" in header
+    assert "nonNegativeOptionError(" in source
+    assert "bng::compile::nonNegativeOptionError" in action
