@@ -651,3 +651,53 @@ end model
     names = list(network.species_names)
     assert any("c1" in n and "C()" in n for n in names), names
     assert not any("c2" in n and "C()" in n for n in names), names
+
+
+def test_strict_trigger_at_zero_with_zero_initial_slope_does_not_refuse(tmp_path):
+    """A strict trigger false at t=0 with a zero initial slope is not an error.
+
+    The event may still rise later; CVODE's per-step crossing check detects
+    that. Refusing to simulate at initialization turns a valid model into an
+    unsupported one.
+    """
+    import bionetgen._bionetgen_cpp as cpp
+    from bionetgen.model import BioNetGenModel
+
+    bngl = tmp_path / "strict0.bngl"
+    bngl.write_text("""begin model
+begin parameters
+  k 0
+end parameters
+begin molecule types
+  X()
+  A()
+end molecule types
+begin seed species
+  X() 0
+  A() 10
+end seed species
+begin observables
+  Species Aobs A()
+  Species A_amt A()
+  Species X_amt X()
+end observables
+begin reaction rules
+  decay: A() -> 0 0.01
+end reaction rules
+begin bng3_events version 1
+  event "growth"
+    trigger: X_amt > 0
+    initial_value: true
+    persistent: true
+    use_values_from_trigger_time: true
+    assignment: A_amt = 0
+  end event
+end bng3_events
+end model
+""")
+    model = cpp.parse_file(str(bngl))
+    result = BioNetGenModel(model, source_path=str(bngl)).simulate(
+        method="ode", t_end=1.0, n_steps=5
+    )
+    assert len(result.observables["Aobs"]) == 6
+    assert result.observables["Aobs"][-1] < 10
