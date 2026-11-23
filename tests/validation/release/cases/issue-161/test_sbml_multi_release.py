@@ -379,11 +379,14 @@ def validate_multi_feature_row(row_id: str, tmp_path: Path) -> dict:
             assert "state_u" in parsed.numeric_values
             return {"row_id": row_id, "status": "PASS", "libsbml_valid": True}
         else:
-            sum_ref_xml = "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n" + MULTI_SOURCE.replace(
-                '<ci multi:representationType="numericValue"\n'
-                '            multi:speciesReference="source_ref">state_u</ci>',
-                '<ci multi:representationType="sum"\n'
-                '            multi:speciesReference="source_ref">Au</ci>',
+            sum_ref_xml = (
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                + MULTI_SOURCE.replace(
+                    '<ci multi:representationType="numericValue"\n'
+                    '            multi:speciesReference="source_ref">state_u</ci>',
+                    '<ci multi:representationType="sum"\n'
+                    '            multi:speciesReference="source_ref">Au</ci>',
+                )
             )
             _check_libsbml_validity(sum_ref_xml)
             parsed = parse_multi_package(sum_ref_xml)

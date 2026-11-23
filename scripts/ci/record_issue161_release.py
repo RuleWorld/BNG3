@@ -65,12 +65,8 @@ def main(argv=None) -> int:
     multi_rows = sorted(
         [r["id"] for r in matrix.get("rows", []) if r.get("issue") == 161]
     )
-    expected_row_tests = {
-        f"test_multi_feature_row[{row_id}]" for row_id in multi_rows
-    }
-    has_full_coverage = bool(
-        expected_row_tests and expected_row_tests <= exact_passed
-    )
+    expected_row_tests = {f"test_multi_feature_row[{row_id}]" for row_id in multi_rows}
+    has_full_coverage = bool(expected_row_tests and expected_row_tests <= exact_passed)
 
     results = []
     scope = {
