@@ -214,7 +214,8 @@ inline void validateNativeEventSubset(const Model& model) {
         }
         if (allowDistributionAssignment &&
             expression.kind() == ExpressionKind::Function &&
-            expression.name() == "sqrt" && expression.args().size() == 1) {
+            (expression.name() == "sqrt" || expression.name() == "ln") &&
+            expression.args().size() == 1) {
             continuous(expression.args().front());
             return;
         }
