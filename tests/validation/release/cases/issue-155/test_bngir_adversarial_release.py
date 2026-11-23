@@ -156,6 +156,24 @@ def test_release_bngir_adversarial():
         > 1e-3
     )
 
+    # Mutation: population-map reference and rate are detected. A malformed
+    # reference may be refused at import; either refusal or a changed wire
+    # document is a valid detection, but an unchanged document is not.
+    base_pop = _load_fixture("valid_population_map.json")
+    base_pop_model = from_bngir(base_pop)
+    base_pop_doc = json.loads(to_bngir(base_pop_model, version="0.2"))
+    for filename in (
+        "mutation_population_map_ref.json",
+        "mutation_population_map_rate.json",
+    ):
+        mutated = _load_fixture(filename)
+        try:
+            mutated_model = from_bngir(mutated)
+        except Exception:
+            continue
+        mutated_doc = json.loads(to_bngir(mutated_model, version="0.2"))
+        assert mutated_doc != base_pop_doc, f"{filename} was accepted without a change"
+
 
 def test_release_bngir_consumer(tmp_path, monkeypatch):
     """Validate release-bngir-consumer.
