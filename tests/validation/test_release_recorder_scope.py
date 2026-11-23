@@ -8,10 +8,12 @@ import pytest
 
 from scripts.ci import (
     record_issue161_release as multi,
+    record_issue163_release as formats,
     record_issue164_release as atomizer,
     record_issue178_release as shared,
 )
 from tests.validation import atomizer_characterization as characterization
+from tests.validation import export_format_tier
 
 
 @pytest.fixture
@@ -95,6 +97,62 @@ def test_issue164_characterization_cannot_certify_corpora(
     )
     assert all(rows[check]["status"] == "NOT_TESTED" for check in atomizer.LIVE_CHECKS)
     assert all(not rows[check]["supported_execution"] for check in atomizer.LIVE_CHECKS)
+
+
+def test_issue163_first_order_cases_cannot_certify_every_format(
+    tmp_path, monkeypatch, revision
+):
+    binary = tmp_path / "bng_cpp"
+    binary.write_bytes(b"fixture")
+    bngir = tmp_path / "bngir.json"
+    bngir.write_text(
+        json.dumps(
+            {
+                "source": {"revision": revision, "dirty": False},
+                "results": [
+                    {"id": check, "status": "PASS"} for check in formats.BNGIR_CHECKS
+                ],
+            }
+        )
+    )
+    output = tmp_path / "receipt.json"
+    monkeypatch.setattr(
+        subprocess,
+        "check_output",
+        lambda argv, **kwargs: revision if "rev-parse" in argv else "",
+    )
+    monkeypatch.setattr(
+        export_format_tier,
+        "run_worker",
+        lambda *_args, **_kwargs: [
+            {
+                "id": check,
+                "status": "PASS",
+                "evidence_kind": "supported-execution",
+                "supported_execution": True,
+                "detail": "fixture",
+            }
+            for check in export_format_tier.check_ids()
+        ],
+    )
+    formats.main(
+        [
+            "--bng-cpp",
+            str(binary),
+            "--bngir-report",
+            str(bngir),
+            "--source-revision",
+            revision,
+            "--output",
+            str(output),
+        ]
+    )
+    rows = {row["id"]: row for row in json.loads(output.read_text())["results"]}
+    assert all(
+        rows[check]["status"] == "PASS" for check in export_format_tier.check_ids()
+    )
+    assert all(rows[check]["status"] == "NOT_TESTED" for check in formats.LIVE_CHECKS)
+    assert all(not rows[check]["supported_execution"] for check in formats.LIVE_CHECKS)
 
 
 def test_issue178_single_owner_checks_cannot_certify_backend_parity(monkeypatch):
