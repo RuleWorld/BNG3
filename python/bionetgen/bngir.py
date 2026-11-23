@@ -3902,6 +3902,33 @@ def _extract_jump_hazards(
     )
 
 
+def _only_delay_asymmetry(left_signatures: list, right_signatures: list) -> bool:
+    """True when exactly one side has delay-only rule execution features."""
+    if left_signatures == right_signatures:
+        return False
+    if not (bool(left_signatures) ^ bool(right_signatures)):
+        return False
+    signatures = left_signatures or right_signatures
+    for raw in signatures:
+        try:
+            signature = json.loads(raw)
+        except (TypeError, ValueError):
+            return False
+        if signature.get("delay") is None:
+            return False
+        if (
+            signature.get("non_consuming", False)
+            or signature.get("modifiers")
+            or signature.get("driving_work")
+            or signature.get("forward.driving_work")
+            or signature.get("reverse.driving_work")
+            or signature.get("forward.non_consuming")
+            or signature.get("reverse.non_consuming")
+        ):
+            return False
+    return True
+
+
 def _volume_rhs_counterexample(left_model: Any, right_model: Any) -> dict | None:
     """Decide inequality when only compartment volumes change the initial RHS."""
     from fractions import Fraction
@@ -4211,6 +4238,20 @@ def exact_process_equal(
                 for key in non_volume_keys
             )
             and _volume_rhs_counterexample(left_model, right_model) is not None
+        ):
+            return False
+        # One model has delayed rules and the other has none, with every other
+        # execution field and the generated jump table identical: completion
+        # clocks differ, so the initialized path laws differ.
+        other_keys = set(left_unlowered) - {
+            "rule_execution_features",
+            "parameters_for_delays",
+        }
+        if all(
+            left_unlowered[key] == right_unlowered[key] for key in other_keys
+        ) and _only_delay_asymmetry(
+            left_unlowered["rule_execution_features"],
+            right_unlowered["rule_execution_features"],
         ):
             return False
         raise EqualityUndecided(
