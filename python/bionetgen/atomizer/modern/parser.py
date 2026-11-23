@@ -4066,6 +4066,7 @@ class SBMLParser:
         SBMLParser._fold_static_parameter_initial_assignments(
             result, _delayed_read_symbols(result)
         )
+        SBMLParser._fold_constant_parameter_assignment_rules(result)
         SBMLParser._fold_static_compartment_initial_assignments(result)
         for reaction_id, outcome in fast_reactions.items():
             if outcome.reduced:
@@ -5032,6 +5033,82 @@ class SBMLParser:
         model.rules = [rule for rule in model.rules if id(rule) not in fold]
 
     @staticmethod
+    def _fold_constant_parameter_assignment_rules(model: SBMLModel) -> None:
+        """Fix constant parameters that an assignment rule targets at t=0.
+
+        SBML declares a parameter with ``constant="true"`` unchangeable after
+        initialization.  A rule targeting it therefore establishes its value
+        once, at the start of the simulation; independent readers freeze that
+        t=0 value rather than re-evaluating the rule at every step.  Emitting a
+        live BNGL function instead makes the parameter track a dynamic species
+        and changes the trajectory.  Fold the t=0 value when it is computable.
+        """
+        rules = [
+            rule
+            for rule in model.rules
+            if getattr(rule, "type", "") == "assignment"
+            and str(getattr(rule, "variable", "")) in model.parameters
+            and model.parameters[str(rule.variable)].constant
+        ]
+        if not rules:
+            return
+
+        symbols: Dict[str, float] = {}
+        for parameter_id, parameter in model.parameters.items():
+            if math.isfinite(parameter.value):
+                symbols[str(parameter_id)] = parameter.value
+                symbols[standardize_name(str(parameter_id))] = parameter.value
+        for compartment_id, compartment in model.compartments.items():
+            if math.isfinite(compartment.size):
+                symbols[str(compartment_id)] = compartment.size
+                symbols[standardize_name(str(compartment_id))] = compartment.size
+        # The rule is evaluated once at t=0, so species carry their declared
+        # initial amount/concentration at that instant.
+        for species_id, species in model.species.items():
+            if bool(getattr(species, "has_only_substance_units", False)):
+                value = float(getattr(species, "initial_amount", 0) or 0)
+                is_set = bool(getattr(species, "initial_amount_set", False))
+            else:
+                value = float(getattr(species, "initial_concentration", 0) or 0)
+                is_set = bool(getattr(species, "initial_concentration_set", False))
+            if is_set and math.isfinite(value):
+                symbols[str(species_id)] = value
+                symbols[standardize_name(str(species_id))] = value
+        symbols["time"] = 0.0
+
+        targets = {str(getattr(rule, "variable", "")) for rule in rules}
+        folded: List[object] = []
+        for _ in range(len(rules) + 1):
+            progressed = False
+            for rule in rules:
+                if rule in folded:
+                    continue
+                variable = str(rule.variable)
+                identifiers = set(_IDENTIFIER_PATTERN.findall(str(rule.math or "")))
+                identifiers -= set(symbols) | {
+                    standardize_name(name) for name in symbols
+                }
+                identifiers -= set(model.function_definitions)
+                identifiers -= {"time"}
+                if identifiers & set(model.species) or identifiers & targets:
+                    continue
+                value = _evaluate_static_arithmetic(
+                    str(rule.math or ""), symbols, model.function_definitions
+                )
+                if value is None or not math.isfinite(value):
+                    continue
+                parameter = model.parameters[variable]
+                parameter.value = value
+                parameter.value_set = True
+                symbols[variable] = value
+                symbols[standardize_name(variable)] = value
+                folded.append(rule)
+                progressed = True
+            if not progressed:
+                break
+        if folded:
+            model.rules = [rule for rule in model.rules if rule not in folded]
+
     def _fold_static_parameter_initial_assignments(
         model: SBMLModel, delayed_history_symbols: Optional[Set[str]] = None
     ) -> None:
@@ -5133,11 +5210,14 @@ class SBMLParser:
         # values are established.
         symbols["time"] = 0.0
 
-        def references_unknown_symbol(expression: str) -> bool:
+        def references_unknown_symbol(
+            expression: str, eval_symbols: Optional[Dict[str, float]] = None
+        ) -> bool:
+            known = eval_symbols if eval_symbols is not None else symbols
             for identifier in _IDENTIFIER_PATTERN.findall(expression):
                 if identifier.lower() in _INTRINSIC_FUNCTIONS:
                     continue
-                if identifier in symbols or standardize_name(identifier) in symbols:
+                if identifier in known or standardize_name(identifier) in known:
                     continue
                 if identifier in species_ids or identifier in rule_targets:
                     return True
@@ -5169,15 +5249,50 @@ class SBMLParser:
                 expression = str(getattr(assignment, "math", "") or "")
                 if not expression:
                     continue
-                if references_unknown_symbol(expression):
+                symbol = str(assignment.symbol)
+                parameter = model.parameters[symbol]
+                eval_symbols = symbols
+                if parameter.constant:
+                    # A constant parameter keeps its t=0 value for the whole
+                    # run, so species' declared initial values are available
+                    # when establishing it.
+                    eval_symbols = dict(symbols)
+                    for species_id, species in model.species.items():
+                        if bool(getattr(species, "has_only_substance_units", False)):
+                            amount = float(getattr(species, "initial_amount", 0) or 0)
+                            is_set = bool(getattr(species, "initial_amount_set", False))
+                        else:
+                            amount = float(
+                                getattr(species, "initial_concentration", 0) or 0
+                            )
+                            is_set = bool(
+                                getattr(species, "initial_concentration_set", False)
+                            )
+                            if not is_set and bool(
+                                getattr(species, "initial_amount_set", False)
+                            ):
+                                compartment = model.compartments.get(
+                                    str(getattr(species, "compartment", ""))
+                                )
+                                volume = (
+                                    float(compartment.size)
+                                    if compartment is not None
+                                    and math.isfinite(float(compartment.size))
+                                    and float(compartment.size) != 0
+                                    else 1.0
+                                )
+                                amount = float(species.initial_amount) / volume
+                                is_set = True
+                        if is_set and math.isfinite(amount):
+                            eval_symbols[str(species_id)] = amount
+                            eval_symbols[standardize_name(str(species_id))] = amount
+                if references_unknown_symbol(expression, eval_symbols):
                     continue
                 value = _evaluate_static_arithmetic(
-                    expression, symbols, model.function_definitions
+                    expression, eval_symbols, model.function_definitions
                 )
                 if value is None or not math.isfinite(value):
                     continue
-                symbol = str(assignment.symbol)
-                parameter = model.parameters[symbol]
                 parameter.value = value
                 parameter.value_set = True
                 symbols[symbol] = value

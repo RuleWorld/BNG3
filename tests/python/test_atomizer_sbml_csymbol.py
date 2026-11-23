@@ -410,3 +410,34 @@ def test_parameter_initial_assignment_from_ruled_species_is_folded():
     model = SBMLParser().parse(_INITIAL_ASSIGNMENT_FROM_RULED_SPECIES)
     assert model.parameters["p"].value == 5.0
     assert not [a for a in model.initial_assignments if a.symbol == "p"]
+
+
+_CONSTANT_PARAM_FROM_SPECIES_INITIAL_AMOUNT = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+  <model id="constant_from_species">
+    <listOfCompartments>
+      <compartment id="C" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="S" compartment="C" initialAmount="2"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k" value="3" constant="true"/>
+      <parameter id="p" value="0" constant="true"/>
+    </listOfParameters>
+    <listOfInitialAssignments>
+      <initialAssignment symbol="p">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><times/><ci> S </ci><ci> k </ci></apply>
+        </math>
+      </initialAssignment>
+    </listOfInitialAssignments>
+  </model>
+</sbml>"""
+
+
+def test_constant_parameter_initial_assignment_from_species_amount_is_folded():
+    """A constant parameter keeps the t=0 value established from a species."""
+    model = SBMLParser().parse(_CONSTANT_PARAM_FROM_SPECIES_INITIAL_AMOUNT)
+    assert model.parameters["p"].value == 6.0
+    assert not [a for a in model.initial_assignments if a.symbol == "p"]
