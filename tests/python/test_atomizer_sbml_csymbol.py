@@ -210,3 +210,63 @@ def test_chained_initial_assignments_resolve_in_dependency_order():
     assert model.parameters["b"].value == 1.0
     assert model.parameters["c"].value == 1.0
     assert model.parameters["d"].value == 1.0
+
+
+def _scaled_compartment_model(body: str, *, scaled: bool) -> str:
+    units = ""
+    compartment_units = ""
+    if scaled:
+        units = """<listOfUnitDefinitions>
+          <unitDefinition id="volume">
+            <listOfUnits>
+              <unit kind="dimensionless" scale="-3" exponent="1"/>
+            </listOfUnits>
+          </unitDefinition>
+        </listOfUnitDefinitions>"""
+        compartment_units = ' units="volume"'
+    return f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="m" substanceUnits="substance" volumeUnits="volume">
+        {units}
+        <listOfCompartments>
+          <compartment id="C" size="1" constant="true"{compartment_units}/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="T" compartment="C" initialConcentration="10000000"
+                   hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+          <species id="E" compartment="C" initialConcentration="20000"
+                   hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+          <species id="I" compartment="C" initialConcentration="1"
+                   hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+          <species id="S" compartment="C" initialConcentration="0"
+                   hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfInitialAssignments>
+          <initialAssignment symbol="S">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><minus/><apply><minus/><ci> T </ci><ci> E </ci></apply><ci> I </ci></apply>
+            </math>
+          </initialAssignment>
+        </listOfInitialAssignments>
+        {body}
+      </model>
+    </sbml>"""
+
+
+def _seed_amount(bngl: str, species: str) -> float:
+    for line in bngl.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("@") and f"M_{species}()" in stripped:
+            return float(stripped.rsplit(" ", 1)[1])
+    raise AssertionError(f"no seed for {species}")
+
+
+@pytest.mark.parametrize("scaled", [False, True])
+def test_species_initial_assignment_seed_is_a_normalized_amount(scaled):
+    # The initial assignment is a sum of concentrations.  After unit scaling
+    # the seed must remain the source amount: 10,000,000 - 20,000 - 1.  A
+    # non-unit compartment factor must not shrink it by that factor.
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(
+        _scaled_compartment_model("", scaled=scaled)
+    )
+    assert result.success
+    assert _seed_amount(result.bngl, "S") == pytest.approx(9979999, rel=1e-12)
