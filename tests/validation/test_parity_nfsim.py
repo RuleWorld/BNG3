@@ -72,12 +72,9 @@ SWEEP_ARTIFACT = corpus.REPO / "build" / "validation" / "direct_path_sweep.json"
 
 TIER_P_MODELS = list(corpus.tier_p())
 
-# bind_nfsim composes this message as "<prefix>: <direct_unavailable_reason>;
-# <suffix>" (cpp/bindings/bind_nfsim.cpp:117-130), so the attributed reason is
-# recoverable from the fail-closed exception without enabling the XML fallback
-# (which risks the NFsim aborts described above).
-_DECLINE_PREFIX = "NFsim direct AST initialization unavailable: "
-_DECLINE_SUFFIX = "; XML fallback disabled"
+# The binding's explicit direct-only mode includes the attributed decline
+# reason, including for refined populations that normally use XML fallback.
+_DECLINE_PREFIX = "NFsim direct AST initialization required but unavailable"
 
 # The child program. Kept as source text so the probe needs no file of its own.
 _SWEEP_CHILD = """
@@ -98,7 +95,7 @@ model_name, t_end, n_steps, seed = sys.argv[1], float(sys.argv[2]), int(sys.argv
 # would silently become an in-memory-XML run and read as acceptance.
 os.environ.pop("BNG_NFSIM_FORCE_XML", None)
 os.environ.pop("BNG_NFSIM_ALLOW_XML_FALLBACK", None)
-os.environ.pop("BNG_NFSIM_REQUIRE_DIRECT", None)
+os.environ["BNG_NFSIM_REQUIRE_DIRECT"] = "1"
 
 def run(model):
     # Built here rather than via runner.run_api: runner.Trajectory carries only
@@ -140,6 +137,7 @@ if direct is not None:
     record["construction_path"] = construction_path
     record["direct_unavailable_reason"] = unavailable_reason
     try:
+        os.environ.pop("BNG_NFSIM_REQUIRE_DIRECT", None)
         os.environ["BNG_NFSIM_FORCE_XML"] = "1"
         os.environ["BNG_NFSIM_ALLOW_XML_FALLBACK"] = "1"
         xml = run(model_name)
@@ -224,10 +222,7 @@ def _decline_reason(record: dict) -> str | None:
     start = message.find(_DECLINE_PREFIX)
     if start < 0:
         return None
-    reason = message[start + len(_DECLINE_PREFIX) :]
-    if _DECLINE_SUFFIX in reason:
-        reason = reason.split(_DECLINE_SUFFIX, 1)[0]
-    return reason.strip()
+    return message[start + len(_DECLINE_PREFIX) :].removeprefix(": ").strip()
 
 
 def _is_decline(record: dict) -> bool:
@@ -499,6 +494,13 @@ def test_nf_seed_site_state_is_resolved_by_name(
 
 
 @pytest.mark.nf
+def test_tierp_direct_probe_refuses_refined_population(api):
+    record = _sweep_child("hybrid_test_hpp")
+    assert record.get("direct_status") is None, record
+    assert _is_decline(record) and _decline_reason(record), record
+
+
+@pytest.mark.nf
 @pytest.mark.slow
 def test_tierp_direct_path_outcome_is_measured_and_attributed(api):
     """Measure what the direct NFsim path does with every committed tier-P model.
@@ -600,7 +602,7 @@ def test_tierp_direct_path_outcome_is_measured_and_attributed(api):
                 f"[{record['model']}]: {record['direct_unavailable_reason']!r}"
             )
     for record in declined:
-        if not _decline_reason(record) or _DECLINE_SUFFIX not in record["error"]:
+        if not _decline_reason(record):
             raise AssertionError(
                 f"decline did not come from the fail-closed direct path, or "
                 f"carried no attributed reason [{record['model']}]: "
