@@ -541,6 +541,16 @@ def _events_certificate() -> tuple[float, float, str]:
     return 10.0 * math.exp(-2.0), 10.0 * math.exp(-1.0), "final parameter k=2 vs k=1"
 
 
+@_register_certificate(
+    "EQ-infinite", "independent-polymer-oracle:initial-growth-hazard"
+)
+def _infinite_certificate() -> tuple[float, float, str]:
+    # Four M(l,r) monomers give six unordered reactant pairs.  The first
+    # polymerisation hazard is 6*k versus 6*2*k, so the first-jump clock
+    # distributions differ even though the product proof search is truncated.
+    return 6.0 * 1.0, 6.0 * 2.0, "first growth hazard 6k vs 12k"
+
+
 @_register_certificate("EQ-order", "independent-event-oracle:final-parameter-value")
 def _order_certificate() -> tuple[float, float, str]:
     # Opposed setters leave k=2 versus k=1; A(1)=10*exp(-k).
