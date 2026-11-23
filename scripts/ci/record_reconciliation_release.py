@@ -78,6 +78,22 @@ def coverage_report(rows, lock, reports, revision):
     }
 
 
+def canonical_gaps(coverage):
+    gaps = []
+    if not coverage["required_rows"] or coverage["missing_rows"]:
+        gaps.append("Canonical rows lack an exact-revision independent case result.")
+    if coverage["conflicting_rows"]:
+        gaps.append("Exact-revision case results disagree for canonical rows.")
+    failed = [
+        row_id
+        for row_id, status in coverage["observed_rows"].items()
+        if status == "FAIL"
+    ]
+    if failed:
+        gaps.append(f"Canonical behavior failed: {', '.join(failed)}.")
+    return gaps
+
+
 def _check_result(check_id, gaps):
     return {
         "id": check_id,
@@ -128,10 +144,7 @@ def main() -> int:
             issues.append(f"{name}: independent source inventory has unmatched rows.")
     if pin_report.get("source_symbol_audit", {}).get("unresolved_rows") != {}:
         issues.append("The pinned source symbol audit has unresolved rows.")
-    if not coverage["required_rows"] or coverage["missing_rows"]:
-        issues.append("Canonical rows lack an exact-revision independent case result.")
-    if coverage["conflicting_rows"]:
-        issues.append("Exact-revision case results disagree for canonical rows.")
+    issues.extend(canonical_gaps(coverage))
 
     results = [_check_result("release-reconciliation", issues)]
     semantic_deltas_without_case = []

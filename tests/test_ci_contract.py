@@ -40,6 +40,7 @@ from scripts.cross_validate import (
 from scripts.ci.disable_unreachable_microsoft_apt_source import (
     disable_unreachable_sources,
 )
+from scripts.ci.release_tag import is_prerelease
 
 REPO = Path(__file__).resolve().parents[1]
 PYPROJECT = REPO / "pyproject.toml"
@@ -1185,6 +1186,13 @@ def test_release_workflow_requires_exact_main_sha_qualification():
     assert "gh api" in qualify
     assert "event=workflow_dispatch" in qualify
     assert "--sbml-runs-json" in qualify
+    assert "--sbml-evidence-dir" in qualify
+    assert (
+        "--biomodels-inventory provenance/curated-biomodels-query-inventory.json"
+        in qualify
+    )
+    assert "ssts-release-consumers-" in qualify
+    assert "curated-biomodels-" in qualify
 
     qualification_script = (
         REPO / "scripts" / "ci" / "qualify_release_candidate.py"
@@ -1192,6 +1200,62 @@ def test_release_workflow_requires_exact_main_sha_qualification():
     for workflow_name in ("CI", "Cross-tool parity", "Lean semantic kernel", "CodeQL"):
         assert f'"{workflow_name}"' in qualification_script
     assert '"Official SBML conformance subset"' in qualification_script
+
+
+@pytest.mark.parametrize(
+    ("tag", "expected"),
+    [
+        ("v3.0.0a1", True),
+        ("v3.0.0-alpha.1", True),
+        ("v3.0.0b2", True),
+        ("v3.0.0rc1", True),
+        ("v3.0.0.dev3", True),
+        ("v3.0.0", False),
+        ("v2.9.9", False),
+    ],
+)
+def test_release_tag_uses_pep440_prerelease_rules(tag, expected):
+    """The alpha tag must not depend on the words alpha/beta/rc appearing."""
+
+    assert is_prerelease(tag) is expected
+    result = subprocess.run(
+        [sys.executable, "scripts/ci/release_tag.py", "--tag", tag],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == f"prerelease={'true' if expected else 'false'}"
+
+
+def test_release_workflow_uses_the_classified_prerelease_flag():
+    """The release step consumes the classifier, not a substring expression."""
+
+    release = parse_workflow(RELEASE_WORKFLOW)
+    steps = release["jobs"]["release"]["steps"]
+    classify = next(step for step in steps if step.get("id") == "tag")
+    python = next(
+        step
+        for step in steps
+        if step.get("uses", "").startswith("actions/setup-python@")
+    )
+    install = next(
+        step for step in steps if "install packaging==" in step.get("run", "")
+    )
+    assert steps.index(python) < steps.index(install) < steps.index(classify)
+    assert "scripts/ci/release_tag.py" in classify["run"]
+    assert "$GITHUB_OUTPUT" in classify["run"]
+    assert classify["env"]["RELEASE_TAG"] == "${{ github.ref_name }}"
+    create = next(
+        step
+        for step in steps
+        if step.get("uses", "").startswith("softprops/action-gh-release@")
+    )
+    assert (
+        create["with"]["prerelease"] == "${{ steps.tag.outputs.prerelease == 'true' }}"
+    )
+    assert "contains(github.ref" not in create["with"]["prerelease"]
 
 
 def test_release_binaries_smoke_before_packaging():
@@ -1280,7 +1344,22 @@ def test_release_run_qualification_requires_official_sbml_manual_run(
     )
 
 
-def test_release_qualification_cli_consumes_both_workflow_payloads(tmp_path):
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        "complete",
+        "no-artifacts",
+        "bounded",
+        "wrong-product",
+        "failed-mode",
+        "different-biomodels-cohorts",
+    ],
+)
+def test_release_qualification_cli_requires_both_full_sbml_artifacts(
+    tmp_path, scenario
+):
+    import hashlib
+
     sha = "a" * 40
     push_runs = [
         {
@@ -1293,10 +1372,119 @@ def test_release_qualification_cli_consumes_both_workflow_payloads(tmp_path):
         }
         for name in ("CI", "Cross-tool parity", "Lean semantic kernel", "CodeQL")
     ]
+    run = {
+        "id": 42,
+        "run_attempt": 2,
+        "name": "Official SBML conformance subset",
+        "head_sha": sha,
+        "head_branch": "main",
+        "event": "workflow_dispatch",
+        "status": "completed",
+        "conclusion": "success",
+    }
+
+    def write_json(path, payload):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return hashlib.sha256(path.read_bytes()).hexdigest()
+
     push_path = tmp_path / "push.json"
     sbml_path = tmp_path / "sbml.json"
-    push_path.write_text(json.dumps({"workflow_runs": push_runs}), encoding="utf-8")
-    sbml_path.write_text(json.dumps({"workflow_runs": []}), encoding="utf-8")
+    inventory_path = tmp_path / "biomodels-inventory.json"
+    artifacts = tmp_path / "evidence"
+    write_json(push_path, {"workflow_runs": push_runs})
+    write_json(sbml_path, {"workflow_runs": [run]})
+    write_json(inventory_path, {"matches": 2, "models": [{"id": "A"}, {"id": "B"}]})
+    if scenario != "no-artifacts":
+        ssts = artifacts / "42" / "2" / "ssts"
+        biomodels = artifacts / "42" / "2" / "biomodels"
+        provenance = {
+            "bng3_commit": "b" * 40 if scenario == "wrong-product" else sha,
+            "bng3_tracked_worktree_clean": True,
+        }
+        full = {"semantic": 1, "stochastic": 1, "total": 2}
+        suite_report_hash = write_json(
+            ssts / "report.json",
+            {
+                "source_provenance": provenance,
+                "validation_harness_provenance": {
+                    "bng3_commit": sha,
+                    "bng3_tracked_worktree_clean": True,
+                },
+                "partial_run": scenario == "bounded",
+                "case_selection": {"strategy": "full-inventory"},
+                "selected_cases": 2,
+                "full_suite_inventory": full,
+                "records": [
+                    {"category": "semantic", "id": "00001"},
+                    {"category": "stochastic", "id": "00001"},
+                ],
+                "stochastic_seed_base": 1000000,
+            },
+        )
+        for issue, checks in (
+            (159, ["release-ssts", "release-ssts-coverage", "release-obligation-159"]),
+            (
+                160,
+                [
+                    "release-sbml-core-comp",
+                    "release-sbml-source-fidelity",
+                    "release-capability-coverage-160",
+                ],
+            ),
+        ):
+            write_json(
+                ssts / f"issue{issue}-release-receipt.json",
+                {
+                    "source": {"revision": sha, "dirty": False},
+                    "results": [
+                        {
+                            "id": check,
+                            "status": "PASS",
+                            "supported_execution": True,
+                            "receipt": {"report_sha256": suite_report_hash},
+                        }
+                        for check in checks
+                    ],
+                },
+            )
+        reports = {}
+        for mode in ("flat", "atomized"):
+            digest = write_json(
+                biomodels / f"{mode}-report.json",
+                {
+                    "mode": mode,
+                    "completeness": {
+                        "counts_match": True,
+                        "partial_run": False,
+                        "expected_records": 2,
+                    },
+                    "supported_surface_passed": not (
+                        mode == "atomized" and scenario == "failed-mode"
+                    ),
+                    "simulation_comparison_is_required": True,
+                    "records": [
+                        {"id": "A"},
+                        {
+                            "id": (
+                                "C"
+                                if mode == "atomized"
+                                and scenario == "different-biomodels-cohorts"
+                                else "B"
+                            )
+                        },
+                    ],
+                },
+            )
+            reports[mode] = {"sha256": digest}
+        write_json(
+            biomodels / "corpus-inventory.json",
+            {
+                "measurement": {"base_commit": sha, "reports": reports},
+                "corpus": {"expected_total_records": 2},
+            },
+        )
+
     command = [
         sys.executable,
         str(REPO / "scripts" / "ci" / "qualify_release_candidate.py"),
@@ -1304,35 +1492,20 @@ def test_release_qualification_cli_consumes_both_workflow_payloads(tmp_path):
         str(push_path),
         "--sbml-runs-json",
         str(sbml_path),
+        "--sbml-evidence-dir",
+        str(artifacts),
+        "--biomodels-inventory",
+        str(inventory_path),
         "--sha",
         sha,
     ]
-
-    missing = subprocess.run(command, capture_output=True, text=True, check=False)
-    assert missing.returncode == 1
-    assert "Official SBML conformance subset" in missing.stderr
-
-    sbml_path.write_text(
-        json.dumps(
-            {
-                "workflow_runs": [
-                    {
-                        "name": "Official SBML conformance subset",
-                        "head_sha": sha,
-                        "head_branch": "main",
-                        "event": "workflow_dispatch",
-                        "status": "completed",
-                        "conclusion": "success",
-                    }
-                ]
-            }
-        ),
-        encoding="utf-8",
-    )
-    accepted = subprocess.run(command, capture_output=True, text=True, check=False)
-    assert accepted.returncode == 0
-    assert "official SBML manual evidence" in accepted.stdout
-    assert "bounded" not in accepted.stdout
+    result = subprocess.run(command, capture_output=True, text=True, check=False)
+    if scenario == "complete":
+        assert result.returncode == 0, result.stderr
+        assert "full SBML" in result.stdout
+    else:
+        assert result.returncode == 1, result.stderr
+        assert "full SBML" in result.stderr
 
 
 def test_oracle_source_loader_requires_full_locked_revisions(tmp_path):

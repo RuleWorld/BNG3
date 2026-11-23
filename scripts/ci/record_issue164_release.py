@@ -11,13 +11,14 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import sys
 import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "python"))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 SELECTOR = "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes"
 PRODUCER = ".github/workflows/parity.yml#atomizer-characterization"
@@ -34,6 +35,14 @@ def main(argv=None) -> int:
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--bng-cpp", type=Path, default=ROOT / "build/cpp/bng_cpp")
     args = parser.parse_args(argv)
+
+    head = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+    ).strip()
+    if head != args.source_revision:
+        raise SystemExit(f"requested source revision does not match checkout: {head}")
+    if subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True):
+        raise SystemExit("Issue 164 receipt requires a clean checkout")
 
     from tests.validation import atomizer_characterization as ac
 
@@ -53,36 +62,35 @@ def main(argv=None) -> int:
             )
         results.append(dict(row))
 
-    # Architecture/live checks are the same executed characterization plus the
-    # exact-revision identity recorded here.
+    scope = {
+        "release-atomizer-modules": "Single ownership was checked for the total-rate seam. Other Atomizer transformations remain unmeasured.",
+        "release-atomizer-refactor": "The characterization has no before/after comparison against independent SSTS and BioModels reports.",
+        "release-obligation-164": "The receipt records symbol resolution and one extracted seam. Remaining work clauses require their own evidence.",
+    }
     for identity in LIVE_CHECKS:
         results.append(
             {
                 "id": identity,
-                "status": "PASS",
+                "status": "NOT_TESTED",
                 "check": identity,
                 "related_issues": [164],
-                "evidence_kind": "supported-execution",
-                "supported_execution": True,
+                "evidence_kind": "not-tested",
+                "supported_execution": False,
                 "stage": "atomizer-characterization",
-                "detail": (
-                    "16 symbol-resolution and 3 seam-ownership checks executed "
-                    "and passed; one owner per semantic transformation."
-                ),
+                "detail": scope[identity],
             }
         )
 
-    # The extracted-boundary qualification is the same executed seam checks.
     results.append(
         {
             "id": "qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo",
-            "status": "PASS",
+            "status": "NOT_TESTED",
             "check": "qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo",
             "related_issues": [164],
-            "evidence_kind": "supported-execution",
-            "supported_execution": True,
+            "evidence_kind": "not-tested",
+            "supported_execution": False,
             "stage": "atomizer-characterization",
-            "detail": "Named seam has one owner and agreeing callers; characterization passed.",
+            "detail": "The total-rate seam has one owner. Other extraction boundaries and corpus behavior preservation remain unmeasured.",
         }
     )
 
@@ -104,7 +112,7 @@ def main(argv=None) -> int:
         "schema_version": 1,
         "acceptance_check": "release-obligation-164",
         "case": "issue-164/atomizer-characterization",
-        "source": {"revision": args.source_revision, "dirty": False},
+        "source": {"revision": head, "dirty": False},
         "subject": {
             "binary": str(args.bng_cpp),
             "sha256": hashlib.sha256(args.bng_cpp.read_bytes()).hexdigest(),
