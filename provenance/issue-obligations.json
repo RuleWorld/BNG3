@@ -8,12 +8,13 @@
       143,
       150,
       156,
+      160,
       176,
       178
     ],
-    "decision": "docs/DECISIONS.md#20",
-    "decision_marker": "Dependencies #138, #140, #142, #143, #150, #156, #176 and #178 for downstream release qualification",
-    "reason": "Maintainer decisions 18 and 20 record that the reviewed scope for these dependency issues is authoritative for downstream exact-revision closure dry runs. #176/#178 resolve the dependency blockage for #149 only; #149's own acceptance checks still executed and passed at exact main 7d20391e in run 44880029171. This resolves dependency status only; dependent issues must still pass all of their own acceptance checks."
+    "decision": "docs/DECISIONS.md#21",
+    "decision_marker": "Dependencies #138, #140, #142, #143, #150, #156, #160, #176 and #178 for downstream release qualification",
+    "reason": "Maintainer decisions 18, 20 and 21 record that the reviewed scope for these dependency issues is authoritative for downstream exact-revision closure dry runs. #160 resolved Core/comp support and closed at c6fc1038. This resolves dependency status only; dependent issues must still pass all of their own acceptance checks."
   },
   "issues": [
     {
