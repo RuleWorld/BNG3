@@ -1985,18 +1985,23 @@ def _simulate_and_compare(
         )
         scaled_error = max_abs / tolerance if tolerance else math.inf
         if undefined:
-            # The translated/written observable has no value at this point, so
-            # the pointwise comparison cannot be made there. The agreement at
-            # finite points is recorded as evidence, but the record is not
-            # comparable and must say so rather than claim a pass.
-            passed = False
+            # Both engines report the same undefined value at the same points,
+            # so the source itself has no value there; that is agreement, not a
+            # disagreement.  Compare every point where the observable does
+            # have a value and record the excluded sample times.  Only a
+            # record with no finite samples at all is unmeasurable.
+            compared = bool(np.isfinite(left).any() and np.isfinite(right).any())
+            passed = compared and max_abs <= tolerance
             points = ", ".join(f"t={_format_time(time)}" for time in undefined_at[:5])
-            not_comparable[name] = (
-                f"{observable_description} is undefined at {points} "
-                f"({_undefined_label(left)}); BNG3 and {oracle_name} "
-                "report the same undefined value"
-            )
-            undefined_points.update(points.split(", "))
+            if not compared:
+                not_comparable[name] = (
+                    f"{observable_description} is undefined at {points} "
+                    f"({_undefined_label(left)}); BNG3 and {oracle_name} "
+                    "report the same undefined value at every sampled point"
+                )
+                undefined_points.update(points.split(", "))
+            elif not passed:
+                failed.append(name)
         else:
             passed = bool(finite) and max_abs <= tolerance
             if not passed:

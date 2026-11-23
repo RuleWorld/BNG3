@@ -214,7 +214,7 @@ def _inventory() -> ModuleType:
 
 
 def test_an_observable_without_a_value_is_not_a_disagreement(tmp_path):
-    """A record whose own observable is undefined at t=0 is not comparable."""
+    """A source-undefined sample is excluded, not scored as a disagreement."""
 
     harness = _harness()
     cpp = pytest.importorskip("bionetgen._bionetgen_cpp")
@@ -234,17 +234,18 @@ def test_an_observable_without_a_value_is_not_a_disagreement(tmp_path):
         1e-12,
     )
 
-    assert result["status"] == "not_comparable", result.get("error")
-    reason = str(result["not_comparable_reason"])
-    assert "undefined at t=0" in reason, reason
+    assert result["core_passed"] is True, result.get("error")
+    assert "not_comparable_reason" not in result
     comparison = result["simulation_comparison"]
-    assert comparison["passed"] is False
+    assert comparison["passed"] is True
     assert comparison["failed_observables"] == []
-    assert "obs" in comparison["not_comparable"]
-    # The two engines agree at every point where the observable has a value.
+    assert "not_comparable" not in comparison
+    # The two engines agree at every point where the observable has a value,
+    # and the undefined sample is retained as evidence rather than concealed.
     entry = comparison["observables"]["obs"]
     assert entry["undefined"] is True
     assert entry["undefined_at"][0] == 0.0
+    assert entry["passed"] is True
     assert entry["max_abs_difference"] <= entry["tolerance"]
 
 

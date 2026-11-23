@@ -2325,7 +2325,15 @@ def get_seed_species(
         if species_id in initial_assignments:
             expression = initial_assignments[species_id]
             if not item.has_only_substance_units:
-                expression = f"({expression} * __Avogadro__ * {volume})"
+                # The initial-assignment math is rewritten from source
+                # coordinates by units.apply_unit_scaling: species symbols are
+                # divided by their coordinate factor and the result is scaled
+                # by the target's coordinate factor.  Seed symbols resolve to
+                # normalized amounts, so that rewrite already yields the
+                # normalized initial amount.  Multiplying by the compartment
+                # volume here applies the volume conversion a second time and
+                # shrinks the seed when the compartment has non-unit units.
+                expression = f"({expression} * __Avogadro__)"
             else:
                 expression = f"({expression})"
         elif amount_set:
