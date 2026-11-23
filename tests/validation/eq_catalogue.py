@@ -542,6 +542,15 @@ def _events_certificate() -> tuple[float, float, str]:
 
 
 @_register_certificate(
+    "EQ-local", "independent-signature-oracle:molecule-site-inventory"
+)
+def _local_certificate() -> tuple[float, float, str]:
+    # The design pairs declare A() versus A(s~u~p): a consistent bijection of
+    # molecule types/sites cannot map zero sites onto one site.
+    return 0.0, 1.0, "A site inventory 0 versus 1; no consistent renaming"
+
+
+@_register_certificate(
     "EQ-infinite", "independent-polymer-oracle:initial-growth-hazard"
 )
 def _infinite_certificate() -> tuple[float, float, str]:
