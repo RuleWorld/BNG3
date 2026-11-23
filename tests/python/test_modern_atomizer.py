@@ -4655,3 +4655,31 @@ def test_negative_state_dependent_flux_is_not_folded_to_constant_source():
     assert result.success, result.error
     assert "0 -> @C:M_S() 0.277" not in result.bngl, result.bngl[:800]
     assert "_c_S()" in result.bngl, result.bngl[:800]
+
+
+def test_species_names_colliding_after_m_prefix_are_distinct_pools():
+    """Species "C" and "M_C" must not collapse into one M_C() pool.
+
+    The writer prefixes "M_" to names lacking it, so both source species map
+    to the BNGL molecule M_C(). Detect that collision using written names and
+    give each species its own molecule type with a state discriminator.
+    """
+    from bionetgen.atomizer.modern import Atomizer
+
+    model = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="m_prefix_collision">
+        <listOfCompartments>
+          <compartment id="C" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="M_C" compartment="C" initialAmount="1"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+          <species id="C" compartment="C" initialAmount="2"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+      </model>
+    </sbml>"""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
+    assert result.success, result.error
+    assert "M_C__M_C(__sp~M_C)" in result.bngl, result.bngl[:800]
+    assert "M_C__C(__sp~C)" in result.bngl, result.bngl[:800]
