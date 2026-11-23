@@ -282,8 +282,10 @@ def generated_cases():
         )
     )
 
-    # Pending #300 owns compartment support. Until it lands, explicit native
-    # refusal remains UNSUPPORTED; acceptance must execute all analytic checks.
+    # Native BNGIR reconstructs compartment-bearing patterns. These are
+    # executable accept cases with independently authored analytic seed, RHS
+    # and trajectory expectations; an UNSUPPORTED disposition is no longer a
+    # valid outcome for them.
     for spelling in ("suffix", "prefix", "molecule"):
         document = copy.deepcopy(baseline)
         model = document["model"]
@@ -309,7 +311,7 @@ def generated_cases():
                     else "compartment-" + spelling
                 ),
                 document=document,
-                oracle="accept-or-unsupported",
+                oracle="accept",
                 expected_semantics=dict(
                     seed={"A()@cell": 100.0, "B()@cell": 0.0},
                     rhs={"A()@cell": -10.0, "B()@cell": 10.0},
@@ -338,9 +340,32 @@ def generated_cases():
         dict(
             id="bonded-complex-boundary",
             document=bonded,
-            oracle="unsupported",
+            oracle="accept",
             expected_semantics=dict(
-                reason="native multi-molecule/site reconstruction unavailable"
+                seed={"A(b!1).A(b!1)": 100.0, "B()": 0.0},
+                rhs={"A(b!1).A(b!1)": -10.0, "B()": 10.0},
+            ),
+        )
+    )
+
+    # Wrong-bond behavioural control: reconnecting the second complex endpoint
+    # to a different molecule type changes the reconstructed seed identity.
+    wrong_bond_behaviour = copy.deepcopy(bonded)
+    wrong_bond_behaviour["model"]["molecule_types"][1]["components"] = [
+        dict(index=0, name="b", states=[])
+    ]
+    changed = wrong_bond_behaviour["model"]["seeds"][0]["pattern"]["molecules"][1]
+    changed["type"] = "B"
+    changed["type_id"] = 1
+    changed["sites"][0]["component"] = "b"
+    cases.append(
+        dict(
+            id="wrong-bond-changes-reconstructed-complex",
+            document=wrong_bond_behaviour,
+            oracle="accept",
+            expected_semantics=dict(
+                seed={"A(b!1).B(b!1)": 100.0, "B()": 0.0},
+                rhs={"A(b!1).B(b!1)": -10.0, "B()": 10.0},
             ),
         )
     )

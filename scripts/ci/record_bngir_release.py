@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tests.validation.junit import require_passing_junit
+from tests.validation.junit import executed_test_names, require_passing_junit
 
 EXPECTED_CHECKS = (
     "release-bngir-schema",
@@ -50,7 +50,7 @@ def verify_manifest(root: Path = ROOT) -> dict[str, dict]:
     return checks
 
 
-def run_tests(root: Path = ROOT) -> None:
+def run_tests(root: Path = ROOT) -> set[str]:
     test_path = root / "tests/validation/release/cases/issue-156/test_bngir_release.py"
     if not test_path.is_file():
         _fail(f"missing test file: {test_path}")
@@ -82,11 +82,7 @@ def run_tests(root: Path = ROOT) -> None:
                 "test_release_capability_coverage_156",
             ],
         )
-        return [
-            "test_release_bngir_schema",
-            "test_release_semantic_equality",
-            "test_release_capability_coverage_156",
-        ]
+        return executed_test_names(junit)
 
 
 def build_release_record(
@@ -120,6 +116,16 @@ def build_release_record(
 
     manifest_checks = verify_manifest(root)
 
+    # Per-row EQ evidence is part of the acceptance check, not an optional
+    # attachment.  Run the independent catalogue and keep its row identities
+    # and oracle names in the receipt; a membership-only document fails here.
+    from tests.validation.eq_catalogue import run_catalogue, validate_catalogue_report
+
+    eq_catalogue = None
+    if not skip_tests:
+        eq_catalogue = run_catalogue()
+        validate_catalogue_report(eq_catalogue)
+
     tested_cases: set[str] = set()
     if junit_path is not None:
         require_passing_junit(
@@ -130,11 +136,7 @@ def build_release_record(
                 "test_release_capability_coverage_156",
             ],
         )
-        tested_cases = {
-            "test_release_bngir_schema",
-            "test_release_semantic_equality",
-            "test_release_capability_coverage_156",
-        }
+        tested_cases = executed_test_names(junit_path)
     elif not skip_tests:
         res = run_tests(root)
         if isinstance(res, (list, set, tuple)):
@@ -146,13 +148,13 @@ def build_release_record(
             "round trip through real consumers, and v0.2 is the default."
         ),
         "release-semantic-equality": (
-            "Exact process equality certificates for renaming, split/merge and "
-            "observables are tested. The full design catalog still lacks "
-            "qualifying evidence for energy, delays and hybrid semantics."
+            "All EQ-* families execute with declared equal, different or "
+            "explicitly undecided outcomes, each tied to a named independent "
+            "oracle; numerical similarity never establishes equality."
         ),
         "release-capability-coverage-156": (
-            "Bounded schema and equality checks ran. Full inventory "
-            "qualification still lacks case evidence."
+            "Inventory rows bngir.v02 and bngir.equality are backed by the "
+            "per-row EQ catalogue results, not by inventory membership."
         ),
     }
     results = [
@@ -203,6 +205,18 @@ def build_release_record(
         },
         "results": results,
         "manifest_check_ids": sorted(manifest_checks.keys()),
+        "eq_catalogue": (
+            {
+                "design": eq_catalogue["design"],
+                "case_count": eq_catalogue["case_count"],
+                "row_count": eq_catalogue["row_count"],
+                "cases": sorted({row["case"] for row in eq_catalogue["results"]}),
+                "oracles": sorted({row["oracle"] for row in eq_catalogue["results"]}),
+                "outcomes": sorted({row["observed"] for row in eq_catalogue["results"]}),
+            }
+            if eq_catalogue is not None
+            else None
+        ),
     }
 
 
