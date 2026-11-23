@@ -4565,3 +4565,307 @@ def test_parser_does_not_drop_empty_declared_dynamic_packages():
     )
     assert package_warning["severity"] == "info"
     assert "core kinetic model is unaffected" in package_warning["message"]
+
+
+def test_initial_assignment_seed_parenthesizes_concentration_before_volume():
+    """A subtraction in an initial assignment must be scaled as a whole."""
+    from bionetgen.atomizer.modern import Atomizer
+
+    model = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="paren_seed">
+        <listOfCompartments>
+          <compartment id="C" size="2" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="S" compartment="C" initialConcentration="0"
+                   hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="a" value="10" constant="true"/>
+          <parameter id="b" value="3" constant="true"/>
+        </listOfParameters>
+        <listOfInitialAssignments>
+          <initialAssignment symbol="S">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><minus/><ci> a </ci><ci> b </ci></apply>
+            </math>
+          </initialAssignment>
+        </listOfInitialAssignments>
+      </model>
+    </sbml>"""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
+    assert result.success, result.error
+    assert "@C:M_S() 14" in result.bngl, result.bngl[:400]
+
+
+def test_scientific_notation_seed_amount_is_not_trimmed():
+    """Trailing-zero trimming must not corrupt a scientific-notation exponent."""
+    from bionetgen.atomizer.modern import Atomizer
+
+    model = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="sci_seed">
+        <listOfCompartments>
+          <compartment id="C" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="S" compartment="C" initialAmount="3.534e-10"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+      </model>
+    </sbml>"""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
+    assert result.success, result.error
+    assert "@C:M_S() 3.534e-10" in result.bngl, result.bngl[:500]
+
+
+def test_negative_state_dependent_flux_is_not_folded_to_constant_source():
+    """A negative flux -n*S must keep its S dependence, not become a source n.
+
+    Folding -n*S by dividing out the reactant gives a negative constant.  The
+    old writer reversed the reaction sides and emitted the magnitude as a
+    state-independent source, so S grew linearly instead of staying at zero.
+    """
+    from bionetgen.atomizer.modern import Atomizer
+
+    model = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="neg_flux">
+        <listOfCompartments>
+          <compartment id="C" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfParameters>
+          <parameter id="n" value="0.277" constant="true"/>
+        </listOfParameters>
+        <listOfSpecies>
+          <species id="S" compartment="C" initialAmount="0"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfReactions>
+          <reaction id="decay" reversible="false">
+            <listOfReactants><speciesReference species="S" stoichiometry="1"/></listOfReactants>
+            <kineticLaw>
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><times/><apply><minus/><ci> n </ci></apply><ci> S </ci></apply>
+              </math>
+            </kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>"""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
+    assert result.success, result.error
+    assert "0 -> @C:M_S() 0.277" not in result.bngl, result.bngl[:800]
+    assert "_c_S()" in result.bngl, result.bngl[:800]
+
+
+def test_species_names_colliding_after_m_prefix_are_distinct_pools():
+    """Species "C" and "M_C" must not collapse into one M_C() pool.
+
+    The writer prefixes "M_" to names lacking it, so both source species map
+    to the BNGL molecule M_C(). Detect that collision using written names and
+    give each species its own molecule type with a state discriminator.
+    """
+    from bionetgen.atomizer.modern import Atomizer
+
+    model = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="m_prefix_collision">
+        <listOfCompartments>
+          <compartment id="C" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="M_C" compartment="C" initialAmount="1"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+          <species id="C" compartment="C" initialAmount="2"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+      </model>
+    </sbml>"""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
+    assert result.success, result.error
+    assert "M_C__M_C(__sp~M_C)" in result.bngl, result.bngl[:800]
+    assert "M_C__C(__sp~C)" in result.bngl, result.bngl[:800]
+
+
+def test_volume_inside_membrane_compartment_parent_is_preserved():
+    """A volume enclosed by a 2D membrane must declare that parent in BNGL.
+
+    Dropping the volume->surface parent breaks cross-compartment interaction
+    topology, so the C++ network generator rejects otherwise valid binding
+    rules between the membrane and the enclosed volume.
+    """
+    from bionetgen.atomizer.modern import Atomizer
+
+    model = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="nested_compartments">
+        <listOfCompartments>
+          <compartment id="cyto" size="1" constant="true" spatialDimensions="3" outside="membrane"/>
+          <compartment id="extra" size="1" constant="true" spatialDimensions="3"/>
+          <compartment id="membrane" size="1" constant="true" spatialDimensions="2" outside="extra"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="cyto" initialAmount="1"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+          <species id="B" compartment="membrane" initialAmount="1"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+      </model>
+    </sbml>"""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
+    assert result.success, result.error
+    assert "cyto 3 1 membrane" in result.bngl, result.bngl[:600]
+
+
+def test_tiny_fractional_stoichiometry_is_not_dropped():
+    """A nonzero stoichiometry that rounds to zero must be flux-lowered.
+
+    With stoichiometry 1.666e-18 and a flux of ~1e17, the product is a
+    meaningful derivative. Rounding the coefficient to an integer count of
+    zero (or filtering |coefficient| <= 1e-12) silently drops the reaction.
+    """
+    from bionetgen.atomizer.modern import Atomizer
+
+    model = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="tiny_stoich">
+        <listOfCompartments>
+          <compartment id="C" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfParameters>
+          <parameter id="NA" value="602200000000" constant="true"/>
+        </listOfParameters>
+        <listOfSpecies>
+          <species id="S" compartment="C" initialAmount="0.48"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfReactions>
+          <reaction id="tiny" reversible="false">
+            <listOfReactants>
+              <speciesReference species="S" stoichiometry="1.666111296e-18"/>
+            </listOfReactants>
+            <kineticLaw>
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><times/><ci> S </ci><ci> NA </ci></apply>
+              </math>
+            </kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>"""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
+    assert result.success, result.error
+    assert "tiny_consume_S" in result.bngl, result.bngl[:800]
+
+
+def test_initial_assignment_reads_rate_ruled_compartment_initial_size():
+    """An initial assignment reading a rate-ruled compartment folds at t=0.
+
+    A rate rule governs the compartment's derivative, not its initial value.
+    The declared size is still the compartment's value at t=0, so a parameter
+    initial assignment reading it must fold to that constant rather than
+    becoming a live function that tracks the compartment over time.
+    """
+    from bionetgen.atomizer.modern import Atomizer
+
+    model = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="rate_ruled_compartment_initial">
+        <listOfCompartments>
+          <compartment id="C" size="0.0237" constant="false"/>
+        </listOfCompartments>
+        <listOfParameters>
+          <parameter id="rate" value="0.001" constant="true"/>
+          <parameter id="snapshot" value="0" constant="true"/>
+        </listOfParameters>
+        <listOfSpecies>
+          <species id="S" compartment="C" initialAmount="1"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfInitialAssignments>
+          <initialAssignment symbol="snapshot">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><ci> C </ci></math>
+          </initialAssignment>
+        </listOfInitialAssignments>
+        <listOfRules>
+          <rateRule variable="C">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><ci> rate </ci></math>
+          </rateRule>
+        </listOfRules>
+      </model>
+    </sbml>"""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
+    assert result.success, result.error
+    assert "snapshot 0.0237" in result.bngl, result.bngl[:800]
+    assert "snapshot()" not in result.bngl
+
+
+def test_keyword_renamed_assignment_rule_parameter_unit_scaling():
+    """A keyword-renamed assignment-rule parameter keeps its unit scale.
+
+    The parser renames "abs" to "abs_id" in the parameter map but the rule
+    keeps the source id. The rule's result factor must be looked up under the
+    renamed spelling, otherwise its function returns source coordinates while
+    the kinetic law divides by the scale again.
+    """
+    from bionetgen.atomizer.modern import Atomizer
+
+    model = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="double_scale" substanceUnits="substance" volumeUnits="volume" timeUnits="per_hour">
+        <listOfUnitDefinitions>
+          <unitDefinition id="substance">
+            <listOfUnits><unit kind="mole" exponent="1" scale="-3" multiplier="1"/></listOfUnits>
+          </unitDefinition>
+          <unitDefinition id="volume">
+            <listOfUnits><unit kind="litre" exponent="1" scale="0" multiplier="1"/></listOfUnits>
+          </unitDefinition>
+          <unitDefinition id="per_hour">
+            <listOfUnits><unit kind="second" exponent="-1" scale="0" multiplier="3600"/></listOfUnits>
+          </unitDefinition>
+        </listOfUnitDefinitions>
+        <listOfCompartments>
+          <compartment id="C" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfParameters>
+          <parameter id="k" value="1" constant="true" units="per_hour"/>
+          <parameter id="abs" value="1" constant="false" units="per_hour"/>
+        </listOfParameters>
+        <listOfSpecies>
+          <species id="S" compartment="C" initialAmount="1"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfRules>
+          <assignmentRule variable="abs">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><ci> k </ci></math>
+          </assignmentRule>
+        </listOfRules>
+        <listOfReactions>
+          <reaction id="r" reversible="false">
+            <listOfProducts><speciesReference species="S" stoichiometry="1"/></listOfProducts>
+            <kineticLaw>
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><times/><ci>abs</ci><ci>S</ci></apply>
+              </math>
+            </kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>"""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
+    assert result.success, result.error
+    rule_line = next(line for line in result.bngl.splitlines() if "abs_id() =" in line)
+    rate_line = next(line for line in result.bngl.splitlines() if line.strip().startswith("r:"))
+    # Rule function returns the scaled value; kinetic law divides it back.
+    assert rule_line.strip().startswith("abs_id() = (0.00027777777777777778) *"), (rule_line, rate_line)
+    assert "abs_id / 0.00027777777777777778" in rate_line, (rule_line, rate_line)
+
+
+def test_compartment_factor_shape_counts_multiplicative_and_divisive_uses():
+    """A law with one V* and two /V factors has net divisive dependence.
+
+    ``V * k * (A/V) * (B/V)`` reduces to ``k*A*B/V``. Counting only the
+    presence of both directions misclassifies it as cancelling ("none") and
+    emits a mass-action constant with the wrong power of the volume.
+    """
+    from bionetgen.atomizer.modern.writer import _compartment_factor_shape
+
+    law = "V * k * (A / V) * (B / V)"
+    assert _compartment_factor_shape(law, "V") == "divisive"
+    assert _compartment_factor_shape("V * k * A * B", "V") == "multiplicative"
+    assert _compartment_factor_shape("k * A * B", "V") == "none"
+    assert _compartment_factor_shape("V * k * A / V", "V") == "none"

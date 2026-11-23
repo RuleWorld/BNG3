@@ -1312,7 +1312,26 @@ def _expectations_main(
         for mismatch in mismatches:
             print(f"  {mismatch}", file=sys.stderr)
         return 2
-    if comparison["revision_mismatch"]:
+    if args.compare_baseline:
+        baseline = comparison["revision_expected"]
+        candidate = comparison["revision_observed"]
+        stated_revision = _report_revision(report)
+        if (
+            not re.fullmatch(r"[0-9a-f]{40}", baseline)
+            or not re.fullmatch(r"[0-9a-f]{40}", candidate)
+            or (stated_revision and stated_revision != candidate)
+            or (report.get("completeness") or {}).get("partial_run") is not False
+        ):
+            print(
+                "baseline comparison requires matching candidate provenance, two "
+                "full commit IDs, and a complete report",
+                file=sys.stderr,
+            )
+            return 2
+        print(
+            f"Comparing BioModels candidate {candidate} to frozen baseline {baseline}."
+        )
+    elif comparison["revision_mismatch"]:
         print(
             "tool revision mismatch: the manifest describes "
             f"{comparison['revision_expected']}, the run used "
@@ -1431,7 +1450,19 @@ def main() -> int:
             "what the tool derives from the report it names"
         ),
     )
+    parser.add_argument(
+        "--compare-baseline",
+        action="store_true",
+        help="compare two identified revisions without changing stored verdicts",
+    )
     args = parser.parse_args()
+
+    if args.compare_baseline and (
+        args.expectations is None
+        or args.verify_regeneration
+        or args.expectations_out is not None
+    ):
+        parser.error("--compare-baseline requires an expectations comparison")
 
     if args.out is None and args.expectations_out is None and args.expectations is None:
         parser.error("one of --out, --expectations-out or --expectations is required")

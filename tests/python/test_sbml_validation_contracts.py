@@ -312,7 +312,7 @@ def test_official_concentration_uses_amount_and_current_compartment_volume():
     assert target == "S_amt / C_amt"
 
 
-def test_reference_time_variable_maps_to_a_declared_time_parameter():
+def test_reference_time_variable_maps_to_the_declared_symbol():
     # A model may declare a parameter whose identifier is ``time``.  BNGL
     # reserves ``time`` as a built-in operand, so the Atomizer emits that
     # parameter under a non-reserved spelling and the reference variable is
@@ -333,6 +333,21 @@ def test_reference_time_variable_maps_to_a_declared_time_parameter():
             "time", reference, declared, {}, standardize_name
         )
         == "time_id"
+    )
+
+    species = SimpleNamespace(
+        species={
+            "time": SimpleNamespace(compartment="C", has_only_substance_units=False)
+        },
+        compartments={"C": object()},
+        parameters={},
+        rules=[],
+    )
+    assert (
+        validator._reference_output_target(
+            "time", reference, species, {"time": "time_id"}, standardize_name
+        )
+        == "time_id_amt / __compartment_C__"
     )
 
     without = SimpleNamespace(

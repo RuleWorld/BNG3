@@ -554,6 +554,42 @@ def test_the_cli_rejects_a_report_that_states_no_revision(tmp_path):
     assert "--report-revision" in result.stderr
 
 
+@pytest.mark.parametrize("regression", [False, True])
+def test_cli_compares_new_revision_to_frozen_baseline(tmp_path, regression):
+    manifest = _manifest()
+    report = _report_from_cases(manifest["cases"])
+    if regression:
+        record = next(row for row in report["records"] if row["status"] == "passed")
+        record.update(status="failed", core_passed=False, modes=[])
+    report_path = tmp_path / "report.json"
+    report_path.write_text(json.dumps(report), encoding="utf-8")
+    revision = "a" * 40
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(TOOL),
+            "--flat-report",
+            str(report_path),
+            "--expectations",
+            str(MANIFEST),
+            "--compare-baseline",
+            "--report-revision",
+            revision,
+        ],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == int(regression), result.stdout + result.stderr
+    assert manifest["source_report"]["bng3_commit"] in result.stdout
+    assert revision in result.stdout
+    if regression:
+        assert "regression" in result.stderr
+
+
 @pytest.mark.smoke
 def test_the_cli_accepts_a_run_that_reproduces_the_manifest(tmp_path):
     manifest = _manifest()

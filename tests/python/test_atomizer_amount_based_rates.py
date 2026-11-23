@@ -529,3 +529,213 @@ def test_multiplicative_compartment_factor_scales_with_the_reactant_multiplicity
             amount,
             expected,
         )
+
+
+_AUTOCATALYTIC_DECAY = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+  <model id="autocatalytic_decay">
+    <listOfCompartments>
+      <compartment id="C" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="A" compartment="C" initialAmount="10"
+               hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k" value="0.1" constant="true"/>
+    </listOfParameters>
+    <listOfReactions>
+      <reaction id="decay" reversible="false" fast="false">
+        <listOfReactants><speciesReference species="A" stoichiometry="1"/></listOfReactants>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci> k </ci><ci> A </ci><ci> A </ci></apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>"""
+
+
+def test_partially_stripped_autocatalytic_law_keeps_mass_action():
+    """``k * A * A`` with one ``A`` reactant needs BNGL mass-action.
+
+    The writer strips one top-level reactant factor from the law.  One live
+    ``A`` operand remains, so the rule must not be marked ``TotalRate``: BNGL
+    has to supply the removed factor from the reaction pattern.
+    """
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(_AUTOCATALYTIC_DECAY)
+    assert result.success, result.error
+    rules = [
+        line for line in result.bngl.splitlines() if line.strip().startswith("decay:")
+    ]
+    assert len(rules) == 1
+    assert "TotalRate" not in rules[0], rules[0]
+    assert "A_amt" in rules[0], rules[0]
+
+
+_ASSIGNMENT_CONSTANT_CLEARANCE = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+  <model id="assignment_constant_clearance">
+    <listOfCompartments>
+      <compartment id="C" size="0.5" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="S" compartment="C" initialConcentration="10"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k0" value="2" constant="true"/>
+      <parameter id="f" value="0.5" constant="true"/>
+    </listOfParameters>
+    <listOfRules>
+      <assignmentRule variable="k">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><times/><ci> k0 </ci><ci> f </ci></apply>
+        </math>
+      </assignmentRule>
+    </listOfRules>
+    <listOfReactions>
+      <reaction id="decay" reversible="false" fast="false">
+        <listOfReactants><speciesReference species="S" stoichiometry="1"/></listOfReactants>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci> k </ci><ci> S </ci></apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>"""
+
+
+def test_assignment_rule_rate_constant_carries_the_volume_exponent():
+    """A function-valued mass-action constant keeps its compartment factor."""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(
+        _ASSIGNMENT_CONSTANT_CLEARANCE
+    )
+    assert result.success, result.error
+    rules = [
+        line for line in result.bngl.splitlines() if line.strip().startswith("decay:")
+    ]
+    assert len(rules) == 1
+    assert "__compartment_C__" in rules[0], rules[0]
+    assert "**-1" in rules[0], rules[0]
+
+
+_CROSS_COMPARTMENT_EXCHANGE = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+  <model id="cross_compartment_exchange">
+    <listOfCompartments>
+      <compartment id="a" size="0.25" constant="true"/>
+      <compartment id="b" size="5" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="X" compartment="a" initialConcentration="10"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="Y" compartment="b" initialConcentration="2"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="U" compartment="b" initialConcentration="3"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="V" compartment="a" initialConcentration="4"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters><parameter id="k" value="600" constant="true"/></listOfParameters>
+    <listOfReactions>
+      <reaction id="exchange" reversible="true" fast="false">
+        <listOfReactants>
+          <speciesReference species="X" stoichiometry="1"/>
+          <speciesReference species="Y" stoichiometry="1"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="U" stoichiometry="1"/>
+          <speciesReference species="V" stoichiometry="1"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><minus/>
+              <apply><times/><ci> X </ci><ci> k </ci><ci> Y </ci></apply>
+              <apply><times/><ci> U </ci><ci> k </ci><ci> V </ci></apply>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>"""
+
+
+def test_cross_compartment_reversible_flux_keeps_both_volumes():
+    """A two-compartment exchange must use the complete SBML net flux."""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(
+        _CROSS_COMPARTMENT_EXCHANGE
+    )
+    assert result.success, result.error
+    rules = [
+        line
+        for line in result.bngl.splitlines()
+        if line.strip().startswith("exchange:")
+    ]
+    assert len(rules) == 1
+    assert "TotalRate" in rules[0], rules[0]
+    assert "_rate()" in rules[0], rules[0]
+    fn = [
+        l for l in result.bngl.splitlines() if l.strip().startswith("exchange_rate()")
+    ]
+    assert fn and "_c_X()" in fn[0] and "_c_Y()" in fn[0], fn
+    assert "<->" not in rules[0], rules[0]
+
+
+_CROSS_COMPARTMENT_IRREVERSIBLE = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+  <model id="cross_irreversible">
+    <listOfCompartments>
+      <compartment id="a" size="0.25" constant="true"/>
+      <compartment id="b" size="5" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="X" compartment="a" initialConcentration="10"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="Y" compartment="b" initialConcentration="2"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="Z" compartment="b" initialConcentration="0"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k" value="600" constant="true"/>
+    </listOfParameters>
+    <listOfReactions>
+      <reaction id="conversion" reversible="false" fast="false">
+        <listOfReactants>
+          <speciesReference species="X" stoichiometry="1"/>
+          <speciesReference species="Y" stoichiometry="1"/>
+        </listOfReactants>
+        <listOfProducts><speciesReference species="Z" stoichiometry="1"/></listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><apply><times/><ci> k </ci><ci> X </ci></apply><ci> Y </ci></apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>"""
+
+
+def test_cross_compartment_irreversible_flux_keeps_both_volumes():
+    """An irreversible cross-compartment law also needs the complete flux."""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(
+        _CROSS_COMPARTMENT_IRREVERSIBLE
+    )
+    assert result.success, result.error
+    rules = [
+        line
+        for line in result.bngl.splitlines()
+        if line.strip().startswith("conversion:")
+    ]
+    assert len(rules) == 1
+    assert "TotalRate" in rules[0], rules[0]
+    assert "_rate()" in rules[0], rules[0]
+    fn = [
+        line
+        for line in result.bngl.splitlines()
+        if line.strip().startswith("conversion_rate()")
+    ]
+    assert fn and "_c_X()" in fn[0] and "_c_Y()" in fn[0], fn
