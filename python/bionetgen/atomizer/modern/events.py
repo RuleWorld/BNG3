@@ -8868,11 +8868,7 @@ def synthesize_event_actions(
                 min(window_end, upper_bound) if window_end is not None else upper_bound
             )
         execution_time = trigger_time
-        if (
-            _is_strict_time_trigger(event.trigger)
-            and not event.trigger_initial_value
-            and trigger_time > 0.0
-        ):
+        if _is_strict_time_trigger(event.trigger) and not event.trigger_initial_value:
             # ``time > T`` is false at T; schedule the action at the first
             # representable instant after T so the left limit at T stays the
             # pre-event state, matching continuous-time readers.
@@ -9424,6 +9420,15 @@ def synthesize_event_actions(
 
     merged: List[Tuple[float, List[Tuple[str, str, float]]]] = []
     for time, sets, _priority, _event, _dynamic_priority, _values in ordered_scheduled:
+        if (
+            _event is not None
+            and _is_strict_time_trigger(_event.trigger)
+            and time == 0.0
+        ):
+            # ``time > 0`` is false at the start of the simulation.  Keep the
+            # assignment out of the initial state so the first output row is
+            # still the pre-event value; schedule it one instant later.
+            time = 1e-12
         if merged and abs(merged[-1][0] - time) < 1e-12:
             merged[-1][1].extend(sets)
         else:
