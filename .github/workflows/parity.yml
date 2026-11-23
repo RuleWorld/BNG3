@@ -684,6 +684,22 @@ jobs:
         if: always() && steps.candidate_identity.outcome == 'success'
         run: python -m pytest -c tests/validation/pytest.ini tests/validation/test_worker_package_identity.py -q
 
+      - name: Check the export-format tier against independent consumers
+        if: always() && steps.candidate_identity.outcome == 'success'
+        run: |
+          python -m pytest -c tests/validation/pytest.ini \
+            tests/validation/test_export_format_tier.py \
+            --bng-cpp build/cpp/bng_cpp \
+            -q -ra
+
+      - name: Check Atomizer symbol resolution and seam ownership
+        if: always() && steps.candidate_identity.outcome == 'success'
+        run: |
+          python -m pytest -c tests/validation/pytest.ini \
+            tests/validation/test_atomizer_characterization.py \
+            --bng-cpp build/cpp/bng_cpp \
+            -q -ra
+
       - name: Run S6 simulate-option acceptance
         run: >-
           python -m pytest -c tests/validation/pytest.ini
