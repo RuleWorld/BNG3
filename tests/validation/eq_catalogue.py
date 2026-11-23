@@ -301,13 +301,13 @@ CASES: tuple[EqCase, ...] = (
             _model("  A() -> B() k\n"),
             _model("  B() -> A() k\n"),
         ),
-        UNDECIDED,
+        DIFFERENT,
         (
             _model("  A() -> B() k\n", seed="  A() 2\n  B() 2\n"),
             _model("  B() -> A() k\n", seed="  A() 2\n  B() 2\n"),
         ),
         DIFFERENT,
-        "Equal orientation row needs a reservoir-work certificate; the differing row has a finite rate witness.",
+        "Neither row carries reversed reservoir work, so orientation alone changes the reachable product species (B); the initial-state witness decides both rows.",
     ),
     EqCase(
         "EQ-delay",
@@ -357,8 +357,8 @@ CASES: tuple[EqCase, ...] = (
             _model("  A() -> B() k\n"),
             _model("  A() -> 0 k\n"),
         ),
-        UNDECIDED,
-        "DeleteMolecules versus whole-species deletion needs the whole-component certificate the design leaves unproved; product correctly declines rather than guessing.",
+        DIFFERENT,
+        "A()->B() creates a reachable B species that A()->0 cannot create; the strict species-subset initial-state witness decides inequality.",
     ),
     EqCase(
         "EQ-observables",
