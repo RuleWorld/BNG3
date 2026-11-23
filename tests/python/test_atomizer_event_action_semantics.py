@@ -362,3 +362,43 @@ def test_synthesize_event_actions_preserves_short_sampling_grids():
         if (match := re.search(r"t_start=>([^,]+), t_end=>([^,]+)", action))
     ]
     assert intervals == [(0.0, 1.0), (1.0, 1.0), (1.0, 1.25), (1.25, 2.5)]
+
+
+_STRICT_TIME_EVENT = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="strict_time_event">
+    <listOfCompartments>
+      <compartment id="C" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="S" compartment="C" initialAmount="0"
+               hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfEvents>
+      <event id="E0" useValuesFromTriggerTime="true">
+        <trigger initialValue="false" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><gt/><ci>time</ci><cn>0.5</cn></apply>
+          </math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="S">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>10</cn></math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>
+"""
+
+
+def test_strict_time_event_is_scheduled_after_the_threshold():
+    """``time > T`` is false at T, so the action must follow T, not equal it."""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(_STRICT_TIME_EVENT)
+    assert result.success, result.error
+    block = result.bngl.split("begin actions", 1)[1]
+    simulate = [line for line in block.splitlines() if "simulate(" in line]
+    assert simulate
+    assert "t_end=>0.500000000001" in simulate[0], simulate[0]
+    assert "t_end=>0.5," not in simulate[0], simulate[0]
