@@ -633,10 +633,45 @@ def _relation_expression(args: Sequence[str], operator: str) -> str:
     return "(" + " && ".join(pairs) + ")"
 
 
-def convert_math_expression(expression: str) -> str:
+_MATH_BUILTIN_SYMBOL_NAMES = frozenset({"pi", "exponentiale", "true", "false", "time"})
+
+
+def _protected_math_names(model: object) -> frozenset[str]:
+    """Declared SBML symbols that collide with MathML built-in spellings.
+
+    ``<ci> pi </ci>`` names a model symbol, while ``<pi/>`` names the constant.
+    The parser keeps that distinction, but a bare ``pi`` reaching the writer
+    would otherwise be rewritten to the built-in value and silently replace a
+    model parameter of the same name.
+    """
+
+    names = set()
+    for collection in (
+        getattr(model, "parameters", {}),
+        getattr(model, "species", {}),
+        getattr(model, "compartments", {}),
+        getattr(model, "function_definitions", {}),
+    ):
+        names.update(str(name) for name in getattr(collection, "keys", lambda: ())())
+    for rule in getattr(model, "rules", ()) or ():
+        if getattr(rule, "variable", None):
+            names.add(str(rule.variable))
+    return frozenset(name for name in names if name in _MATH_BUILTIN_SYMBOL_NAMES)
+
+
+def convert_math_expression(
+    expression: str, protected: Optional[Set[str]] = None
+) -> str:
     """Convert common MathML/libSBML function spellings to BNGL syntax."""
 
     result = str(expression or "").strip()
+    placeholders: Dict[str, str] = {}
+    for index, name in enumerate(sorted(protected or ())):
+        token = f"__SBML_DECLARED_SYMBOL_{index}__"
+        placeholders[token] = name
+        result = re.sub(
+            rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])", token, result
+        )
     # The MathML built-ins are lowered from one shared table so that the
     # writer's lowering and the parser's static evaluator cannot drift: the
     # evaluator computes the value of exactly the expression emitted here.
@@ -780,6 +815,8 @@ def convert_math_expression(expression: str) -> str:
     # ``0()`` is a syntax error and is never a meaningful call.
     result = _RE_MATH_ZERO_CALL_NO_ARGS.sub("0", result)
     result = result.replace("--", "+")
+    for token, name in placeholders.items():
+        result = result.replace(token, standardize_name(name))
     return result
 
 
@@ -2426,6 +2463,8 @@ def _rate_for_reaction(
     complete_flux: bool = False,
     synthetic_rate_rule_variables: Optional[Set[str]] = None,
 ) -> str:
+    protected = _protected_math_names(model)
+
     def apply_conversion(rate: str) -> str:
         if conversion_factor is None:
             return rate
@@ -2538,7 +2577,7 @@ def _rate_for_reaction(
         # writer emits that factor as a kinetic constant instead of removing
         # the factor already represented by the BNGL pattern.
         math = _extract_statistical_factor(
-            convert_math_expression(math), reactant_structures
+            convert_math_expression(math, protected=protected), reactant_structures
         )
     # Multi sums are source amount/concentration projections. Keep explicit
     # volume factors rather than treating them as elementary reactant factors.
@@ -2623,7 +2662,7 @@ def _rate_for_reaction(
     # amount-dependent rate, otherwise the engine multiplies by the reactant
     # count a second time.
     converted_for_check = bngl_function(
-        convert_math_expression(math),
+        convert_math_expression(math, protected=protected),
         reaction.name or reaction.id,
         reactants,
         list(model.compartments),
@@ -2710,7 +2749,7 @@ def _rate_for_reaction(
     # its biology.
     if nonlinear:
         converted_function = bngl_function(
-            convert_math_expression(math),
+            convert_math_expression(math, protected=protected),
             reaction.name or reaction.id,
             reactants,
             list(model.compartments),
@@ -2726,7 +2765,7 @@ def _rate_for_reaction(
             )
         return apply_conversion(converted_function)
 
-    converted = convert_math_expression(math)
+    converted = convert_math_expression(math, protected=protected)
     converted_rate = bngl_function(
         converted,
         reaction.name or reaction.id,
@@ -2814,7 +2853,7 @@ def _rate_for_reaction(
         # keep the source compartment factor in the complete flux instead of
         # emitting a concentration rate with its amount/time scale missing.
         stripped = _strip_mass_action_factors(
-            convert_math_expression(original_math), reactants
+            convert_math_expression(original_math, protected=protected), reactants
         )
     if (
         not complete_flux
