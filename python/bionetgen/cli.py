@@ -9,9 +9,32 @@ from pathlib import Path
 import click
 
 
+def _require_callback(ctx, param, value):
+    """Apply the pinned PyBioNetGen ``--require`` version guard."""
+    if value is None:
+        return None
+    from packaging.version import parse
+
+    from bionetgen.core.exc import BNGVersionError
+    from bionetgen.core.version import get_version
+
+    current = get_version()
+    if parse(current) < parse(value):
+        raise BNGVersionError(current, value)
+    return value
+
+
 @click.group()
 @click.version_option(package_name="bionetgen")
-def main():
+@click.option(
+    "--require",
+    "-req",
+    callback=_require_callback,
+    is_eager=True,
+    default=None,
+    help="Require at least this BNG version before running a command.",
+)
+def main(require):
     """BioNetGen: Rule-based modeling of biochemical systems."""
     pass
 
