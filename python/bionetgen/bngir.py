@@ -176,13 +176,42 @@ def _payload_v01(model: Any, provenance: Mapping[str, Any] | None) -> dict[str, 
         }
         for function in native.functions
     ]
+    # v0.1 stores patterns as strings. The native rule view drops compartment
+    # prefixes, so recover them from the compiled snapshot; otherwise a v0.1
+    # round trip silently deletes compartment transport rules.
+    snapshot_rules = []
+    try:
+        from .model import _cpp
+
+        snapshot_rules = _cpp._compiled_snapshot(native).get("rules", [])
+    except Exception:
+        snapshot_rules = []
+
+    def _v01_patterns(rule_index: int, side: str, patterns: list) -> list:
+        if rule_index >= len(snapshot_rules):
+            return list(patterns)
+        direction = snapshot_rules[rule_index].get("forward", {})
+        snapshot_patterns = direction.get(side, [])
+        rendered = []
+        for index, pattern in enumerate(patterns):
+            text = str(pattern)
+            if index < len(snapshot_patterns) and not text.startswith("@"):
+                compartment = snapshot_patterns[index].get("compartment", "")
+                if compartment and f"@{compartment}" not in text:
+                    # The suffix spelling keeps the compartment on the molecule,
+                    # which BNGL's network generator honours for transport
+                    # rules; the prefix spelling is silently dropped.
+                    text = f"{text}@{compartment}"
+            rendered.append(text)
+        return rendered
+
     rules = []
-    for rule in native.reaction_rules:
+    for rule_index, rule in enumerate(native.reaction_rules):
         item = {
             "name": rule.rule_name,
             "label": rule.label,
-            "reactants": list(rule.reactant_patterns),
-            "products": list(rule.product_patterns),
+            "reactants": _v01_patterns(rule_index, "reactants", rule.reactant_patterns),
+            "products": _v01_patterns(rule_index, "products", rule.product_patterns),
             "rates": list(rule.rates),
             "modifiers": list(rule.modifiers),
             "bidirectional": bool(rule.is_bidirectional),
@@ -3873,6 +3902,86 @@ def _extract_jump_hazards(
     )
 
 
+def _initial_state_counterexample(left_model: Any, right_model: Any) -> dict | None:
+    """Find an enabled jump that differs between two identically labelled models.
+
+    Only complete, unpruned networks with the same species labels are compared,
+    and the jump must be enabled by the initial state.  Such a difference is a
+    decisive counterexample to equality of the initialized process generator.
+    Cases outside this narrow contract stay unresolved.
+    """
+    from collections import Counter
+
+    try:
+        left_jumps, left_init, left_species, left_complete, left_pruned = (
+            _extract_jump_hazards(left_model)
+        )
+        right_jumps, right_init, right_species, right_complete, right_pruned = (
+            _extract_jump_hazards(right_model)
+        )
+    except Exception:
+        return None
+    if not (left_complete and right_complete) or left_pruned or right_pruned:
+        return None
+    left_types = {t.name for t in left_model._model.molecule_types}
+    right_types = {t.name for t in right_model._model.molecule_types}
+    if left_types != right_types:
+        return None
+
+    def enabled(key, init) -> bool:
+        return all(
+            init.get(species, 0) >= count
+            for species, count in Counter(key[0]).items()
+        )
+
+    if set(left_species) != set(right_species):
+        # Only a strict species subset under an identical type inventory can
+        # support the identity mapping this witness needs.  A permutation or
+        # partial rename must stay undecided instead of being called unequal.
+        if not (
+            set(left_species) < set(right_species)
+            or set(right_species) < set(left_species)
+        ):
+            return None
+        # A reachable product absent from the other network is a decisive
+        # witness: the other process has no state with that species at all.
+        for jumps, init, other_species, side in (
+            (left_jumps, left_init, set(right_species), "left"),
+            (right_jumps, right_init, set(left_species), "right"),
+        ):
+            for key, rate in jumps.items():
+                if not enabled(key, init):
+                    continue
+                missing = sorted(set(key[1]) - other_species)
+                if missing:
+                    return {
+                        "jump": [list(key[0]), list(key[1])],
+                        "missing_product_species": missing,
+                        "side": side,
+                        "rate": str(rate),
+                    }
+        return None
+
+    for key, left_rate in left_jumps.items():
+        if not enabled(key, left_init):
+            continue
+        right_rate = right_jumps.get(key)
+        if right_rate != left_rate:
+            return {
+                "jump": [list(key[0]), list(key[1])],
+                "left_rate": str(left_rate),
+                "right_rate": str(right_rate),
+            }
+    for key in right_jumps:
+        if key not in left_jumps and enabled(key, right_init):
+            return {
+                "jump": [list(key[0]), list(key[1])],
+                "left_rate": "0",
+                "right_rate": str(right_jumps[key]),
+            }
+    return None
+
+
 def _function_counterexample(left_model: Any, right_model: Any) -> dict | None:
     """Find a rational assignment where matching zero-argument functions differ.
 
@@ -4028,6 +4137,16 @@ def exact_process_equal(
                 )
             ),
         }
+
+    # A concrete enabled transition difference at the initial state decides
+    # inequality even when structural execution fields differ.  This is checked
+    # before the structural guard so that a valid witness is never hidden by a
+    # field that would otherwise force an undecided result.  The check is
+    # deliberately narrow: identical species labels, complete networks and an
+    # actually enabled jump are required.
+    initial_witness = _initial_state_counterexample(left_model, right_model)
+    if initial_witness is not None:
+        return False
 
     left_unlowered = unlowered_contract(left_structural)
     right_unlowered = unlowered_contract(right_structural)
