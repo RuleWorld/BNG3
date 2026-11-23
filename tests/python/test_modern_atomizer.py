@@ -4853,3 +4853,19 @@ def test_keyword_renamed_assignment_rule_parameter_unit_scaling():
     # Rule function returns the scaled value; kinetic law divides it back.
     assert rule_line.strip().startswith("abs_id() = (0.00027777777777777778) *"), (rule_line, rate_line)
     assert "abs_id / 0.00027777777777777778" in rate_line, (rule_line, rate_line)
+
+
+def test_compartment_factor_shape_counts_multiplicative_and_divisive_uses():
+    """A law with one V* and two /V factors has net divisive dependence.
+
+    ``V * k * (A/V) * (B/V)`` reduces to ``k*A*B/V``. Counting only the
+    presence of both directions misclassifies it as cancelling ("none") and
+    emits a mass-action constant with the wrong power of the volume.
+    """
+    from bionetgen.atomizer.modern.writer import _compartment_factor_shape
+
+    law = "V * k * (A / V) * (B / V)"
+    assert _compartment_factor_shape(law, "V") == "divisive"
+    assert _compartment_factor_shape("V * k * A * B", "V") == "multiplicative"
+    assert _compartment_factor_shape("k * A * B", "V") == "none"
+    assert _compartment_factor_shape("V * k * A / V", "V") == "none"

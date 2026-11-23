@@ -2248,19 +2248,20 @@ def _compartment_factor_shape(expression: str, compartment_id: str) -> str:
         name,
         f"__compartment_{name}__",
     }
-    multiplicative = False
-    divisive = False
+    multiplicative = 0
+    divisive = 0
     for identifier in identifiers:
         escaped = re.escape(identifier)
-        if re.search(rf"\*\s*{escaped}\b", expression) or re.search(
-            rf"^\s*{escaped}\b\s*\*", expression
-        ):
-            multiplicative = True
-        if re.search(rf"/\s*{escaped}\b", expression):
-            divisive = True
+        multiplicative += len(
+            re.findall(rf"\*\s*{escaped}\b", expression)
+        ) + len(re.findall(rf"^\s*{escaped}\b\s*\*", expression))
+        divisive += len(re.findall(rf"/\s*{escaped}\b", expression))
+    # Count the factors, not just their presence: a law such as
+    # ``V * k * (A/V) * (B/V)`` has one multiplicative and two divisive uses,
+    # so the net dependence is 1/V, not cancellation.
     if multiplicative == divisive:
         return "none"
-    return "multiplicative" if multiplicative else "divisive"
+    return "multiplicative" if multiplicative > divisive else "divisive"
 
 
 def _rate_law_volume_exponent(
