@@ -16490,7 +16490,7 @@
     },
     {
       "number": 172,
-      "body_sha256": "9ba434920c5e27aa6e4ff7462d938884dfe1b03d01331d45c306ab5de3ce550e",
+      "body_sha256": "934a996081d59e0d690fa2a0e3eec1a5f921c5cfbab1265bd1942b039625a7c0",
       "obligations": [
         {
           "id": "issue:172:trace-imports-and-callers-of-modelapi-legacy-network-parser-simu",
@@ -16623,14 +16623,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-python-consolidation.",
-                "No revision-locked consuming receipt producer is declared for required live check release-python-consolidation."
-              ]
+              "selector": "tests/validation/release/cases/issue-172/test_python_consolidation_release.py::test_release_python_consolidation",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#pybionetgen-compat",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -16656,14 +16653,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-python-legacy.",
-                "No revision-locked consuming receipt producer is declared for required live check release-python-legacy."
-              ]
+              "selector": "tests/validation/release/cases/issue-172/test_python_consolidation_release.py::test_release_python_legacy",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#pybionetgen-compat",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -16689,14 +16683,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-172.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-172."
-              ]
+              "selector": "tests/validation/release/cases/issue-172/test_python_consolidation_release.py::test_release_obligation_172",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#pybionetgen-compat",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],

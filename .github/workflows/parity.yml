@@ -1845,6 +1845,26 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+      - name: Validate independent issue-172 Python legacy consolidation release acceptance
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/issue-172-artifacts"
+          python -m pytest -q \
+            tests/validation/release/cases/issue-172/test_python_consolidation_release.py \
+            --junitxml="$RUNNER_TEMP/issue-172-artifacts/pytest.xml"
+          python scripts/ci/record_issue172_release.py \
+            --source-revision "${{ github.event.pull_request.head.sha || github.sha }}" \
+            --junit "$RUNNER_TEMP/issue-172-artifacts/pytest.xml" \
+            --output "$RUNNER_TEMP/issue-172-artifacts/issue-172.json"
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: issue172-release-record-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/issue-172-artifacts/
+          if-no-files-found: warn
+          retention-days: 14
+
   release-obligation-142:
     name: release-obligation-142
     needs: [bng2-parity, nfsim-parity]
