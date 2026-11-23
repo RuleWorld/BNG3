@@ -4,8 +4,8 @@
 The official BioModels search API is the inventory source.  Every returned
 record is retained in the report: SBML records go through the modern
 Atomizer, C++ network generation, C++ SBML writing, modern SBML re-import,
-the native C++ SBML reader, and direct BNG3-CVODE/libRoadRunner observable
-comparison; non-SBML records are explicitly reported as unsupported by this
+the native C++ SBML reader, and independent observable comparison against
+libRoadRunner or a pinned delay oracle; non-SBML records are reported as unsupported by this
 SBML path. Public-source transport failures are reported as ``harness_error``
 with endpoint and HTTP diagnostics; they are not Atomizer verdicts.
 """
@@ -18,6 +18,7 @@ import hashlib
 import itertools
 import json
 import math
+import os
 import re
 import shutil
 import subprocess
@@ -1482,6 +1483,80 @@ def _deduplicate_action_trajectory(
     return times[keep], values[keep], pre_event_rows
 
 
+def _delay_oracle_input(sbml: str) -> tuple[str, set[str], dict[str, str]]:
+    import libsbml
+
+    csymbol = "{http://www.w3.org/1998/Math/MathML}csymbol"
+    if not any(
+        node.get("definitionURL") == "http://www.sbml.org/sbml/symbols/delay"
+        for node in ET.fromstring(sbml).iter(csymbol)
+    ):
+        raise OracleIntegrationError("the rejected SBML has no MathML delay csymbol")
+    document = libsbml.readSBMLFromString(sbml)
+    if document.getModel() is None:
+        raise OracleIntegrationError("libSBML could not parse the delay oracle input")
+    converted = sbml
+    if document.getLevel() != 3:
+        if not document.setLevelAndVersion(3, 2, True):
+            raise OracleIntegrationError(
+                "libSBML could not strictly convert input to L3V2"
+            )
+        converted = libsbml.writeSBMLToString(document)
+    assignments = {
+        rule.getVariable()
+        for rule in document.getModel().getListOfRules()
+        if rule.isAssignment()
+    }
+    return (
+        converted,
+        assignments,
+        {
+            "original_sbml_sha256": hashlib.sha256(sbml.encode()).hexdigest(),
+            "converted_sbml_sha256": hashlib.sha256(converted.encode()).hexdigest(),
+            "libsbml_version": libsbml.getLibSBMLDottedVersion(),
+        },
+    )
+
+
+def _simulate_delay_oracle(
+    python: str,
+    sbml: str,
+    times: np.ndarray,
+    selections: list[str],
+    *,
+    rtol: float,
+    atol: float,
+    max_step: float,
+) -> dict[str, Any]:
+    program = Path(__file__).with_name("run_biomodels_delay_oracle.py")
+    completed = subprocess.run(
+        [python, "-I", str(program)],
+        input=json.dumps(
+            {
+                "sbml": sbml,
+                "times": times.tolist(),
+                "selections": selections,
+                "rtol": rtol,
+                "atol": atol,
+                "max_step": max_step,
+            },
+            allow_nan=False,
+        ),
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=120,
+    )
+    if completed.returncode:
+        raise RuntimeError(completed.stderr.strip())
+    result = json.loads(completed.stdout)
+    if result["columns"] != selections:
+        raise RuntimeError("independent delay oracle returned different columns")
+    if result["sbml_sha256"] != hashlib.sha256(sbml.encode()).hexdigest():
+        raise RuntimeError("independent delay oracle returned a different SBML hash")
+    return result
+
+
 def _simulate_and_compare(
     cpp_model: Any,
     model_type: Any,
@@ -1502,7 +1577,7 @@ def _simulate_and_compare(
     comparison_scope: str = COMPARISON_SCOPE,
     source_time_units: str | None = None,
 ) -> dict[str, Any]:
-    """Compare BNG3/CVODE observables with libRoadRunner on one time grid."""
+    """Compare BNG3/CVODE observables with an independent solver on one grid."""
 
     try:
         import roadrunner
@@ -1523,6 +1598,10 @@ def _simulate_and_compare(
     compared_model = (
         "original source SBML" if reference_model is not None else "written SBML"
     )
+    rr = None
+    oracle_name = "libRoadRunner"
+    delay_oracle: dict[str, Any] = {}
+    delay_python = os.environ.get("BNG3_BIOMODELS_DELAY_PYTHON")
     try:
         rr = roadrunner.RoadRunner(
             reference_model if reference_model is not None else str(output_path)
@@ -1572,10 +1651,28 @@ def _simulate_and_compare(
     except OracleIntegrationError:
         raise
     except Exception as exc:
-        raise OracleIntegrationError(
-            f"the independent oracle (libRoadRunner) could not load the "
-            f"{compared_model}: {type(exc).__name__}: {exc}"
-        ) from exc
+        if (
+            rr is not None
+            or not delay_python
+            or "Unable to support delay differential equations" not in str(exc)
+        ):
+            raise OracleIntegrationError(
+                f"the independent oracle (libRoadRunner) could not load the "
+                f"{compared_model}: {type(exc).__name__}: {exc}"
+            ) from exc
+        oracle_name = "sbmlsim-core"
+        delay_sbml, delay_assignments, delay_oracle = _delay_oracle_input(
+            reference_model
+            if reference_model is not None
+            else output_path.read_text(encoding="utf-8")
+        )
+        delay_oracle["roadrunner_refusal"] = str(exc)
+        rr_effective_atol_min = rr_state_count = None
+        # The delay oracle applies its scalar directly to each source state.
+        actual_native_atol = min(atol, atol * native_amount_scale)
+        if not math.isfinite(actual_native_atol) or actual_native_atol <= 0:
+            raise OracleIntegrationError("mapped delay-oracle tolerance is invalid")
+        tolerance_mapping = "delay_oracle_scalar_minimum"
 
     unscored_pre_event_rows: list[dict[str, Any]] = []
     if action_bngl is not None:
@@ -1709,7 +1806,7 @@ def _simulate_and_compare(
             name: bng_values[name] for name in observable_names if name in bng_values
         }
     else:
-        available = set(rr.getAssignmentRuleIds())
+        available = delay_assignments if rr is None else set(rr.getAssignmentRuleIds())
         for name in observable_names:
             safe_name = sbml_id(name)
             candidates = [
@@ -1733,28 +1830,42 @@ def _simulate_and_compare(
             else "written SBML is missing observable assignment rules: "
         )
         raise RuntimeError(missing_description + ", ".join(missing[:10]))
-    rr.timeCourseSelections = ["time", *selected_names]
     try:
-        rr_values, oracle_solver_attempts = _simulate_oracle_trajectory(
-            rr,
-            t_end,
-            n_steps,
-            sample_times=bng_time if action_bngl is not None else None,
-        )
+        if rr is None:
+            output = _simulate_delay_oracle(
+                delay_python,
+                delay_sbml,
+                bng_time,
+                ["time", *selected_names],
+                rtol=rtol,
+                atol=atol,
+                max_step=max_step,
+            )
+            rr_values = np.asarray(output["values"], dtype=float)
+            delay_oracle["version"] = output["version"]
+            oracle_solver_attempts = [{"stiff": True, "passed": True}]
+        else:
+            rr.timeCourseSelections = ["time", *selected_names]
+            rr_values, oracle_solver_attempts = _simulate_oracle_trajectory(
+                rr,
+                t_end,
+                n_steps,
+                sample_times=bng_time if action_bngl is not None else None,
+            )
     except Exception as exc:
         # The oracle's own solver failed.  That is a limitation of the
         # measurement, not a disagreement between the two engines.
         raise OracleIntegrationError(
-            "the independent oracle (libRoadRunner) could not integrate the "
+            f"the independent oracle ({oracle_name}) could not integrate the "
             f"{compared_model}: {type(exc).__name__}: {exc}"
         ) from exc
     expected_shape = (len(bng_time), len(observable_names) + 1)
     if rr_values.ndim != 2 or rr_values.shape != expected_shape:
         raise RuntimeError(
-            f"libRoadRunner returned shape {rr_values.shape}, expected {expected_shape}"
+            f"{oracle_name} returned shape {rr_values.shape}, expected {expected_shape}"
         )
     if not np.allclose(rr_values[:, 0], bng_time, rtol=0.0, atol=max(atol, 1e-12)):
-        raise RuntimeError("BNG3 and libRoadRunner produced different time grids")
+        raise RuntimeError(f"BNG3 and {oracle_name} produced different time grids")
 
     comparison_scale = max(
         [
@@ -1829,7 +1940,7 @@ def _simulate_and_compare(
             points = ", ".join(f"t={_format_time(time)}" for time in undefined_at[:5])
             not_comparable[name] = (
                 f"{observable_description} is undefined at {points} "
-                f"({_undefined_label(left)}); BNG3 and libRoadRunner "
+                f"({_undefined_label(left)}); BNG3 and {oracle_name} "
                 "report the same undefined value"
             )
             undefined_points.update(points.split(", "))
@@ -1853,7 +1964,7 @@ def _simulate_and_compare(
             if action_bngl is not None
             else "BNG3 CVODE (simulate method='ode')"
         ),
-        "method_sbml": "libRoadRunner CVODE",
+        "method_sbml": f"{oracle_name} CVODE",
         "roadrunner_version": getattr(roadrunner, "__version__", None),
         "t_start": 0.0,
         "t_end": t_end,
@@ -1861,10 +1972,10 @@ def _simulate_and_compare(
         "rtol": rtol,
         "atol": atol,
         "requested_comparison_atol": atol,
-        "roadrunner_requested_atol": atol,
+        "roadrunner_requested_atol": atol if rr is not None else None,
         "roadrunner_effective_atol_min": rr_effective_atol_min,
         "roadrunner_state_count": rr_state_count,
-        "roadrunner_solver_attempts": oracle_solver_attempts,
+        "roadrunner_solver_attempts": oracle_solver_attempts if rr is not None else [],
         "native_solver_atol": actual_native_atol,
         "native_amount_scale": native_amount_scale,
         "native_tolerance_mapping": tolerance_mapping,
@@ -1880,6 +1991,11 @@ def _simulate_and_compare(
     }
     if action_bngl is not None:
         base["unscored_pre_event_rows"] = unscored_pre_event_rows
+    if delay_oracle:
+        base["delay_oracle"] = {
+            **delay_oracle,
+            "solver_attempts": oracle_solver_attempts,
+        }
     if native_tolerance_context:
         base.update(native_tolerance_context)
     if source_time_units is not None:
@@ -1893,7 +2009,7 @@ def _simulate_and_compare(
                 observable_description
                 + " is undefined at "
                 + ", ".join(sorted(undefined_points))
-                + ": BNG3 and libRoadRunner report the same undefined value, "
+                + f": BNG3 and {oracle_name} report the same undefined value, "
                 "so a pointwise comparison cannot measure the record ("
                 + ", ".join(sorted(not_comparable)[:10])
                 + ")"
@@ -1905,7 +2021,7 @@ def _simulate_and_compare(
             **base,
             "passed": False,
             "error": (
-                "BNG3 CVODE/libRoadRunner observable mismatch: "
+                f"BNG3 CVODE/{oracle_name} observable mismatch: "
                 + ", ".join(failed[:10])
             ),
             "failed_observables": failed,
@@ -1962,7 +2078,7 @@ def _simulate_source_and_compare(
     max_step: float = 0.0,
     model_id: str,
 ) -> dict[str, Any]:
-    """Compare mapped BNG3 species with the original SBML in libRoadRunner."""
+    """Compare mapped BNG3 species with independently simulated original SBML."""
 
     from bionetgen.atomizer.modern.types import standardize_name
     from scripts.ci.validate_sbml_test_suite import (
@@ -3536,7 +3652,15 @@ def main() -> int:
             "atol": args.simulation_atol,
             "comparison_scope": COMPARISON_SCOPE,
             "comparison": "all generated BNGL observables on the same time grid",
-            "engines": ["BNG3 CVODE", "libRoadRunner CVODE"],
+            "engines": [
+                "BNG3 CVODE",
+                "libRoadRunner CVODE",
+                *(
+                    ["sbmlsim-core CVODE"]
+                    if os.environ.get("BNG3_BIOMODELS_DELAY_PYTHON")
+                    else []
+                ),
+            ],
         },
         "records": records,
         "unsupported_summary": unsupported_summary,
