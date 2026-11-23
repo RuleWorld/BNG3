@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "issue": 172,
+  "title": "G02: Retire redundant legacy Python paths after compatibility qualification",
+  "acceptance_checks": [
+    "release-python-consolidation",
+    "release-python-legacy",
+    "release-obligation-172"
+  ],
+  "dependencies": [
+    171,
+    178
+  ],
+  "maintained_surfaces": {
+    "engine": "_bionetgen_cpp",
+    "model_entrypoint": "bionetgen.load",
+    "simulation_runner": "bionetgen.run",
+    "result_type": "bionetgen.result.SimResult"
+  },
+  "compatibility_wrappers": {
+    "model_legacy": "bionetgen.modelapi.model.bngmodel",
+    "result_legacy": "bionetgen.core.tools.result.BNGResult",
+    "simulator_getter": "bionetgen.simulator.simulators.sim_getter"
+  }
+}
