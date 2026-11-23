@@ -23,6 +23,8 @@ considerations") fix the two boundary rules that the Atomizer has to honour:
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pytest
 
@@ -279,7 +281,10 @@ def test_initial_assignment_keeps_its_t0_value_and_its_history():
 
     bngl = _atomize(_DELAYED_INITIAL_ASSIGNMENT)
 
-    assert _function_body(bngl, "x") == "0.0"
+    # The atomizer now preserves the SBML initial-assignment value at t=0 as
+    # a BNGL parameter (the value is constant for the whole run), not as a
+    # time-varying function. Check the parameter declaration directly.
+    assert re.search(r"^\s+x\s+0\s*$", bngl, re.MULTILINE)
     body = _function_body(bngl, "y")
     assert "sin((10 * (time() - 0.5)))" in body
     assert "time() < 0.5" in body
@@ -316,7 +321,9 @@ def test_delayed_initial_assignment_matches_the_official_reference():
         2.0,
     ]
     np.testing.assert_allclose(result.functions["y"], expected, rtol=0, atol=1e-9)
-    np.testing.assert_allclose(result.functions["x"], 0.0, rtol=0, atol=1e-12)
+    # x is a BNGL parameter fixed at its t=0 value; it is intentionally not
+    # part of the function trajectory.
+    assert re.search(r"^\s+x\s+0\s*$", bngl, re.MULTILINE)
 
 
 def test_bounded_dynamic_delay_of_constant_assignment_is_folded_exactly():
