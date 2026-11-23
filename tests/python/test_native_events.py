@@ -591,3 +591,37 @@ def test_piecewise_assignment_does_not_sample_an_unselected_distribution(tmp_pat
     )
     actual = conditional.simulate(method="ode", t_end=1, n_steps=1, seed=17)
     np.testing.assert_array_equal(actual.concentrations, expected.concentrations)
+
+
+def test_cross_compartment_catalyst_product_keeps_declared_compartment(tmp_path):
+    """A catalyst product must not inherit the other reactant's compartment."""
+    import bionetgen._bionetgen_cpp as cpp
+
+    bngl = tmp_path / "comptest.bngl"
+    bngl.write_text("""begin model
+begin compartments
+  c1 3 1
+  c2 3 1
+end compartments
+begin molecule types
+  A()
+  B()
+  C()
+end molecule types
+begin seed species
+  @c1:A() 10
+  @c2:B() 5
+end seed species
+begin observables
+  Species Cc @c1:C()
+end observables
+begin reaction rules
+  r: @c1:A() + @c2:B() -> @c1:C() + @c2:B() 1
+end reaction rules
+end model
+""")
+    model = cpp.parse_file(str(bngl))
+    network = cpp.generate_network(model)
+    names = list(network.species_names)
+    assert any("c1" in n and "C()" in n for n in names), names
+    assert not any("c2" in n and "C()" in n for n in names), names
