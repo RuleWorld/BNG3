@@ -4849,9 +4849,14 @@ def test_keyword_renamed_assignment_rule_parameter_unit_scaling():
     result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
     assert result.success, result.error
     rule_line = next(line for line in result.bngl.splitlines() if "abs_id() =" in line)
-    rate_line = next(line for line in result.bngl.splitlines() if line.strip().startswith("r:"))
+    rate_line = next(
+        line for line in result.bngl.splitlines() if line.strip().startswith("r:")
+    )
     # Rule function returns the scaled value; kinetic law divides it back.
-    assert rule_line.strip().startswith("abs_id() = (0.00027777777777777778) *"), (rule_line, rate_line)
+    assert rule_line.strip().startswith("abs_id() = (0.00027777777777777778) *"), (
+        rule_line,
+        rate_line,
+    )
     assert "abs_id / 0.00027777777777777778" in rate_line, (rule_line, rate_line)
 
 

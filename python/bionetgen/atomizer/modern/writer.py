@@ -2252,9 +2252,9 @@ def _compartment_factor_shape(expression: str, compartment_id: str) -> str:
     divisive = 0
     for identifier in identifiers:
         escaped = re.escape(identifier)
-        multiplicative += len(
-            re.findall(rf"\*\s*{escaped}\b", expression)
-        ) + len(re.findall(rf"^\s*{escaped}\b\s*\*", expression))
+        multiplicative += len(re.findall(rf"\*\s*{escaped}\b", expression)) + len(
+            re.findall(rf"^\s*{escaped}\b\s*\*", expression)
+        )
         divisive += len(re.findall(rf"/\s*{escaped}\b", expression))
     # Count the factors, not just their presence: a law such as
     # ``V * k * (A/V) * (B/V)`` has one multiplicative and two divisive uses,
@@ -6546,11 +6546,6 @@ def write_functions(
                         "species concentration rate rule requires an explicit compartment derivative; "
                         "an assignment-rule-driven compartment size is unsupported"
                     )
-                event_assigned_compartment = any(
-                    assignment.variable == species.compartment
-                    for event in model.events
-                    for assignment in event.assignments
-                )
                 if compartment_name in rate_ruled_compartments:
                     body = (
                         f"({body}) * {compartment_name}_amt + "
@@ -7130,12 +7125,8 @@ def write_reaction_rules(
             and not reference.variable_stoichiometry
             and math.isfinite(reference.stoichiometry)
             and (
-                (
-                    round(reference.stoichiometry) == 0
-                    and reference.stoichiometry != 0
-                )
-                or abs(reference.stoichiometry - round(reference.stoichiometry))
-                > 1e-9
+                (round(reference.stoichiometry) == 0 and reference.stoichiometry != 0)
+                or abs(reference.stoichiometry - round(reference.stoichiometry)) > 1e-9
             )
             for reference in [*reaction.reactants, *reaction.products]
         )
