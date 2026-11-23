@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -122,7 +123,14 @@ def build_release_record(
     from tests.validation.eq_catalogue import run_catalogue, validate_catalogue_report
 
     eq_catalogue = None
-    if not skip_tests:
+    eq_catalogue_path = None
+    if args.eq_catalogue is not None:
+        if not args.eq_catalogue.is_file():
+            _fail(f"missing EQ catalogue artifact: {args.eq_catalogue}")
+        eq_catalogue = json.loads(args.eq_catalogue.read_text())
+        validate_catalogue_report(eq_catalogue)
+        eq_catalogue_path = args.eq_catalogue
+    elif not skip_tests:
         eq_catalogue = run_catalogue()
         validate_catalogue_report(eq_catalogue)
 
@@ -213,6 +221,12 @@ def build_release_record(
                 "cases": sorted({row["case"] for row in eq_catalogue["results"]}),
                 "oracles": sorted({row["oracle"] for row in eq_catalogue["results"]}),
                 "outcomes": sorted({row["observed"] for row in eq_catalogue["results"]}),
+                "artifact": str(eq_catalogue_path) if eq_catalogue_path else "generated-in-recorder",
+                "sha256": (
+                    hashlib.sha256(eq_catalogue_path.read_bytes()).hexdigest()
+                    if eq_catalogue_path
+                    else None
+                ),
             }
             if eq_catalogue is not None
             else None
@@ -238,6 +252,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Allow dirty checkout (local testing only)",
     )
     parser.add_argument("--junit", type=Path, help="Path to passing junit XML report")
+    parser.add_argument(
+        "--eq-catalogue",
+        type=Path,
+        help="Per-row EQ catalogue artifact validated with the independent oracle identities",
+    )
     args = parser.parse_args(argv)
 
     try:
