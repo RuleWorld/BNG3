@@ -1631,6 +1631,7 @@ jobs:
         run: |
           set -euo pipefail
           pytest -c tests/validation/pytest.ini \
+            tests/validation/test_parity_nfsim.py::test_tierp_direct_probe_refuses_refined_population \
             tests/validation/test_parity_nfsim.py::test_tierp_direct_path_outcome_is_measured_and_attributed \
             -q -ra --junitxml="$RUNNER_TEMP/nfsim-tier-p.xml"
 
