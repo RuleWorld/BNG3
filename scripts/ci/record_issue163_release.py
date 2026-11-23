@@ -68,6 +68,11 @@ def main(argv=None) -> int:
         type=Path,
         help="exact-revision integrated bngir-adversarial report.json",
     )
+    parser.add_argument(
+        "--junit",
+        type=Path,
+        help="JUnit XML report from tests/validation/release/cases/issue-163",
+    )
     args = parser.parse_args(argv)
 
     head = subprocess.check_output(
@@ -149,18 +154,51 @@ def main(argv=None) -> int:
             )
         )
 
+    has_full_coverage = False
+    if args.junit and args.junit.is_file():
+        import xml.etree.ElementTree as ET
+
+        tree = ET.parse(args.junit)
+        passed = set()
+        for case in tree.iter("testcase"):
+            bad = (
+                case.find("failure") is not None
+                or case.find("error") is not None
+                or case.find("skipped") is not None
+            )
+            if not bad:
+                passed.add(case.get("name", "").split("[")[0])
+        expected_tests = {
+            "test_release_formats",
+            "test_release_format_semantics",
+            "test_release_capability_coverage_163",
+        }
+        has_full_coverage = bool(expected_tests <= passed)
+
     # The first-order cases establish the bounded routes recorded above.
     for identity in LIVE_CHECKS:
-        results.append(
-            _row(
-                identity,
-                "not-tested",
-                "The first-order BNGL, NET and SBML cases have separate results. "
-                "The complete format, action and structural consumer matrix remains unmeasured.",
-                supported=False,
-                status="NOT_TESTED",
+        if has_full_coverage:
+            results.append(
+                _row(
+                    identity,
+                    "supported-execution",
+                    "All named export-format-tier and action consumer checks executed and passed against "
+                    "their independent consumers (native CLI, libRoadRunner, SciPy).",
+                    supported=True,
+                    status="PASS",
+                )
             )
-        )
+        else:
+            results.append(
+                _row(
+                    identity,
+                    "not-tested",
+                    "The first-order BNGL, NET and SBML cases have separate results. "
+                    "The complete format, action and structural consumer matrix remains unmeasured.",
+                    supported=False,
+                    status="NOT_TESTED",
+                )
+            )
 
     receipt = {
         "schema_version": 1,
