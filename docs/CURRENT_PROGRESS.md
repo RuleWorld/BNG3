@@ -1,5 +1,25 @@
 # BNG3 current progress
 
+## Gap resolved — all four network-free issues closed (2026-11-22)
+
+The gap described in the capability inventory is fully resolved:
+
+- `#147` CLOSED — dynamic energy and population-map rates execute in NFnext,
+  with lowering/roundtrip acceptance demonstrated at exact main.
+- `#148` CLOSED — full TIER_NF NFnext-vs-pinned-native-NFsim corpus parity
+  (4/4 models PASS, 32 seeds) accepted at exact main `7d20391e`.
+- `#149` CLOSED — NFnext promoted to the `method="nf"` default on main (PR
+  #832); NFcore remains selectable via `method="nfcore"`; the three release
+  checks PASS at exact main and maintainer decision item 20 approves #176/#178
+  as downstream dependency scope.
+- `#150` CLOSED — hybrid particle/population execution and conservation
+  accepted at exact main.
+
+Final closure evidence: `issue_queue --require-closed-acceptance` dry runs at
+exact revision `7d20391e` show acceptance 1/2/3 PASS with no gaps for each of
+#148, #149 and #150, using the exact-main records from hosted run
+`44880029171` and the approved dependency scope in `provenance/issue-obligations.json`.
+
 ## #148/#149 acceptance evidence — 2026-11-21
 
 Exact-main Cross-tool parity run `44880029171` at `7d20391e` produced
