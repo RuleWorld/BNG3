@@ -92,6 +92,7 @@ def build_release_record(
     skip_tests: bool = False,
     allow_dirty: bool = False,
     junit_path: Path | None = None,
+    eq_catalogue_path: Path | None = None,
 ) -> dict:
     head = subprocess.run(
         ["git", "-C", str(root), "rev-parse", "HEAD"],
@@ -123,13 +124,13 @@ def build_release_record(
     from tests.validation.eq_catalogue import run_catalogue, validate_catalogue_report
 
     eq_catalogue = None
-    eq_catalogue_path = None
-    if args.eq_catalogue is not None:
-        if not args.eq_catalogue.is_file():
-            _fail(f"missing EQ catalogue artifact: {args.eq_catalogue}")
-        eq_catalogue = json.loads(args.eq_catalogue.read_text())
+    artifact_path = None
+    if eq_catalogue_path is not None:
+        if not eq_catalogue_path.is_file():
+            _fail(f"missing EQ catalogue artifact: {eq_catalogue_path}")
+        eq_catalogue = json.loads(eq_catalogue_path.read_text())
         validate_catalogue_report(eq_catalogue)
-        eq_catalogue_path = args.eq_catalogue
+        artifact_path = eq_catalogue_path
     elif not skip_tests:
         eq_catalogue = run_catalogue()
         validate_catalogue_report(eq_catalogue)
@@ -221,10 +222,12 @@ def build_release_record(
                 "cases": sorted({row["case"] for row in eq_catalogue["results"]}),
                 "oracles": sorted({row["oracle"] for row in eq_catalogue["results"]}),
                 "outcomes": sorted({row["observed"] for row in eq_catalogue["results"]}),
-                "artifact": str(eq_catalogue_path) if eq_catalogue_path else "generated-in-recorder",
+                "artifact": (
+                    str(artifact_path) if artifact_path else "generated-in-recorder"
+                ),
                 "sha256": (
-                    hashlib.sha256(eq_catalogue_path.read_bytes()).hexdigest()
-                    if eq_catalogue_path
+                    hashlib.sha256(artifact_path.read_bytes()).hexdigest()
+                    if artifact_path
                     else None
                 ),
             }
@@ -265,6 +268,7 @@ def main(argv: list[str] | None = None) -> int:
             skip_tests=args.skip_tests,
             allow_dirty=args.allow_dirty,
             junit_path=args.junit,
+            eq_catalogue_path=args.eq_catalogue,
         )
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(json.dumps(record, indent=2) + "\n", encoding="utf-8")
