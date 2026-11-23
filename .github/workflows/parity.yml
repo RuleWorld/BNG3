@@ -80,6 +80,7 @@ jobs:
             tests/validation/test_record_issue166_release.py \
             tests/validation/test_record_issue152_release.py \
             tests/validation/test_record_issue178_release.py \
+            tests/validation/test_record_issue174_release.py \
             tests/validation/test_reconciliation_evidence.py \
             tests/validation/test_integrated_wiring.py \
             tests/validation/test_integrated.py \
@@ -1477,6 +1478,26 @@ jobs:
         with:
           name: issue178-shared-decisions-release-${{ github.event.pull_request.head.sha || github.sha }}
           path: ${{ runner.temp }}/issue-178-release-report.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Record Issue 174 CPU benchmark release acceptance
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+          BNG3_CPU_BENCHMARK_REPORT: ${{ runner.temp }}/issue174-benchmark-record.json
+        run: |
+          set -euo pipefail
+          python scripts/ci/record_issue174_release.py \
+            --source-revision "$BNG3_SOURCE_REVISION" \
+            --output "$BNG3_CPU_BENCHMARK_REPORT" \
+            --summary-file "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload Issue 174 CPU benchmark evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue174-cpu-benchmark-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/issue174-benchmark-record.json
           if-no-files-found: error
           retention-days: 30
 
