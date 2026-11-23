@@ -96,6 +96,49 @@ def _cli_option_present(row_id: str) -> bool:
     return False
 
 
+# Documented BNG3 equivalents for pinned PyBioNetGen atomizer CLI options.
+# A flag may be absent from the CLI while the capability exists in the legacy
+# AtomizeTool configuration; these are recorded as dispositions, not as passes.
+CLI_EQUIVALENTS = {
+    "annotation": "AtomizeTool.config['annotation']",
+    "bionetgen-analysis": "AtomizeTool.config['bionetgen_analysis']",
+    "convention-file": "AtomizeTool.config['convention_file']",
+    "convert-units": "atomize CLI --no-conversion (inverted default)",
+    "ignore": "AtomizeTool.config['ignore']",
+    "input-file": "atomize CLI --input",
+    "isomorphism-check": "AtomizeTool.config['isomorphism_check']",
+    "keep-local-parameters": "AtomizeTool.config['keep_local_parameters']",
+    "log-level": "AtomizeTool.config['log_level']",
+    "memoized-resolver": "AtomizeTool.config['memoized_resolver']",
+    "molecule-id": "AtomizeTool.config['molecule_id']",
+    "naming-conventions": "AtomizeTool.config['naming_conventions']",
+    "obs-map-file": "AtomizeTool.config['obs_map_file']",
+    "output-file": "atomize CLI --output",
+    "pathwaycommons": "atomize CLI --no-pathwaycommons (inverted default)",
+    "quiet-mode": "AtomizeTool.config['quiet_mode']",
+    "user-structures": "AtomizeTool.config['user_structures']",
+    "version": "click.version_option(package_name='bionetgen')",
+}
+_NO_CLI_EQUIVALENT = (
+    "no BNG3 CLI flag or AtomizeTool config key; requires a product change"
+)
+
+
+def _disposition(row_id: str) -> tuple[str, str]:
+    if row_id.endswith(".add_modifier") or row_id.endswith(".resolve_ratelaw"):
+        return (
+            "missing-product-entry-point",
+            "pinned public method is not exposed by BNG3",
+        )
+    option = row_id.rsplit(".", 1)[-1]
+    if option in CLI_EQUIVALENTS:
+        return (
+            "capability-without-cli-flag",
+            f"capability exists as {CLI_EQUIVALENTS[option]}; PyBioNetGen CLI flag absent",
+        )
+    return "missing-cli-flag", _NO_CLI_EQUIVALENT
+
+
 def run_row_map(source_root: Path) -> dict:
     import yaml
 
@@ -115,10 +158,14 @@ def run_row_map(source_root: Path) -> dict:
         key = target or row_id
         if key not in cache:
             cache[key] = _resolves(target, row_id)
+        passed = oracle_ok and cache[key]
+        category, reason = ("resolved", "") if passed else _disposition(row_id)
         results.append(
             {
                 "id": row_id,
-                "status": "PASS" if oracle_ok and cache[key] else "FAIL",
+                "status": "PASS" if passed else "FAIL",
+                "disposition": category,
+                "reason": reason,
                 "oracle_coordinate": row.get("upstream", ""),
                 "bng3_coordinate": row.get("bng3", ""),
                 "bng3_target": target,
@@ -127,6 +174,9 @@ def run_row_map(source_root: Path) -> dict:
                 "evidence_kind": "surface-differential",
             }
         )
+    counts: dict[str, int] = {}
+    for row in results:
+        counts[row["disposition"]] = counts.get(row["disposition"], 0) + 1
     return {
         "schema_version": 1,
         "acceptance_check": "release-python-api",
@@ -135,6 +185,7 @@ def run_row_map(source_root: Path) -> dict:
         "package": package_identity(),
         "oracle": identity,
         "row_count": len(results),
+        "disposition_counts": counts,
         "results": results,
     }
 
