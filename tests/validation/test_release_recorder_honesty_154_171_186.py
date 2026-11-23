@@ -15,6 +15,8 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
+from tests.validation.eq_catalogue import CASES, validate_catalogue_report
+
 from scripts.ci import (
     record_bngir_release,
     record_bngir_roundtrip_release,
@@ -265,3 +267,49 @@ def test_disposition_needs_exact_revision_evidence(
     assert rows[dispositions[0]]["evidence_kind"] == "disposition"
     for check in dispositions[1:]:
         assert rows[check]["status"] == "NOT_TESTED"
+
+
+# --- #156: inventory membership cannot certify per-row EQ outcomes. ----------
+
+def test_membership_only_eq_evidence_is_rejected():
+    membership_only = {
+        "acceptance_check": "release-semantic-equality",
+        "case_count": len(CASES),
+        "row_count": 2 * len(CASES),
+        "results": [
+            {
+                "case": case.id,
+                "variant": variant,
+                "oracle": case.oracle,
+                "expected": "equal",
+                "observed": "equal",
+                "status": "PASS",
+            }
+            for case in CASES
+            for variant in ("equal", "different")
+        ],
+    }
+    # Every declared outcome was overwritten with "equal": no different or
+    # undecided row exists, so the catalogue cannot be a real per-row result.
+    with pytest.raises(ValueError, match="outcomes"):
+        validate_catalogue_report(membership_only)
+
+
+def test_partial_eq_evidence_is_rejected():
+    partial = {
+        "acceptance_check": "release-semantic-equality",
+        "case_count": len(CASES),
+        "row_count": 2 * len(CASES),
+        "results": [
+            {
+                "case": CASES[0].id,
+                "variant": "equal",
+                "oracle": CASES[0].oracle,
+                "expected": CASES[0].equal_outcome,
+                "observed": CASES[0].equal_outcome,
+                "status": "PASS",
+            }
+        ],
+    }
+    with pytest.raises(ValueError, match="missing rows"):
+        validate_catalogue_report(partial)
