@@ -1280,7 +1280,6 @@ def test_biomodels_atol_floor_covers_assignment_rule_cancellation():
     scale = 8.960396788647e-08
     max_abs_difference = 5.195749186702531e-11
     tolerance = (
-        NUMERICAL_COMPARISON_ATOL_FLOOR
-        + NUMERICAL_COMPARISON_RTOL_FLOOR * scale
+        NUMERICAL_COMPARISON_ATOL_FLOOR + NUMERICAL_COMPARISON_RTOL_FLOOR * scale
     )
     assert max_abs_difference <= tolerance

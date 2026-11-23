@@ -1794,7 +1794,19 @@ def _simulate_and_compare(
                 # an unusable step count without improving the comparison.
                 # Keep the conservative-minima mapping but floor the derived
                 # value at a small fraction of the requested tolerance.
-                derived_native_atol = max(derived_native_atol, atol * 1e-6)
+                # libRoadRunner scales its per-state atols by each state's
+                # magnitude. A model whose states are genuinely tiny has a
+                # uniformly tiny atol vector (median near the minimum), and
+                # BNG3 can integrate at that scale. But one near-zero state in
+                # an otherwise normal-scale model can drag the minimum far
+                # below what BNG3's independent CVODE can integrate without
+                # exhausting its step budget. Floor at a fraction of the
+                # median oracle atol: this preserves genuinely tiny models
+                # while avoiding an outlier-driven unusable tolerance.
+                rr_effective_atol_median = float(np.median(tolerance_vector))
+                derived_native_atol = max(
+                    derived_native_atol, rr_effective_atol_median * 1e-6
+                )
                 actual_native_atol = min(atol, derived_native_atol)
                 tolerance_mapping = "conservative_minima"
             else:
