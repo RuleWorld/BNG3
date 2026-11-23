@@ -330,7 +330,8 @@ CASES: tuple[EqCase, ...] = (
             _model("  A() -> B() k delay=2\n", params="  k 1\n  tau 2\n"),
             _model("  A() -> B() k\n", params="  k 1\n  tau 2\n"),
         ),
-        UNDECIDED,
+        DIFFERENT,
+        "Independent delay law: a delayed completion clock differs from immediate completion; the product-side delay asymmetry witness decides it.",
     ),
     EqCase(
         "EQ-population",
