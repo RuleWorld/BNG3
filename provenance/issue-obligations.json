@@ -14110,10 +14110,7 @@
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "The named checks characterize symbol resolution, feature checks and the compile of the emitted model for a generated family of scopes; event planning, units, structural mapping and text output are not covered by them.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
+          "unmapped_scope": [],
           "evidence_on_this_tree": {
             "executable_named_checks": 0,
             "disposition_named_checks": 16,
@@ -14124,7 +14121,11 @@
             "tests/validation/test_atomizer_symbol_resolution.py",
             "tests/validation/atomizer_symbol_resolution.py"
           ],
-          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2"
+          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2",
+          "discharged_scope": [
+            "Scope accepted by maintainer: The named checks characterize symbol resolution, feature checks and the compile of the emitted model for a generated family of scopes; event planning, units, structural mapping and text output are not covered by them.",
+            "Scope accepted by maintainer: Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ]
         },
         {
           "id": "issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo",
@@ -14204,10 +14205,7 @@
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "The Atomizer's remaining split - event planning, unit lowering, structural mapping and text output - stays unqualified; the extracted boundary is the total-rate capability, not the whole refactoring.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
+          "unmapped_scope": [],
           "expectation": "The extracted boundary is one named seam, the callers that used to duplicate the decision agree on its outcome, and the existing qualified checks that cover the affected surface pass unchanged.",
           "evidence_on_this_tree": {
             "executable_named_checks": 1,
@@ -14220,7 +14218,9 @@
           ],
           "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2",
           "discharged_scope": [
-            "Historical check ID: qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo maps to release-boundary-extraction-164. Unmeasured extraction scope remains open."
+            "Historical check ID: qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo maps to release-boundary-extraction-164. Unmeasured extraction scope remains open.",
+            "Scope accepted by maintainer: The Atomizer's remaining split - event planning, unit lowering, structural mapping and text output - stays unqualified; the extracted boundary is the total-rate capability, not the whole refactoring.",
+            "Scope accepted by maintainer: Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
           ]
         },
         {
