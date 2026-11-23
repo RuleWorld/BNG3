@@ -115,3 +115,38 @@ class SimResult:
         from bionetgen.display import render_sim_result_html
 
         return render_sim_result_html(self)
+
+
+class GpuBatchSimResult:
+    """Independent network-free GPU trajectories.
+
+    ``observables`` maps each observable name to a two-dimensional array with
+    shape ``(batch_size, len(time))``. This result is separate from
+    :class:`SimResult`, whose observable arrays describe one trajectory.
+    """
+
+    def __init__(self, raw: dict):
+        self.time = raw["time"]
+        self.observables: Dict[str, np.ndarray] = raw["observables"]
+        self.event_counts = raw["event_counts"]
+        self.batch_size = int(raw["batch_size"])
+        self.backend: str = raw["backend"]
+        self.device: str = raw["device"]
+        self.wall_time_ms = float(raw["wall_time_ms"])
+        self.dispatch_wait_time_ms = float(raw["dispatch_wait_time_ms"])
+        self.engine: str = raw["engine"]
+
+    @property
+    def n_steps(self) -> int:
+        return len(self.time)
+
+    @property
+    def observable_names(self) -> list:
+        return list(self.observables)
+
+    def __repr__(self) -> str:
+        return (
+            f"<GpuBatchSimResult trajectories={self.batch_size} "
+            f"steps={self.n_steps} observables={len(self.observables)} "
+            f"backend={self.backend!r} device={self.device!r}>"
+        )

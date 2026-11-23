@@ -1,0 +1,220 @@
+name: GPU device qualification
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cuda-device:
+    name: CUDA qualification (self-hosted NVIDIA)
+    runs-on: [self-hosted, linux, x64, cuda]
+    timeout-minutes: 180
+    env:
+      CMAKE_BUILD_TYPE: Release
+      CUDA_HOME: /usr/local/cuda-12.4
+      PYTHONPATH: python:build/cpp
+      JAX_PLATFORMS: cpu
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Python test dependencies
+        run: python -m pip install numpy scipy pytest
+
+      - name: Require and record the selected NVIDIA device
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "$(git status --porcelain)"
+          mkdir -p "${RUNNER_TEMP}/gpu-artifacts"
+          git rev-parse HEAD | tee "${RUNNER_TEMP}/gpu-artifacts/source_revision.txt"
+          nvidia-smi -q > "${RUNNER_TEMP}/gpu-artifacts/nvidia-smi.txt"
+          python - <<'PY'
+          import ctypes
+          import ctypes.util
+          import json
+          import os
+          from pathlib import Path
+
+          library = ctypes.util.find_library("cuda") or "libcuda.so.1"
+          driver = ctypes.CDLL(library)
+
+          def check(result, operation):
+              if result != 0:
+                  raise SystemExit(f"CUDA driver {operation} failed with code {result}")
+
+          driver.cuInit.argtypes = [ctypes.c_uint]
+          driver.cuInit.restype = ctypes.c_int
+          check(driver.cuInit(0), "cuInit")
+
+          device = ctypes.c_int()
+          driver.cuDeviceGet.argtypes = [ctypes.POINTER(ctypes.c_int), ctypes.c_int]
+          driver.cuDeviceGet.restype = ctypes.c_int
+          check(driver.cuDeviceGet(ctypes.byref(device), 0), "cuDeviceGet(ordinal 0)")
+
+          name_buffer = ctypes.create_string_buffer(256)
+          driver.cuDeviceGetName.argtypes = [
+              ctypes.c_char_p,
+              ctypes.c_int,
+              ctypes.c_int,
+          ]
+          driver.cuDeviceGetName.restype = ctypes.c_int
+          check(
+              driver.cuDeviceGetName(name_buffer, len(name_buffer), device.value),
+              "cuDeviceGetName",
+          )
+
+          uuid_buffer = ctypes.create_string_buffer(16)
+          driver.cuDeviceGetUuid.argtypes = [ctypes.c_void_p, ctypes.c_int]
+          driver.cuDeviceGetUuid.restype = ctypes.c_int
+          check(
+              driver.cuDeviceGetUuid(uuid_buffer, device.value),
+              "cuDeviceGetUuid",
+          )
+
+          major = ctypes.c_int()
+          minor = ctypes.c_int()
+          driver.cuDeviceComputeCapability.argtypes = [
+              ctypes.POINTER(ctypes.c_int),
+              ctypes.POINTER(ctypes.c_int),
+              ctypes.c_int,
+          ]
+          driver.cuDeviceComputeCapability.restype = ctypes.c_int
+          check(
+              driver.cuDeviceComputeCapability(
+                  ctypes.byref(major), ctypes.byref(minor), device.value
+              ),
+              "cuDeviceComputeCapability",
+          )
+
+          name = name_buffer.value.decode("utf-8")
+          uuid = uuid_buffer.raw[:16].hex()
+          compute_cap = f"{major.value}.{minor.value}"
+          architecture = major.value * 10 + minor.value
+          if not name or len(uuid) != 32 or architecture <= 0:
+              raise SystemExit("runtime ordinal 0 identity is incomplete")
+          identity = {
+              "runtime_ordinal": 0,
+              "name": name,
+              "uuid": uuid,
+              "compute_capability": compute_cap,
+              "cmake_cuda_architecture": architecture,
+              "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES"),
+          }
+          artifact = (
+              Path(os.environ["RUNNER_TEMP"])
+              / "gpu-artifacts/cuda-runtime-device.json"
+          )
+          artifact.write_text(json.dumps(identity, indent=2) + "\n", encoding="utf-8")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as env:
+              env.write(f"BNG3_CUDA_ARCH={architecture}\n")
+          print(
+              f"selected CUDA runtime ordinal 0: {name}, UUID {uuid}, compute "
+              f"capability {compute_cap}, CMake architecture {architecture}"
+          )
+          PY
+
+      - name: Require the pinned CUDA 12.4 toolchain
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x "${CUDA_HOME}/bin/nvcc"
+          export PATH="${CUDA_HOME}/bin:${PATH}"
+          command -v cmake
+          command -v ninja
+          command -v nvcc
+          nvcc --version | tee "${RUNNER_TEMP}/gpu-artifacts/nvcc.txt"
+          grep -F "release 12.4" "${RUNNER_TEMP}/gpu-artifacts/nvcc.txt"
+          cmake --version | tee "${RUNNER_TEMP}/gpu-artifacts/cmake.txt"
+          ninja --version | tee "${RUNNER_TEMP}/gpu-artifacts/ninja.txt"
+
+      - name: Configure the CUDA backend for device 0
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="${CUDA_HOME}/bin:${PATH}"
+          cmake -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CUDA_ARCHITECTURES="${BNG3_CUDA_ARCH}" \
+            -DPython3_EXECUTABLE="$(python -c 'import sys; print(sys.executable)')" \
+            -DBNG3_ENABLE_CUDA=ON \
+            -DBNG3_ENABLE_METAL=OFF \
+            -DBUILD_PYTHON_BINDINGS=ON \
+            -DBUILD_CLI=OFF \
+            -DBUILD_TESTS=ON 2>&1 | tee "${RUNNER_TEMP}/gpu-artifacts/configure.log"
+
+      - name: Build and assert the CUDA kernel is present
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="${CUDA_HOME}/bin:${PATH}"
+          cmake --build build 2>&1 | tee "${RUNNER_TEMP}/gpu-artifacts/build.log"
+          grep -q "BNG3 batch SSA GPU backends: .*cuda" "${RUNNER_TEMP}/gpu-artifacts/configure.log"
+          object="$(find build -name 'CudaSsaBackend.cu.o' -print -quit)"
+          test -n "${object}"
+          nm -C "${object}" | grep -q probeCudaBackend
+
+      - name: Run GPU qualification harness tests
+        run: >-
+          python -m pytest -q
+          tests/python/test_gpu_qualification.py
+          tests/python/test_gpu_bench_equivalence.py
+          tests/python/test_gpu_bench_runner.py
+          tests/python/test_gpu_bench_metrics.py
+
+      - name: Require actual CUDA kernel execution and independent parity
+        shell: bash
+        run: |
+          set -o pipefail
+          python -u tests/test_batch_ssa_statistical_parity.py \
+            --mode gpu --backend cuda --require-device \
+            --json "${RUNNER_TEMP}/gpu-artifacts/release-cuda-device.json" \
+            2>&1 | tee "${RUNNER_TEMP}/gpu-artifacts/release-cuda-device.log"
+
+      - name: Require fail-closed CUDA backend selection
+        shell: bash
+        run: |
+          set -o pipefail
+          python -u benchmarks/gpu/run_gpu_bench.py \
+            --arms cuda --verify-no-fallback --engine-dir build/cpp \
+            2>&1 | tee "${RUNNER_TEMP}/gpu-artifacts/release-cuda-no-fallback.log"
+
+      - name: Measure CUDA against CPU with semantic comparison
+        shell: bash
+        run: |
+          set -o pipefail
+          python -u benchmarks/gpu/run_gpu_bench.py \
+            --arms cpu:0,cuda \
+            --model models/performance_test_models/egfr_net.bngl \
+            --t-end 0.02 --batch 2000 --n-steps 10 \
+            --rounds 5 --warmups 2 --null-rounds 5 \
+            --equivalence --alpha 0.001 --engine-dir build/cpp \
+            --json "${RUNNER_TEMP}/gpu-artifacts/release-cuda-performance-egfr-b2000.json" \
+            2>&1 | tee "${RUNNER_TEMP}/gpu-artifacts/release-cuda-performance-egfr-b2000.log"
+
+      - name: Measure CUDA/CPU crossover on the analytic model
+        shell: bash
+        run: |
+          set -euo pipefail
+          for batch in 1 10 100 300 500 1000; do
+            python -u benchmarks/gpu/run_gpu_bench.py \
+              --arms cpu:0,cuda --model models/isomerization.bngl \
+              --batch "${batch}" --n-steps 10 \
+              --rounds 5 --warmups 2 --null-rounds 5 \
+              --engine-dir build/cpp \
+              --json "${RUNNER_TEMP}/gpu-artifacts/release-cuda-crossover-isomerization-b${batch}.json" \
+              2>&1 | tee "${RUNNER_TEMP}/gpu-artifacts/release-cuda-crossover-isomerization-b${batch}.log"
+          done
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bng3-cuda-device-qualification-${{ github.run_id }}
+          path: ${{ runner.temp }}/gpu-artifacts/
+          if-no-files-found: error
+          retention-days: 90

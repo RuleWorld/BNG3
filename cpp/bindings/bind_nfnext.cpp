@@ -4,6 +4,7 @@
 
 #include "ast/Model.hpp"
 #include "compile/CompiledModel.hpp"
+#include "engine/gpu/NfnextGpuBackend.hpp"
 #include "nfnext/from_bng.hpp"
 
 namespace py = pybind11;
@@ -84,4 +85,69 @@ void bind_nfnext(py::module_& m) {
     py::arg("retain_state") = false,
     py::arg("population_threshold") = 0,
     "Run NFnext simulation directly from CompiledModel.");
+
+    m.def("simulate_nfnext_gpu", [](bng::ast::Model& model,
+                                    const std::vector<double>& sample_times,
+                                    std::uint64_t seed,
+                                    std::size_t batch_size,
+                                    const std::string& backend,
+                                    std::uint64_t max_events,
+                                    std::size_t max_particles) -> py::dict {
+        bng::compile::CompiledModel compiled(model);
+        bng::engine::NfnextGpuRequest request;
+        request.sampleTimes = sample_times;
+        request.seed = seed;
+        request.batchSize = batch_size;
+        request.backend = backend;
+        request.maxEvents = max_events;
+        request.maxParticles = max_particles;
+
+        bng::engine::NfnextGpuResult result;
+        {
+            py::gil_scoped_release release;
+            result = bng::engine::simulateNfnextGpu(compiled, request);
+        }
+
+        py::dict out;
+        py::array_t<double> time_arr(static_cast<py::ssize_t>(result.sampleTimes.size()));
+        auto time_buf = time_arr.mutable_unchecked<1>();
+        for (std::size_t i = 0; i < result.sampleTimes.size(); ++i)
+            time_buf(static_cast<py::ssize_t>(i)) = result.sampleTimes[i];
+        out["time"] = time_arr;
+
+        py::dict observable_dict;
+        const auto timeCount = result.sampleTimes.size();
+        const auto observableCount = result.observableNames.size();
+        for (std::size_t observable = 0; observable < observableCount; ++observable) {
+            py::array_t<float> values({static_cast<py::ssize_t>(result.batchSize),
+                                       static_cast<py::ssize_t>(timeCount)});
+            auto view = values.mutable_unchecked<2>();
+            for (std::size_t trajectory = 0; trajectory < result.batchSize; ++trajectory) {
+                for (std::size_t time = 0; time < timeCount; ++time) {
+                    const auto index =
+                        (trajectory * timeCount + time) * observableCount + observable;
+                    view(static_cast<py::ssize_t>(trajectory),
+                         static_cast<py::ssize_t>(time)) = result.observables[index];
+                }
+            }
+            observable_dict[py::cast(result.observableNames[observable])] = values;
+        }
+        out["observables"] = observable_dict;
+        out["event_counts"] = py::cast(result.eventCounts);
+        out["batch_size"] = result.batchSize;
+        out["backend"] = result.backend;
+        out["device"] = result.device;
+        out["wall_time_ms"] = result.wallTimeMs;
+        out["dispatch_wait_time_ms"] = result.dispatchWaitTimeMs;
+        out["engine"] = "nfnext-gpu";
+        return out;
+    },
+    py::arg("model"),
+    py::arg("sample_times"),
+    py::arg("seed") = 0,
+    py::arg("batch_size") = 1024,
+    py::arg("backend") = "metal",
+    py::arg("max_events") = 1000000,
+    py::arg("max_particles") = 1000000,
+    "Run the bounded NFnext unary state-change family on an explicit GPU.");
 }
