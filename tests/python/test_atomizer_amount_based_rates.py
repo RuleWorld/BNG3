@@ -529,3 +529,46 @@ def test_multiplicative_compartment_factor_scales_with_the_reactant_multiplicity
             amount,
             expected,
         )
+
+
+_AUTOCATALYTIC_DECAY = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+  <model id="autocatalytic_decay">
+    <listOfCompartments>
+      <compartment id="C" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="A" compartment="C" initialAmount="10"
+               hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k" value="0.1" constant="true"/>
+    </listOfParameters>
+    <listOfReactions>
+      <reaction id="decay" reversible="false" fast="false">
+        <listOfReactants><speciesReference species="A" stoichiometry="1"/></listOfReactants>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci> k </ci><ci> A </ci><ci> A </ci></apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>"""
+
+
+def test_partially_stripped_autocatalytic_law_keeps_mass_action():
+    """``k * A * A`` with one ``A`` reactant needs BNGL mass-action.
+
+    The writer strips one top-level reactant factor from the law.  One live
+    ``A`` operand remains, so the rule must not be marked ``TotalRate``: BNGL
+    has to supply the removed factor from the reaction pattern.
+    """
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(_AUTOCATALYTIC_DECAY)
+    assert result.success, result.error
+    rules = [
+        line for line in result.bngl.splitlines() if line.strip().startswith("decay:")
+    ]
+    assert len(rules) == 1
+    assert "TotalRate" not in rules[0], rules[0]
+    assert "A_amt" in rules[0], rules[0]

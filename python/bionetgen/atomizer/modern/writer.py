@@ -2879,6 +2879,30 @@ def _expression_mentions_species(expression: str, species_id: str) -> bool:
     )
 
 
+def _count_species_mentions(expression: str, species_id: str) -> int:
+    """Count operand occurrences of one species in an emitted rate expression."""
+
+    standardized = standardize_name(species_id)
+    count = 0
+    for run in set(_id_runs(expression)):
+        if standardize_name(run) == standardized:
+            count += len(
+                re.findall(
+                    rf"(?<![A-Za-z0-9_]){re.escape(run)}(?![A-Za-z0-9_])",
+                    expression,
+                )
+            )
+    count += len(
+        re.findall(
+            rf"(?:_c_{re.escape(standardized)}\s*\(|"
+            rf"\b{re.escape(standardized)}_amt\b)",
+            expression,
+            re.IGNORECASE,
+        )
+    )
+    return count
+
+
 def _rate_requires_total_rate(
     rate: str,
     reactant_ids: Optional[Sequence[str]] = None,
@@ -2930,6 +2954,18 @@ def _rate_requires_total_rate(
             # supply it from the reaction pattern.
             if not source_has_reactant:
                 return True
+            # The lowering may remove one reactant factor from a compound law
+            # whose source carried that species more than once (for example an
+            # autocatalytic ``k * A * A`` with a single ``A -> ...`` reactant).
+            # The surviving operand must then be supplied again by BNGL's
+            # mass-action expansion; treating the partial law as an absolute
+            # flux would drop that factor and change the trajectory.
+            if any(
+                _count_species_mentions(source_part, species_id)
+                > _count_species_mentions(part, species_id)
+                for species_id in reactants
+            ):
+                continue
             if lowered_has_reactant:
                 return True
             continue
