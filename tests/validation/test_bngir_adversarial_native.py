@@ -60,3 +60,59 @@ def test_native_import_roundtrips_and_executes_hand_authored_function_document(
         assert dict(zip(network.species_names, observed)) == pytest.approx(
             reference["amounts"], abs=1e-7, rel=1e-7
         )
+
+
+def test_compartment_and_bonded_cases_execute_against_independent_laws(tmp_path):
+    """The known native gaps must not be discharged as UNSUPPORTED."""
+    rows = {row["check"]: row for row in adversarial.run_worker(tmp_path)}
+    for case in adversarial.CASES:
+        if case["id"] in {
+            "compartment-suffix",
+            "compartment-prefix",
+            "molecule-compartment",
+            "bonded-complex-boundary",
+            "wrong-bond-changes-reconstructed-complex",
+        }:
+            assert case["oracle"] == "accept"
+            row = rows[case["id"]]
+            assert row["status"] == "PASS", row
+            assert row["supported_execution"] is True
+            assert (tmp_path / f"{case['id']}.execution.json").is_file()
+
+
+def test_wrong_bond_control_detects_reconstructed_behaviour_change():
+    base = next(c for c in adversarial.CASES if c["id"] == "bonded-complex-boundary")
+    changed = next(
+        c
+        for c in adversarial.CASES
+        if c["id"] == "wrong-bond-changes-reconstructed-complex"
+    )
+    base_model = bionetgen.BioNetGenModel(
+        _cpp._model_from_bngir_v02(copy.deepcopy(base["document"]["model"]))
+    )
+    changed_model = bionetgen.BioNetGenModel(
+        _cpp._model_from_bngir_v02(copy.deepcopy(changed["document"]["model"]))
+    )
+    base_species = set(base_model.generate_network().species_names)
+    changed_species = set(changed_model.generate_network().species_names)
+    assert base_species != changed_species
+    assert "A(b!1).A(b!1)" in base_species
+    assert "A(b!1).B(b!1)" in changed_species
+
+
+def test_malformed_bond_fails_before_a_model_is_returned():
+    case = next(
+        c for c in adversarial.CASES if c["id"] == "unpaired-exact-bond-group"
+    )
+    document = copy.deepcopy(case["document"])
+    before = json.dumps(document, sort_keys=True)
+    with pytest.raises(Exception, match="exact bond group"):
+        _cpp._model_from_bngir_v02(document["model"])
+    # Refusal is atomic: the input document is untouched and a subsequent
+    # valid import still constructs a fresh model.
+    assert json.dumps(document, sort_keys=True) == before
+    valid = next(c for c in adversarial.CASES if c["id"] == "baseline-native-control")
+    assert isinstance(
+        _cpp._model_from_bngir_v02(copy.deepcopy(valid["document"]["model"])),
+        _cpp.Model,
+    )

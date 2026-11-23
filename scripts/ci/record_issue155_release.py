@@ -137,13 +137,14 @@ def build_release_record(
 
     details = {
         "release-bngir-adversarial": (
-            "Hand-authored valid documents validate and roundtrip; malformed JSON "
-            "cases fail closed; mutations across units, reversed rules, bonds, maps "
-            "and observables are distinguished."
+            "Independent valid and malformed documents validate or fail closed; "
+            "bond, unit, rule, map and observable mutations are distinguished, "
+            "including a wrong-bond control that changes reconstructed behavior."
         ),
         "release-bngir-consumer": (
-            "Native consumers execute hand-authored valid cases against independent "
-            "analytic continuous-time trajectories without BNGL translation."
+            "Native consumers execute compartment-bearing and bonded-complex cases "
+            "against independently authored analytic seed, RHS and trajectory laws "
+            "without BNGL translation."
         ),
         "release-obligation-155": (
             "Exact-revision contract, capability inventory rows (bngir.native, bngir.v02), "
