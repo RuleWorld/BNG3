@@ -601,6 +601,31 @@ jobs:
           "$RUNNER_TEMP/biomodels-venv/bin/python" -m pip freeze \
             > "$RUNNER_TEMP/biomodels-runtime.txt"
 
+      - uses: actions/setup-python@v5
+        id: delay-python
+        with:
+          python-version: '3.14'
+          update-environment: false
+
+      - name: Install and check the independent delay oracle
+        shell: bash
+        env:
+          ORACLE_SETUP_PYTHON: ${{ steps.delay-python.outputs.python-path }}
+        run: |
+          set -euo pipefail
+          "$ORACLE_SETUP_PYTHON" -m venv "$RUNNER_TEMP/biomodels-delay-venv"
+          delay_python="$RUNNER_TEMP/biomodels-delay-venv/bin/python"
+          "$delay_python" -m pip install --require-hashes --only-binary=:all: \
+            -r provenance/biomodels-delay-ci-linux-py314.lock
+          "$delay_python" -m pip check
+          {
+            "$delay_python" -V
+            "$delay_python" -m pip freeze
+          } > "$RUNNER_TEMP/biomodels-delay-runtime.txt"
+          export BNG3_BIOMODELS_DELAY_PYTHON="$delay_python"
+          echo "BNG3_BIOMODELS_DELAY_PYTHON=$delay_python" >> "$GITHUB_ENV"
+          python -m pytest --noconftest -q tests/test_biomodels_delay_oracle.py
+
       - name: Verify package and native extension identity
         run: |
           python scripts/ci/check_python_package_identity.py \
@@ -1102,6 +1127,7 @@ jobs:
           path: |
             ${{ runner.temp }}/biomodels-artifacts/
             ${{ runner.temp }}/biomodels-runtime.txt
+            ${{ runner.temp }}/biomodels-delay-runtime.txt
             ${{ runner.temp }}/biomodels-package-identity.json
             ${{ runner.temp }}/biomodels-inventory.sha256
             provenance/curated-biomodels-query-inventory.json

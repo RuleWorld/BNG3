@@ -1,0 +1,6 @@
+# Independent delay oracle at upstream v0.20.0 (e840b3513d65685250fe630f62458bab97f15a73).
+# Wheels for CPython 3.14 on Linux x86_64. The BNG3 and RoadRunner runtime stays on its own lock.
+numpy==2.5.5 \
+    --hash=sha256:c48960d420e90cf305cb1fde0d4e6082cc90512cda87a9acf0b6e04e91cf4abe
+sbmlsim-core==0.20.0 \
+    --hash=sha256:4e04f018b883b5ea150e32b58019468fc7e28c19aa4035f530d326e0e5675f26
