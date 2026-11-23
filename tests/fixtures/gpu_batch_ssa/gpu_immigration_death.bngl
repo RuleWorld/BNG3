@@ -1,0 +1,23 @@
+# Small finite-network GPU qualification model.
+# Starting from zero, immigration followed by independent first-order death
+# has an exact Poisson count law at every time point.
+
+begin model
+begin parameters
+    immigration_rate 4.0
+    death_rate 0.7
+end parameters
+begin molecule types
+    A()
+end molecule types
+begin seed species
+    A() 0
+end seed species
+begin observables
+    Molecules A_count A()
+end observables
+begin reaction rules
+    immigration: 0 -> A() immigration_rate
+    death: A() -> 0 death_rate
+end reaction rules
+end model

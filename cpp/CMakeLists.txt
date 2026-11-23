@@ -103,6 +103,7 @@ add_library(bng_engine STATIC
     engine/EventClock.cpp
     engine/BatchSsa.cpp
     engine/gpu/GpuSsaBackend.cpp
+    engine/gpu/NfnextGpuBackend.cpp
     engine/PlaSimulator.cpp
     engine/PsaSimulator.cpp
     engine/HybridModelGenerator.cpp
@@ -203,6 +204,7 @@ set(BNG3_GPU_BACKEND_NAMES "")
 set(BNG3_GPU_BACKEND_DEFINES "")
 if(APPLE AND NOT BNG3_ENABLE_METAL STREQUAL "OFF")
     list(APPEND BNG3_GPU_BACKEND_SOURCES engine/gpu/MetalSsaBackend.mm)
+    list(APPEND BNG3_GPU_BACKEND_SOURCES engine/gpu/NfnextMetalBackend.mm)
     list(APPEND BNG3_GPU_BACKEND_NAMES "metal")
     list(APPEND BNG3_GPU_BACKEND_DEFINES BNG3_HAS_METAL=1)
     target_link_libraries(bng_engine PUBLIC "-framework Metal" "-framework Foundation")
@@ -391,6 +393,8 @@ add_library(bng_nfnext STATIC
 )
 target_include_directories(bng_nfnext PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/nfnext/include)
 target_link_libraries(bng_nfnext PUBLIC Threads::Threads bng_compile)
+target_include_directories(bng_engine PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/nfnext/include)
+target_link_libraries(bng_engine PUBLIC bng_nfnext)
 
 add_library(bionetgen_core INTERFACE)
 target_link_libraries(bionetgen_core INTERFACE
