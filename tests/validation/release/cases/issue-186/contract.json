@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "issue": 186,
+  "title": "H08: Publish alpha migration, backend-support and repository-maintenance guidance",
+  "acceptance_checks": [
+    "release-migration-docs",
+    "release-maintenance-docs",
+    "release-obligation-186"
+  ],
+  "dependencies": [
+    144,
+    149,
+    171
+  ],
+  "guidance_documents": [
+    "README.md",
+    "docs/migration_guide.md",
+    "docs/DECISIONS.md"
+  ],
+  "canonical_installation": "pip install bionetgen",
+  "retired_repositories": [
+    "RuleWorld/bionetgen",
+    "RuleWorld/nfsim",
+    "RuleWorld/PyBioNetGen"
+  ]
+}
