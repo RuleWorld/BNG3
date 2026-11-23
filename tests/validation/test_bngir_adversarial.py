@@ -145,11 +145,12 @@ def test_structural_cases_declare_independent_trajectories_and_boundary_policy()
         "compartment-suffix",
         "compartment-prefix",
         "molecule-compartment",
+        "bonded-complex-boundary",
+        "wrong-bond-changes-reconstructed-complex",
     ):
         case = cases[name]
         assert case["expected_semantics"]["trajectory"]
-        assert case["oracle"] in {"accept", "accept-or-unsupported"}
-    assert cases["bonded-complex-boundary"]["oracle"] == "unsupported"
+        assert case["oracle"] == "accept"
     assert cases["unknown-pattern-compartment"]["oracle"] == "refuse"
 
 
@@ -187,7 +188,8 @@ def test_optional_supported_structure_refusal_is_unsupported_not_pass():
     assert row["supported_execution"] is False
 
 
-def test_bonded_complex_boundary_refusal_is_unsupported():
+def test_bonded_complex_boundary_refusal_is_a_failure():
+    """The formerly unsupported case is now executable; a refusal is a FAIL."""
     case = next(
         c for c in adversarial.generated_cases() if c["id"] == "bonded-complex-boundary"
     )
@@ -200,9 +202,8 @@ def test_bonded_complex_boundary_refusal_is_unsupported():
         ),
         wrap_model=lambda x: x,
     )
-    assert row["status"] == "UNSUPPORTED"
-    assert row["evidence_kind"] == "unsupported-boundary"
-    assert row["supported_execution"] is False
+    assert row["status"] == "FAIL"
+    assert row["supported_execution"] is True
 
 
 def test_bonded_complex_refusal_does_not_pass_other_controls():
@@ -236,7 +237,7 @@ def test_bonded_complex_boundary_requires_its_specific_refusal():
         wrap_model=lambda x: x,
     )
     assert row["status"] == "FAIL"
-    assert row["evidence_kind"] == "diagnostic-only"
+    assert row["evidence_kind"] == "native-bngir-semantic-control"
 
 
 def test_positive_structure_does_not_hide_unexpected_native_refusal():
