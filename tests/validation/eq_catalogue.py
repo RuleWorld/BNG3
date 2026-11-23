@@ -213,7 +213,8 @@ CASES: tuple[EqCase, ...] = (
                 extra="begin functions\n  f() = 2*k\nend functions\n",
             ),
         ),
-        UNDECIDED,
+        DIFFERENT,
+        "Independent rational witness: f()=k and f()=2*k differ at k=1, so F differs.",
     ),
     EqCase(
         "EQ-local",
