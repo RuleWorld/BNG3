@@ -7,14 +7,16 @@
       142,
       143,
       150,
+      153,
       156,
       160,
       176,
-      178
+      178,
+      473
     ],
-    "decision": "docs/DECISIONS.md#21",
-    "decision_marker": "Dependencies #138, #140, #142, #143, #150, #156, #160, #176 and #178 for downstream release qualification",
-    "reason": "Maintainer decisions 18, 20 and 21 record that the reviewed scope for these dependency issues is authoritative for downstream exact-revision closure dry runs. #160 resolved Core/comp support and closed at c6fc1038. This resolves dependency status only; dependent issues must still pass all of their own acceptance checks."
+    "decision": "docs/DECISIONS.md#22",
+    "decision_marker": "Dependencies #138, #140, #142, #143, #150, #153, #156, #160, #176, #178 and #473 for downstream release qualification",
+    "reason": "Maintainer decisions 18, 20, 21 and 22 record that the reviewed scope for these dependency issues is authoritative for downstream exact-revision closure dry runs. #153 and #473 resolved native BNGIR deserialization and JAX backends and are closed. This resolves dependency status only; dependent issues must still pass all of their own acceptance checks."
   },
   "issues": [
     {
@@ -16118,7 +16120,7 @@
     },
     {
       "number": 171,
-      "body_sha256": "d44160ca835056403aec4f685d58d1114476c5f398451bd61f920cd4fb5dc6a1",
+      "body_sha256": "676cd2083acef5eb5359d5b9dab715db72b3c2e4676bb4fbd5bde3da150e0876",
       "obligations": [
         {
           "id": "issue:171:cover-signatures-defaults-positional-dispatch-timeouts-actions-r",
@@ -16407,14 +16409,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-python-api.",
-                "No revision-locked consuming receipt producer is declared for required live check release-python-api."
-              ]
+              "selector": "tests/validation/release/cases/issue-171/test_pybionetgen_api_release.py::test_release_python_api",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#pybionetgen-compat",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -16441,14 +16440,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-python-install.",
-                "No revision-locked consuming receipt producer is declared for required live check release-python-install."
-              ]
+              "selector": "tests/validation/release/cases/issue-171/test_pybionetgen_api_release.py::test_release_python_install",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#pybionetgen-compat",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -16475,14 +16471,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-capability-coverage-171.",
-                "No revision-locked consuming receipt producer is declared for required live check release-capability-coverage-171."
-              ]
+              "selector": "tests/validation/release/cases/issue-171/test_pybionetgen_api_release.py::test_release_capability_coverage_171",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#pybionetgen-compat",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],

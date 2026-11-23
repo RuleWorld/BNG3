@@ -29,6 +29,8 @@ Owner: **@akutuva21**. These decisions were made by the maintainer in the Phase 
 
 21. **Dependencies #138, #140, #142, #143, #150, #156, #160, #176 and #178 for downstream release qualification (2026-11-23).** This combines the scope approved in items 18 and 20 with closed dependency [#160](https://github.com/RuleWorld/BNG3/issues/160), as recorded in `provenance/issue-obligations.json`. In an exact-revision single-issue closure dry run, all nine issues count as accepted dependency scope for downstream qualification. This resolves only their dependency status; it is not a closure approval for any dependent issue and does not waive that issue's own acceptance checks, which must still execute and pass with exact-revision evidence.
 
+22. **Dependencies #138, #140, #142, #143, #150, #153, #156, #160, #176, #178 and #473 for downstream release qualification (2026-11-23).** This combines the scope approved in item 21 with closed dependencies [#153](https://github.com/RuleWorld/BNG3/issues/153) and [#473](https://github.com/RuleWorld/BNG3/issues/473), as recorded in `provenance/issue-obligations.json`. In an exact-revision single-issue closure dry run, all eleven issues count as accepted dependency scope for downstream qualification. This resolves only their dependency status; it is not a closure approval for any dependent issue and does not waive that issue's own acceptance checks, which must still execute and pass with exact-revision evidence.
+
 ## Required NFnext consolidation order
 
 1. Make `CompiledModel → NFIR` the only NFnext input path. Use NFcore2's native NFsim reader only as a validation oracle.
