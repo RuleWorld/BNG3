@@ -1852,6 +1852,8 @@ jobs:
             tests/validation/release/cases/issue-171/test_pybionetgen_api_release.py \
             --junitxml="$RUNNER_TEMP/issue-171-artifacts/pytest.xml"
 
+      # Diagnostic artifact only: unresolved py.* rows keep #171 open, so the
+      # row map must not be consumed as a passing receipt precondition.
       - name: Map every py.* row to the locked PyBioNetGen source
         run: |
           set -euo pipefail
@@ -1872,7 +1874,6 @@ jobs:
           python scripts/ci/record_issue171_release.py \
             --source-revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --junit "$RUNNER_TEMP/issue-171-artifacts/pytest.xml" \
-            --py-row-map "$RUNNER_TEMP/issue-171-artifacts/py-row-map.json" \
             --output "$RUNNER_TEMP/issue-171-artifacts/issue-171.json"
 
       - uses: actions/upload-artifact@v4
