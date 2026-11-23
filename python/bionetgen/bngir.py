@@ -3873,6 +3873,48 @@ def _extract_jump_hazards(
     )
 
 
+def _function_counterexample(left_model: Any, right_model: Any) -> dict | None:
+    """Find a rational assignment where matching zero-argument functions differ.
+
+    Only the exact rational arithmetic subset is attempted.  A differing value
+    is a sound inequivalence witness for F; no witness means the case stays
+    undecided, never equal.
+    """
+    from fractions import Fraction
+
+    def visible(model: Any) -> dict[str, tuple[tuple[str, ...], str]]:
+        return {
+            f.name: (tuple(f.args), f.expression.to_string())
+            for f in model._model.functions
+        }
+
+    left_functions = visible(left_model)
+    right_functions = visible(right_model)
+    parameter_names = sorted(
+        {p.name for m in (left_model, right_model) for p in m._model.parameters}
+    )
+    for value in (1, 2, 3, 5):
+        assignment = {name: Fraction(value) for name in parameter_names}
+        for name in sorted(set(left_functions) & set(right_functions)):
+            left_args, left_body = left_functions[name]
+            right_args, right_body = right_functions[name]
+            if left_args or right_args:
+                continue
+            try:
+                left_value = _evaluate_model_expression_exact(left_body, assignment)
+                right_value = _evaluate_model_expression_exact(right_body, assignment)
+            except (ValueError, TypeError):
+                continue
+            if left_value != right_value:
+                return {
+                    "function": name,
+                    "assignment": {k: str(v) for k, v in assignment.items()},
+                    "left": str(left_value),
+                    "right": str(right_value),
+                }
+    return None
+
+
 def exact_process_equal(
     left: Any,
     right: Any,
@@ -4038,6 +4080,15 @@ def exact_process_equal(
         )
 
     if function_signature(left_model) != function_signature(right_model):
+        # A single rational parameter assignment where corresponding
+        # zero-argument functions take different values is a verified
+        # counterexample to equality of the function interpretations F, which
+        # are part of the initialized process under the equality contract.
+        # Expressions outside the exact rational subset are skipped; absence
+        # of a witness leaves the case undecided rather than declaring it equal.
+        witness = _function_counterexample(left_model, right_model)
+        if witness is not None:
+            return False
         raise EqualityUndecided(
             "Function interpretations differ and have no verified equivalence certificate",
             {
