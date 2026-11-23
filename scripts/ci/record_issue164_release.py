@@ -34,7 +34,9 @@ def main(argv=None) -> int:
     parser.add_argument("--source-revision", required=True)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--bng-cpp", type=Path, default=ROOT / "build/cpp/bng_cpp")
-    parser.add_argument("--allow-dirty", action="store_true", help="allow dirty working tree")
+    parser.add_argument(
+        "--allow-dirty", action="store_true", help="allow dirty working tree"
+    )
     args = parser.parse_args(argv)
 
     head = subprocess.check_output(
@@ -42,7 +44,9 @@ def main(argv=None) -> int:
     ).strip()
     if head != args.source_revision:
         raise SystemExit(f"requested source revision does not match checkout: {head}")
-    if not args.allow_dirty and subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True):
+    if not args.allow_dirty and subprocess.check_output(
+        ["git", "status", "--porcelain"], cwd=ROOT, text=True
+    ):
         raise SystemExit("Issue 164 receipt requires a clean checkout")
 
     from tests.validation import atomizer_characterization as ac

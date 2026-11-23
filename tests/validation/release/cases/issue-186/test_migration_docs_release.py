@@ -45,16 +45,18 @@ end model
 def test_release_migration_docs(tmp_path: Path):
     """Verify that installed-package examples and all migration-table targets execute successfully."""
     # 1. First run the existing installed example suite
-    installed_suite = REPO_ROOT / "tests/python/test_migration_guide_installed_example.py"
+    installed_suite = (
+        REPO_ROOT / "tests/python/test_migration_guide_installed_example.py"
+    )
     proc = subprocess.run(
         [sys.executable, "-m", "pytest", "-q", "--noconftest", str(installed_suite)],
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,
     )
-    assert proc.returncode == 0, (
-        f"test_migration_guide_installed_example failed:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
-    )
+    assert (
+        proc.returncode == 0
+    ), f"test_migration_guide_installed_example failed:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
 
     # 2. Test every row of the migration table systematically
     model_path = tmp_path / "model.bngl"
