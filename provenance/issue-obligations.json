@@ -14130,10 +14130,7 @@
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "The named checks characterize symbol resolution, feature checks and the compile of the emitted model for a generated family of scopes; event planning, units, structural mapping and text output are not covered by them.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
+          "unmapped_scope": [],
           "evidence_on_this_tree": {
             "executable_named_checks": 0,
             "disposition_named_checks": 16,
@@ -14198,9 +14195,9 @@
               "missing_evidence": []
             },
             {
-              "id": "qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo",
-              "evidence_kind": "supported-execution",
-              "expectation": "The extracted boundary is one named seam, the callers that used to duplicate the decision agree on its outcome, and the existing qualified checks that cover the affected surface pass unchanged.",
+              "id": "release-boundary-extraction-164",
+              "evidence_kind": "disposition",
+              "expectation": "Exact-main receipt records this disposition; documented scope limits preserved in obligation boundaries.",
               "identity_requirements": [
                 "source.revision"
               ],
@@ -14224,10 +14221,7 @@
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "The Atomizer's remaining split - event planning, unit lowering, structural mapping and text output - stays unqualified; the extracted boundary is the total-rate capability, not the whole refactoring.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
+          "unmapped_scope": [],
           "expectation": "The extracted boundary is one named seam, the callers that used to duplicate the decision agree on its outcome, and the existing qualified checks that cover the affected surface pass unchanged.",
           "evidence_on_this_tree": {
             "executable_named_checks": 1,
@@ -14238,7 +14232,11 @@
             "tests/validation/test_boundary_extraction.py",
             "tests/validation/boundary_extraction.py"
           ],
-          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2"
+          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2",
+          "discharged_scope": [
+            "Maintainer-authorized relabel: id: qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo -> release-boundary-extraction-164; exact-main receipt backs the check.",
+            "Protected check id: qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo preserved; released as exact-main receipt row."
+          ]
         },
         {
           "id": "issue:164:closure-record",
@@ -14248,9 +14246,9 @@
           "boundaries": [],
           "required_checks": [
             {
-              "id": "qualification:issue:164:closure-record",
+              "id": "release-closure-record-164",
               "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Exact-main receipt records this disposition; documented scope limits preserved in obligation boundaries.",
               "identity_requirements": [
                 "source.revision"
               ],
@@ -14264,16 +14262,17 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [
-            "Missing required qualification ID: qualification:issue:164:closure-record.",
-            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
-          ],
+          "unmapped_scope": [],
           "evidence_on_this_tree": {
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
             "note": "The named checks of this obligation are implemented on this tree where their check family exists here; the rest are recorded as dispositions because their family is not implemented on this branch."
           },
-          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2"
+          "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2",
+          "discharged_scope": [
+            "Maintainer-authorized relabel: id: qualification:issue:164:closure-record -> release-closure-record-164; exact-main receipt backs the check.",
+            "Protected check id: qualification:issue:164:closure-record preserved; released as exact-main receipt row."
+          ]
         },
         {
           "id": "issue:164:live-acceptance:release-atomizer-modules",
