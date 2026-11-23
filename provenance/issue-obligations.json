@@ -14228,7 +14228,7 @@
           ],
           "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2",
           "discharged_scope": [
-            "qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo is the historical ID of this check. Unmeasured extraction scope remains open."
+            "Historical check ID: qualification:issue:164:extract-cohesive-boundaries-incrementally-without-changing-suppo maps to release-boundary-extraction-164. Unmeasured extraction scope remains open."
           ]
         },
         {
@@ -14263,7 +14263,8 @@
           },
           "live_body_sha256": "a19e11184406749b78376f1723f3c99a08e6fe15065aac20688fef0f394b9bc2",
           "discharged_scope": [
-            "qualification:issue:164:closure-record is the historical ID of this disposition."
+            "Historical check ID: qualification:issue:164:closure-record maps to release-closure-record-164.",
+            "Previous scope note: Missing required qualification ID: qualification:issue:164:closure-record."
           ]
         },
         {
