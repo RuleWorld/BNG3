@@ -620,3 +620,61 @@ def test_assignment_rule_rate_constant_carries_the_volume_exponent():
     assert len(rules) == 1
     assert "__compartment_C__" in rules[0], rules[0]
     assert "**-1" in rules[0], rules[0]
+
+
+_CROSS_COMPARTMENT_EXCHANGE = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+  <model id="cross_compartment_exchange">
+    <listOfCompartments>
+      <compartment id="a" size="0.25" constant="true"/>
+      <compartment id="b" size="5" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="X" compartment="a" initialConcentration="10"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="Y" compartment="b" initialConcentration="2"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="U" compartment="b" initialConcentration="3"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="V" compartment="a" initialConcentration="4"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters><parameter id="k" value="600" constant="true"/></listOfParameters>
+    <listOfReactions>
+      <reaction id="exchange" reversible="true" fast="false">
+        <listOfReactants>
+          <speciesReference species="X" stoichiometry="1"/>
+          <speciesReference species="Y" stoichiometry="1"/>
+        </listOfReactants>
+        <listOfProducts>
+          <speciesReference species="U" stoichiometry="1"/>
+          <speciesReference species="V" stoichiometry="1"/>
+        </listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><minus/>
+              <apply><times/><ci> X </ci><ci> k </ci><ci> Y </ci></apply>
+              <apply><times/><ci> U </ci><ci> k </ci><ci> V </ci></apply>
+            </apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>"""
+
+
+def test_cross_compartment_reversible_flux_keeps_both_volumes():
+    """A two-compartment exchange must use the complete SBML net flux."""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(
+        _CROSS_COMPARTMENT_EXCHANGE
+    )
+    assert result.success, result.error
+    rules = [
+        line
+        for line in result.bngl.splitlines()
+        if line.strip().startswith("exchange:")
+    ]
+    assert len(rules) == 1
+    assert "TotalRate" in rules[0], rules[0]
+    assert "_c_X()" in rules[0] and "_c_Y()" in rules[0], rules[0]
+    assert "<->" not in rules[0], rules[0]
