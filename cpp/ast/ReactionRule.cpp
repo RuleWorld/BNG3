@@ -3307,7 +3307,13 @@ bool ReactionRule::buildReaction(
     //
     // For all other rules, the reaction center signature and/or the normal
     // RxnList dedup already handle symmetry correctly.
-    double factor = identicalReactantPatternPermutationFactor(reactantPatterns_);
+    // An absolute-flux (TotalRate) rule states the complete extent rate in its
+    // rate expression.  SBML's kinetic law already accounts for repeated
+    // reactants, so applying the identical-reactant permutation factor here
+    // would divide the source flux by the multiplicity factorial.
+    double factor = absoluteFlux_
+                        ? 1.0
+                        : identicalReactantPatternPermutationFactor(reactantPatterns_);
     // NOTE: For -> 0 DeleteMolecules rules (operations_ empty, productPatterns_
     // empty), we intentionally do NOT apply the embedding multiplicity as a stat
     // factor.  The multiplicity counts automorphic embeddings that map the pattern
