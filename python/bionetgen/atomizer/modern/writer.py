@@ -2816,6 +2816,25 @@ def _rate_for_reaction(
         stripped = _strip_mass_action_factors(
             convert_math_expression(original_math), reactants
         )
+    if (
+        not complete_flux
+        and not law_references_other_compartment
+        and not any(
+            references_species(stripped, species_id) for species_id in reactants
+        )
+    ):
+        # A constant that the numeric mass-action probe could not evaluate (for
+        # example an assignment-rule function) still needs the volume exponent
+        # that converts the SBML extent rate into BNGL's concentration rate.
+        exponent = _rate_law_volume_exponent(
+            reaction,
+            model,
+            reactants,
+            compartment_factor_shape=compartment_factor_shape,
+        )
+        rate_volume = _reaction_volume_expression(reaction, model)
+        if exponent and rate_volume != "1":
+            stripped = f"({stripped}) * ({rate_volume})**{exponent}"
     return apply_conversion(
         bngl_function(
             stripped,
