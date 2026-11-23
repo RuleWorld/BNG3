@@ -1,0 +1,767 @@
+{
+  "schema_version": 1,
+  "issue": 163,
+  "source": {
+    "contract": "tests/validation/release/cases/issue-163/contract.json",
+    "capability_matrix": "provenance/capability-matrix.yml"
+  },
+  "rows": [
+    {
+      "row": "action.visualize",
+      "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
+      "oracle": "pinned BNG2 action execution and produced artifact consumer",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.visualize.help",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeBNGL",
+      "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
+      "oracle": "pinned BNG2 action execution and produced artifact consumer",
+      "matrix_status": "unassessed",
+      "execution_class": "consumer-executed",
+      "executed_route": "BioNetGen parser + engine (re-import, closed-form ODE)"
+    },
+    {
+      "row": "action.writeCPPfile",
+      "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
+      "oracle": "pinned BNG2 action execution and produced artifact consumer",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPPfile.atol",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPPfile.max_conv_fails",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPPfile.max_err_test_fails",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPPfile.max_num_steps",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPPfile.max_step",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPPfile.n_steps",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPPfile.prefix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPPfile.rtol",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPPfile.sparse",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPPfile.stiff",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPPfile.suffix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPPfile.t_end",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPPfile.t_start",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPYfile",
+      "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
+      "oracle": "pinned BNG2 action execution and produced artifact consumer",
+      "matrix_status": "unassessed",
+      "execution_class": "consumer-executed",
+      "executed_route": "Python/SciPy runtime (exported .py + .gdat)"
+    },
+    {
+      "row": "action.writeCPYfile.atol",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPYfile.max_conv_fails",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPYfile.max_err_test_fails",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPYfile.max_num_steps",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPYfile.max_step",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPYfile.n_steps",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPYfile.prefix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPYfile.rtol",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPYfile.sparse",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPYfile.stiff",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPYfile.suffix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPYfile.t_end",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeCPYfile.t_start",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeFile",
+      "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
+      "oracle": "pinned BNG2 action execution and produced artifact consumer",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeLaTeXfile",
+      "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
+      "oracle": "pinned BNG2 action execution and produced artifact consumer",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeLatex",
+      "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
+      "oracle": "pinned BNG2 action execution and produced artifact consumer",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeLatex.prefix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeLatex.suffix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMDL",
+      "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
+      "oracle": "pinned BNG2 action execution and produced artifact consumer",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMDL.prefix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMDL.suffix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMEXfile",
+      "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
+      "oracle": "pinned BNG2 action execution and produced artifact consumer",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMexfile",
+      "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
+      "oracle": "pinned BNG2 action execution and produced artifact consumer",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMexfile.atol",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMexfile.max_conv_fails",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMexfile.max_err_test_fails",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMexfile.max_num_steps",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMexfile.max_step",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMexfile.n_steps",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMexfile.prefix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMexfile.rtol",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMexfile.sparse",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMexfile.stiff",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMexfile.suffix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMexfile.t_end",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMexfile.t_start",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile",
+      "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
+      "oracle": "pinned BNG2 action execution and produced artifact consumer",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile.atol",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile.bdf",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile.maxOrder",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile.max_step",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile.n_steps",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile.prefix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile.rtol",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile.stats",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile.suffix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile.t_end",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile.t_start",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile_all",
+      "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
+      "oracle": "pinned BNG2 action execution and produced artifact consumer",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile_all.atol",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile_all.bdf",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile_all.maxOrder",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile_all.max_step",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile_all.n_steps",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile_all.prefix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile_all.rtol",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile_all.stats",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile_all.suffix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile_all.t_end",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeMfile_all.t_start",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeModel",
+      "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
+      "oracle": "pinned BNG2 action execution and produced artifact consumer",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeNET",
+      "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
+      "oracle": "pinned BNG2 action execution and produced artifact consumer",
+      "matrix_status": "partial",
+      "execution_class": "consumer-executed",
+      "executed_route": "native bng_cpp CLI (readFile + simulate_ode)"
+    },
+    {
+      "row": "action.writeNetwork",
+      "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
+      "oracle": "pinned BNG2 action execution and produced artifact consumer",
+      "matrix_status": "partial",
+      "execution_class": "consumer-executed",
+      "executed_route": "native bng_cpp CLI (network regeneration)"
+    },
+    {
+      "row": "action.writeSBML",
+      "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
+      "oracle": "pinned BNG2 action execution and produced artifact consumer",
+      "matrix_status": "unassessed",
+      "execution_class": "consumer-executed",
+      "executed_route": "libSBML validation + libRoadRunner simulation"
+    },
+    {
+      "row": "action.writeSBML.prefix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeSBML.suffix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeSBMLMulti",
+      "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
+      "oracle": "pinned BNG2 action execution and produced artifact consumer",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeSBMLMulti.prefix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeSBMLMulti.suffix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeSSC",
+      "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
+      "oracle": "pinned BNG2 action execution and produced artifact consumer",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeSSC.prefix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeSSC.suffix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeSSCcfg",
+      "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
+      "oracle": "pinned BNG2 action execution and produced artifact consumer",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeSSCcfg.prefix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeSSCcfg.suffix",
+      "intended_consumer": "pinned BNG2 argument/default/error behavior",
+      "oracle": "pinned BNG2 argument/default/error behavior",
+      "matrix_status": "unassessed",
+      "execution_class": "unmeasured-or-structure-only",
+      "executed_route": null
+    },
+    {
+      "row": "action.writeXML",
+      "intended_consumer": "pinned BNG2 action execution and produced artifact consumer",
+      "oracle": "pinned BNG2 action execution and produced artifact consumer",
+      "matrix_status": "unassessed",
+      "execution_class": "consumer-executed",
+      "executed_route": "native NFsim fixed-seed fact (one detector case)"
+    }
+  ],
+  "summary": {
+    "total_rows": 94,
+    "consumer_executed_rows": 6,
+    "missing_consumer_rows": 88
+  }
+}
