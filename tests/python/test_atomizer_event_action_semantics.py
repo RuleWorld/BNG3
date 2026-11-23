@@ -402,3 +402,43 @@ def test_strict_time_event_is_scheduled_after_the_threshold():
     assert simulate
     assert "t_end=>0.500000000001" in simulate[0], simulate[0]
     assert "t_end=>0.5," not in simulate[0], simulate[0]
+
+
+_STRICT_ZERO_TIME_EVENT = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="strict_zero_time_event">
+    <listOfCompartments>
+      <compartment id="C" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="S" compartment="C" initialAmount="1"
+               hasOnlySubstanceUnits="true" boundaryCondition="true" constant="false"/>
+    </listOfSpecies>
+    <listOfEvents>
+      <event id="E0" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><gt/><ci>time</ci><cn>0</cn></apply>
+          </math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="S">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn>10</cn></math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>
+"""
+
+
+def test_strict_time_zero_event_does_not_change_the_initial_row():
+    """``time > 0`` must fire after the initial state is recorded."""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(_STRICT_ZERO_TIME_EVENT)
+    assert result.success, result.error
+    block = result.bngl.split("begin actions", 1)[1]
+    set_lines = [line for line in block.splitlines() if "setConcentration" in line]
+    sim_lines = [line for line in block.splitlines() if "simulate(" in line]
+    assert set_lines and sim_lines
+    assert block.index(sim_lines[0]) < block.index(set_lines[0])
