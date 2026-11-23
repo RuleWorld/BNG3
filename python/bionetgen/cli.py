@@ -25,7 +25,7 @@ def _require_callback(ctx, param, value):
 
 
 @click.group()
-@click.version_option(package_name="bionetgen")
+@click.version_option(None, "--version", package_name="bionetgen")
 @click.option(
     "--require",
     "-req",
@@ -459,7 +459,7 @@ def graphdiff(input_path, input2_path, output_path, output2_path, mode, colors_p
     "--input",
     "-i",
     "input_path",
-    required=True,
+    default=None,
     type=click.Path(exists=True, dir_okay=False),
 )
 @click.option("--output", "-o", "output_path", default=None, type=click.Path())
@@ -468,19 +468,101 @@ def graphdiff(input_path, input2_path, output_path, output2_path, mode, colors_p
     "--no-conversion", is_flag=True, help="Disable reaction conversion heuristics."
 )
 @click.option("--no-pathwaycommons", is_flag=True, help="Do not query Pathway Commons.")
-def atomize(input_path, output_path, atomize, no_conversion, no_pathwaycommons):
+@click.option("--input-file", "input_file", type=click.Path(exists=True), default=None)
+@click.option("--output-file", "output_file", type=click.Path(), default=None)
+@click.option("--annotation", is_flag=True, default=False)
+@click.option("--convention-file", type=click.Path(exists=True), default=None)
+@click.option("--naming-conventions", default=None)
+@click.option("--user-structures", default=None)
+@click.option("--molecule-id", "molecule_id", is_flag=True, default=False)
+@click.option("--isomorphism-check", is_flag=True, default=False)
+@click.option("--ignore", "ignore_errors", is_flag=True, default=False)
+@click.option("--memoized-resolver", is_flag=True, default=False)
+@click.option("--keep-local-parameters", is_flag=True, default=False)
+@click.option("--quiet-mode", is_flag=True, default=False)
+@click.option("--obs-map-file", type=click.Path(), default=None)
+@click.option(
+    "--log-level",
+    type=click.Choice(["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"]),
+    default=None,
+)
+@click.option("--bionetgen-analysis", type=click.Path(), default=None)
+@click.option("--convert-units", is_flag=True, default=False)
+@click.option("--pathwaycommons", "use_pathwaycommons", is_flag=True, default=False)
+def atomize(
+    input_path,
+    output_path,
+    atomize,
+    no_conversion,
+    no_pathwaycommons,
+    input_file,
+    output_file,
+    annotation,
+    convention_file,
+    naming_conventions,
+    user_structures,
+    molecule_id,
+    isomorphism_check,
+    ignore_errors,
+    memoized_resolver,
+    keep_local_parameters,
+    quiet_mode,
+    obs_map_file,
+    log_level,
+    bionetgen_analysis,
+    convert_units,
+    use_pathwaycommons,
+):
     """Translate an SBML file to BNGL through the Python atomizer."""
     from bionetgen import sbml_to_bngl
 
-    try:
-        text = sbml_to_bngl(
-            input_path,
-            atomize=atomize,
-            no_conversion=no_conversion,
-            pathwaycommons=not no_pathwaycommons,
+    source = input_path or input_file
+    if source is None:
+        raise click.UsageError("an input model is required (--input or --input-file)")
+
+    options = {
+        "annotation": annotation,
+        "molecule_id": molecule_id,
+        "use_id": molecule_id,
+        "ignore": ignore_errors,
+        "no_conversion": no_conversion or not convert_units,
+        "pathwaycommons": not no_pathwaycommons and use_pathwaycommons,
+        "memoized_resolver": memoized_resolver,
+        "replace_local_parameters": not keep_local_parameters,
+        "quiet_mode": quiet_mode,
+    }
+    if log_level is not None:
+        options["log_level"] = log_level
+    for key, value in (
+        ("convention_file", convention_file),
+        ("naming_conventions", naming_conventions),
+        ("user_structures", user_structures),
+        ("isomorphism_check", isomorphism_check),
+        ("obs_map_file", obs_map_file),
+        ("bionetgen_analysis", bionetgen_analysis),
+    ):
+        if value is not None:
+            options[key] = value
+    if any(
+        key in options
+        for key in (
+            "convention_file",
+            "naming_conventions",
+            "user_structures",
+            "isomorphism_check",
+            "obs_map_file",
+            "bionetgen_analysis",
+            "log_level",
         )
+    ):
+        options["atomizer_backend"] = "legacy"
+
+    try:
+        text = sbml_to_bngl(source, atomize=atomize, **options)
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
+    if output_path is None:
+        output_path = output_file
 
     if output_path is None:
         output = Path(input_path).with_suffix(".bngl")
