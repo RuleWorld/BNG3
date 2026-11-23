@@ -2879,7 +2879,7 @@ def _rate_for_reaction(
         )
     ):
         # A constant that the numeric mass-action probe could not evaluate (for
-        # example an assignment-rule function) still needs the volume exponent
+        # example a function in an assignment rule) still needs the volume exponent
         # that converts the SBML extent rate into BNGL's concentration rate.
         exponent = _rate_law_volume_exponent(
             reaction,

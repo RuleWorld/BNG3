@@ -5190,7 +5190,7 @@ class SBMLParser:
                 variable = str(rule.variable)
                 if variable in symbols or standardize_name(variable) in symbols:
                     continue
-                # A species that is also an assignment-rule target carries its
+                # A species targeted by an assignment rule carries its
                 # declared t=0 amount/concentration, which is the rule's value
                 # at the start of the simulation.
                 species = model.species.get(variable)
