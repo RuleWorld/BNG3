@@ -609,3 +609,38 @@ def test_playground_generate_bngl_returns_named_generation_result():
     bngl, observable_map = result
     assert bngl == result.bngl
     assert observable_map == result.observable_map
+
+
+def test_uppercase_t_function_is_not_the_time_builtin(tmp_path):
+    """The native compiler must not treat a function named ``T`` as time.
+
+    Its builtin dispatch lowercases names, so ``T()`` previously resolved to
+    the time operand (zero at the start of the run) instead of the model's
+    declared function.
+    """
+    import bionetgen
+
+    bngl = """begin model
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 2
+end seed species
+begin observables
+  Species Aobs A()
+end observables
+begin functions
+  T() = Aobs * 2.5
+end functions
+begin reaction rules
+  decay: A() -> 0 T() TotalRate
+end reaction rules
+setOption("BNG3AbsoluteFluxRules","decay")
+end model
+"""
+    path = tmp_path / "upper_t.bngl"
+    path.write_text(bngl)
+    result = bionetgen.load(str(path)).simulate(method="ode", t_end=1e-6, n_steps=1)
+    # dA/dt = -5, so after 1e-6 the population is 2 - 5e-6.
+    assert result.observables["Aobs"][-1] == pytest.approx(2 - 5e-6, abs=1e-8)
