@@ -13212,7 +13212,10 @@
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:163:inventory-supported-bngl-xml-net-sbml-multi-and-code-graph-docum.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ],
           "evidence_on_this_tree": {
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
@@ -13516,7 +13519,10 @@
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies this obligation.",
           "decisions": [],
-          "unmapped_scope": [],
+          "unmapped_scope": [
+            "Missing required qualification ID: qualification:issue:163:closure-record.",
+            "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
+          ],
           "evidence_on_this_tree": {
             "executable_named_checks": 0,
             "disposition_named_checks": 1,
