@@ -1,16 +1,12 @@
 #!/usr/bin/env python3
-"""Execute and record the Issue 161 SBML Multi live acceptance checks.
-
-Runs the row-specific issue-161 release cases and emits an issue-queue receipt.
-The three named checks are backed by actually executed tests, not by a fixture
-list or a passing process exit. No scientific expectation or case id is authored
-here.
-"""
+"""Record bounded SBML Multi execution and the remaining Issue 161 criteria."""
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
+import subprocess
 import sys
 from pathlib import Path
 
@@ -39,6 +35,14 @@ def main(argv=None) -> int:
     if args.junit is None:
         raise SystemExit("--junit is required (row-specific execution evidence)")
 
+    head = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+    ).strip()
+    if head != args.source_revision:
+        raise SystemExit(f"requested source revision does not match checkout: {head}")
+    if subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True):
+        raise SystemExit("Issue 161 receipt requires a clean checkout")
+
     import xml.etree.ElementTree as ET
 
     tree = ET.parse(args.junit)
@@ -53,6 +57,11 @@ def main(argv=None) -> int:
             passed.add(case.get("name", "").split("[")[0])
 
     results = []
+    scope = {
+        "release-sbml-multi": "Selected Multi constructs executed against independent structural oracles. Full inventory execution remains unmeasured.",
+        "release-atomizer-structure": "Selected canonical motifs executed against independent source laws. The complete structural surface remains unmeasured.",
+        "release-capability-coverage-161": "The selector reconciles inventory and contract IDs. Row-level execution against the named oracles remains unmeasured.",
+    }
     for check in CHECKS:
         test = {
             "release-sbml-multi": "test_release_sbml_multi",
@@ -64,13 +73,14 @@ def main(argv=None) -> int:
         results.append(
             {
                 "id": check,
-                "status": "PASS",
+                "status": "NOT_TESTED",
                 "check": check,
                 "related_issues": [161],
-                "evidence_kind": "supported-execution",
-                "supported_execution": True,
+                "evidence_kind": "not-tested",
+                "supported_execution": False,
                 "stage": "sbml-multi",
-                "detail": f"{test} executed and passed against independent Multi oracles",
+                "detail": scope[check],
+                "selector": f"{NODE}::{test}",
             }
         )
 
@@ -107,8 +117,9 @@ def main(argv=None) -> int:
         "schema_version": 1,
         "acceptance_check": "release-capability-coverage-161",
         "case": "issue-161/sbml-multi",
-        "source": {"revision": args.source_revision, "dirty": False},
+        "source": {"revision": head, "dirty": False},
         "references": {},
+        "junit": {"sha256": hashlib.sha256(args.junit.read_bytes()).hexdigest()},
         "results": results,
         "selector": f"{NODE}::test_release_capability_coverage_161",
         "receipt_producer": PRODUCER,
