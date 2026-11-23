@@ -1204,3 +1204,61 @@ def test_oracle_adams_retry_does_not_accept_nonfinite_rates_when_jacobian_throws
     with pytest.raises(RuntimeError, match="CV_CONV_FAILURE"):
         _harness()._simulate_oracle_trajectory(oracle, 1.0, 1)
     assert oracle.calls == 1
+
+
+def test_oracle_step_budget_retry_relaxes_only_oracle_solver(tmp_path):
+    """CV_TOO_MUCH_WORK in the oracle gets a solver-only tolerance retry.
+
+    The comparison predicate is never relaxed; only the independent oracle's
+    integrator controls are loosened so a stiff-but-valid source can produce a
+    trajectory to compare against.
+    """
+    import numpy as np
+    import roadrunner
+
+    bngl = tmp_path / "stiff_oracle.bngl"
+    bngl.write_text("""begin model
+begin parameters
+  k 1
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 10
+end seed species
+begin observables
+  Species Aobs A()
+end observables
+begin reaction rules
+  decay: A() -> 0 0.1
+end reaction rules
+end model
+""")
+    import bionetgen
+    import bionetgen._bionetgen_cpp as cpp
+    from bionetgen import BioNetGenModel
+
+    written = tmp_path / "stiff.xml"
+    BioNetGenModel(cpp.parse_file(str(bngl))).write_sbml(str(written))
+    oracle = roadrunner.RoadRunner(str(written))
+    oracle.timeCourseSelections = ["time", "Aobs"]
+
+    class BudgetOracle:
+        calls = 0
+
+        def __getattr__(self, name):
+            return getattr(oracle, name)
+
+        def simulate(self, *args):
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("CVODE Error: CV_TOO_MUCH_WORK: mxstep (20000)")
+            return oracle.simulate(*args)
+
+    wrapped = BudgetOracle()
+    values, attempts = _harness()._simulate_oracle_trajectory(wrapped, 1.0, 10)
+    assert wrapped.calls == 2
+    assert any("relaxed_rtol" in attempt for attempt in attempts)
+    assert attempts[-1]["passed"] is True
+    assert values[:, 1] == pytest.approx(10 * np.exp(-0.1 * values[:, 0]), rel=1e-4)
