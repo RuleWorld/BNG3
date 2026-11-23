@@ -23,7 +23,7 @@ def run(
     analysis.
     """
     # Preserve PyBioNetGen's argument surface.
-    if format is not None and str(format).lower() != "bngl":
+    if format is not None and str(format).lower().strip() != "bngl":
         from bionetgen.core.exc import BNGFormatError
 
         raise BNGFormatError(

@@ -5819,6 +5819,9 @@ bool addReactionRulesFromAst(const bng::ast::Model& model, System* s,
                 reaction = new BasicRxnClass(
                     rule.getRuleName(), 0.0, "", transformationSet, s);
                 reaction->setBaseRate(rateValue, rateParameterName);
+                if (rateParameterName.empty() && !rate.getDependencies().empty()) {
+                    NFinput::bindStaticRateExpression(*reaction, *s, rate);
+                }
             } else {
                 GlobalFunction* dynamicGlobal = nullptr;
                 CompositeFunction* dynamicComposite = nullptr;
@@ -6222,3 +6225,31 @@ System* buildSystemFromAstWithSeedOverrides(
 }
 
 } // namespace NFinput
+
+void NFinput::refreshSystemParameters(NFcore::System& system, const bng::ast::Model& model) {
+    std::vector<std::pair<std::string, double>> changes;
+    const auto& parameters = model.getParameters();
+    for (const auto& parameter : parameters.all()) {
+        const auto& name = parameter.getName();
+        if (!system.hasParameter(name) || parameters.isTimeDependent(name)) continue;
+        const auto value = parameters.evaluate(name);
+        if (value != system.getParameter(name)) changes.emplace_back(name, value);
+    }
+    if (changes.empty()) return;
+    for (const auto& [name, value] : changes) system.setParameter(name, value);
+    system.updateSystemWithNewParameters();
+}
+
+void NFinput::bindStaticRateExpression(NFcore::ReactionClass& reaction, NFcore::System& system,
+                                      const bng::ast::Expression& expression) {
+    for (const auto& name : expression.getDependencies()) {
+        if (!system.hasParameter(name)) {
+            throw std::invalid_argument("Unknown parameter in NFsim rate expression: " + name);
+        }
+    }
+    reaction.setBaseRateExpression([expression, &system] {
+        return expression.evaluate([&system](const std::string& name) {
+            return system.getParameter(name);
+        });
+    });
+}

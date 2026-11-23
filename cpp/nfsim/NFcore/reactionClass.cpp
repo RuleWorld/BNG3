@@ -488,9 +488,13 @@ void ReactionClass::refreshZeroOrderVolumeFactor() {
 
 void ReactionClass::resetBaseRateFromSystemParamter() {
 
-	if(!this->baseRateParameterName.empty()) {
-		const double parameterRate = system->getParameter(this->baseRateParameterName) *
-									this->baseRateParameterConversionFactor;
+	if (hasLiveBaseRate()) {
+        const double rawRate = baseRateExpression
+            ? baseRateExpression() : system->getParameter(baseRateParameterName);
+        if (!std::isfinite(rawRate) || rawRate < 0.0) {
+            throw std::runtime_error("NFsim rate must remain finite and nonnegative: " + name);
+        }
+        const double parameterRate = rawRate * baseRateParameterConversionFactor;
 		double updatedBaseRate = parameterRate;
 		if ( transformationSet->usingSymmetryFactor() ) {
 			updatedBaseRate = transformationSet->getSymmetryFactor() * parameterRate;

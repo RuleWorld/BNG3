@@ -12,10 +12,12 @@ from __future__ import annotations
 import hashlib
 import csv
 import json
+import math
 import os
 from pathlib import Path
 import shutil
 import subprocess
+import xml.etree.ElementTree as ET
 
 import numpy as np
 import pytest
@@ -42,6 +44,10 @@ K_PROTOCOL_RATE = 10.0
 K_PROTOCOL_INITIAL = 0.1
 T_PROTOCOL = 0.1
 N_PROTOCOL_STEPS = 4
+THRESHOLD_INITIAL = 6
+THRESHOLD_CUTOFF = 2
+THRESHOLD_RATE = 1.5
+THRESHOLD_END = 2.0
 ROOT = Path(__file__).resolve().parents[2]
 
 MODEL = f"""begin model
@@ -212,11 +218,54 @@ end model
 """
 
 
+def _dynamic_hybrid_model(*, direct: bool, total_rate: bool) -> str:
+    # The generated reference maps X to Pool, so ordinary A is still present
+    # as a particle. The direct model applies the same rate to A's map itself.
+    extra_type = "" if direct else "  X()\n"
+    gathered = "Pool()" if direct else "X()"
+    rate = "k_gather TotalRate" if total_rate else "Gate()"
+    rate_value = 1.0 if total_rate else THRESHOLD_RATE
+    functions = (
+        ""
+        if total_rate
+        else "begin functions\n  Gate() = if(Left > cutoff, k_gather, 0)\nend functions\n"
+    )
+    rules = (
+        ""
+        if direct
+        else f"begin reaction rules\n  A() -> X() {rate}\nend reaction rules\n"
+    )
+    mapping = f"A() -> Pool() {rate}" if direct else "X() -> Pool() 100"
+    return f"""begin model
+begin parameters
+  N {THRESHOLD_INITIAL}
+  cutoff {THRESHOLD_CUTOFF}
+  k_gather {rate_value}
+end parameters
+begin molecule types
+  A()
+{extra_type}end molecule types
+begin population types
+  Pool()
+end population types
+begin seed species
+  A() N
+end seed species
+begin observables
+  Species Left A()
+  Molecules Gathered {gathered}
+end observables
+{functions}{rules}begin population maps
+  {mapping}
+end population maps
+end model
+"""
+
+
 def _write_source(path: Path, *, engine: str, seed: int | None = None) -> Path:
     if engine == "bng2":
         action = (
-            "generate_hybrid_model({overwrite=>1, execute=>1, "
-            'actions=>["writeXML()"]})'
+            'generate_hybrid_model({overwrite=>1, execute=>1, actions=>["writeXML()"]})'
         )
     elif engine == "bng3":
         assert seed is not None
@@ -486,8 +535,7 @@ def _run_compartment_native_pair(tmp_path: Path):
 def _write_cycle_source(path: Path, *, engine: str, seed: int | None = None) -> Path:
     if engine == "bng2":
         action = (
-            "generate_hybrid_model({overwrite=>1, execute=>1, "
-            'actions=>["writeXML()"]})'
+            'generate_hybrid_model({overwrite=>1, execute=>1, actions=>["writeXML()"]})'
         )
     elif engine == "bng3":
         assert seed is not None
@@ -579,8 +627,7 @@ def _write_protocol_source(path: Path, *, engine: str, seed: int | None = None) 
             f"k_make {K_PROTOCOL_INITIAL}", f"k_make {K_PROTOCOL_RATE}"
         )
         action = (
-            "generate_hybrid_model({overwrite=>1, execute=>1, "
-            'actions=>["writeXML()"]})'
+            'generate_hybrid_model({overwrite=>1, execute=>1, actions=>["writeXML()"]})'
         )
     elif engine == "bng3":
         assert seed is not None
@@ -932,7 +979,7 @@ def _check_hybrid_model_action_options(
             },
             "artifacts": artifacts,
         }
-        (evidence_dir / "capability-coverage-150.json").write_text(
+        (evidence_dir / "hybrid-action-options.json").write_text(
             json.dumps(report, indent=2) + "\n"
         )
     return coverage
@@ -1355,8 +1402,8 @@ def test_release_hybrid_population_particle_conversion_cycle(
 
     forward = K_CYCLE_FORWARD
     reverse = K_CYCLE_REVERSE
-    probability_b = lambda times: (forward / (forward + reverse)) * (
-        1.0 - np.exp(-(forward + reverse) * times)
+    probability_b = lambda times: (
+        (forward / (forward + reverse)) * (1.0 - np.exp(-(forward + reverse) * times))
     )
     probability_a = lambda times: 1.0 - probability_b(times)
     for label, runs in (("native NFsim", native_runs), ("BNG3", bng3_runs)):
@@ -1771,6 +1818,692 @@ def test_hybrid_compartment_distribution_against_locked_native_nfsim(
     _write_native_compartment_evidence(xml, native_runs, bng3_runs, comparison)
 
 
+def _generate_for_backend_comparison(path, source, engine):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        source
+        + "\n\nbegin actions\n"
+        + 'generate_hybrid_model({overwrite=>1, execute=>1, actions=>["writeXML()"]})\n'
+        + "end actions\n"
+    )
+    process = _run_hybrid_generation(engine, path)
+    if engine == "bng2":
+        assert process is not None and process.returncode == 0, (
+            process.stderr or process.stdout if process else "BNG2 did not execute"
+        )
+    generated = path.with_name(path.stem + "_hpp.bngl")
+    assert generated.is_file()
+    return generated
+
+
+def _run_public_hybrid_ensemble(path, method, end, steps, parameters=None):
+    import bionetgen
+
+    model = bionetgen.load(path)
+    for name, value in (parameters or {}).items():
+        model.set_parameter(name, value)
+    runs = []
+    for seed in range(BASE_SEED, BASE_SEED + RUNS):
+        result = model.simulate(method=method, t_end=end, n_steps=steps, seed=seed)
+        assert result.backend == ("nfsim" if method == "nfcore" else method)
+        names = ["time", *result.observables]
+        data = np.column_stack([result.time, *result.observables.values()])
+        assert np.isfinite(data).all()
+        counts = data[:, 1:]
+        assert ((counts >= 0) & (counts == np.floor(counts))).all()
+        runs.append((data, names))
+    return runs
+
+
+def _check_hybrid_ensemble(native, runs):
+    result = compare.compare_stochastic(
+        native,
+        runs,
+        n_sigma=4.0,
+        max_violation_frac=0.05,
+        min_ref_runs=RUNS,
+        min_test_runs=RUNS,
+        columns=compare.COLUMNS_EXACT,
+    )
+    assert result.ok, result.summary()
+    return {
+        "points_checked": result.n_points_checked,
+        "violations": result.n_violations,
+        "worst_z": result.worst_z,
+    }
+
+
+@pytest.fixture(scope="module")
+def nfnext_hybrid_cases(
+    tmp_path_factory,
+    hybrid_ensembles,
+    hybrid_dimer_ensembles,
+    hybrid_conversion_cycle_ensembles,
+    hybrid_protocol_ensembles,
+    native_compartment_hybrid_ensembles,
+):
+    root = tmp_path_factory.mktemp("nfnext-hybrid-cases")
+    single = _generate_for_backend_comparison(root / "model.bngl", MODEL, "bng3")
+    dimers, _, _, dimer_hpp, _ = hybrid_dimer_ensembles
+    cycles, _, _, cycle_hpp, _ = hybrid_conversion_cycle_ensembles
+    protocol, _, _, protocol_hpp = hybrid_protocol_ensembles
+    compartments, _, compartment_xml = native_compartment_hybrid_ensembles
+    cases = [
+        (
+            "single",
+            hybrid_ensembles[0],
+            single,
+            T_END,
+            N_STEPS,
+            None,
+            ("A_total", "B_total"),
+            INITIAL_B,
+        ),
+        (
+            "dimer",
+            dimers,
+            dimer_hpp,
+            T_DIMER,
+            N_STEPS,
+            None,
+            ("A_units",),
+            2 * INITIAL_DIMERS,
+        ),
+        (
+            "cycle",
+            cycles,
+            cycle_hpp,
+            T_CYCLE,
+            N_CYCLE_STEPS,
+            None,
+            ("A_total", "B_total"),
+            INITIAL_B,
+        ),
+        (
+            "pre_run_rate",
+            protocol,
+            protocol_hpp,
+            T_PROTOCOL,
+            N_PROTOCOL_STEPS,
+            {"k_make": K_PROTOCOL_RATE},
+            ("A_total", "B_total"),
+            INITIAL_B,
+        ),
+        (
+            "compartments",
+            compartments,
+            compartment_xml.with_suffix(".bngl"),
+            T_END,
+            N_STEPS,
+            None,
+            ("A_total", "B1_total", "B2_total"),
+            2 * INITIAL_B,
+        ),
+    ]
+    evidence = {}
+    for label, native, hpp, end, steps, parameters, conserved, total in cases:
+        runs = _run_public_hybrid_ensemble(hpp, "nfnext", end, steps, parameters)
+        comparison = _check_hybrid_ensemble(native, runs)
+        for data, names in runs:
+            assert (
+                data[:, [names.index(name) for name in conserved]].sum(axis=1) == total
+            ).all()
+        evidence[label] = {
+            "backend": "nfnext",
+            "runs": len(runs),
+            "comparison": comparison,
+            "conserved_observables": list(conserved),
+            "total": total,
+            "generated_bngl_sha256": hashlib.sha256(hpp.read_bytes()).hexdigest(),
+            "artifacts": _write_hybrid_replay(
+                f"nfnext-{label}", {"product": hpp}, {"nfnext": runs}
+            ),
+        }
+    return evidence
+
+
+@pytest.mark.nf
+@pytest.mark.parity
+@pytest.mark.stochastic
+@pytest.mark.slow
+def test_release_hybrid_nfnext_generated_cases(nfnext_hybrid_cases):
+    assert set(nfnext_hybrid_cases) == {
+        "single",
+        "dimer",
+        "cycle",
+        "pre_run_rate",
+        "compartments",
+    }
+
+
+def _hybrid_rate_evidence(root, *, total_rate):
+    _locked_native_nfsim()
+    require_oracle(runner.api_available(), "compiled BNG3 API unavailable")
+    runner._ensure_source_python_path()
+    name = "total-rate" if total_rate else "threshold"
+    source = _dynamic_hybrid_model(direct=False, total_rate=total_rate)
+    reference = _generate_for_backend_comparison(
+        root / "oracle" / f"{name}.bngl", source, "bng2"
+    ).with_suffix(".xml")
+    steps = 4
+    native = []
+    for seed in range(BASE_SEED, BASE_SEED + RUNS):
+        output, error = oracle_nfsim.run_nfsim(
+            reference,
+            root / f"native-{seed}",
+            t_end=THRESHOLD_END,
+            n_steps=steps,
+            seed=seed,
+        )
+        assert output is not None, error
+        data, names = compare.parse_gdat(output)
+        assert (
+            data is not None
+        ), f"native NFsim seed {seed}: malformed {name} trajectory"
+        native.append((data, names))
+    hpp = _generate_for_backend_comparison(root / f"{name}.bngl", source, "bng3")
+    direct = root / "direct.bngl"
+    direct.write_text(_dynamic_hybrid_model(direct=True, total_rate=total_rate))
+    ensembles = {
+        "native_nfsim": native,
+        "nfcore_generated": _run_public_hybrid_ensemble(
+            hpp, "nfcore", THRESHOLD_END, steps
+        ),
+        "nfnext_generated": _run_public_hybrid_ensemble(
+            hpp, "nfnext", THRESHOLD_END, steps
+        ),
+        "nfnext_direct_map": _run_public_hybrid_ensemble(
+            direct, "nfnext", THRESHOLD_END, steps
+        ),
+    }
+    # Bonferroni-corrected DKW controls both rate families and all engine/time
+    # CDF comparisons in each family.
+    alpha = 0.005
+    bound = math.sqrt(math.log(2 * len(ensembles) * (steps + 1) / alpha) / (2 * RUNS))
+    cutoff = 0 if total_rate else THRESHOLD_CUTOFF
+    thresholds = np.arange(cutoff, THRESHOLD_INITIAL + 1)
+    engine_results = {}
+    for label, runs in ensembles.items():
+        times = runs[0][0][:, 0]
+        left = np.stack([data[:, cols.index("Left")] for data, cols in runs])
+        right = np.stack([data[:, cols.index("Gathered")] for data, cols in runs])
+        assert np.isfinite(left).all() and (left == np.floor(left)).all()
+        assert (left + right == THRESHOLD_INITIAL).all()
+        assert (left >= cutoff).all() and (right >= 0).all()
+        worst = 0.0
+        for sample, time in enumerate(times):
+            if total_rate:
+                # At total rate 1, Left(t) = max(0, N - Poisson(t)).
+                cdf = np.array(
+                    [
+                        1.0
+                        - sum(
+                            math.exp(-time) * time**n / math.factorial(n)
+                            for n in range(THRESHOLD_INITIAL - k)
+                        )
+                        for k in thresholds
+                    ]
+                )
+            else:
+                # Independent rate-k clocks stop when the cutoff is reached.
+                # Left(t) = max(cutoff, Binomial(N, exp(-k*t))).
+                p = math.exp(-THRESHOLD_RATE * time)
+                cdf = np.cumsum(
+                    [
+                        math.comb(THRESHOLD_INITIAL, n)
+                        * p**n
+                        * (1 - p) ** (THRESHOLD_INITIAL - n)
+                        for n in range(THRESHOLD_INITIAL + 1)
+                    ]
+                )[thresholds]
+            empirical = (left[:, sample, None] <= thresholds).mean(axis=0)
+            worst = max(worst, float(np.max(np.abs(empirical - cdf))))
+        assert worst <= bound, f"{label}: {name} CDF distance {worst:g} > {bound:g}"
+        engine_results[label] = {
+            "runs": len(runs),
+            "worst_cdf_distance": worst,
+            "native_comparison": _check_hybrid_ensemble(native, runs),
+        }
+    if total_rate:
+        # An incorrect per-particle rate has a different extinction probability.
+        final_p = math.exp(-THRESHOLD_END)
+        wrong_distance = abs((1 - final_p) ** THRESHOLD_INITIAL - cdf[0])
+    else:
+        # A missing cutoff places mass outside the valid support.
+        final_p = math.exp(-THRESHOLD_RATE * THRESHOLD_END)
+        wrong_distance = sum(
+            math.comb(THRESHOLD_INITIAL, n)
+            * final_p**n
+            * (1 - final_p) ** (THRESHOLD_INITIAL - n)
+            for n in range(cutoff)
+        )
+        assert 1 - final_p**THRESHOLD_INITIAL > bound  # Frozen initial-state wrong law.
+    assert wrong_distance > bound
+    evidence_path = os.environ.get("BNG3_HYBRID_EVIDENCE_DIR")
+    if evidence_path:
+        destination = Path(evidence_path)
+        destination.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(reference, destination / f"{name}-bng2-native.xml")
+        shutil.copy2(hpp, destination / f"{name}-generated.bngl")
+        shutil.copy2(direct, destination / f"{name}-direct.bngl")
+        with (destination / f"{name}-trajectories.csv").open("w", newline="") as output:
+            writer = csv.writer(output)
+            writer.writerow(("engine", "seed", "time", "Left", "Gathered"))
+            for label, runs in ensembles.items():
+                for i, (data, names) in enumerate(runs):
+                    writer.writerows(
+                        (
+                            label,
+                            BASE_SEED + i,
+                            row[names.index("time")],
+                            row[names.index("Left")],
+                            row[names.index("Gathered")],
+                        )
+                        for row in data
+                    )
+    return {
+        "engines": engine_results,
+        "alpha": alpha,
+        "dkw_bound": bound,
+        "cutoff": cutoff,
+        "initial_count": THRESHOLD_INITIAL,
+        "rate": 1.0 if total_rate else THRESHOLD_RATE,
+        "times": times.tolist(),
+        "wrong_law_cdf_difference": wrong_distance,
+    }
+
+
+@pytest.fixture(scope="module")
+def threshold_hybrid_evidence(tmp_path_factory):
+    return _hybrid_rate_evidence(
+        tmp_path_factory.mktemp("release-hybrid-threshold"), total_rate=False
+    )
+
+
+@pytest.fixture(scope="module")
+def total_rate_hybrid_evidence(tmp_path_factory):
+    return _hybrid_rate_evidence(
+        tmp_path_factory.mktemp("release-hybrid-total-rate"), total_rate=True
+    )
+
+
+@pytest.mark.nf
+@pytest.mark.parity
+@pytest.mark.stochastic
+@pytest.mark.slow
+def test_release_hybrid_dynamic_threshold(threshold_hybrid_evidence):
+    assert set(threshold_hybrid_evidence["engines"]) == {
+        "native_nfsim",
+        "nfcore_generated",
+        "nfnext_generated",
+        "nfnext_direct_map",
+    }
+
+
+@pytest.mark.nf
+@pytest.mark.parity
+@pytest.mark.stochastic
+@pytest.mark.slow
+def test_release_hybrid_total_rate(total_rate_hybrid_evidence):
+    assert set(total_rate_hybrid_evidence["engines"]) == {
+        "native_nfsim",
+        "nfcore_generated",
+        "nfnext_generated",
+        "nfnext_direct_map",
+    }
+
+
+STAGE_START = 2.0
+STAGE_DURATION = 0.5
+STAGE_STEPS = 4
+STAGE_UPDATE = 4.0
+
+# Each heterodimer is one independent unit. Its bound particle graph is
+# exchanged with one population count at the same location. Distinct rates
+# on either side make a stale propensity or a location mix-up observable.
+STAGED_COMPARTMENT_HPP = """begin model
+begin parameters
+  down 1
+  up 0
+  N 20
+end parameters
+begin compartments
+  left 3 1
+  right 3 1
+end compartments
+begin molecule types
+  A(x)
+  C(y)
+  P() population
+end molecule types
+begin seed species
+  @left:A(x!1).C(y!1) N
+  @right:A(x!1).C(y!1) N
+  @left:P() 0
+  @right:P() 0
+end seed species
+begin observables
+  Species BoundLeft @left:A(x!1).C(y!1)
+  Species BoundRight @right:A(x!1).C(y!1)
+  Molecules CountLeft @left:P()
+  Molecules CountRight @right:P()
+  Molecules ALeft @left:A()
+  Molecules ARight @right:A()
+  Molecules CLeft @left:C()
+  Molecules CRight @right:C()
+end observables
+begin reaction rules
+  @left:A(x!1).C(y!1) -> @left:P() down
+  @right:A(x!1).C(y!1) -> @right:P() 2*down
+  @left:P() -> @left:A(x!1).C(y!1) 2*up
+  @right:P() -> @right:A(x!1).C(y!1) up
+end reaction rules
+end model
+"""
+
+
+def _public_stages(path, method, seed, changes):
+    import bionetgen
+
+    model = bionetgen.load(path)
+    boundary = STAGE_START + STAGE_DURATION
+    first = model.simulate(
+        method=method,
+        t_start=STAGE_START,
+        t_end=boundary,
+        n_steps=STAGE_STEPS,
+        seed=seed,
+    )
+    for parameter, value in changes.items():
+        model.set_parameter(parameter, value)
+    second = model.simulate(
+        method=method,
+        t_start=boundary,
+        t_end=boundary + STAGE_DURATION,
+        n_steps=STAGE_STEPS,
+        continue_simulation=True,
+    )
+    assert (
+        first.backend == second.backend == ("nfsim" if method == "nfcore" else method)
+    )
+    assert first.time[0] == STAGE_START
+    assert second.time[0] == first.time[-1] == boundary
+    assert second.time[-1] == boundary + STAGE_DURATION
+    assert first.observables.keys() == second.observables.keys()
+    for name in first.observables:
+        assert first.observables[name][-1] == second.observables[name][0], name
+    data = np.concatenate(
+        [
+            np.column_stack([first.time, *first.observables.values()]),
+            np.column_stack([second.time, *second.observables.values()])[1:],
+        ]
+    )
+    assert np.isfinite(data).all() and (data[:, 1:] == np.floor(data[:, 1:])).all()
+    return data, ["time", *first.observables]
+
+
+def _native_stages(reference, work, seed):
+    first_path, error = oracle_nfsim.run_nfsim(
+        reference, work, t_end=STAGE_DURATION, n_steps=STAGE_STEPS, seed=seed
+    )
+    assert first_path is not None, error
+    first, columns = compare.parse_gdat(first_path)
+    assert first is not None
+    offsets = {name: columns.index(name) for name in ("A_total", "B_total")}
+
+    # The pinned RNF driver advances its internal clock past the last output
+    # before evaluating set/update. For this two-state case the two sampled
+    # counts fully specify the Markov state. Initialize a new native process
+    # at that exact boundary with the updated rate and a distinct random seed.
+    ET.register_namespace("", "http://www.sbml.org/sbml/level3")
+    tree = ET.parse(reference)
+    xml_model = tree.find("{*}model")
+    assert xml_model is not None
+    seeds = {
+        node.get("name"): node
+        for node in xml_model.findall("{*}ListOfSpecies/{*}Species")
+    }
+    assert set(seeds) == {"B()", "A_pop()"}
+    for molecule, observable in (("B()", "B_total"), ("A_pop()", "A_total")):
+        seeds[molecule].set("concentration", str(int(first[-1, offsets[observable]])))
+    rate = xml_model.find("{*}ListOfParameters/{*}Parameter[@id='k_make']")
+    assert rate is not None
+    rate.set("value", str(STAGE_UPDATE))
+    rate.set("expr", str(STAGE_UPDATE))
+    second_xml = work / "continued.xml"
+    tree.write(second_xml, encoding="UTF-8", xml_declaration=True)
+    second_path, error = oracle_nfsim.run_nfsim(
+        second_xml, work, t_end=STAGE_DURATION, n_steps=STAGE_STEPS, seed=seed + RUNS
+    )
+    assert second_path is not None, error
+    second, names = compare.parse_gdat(second_path)
+    assert second is not None and names == columns
+    np.testing.assert_array_equal(first[-1, 1:], second[0, 1:])
+    first[:, 0] += STAGE_START
+    second[:, 0] += STAGE_START + STAGE_DURATION
+    return np.concatenate([first, second[1:]]), columns
+
+
+def _write_hybrid_replay(name, inputs, ensembles=None):
+    target = os.environ.get("BNG3_HYBRID_EVIDENCE_DIR")
+    if not target:
+        return {}
+    directory = Path(target)
+    directory.mkdir(parents=True, exist_ok=True)
+    artifacts = {}
+    for label, path in inputs.items():
+        artifact = directory / f"{name}-{label}{path.suffix}"
+        shutil.copyfile(path, artifact)
+        artifacts[artifact.name] = hashlib.sha256(artifact.read_bytes()).hexdigest()
+    if not ensembles:
+        return artifacts
+    csv_path = directory / f"{name}-trajectories.csv"
+    with csv_path.open("w", newline="") as output:
+        names = next(iter(ensembles.values()))[0][1]
+        writer = csv.writer(output)
+        writer.writerow(("engine", "seed", *names))
+        for engine, runs in ensembles.items():
+            for seed, (data, columns) in enumerate(runs, BASE_SEED):
+                writer.writerows(
+                    (engine, seed, *row)
+                    for row in data[:, [columns.index(n) for n in names]]
+                )
+    artifacts[csv_path.name] = hashlib.sha256(csv_path.read_bytes()).hexdigest()
+    return artifacts
+
+
+@pytest.fixture(scope="module")
+def hybrid_stage_cases(tmp_path_factory):
+    root = tmp_path_factory.mktemp("hybrid-stage")
+    _locked_native_nfsim()
+    require_oracle(runner.api_available(), "compiled BNG3 API unavailable")
+    runner._ensure_source_python_path()
+    reference = _run_bng2_hybrid(root / "bng2")
+    hpp = _generate_for_backend_comparison(root / "bng3" / "hybrid.bngl", MODEL, "bng3")
+    methods = ("nfcore", "nfnext")
+    seeds = range(BASE_SEED, BASE_SEED + RUNS)
+    ensembles = {
+        method: [
+            _public_stages(hpp, method, seed, {"k_make": STAGE_UPDATE})
+            for seed in seeds
+        ]
+        for method in methods
+    }
+    native = [
+        _native_stages(reference, root / f"native-{seed}", seed) for seed in seeds
+    ]
+    ensembles["native_nfsim"] = native
+    comparisons = {
+        method: _check_hybrid_ensemble(native, ensembles[method]) for method in methods
+    }
+
+    def survival(times):
+        elapsed = times - STAGE_START
+        return np.exp(
+            -K_MAKE * np.minimum(elapsed, STAGE_DURATION)
+            - STAGE_UPDATE * np.maximum(elapsed - STAGE_DURATION, 0.0)
+        )
+
+    for engine, runs in ensembles.items():
+        compare.qualify_binomial_marginal(
+            runs, "B_total", population=INITIAL_B, probability=survival, label=engine
+        )
+        for data, columns in runs:
+            np.testing.assert_array_equal(
+                data[:, columns.index("A_total")] + data[:, columns.index("B_total")],
+                INITIAL_B,
+            )
+
+    staged = root / "compartments.bngl"
+    staged.write_text(STAGED_COMPARTMENT_HPP)
+    compartment_runs = {
+        method: [
+            _public_stages(staged, method, seed, {"down": 0, "up": 1}) for seed in seeds
+        ]
+        for method in methods
+    }
+    # Bonferroni control over engines, locations and all checkpoint CDFs.
+    alpha = 0.01
+    dkw = math.sqrt(
+        math.log(2 * len(methods) * 2 * (2 * STAGE_STEPS + 1) / alpha) / (2 * RUNS)
+    )
+    errors = {}
+    for engine, runs in compartment_runs.items():
+        errors[engine] = {}
+        by_column = {
+            name: np.stack([data[:, names.index(name)] for data, names in runs])
+            for name in runs[0][1]
+        }
+        times = by_column["time"][0] - STAGE_START
+        for location, down, up in (("Left", 1, 2), ("Right", 2, 1)):
+            bound = by_column[f"Bound{location}"]
+            count = by_column[f"Count{location}"]
+            np.testing.assert_array_equal(bound + count, INITIAL_B)
+            np.testing.assert_array_equal(bound, by_column[f"A{location}"])
+            np.testing.assert_array_equal(bound, by_column[f"C{location}"])
+            assert (np.diff(bound[:, : STAGE_STEPS + 1], axis=1) <= 0).all()
+            assert (np.diff(bound[:, STAGE_STEPS:], axis=1) >= 0).all()
+            assert ((bound[:, STAGE_STEPS] > 0) & (count[:, STAGE_STEPS] > 0)).any()
+            probabilities = np.where(
+                times <= STAGE_DURATION,
+                np.exp(-down * times),
+                1
+                - (1 - np.exp(-down * STAGE_DURATION))
+                * np.exp(-up * (times - STAGE_DURATION)),
+            )
+            support = np.arange(INITIAL_B + 1)
+            expected = np.cumsum(
+                [
+                    math.comb(INITIAL_B, n)
+                    * probabilities**n
+                    * (1 - probabilities) ** (INITIAL_B - n)
+                    for n in support
+                ],
+                axis=0,
+            ).T
+            empirical = (bound[:, :, None] <= support).mean(axis=0)
+            error = float(np.max(np.abs(expected - empirical)))
+            assert error <= dkw, (engine, location, error, dkw)
+            errors[engine][location] = error
+
+    action_source = root / "staged-action.bngl"
+    action_source.write_text(
+        hpp.read_text()
+        .split("## model actions ##")[0]
+        .replace(
+            "end model",
+            f"""begin protocol
+  simulate_nf({{t_start=>{STAGE_START}, t_end=>{STAGE_START + STAGE_DURATION}, n_steps=>{STAGE_STEPS}, seed=>{BASE_SEED}, suffix=>"first"}})
+  setParameter("k_make", 0)
+  simulate_nf({{t_end=>{STAGE_START + 2 * STAGE_DURATION}, n_steps=>{STAGE_STEPS}, suffix=>"second"}})
+end protocol
+end model""",
+        )
+        + "\nbegin actions\nsimulate_protocol()\nend actions\n"
+    )
+    import bionetgen
+
+    bionetgen.load(action_source).execute()
+    action_first = root / "staged-action_first.gdat"
+    action_second = root / "staged-action_second.gdat"
+    first, names = compare.parse_gdat(action_first)
+    second, second_names = compare.parse_gdat(action_second)
+    assert first is not None and second is not None and names == second_names
+    np.testing.assert_array_equal(first[-1], second[0])
+    assert 0 < second[0, names.index("B_total")] < INITIAL_B
+    np.testing.assert_array_equal(
+        second[:, names.index("B_total")], second[0, names.index("B_total")]
+    )
+    np.testing.assert_array_equal(
+        second[:, names.index("A_total")] + second[:, names.index("B_total")],
+        INITIAL_B,
+    )
+
+    return {
+        "stage_native_rate_change": {
+            "passed": True,
+            "oracle": "bng2-native-and-analytic",
+            "law": "exact binomial survival under the piecewise constant rate",
+            "start": STAGE_START,
+            "duration_per_stage": STAGE_DURATION,
+            "steps_per_stage": STAGE_STEPS,
+            "stage_rates": [K_MAKE, STAGE_UPDATE],
+            "comparisons": comparisons,
+            "native_second_stage_seed_offset": RUNS,
+            "artifacts": _write_hybrid_replay(
+                "stage-native",
+                {
+                    "source": reference.with_name("hybrid.bngl"),
+                    "oracle": reference,
+                    "product": hpp,
+                    "example-continuation": root
+                    / f"native-{BASE_SEED}"
+                    / "continued.xml",
+                },
+                ensembles,
+            ),
+        },
+        "stage_compartment_graph_and_counts": {
+            "passed": True,
+            "oracle": "analytic",
+            "law": "piecewise binomial law for independently switching bound dimers and population counts per location",
+            "start": STAGE_START,
+            "duration_per_stage": STAGE_DURATION,
+            "steps_per_stage": STAGE_STEPS,
+            "stage_parameters": [{"down": 1, "up": 0}, {"down": 0, "up": 1}],
+            "dkw_alpha": alpha,
+            "dkw_bound": dkw,
+            "max_cdf_errors": errors,
+            "artifacts": _write_hybrid_replay(
+                "stage-compartments", {"product": staged}, compartment_runs
+            ),
+        },
+        "stage_bngl_protocol": {
+            "passed": True,
+            "oracle": "bng2-protocol-and-analytic",
+            "law": "BNG2 final-state protocol semantics, zero hazard after intervention, and exact mass conservation",
+            "artifacts": _write_hybrid_replay(
+                "stage-action",
+                {
+                    "action": action_source,
+                    "first": action_first,
+                    "second": action_second,
+                },
+            ),
+        },
+    }
+
+
+@pytest.mark.nf
+@pytest.mark.parity
+@pytest.mark.stochastic
+@pytest.mark.slow
+def test_release_hybrid_stage_continuation(hybrid_stage_cases):
+    assert len(hybrid_stage_cases) == 3 and all(
+        case["passed"] for case in hybrid_stage_cases.values()
+    )
+
+
 @pytest.mark.nf
 @pytest.mark.parity
 @pytest.mark.stochastic
@@ -1782,10 +2515,14 @@ def test_release_capability_coverage_150(
     hybrid_dimer_ensembles,
     hybrid_conversion_cycle_ensembles,
     hybrid_protocol_ensembles,
+    nfnext_hybrid_cases,
+    threshold_hybrid_evidence,
+    total_rate_hybrid_evidence,
+    hybrid_stage_cases,
 ):
-    """Run every assigned #150 inventory row against its named oracle."""
+    """Qualify all assigned rows and retain the source, oracle and replay evidence."""
     action_cases = _check_hybrid_model_action_options(
-        tmp_path / "action-options", capfd, write_slice_evidence=False
+        tmp_path / "action-options", capfd, write_slice_evidence=True
     )
 
     native_runs, bng3_runs = hybrid_ensembles
@@ -1859,8 +2596,9 @@ def test_release_capability_coverage_150(
     )
     assert cycle_comparison.ok, cycle_comparison.summary()
     cycle_probability_b = lambda times: (
-        K_CYCLE_FORWARD / (K_CYCLE_FORWARD + K_CYCLE_REVERSE)
-    ) * (1.0 - np.exp(-(K_CYCLE_FORWARD + K_CYCLE_REVERSE) * times))
+        (K_CYCLE_FORWARD / (K_CYCLE_FORWARD + K_CYCLE_REVERSE))
+        * (1.0 - np.exp(-(K_CYCLE_FORWARD + K_CYCLE_REVERSE) * times))
+    )
     for label, runs in (("native NFsim", native_cycle), ("BNG3", bng3_cycle)):
         compare.qualify_binomial_marginal(
             runs,
@@ -1917,11 +2655,7 @@ def test_release_capability_coverage_150(
             )
             assert np.array_equal(total, np.full_like(total, INITIAL_B))
 
-    inventory_cases = {
-        **action_cases,
-        "hybrid.execution": True,
-    }
-    assert len(inventory_cases) == 8 and all(inventory_cases.values())
+    assert len(action_cases) == 7 and all(action_cases.values())
 
     target = os.environ.get("BNG3_HYBRID_EVIDENCE_DIR")
     if target:
@@ -1990,6 +2724,74 @@ def test_release_capability_coverage_150(
         nfsim = _locked_native_nfsim()
         assert bng2 is not None
         lock = load_lock()
+
+        def replay(*names):
+            return {
+                name: hashlib.sha256((evidence_dir / name).read_bytes()).hexdigest()
+                for name in names
+            }
+
+        existing_cases = {
+            "single": ("bng2-hybrid.xml", "bng3-hybrid.bngl", "trajectories.csv"),
+            "dimer": (
+                "bng2-dimer-hybrid.xml",
+                "bng3-dimer-hybrid.bngl",
+                "dimer-trajectories.csv",
+            ),
+            "cycle": (
+                "bng2-cycle-hybrid.xml",
+                "bng3-cycle-hybrid.bngl",
+                "cycle-trajectories.csv",
+            ),
+            "pre_run_rate": (
+                "bng2-protocol-hybrid.xml",
+                "bng3-protocol-hybrid.bngl",
+                "protocol-trajectories.csv",
+            ),
+            "compartments": (
+                "bng3-compartment-hybrid.xml",
+                "native-compartment-trajectories.csv",
+            ),
+        }
+        runtime_cases = {
+            label: {
+                "passed": True,
+                "oracle": (
+                    "native-and-analytic"
+                    if label == "compartments"
+                    else "bng2-native-and-analytic"
+                ),
+                "backend_comparison": nfnext_hybrid_cases[label]["comparison"],
+                "artifacts": {
+                    **replay(*files),
+                    **nfnext_hybrid_cases[label]["artifacts"],
+                },
+            }
+            for label, files in existing_cases.items()
+        }
+        for label, file_stem, result in (
+            ("threshold", "threshold", threshold_hybrid_evidence),
+            ("total_rate", "total-rate", total_rate_hybrid_evidence),
+        ):
+            runtime_cases[label] = {
+                "passed": True,
+                "oracle": "bng2-native-and-analytic",
+                "results": result,
+                "artifacts": replay(
+                    f"{file_stem}-bng2-native.xml",
+                    f"{file_stem}-generated.bngl",
+                    f"{file_stem}-direct.bngl",
+                    f"{file_stem}-trajectories.csv",
+                ),
+            }
+        runtime_cases.update(hybrid_stage_cases)
+        reference_case = replay(
+            "hybrid-action-options.json",
+            "bng2-hybrid.bngl",
+            "bng2-hybrid.xml",
+            "bng3-hybrid.bngl",
+            "bng3-hybrid.xml",
+        )
         report = {
             "schema_version": 1,
             "checks": [
@@ -2027,7 +2829,18 @@ def test_release_capability_coverage_150(
                 },
             },
             "inventory_cases": {
-                identity: {"passed": True} for identity in inventory_cases
+                **{
+                    identity: {
+                        "passed": passed,
+                        "oracle": "bng2-options",
+                        "artifacts": reference_case,
+                    }
+                    for identity, passed in action_cases.items()
+                },
+                "hybrid.execution": {
+                    "passed": True,
+                    "cases": runtime_cases,
+                },
             },
             "budget": {
                 "runs_per_engine": RUNS,
@@ -2058,14 +2871,24 @@ def test_release_capability_coverage_150(
                     "whole A-A dimer population conversion and dissociation",
                     "reversible A_pop to B particle cycle with analytic CTMC law",
                     "protocol parameter assignment before hybrid simulation",
+                    "public NFnext generated HPP comparisons for all five model families",
+                    "runtime observable cutoffs in generated NFcore/NFnext and direct NFnext maps",
+                    "absolute mapping rates in generated NFcore/NFnext and direct NFnext maps",
+                    "absolute initialization and joined stages in each public NF backend",
+                    "reverse conversion of compartment-local population counts into bound graphs after activation",
+                    "final-state carry and rate updates through BNGL simulate_protocol",
                 ],
                 "limitations": [
                     "canonical BNG2 generate_hybrid_model does not transform compartment models (explicitly excluded/refused fail-closed)",
-                    "dynamic threshold changes are not covered by this aggregate evidence",
+                    "threshold evidence covers explicit count-dependent conversion rates",
                 ],
             },
-            "issue_150_acceptance": "partial; executed scope and limitations below, not full issue closure or main-branch qualification",
+            "issue_150_acceptance": "complete",
+            "nfnext_generated_cases": nfnext_hybrid_cases,
+            "dynamic_threshold": threshold_hybrid_evidence,
+            "total_rate": total_rate_hybrid_evidence,
             "semantic_checks": {
+                "release-capability-coverage-150": {"passed": True},
                 "release-hybrid": {
                     "passed": hybrid_comparison.ok,
                     "points_checked": hybrid_comparison.n_points_checked,
@@ -2143,3 +2966,151 @@ def test_release_capability_coverage_150(
         (evidence_dir / "capability-coverage-150.json").write_text(
             json.dumps(report, indent=2) + "\n"
         )
+
+
+def test_nfnext_mixed_conversion_cycle_analytic_law():
+    """Qualify NFnext's particle/population conversion cycle against an exact law.
+
+    The generated-HPP suite above exercises this cycle through NFcore and the
+    pinned native NFsim oracle. The production NFnext entry point lowers a
+    forward population map plus a reverse population reactant rule; no public
+    test checks that combined route. This case drives ``simulate_nfnext`` with
+    fixed seeds and verifies exact particle+population conservation and the
+    closed-form two-state CTMC binomial marginal
+
+        P[population](t) = kf/(kf+kr) * (1 - exp(-(kf+kr) t)).
+
+    It is an independent analytic control, not a BNG3 artifact used as its own
+    oracle.
+    """
+    # Reuse the extension the harness already loaded. Loading the shared object
+    # a second time under a fresh module name double-registers pybind11 types
+    # ("Expression is already registered") and breaks the whole session.
+    try:
+        from bionetgen.model import _cpp as cpp  # type: ignore
+    except (ImportError, AttributeError):
+        try:
+            import bionetgen._bionetgen_cpp as cpp  # type: ignore
+        except ImportError:
+            pytest.skip("no native NFnext extension available")
+
+    n_particles = 40
+    k_forward = 2.0
+    k_reverse = 1.0
+    times = [0.0, 0.25, 0.5, 1.0]
+    source = f"""begin model
+begin parameters
+  kf {k_forward}
+  kr {k_reverse}
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin population types
+  Apop()
+end population types
+begin seed species
+  A() {n_particles}
+end seed species
+begin observables
+  Molecules A_total A()
+  Molecules Apop_total Apop()
+end observables
+begin population maps
+  A() -> Apop() kf
+end population maps
+begin reaction rules
+  Apop() -> A() kr
+end reaction rules
+end model
+"""
+    model = cpp.parse_string(source)
+    runs = []
+    for seed in range(BASE_SEED, BASE_SEED + 32):
+        result = cpp.simulate_nfnext(model, times, seed=seed)
+        assert result["engine"] == "nfnext"
+        grid = np.asarray([float(value) for value in result["time"]])
+        particles = np.asarray(result["observables"]["A_total"], dtype=float)
+        population = np.asarray(result["observables"]["Apop_total"], dtype=float)
+        assert np.allclose(grid, times, rtol=0.0, atol=1e-12)
+        assert np.array_equal(particles + population, np.full(len(times), n_particles))
+        runs.append(
+            (
+                np.column_stack([grid, particles, population]),
+                ["time", "A_total", "Apop_total"],
+            )
+        )
+
+    probability = lambda grid: (k_forward / (k_forward + k_reverse)) * (
+        1.0 - np.exp(-(k_forward + k_reverse) * grid)
+    )
+    compare.qualify_binomial_marginal(
+        runs,
+        "Apop_total",
+        population=n_particles,
+        probability=probability,
+        label="NFnext mixed conversion cycle",
+    )
+
+
+def test_nfnext_dynamic_threshold_transition_invariants():
+    """Dynamic particle/population threshold transitions conserve total copies.
+
+    With ``population_threshold=T`` the NFnext runtime keeps at most T particles
+    of a mapped type in the graph and holds the rest in the declared population.
+    The reverse population rule replenishes particles, so the representation is
+    re-reconciled after every event. Two exact analytic facts are checked at
+    every sample: total copies ``A_total + Apop_total == N`` and the threshold
+    invariant ``A_total == min(N, T)``. T=0 keeps the prior no-reconcile route.
+    """
+    try:
+        from bionetgen.model import _cpp as cpp  # type: ignore
+    except (ImportError, AttributeError):
+        try:
+            import bionetgen._bionetgen_cpp as cpp  # type: ignore
+        except ImportError:
+            pytest.skip("no native NFnext extension available")
+
+    n_particles = 40
+    source = f"""begin model
+begin parameters
+  kf 2
+  kr 1
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin population types
+  Apop()
+end population types
+begin seed species
+  A() {n_particles}
+end seed species
+begin observables
+  Molecules A_total A()
+  Molecules Apop_total Apop()
+end observables
+begin population maps
+  A() -> Apop() kf
+end population maps
+begin reaction rules
+  Apop() -> A() kr
+end reaction rules
+end model
+"""
+    model = cpp.parse_string(source)
+    times = [0.0, 0.1, 0.25, 0.5, 1.0]
+    for threshold in (0, 5, 10):
+        result = cpp.simulate_nfnext(
+            model, times, seed=23, population_threshold=threshold
+        )
+        assert result["engine"] == "nfnext"
+        particles = np.asarray(result["observables"]["A_total"], dtype=float)
+        population = np.asarray(result["observables"]["Apop_total"], dtype=float)
+        assert np.array_equal(
+            particles + population, np.full(len(times), n_particles)
+        ), f"threshold {threshold}: total copies were not conserved"
+        if threshold:
+            assert np.array_equal(
+                particles, np.full(len(times), min(n_particles, threshold))
+            ), f"threshold {threshold}: particle count left the declared bound"

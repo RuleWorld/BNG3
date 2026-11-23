@@ -213,6 +213,34 @@ def test_release_energy_protocols(tmp_path):
     np.testing.assert_allclose(up + down, 9.0, atol=1e-6)
 
 
+def test_motor_closed_form_law_is_rate_sensitive():
+    """The analytic motor law must fail for a wrong forward rate.
+
+    A closed-form check only has scientific power if a wrong rate is rejected.
+    Build two independent evaluations of the two-state thinning law from the
+    fixture's declared parameters: the recorded law and the same law with a
+    doubled forward rate. They must differ by more than the fixture's own
+    relative tolerance at shared sample times, and must reach different
+    equilibria. No BNG3 output is used in either curve.
+    """
+    motor = next(f for f in fixtures.fixtures() if f["id"] == "motor-motor")
+    times = np.asarray([0.0, 0.25, 0.5, 1.0, 2.0], dtype=float)
+    correct = fixtures._thinning_law(motor, times)
+
+    wrong = dict(motor)
+    wrong["law"] = dict(motor["law"])
+    wrong["law"]["forward"] = motor["law"]["forward"] * 2.0
+    wrong_curve = fixtures._thinning_law(wrong, times)
+
+    scale = np.maximum(np.abs(correct), 1.0)
+    worst = float(np.max(np.abs(wrong_curve - correct) / scale))
+    assert worst > fixtures.LAW_RTOL, (
+        f"wrong-rate law is indistinguishable from the recorded law "
+        f"(worst relative difference {worst:g} <= {fixtures.LAW_RTOL:g})"
+    )
+    assert abs(float(wrong_curve[-1]) - float(correct[-1])) > 1.0
+
+
 # =========================================================================== #
 # Acceptance Check 2: release-extension-protocols
 # =========================================================================== #

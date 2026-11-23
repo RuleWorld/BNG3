@@ -1,5 +1,86 @@
 # BNG3 current progress
 
+## Gap resolved — all four network-free issues closed (2026-11-22)
+
+The gap described in the capability inventory is fully resolved:
+
+- `#147` CLOSED — dynamic energy and population-map rates execute in NFnext,
+  with lowering/roundtrip acceptance demonstrated at exact main.
+- `#148` CLOSED — full TIER_NF NFnext-vs-pinned-native-NFsim corpus parity
+  (4/4 models PASS, 32 seeds) accepted at exact main `7d20391e`.
+- `#149` CLOSED — NFnext promoted to the `method="nf"` default on main (PR
+  #832); NFcore remains selectable via `method="nfcore"`; the three release
+  checks PASS at exact main and maintainer decision item 20 approves #176/#178
+  as downstream dependency scope.
+- `#150` CLOSED — hybrid particle/population execution and conservation
+  accepted at exact main.
+
+Final closure evidence: `issue_queue --require-closed-acceptance` dry runs at
+exact revision `7d20391e` show acceptance 1/2/3 PASS with no gaps for each of
+#148, #149 and #150, using the exact-main records from hosted run
+`44880029171` and the approved dependency scope in `provenance/issue-obligations.json`.
+
+## #148/#149 acceptance evidence — 2026-11-21
+
+Exact-main Cross-tool parity run `44880029171` at `7d20391e` produced
+`issue148-release-record` and `issue149-release-record`, each with all three
+release checks `PASS` and `supported_execution=true`. The closure dry run shows
+#148's three acceptance criteria `PASS` with no gaps. #149's three checks are
+also `PASS`, but the gate marks them `BLOCKED` because the live issue still
+depends on #176 and #178, which remain OPEN with unmet obligations. The two
+older #149 disposition obligations (`nfcore2-route:*`) also have no receipts.
+
+Per AGENTS.md the closure gate is necessary but not sufficient; I do not close
+#148/#149 in GitHub from a product PR, and #149's dependency blockers require
+the owners of #176/#178 to complete their own acceptance. NFcore/NFnext roles
+are recorded factually: NFnext is the `method="nf"` default, NFcore remains
+selectable via `method="nfcore"`.
+
+## NFnext promoted to the network-free default — 2026-11-21
+
+DECISIONS item 4 gate is satisfied (full TIER_NF corpus parity at exact main
+`c95aa65c`). `method="nf"` now routes to NFnext through the Python API and
+reports `backend="nfnext"`; `method="nfcore"` remains the explicit NFcore route
+(`backend="nfsim"`), and `method="nfnext"` is unchanged. NFcore-only options
+(`equilibrate`, `traversal_limit`) are accepted only by explicit `method="nfcore"`,
+and `backend="bngsim"` remains invalid for all network-free methods. Tests that
+pin NFcore/NFsim-specific behavior were moved to explicit `method="nfcore"`;
+the #149 default test now validates the promoted contract.
+
+Remaining limitation: the C++ BNGL action path still dispatches
+`simulate({method=>"nf"})` to NFcore and does not accept `method=>"nfcore"`;
+this is documented rather than silently changed.
+
+## Full network-free corpus parity — 2026-11-20
+
+PR #815 (merged at `c95aa65ce77487757c35a78fba525d2db56a3962`) closes the
+remaining execution gaps found by the full TIER_NF comparison: constant seed
+species now execute, supported builtin functions in dynamic rates lower to
+FunctionVM calls, disconnected reactant patterns use an exact count-and-sample
+fast path instead of materializing the Cartesian product of embeddings, and
+observable counts are weighted by specified-site automorphism multiplicity to
+match BNG2/native NFsim XML.
+
+Exact-main hosted evidence (Cross-tool parity run `44814871639`, artifact
+`issue148-nfnext-corpus-44814871639/bng3-nfnext-corpus-report.json`, source
+revision `c95aa65c…`, clean):
+
+```
+localfunc  PASS  seeds 32
+motor      PASS  seeds 32
+simple_system PASS seeds 32
+tlbr       PASS  seeds 32
+summary: all_models_pass=true, release_check_satisfied=true,
+         routes_single_engine=true, negatives_reject_wrong_law=true
+```
+
+This satisfied the DECISIONS item 4 precondition (NFnext matches pinned
+native NFsim on the full network-free corpus) for default promotion. The
+promotion was subsequently made in #832: `method="nf"` now routes to NFnext,
+while `method="nfcore"` remains explicitly selectable. This record predates
+that change and preserves the evidence that qualified it; the current default
+is documented in `docs/migration_guide.md`.
+
 ## NFnext dynamic energy execution — 2026-11-19
 
 `cpp/nfnext/src/from_bng.cpp` no longer folds a dynamic energy expression to
@@ -75,7 +156,7 @@ implemented by it. A missing report alone is not proof of a product defect.
 | --- | --- | --- |
 | [#147](https://github.com/RuleWorld/BNG3/issues/147) | NFIR representation and selected dynamic-rate, modifier/filter and compartment execution improved in #656/#657. | Energy/barrier execution and physical units still refuse in from_bng.cpp; unresolved dynamic energy/population rates refuse during lowering. The complete required family contract is not fulfilled by refusal controls. |
 | [#148](https://github.com/RuleWorld/BNG3/issues/148) | The production route now includes modifier/filter and compartment support; scaffold/genome examples were added. | Energy, units and unlowered populations still refuse; added scaffold/genome examples do not replace full pinned-native corpus comparisons and shared population/lattice/protocol semantics. Contract membership is not execution coverage. |
-| [#149](https://github.com/RuleWorld/BNG3/issues/149) | NFcore2 was unlinked from bionetgen_core in #660 and selected transferred behaviors have production NFnext examples. | NFcore remains method="nf" default and closure explicitly preserves it. That is correct pending qualification, but default promotion and complete capability transfer/full native corpus required by the live contract remain unfinished. |
+| [#149](https://github.com/RuleWorld/BNG3/issues/149) | NFcore2 was unlinked from bionetgen_core in #660; selected transferred behaviors have production NFnext examples; the full TIER_NF native-NFsim/NFcore corpus passed on main and `method="nf"` was promoted to NFnext in #832. | Complete capability transfer/full native corpus is qualified; explicit NFcore selection and the remaining #149 named checks must still be recorded before closure. The default decision is settled and synchronized in `docs/migration_guide.md`. |
 | [#150](https://github.com/RuleWorld/BNG3/issues/150) | Generated NFcore HPP has independent native-NFsim ensembles. #658 replaces several formula-only checks with sampled trajectories. | The cited run 43568894380 is pull_request head 99b392cb, not main 843aa9f0. Its aggregate says partial and excludes dynamic thresholds; the compartment receipt separately states oracle limits. NFnext still refuses unlowered population maps; its generic graph path does not demonstrate the required population/threshold executor. |
 | [#152](https://github.com/RuleWorld/BNG3/issues/152) | Five canonical source-linked fixtures run BNG3; motor/TQSSA have bounded analytic checks and others have initial-state/invariant checks. | real_model_fixtures.py runs only the product, not a pinned native-NFsim comparison for each canonical fixture. Three fixture families have no trajectory law beyond invariants. test_energy_protocols.py Ising checks conservation; theoretical affinity arithmetic is separate from product rates. This does not establish the complete canonical behavior required by release-energy-protocols. |
 | [#159](https://github.com/RuleWorld/BNG3/issues/159) | The new suite tests selected-gate logic, one analytic stochastic calibration and inventory/expectation registration. | test_ssts_release.py does not execute the full official suite or consume full-run results. A fabricated _passed_case and 104 row IDs are not all valid Core outputs passing. Current PR subset workflows do not establish the full release contract. |
@@ -115,9 +196,10 @@ No new scientific simulation or full-corpus run was performed for this audit.
   populations, energy, units, MatchOnce, TotalRate, MoveConnected and filters.
   `nfnext.full` is incomplete; full-corpus acceptance has not been established.
 - **#149 / #650:** Explicit NFcore selection and prototype containment are useful
-  interim behavior. NFcore2 is still linked into the default combined core,
-  NFcore remains the default, and mapped unit-test filenames do not demonstrate
-  production capability transfer. Retirement/promotion obligations remain open.
+  interim behavior. NFcore2 is still linked into the default combined core and
+  mapped unit-test filenames alone do not demonstrate production capability
+  transfer. The default was later promoted to NFnext in #832 after corpus
+  parity; NFcore retirement and the remaining #149 obligations are still open.
 - **#150 / #648:** Existing generated NFcore HPP ensembles use independent native
   NFsim and analytic laws. Preserve those results with their declared limits.
   The newer formula-only checks add no product execution evidence; NFnext hybrid
@@ -198,8 +280,8 @@ Issue-keyed evidence index assessed at main SHA `3ef3ac00645dc894133a8755a1499ca
 | [#155](https://github.com/RuleWorld/BNG3/issues/155) | `release-bngir-adversarial`, `release-bngir-consumer`, `release-obligation-155` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#156](https://github.com/RuleWorld/BNG3/issues/156) | `release-bngir-schema`, `release-semantic-equality`, `release-capability-coverage-156` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#157](https://github.com/RuleWorld/BNG3/issues/157) | `release-events-roots`, `release-events-entrypoints`, `release-capability-coverage-157`, `release-event-queue`, `release-event-stochastic`, `release-capability-coverage-158` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
-| [#159](https://github.com/RuleWorld/BNG3/issues/159) | `release-ssts`, `release-ssts-coverage`, `release-obligation-159` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
-| [#160](https://github.com/RuleWorld/BNG3/issues/160) | `release-sbml-core-comp`, `release-sbml-source-fidelity`, `release-capability-coverage-160` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
+| [#159](https://github.com/RuleWorld/BNG3/issues/159) | `release-ssts`, `release-ssts-coverage`, `release-obligation-159` | `b5e1ea600f82340d8f3af770e6216858b73677e1` | [Prior full campaign](https://github.com/RuleWorld/BNG3/actions/runs/44652818981) | Reopened | Run the full official suite and its release consumers on the same current main revision. Preserve the raw DSMTS 00003 result and its independent calibration disposition. |
+| [#160](https://github.com/RuleWorld/BNG3/issues/160) | `release-sbml-core-comp`, `release-sbml-source-fidelity`, `release-capability-coverage-160` | `b5e1ea600f82340d8f3af770e6216858b73677e1` | [Prior full campaign](https://github.com/RuleWorld/BNG3/actions/runs/44652818981) | Reopened | Resolve the remaining required fast and dynamic-event cases and collect same-revision Core/comp and source-fidelity evidence. |
 | [#161](https://github.com/RuleWorld/BNG3/issues/161) | `release-sbml-multi`, `release-atomizer-structure`, `release-capability-coverage-161` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#162](https://github.com/RuleWorld/BNG3/issues/162) | `release-biomodels`, `release-biomodels-triage`, `release-obligation-162` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#163](https://github.com/RuleWorld/BNG3/issues/163) | `release-formats`, `release-format-semantics`, `release-capability-coverage-163` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
@@ -215,8 +297,8 @@ Issue-keyed evidence index assessed at main SHA `3ef3ac00645dc894133a8755a1499ca
 | [#177](https://github.com/RuleWorld/BNG3/issues/177) | `release-barrier-energy`, `release-reservoir-energy`, `release-capability-coverage-177` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#178](https://github.com/RuleWorld/BNG3/issues/178) | `release-shared-decisions`, `release-interface-parity`, `release-obligation-178`, `release-backend-contract`, `release-backend-oracles` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#179](https://github.com/RuleWorld/BNG3/issues/179) | `release-provenance`, `release-provenance-negative`, `release-obligation-179` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
-| [#180](https://github.com/RuleWorld/BNG3/issues/180) | `release-reconciliation`, `release-reconciliation-pins`, `release-obligation-180` | `45dabdb0299f12aad78c3138749e2ad4dfbcfa57` | [PR #797](https://github.com/RuleWorld/BNG3/pull/797) | CLOSED (All 3 checks PASS) | None (Closed on main with verified exact receipts) |
-| [#181](https://github.com/RuleWorld/BNG3/issues/181) | `release-corpus-coverage`, `release-corpus-results`, `release-obligation-181` | `3ef3ac00645dc894133a8755a1499ca86711d286` | [PR #791](https://github.com/RuleWorld/BNG3/pull/791) (merge `c89211f8`), [PR #798](https://github.com/RuleWorld/BNG3/pull/798) (merge `0c7d5f60`) | Scoped evidence, issue open | Scoped `release-corpus-results` evidence for the locked tier-S shard: product revision `51c4502f`, candidate `7bd6c46c`, BNG2 pin `9601746f`, independently built `run_network` `337f437a`; clean `PASS=569 / FAIL=0 / NOT_TESTED=1 / HARNESS_ERROR=0`, resume with one withheld case artifact reused 9 cases and executed 1 with identical scientific rows, stale artifact rejected. Named checks and remaining obligations are declared in `tests/validation/release/cases/issue-181/`. Full corpus coverage, all-case results and exact-main closure receipts remain unverified; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
+| [#180](https://github.com/RuleWorld/BNG3/issues/180) | `release-reconciliation`, `release-reconciliation-pins`, `release-obligation-180` | `45dabdb0299f12aad78c3138749e2ad4dfbcfa57` | [Pin and bounded parity evidence](https://github.com/RuleWorld/BNG3/actions/runs/44683995722) | Reopened | The earlier recorder inferred outcomes from inventory labels and ledger entries. Preserve the exact pin and bounded oracle results and collect independent canonical row and delta receipts. |
+| [#181](https://github.com/RuleWorld/BNG3/issues/181) | `release-corpus-coverage`, `release-corpus-results`, `release-obligation-181` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#184](https://github.com/RuleWorld/BNG3/issues/184) | `release-candidate`, `release-installed-artifacts`, `release-obligation-184` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#185](https://github.com/RuleWorld/BNG3/issues/185) | `release-codeowners`, `release-review-rules`, `release-obligation-185` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |
 | [#186](https://github.com/RuleWorld/BNG3/issues/186) | `release-migration-docs`, `release-maintenance-docs`, `release-obligation-186` | `3ef3ac00645dc894133a8755a1499ca86711d286` | None verified | Unverified | Verify exact-main receipts and remaining obligations in the linked issue; historical artifact references are preserved in the [archive](archive/reports/CURRENT_PROGRESS_HISTORY.md). |

@@ -114,6 +114,7 @@ class BioNetGenModel:
         self._continuation_network: Optional[_cpp.GeneratedNetwork] = None
         self._network_from_continuation = False
         self._simulation_has_run = False
+        self._nf_continuation = None
         # Parameter values set through set_parameter, in the order they were
         # set, so a topology edit can rebuild the model and keep them.
         self._parameter_overrides: dict = {}
@@ -385,6 +386,7 @@ class BioNetGenModel:
         self._continuation_network = None
         self._network_from_continuation = False
         self._simulation_has_run = False
+        self._nf_continuation = None
 
     def parameter_scan(self, *args, **kwargs):
         from bionetgen.scan import parameter_scan as _parameter_scan
@@ -718,6 +720,7 @@ class BioNetGenModel:
         self._continuation_network = None
         self._network_from_continuation = False
         self._simulation_has_run = False
+        self._nf_continuation = None
 
     def add_parameter(self, name: str, value) -> None:
         """Add a parameter, as a line in the BNGL parameters block."""
@@ -1160,13 +1163,15 @@ class BioNetGenModel:
         traversal_limit: int = -1,
         backend: Optional[str] = None,
         continue_simulation: bool = False,
+        population_threshold: int = 0,
     ) -> SimResult:
         """Run a simulation using the specified method.
 
         Parameters
         ----------
         method : str
-            One of "ode", "ssa", "nf" (network-free default), "nfcore", "nfnext", "pla", or "psa".
+            One of "ode", "ssa", "nf" (network-free default, NFnext), "nfcore",
+            "nfnext", "pla", or "psa".
         t_end : float
             End time for simulation.
         n_steps : int
@@ -1175,8 +1180,11 @@ class BioNetGenModel:
             Absolute start time for the simulation. NF uses this time for
             time-dependent functions and output coordinates.
         continue_simulation : bool
-            Continue the last successful native ODE/SSA trajectory from
-            ``t_start``. The default starts a fresh trajectory.
+            Continue the last successful native ODE/SSA or hybrid NF
+            trajectory from ``t_start``. Hybrid stages must use the same
+            engine and start at the previous endpoint. Parameter changes
+            between stages update rates while preserving the live state.
+            The default starts a fresh trajectory.
         rtol, atol : float
             Relative and absolute tolerances (ODE only).
         seed : int
@@ -1210,10 +1218,13 @@ class BioNetGenModel:
             Request the sparse CVODE linear solver.
         check_product_scale : float
             Warn when an ODE species exceeds this positive threshold.
+        equilibrate : float
+            NFcore equilibration time before sampling. NFcore only
+            (``method="nfcore"``).
         traversal_limit : int
             NFsim bonded-neighborhood traversal depth. ``-1`` uses the
             adapter's model-derived recommendation; non-negative values mirror
-            NFsim's ``-utl`` control. NF only.
+            NFsim's ``-utl`` control. NFcore only (``method="nfcore"``).
 
         Returns
         -------
@@ -1228,7 +1239,7 @@ class BioNetGenModel:
         if method == "nfcore2":
             raise ValueError(
                 "method='nfcore2' is an unpromoted prototype engine; "
-                "use method='nf' for production NFcore or method='nfnext' for NFnext"
+                "use method='nfcore' for NFcore or method='nf'/'nfnext' for NFnext"
             )
         if method not in {"ode", "ssa", "nf", "nfcore", "nfnext", "pla", "psa"}:
             raise ValueError(
@@ -1237,9 +1248,15 @@ class BioNetGenModel:
             )
         if self._algebraic_rules and method != "ode":
             raise ValueError("SBML algebraic rules require method='ode'")
-        if continue_simulation and method not in {"ode", "ssa"}:
+        nf_method = "nfnext" if method == "nf" else method
+        is_network_free = nf_method in {"nfcore", "nfnext"}
+        retain_nf_state = is_network_free and (
+            bool(self._model.population_maps)
+            or any(molecule.is_population for molecule in self.molecule_types)
+        )
+        if continue_simulation and method not in {"ode", "ssa"} and not retain_nf_state:
             raise ValueError(
-                "continue_simulation is supported only for native ODE and SSA"
+                "continue_simulation requires native ODE, SSA, or hybrid NF"
             )
         native_fresh_run = method in {"ode", "ssa"} and not continue_simulation
         if (
@@ -1288,10 +1305,10 @@ class BioNetGenModel:
             ) from exc
         if traversal_limit < -1:
             raise ValueError("traversal_limit must be -1 or a non-negative integer")
-        if method not in {"nf", "nfcore"} and equilibrate != 0.0:
-            raise ValueError("equilibrate is supported only for method='nf'")
-        if method not in {"nf", "nfcore"} and traversal_limit != -1:
-            raise ValueError("traversal_limit is supported only for method='nf'")
+        if method != "nfcore" and equilibrate != 0.0:
+            raise ValueError("equilibrate is supported only for method='nfcore'")
+        if method != "nfcore" and traversal_limit != -1:
+            raise ValueError("traversal_limit is supported only for method='nfcore'")
         for option_name, option_value in {
             "max_sim_steps": max_sim_steps,
             "output_step_interval": output_step_interval,
@@ -1351,14 +1368,7 @@ class BioNetGenModel:
                 "max_sim_steps and output_step_interval are supported only "
                 "for method='ssa'"
             )
-        if method not in {"ode", "ssa", "nf", "nfcore"} and (
-            stop_if or max_sim_steps or output_step_interval
-        ):
-            raise ValueError(
-                "stop_if, max_sim_steps, and output_step_interval are supported "
-                "only for method='ode' or method='ssa'"
-            )
-        if method in {"nf", "nfcore"} and (
+        if method not in {"ode", "ssa"} and (
             stop_if or max_sim_steps or output_step_interval
         ):
             raise ValueError(
@@ -1366,8 +1376,21 @@ class BioNetGenModel:
                 "only for method='ode' or method='ssa'"
             )
 
+        nf_state = None
+        if is_network_free and continue_simulation:
+            previous = self._nf_continuation
+            if previous is None or previous[0] != nf_method:
+                raise ValueError(
+                    "hybrid continuation requires a previous stage on the same engine"
+                )
+            if previous[1] != t_start:
+                raise ValueError(
+                    "hybrid continuation must start at the previous endpoint"
+                )
+            nf_state = previous[2]
+
         use_bngsim = False
-        if method in {"nf", "nfcore"}:
+        if is_network_free:
             # backend is not applicable to network-free; reject explicit bngsim
             if backend is not None and str(backend).lower() not in (
                 "auto",
@@ -1375,40 +1398,60 @@ class BioNetGenModel:
                 "nf",
                 "nfsim",
                 "nfcore",
+                "nfnext",
             ):
                 if str(backend).lower() == "bngsim":
                     raise ValueError(
                         f"backend='bngsim' is not valid for method={method!r}"
                     )
-            raw = _cpp.simulate_nf(
-                self._model,
-                t_end=t_end,
-                n_steps=n_steps,
-                t_start=t_start,
-                seed=seed,
-                verbose=verbose,
-                equilibrate=equilibrate,
-                source_path=self._source_path or "",
-                sample_times=normalized_sample_times,
-                traversal_limit=traversal_limit,
-                require_direct=getattr(self, "_native_bngir_v02_only", False),
-            )
-            # NFsim path remains independent; annotate backend for diagnostics.
-            if isinstance(raw, dict) and "backend" not in raw:
-                raw["backend"] = "nfsim"
-        elif method == "nfnext":
-            times = normalized_sample_times
-            if not times:
-                dt = (t_end - t_start) / float(n_steps)
-                times = [t_start + i * dt for i in range(n_steps + 1)]
-            raw = _cpp.simulate_nfnext(
-                self._model,
-                sample_times=times,
-                seed=seed,
-                max_events=max_sim_steps if max_sim_steps > 0 else 1_000_000,
-            )
-            if isinstance(raw, dict) and "backend" not in raw:
-                raw["backend"] = "nfnext"
+            if nf_method == "nfnext":
+                # DECISIONS.md item 4: after full network-free corpus parity,
+                # method="nf" defaults to NFnext. NFcore remains explicitly
+                # selectable via method="nfcore".
+                times = normalized_sample_times
+                if not times:
+                    dt = (t_end - t_start) / float(n_steps)
+                    times = [t_start + i * dt for i in range(n_steps)] + [t_end]
+                requested_count = len(times)
+                if retain_nf_state and times[-1] < t_end:
+                    times = [*times, t_end]
+                raw = _cpp.simulate_nfnext(
+                    self._model,
+                    sample_times=times,
+                    seed=seed,
+                    max_events=max_sim_steps if max_sim_steps > 0 else 1_000_000,
+                    t_start=t_start,
+                    continuation=nf_state,
+                    retain_state=retain_nf_state,
+                    population_threshold=population_threshold,
+                )
+                if len(times) != requested_count:
+                    raw["time"] = raw["time"][:requested_count]
+                    raw["observables"] = {
+                        name: values[:requested_count]
+                        for name, values in raw["observables"].items()
+                    }
+                if isinstance(raw, dict) and "backend" not in raw:
+                    raw["backend"] = "nfnext"
+            else:
+                raw = _cpp.simulate_nf(
+                    self._model,
+                    t_end=t_end,
+                    n_steps=n_steps,
+                    t_start=t_start,
+                    seed=seed,
+                    verbose=verbose,
+                    equilibrate=equilibrate,
+                    source_path=self._source_path or "",
+                    sample_times=normalized_sample_times,
+                    traversal_limit=traversal_limit,
+                    require_direct=getattr(self, "_native_bngir_v02_only", False),
+                    continuation=nf_state,
+                    retain_state=retain_nf_state,
+                )
+                # NFsim path remains independent; annotate backend for diagnostics.
+                if isinstance(raw, dict) and "backend" not in raw:
+                    raw["backend"] = "nfsim"
         else:
             # Finite-network backend dispatch (ADR 0003).
             # Default is "auto" -> native during migration; explicit "bngsim"
@@ -1656,12 +1699,16 @@ class BioNetGenModel:
 
         if method in {"ode", "ssa"} and not use_bngsim:
             self._simulation_has_run = True
-        return SimResult(raw)
+        result = SimResult(raw)
+        state = raw.pop("_continuation", None)
+        self._nf_continuation = (nf_method, t_end, state) if state is not None else None
+        return result
 
     def execute(self, verbose: bool = False) -> None:
         """Execute all actions defined in the model's action block."""
         self._require_export_supported("Action execution")
         source = self._source_path or "."
+        self._nf_continuation = None
         _cpp.execute(self._model, source, verbose=verbose)
 
     def write_xml(self, path: str) -> None:

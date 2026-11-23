@@ -94,7 +94,8 @@ private:
 namespace function_vm_detail {
 
 enum class Op : std::uint8_t {
-    Constant, Symbol, Add, Subtract, Multiply, Divide, Power, Negate, Function
+    Constant, Symbol, Add, Subtract, Multiply, Divide, Power, Negate, Function,
+    Less, LessEqual, Greater, GreaterEqual, Equal, NotEqual, JumpIfZero, Jump
 };
 
 struct Instruction {
@@ -103,6 +104,7 @@ struct Instruction {
     std::uint8_t function{0};
     std::uint8_t argc{0};
     std::string symbol;
+    std::size_t jump_target{0};
 };
 
 struct Bytecode {
@@ -143,6 +145,13 @@ private:
         if (position_ < source_.size() && source_[position_] == value) { ++position_; return true; }
         return false;
     }
+    bool consumePair(char first, char second) {
+        skipSpace();
+        if (position_ + 1 >= source_.size() ||
+            source_[position_] != first || source_[position_ + 1] != second) return false;
+        position_ += 2;
+        return true;
+    }
     void require(char value) {
         if (!consume(value)) fail(std::string("expected '") + value + "'");
     }
@@ -150,7 +159,24 @@ private:
         throw FunctionCompileError(message + " at offset " + std::to_string(position_));
     }
 
-    void expression() { addSub(); }
+    void expression() {
+        comparison();
+        for (;;) {
+            if (consumePair('=', '=')) { comparison(); emitBinary(Op::Equal); }
+            else if (consumePair('!', '=')) { comparison(); emitBinary(Op::NotEqual); }
+            else return;
+        }
+    }
+    void comparison() {
+        addSub();
+        for (;;) {
+            if (consumePair('<', '=')) { addSub(); emitBinary(Op::LessEqual); }
+            else if (consumePair('>', '=')) { addSub(); emitBinary(Op::GreaterEqual); }
+            else if (consume('<')) { addSub(); emitBinary(Op::Less); }
+            else if (consume('>')) { addSub(); emitBinary(Op::Greater); }
+            else return;
+        }
+    }
     void addSub() {
         multiply();
         for (;;) {
@@ -175,6 +201,23 @@ private:
     void power() {
         primary();
         if (consume('^')) { unary(); emitBinary(function_vm_detail::Op::Power); }
+    }
+    void conditional() {
+        const auto incomingDepth = stack_depth_;
+        expression();
+        require(',');
+        const auto jumpToElse = bytecode_.code.size();
+        bytecode_.code.push_back({Op::JumpIfZero});
+        stack_depth_ = incomingDepth;
+        expression();
+        require(',');
+        const auto jumpToEnd = bytecode_.code.size();
+        bytecode_.code.push_back({Op::Jump});
+        bytecode_.code[jumpToElse].jump_target = bytecode_.code.size();
+        stack_depth_ = incomingDepth;
+        expression();
+        require(')');
+        bytecode_.code[jumpToEnd].jump_target = bytecode_.code.size();
     }
     void primary() {
         skipSpace();
@@ -202,6 +245,10 @@ private:
                (std::isalnum(static_cast<unsigned char>(source_[position_])) || source_[position_] == '_')) ++position_;
         const std::string name = source_.substr(begin, position_ - begin);
         if (consume('(')) {
+            if (name == "if") {
+                conditional();
+                return;
+            }
             std::uint8_t function_id = 0;
             if (!builtin(name, function_id)) fail("unknown function: " + name);
             std::uint8_t argc = 0;
@@ -277,7 +324,8 @@ public:
     double evaluate(const FunctionEnvironment& environment) const {
         std::array<double, 256> stack{};
         std::size_t top = 0;
-        for (const auto& instruction : code_->code) {
+        for (std::size_t pc = 0; pc < code_->code.size();) {
+            const auto& instruction = code_->code[pc++];
             using Op = function_vm_detail::Op;
             switch (instruction.op) {
                 case Op::Constant: stack.at(top++) = instruction.value; break;
@@ -294,6 +342,17 @@ public:
                     });
                     break;
                 case Op::Power: binary(stack, top, [](double a, double b) { return std::pow(a, b); }); break;
+                case Op::Less: binary(stack, top, [](double a, double b) { return a < b; }); break;
+                case Op::LessEqual: binary(stack, top, [](double a, double b) { return a <= b; }); break;
+                case Op::Greater: binary(stack, top, [](double a, double b) { return a > b; }); break;
+                case Op::GreaterEqual: binary(stack, top, [](double a, double b) { return a >= b; }); break;
+                case Op::Equal: binary(stack, top, [](double a, double b) { return a == b; }); break;
+                case Op::NotEqual: binary(stack, top, [](double a, double b) { return a != b; }); break;
+                case Op::JumpIfZero:
+                    if (top == 0) throw FunctionEvaluationError("condition stack underflow");
+                    if (stack[--top] == 0.0) pc = instruction.jump_target;
+                    break;
+                case Op::Jump: pc = instruction.jump_target; break;
                 case Op::Function: {
                     if (top < instruction.argc) throw FunctionEvaluationError("function stack underflow");
                     const auto first = top - instruction.argc;

@@ -13,7 +13,8 @@ from pathlib import Path
 
 import pytest
 
-from bionetgen.atomizer.modern import Atomizer
+import bionetgen
+from bionetgen.atomizer.modern import Atomizer, SBMLParser, source_metadata_payload
 
 _FIXTURES = Path(__file__).resolve().parents[5] / "provenance/core-fixtures"
 import bionetgen._bionetgen_cpp as cpp
@@ -56,3 +57,15 @@ def test_fixture_actually_contains_its_construct(fixture):
         "sbase-annotation": "<annotation>",
     }
     assert tokens[fixture] in text
+
+
+def test_annotation_roundtrip_through_public_sbml_consumer(tmp_path):
+    source = _FIXTURES / "sbase-annotation.xml"
+    parser = SBMLParser()
+    expected = source_metadata_payload(parser.parse(source.read_text(encoding="utf-8")))
+    assert expected
+
+    output = tmp_path / "roundtrip.xml"
+    bionetgen.from_sbml(str(source)).write_sbml(str(output))
+    restored = parser.parse(output.read_text(encoding="utf-8"))
+    assert restored.source_metadata_payload == expected

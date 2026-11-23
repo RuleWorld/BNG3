@@ -399,7 +399,7 @@ def run(
             try:
                 if engine == "embedded":
                     result = bionetgen.load(str(source)).simulate(
-                        method="nf", t_end=2, n_steps=10, seed=seed
+                        method="nfcore", t_end=2, n_steps=10, seed=seed
                     )
                     names = list(result.observables)
                     data = np.column_stack(

@@ -9,16 +9,33 @@
 
 namespace py = pybind11;
 
+namespace {
+using StageState = std::shared_ptr<nfnext::BngExecutionState>;
+constexpr const char* kStageState = "bionetgen.nfnext.stage";
+}
+
 void bind_nfnext(py::module_& m) {
     m.def("simulate_nfnext", [](bng::ast::Model& model,
                                 const std::vector<double>& sample_times,
                                 std::uint64_t seed,
                                 std::uint64_t max_events,
-                                std::size_t max_particles) -> py::dict {
+                                std::size_t max_particles,
+                                double t_start,
+                                const py::object& continuation,
+                                bool retain_state,
+                                std::uint64_t population_threshold) -> py::dict {
         bng::compile::CompiledModel compiled(model);
         nfnext::BngExecutionRequest req;
         req.sample_times = sample_times;
         req.seed = seed;
+        req.start_time = t_start;
+        req.retain_state = retain_state;
+        req.population_threshold = population_threshold;
+        if (!continuation.is_none()) {
+            auto* pointer = PyCapsule_GetPointer(continuation.ptr(), kStageState);
+            if (!pointer) throw py::error_already_set();
+            req.continuation = *static_cast<StageState*>(pointer);
+        }
         if (max_events > 0) req.max_events = max_events;
         if (max_particles > 0) req.max_particles = max_particles;
 
@@ -48,6 +65,14 @@ void bind_nfnext(py::module_& m) {
         out["observables"] = obs_dict;
         out["event_count"] = result.event_count;
         out["engine"] = "nfnext";
+        if (result.final_state) {
+            auto state = std::make_unique<StageState>(std::move(result.final_state));
+            auto capsule = py::capsule(state.get(), kStageState, [](void* pointer) {
+                delete static_cast<StageState*>(pointer);
+            });
+            state.release();
+            out["_continuation"] = std::move(capsule);
+        }
         return out;
     },
     py::arg("model"),
@@ -55,6 +80,10 @@ void bind_nfnext(py::module_& m) {
     py::arg("seed") = 0,
     py::arg("max_events") = 1000000,
     py::arg("max_particles") = 1000000,
+    py::arg("t_start") = 0.0,
+    py::arg("continuation") = py::none(),
+    py::arg("retain_state") = false,
+    py::arg("population_threshold") = 0,
     "Run NFnext simulation directly from CompiledModel.");
 
     m.def("simulate_nfnext_gpu", [](bng::ast::Model& model,

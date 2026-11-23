@@ -101,3 +101,17 @@ def test_unmatched_source_reference_revision_is_ignored():
     result = coverage_report(ROWS, LOCK, [mismatched_record], REVISION)
     assert result["observed_rows"] == {}
     assert result["missing_rows"] == ["action.simulate", "action.visualize"]
+
+
+def test_complete_inventory_with_a_semantic_failure_blocks_release():
+    from scripts.ci.record_reconciliation_release import canonical_gaps
+
+    reports = [
+        evidence(
+            observation("action.simulate"),
+            observation("action.visualize", status="FAIL", supported_execution=False),
+        )
+    ]
+    coverage = coverage_report(ROWS, LOCK, reports, REVISION)
+    assert coverage["missing_rows"] == []
+    assert canonical_gaps(coverage) == ["Canonical behavior failed: action.visualize."]

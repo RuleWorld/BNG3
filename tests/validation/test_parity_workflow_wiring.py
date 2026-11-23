@@ -616,6 +616,48 @@ def test_delay_release_receipt_is_recorded_and_consumed_in_parity_queue():
     )
 
 
+def test_hybrid_execution_step_runs_full_suite_with_locked_oracles():
+    """The #150 execution step must not silently lose oracles or narrow its suite.
+
+    The receipt/consumer guard below proves the report is recorded and replayed.
+    It does not prove the producing step actually ran the complete hybrid suite
+    against the pinned independent oracles. A dropped env var, a removed
+    ``-c tests/validation/pytest.ini``, an added ``-k``/``--deselect`` filter or a
+    missing junit artifact would all still leave the receipt step green while
+    the scientific evidence was reduced. Assert on the parsed step structure.
+    """
+    workflow = _parse_workflow()
+    steps = workflow["jobs"]["nfsim-parity"]["steps"]
+    step = next(
+        item
+        for item in steps
+        if item.get("name") == "Run hybrid particle-population parity and conservation"
+    )
+    run = step["run"]
+    assert "tests/validation/test_hybrid_execution.py" in run
+    assert "-c tests/validation/pytest.ini" in run
+    assert "--junitxml=" in run
+    tokens = shlex.split(run)
+    assert not {"-k", "--deselect", "--runxfail"} & set(tokens)
+    assert step.get("continue-on-error", False) is False
+
+    env = step.get("env", {})
+    assert env.get("BNG2_PERL", "").endswith("/oracle-bionetgen/bng2/BNG2.pl")
+    assert env.get("NFSIM_BIN", "").endswith("/oracle-nfsim/build/NFsim")
+    assert env.get("BNG3_CI_STRICT_ORACLES") == "1"
+    assert env.get("BNG3_HYBRID_EVIDENCE_DIR", "").endswith("/release-hybrid-evidence")
+
+    upload = next(
+        item
+        for item in steps
+        if item.get("name") == "Upload hybrid particle-population evidence"
+    )
+    assert upload["uses"].startswith("actions/upload-artifact@")
+    assert upload["if"] == "always()"
+    assert upload["with"].get("if-no-files-found") == "error"
+    assert "release-hybrid-evidence" in upload["with"]["path"]
+
+
 def test_hybrid_release_receipt_is_recorded_and_consumed_in_parity_queue():
     workflow = _parse_workflow()
     nfsim_parity = workflow["jobs"]["nfsim-parity"]
@@ -625,6 +667,7 @@ def test_hybrid_release_receipt_is_recorded_and_consumed_in_parity_queue():
         if step.get("name")
         == "Validate independent issue-150 hybrid release acceptance"
     )
+    assert "--require-complete" in record_step["run"]
     assert "scripts/ci/record_hybrid_release.py" in record_step["run"]
     assert (
         '--output "${{ runner.temp }}/release-hybrid-evidence/issue-150-release-report.json"'
@@ -749,3 +792,65 @@ def test_upstream_history_job_checks_all_pins_and_retains_the_report():
     assert "--history-report" in command
     assert upload["if"] == "always()"
     assert upload["with"]["path"] == "${{ runner.temp }}/reconciliation-history.json"
+
+
+def test_issue152_energy_protocol_case_runs_with_locked_strict_oracles():
+    """The #152 release case must stay wired into the nfsim-parity job.
+
+    Its checks cover source-linked real-model fixtures, canonical energy and
+    fail-closed extension refusals. A dropped step, relaxed strict-oracle mode
+    or a narrowing filter would leave the case green having tested less.
+    """
+    workflow = _parse_workflow()
+    steps = workflow["jobs"]["nfsim-parity"]["steps"]
+    step = next(
+        (
+            item
+            for item in steps
+            if item.get("name")
+            == "Run Issue 152 energy and protocol release acceptance"
+        ),
+        None,
+    )
+    assert step is not None
+    run = step["run"]
+    assert "tests/validation/release/cases/issue-152/" in run
+    assert "--junitxml=" in run
+    tokens = shlex.split(run)
+    assert not {"-k", "--deselect", "--runxfail"} & set(tokens)
+    assert step.get("continue-on-error", False) is False
+    assert step.get("env", {}).get("BNG3_CI_STRICT_ORACLES") == "1"
+
+    upload = next(
+        (
+            item
+            for item in steps
+            if item.get("name") == "Retain Issue 152 energy and protocol evidence"
+        ),
+        None,
+    )
+    assert upload is not None
+    assert upload["uses"].startswith("actions/upload-artifact@")
+    assert upload["if"] == "always()"
+    assert upload["with"].get("if-no-files-found") == "error"
+
+
+def test_nfnext_ensemble_rng_isolation_step_is_wired():
+    """The #176 bounded ensemble-isolation check must not silently disappear."""
+    workflow = _parse_workflow()
+    steps = workflow["jobs"]["nfsim-parity"]["steps"]
+    step = next(
+        (
+            item
+            for item in steps
+            if item.get("name")
+            == "Check NFnext ensemble RNG and state isolation (#176)"
+        ),
+        None,
+    )
+    assert step is not None
+    run = step["run"]
+    assert "tests/python/nfnext/test_nfnext_ensemble_rng_isolation.py" in run
+    tokens = shlex.split(run)
+    assert "--noconftest" in tokens
+    assert not {"-k", "--deselect", "--runxfail"} & set(tokens)

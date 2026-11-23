@@ -32,5 +32,17 @@
     "issue:150:live-acceptance:release-hybrid",
     "issue:150:live-acceptance:release-hybrid-conservation",
     "issue:150:live-acceptance:release-capability-coverage-150"
-  ]
+  ],
+  "hybrid_execution_cases": {
+    "single": "bng2-native-and-analytic",
+    "dimer": "bng2-native-and-analytic",
+    "cycle": "bng2-native-and-analytic",
+    "pre_run_rate": "bng2-native-and-analytic",
+    "compartments": "native-and-analytic",
+    "threshold": "bng2-native-and-analytic",
+    "total_rate": "bng2-native-and-analytic",
+    "stage_native_rate_change": "bng2-native-and-analytic",
+    "stage_compartment_graph_and_counts": "analytic",
+    "stage_bngl_protocol": "bng2-protocol-and-analytic"
+  }
 }

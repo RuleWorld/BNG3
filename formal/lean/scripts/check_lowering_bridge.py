@@ -214,6 +214,22 @@ def main() -> int:
             f"[formal:negative] wrong_site_unchanged: divergence detected (P after = {neg_wrong_site.get('obs_p_after')})"
         )
 
+    neg_wrong_rate = lean_results.get("negative_substituted_rate")
+    if not neg_wrong_rate or neg_wrong_rate.get("divergence_detected") != "true":
+        failures.append(
+            "negative case (substituted rate) failed to detect rate divergence"
+        )
+    elif neg_wrong_rate.get("obs_p_after") != "1":
+        failures.append(
+            "substituted-rate case must keep the correct graph edit and observable"
+        )
+    else:
+        print(
+            f"[formal:negative] substituted_rate: divergence detected "
+            f"(rate = {neg_wrong_rate.get('rate')}, expected "
+            f"{INDEPENDENT_REFERENCE['rate']}, P after = {neg_wrong_rate.get('obs_p_after')})"
+        )
+
     print("\n=== Step 2: Evaluating Production Lowering Artifact ===")
     exe = find_native_bridge_executable()
     if not exe:

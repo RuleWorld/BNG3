@@ -176,6 +176,7 @@ void bind_model(py::module_& m) {
         .def_readonly("label", &PopulationMap::label)
         .def_readonly("pattern", &PopulationMap::patternText)
         .def_readonly("function", &PopulationMap::populationFunction)
+        .def_readonly("total_rate", &PopulationMap::totalRate)
         .def_readonly("args", &PopulationMap::functionArgs);
 
     py::class_<Action>(m, "Action")

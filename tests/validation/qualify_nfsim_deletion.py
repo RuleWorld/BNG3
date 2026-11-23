@@ -114,7 +114,7 @@ def probe(output: Path) -> dict:
         def run_api(seed):
             result = runner._result_to_trajectory(
                 bionetgen.load(source).simulate(
-                    method="nf", t_end=T_END, n_steps=N_STEPS, seed=seed
+                    method="nfcore", t_end=T_END, n_steps=N_STEPS, seed=seed
                 )
             )
             if result.construction_path != "direct":

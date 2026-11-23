@@ -13,6 +13,18 @@ namespace bng::ast { class Model; }
 
 namespace bng::compile {
 
+// Compile-owned decision for the PSA population-level threshold. Both the
+// compile-time default (Document.cpp) and the runtime action override
+// (ActionDispatch.cpp) must apply this one rule; a second inline copy would let
+// the two layers disagree about what a valid threshold is.
+std::optional<std::string> poplevelDecisionError(double value);
+
+// Compile-owned validation of numeric simulation options. The action layer and
+// the API must apply one rule per option domain rather than a local copy of the
+// finite/positive test with a hand-written message.
+std::optional<std::string> positiveToleranceError(double value);
+std::optional<std::string> nonNegativeOptionError(double value, const char* name);
+
 enum class ActionScope {
     Model,
     SimulationProtocol,

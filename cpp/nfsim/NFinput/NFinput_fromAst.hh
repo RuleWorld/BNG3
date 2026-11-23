@@ -33,11 +33,17 @@
 #include <map>
 #include <string>
 
-namespace bng::ast { class Model; }
+namespace bng::ast { class Expression; class Model; }
 
-namespace NFcore { class System; }
+namespace NFcore { class ReactionClass; class System; }
 
 namespace NFinput {
+
+// Apply the current model parameters to a live network-free trajectory.
+void refreshSystemParameters(NFcore::System& system, const bng::ast::Model& model);
+
+void bindStaticRateExpression(NFcore::ReactionClass& reaction, NFcore::System& system,
+                              const bng::ast::Expression& expression);
 
 using SeedAmountOverrides = std::map<std::string, double>;
 

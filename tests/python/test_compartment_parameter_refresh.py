@@ -82,8 +82,8 @@ def test_physical_zero_order_nfsim_rate_matches_fresh_volume_after_override(
     fresh_path.write_text(_volume_model(vcell="2"))
     fresh = bionetgen.load(str(fresh_path))
 
-    mutated_result = model.simulate(method="nf", t_end=100.0, n_steps=1, seed=7)
-    fresh_result = fresh.simulate(method="nf", t_end=100.0, n_steps=1, seed=7)
+    mutated_result = model.simulate(method="nfcore", t_end=100.0, n_steps=1, seed=7)
+    fresh_result = fresh.simulate(method="nfcore", t_end=100.0, n_steps=1, seed=7)
 
     assert mutated_result.construction_path == "direct"
     assert mutated_result.time.tolist() == fresh_result.time.tolist() == [0.0, 100.0]
@@ -102,8 +102,8 @@ def test_direct_nfsim_tracks_simple_compartment_parameter_expression(tmp_path):
     fresh_path.write_text(_volume_model(vcell="2"))
     fresh = bionetgen.load(str(fresh_path))
 
-    actual = model.simulate(method="nf", t_end=100.0, n_steps=1, seed=7)
-    expected = fresh.simulate(method="nf", t_end=100.0, n_steps=1, seed=7)
+    actual = model.simulate(method="nfcore", t_end=100.0, n_steps=1, seed=7)
+    expected = fresh.simulate(method="nfcore", t_end=100.0, n_steps=1, seed=7)
 
     assert actual.construction_path == expected.construction_path == "direct"
     assert actual.observables["A_count"].tolist() == (
@@ -139,7 +139,7 @@ end model
     model.set_parameter("divisor", 0.0)
 
     with pytest.raises(RuntimeError, match="positive static declared 3D volume"):
-        model.simulate(method="nf", t_end=100.0, n_steps=1, seed=7)
+        model.simulate(method="nfcore", t_end=100.0, n_steps=1, seed=7)
 
 
 def test_failed_volume_refresh_keeps_parameter_and_compartment_consistent(tmp_path):
@@ -269,8 +269,8 @@ def test_setvolume_action_overrides_dynamic_expression_for_later_parameter_updat
     fresh_path.write_text(_volume_model(vbase="10", vcell="2"))
     fresh = bionetgen.load(str(fresh_path))
 
-    manual_result = model.simulate(method="nf", t_end=100.0, n_steps=1, seed=7)
-    fresh_result = fresh.simulate(method="nf", t_end=100.0, n_steps=1, seed=7)
+    manual_result = model.simulate(method="nfcore", t_end=100.0, n_steps=1, seed=7)
+    fresh_result = fresh.simulate(method="nfcore", t_end=100.0, n_steps=1, seed=7)
     assert manual_result.construction_path == "direct"
     assert manual_result.observables["A_count"].tolist() == (
         fresh_result.observables["A_count"].tolist()

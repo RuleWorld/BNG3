@@ -116,6 +116,62 @@ def test_hybrid_model_generation_executes_population_trajectory_with_nfsim(
     assert int(population_rows[0][1]) > 0
 
 
+def test_generated_hybrid_model_runs_through_public_nfcore(tmp_path, monkeypatch):
+    monkeypatch.delenv("BNG_NFSIM_ALLOW_XML_FALLBACK", raising=False)
+    _model(tmp_path, "generate_hybrid_model({overwrite=>1, execute=>0})").execute()
+    hybrid = bionetgen.load(tmp_path / "model_hpp.bngl")
+    result = hybrid.simulate(method="nfcore", t_end=0.2, n_steps=4, seed=7)
+
+    assert result.backend == "nfsim"
+    assert result.observables["A_total"][-1] > 0
+    assert (result.observables["A_total"] + result.observables["B_total"] == 20).all()
+
+
+@pytest.mark.parametrize("method", ["nfcore", "nfnext"])
+def test_hybrid_clock_initializes_at_requested_start(tmp_path, method):
+    _model(tmp_path, "generate_hybrid_model({overwrite=>1, execute=>0})").execute()
+    hybrid = bionetgen.load(tmp_path / "model_hpp.bngl")
+    result = hybrid.simulate(method=method, t_start=2, t_end=2.1, n_steps=1, seed=42)
+    assert result.time.tolist() == [2.0, 2.1]
+    assert result.observables["A_total"][0] == 0
+    assert result.observables["B_total"][0] == 20
+    assert (result.observables["A_total"] + result.observables["B_total"] == 20).all()
+
+
+def test_population_map_total_rate_survives_generation_and_execution(tmp_path):
+    source = tmp_path / "total_rate.bngl"
+    source.write_text(
+        MODEL.replace(
+            "begin seed species",
+            "begin population types\n  A_pop()\nend population types\nbegin seed species",
+        )
+        .replace("  B() N", "  A() N")
+        .replace("  Molecules B_total B()", "  Molecules Population A_pop()")
+        .replace("A() -> A_pop() k_map", "A() -> A_pop() 1 TotalRate")
+        + "\nbegin actions\ngenerate_hybrid_model({overwrite=>1, execute=>0})\nend actions\n"
+    )
+    model = bionetgen.load(source)
+    model.execute()
+    generated = (tmp_path / "total_rate_hpp.bngl").read_text()
+    assert "A() -> A_pop() 1 TotalRate" in generated
+
+    from bionetgen.bngir import from_bngir, to_bngir
+
+    round_trip = from_bngir(to_bngir(model, version="0.2"))
+    assert round_trip._model.population_maps[0].total_rate
+
+    # Each jump consumes one particle at absolute rate 1 while any remain.
+    # The 20-copy cutoff has negligible effect on the mean at T=1.
+    converted = []
+    for seed in range(100, 228):
+        result = model.simulate(method="nfnext", t_end=1, n_steps=1, seed=seed)
+        assert (
+            result.observables["A_total"] + result.observables["Population"] == 20
+        ).all()
+        converted.append(result.observables["Population"][-1])
+    assert sum(converted) / len(converted) == pytest.approx(1, abs=0.5)
+
+
 def test_hybrid_model_generation_still_refuses_finite_network_simulation(tmp_path):
     model = _model(
         tmp_path,
@@ -402,3 +458,67 @@ end actions
         match="hybrid population execution refinement is not supported",
     ):
         bionetgen.load(unsupported).execute()
+
+
+@pytest.mark.parametrize(
+    ("method", "resume_method"),
+    [
+        ("nfcore", "nfcore"),
+        ("nfnext", "nfnext"),
+        ("nf", "nfnext"),
+        ("nfnext", "nf"),
+    ],
+)
+def test_hybrid_continuation_uses_final_state_and_updated_rate(
+    tmp_path, method, resume_method
+):
+    _model(tmp_path, "generate_hybrid_model({overwrite=>1, execute=>0})").execute()
+    path = tmp_path / "model_hpp.bngl"
+    path.write_text(
+        path.read_text().replace("B() -> A_pop() k_make", "B() -> A_pop() 2*k_make")
+    )
+    hybrid = bionetgen.load(path)
+    before = hybrid.simulate(method=method, t_end=0.1, n_steps=1, seed=42)
+    at_boundary = before.observables["B_total"][-1]
+    assert 0 < at_boundary < 20
+
+    hybrid.set_parameter("k_make", 0)
+    if method == "nf":
+        with pytest.raises(ValueError, match="previous stage on the same engine"):
+            hybrid.simulate(
+                method="nfcore",
+                t_start=0.1,
+                t_end=1,
+                n_steps=2,
+                continue_simulation=True,
+            )
+    after = hybrid.simulate(
+        method=resume_method, t_start=0.1, t_end=1, n_steps=2, continue_simulation=True
+    )
+    assert after.time.tolist() == [0.1, 0.55, 1.0]
+    assert after.observables["B_total"].tolist() == [at_boundary] * 3
+    assert after.observables["A_total"].tolist() == [20 - at_boundary] * 3
+
+    fresh = hybrid.simulate(method=method, t_start=1, t_end=2, n_steps=1)
+    assert fresh.observables["B_total"].tolist() == [20, 20]
+
+
+def test_hybrid_nf_actions_continue_from_final_state(tmp_path):
+    _model(tmp_path, "generate_hybrid_model({overwrite=>1, execute=>0})").execute()
+    path = tmp_path / "model_hpp.bngl"
+    path.write_text(path.read_text().split("## model actions ##")[0] + """
+begin actions
+  simulate_nf({t_end=>0.1, n_steps=>1, seed=>42, suffix=>"before"})
+  setParameter("k_make",0)
+  simulate_nf({t_end=>1, n_steps=>2, suffix=>"after"})
+end actions
+""")
+    bionetgen.load(path).execute()
+    before = (tmp_path / "model_hpp_before.gdat").read_text().splitlines()
+    after = (tmp_path / "model_hpp_after.gdat").read_text().splitlines()
+    boundary = [float(cell) for cell in before[-1].split()]
+    assert 0 < boundary[2] < 20
+    assert [float(cell) for cell in after[1].split()] == pytest.approx(boundary)
+    assert [float(cell) for cell in after[-1].split()] == pytest.approx(
+        [1.0, *boundary[1:]]
+    )

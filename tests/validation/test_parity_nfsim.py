@@ -72,12 +72,9 @@ SWEEP_ARTIFACT = corpus.REPO / "build" / "validation" / "direct_path_sweep.json"
 
 TIER_P_MODELS = list(corpus.tier_p())
 
-# bind_nfsim composes this message as "<prefix>: <direct_unavailable_reason>;
-# <suffix>" (cpp/bindings/bind_nfsim.cpp:117-130), so the attributed reason is
-# recoverable from the fail-closed exception without enabling the XML fallback
-# (which risks the NFsim aborts described above).
-_DECLINE_PREFIX = "NFsim direct AST initialization unavailable: "
-_DECLINE_SUFFIX = "; XML fallback disabled"
+# The binding's explicit direct-only mode includes the attributed decline
+# reason, including for refined populations that normally use XML fallback.
+_DECLINE_PREFIX = "NFsim direct AST initialization required but unavailable"
 
 # The child program. Kept as source text so the probe needs no file of its own.
 _SWEEP_CHILD = """
@@ -98,7 +95,7 @@ model_name, t_end, n_steps, seed = sys.argv[1], float(sys.argv[2]), int(sys.argv
 # would silently become an in-memory-XML run and read as acceptance.
 os.environ.pop("BNG_NFSIM_FORCE_XML", None)
 os.environ.pop("BNG_NFSIM_ALLOW_XML_FALLBACK", None)
-os.environ.pop("BNG_NFSIM_REQUIRE_DIRECT", None)
+os.environ["BNG_NFSIM_REQUIRE_DIRECT"] = "1"
 
 def run(model):
     # Built here rather than via runner.run_api: runner.Trajectory carries only
@@ -108,7 +105,7 @@ def run(model):
     if source is None:
         raise FileNotFoundError(f"model {model!r} not found on disk")
     return bionetgen.load(str(source)).simulate(
-        method="nf", seed=seed, t_end=t_end, n_steps=n_steps
+        method="nfcore", seed=seed, t_end=t_end, n_steps=n_steps
     )
 
 def trajectory(result):
@@ -140,6 +137,7 @@ if direct is not None:
     record["construction_path"] = construction_path
     record["direct_unavailable_reason"] = unavailable_reason
     try:
+        os.environ.pop("BNG_NFSIM_REQUIRE_DIRECT", None)
         os.environ["BNG_NFSIM_FORCE_XML"] = "1"
         os.environ["BNG_NFSIM_ALLOW_XML_FALLBACK"] = "1"
         xml = run(model_name)
@@ -224,10 +222,7 @@ def _decline_reason(record: dict) -> str | None:
     start = message.find(_DECLINE_PREFIX)
     if start < 0:
         return None
-    reason = message[start + len(_DECLINE_PREFIX) :]
-    if _DECLINE_SUFFIX in reason:
-        reason = reason.split(_DECLINE_SUFFIX, 1)[0]
-    return reason.strip()
+    return message[start + len(_DECLINE_PREFIX) :].removeprefix(": ").strip()
 
 
 def _is_decline(record: dict) -> bool:
@@ -272,7 +267,7 @@ def test_nf_vs_native(model_name, api, work_dir):
 
     test = runner.run_api_ensemble(
         model_name,
-        method="nf",
+        method="nfcore",
         n_runs=n_runs,
         t_end=t_end,
         n_steps=n_steps,
@@ -319,7 +314,7 @@ def test_nf_fixed_seed_direct_matches_native_at_final_endpoint(api, work_dir):
 
     direct = runner.run_api(
         model_name,
-        method="nf",
+        method="nfcore",
         seed=seed,
         t_end=t_end,
         n_steps=n_steps,
@@ -348,7 +343,7 @@ def test_nf_ast_direct_matches_xml(model_name, api, work_dir, monkeypatch):
     monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
     monkeypatch.setenv("BNG_NFSIM_ALLOW_XML_FALLBACK", "1")
     xml_traj = runner.run_api(
-        model_name, method="nf", seed=seed, t_end=t_end, n_steps=n_steps
+        model_name, method="nfcore", seed=seed, t_end=t_end, n_steps=n_steps
     )
 
     monkeypatch.delenv("BNG_NFSIM_FORCE_XML", raising=False)
@@ -357,7 +352,7 @@ def test_nf_ast_direct_matches_xml(model_name, api, work_dir, monkeypatch):
     # direct construction regresses.
     monkeypatch.delenv("BNG_NFSIM_ALLOW_XML_FALLBACK", raising=False)
     direct_traj = runner.run_api(
-        model_name, method="nf", seed=seed, t_end=t_end, n_steps=n_steps
+        model_name, method="nfcore", seed=seed, t_end=t_end, n_steps=n_steps
     )
 
     assert xml_traj.construction_path == "in-memory-xml"
@@ -455,14 +450,14 @@ def test_nf_seed_site_state_is_resolved_by_name(
     monkeypatch.setenv("BNG_NFSIM_FORCE_XML", "1")
     monkeypatch.setenv("BNG_NFSIM_ALLOW_XML_FALLBACK", "1")
     xml_result = api.load(str(source)).simulate(
-        method="nf", seed=7, t_end=0.1, n_steps=10
+        method="nfcore", seed=7, t_end=0.1, n_steps=10
     )
     assert xml_result.construction_path == "in-memory-xml"
 
     monkeypatch.delenv("BNG_NFSIM_FORCE_XML", raising=False)
     monkeypatch.delenv("BNG_NFSIM_ALLOW_XML_FALLBACK", raising=False)
     direct_result = api.load(str(source)).simulate(
-        method="nf", seed=7, t_end=0.1, n_steps=10
+        method="nfcore", seed=7, t_end=0.1, n_steps=10
     )
     assert direct_result.construction_path == "direct", (
         "the direct path declined a model the XML path accepts; a decline is "
@@ -496,6 +491,13 @@ def test_nf_seed_site_state_is_resolved_by_name(
     assert (
         diff.ok or diff.max_rel_err == 0.0
     ), f"ast-direct diverges from in-memory-XML [{block_order}]: {diff.summary()}"
+
+
+@pytest.mark.nf
+def test_tierp_direct_probe_refuses_refined_population(api):
+    record = _sweep_child("hybrid_test_hpp")
+    assert record.get("direct_status") is None, record
+    assert _is_decline(record) and _decline_reason(record), record
 
 
 @pytest.mark.nf
@@ -600,7 +602,7 @@ def test_tierp_direct_path_outcome_is_measured_and_attributed(api):
                 f"[{record['model']}]: {record['direct_unavailable_reason']!r}"
             )
     for record in declined:
-        if not _decline_reason(record) or _DECLINE_SUFFIX not in record["error"]:
+        if not _decline_reason(record):
             raise AssertionError(
                 f"decline did not come from the fail-closed direct path, or "
                 f"carried no attributed reason [{record['model']}]: "
@@ -760,7 +762,7 @@ end model
     n_runs, horizon = 1024, 2.0
     zero_products = 0
     for seed in range(31000, 31000 + n_runs):
-        result = model.simulate(method="nf", seed=seed, t_end=horizon, n_steps=1)
+        result = model.simulate(method="nfcore", seed=seed, t_end=horizon, n_steps=1)
         assert result.construction_path == "direct"
         zero_products += result.observables["Pcount"][-1] == 0
     observed = zero_products / n_runs

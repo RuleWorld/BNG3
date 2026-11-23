@@ -1926,18 +1926,19 @@ void runSimulation(
     // that is not finite and positive, so the action surface refuses the
     // same values instead of accepting an option the caller cannot use
     // through the API.
-    if (!std::isfinite(opts.atol) || opts.atol <= 0.0) {
-        throw std::runtime_error("atol must be finite and positive");
+    if (const auto decision = bng::compile::positiveToleranceError(opts.atol)) {
+        throw std::runtime_error("atol " + *decision);
     }
-    if (!std::isfinite(opts.rtol) || opts.rtol <= 0.0) {
-        throw std::runtime_error("rtol must be finite and positive");
+    if (const auto decision = bng::compile::positiveToleranceError(opts.rtol)) {
+        throw std::runtime_error("rtol " + *decision);
     }
 
     const auto maxStepText = readArgument(action, "max_step", "");
     if (!maxStepText.empty()) {
         opts.maxStep = parseScalarValue(maxStepText, model);
-        if (!std::isfinite(opts.maxStep) || opts.maxStep < 0.0) {
-            throw std::runtime_error("max_step must be finite and non-negative");
+        if (const auto decision =
+                bng::compile::nonNegativeOptionError(opts.maxStep, "max_step")) {
+            throw std::runtime_error(*decision);
         }
     }
 
@@ -2213,8 +2214,8 @@ void runSimulation(
         }
         const auto poplevelText = readArgument(action, "poplevel", std::to_string(defaultPoplevel));
         const double poplevel = parseScalarValue(poplevelText, model);
-        if (!std::isfinite(poplevel) || poplevel < 0.0) {
-            throw std::runtime_error("poplevel must be finite and non-negative");
+        if (const auto decision = bng::compile::poplevelDecisionError(poplevel)) {
+            throw std::runtime_error(*decision);
         }
         engine::PsaSimulator simulator(model, network);
         result = simulator.simulate(opts, poplevel);
@@ -2688,6 +2689,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             sourcePath.parent_path() / (sourcePath.stem().string() + ".net"), options);
     };
 
+    std::unique_ptr<NFcore::System> hybridStage;
     const auto runNfSimulation = [&](const ast::Action& action) {
         const auto printActiveText = lowercase(
             stripQuotes(readArgument(action, "print_n_species_active", "0")));
@@ -2701,12 +2703,25 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         const auto prefix = simulationPrefix(action, sourcePath);
         const auto xmlPath = sourcePath.parent_path() / (prefix + ".xml");
 
-        if (parseBoolean(readArgument(action, "continue", "0"))) {
-            throw std::runtime_error("NFsim does not support 'continue' option");
+        const bool modelUsesPopulationTypes = std::any_of(
+            model.getMoleculeTypes().begin(), model.getMoleculeTypes().end(),
+            [](const ast::MoleculeType& type) { return type.isPopulation(); });
+        const auto continueText = readArgument(action, "continue", "");
+        const bool continueRequested = parseBoolean(continueText);
+        if (continueRequested && !hybridStage) {
+            throw std::runtime_error(modelUsesPopulationTypes
+                ? "Hybrid NFcore continuation requires a previous final state"
+                : "NFsim does not support 'continue' option");
         }
-
-        const auto tStartText = stripQuotes(readArgument(action, "t_start", "0"));
-        const double startTime = parseScalarValue(tStartText, model);
+        const bool resuming = modelUsesPopulationTypes && hybridStage &&
+            (continueText.empty() || continueRequested);
+        const auto tStartText = stripQuotes(readArgument(action, "t_start", ""));
+        const double startTime = tStartText.empty()
+            ? (resuming ? hybridStage->getCurrentTime() : 0.0)
+            : parseScalarValue(tStartText, model);
+        if (resuming && startTime != hybridStage->getCurrentTime()) {
+            throw std::runtime_error("Hybrid NFcore continuation must start at the previous endpoint");
+        }
         if (!std::isfinite(startTime)) {
             throw std::runtime_error("NFsim 't_start' must be finite");
         }
@@ -2808,147 +2823,155 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             std::cerr << "[bng_cpp] Running NFSim in-process from AST model\n";
         }
 
-        // Action commands can edit the generated network before an NFsim
-        // action.  Keep those current seed amounts as an adapter-local
-        // override so the original AST seed expressions remain unchanged for
-        // resetConcentrations and later network generation.
-        NFinput::SeedAmountOverrides seedAmountOverrides;
-        if (network.has_value()) {
-            for (std::size_t index = 0; index < network->species.size(); ++index) {
-                const auto& species = network->species.get(index);
-                const auto pattern = species.getSpeciesGraph().toString();
-                seedAmountOverrides[pattern] = species.getAmount();
-                if (!species.getCompartment().empty()) {
-                    const auto& compartment = species.getCompartment();
-                    seedAmountOverrides["@" + compartment + "::" + pattern] =
-                        species.getAmount();
-                    seedAmountOverrides["@" + compartment + ":" + pattern] =
-                        species.getAmount();
+        std::unique_ptr<NFcore::System> nfSystem;
+        if (resuming) {
+            if (equilibration != 0.0 || explicitTraversalLimit || !gmlText.empty() ||
+                !legacyParamText.empty() || action.arguments.count("complex") ||
+                action.arguments.count("nocslf") || action.arguments.count("pcg") ||
+                action.arguments.count("notf") || action.arguments.count("print_functions") ||
+                action.arguments.count("binary_output")) {
+                throw std::runtime_error("Hybrid NFcore continuation retains the first stage's runtime options");
+            }
+            nfSystem = std::move(hybridStage);
+            NFinput::refreshSystemParameters(*nfSystem, model);
+        } else {
+            hybridStage.reset();
+            // Action commands can edit the generated network before an NFsim
+            // action.  Keep those current seed amounts as an adapter-local
+            // override so the original AST seed expressions remain unchanged for
+            // resetConcentrations and later network generation.
+            NFinput::SeedAmountOverrides seedAmountOverrides;
+            if (network.has_value()) {
+                for (std::size_t index = 0; index < network->species.size(); ++index) {
+                    const auto& species = network->species.get(index);
+                    const auto pattern = species.getSpeciesGraph().toString();
+                    seedAmountOverrides[pattern] = species.getAmount();
+                    if (!species.getCompartment().empty()) {
+                        const auto& compartment = species.getCompartment();
+                        seedAmountOverrides["@" + compartment + "::" + pattern] =
+                            species.getAmount();
+                        seedAmountOverrides["@" + compartment + ":" + pattern] =
+                            species.getAmount();
+                    }
                 }
             }
-        }
 
-        // Direct construction is the default. Population reaction transforms
-        // are not yet directly constructible, so population models use the
-        // NFcore XML reader that preserves its established count semantics.
-        std::string directUnavailableReason;
-        bool directSemanticsUnsupported = false;
-        const bool modelUsesUnits = bng::compile::featuresUsed(model).contains(
-            bng::compile::Feature::Units);
-        const bool modelUsesPopulationTypes = std::any_of(
-            model.getMoleculeTypes().begin(), model.getMoleculeTypes().end(),
-            [](const ast::MoleculeType& moleculeType) {
-                return moleculeType.isPopulation();
-            });
-        NFcore::System *nfSystem = NFinput::buildSystemFromAstWithSeedOverrides(
-            model,
-            useComplex,
-            blockSameComplexBinding,
-            globalMoleculeLimit,
-            nfVerbose,
-            suggestedTraversalLimit,
-            sourcePath,
-            seedAmountOverrides,
-            &directUnavailableReason,
-            &directSemanticsUnsupported);
-
-        if (!nfSystem) {
-            const std::string because =
-                directUnavailableReason.empty()
-                    ? std::string()
-                    : ": " + directUnavailableReason;
-            if (directSemanticsUnsupported) {
-                throw std::runtime_error(
-                    "NFsim cannot preserve the requested reaction-rate semantics" +
-                    because);
-            }
-            if (std::getenv("BNG_NFSIM_REQUIRE_DIRECT") != nullptr) {
-                throw std::runtime_error(
-                    "NFsim direct AST initialization required but unavailable" +
-                    because);
-            }
-            if (std::getenv("BNG_NFSIM_ALLOW_XML_FALLBACK") == nullptr &&
-                !modelUsesPopulationTypes) {
-                throw std::runtime_error(
-                    "NFsim direct AST initialization unavailable" + because +
-                    "; XML fallback disabled for this model "
-                    "(set BNG_NFSIM_ALLOW_XML_FALLBACK=1 to opt in)");
-            }
-            if (modelUsesUnits) {
-                throw std::runtime_error(
-                    "NFsim XML fallback cannot preserve physical units; refusing model");
-            }
-            if (verbose) {
-                std::cerr << "[bng_cpp] AST adapter declined (" << directUnavailableReason
-                          << "); using in-memory XML fallback...\n";
-            }
-            nfSystem = NFinput::initializeFromModel(
-                &model,
+            // Direct construction is the default. Population reaction transforms
+            // are not yet directly constructible, so population models use the
+            // NFcore XML reader that preserves its established count semantics.
+            std::string directUnavailableReason;
+            bool directSemanticsUnsupported = false;
+            const bool modelUsesUnits = bng::compile::featuresUsed(model).contains(
+                bng::compile::Feature::Units);
+            nfSystem.reset(NFinput::buildSystemFromAstWithSeedOverrides(
+                model,
+                useComplex,
                 blockSameComplexBinding,
                 globalMoleculeLimit,
                 nfVerbose,
                 suggestedTraversalLimit,
-                useComplex);
-        }
+                sourcePath,
+                seedAmountOverrides,
+                &directUnavailableReason,
+                &directSemanticsUnsupported));
 
-        if (!nfSystem) {
-            if (modelUsesUnits) {
-                throw std::runtime_error(
-                    "NFsim on-disk XML fallback cannot preserve physical units; refusing model");
+            if (!nfSystem) {
+                const std::string because =
+                    directUnavailableReason.empty()
+                        ? std::string()
+                        : ": " + directUnavailableReason;
+                if (directSemanticsUnsupported) {
+                    throw std::runtime_error(
+                        "NFsim cannot preserve the requested reaction-rate semantics" +
+                        because);
+                }
+                if (std::getenv("BNG_NFSIM_REQUIRE_DIRECT") != nullptr) {
+                    throw std::runtime_error(
+                        "NFsim direct AST initialization required but unavailable" +
+                        because);
+                }
+                if (std::getenv("BNG_NFSIM_ALLOW_XML_FALLBACK") == nullptr &&
+                    !modelUsesPopulationTypes) {
+                    throw std::runtime_error(
+                        "NFsim direct AST initialization unavailable" + because +
+                        "; XML fallback disabled for this model "
+                        "(set BNG_NFSIM_ALLOW_XML_FALLBACK=1 to opt in)");
+                }
+                if (modelUsesUnits) {
+                    throw std::runtime_error(
+                        "NFsim XML fallback cannot preserve physical units; refusing model");
+                }
+                if (verbose) {
+                    std::cerr << "[bng_cpp] AST adapter declined (" << directUnavailableReason
+                              << "); using in-memory XML fallback...\n";
+                }
+                nfSystem.reset(NFinput::initializeFromModel(
+                    &model,
+                    blockSameComplexBinding,
+                    globalMoleculeLimit,
+                    nfVerbose,
+                    suggestedTraversalLimit,
+                    useComplex));
             }
-            if (verbose) {
-                std::cerr << "[bng_cpp] In-memory XML fallback failed; writing XML fallback...\n";
-            }
-            const auto xmlContent = io::XmlWriter::write(
-                model, network.has_value() ? &(*network) : nullptr);
-            std::ofstream xmlOut(xmlPath);
-            if (!xmlOut) {
-                throw std::runtime_error("Failed to write XML for NFSim: " + xmlPath.string());
-            }
-            xmlOut << xmlContent;
-            if (!xmlOut) {
-                throw std::runtime_error("Failed to write XML for NFSim: " + xmlPath.string());
-            }
-            nfSystem = NFinput::initializeFromXML(
-                xmlPath.string(), blockSameComplexBinding, globalMoleculeLimit, nfVerbose,
-                suggestedTraversalLimit, evalCSLF, connectivityFlag, true, useComplex);
-        }
 
-        if (!nfSystem) {
-            throw std::runtime_error("NFSim: Failed to initialize system: " + prefix);
-        }
+            if (!nfSystem) {
+                if (modelUsesUnits) {
+                    throw std::runtime_error(
+                        "NFsim on-disk XML fallback cannot preserve physical units; refusing model");
+                }
+                if (verbose) {
+                    std::cerr << "[bng_cpp] In-memory XML fallback failed; writing XML fallback...\n";
+                }
+                const auto xmlContent = io::XmlWriter::write(
+                    model, network.has_value() ? &(*network) : nullptr,
+                    /*retainRateExpressions=*/true);
+                std::ofstream xmlOut(xmlPath);
+                if (!xmlOut) {
+                    throw std::runtime_error("Failed to write XML for NFSim: " + xmlPath.string());
+                }
+                xmlOut << xmlContent;
+                if (!xmlOut) {
+                    throw std::runtime_error("Failed to write XML for NFSim: " + xmlPath.string());
+                }
+                nfSystem.reset(NFinput::initializeFromXML(
+                    xmlPath.string(), blockSameComplexBinding, globalMoleculeLimit, nfVerbose,
+                    suggestedTraversalLimit, evalCSLF, connectivityFlag, true, useComplex));
+            }
 
-        // The legacy initializer applies these switches while reading XML.
-        // Apply the same runtime policy to a directly-built System.
-        nfSystem->setEvaluateComplexScopedLocalFunctions(evalCSLF);
-        nfSystem->useConnectivityFlag(connectivityFlag);
-        const int effectiveTraversalLimit = explicitTraversalLimit
-            ? requestedTraversalLimit
-            : (nfSystem->needsWholeComplexTraversal() ? NFcore::ReactionClass::NO_LIMIT : 3);
-        nfSystem->setUniversalTraversalLimit(effectiveTraversalLimit);
-        if (nfVerbose) {
-            std::cerr << "[bng_cpp] Universal traversal limit = "
-                      << effectiveTraversalLimit << "\n";
-        }
-        if (disableOnTheFly) {
-            nfSystem->turnOff_OnTheFlyObs();
-        }
-        if (outputFunctions) {
-            nfSystem->turnOnGlobalFuncOut();
-        }
-        if (binaryOutput) {
-            nfSystem->setOutputToBinary();
-        }
+            if (!nfSystem) {
+                throw std::runtime_error("NFSim: Failed to initialize system: " + prefix);
+            }
 
+            // The legacy initializer applies these switches while reading XML.
+            // Apply the same runtime policy to a directly-built System.
+            nfSystem->setEvaluateComplexScopedLocalFunctions(evalCSLF);
+            nfSystem->useConnectivityFlag(connectivityFlag);
+            const int effectiveTraversalLimit = explicitTraversalLimit
+                ? requestedTraversalLimit
+                : (nfSystem->needsWholeComplexTraversal() ? NFcore::ReactionClass::NO_LIMIT : 3);
+            nfSystem->setUniversalTraversalLimit(effectiveTraversalLimit);
+            if (nfVerbose) {
+                std::cerr << "[bng_cpp] Universal traversal limit = "
+                          << effectiveTraversalLimit << "\n";
+            }
+            if (disableOnTheFly) {
+                nfSystem->turnOff_OnTheFlyObs();
+            }
+            if (outputFunctions) {
+                nfSystem->turnOnGlobalFuncOut();
+            }
+            if (binaryOutput) {
+                nfSystem->setOutputToBinary();
+            }
+
+            nfSystem->setCurrentTime(startTime);
+        }
         if (!effectiveSeedText.empty()) {
+            nfSystem->setCurrentTime(startTime);
             nfSystem->seedRNG(std::stoul(effectiveSeedText));
         }
-
-        // Match NFsim's absolute-start contract before preparation so generic
-        // time() functions and initial propensities see the requested clock.
-        nfSystem->setCurrentTime(startTime);
         nfSystem->registerOutputFileLocation(gdatPath.string());
-        nfSystem->prepareForSimulation();
+        if (!resuming) nfSystem->prepareForSimulation();
         if (!nfSystem->isOutputtingBinary()) {
             nfSystem->outputAllObservableNames();
         }
@@ -2973,7 +2996,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         if (verbose) {
             std::cerr << "[bng_cpp] NFSim completed. Output: " << gdatPath << "\n";
         }
-        delete nfSystem;
+        if (modelUsesPopulationTypes && getFinalState) hybridStage = std::move(nfSystem);
     };
 
     // Execute protocol actions through the same stateful dispatcher used by
@@ -2986,6 +3009,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             throw std::runtime_error("simulate_protocol requires a non-empty protocol block");
         }
 
+        hybridStage.reset();
         std::size_t compiledActionIndex = model.getActions().size();
         for (const auto& protoAction : protocol) {
             const auto actionIndex = compiledActionIndex++;
@@ -3054,6 +3078,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             if (protoName == "setconcentration" || protoName == "addconcentration" ||
                 protoName == "add_concentration") {
+                hybridStage.reset();
                 ensureNetwork();
                 const auto* setOpt = setConcentrationOptionsAt(actionIndex);
                 const auto* addOpt = addConcentrationOptionsAt(actionIndex);
@@ -3141,6 +3166,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             }
 
             if (protoName == "resetconcentrations" || protoName == "reset_concentrations") {
+                hybridStage.reset();
                 ensureNetwork();
                 network->resetSimulationSession();
                 lastSimulationState.clear();
@@ -3197,6 +3223,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "readfile") {
+            hybridStage.reset();
             const auto filepath = stripQuotes(readArgument(action, "file", ""));
             if (filepath.empty()) {
                 throw std::runtime_error("readFile requires 'file' argument");
@@ -3280,6 +3307,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "include_model") {
+            hybridStage.reset();
             const auto filepath = stripQuotes(readArgument(action, "file",
                 stripQuotes(readArgument(action, "value", ""))));
             if (filepath.empty()) {
@@ -3304,6 +3332,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "include_network") {
+            hybridStage.reset();
             const auto filepath = stripQuotes(readArgument(action, "file",
                 stripQuotes(readArgument(action, "value", ""))));
             if (filepath.empty()) {
@@ -3528,6 +3557,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "setconcentration") {
+            hybridStage.reset();
             ensureNetwork();
             const auto target = readArgument(action, "target", "");
             const auto valueText = readArgument(action, "value", "");
@@ -3550,6 +3580,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "resetconcentrations") {
+            hybridStage.reset();
             ensureNetwork();
             const auto label = stripQuotes(readArgument(action, "value", "default"));
             const auto found = savedConcentrations.find(label);
@@ -3575,6 +3606,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "addconcentration") {
+            hybridStage.reset();
             ensureNetwork();
             const auto target = readArgument(action, "target", "");
             const auto valueText = readArgument(action, "value", "");

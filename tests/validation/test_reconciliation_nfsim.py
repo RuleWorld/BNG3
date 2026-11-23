@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import subprocess
 from pathlib import Path
@@ -81,7 +82,7 @@ def test_record_complex_flag_reconciliation(
     assert actions
     monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
 
-    matched = True
+    comparisons = {}
     for name, flags, options, expected in (
         ("default", (), "", 0.0),
         ("cb", ("-cb",), ",complex=>1", 0.0),
@@ -106,8 +107,57 @@ def test_record_complex_flag_reconciliation(
         actual = _bound_endpoint(tmp_path / f"product-{name}.gdat")
         record_property(f"{name}.source_bound", reference)
         record_property(f"{name}.bng3_bound", actual)
-        matched &= reference == actual
+        comparisons[name] = {"source_bound": reference, "bng3_bound": actual}
+    matched = all(
+        pair["source_bound"] == pair["bng3_bound"] for pair in comparisons.values()
+    )
     record_property("semantic_result", "PASS" if matched else "FAIL")
+
+    output = os.environ.get("BNG3_NFSIM_RECONCILIATION_REPORT")
+    if output:
+        repo = Path(__file__).resolve().parents[2]
+        product = subprocess.check_output(
+            ["git", "-C", str(repo), "rev-parse", "HEAD"], text=True
+        ).strip()
+        dirty = subprocess.check_output(
+            ["git", "-C", str(repo), "status", "--porcelain"]
+        )
+        upstream = subprocess.check_output(
+            ["git", "-C", str(root), "rev-parse", "HEAD"], text=True
+        ).strip()
+        results = []
+        for option in ("cb", "bscb", "no_bscb"):
+            pair = comparisons[option]
+            passed = pair["source_bound"] == pair["bng3_bound"]
+            results.append(
+                {
+                    "id": f"release-capability[nf.option.{option.replace('_', '-')}]",
+                    "status": "PASS" if passed else "FAIL",
+                    "supported_execution": passed,
+                    "evidence_kind": "supported-execution",
+                    "case": "NFsim Issue51 bound observable at t=1",
+                    "comparisons": pair,
+                }
+            )
+        report = {
+            "schema_version": 1,
+            "source": {"revision": product, "dirty": bool(dirty)},
+            "references": {
+                "nfsim": {
+                    "revision": upstream,
+                    "sha256": hashlib.sha256(native.read_bytes()).hexdigest(),
+                    "bngl_sha256": hashlib.sha256(bngl).hexdigest(),
+                    "xml_sha256": hashlib.sha256(xml.read_bytes()).hexdigest(),
+                },
+            },
+            "subject": {
+                "sha256": hashlib.sha256(
+                    Path(api.model._cpp.__file__).read_bytes()
+                ).hexdigest()
+            },
+            "results": results,
+        }
+        Path(output).write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 
 
 @pytest.mark.parametrize(
@@ -159,7 +209,7 @@ def test_record_totalrate_reconciliation(
     monkeypatch.setenv("BNG_NFSIM_REQUIRE_DIRECT", "1")
     try:
         trajectory = api.load(str(product)).simulate(
-            method="nf", t_end=1, n_steps=1, seed=1
+            method="nfcore", t_end=1, n_steps=1, seed=1
         )
     except (RuntimeError, ValueError) as error:
         captured = capfd.readouterr()
