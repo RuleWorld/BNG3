@@ -314,7 +314,26 @@ jobs:
 
       - name: Organize release assets
         run: |
+          set -euo pipefail
           mkdir -p release-assets
+          # Fail closed before any cp: two sources with one basename but
+          # different bytes would silently overwrite in release-assets/.
+          python3 - <<'PYCODE'
+          import hashlib, pathlib, sys
+          groups = {}
+          patterns = ('artifacts/bionetgen-*/*.tar.gz',
+                      'artifacts/wheels-*/*.whl', 'artifacts/sdist/*.tar.gz')
+          for pattern in patterns:
+              for p in pathlib.Path('.').glob(pattern):
+                  groups.setdefault(p.name, []).append(
+                      (str(p), hashlib.sha256(p.read_bytes()).hexdigest()))
+          collisions = {n: rows for n, rows in groups.items()
+                        if len({digest for _, digest in rows}) > 1}
+          if collisions:
+              for name, rows in sorted(collisions.items()):
+                  print(f'release asset basename collision {name}: {rows}', file=sys.stderr)
+              sys.exit(1)
+          PYCODE
           # CLI binaries
           cp artifacts/bionetgen-*/*.tar.gz release-assets/
           # Python wheels
@@ -347,11 +366,31 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: dist/
-          merge-multiple: true
           pattern: "{wheels-*,sdist}"
+          # Keep each artifact in its own directory. merge-multiple: true would
+          # collapse them into dist/ and let a duplicate basename overwrite
+          # another artifact before the guard in the next step can see both.
+          merge-multiple: false
 
       - name: Flatten dist directory
         run: |
+          set -euo pipefail
+          # Fail closed before any cp: PyPI file uploads are immutable, so a
+          # flattened duplicate basename must never silently overwrite.
+          python3 - <<'PYCODE'
+          import hashlib, pathlib, sys
+          groups = {}
+          for p in pathlib.Path('dist').rglob('*'):
+              if p.is_file() and p.suffix in ('.whl', '.gz'):
+                  groups.setdefault(p.name, []).append(
+                      (str(p), hashlib.sha256(p.read_bytes()).hexdigest()))
+          collisions = {n: rows for n, rows in groups.items()
+                        if len({digest for _, digest in rows}) > 1}
+          if collisions:
+              for name, rows in sorted(collisions.items()):
+                  print(f'PyPI dist basename collision {name}: {rows}', file=sys.stderr)
+              sys.exit(1)
+          PYCODE
           mkdir -p flat-dist
           find dist -name "*.whl" -exec cp {} flat-dist/ \;
           find dist -name "*.tar.gz" -exec cp {} flat-dist/ \;
