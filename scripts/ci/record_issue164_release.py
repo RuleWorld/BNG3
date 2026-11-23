@@ -17,8 +17,8 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path.insert(0, str(ROOT))
-sys.path.insert(0, str(ROOT / "python"))
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 SELECTOR = "tests/validation/test_atomizer_characterization.py::test_every_named_check_executes_and_passes"
 PRODUCER = ".github/workflows/parity.yml#atomizer-characterization"

@@ -231,7 +231,11 @@ def test_native_marginal_rows_say_that_the_oracle_sampled_the_model(tmp_path):
     """A native comparison that ran says so; one that could not says why."""
     from tests.validation import integrated_traces
 
-    bionetgen = pytest.importorskip("bionetgen")
+    try:
+        import bionetgen
+        from bionetgen import _bionetgen_cpp  # noqa: F401
+    except ImportError:
+        pytest.skip("installed BNG3 package/native binding is unavailable")
 
     case = next(
         item
@@ -267,7 +271,11 @@ def test_native_rows_state_the_count_rate_convention_when_the_oracle_is_present(
     """A native comparison that ran says so, and reports its coefficients."""
     from tests.validation import oracle_nfsim
 
-    bionetgen = pytest.importorskip("bionetgen")
+    try:
+        import bionetgen
+        from bionetgen import _bionetgen_cpp  # noqa: F401
+    except ImportError:
+        pytest.skip("installed BNG3 package/native binding is unavailable")
 
     binary = oracle_nfsim.nfsim_binary()
     if binary is None:
@@ -319,7 +327,11 @@ def test_native_marginal_rows_report_the_missing_prerequisite(tmp_path):
     """
     from tests.validation import reporting
 
-    bionetgen = pytest.importorskip("bionetgen")
+    try:
+        import bionetgen
+        from bionetgen import _bionetgen_cpp  # noqa: F401
+    except ImportError:
+        pytest.skip("installed BNG3 package/native binding is unavailable")
 
     case = next(
         item
