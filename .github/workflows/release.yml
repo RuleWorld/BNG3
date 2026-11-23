@@ -316,15 +316,23 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-assets
-          # Fail closed before any cp: two sources with one basename but
+          # Fail closed before any copy: two sources with one basename but
           # different bytes would silently overwrite in release-assets/.
+          # Identical duplicates (the same universal wheel built on several
+          # OSes) are staged once; cp would abort on the second just-created
+          # file even though the bytes agree.
           python3 - <<'PYCODE'
-          import hashlib, pathlib, sys
+          import hashlib, pathlib, shutil, sys
+          dest = pathlib.Path('release-assets')
           groups = {}
+          sources = []
           patterns = ('artifacts/bionetgen-*/*.tar.gz',
                       'artifacts/wheels-*/*.whl', 'artifacts/sdist/*.tar.gz')
           for pattern in patterns:
-              for p in pathlib.Path('.').glob(pattern):
+              for p in sorted(pathlib.Path('.').glob(pattern)):
+                  if not p.is_file():
+                      continue
+                  sources.append(p)
                   groups.setdefault(p.name, []).append(
                       (str(p), hashlib.sha256(p.read_bytes()).hexdigest()))
           collisions = {n: rows for n, rows in groups.items()
@@ -333,13 +341,11 @@ jobs:
               for name, rows in sorted(collisions.items()):
                   print(f'release asset basename collision {name}: {rows}', file=sys.stderr)
               sys.exit(1)
+          for p in sources:
+              target = dest / p.name
+              if not target.exists():
+                  shutil.copy2(p, target)
           PYCODE
-          # CLI binaries
-          cp artifacts/bionetgen-*/*.tar.gz release-assets/
-          # Python wheels
-          cp artifacts/wheels-*/*.whl release-assets/
-          # Source dist
-          cp artifacts/sdist/*.tar.gz release-assets/
           ls -la release-assets/
 
       - name: Create GitHub Release
@@ -375,13 +381,18 @@ jobs:
       - name: Flatten dist directory
         run: |
           set -euo pipefail
-          # Fail closed before any cp: PyPI file uploads are immutable, so a
+          # Fail closed before any copy: PyPI file uploads are immutable, so a
           # flattened duplicate basename must never silently overwrite.
+          # Identical duplicates are copied once; cp would abort on the second
+          # just-created file even when the bytes agree.
           python3 - <<'PYCODE'
-          import hashlib, pathlib, sys
+          import hashlib, pathlib, shutil, sys
+          dest = pathlib.Path('flat-dist')
           groups = {}
-          for p in pathlib.Path('dist').rglob('*'):
+          sources = []
+          for p in sorted(pathlib.Path('dist').rglob('*')):
               if p.is_file() and p.suffix in ('.whl', '.gz'):
+                  sources.append(p)
                   groups.setdefault(p.name, []).append(
                       (str(p), hashlib.sha256(p.read_bytes()).hexdigest()))
           collisions = {n: rows for n, rows in groups.items()
@@ -390,10 +401,12 @@ jobs:
               for name, rows in sorted(collisions.items()):
                   print(f'PyPI dist basename collision {name}: {rows}', file=sys.stderr)
               sys.exit(1)
+          dest.mkdir(parents=True, exist_ok=True)
+          for p in sources:
+              target = dest / p.name
+              if not target.exists():
+                  shutil.copy2(p, target)
           PYCODE
-          mkdir -p flat-dist
-          find dist -name "*.whl" -exec cp {} flat-dist/ \;
-          find dist -name "*.tar.gz" -exec cp {} flat-dist/ \;
           ls flat-dist/
 
       - name: Publish to PyPI
