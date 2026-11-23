@@ -294,6 +294,19 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install release tag parser dependency
+        run: python -m pip install packaging==26.3
+
+      - name: Classify release tag with PEP 440 rules
+        id: tag
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: python scripts/ci/release_tag.py --tag "$RELEASE_TAG" >> "$GITHUB_OUTPUT"
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
@@ -316,7 +329,7 @@ jobs:
           files: release-assets/*
           generate_release_notes: true
           draft: false
-          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
+          prerelease: ${{ steps.tag.outputs.prerelease == 'true' }}
 
   # ═══════════════════════════════════════════════════════════════════════════
   # Publish to PyPI

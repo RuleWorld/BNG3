@@ -40,6 +40,7 @@ from scripts.cross_validate import (
 from scripts.ci.disable_unreachable_microsoft_apt_source import (
     disable_unreachable_sources,
 )
+from scripts.ci.release_tag import is_prerelease
 
 REPO = Path(__file__).resolve().parents[1]
 PYPROJECT = REPO / "pyproject.toml"
@@ -1199,6 +1200,62 @@ def test_release_workflow_requires_exact_main_sha_qualification():
     for workflow_name in ("CI", "Cross-tool parity", "Lean semantic kernel", "CodeQL"):
         assert f'"{workflow_name}"' in qualification_script
     assert '"Official SBML conformance subset"' in qualification_script
+
+
+@pytest.mark.parametrize(
+    ("tag", "expected"),
+    [
+        ("v3.0.0a1", True),
+        ("v3.0.0-alpha.1", True),
+        ("v3.0.0b2", True),
+        ("v3.0.0rc1", True),
+        ("v3.0.0.dev3", True),
+        ("v3.0.0", False),
+        ("v2.9.9", False),
+    ],
+)
+def test_release_tag_uses_pep440_prerelease_rules(tag, expected):
+    """The alpha tag must not depend on the words alpha/beta/rc appearing."""
+
+    assert is_prerelease(tag) is expected
+    result = subprocess.run(
+        [sys.executable, "scripts/ci/release_tag.py", "--tag", tag],
+        cwd=REPO,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == f"prerelease={'true' if expected else 'false'}"
+
+
+def test_release_workflow_uses_the_classified_prerelease_flag():
+    """The release step consumes the classifier, not a substring expression."""
+
+    release = parse_workflow(RELEASE_WORKFLOW)
+    steps = release["jobs"]["release"]["steps"]
+    classify = next(step for step in steps if step.get("id") == "tag")
+    python = next(
+        step
+        for step in steps
+        if step.get("uses", "").startswith("actions/setup-python@")
+    )
+    install = next(
+        step for step in steps if "install packaging==" in step.get("run", "")
+    )
+    assert steps.index(python) < steps.index(install) < steps.index(classify)
+    assert "scripts/ci/release_tag.py" in classify["run"]
+    assert "$GITHUB_OUTPUT" in classify["run"]
+    assert classify["env"]["RELEASE_TAG"] == "${{ github.ref_name }}"
+    create = next(
+        step
+        for step in steps
+        if step.get("uses", "").startswith("softprops/action-gh-release@")
+    )
+    assert (
+        create["with"]["prerelease"] == "${{ steps.tag.outputs.prerelease == 'true' }}"
+    )
+    assert "contains(github.ref" not in create["with"]["prerelease"]
 
 
 def test_release_binaries_smoke_before_packaging():
