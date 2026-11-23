@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tests.validation.junit import require_passing_junit
+from tests.validation.junit import executed_test_names, require_passing_junit
 
 EXPECTED_CHECKS = (
     "release-bngir-adversarial",
@@ -85,11 +85,7 @@ def run_tests(root: Path = ROOT) -> list[str]:
                 "test_release_obligation_155",
             ],
         )
-        return [
-            "test_release_bngir_adversarial",
-            "test_release_bngir_consumer",
-            "test_release_obligation_155",
-        ]
+        return executed_test_names(junit)
 
 
 def build_release_record(
@@ -133,11 +129,7 @@ def build_release_record(
                 "test_release_obligation_155",
             ],
         )
-        tested_cases = {
-            "test_release_bngir_adversarial",
-            "test_release_bngir_consumer",
-            "test_release_obligation_155",
-        }
+        tested_cases = executed_test_names(junit_path)
     elif not skip_tests:
         res = run_tests(root)
         if isinstance(res, (list, set, tuple)):

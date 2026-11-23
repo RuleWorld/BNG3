@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tests.validation.junit import require_passing_junit
+from tests.validation.junit import executed_test_names, require_passing_junit
 
 EXPECTED_CHECKS = (
     "release-bngir-schema",
@@ -50,7 +50,7 @@ def verify_manifest(root: Path = ROOT) -> dict[str, dict]:
     return checks
 
 
-def run_tests(root: Path = ROOT) -> None:
+def run_tests(root: Path = ROOT) -> set[str]:
     test_path = root / "tests/validation/release/cases/issue-156/test_bngir_release.py"
     if not test_path.is_file():
         _fail(f"missing test file: {test_path}")
@@ -82,11 +82,7 @@ def run_tests(root: Path = ROOT) -> None:
                 "test_release_capability_coverage_156",
             ],
         )
-        return [
-            "test_release_bngir_schema",
-            "test_release_semantic_equality",
-            "test_release_capability_coverage_156",
-        ]
+        return executed_test_names(junit)
 
 
 def build_release_record(
@@ -130,11 +126,7 @@ def build_release_record(
                 "test_release_capability_coverage_156",
             ],
         )
-        tested_cases = {
-            "test_release_bngir_schema",
-            "test_release_semantic_equality",
-            "test_release_capability_coverage_156",
-        }
+        tested_cases = executed_test_names(junit_path)
     elif not skip_tests:
         res = run_tests(root)
         if isinstance(res, (list, set, tuple)):

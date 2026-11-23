@@ -4,6 +4,29 @@ from pathlib import Path
 import xml.etree.ElementTree as ET
 
 
+def executed_test_names(path: Path) -> set[str]:
+    """Return base names of tests that actually ran and passed in a JUnit report.
+
+    A check may only claim PASS when its named test is in this set.  Callers
+    must never synthesize the set from an expected-name list or from a pytest
+    exit code: a skipped, deselected or missing test leaves no passing case in
+    the report.
+    """
+    if not path.is_file():
+        raise ValueError(f"missing JUnit report {path}")
+    root = ET.parse(path).getroot()
+    suites = [root] if root.tag == "testsuite" else list(root.findall("testsuite"))
+    names: set[str] = set()
+    for suite in suites:
+        for case in suite.findall("testcase"):
+            problem = any(
+                case.find(tag) is not None for tag in ("failure", "error", "skipped")
+            )
+            if not problem:
+                names.add(case.get("name", "").split("[", 1)[0])
+    return names
+
+
 def require_passing_junit(path: Path, required: list[str]) -> None:
     if not path.is_file():
         raise ValueError(f"missing JUnit report {path}")
