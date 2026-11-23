@@ -9234,7 +9234,9 @@
               "missing_evidence": []
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/test_bngir_adversarial_native.py (compartment and bonded-complex controls)"
+          ],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
           "unmapped_scope": []
@@ -9430,7 +9432,9 @@
               "missing_evidence": []
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/eq_catalogue.py (per-row EQ-* outcomes with named oracles)"
+          ],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
           "unmapped_scope": []
@@ -9460,7 +9464,9 @@
               "missing_evidence": []
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/eq_catalogue.py (per-row oracle identities)"
+          ],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
           "unmapped_scope": []
@@ -16427,7 +16433,9 @@
               "missing_evidence": []
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/pybionetgen_row_map.py (per-row pinned-oracle surface comparison)"
+          ],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
           "unmapped_scope": []
@@ -16458,7 +16466,9 @@
               "missing_evidence": []
             }
           ],
-          "test_references": [],
+          "test_references": [
+            "tests/validation/release/cases/issue-171/test_python_install_matrix.py (wheel and sdist fresh-environment matrix)"
+          ],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
           "unmapped_scope": []
