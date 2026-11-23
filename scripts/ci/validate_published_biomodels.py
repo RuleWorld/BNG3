@@ -1442,10 +1442,42 @@ def _source_action_bngl(
     return rewritten
 
 
+def _strict_source_event_time(source_sbml: str | None) -> float | None:
+    """Identify an undelayed single event whose trigger is false at its edge."""
+
+    if source_sbml is None:
+        return None
+    import libsbml
+
+    document = libsbml.readSBMLFromString(source_sbml)
+    model = document.getModel()
+    if model is None or model.getNumEvents() != 1:
+        return None
+    event = model.getEvent(0)
+    if event.isSetDelay() or not event.isSetTrigger():
+        return None
+    trigger = event.getTrigger().getMath()
+    if trigger is None or trigger.getNumChildren() != 2:
+        return None
+    left, right = trigger.getLeftChild(), trigger.getRightChild()
+    if trigger.getType() == libsbml.AST_RELATIONAL_LT:
+        left, right = right, left
+    elif trigger.getType() != libsbml.AST_RELATIONAL_GT:
+        return None
+    if left.getType() == libsbml.AST_NAME_TIME and right.isNumber():
+        boundary = right.getValue()
+        if math.isfinite(boundary) and boundary > 0.0:
+            return boundary
+    return None
+
+
 def _deduplicate_action_trajectory(
-    times: np.ndarray, values: np.ndarray, names: list[str]
+    times: np.ndarray,
+    values: np.ndarray,
+    observable_columns: dict[str, int],
+    strict_event_time: float | None,
 ) -> tuple[np.ndarray, np.ndarray, list[dict[str, Any]]]:
-    """Score the post-event row and retain pre-event values as diagnostics."""
+    """Select the source-defined sample and retain the other side of each edge."""
 
     times = np.asarray(times, dtype=float)
     values = np.asarray(values, dtype=float)
@@ -1454,32 +1486,40 @@ def _deduplicate_action_trajectory(
     if (np.diff(times) < 0.0).any():
         raise RuntimeError("BNG3 action trajectory output times are not ordered")
     keep: list[int] = []
-    pre_event_rows: list[dict[str, Any]] = []
+    unscored_rows: list[dict[str, Any]] = []
     index = 0
     while index < times.size:
         end = index + 1
         while end < times.size and times[end] == times[index]:
             end += 1
         count = end - index
+        kept = end - 1
         if count > 1:
             if count != 2:
                 raise OracleIntegrationError(
                     "BNG3 action trajectory has more than two rows at one event time"
                 )
-            pre_event_rows.append(
+            strict_boundary = times[index] == strict_event_time
+            kept, unscored = (index, end - 1) if strict_boundary else (end - 1, index)
+            unscored_rows.append(
                 {
                     "time": float(times[index]),
                     "outputs": {
-                        name: float(values[index, column + 1])
-                        for column, name in enumerate(names)
+                        name: float(values[unscored, column])
+                        for name, column in observable_columns.items()
                     },
                     "scored": False,
-                    "reason": "the left-limit source state is not sampled at the event time",
+                    "side": "post" if strict_boundary else "pre",
+                    "reason": (
+                        "the strict source trigger is false at the exact threshold"
+                        if strict_boundary
+                        else "the left-limit source state is not sampled at the event time"
+                    ),
                 }
             )
-        keep.append(end - 1)
+        keep.append(kept)
         index = end
-    return times[keep], values[keep], pre_event_rows
+    return times[keep], values[keep], unscored_rows
 
 
 def _simulate_and_compare(
@@ -1577,7 +1617,7 @@ def _simulate_and_compare(
             f"{compared_model}: {type(exc).__name__}: {exc}"
         ) from exc
 
-    unscored_pre_event_rows: list[dict[str, Any]] = []
+    unscored_event_rows: list[dict[str, Any]] = []
     if action_bngl is not None:
         if action_model_parser is None:
             raise RuntimeError("source action comparison requires a BNGL parser")
@@ -1620,11 +1660,12 @@ def _simulate_and_compare(
                     "BNG3 action gdat is missing mapped source outputs: "
                     + ", ".join(missing[:10])
                 )
-            bng_time, action_values, unscored_pre_event_rows = (
+            bng_time, action_values, unscored_event_rows = (
                 _deduplicate_action_trajectory(
                     action_values[:, column_indices["time"]],
                     action_values,
-                    observable_names,
+                    {name: column_indices[name] for name in observable_names},
+                    _strict_source_event_time(reference_model),
                 )
             )
             requested_times = np.linspace(0.0, t_end, n_steps + 1)
@@ -1638,9 +1679,9 @@ def _simulate_and_compare(
             horizon_mask = bng_time <= t_end + max(1e-9, abs(t_end) * 1e-9)
             bng_time = bng_time[horizon_mask]
             action_values = action_values[horizon_mask]
-            unscored_pre_event_rows = [
+            unscored_event_rows = [
                 row
-                for row in unscored_pre_event_rows
+                for row in unscored_event_rows
                 if row["time"] <= t_end + max(1e-9, abs(t_end) * 1e-9)
             ]
             bng_values = {
@@ -1879,7 +1920,12 @@ def _simulate_and_compare(
         "observables": comparisons,
     }
     if action_bngl is not None:
-        base["unscored_pre_event_rows"] = unscored_pre_event_rows
+        base["unscored_pre_event_rows"] = [
+            row for row in unscored_event_rows if row["side"] == "pre"
+        ]
+        post_event_rows = [row for row in unscored_event_rows if row["side"] == "post"]
+        if post_event_rows:
+            base["unscored_post_event_rows"] = post_event_rows
     if native_tolerance_context:
         base.update(native_tolerance_context)
     if source_time_units is not None:
