@@ -4616,3 +4616,99 @@ def test_scientific_notation_seed_amount_is_not_trimmed():
     result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
     assert result.success, result.error
     assert "@C:M_S() 3.534e-10" in result.bngl, result.bngl[:500]
+
+
+def test_negative_state_dependent_flux_is_not_folded_to_constant_source():
+    """A negative flux -n*S must keep its S dependence, not become a source n.
+
+    Folding -n*S by dividing out the reactant gives a negative constant.  The
+    old writer reversed the reaction sides and emitted the magnitude as a
+    state-independent source, so S grew linearly instead of staying at zero.
+    """
+    from bionetgen.atomizer.modern import Atomizer
+
+    model = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="neg_flux">
+        <listOfCompartments>
+          <compartment id="C" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfParameters>
+          <parameter id="n" value="0.277" constant="true"/>
+        </listOfParameters>
+        <listOfSpecies>
+          <species id="S" compartment="C" initialAmount="0"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfReactions>
+          <reaction id="decay" reversible="false">
+            <listOfReactants><speciesReference species="S" stoichiometry="1"/></listOfReactants>
+            <kineticLaw>
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><times/><apply><minus/><ci> n </ci></apply><ci> S </ci></apply>
+              </math>
+            </kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>"""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
+    assert result.success, result.error
+    assert "0 -> @C:M_S() 0.277" not in result.bngl, result.bngl[:800]
+    assert "_c_S()" in result.bngl, result.bngl[:800]
+
+
+def test_species_names_colliding_after_m_prefix_are_distinct_pools():
+    """Species "C" and "M_C" must not collapse into one M_C() pool.
+
+    The writer prefixes "M_" to names lacking it, so both source species map
+    to the BNGL molecule M_C(). Detect that collision using written names and
+    give each species its own molecule type with a state discriminator.
+    """
+    from bionetgen.atomizer.modern import Atomizer
+
+    model = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="m_prefix_collision">
+        <listOfCompartments>
+          <compartment id="C" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="M_C" compartment="C" initialAmount="1"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+          <species id="C" compartment="C" initialAmount="2"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+      </model>
+    </sbml>"""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
+    assert result.success, result.error
+    assert "M_C__M_C(__sp~M_C)" in result.bngl, result.bngl[:800]
+    assert "M_C__C(__sp~C)" in result.bngl, result.bngl[:800]
+
+
+def test_volume_inside_membrane_compartment_parent_is_preserved():
+    """A volume enclosed by a 2D membrane must declare that parent in BNGL.
+
+    Dropping the volume->surface parent breaks cross-compartment interaction
+    topology, so the C++ network generator rejects otherwise valid binding
+    rules between the membrane and the enclosed volume.
+    """
+    from bionetgen.atomizer.modern import Atomizer
+
+    model = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="nested_compartments">
+        <listOfCompartments>
+          <compartment id="cyto" size="1" constant="true" spatialDimensions="3" outside="membrane"/>
+          <compartment id="extra" size="1" constant="true" spatialDimensions="3"/>
+          <compartment id="membrane" size="1" constant="true" spatialDimensions="2" outside="extra"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="cyto" initialAmount="1"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+          <species id="B" compartment="membrane" initialAmount="1"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+      </model>
+    </sbml>"""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
+    assert result.success, result.error
+    assert "cyto 3 1 membrane" in result.bngl, result.bngl[:600]

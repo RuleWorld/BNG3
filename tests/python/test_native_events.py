@@ -701,3 +701,81 @@ end model
     )
     assert len(result.observables["Aobs"]) == 6
     assert result.observables["Aobs"][-1] < 10
+
+
+def test_single_reactant_catalyst_is_not_transported_by_new_product(tmp_path):
+    """A catalyst that is also the sole reactant stays in its compartment.
+
+    With one reactant and two products, index-based reactant→product pairing
+    would move the catalyst into the new product's compartment, turning a
+    nuclear catalyst that synthesizes a cytoplasmic product into a spurious
+    transport reaction.
+    """
+    import bionetgen._bionetgen_cpp as cpp
+
+    bngl = tmp_path / "catalyst_transport.bngl"
+    bngl.write_text("""begin model
+begin compartments
+  nucleus 3 1
+  cytoplasm 3 1 nucleus
+end compartments
+begin molecule types
+  D()
+  M()
+end molecule types
+begin seed species
+  @nucleus:D() 2
+  @cytoplasm:M() 0
+end seed species
+begin observables
+  Species Dnuc @nucleus:D()
+  Species Mcyt @cytoplasm:M()
+end observables
+begin reaction rules
+  tx: @nucleus:D() -> @cytoplasm:M() + @nucleus:D() 1
+end reaction rules
+end model
+""")
+    model = cpp.parse_file(str(bngl))
+    network = cpp.generate_network(model)
+    names = list(network.species_names)
+    assert not any("cytoplasm" in n and "D()" in n for n in names), names
+    assert any("nucleus" in n and "D()" in n for n in names), names
+
+
+def test_declared_function_named_e_shadows_euler_builtin(tmp_path):
+    """A user function E() must not be replaced by Euler's constant e.
+
+    Function names are lowercased on parse; the compiled rate-law resolver
+    must consult declared functions before builtins so E() keeps its dynamic
+    value instead of evaluating to 2.718... .
+    """
+    import bionetgen
+
+    bngl = tmp_path / "named_e.bngl"
+    bngl.write_text("""begin model
+begin parameters
+  k 1
+  Et 10
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 2
+end seed species
+begin observables
+  Species Aobs A()
+end observables
+begin functions
+  E() = Et - Aobs
+end functions
+begin reaction rules
+  r: 0 -> A() E() TotalRate
+end reaction rules
+end model
+""")
+    result = bionetgen.load(str(bngl)).simulate(method="ode", t_end=1, n_steps=2)
+    assert result.observables["Aobs"][0] == 2.0
+    # dA/dt = E() = 10 - A; A(1) = 10 - 8*exp(-1) ~= 7.057, not 2 + e ~= 4.718.
+    assert result.observables["Aobs"][-1] == pytest.approx(7.057, rel=1e-3)

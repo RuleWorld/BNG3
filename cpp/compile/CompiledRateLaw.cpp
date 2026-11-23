@@ -232,18 +232,24 @@ ResolvedExpression resolveExpression(const ast::Expression& expression,
             resolved.localName = expression.name();
             return resolved;
         }
-        const auto builtin = builtinFunction(expression.name());
-        resolved.kind = builtin != BuiltinFunction::Unknown
-                            ? ResolvedExpressionKind::BuiltinCall
-                            : ResolvedExpressionKind::FunctionRef;
+        // A declared model function must win over a builtin of the same
+        // (lowercased) spelling.  The parser lowercases function names, so a
+        // model function named ``E()`` otherwise resolves to the builtin
+        // ``e`` (Euler's constant) before the symbol table is consulted, and
+        // its dynamic value is silently replaced by a constant.  The
+        // ObservableRef path below already gives declared functions priority;
+        // keep the call path consistent.
         resolved.operation = expression.name();
         resolved.call = true;
-        if (builtin != BuiltinFunction::Unknown) {
-            resolved.builtin = builtin;
+        if (const auto function = symbols.resolveFunction(expression.name())) {
+            resolved.kind = ResolvedExpressionKind::FunctionRef;
+            addReference(references, SymbolRef{SymbolKind::Function, function->value()});
+            resolved.symbol = SymbolRef{SymbolKind::Function, function->value()};
         } else {
-            if (const auto function = symbols.resolveFunction(expression.name())) {
-                addReference(references, SymbolRef{SymbolKind::Function, function->value()});
-                resolved.symbol = SymbolRef{SymbolKind::Function, function->value()};
+            const auto builtin = builtinFunction(expression.name());
+            if (builtin != BuiltinFunction::Unknown) {
+                resolved.kind = ResolvedExpressionKind::BuiltinCall;
+                resolved.builtin = builtin;
             } else {
                 unresolved(diagnostics, expression.name());
                 resolved.kind = ResolvedExpressionKind::Unresolved;

@@ -2759,6 +2759,28 @@ bool ReactionRule::buildReaction(
             const auto& compP = (pi < productPatterns_.size()) ? productPatterns_[pi].getCompartment() : std::string();
             if (compR.empty() || compP.empty() || compR == compP) continue;
 
+            // The index-based pairing below is only valid when reactant pi is
+            // actually transported into product pi.  A catalyst that is also a
+            // product in its original compartment must stay there.  For
+            // example, `@nucleus:D() -> @cytoplasm:M() + @nucleus:D()`
+            // synthesizes a cytoplasmic M while D remains nuclear; pairing
+            // reactant 0 with product 0 would wrongly move D to cytoplasm.
+            // Detect that case structurally before building the compartment
+            // map so the catalyst is left untouched.
+            bool catalystStays = false;
+            for (const auto& productPattern : productPatterns_) {
+                if (productPattern.getCompartment() != compR) continue;
+                BNGcore::UllmannSGIso matcher(
+                    reactantPatterns_[pi].getGraph(), productPattern.getGraph());
+                BNGcore::List<BNGcore::Map> maps;
+                matcher.find_maps(maps);
+                if (maps.begin() != maps.end()) {
+                    catalystStays = true;
+                    break;
+                }
+            }
+            if (catalystStays) continue;
+
             auto dimRIt = lastDimRIt;
             if (lastCompR != compR) {
                 dimRIt = g_compartmentDimensions.find(compR);
