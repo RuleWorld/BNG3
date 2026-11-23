@@ -336,7 +336,81 @@ def test_release_bngir_roundtrip():
             assert a == pytest.approx(expected, abs=1e-5)
             assert b == pytest.approx(10.0 - expected, abs=1e-5)
 
-    # 4b. Downstream execution and exact analytic ODE trajectory qualification
+    # 4b. Independent closed-form/mass-action laws for the remaining construct
+    # families.  Each law is authored from the BNGL reaction list, not from
+    # the BNG3 model or its generated network, and integrated with an
+    # independent scipy solver.
+    import numpy as np
+    from scipy.integrate import solve_ivp
+
+    def _from_construct(name):
+        source = _parse_model(CONSTRUCT_MODELS[name])
+        doc = json.loads(to_bngir(source, version="0.2"))
+        try:
+            model = from_bngir(doc, native=True)
+        except ValueError:
+            model = from_bngir(doc)
+        return model, list(model.generate_network().species_names)
+
+    _kf, _kr, _kp = 1.0, 0.5, 0.2
+
+    def _states_bonds_law(_t, y):
+        ab_u, _ap, b, au, _ab_p = y
+        dissociation = _kr * ab_u
+        binding = _kf * au * b
+        complex_phos = _kp * ab_u
+        free_phos = _kp * au
+        return [
+            -dissociation - complex_phos + binding,
+            free_phos,
+            dissociation - binding,
+            dissociation - binding - free_phos,
+            complex_phos,
+        ]
+
+    analytic_cases = (
+        (
+            "compartments_and_protocol",
+            ["@CP::A()", "@EC::A()"],
+            lambda _t, y: [-y[0], y[0]],
+            [10.0, 0.0],
+        ),
+        (
+            "energy_and_driven_reservoirs",
+            ["A(x~u)", "B()", "A(x~p)"],
+            lambda _t, y: [-y[0] + y[2], y[2], y[0] - 2.0 * y[2]],
+            [5.0, 2.0, 0.0],
+        ),
+        (
+            "modifiers_and_synthesis",
+            ["A()", "B()"],
+            lambda _t, y: [1.0 - 0.2 * y[0] - 0.5 * y[0] ** 2, 0.0],
+            [10.0, 1.0],
+        ),
+        (
+            "units_and_metadata",
+            ["@cyto::A(x~u)", "@cyto::A(x~p)"],
+            lambda _t, y: [-0.02 * y[0], 0.02 * y[0]],
+            [10.0, 0.0],
+        ),
+        ("states_and_bonds", None, _states_bonds_law, [5.0, 2.0, 3.0, 0.0, 0.0]),
+    )
+    for name, expected_species, law, initial in analytic_cases:
+        model, species = _from_construct(name)
+        if expected_species is not None:
+            assert species == expected_species
+        result = model.simulate(method="ode", t_end=1.0, n_steps=3)
+        reference = solve_ivp(
+            law,
+            (0.0, 1.0),
+            initial,
+            t_eval=result.time,
+            rtol=1e-11,
+            atol=1e-12,
+        )
+        assert np.max(np.abs(np.asarray(result.concentrations) - reference.y.T)) < 1e-5
+
+    # 4c. Downstream execution and exact analytic ODE trajectory qualification
     delayed_model = _parse_model(CONSTRUCT_MODELS["delayed_rules_consuming"])
     doc_delayed = json.loads(to_bngir(delayed_model, version="0.2"))
     native_delayed = from_bngir(doc_delayed, native=True)
