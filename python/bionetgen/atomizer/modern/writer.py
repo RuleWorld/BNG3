@@ -5020,7 +5020,13 @@ def write_compartments(model: SBMLModel) -> List[str]:
         )
         if compartment.outside and compartment.outside in model.compartments:
             parent = model.compartments[compartment.outside]
-            if int(parent.spatial_dimensions or 3) == dimension + 1:
+            parent_dimension = int(parent.spatial_dimensions or 3)
+            # BNGL declares the enclosing compartment for both nesting
+            # directions: a 2D membrane encloses a 3D volume and is itself
+            # enclosed by another 3D volume.  Requiring parent = child + 1
+            # drops volume-inside-membrane parents (e.g. cyto -> cyto_mem),
+            # breaking the topology so cross-compartment rules are rejected.
+            if abs(parent_dimension - dimension) == 1:
                 line += " " + standardize_name(compartment.outside)
         lines.append(line)
     return lines

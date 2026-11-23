@@ -4683,3 +4683,32 @@ def test_species_names_colliding_after_m_prefix_are_distinct_pools():
     assert result.success, result.error
     assert "M_C__M_C(__sp~M_C)" in result.bngl, result.bngl[:800]
     assert "M_C__C(__sp~C)" in result.bngl, result.bngl[:800]
+
+
+def test_volume_inside_membrane_compartment_parent_is_preserved():
+    """A volume enclosed by a 2D membrane must declare that parent in BNGL.
+
+    Dropping the volume->surface parent breaks cross-compartment interaction
+    topology, so the C++ network generator rejects otherwise valid binding
+    rules between the membrane and the enclosed volume.
+    """
+    from bionetgen.atomizer.modern import Atomizer
+
+    model = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="nested_compartments">
+        <listOfCompartments>
+          <compartment id="cyto" size="1" constant="true" spatialDimensions="3" outside="membrane"/>
+          <compartment id="extra" size="1" constant="true" spatialDimensions="3"/>
+          <compartment id="membrane" size="1" constant="true" spatialDimensions="2" outside="extra"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="A" compartment="cyto" initialAmount="1"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+          <species id="B" compartment="membrane" initialAmount="1"
+                   hasOnlySubstanceUnits="true" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+      </model>
+    </sbml>"""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(model)
+    assert result.success, result.error
+    assert "cyto 3 1 membrane" in result.bngl, result.bngl[:600]
