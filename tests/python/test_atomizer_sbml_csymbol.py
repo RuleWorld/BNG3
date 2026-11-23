@@ -309,3 +309,39 @@ def test_declared_parameter_named_pi_is_not_the_math_constant():
     assert len(rules) == 1
     assert "pi_id" in rules[0], rules[0]
     assert "3.14159" not in rules[0], rules[0]
+
+
+_INITIAL_ASSIGNMENT_FROM_RULED_SPECIES = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+  <model id="initial_from_ruled_species">
+    <listOfCompartments>
+      <compartment id="C" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="S" compartment="C" initialConcentration="5"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="p" value="0" constant="true"/>
+      <parameter id="S_half" value="2.5" constant="true"/>
+    </listOfParameters>
+    <listOfRules>
+      <assignmentRule variable="S">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><times/><cn> 2 </cn><ci> S_half </ci></apply>
+        </math>
+      </assignmentRule>
+    </listOfRules>
+    <listOfInitialAssignments>
+      <initialAssignment symbol="p">
+        <math xmlns="http://www.w3.org/1998/Math/MathML"><ci> S </ci></math>
+      </initialAssignment>
+    </listOfInitialAssignments>
+  </model>
+</sbml>"""
+
+
+def test_parameter_initial_assignment_from_ruled_species_is_folded():
+    """A species that is also a rule target has a known t=0 value."""
+    model = SBMLParser().parse(_INITIAL_ASSIGNMENT_FROM_RULED_SPECIES)
+    assert model.parameters["p"].value == 5.0
+    assert not [a for a in model.initial_assignments if a.symbol == "p"]
