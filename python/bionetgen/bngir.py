@@ -3902,6 +3902,56 @@ def _extract_jump_hazards(
     )
 
 
+def _volume_rhs_counterexample(left_model: Any, right_model: Any) -> dict | None:
+    """Decide inequality when only compartment volumes change the initial RHS."""
+    from fractions import Fraction
+
+    try:
+        from .model import _cpp
+
+        left_jumps, left_init, left_species, left_ok, left_pruned = (
+            _extract_jump_hazards(left_model)
+        )
+        right_jumps, right_init, right_species, right_ok, right_pruned = (
+            _extract_jump_hazards(right_model)
+        )
+    except Exception:
+        return None
+    if (
+        not (left_ok and right_ok)
+        or left_pruned
+        or right_pruned
+        or left_jumps != right_jumps
+        or set(left_species) != set(right_species)
+        or set(left_species) != set(left_init)
+        or set(right_species) != set(right_init)
+    ):
+        return None
+    ordered = sorted(left_species)
+    state = [float(left_init[name]) for name in ordered]
+    try:
+        left_net = left_model.generate_network(max_iter=_EQUALITY_NETWORK_MAX_ITER)
+        right_net = right_model.generate_network(max_iter=_EQUALITY_NETWORK_MAX_ITER)
+        left_rhs = _cpp._validation_ode_rhs(left_model._model, left_net, 0.0, state)
+        right_rhs = _cpp._validation_ode_rhs(right_model._model, right_net, 0.0, state)
+    except Exception:
+        return None
+    if [name for name in left_net.species_names] != ordered or [
+        name for name in right_net.species_names
+    ] != ordered:
+        return None
+    for name, a, b in zip(ordered, left_rhs, right_rhs):
+        left_value = Fraction(str(float(a)))
+        right_value = Fraction(str(float(b)))
+        if left_value != right_value:
+            return {
+                "species": name,
+                "left_rhs": str(left_value),
+                "right_rhs": str(right_value),
+            }
+    return None
+
+
 def _initial_state_counterexample(left_model: Any, right_model: Any) -> dict | None:
     """Find an enabled jump that differs between two identically labelled models.
 
@@ -4151,6 +4201,18 @@ def exact_process_equal(
     left_unlowered = unlowered_contract(left_structural)
     right_unlowered = unlowered_contract(right_structural)
     if left_unlowered != right_unlowered:
+        # Only compartment volume may differ for this witness.  With identical
+        # jump tables, a differing initial ODE RHS is a decisive observation of
+        # volume scaling (e.g. a bimolecular propensity in that compartment).
+        non_volume_keys = set(left_unlowered) - {"compartments"}
+        if (
+            all(
+                left_unlowered[key] == right_unlowered[key]
+                for key in non_volume_keys
+            )
+            and _volume_rhs_counterexample(left_model, right_model) is not None
+        ):
+            return False
         raise EqualityUndecided(
             "Execution features outside the finite jump table differ and need a dedicated certificate",
             {"left_contract": left_unlowered, "right_contract": right_unlowered},
