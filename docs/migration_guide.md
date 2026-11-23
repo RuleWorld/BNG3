@@ -23,6 +23,10 @@ Check the resolved version with `bionetgen --version`.
 | JAX CPU | The `jax` extra installs the dependencies for the separate [JAX ODE](../python/bionetgen/jax_ode.py) and [JAX SSA](../python/bionetgen/jax_ssa.py). See [#473](https://github.com/RuleWorld/BNG3/issues/473) for the qualified surface. |
 | Metal and CUDA | Actual device qualification is tracked separately in [#474](https://github.com/RuleWorld/BNG3/issues/474). |
 
+The method names in this table apply to Python's `model.simulate()`. In
+native BNGL action files, `simulate({method=>"nf"})` and `simulate_nf()`
+currently execute NFcore.
+
 Install the `plotting` extra for plotting and dataframe access, `notebook`
 for a notebook kernel, and `full` for the SBML and SymPy integrations.
 
