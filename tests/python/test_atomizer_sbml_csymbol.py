@@ -210,3 +210,169 @@ def test_chained_initial_assignments_resolve_in_dependency_order():
     assert model.parameters["b"].value == 1.0
     assert model.parameters["c"].value == 1.0
     assert model.parameters["d"].value == 1.0
+
+
+def _scaled_compartment_model(body: str, *, scaled: bool) -> str:
+    units = ""
+    compartment_units = ""
+    if scaled:
+        units = """<listOfUnitDefinitions>
+          <unitDefinition id="volume"><listOfUnits>
+            <unit kind="dimensionless" scale="-3" exponent="1"/>
+          </listOfUnits></unitDefinition>
+        </listOfUnitDefinitions>"""
+        compartment_units = ' units="volume"'
+    return f"""<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+      <model id="m" substanceUnits="substance" volumeUnits="volume">
+        {units}
+        <listOfCompartments>
+          <compartment id="C" size="1" constant="true"{compartment_units}/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="T" compartment="C" initialConcentration="10000000"
+                   hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+          <species id="E" compartment="C" initialConcentration="20000"
+                   hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+          <species id="I" compartment="C" initialConcentration="1"
+                   hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+          <species id="S" compartment="C" initialConcentration="0"
+                   hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+        </listOfSpecies>
+        <listOfInitialAssignments>
+          <initialAssignment symbol="S">
+            <math xmlns="http://www.w3.org/1998/Math/MathML">
+              <apply><minus/><apply><minus/><ci> T </ci><ci> E </ci></apply><ci> I </ci></apply>
+            </math>
+          </initialAssignment>
+        </listOfInitialAssignments>
+        {body}
+      </model>
+    </sbml>"""
+
+
+def _seed_amount(bngl: str, species: str) -> float:
+    for line in bngl.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("@") and f"M_{species}()" in stripped:
+            return float(stripped.rsplit(" ", 1)[1])
+    raise AssertionError(f"no seed for {species}")
+
+
+@pytest.mark.parametrize("scaled", [False, True])
+def test_species_initial_assignment_seed_is_a_normalized_amount(scaled):
+    """The seed is the source amount whether or not units are scaled."""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(
+        _scaled_compartment_model("", scaled=scaled)
+    )
+    assert result.success
+    assert _seed_amount(result.bngl, "S") == pytest.approx(9979999, rel=1e-12)
+
+
+_MODEL_PI_SYMBOL = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+  <model id="pi_symbol">
+    <listOfCompartments>
+      <compartment id="c" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="E" compartment="c" initialConcentration="10"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+      <species id="V" compartment="c" initialConcentration="0"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="pi" value="300" constant="true"/>
+    </listOfParameters>
+    <listOfReactions>
+      <reaction id="creation" reversible="false" fast="false">
+        <listOfProducts><speciesReference species="V" stoichiometry="1"/></listOfProducts>
+        <kineticLaw>
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><times/><ci> pi </ci><ci> E </ci></apply>
+          </math>
+        </kineticLaw>
+      </reaction>
+    </listOfReactions>
+  </model>
+</sbml>"""
+
+
+def test_declared_parameter_named_pi_is_not_the_math_constant():
+    """A model symbol ``pi`` must keep its declared value in emitted rates."""
+    result = Atomizer(atomize=False, quiet_mode=True).atomize(_MODEL_PI_SYMBOL)
+    assert result.success, result.error
+    assert "pi_id 300" in result.bngl, result.bngl[:500]
+    rules = [
+        line
+        for line in result.bngl.splitlines()
+        if line.strip().startswith("creation:")
+    ]
+    assert len(rules) == 1
+    assert "pi_id" in rules[0], rules[0]
+    assert "3.14159" not in rules[0], rules[0]
+
+
+_INITIAL_ASSIGNMENT_FROM_RULED_SPECIES = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+  <model id="initial_from_ruled_species">
+    <listOfCompartments>
+      <compartment id="C" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="S" compartment="C" initialConcentration="5"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="p" value="0" constant="true"/>
+      <parameter id="S_half" value="2.5" constant="true"/>
+    </listOfParameters>
+    <listOfRules>
+      <assignmentRule variable="S">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><times/><cn> 2 </cn><ci> S_half </ci></apply>
+        </math>
+      </assignmentRule>
+    </listOfRules>
+    <listOfInitialAssignments>
+      <initialAssignment symbol="p">
+        <math xmlns="http://www.w3.org/1998/Math/MathML"><ci> S </ci></math>
+      </initialAssignment>
+    </listOfInitialAssignments>
+  </model>
+</sbml>"""
+
+
+def test_parameter_initial_assignment_from_ruled_species_is_folded():
+    """A species that is also a rule target has a known t=0 value."""
+    model = SBMLParser().parse(_INITIAL_ASSIGNMENT_FROM_RULED_SPECIES)
+    assert model.parameters["p"].value == 5.0
+    assert not [a for a in model.initial_assignments if a.symbol == "p"]
+
+
+_CONSTANT_PARAM_FROM_SPECIES_INITIAL_AMOUNT = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core">
+  <model id="constant_from_species">
+    <listOfCompartments>
+      <compartment id="C" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="S" compartment="C" initialAmount="2"
+               hasOnlySubstanceUnits="false" boundaryCondition="false" constant="false"/>
+    </listOfSpecies>
+    <listOfParameters>
+      <parameter id="k" value="3" constant="true"/>
+      <parameter id="p" value="0" constant="true"/>
+    </listOfParameters>
+    <listOfInitialAssignments>
+      <initialAssignment symbol="p">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <apply><times/><ci> S </ci><ci> k </ci></apply>
+        </math>
+      </initialAssignment>
+    </listOfInitialAssignments>
+  </model>
+</sbml>"""
+
+
+def test_constant_parameter_initial_assignment_from_species_amount_is_folded():
+    """A constant parameter keeps the t=0 value established from a species."""
+    model = SBMLParser().parse(_CONSTANT_PARAM_FROM_SPECIES_INITIAL_AMOUNT)
+    assert model.parameters["p"].value == 6.0
+    assert not [a for a in model.initial_assignments if a.symbol == "p"]

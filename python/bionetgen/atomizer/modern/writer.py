@@ -633,10 +633,45 @@ def _relation_expression(args: Sequence[str], operator: str) -> str:
     return "(" + " && ".join(pairs) + ")"
 
 
-def convert_math_expression(expression: str) -> str:
+_MATH_BUILTIN_SYMBOL_NAMES = frozenset({"pi", "exponentiale", "true", "false", "time"})
+
+
+def _protected_math_names(model: object) -> frozenset[str]:
+    """Declared SBML symbols that collide with MathML built-in spellings.
+
+    ``<ci> pi </ci>`` names a model symbol, while ``<pi/>`` names the constant.
+    The parser keeps that distinction, but a bare ``pi`` reaching the writer
+    would otherwise be rewritten to the built-in value and silently replace a
+    model parameter of the same name.
+    """
+
+    names = set()
+    for collection in (
+        getattr(model, "parameters", {}),
+        getattr(model, "species", {}),
+        getattr(model, "compartments", {}),
+        getattr(model, "function_definitions", {}),
+    ):
+        names.update(str(name) for name in getattr(collection, "keys", lambda: ())())
+    for rule in getattr(model, "rules", ()) or ():
+        if getattr(rule, "variable", None):
+            names.add(str(rule.variable))
+    return frozenset(name for name in names if name in _MATH_BUILTIN_SYMBOL_NAMES)
+
+
+def convert_math_expression(
+    expression: str, protected: Optional[Set[str]] = None
+) -> str:
     """Convert common MathML/libSBML function spellings to BNGL syntax."""
 
     result = str(expression or "").strip()
+    placeholders: Dict[str, str] = {}
+    for index, name in enumerate(sorted(protected or ())):
+        token = f"__SBML_DECLARED_SYMBOL_{index}__"
+        placeholders[token] = name
+        result = re.sub(
+            rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])", token, result
+        )
     # The MathML built-ins are lowered from one shared table so that the
     # writer's lowering and the parser's static evaluator cannot drift: the
     # evaluator computes the value of exactly the expression emitted here.
@@ -780,6 +815,8 @@ def convert_math_expression(expression: str) -> str:
     # ``0()`` is a syntax error and is never a meaningful call.
     result = _RE_MATH_ZERO_CALL_NO_ARGS.sub("0", result)
     result = result.replace("--", "+")
+    for token, name in placeholders.items():
+        result = result.replace(token, standardize_name(name))
     return result
 
 
@@ -2426,6 +2463,8 @@ def _rate_for_reaction(
     complete_flux: bool = False,
     synthetic_rate_rule_variables: Optional[Set[str]] = None,
 ) -> str:
+    protected = _protected_math_names(model)
+
     def apply_conversion(rate: str) -> str:
         if conversion_factor is None:
             return rate
@@ -2538,7 +2577,7 @@ def _rate_for_reaction(
         # writer emits that factor as a kinetic constant instead of removing
         # the factor already represented by the BNGL pattern.
         math = _extract_statistical_factor(
-            convert_math_expression(math), reactant_structures
+            convert_math_expression(math, protected=protected), reactant_structures
         )
     # Multi sums are source amount/concentration projections. Keep explicit
     # volume factors rather than treating them as elementary reactant factors.
@@ -2623,7 +2662,7 @@ def _rate_for_reaction(
     # amount-dependent rate, otherwise the engine multiplies by the reactant
     # count a second time.
     converted_for_check = bngl_function(
-        convert_math_expression(math),
+        convert_math_expression(math, protected=protected),
         reaction.name or reaction.id,
         reactants,
         list(model.compartments),
@@ -2637,6 +2676,10 @@ def _rate_for_reaction(
         _ENABLE_MASS_ACTION_CHECK
         and not functional
         and not has_saturation
+        # A rational law is not a mass-action law: the probe's fixed sample
+        # values can make a saturating denominator look like a constant when
+        # the model's own concentrations are near the half-saturation value.
+        and "/" not in converted_for_check
         and not has_nonreactant_species
         and not (preserved_compartment_flux and nonlinear)
         and not requires_explicit_compartment_flux
@@ -2710,7 +2753,7 @@ def _rate_for_reaction(
     # its biology.
     if nonlinear:
         converted_function = bngl_function(
-            convert_math_expression(math),
+            convert_math_expression(math, protected=protected),
             reaction.name or reaction.id,
             reactants,
             list(model.compartments),
@@ -2726,7 +2769,7 @@ def _rate_for_reaction(
             )
         return apply_conversion(converted_function)
 
-    converted = convert_math_expression(math)
+    converted = convert_math_expression(math, protected=protected)
     converted_rate = bngl_function(
         converted,
         reaction.name or reaction.id,
@@ -2814,8 +2857,27 @@ def _rate_for_reaction(
         # keep the source compartment factor in the complete flux instead of
         # emitting a concentration rate with its amount/time scale missing.
         stripped = _strip_mass_action_factors(
-            convert_math_expression(original_math), reactants
+            convert_math_expression(original_math, protected=protected), reactants
         )
+    if (
+        not complete_flux
+        and not law_references_other_compartment
+        and not any(
+            references_species(stripped, species_id) for species_id in reactants
+        )
+    ):
+        # A constant that the numeric mass-action probe could not evaluate (for
+        # example an assignment-rule function) still needs the volume exponent
+        # that converts the SBML extent rate into BNGL's concentration rate.
+        exponent = _rate_law_volume_exponent(
+            reaction,
+            model,
+            reactants,
+            compartment_factor_shape=compartment_factor_shape,
+        )
+        rate_volume = _reaction_volume_expression(reaction, model)
+        if exponent and rate_volume != "1":
+            stripped = f"({stripped}) * ({rate_volume})**{exponent}"
     return apply_conversion(
         bngl_function(
             stripped,
@@ -2879,6 +2941,30 @@ def _expression_mentions_species(expression: str, species_id: str) -> bool:
     )
 
 
+def _count_species_mentions(expression: str, species_id: str) -> int:
+    """Count operand occurrences of one species in an emitted rate expression."""
+
+    standardized = standardize_name(species_id)
+    count = 0
+    for run in set(_id_runs(expression)):
+        if standardize_name(run) == standardized:
+            count += len(
+                re.findall(
+                    rf"(?<![A-Za-z0-9_]){re.escape(run)}(?![A-Za-z0-9_])",
+                    expression,
+                )
+            )
+    count += len(
+        re.findall(
+            rf"(?:_c_{re.escape(standardized)}\s*\(|"
+            rf"\b{re.escape(standardized)}_amt\b)",
+            expression,
+            re.IGNORECASE,
+        )
+    )
+    return count
+
+
 def _rate_requires_total_rate(
     rate: str,
     reactant_ids: Optional[Sequence[str]] = None,
@@ -2930,6 +3016,18 @@ def _rate_requires_total_rate(
             # supply it from the reaction pattern.
             if not source_has_reactant:
                 return True
+            # The lowering may remove one reactant factor from a compound law
+            # whose source carried that species more than once (for example an
+            # autocatalytic ``k * A * A`` with a single ``A -> ...`` reactant).
+            # The surviving operand must then be supplied again by BNGL's
+            # mass-action expansion; treating the partial law as an absolute
+            # flux would drop that factor and change the trajectory.
+            if any(
+                _count_species_mentions(source_part, species_id)
+                > _count_species_mentions(part, species_id)
+                for species_id in reactants
+            ):
+                continue
             if lowered_has_reactant:
                 return True
             continue
@@ -2960,6 +3058,43 @@ def process_reaction_rate(
         reaction_id=reaction_id,
     )
     structures = reactant_structures or {}
+    # A law whose reactants draw from different compartments cannot be
+    # represented by one folded BNGL mass-action constant: SBML concentrations
+    # carry each compartment's own volume, and a single directional constant
+    # loses that geometry.  Keep the complete flux as an absolute TotalRate
+    # rule instead.  This applies to irreversible and reversible laws alike.
+    reactant_compartments = {
+        str(model.species.get(getattr(reference, "species", ""), None).compartment)
+        for reference in reaction.reactants
+        if model.species.get(getattr(reference, "species", ""), None) is not None
+    }
+    if len(reactant_compartments) > 1:
+        # write_functions has already emitted the full extent-rate expression
+        # as a zero-argument function.  Reference it so the rule keeps the
+        # source law instead of a folded compartment-blind mass-action value.
+        rate_functions = getattr(model, "reaction_rate_functions", {}) or {}
+        rate_name = rate_functions.get(str(getattr(reaction, "id", "")))
+        full_rate = (
+            f"{rate_name}()"
+            if rate_name
+            else _rate_for_reaction(
+                reaction,
+                model,
+                conversion_factor,
+                observable_converted_rules,
+                structures,
+                prepared_math=prepared_math,
+                replace_loc_params=replace_loc_params,
+                synthetic_rate_rule_variables=synthetic_rate_rule_variables,
+            )
+        )
+        return ProcessedRate(
+            full_rate,
+            force_irreversible=True,
+            is_split_rxn=True,
+            is_total_rate=True,
+        )
+
     if not prepared_math or not str(prepared_math).strip():
         rate = _rate_for_reaction(
             reaction,

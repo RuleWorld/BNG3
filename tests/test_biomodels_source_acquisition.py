@@ -932,3 +932,29 @@ def test_source_action_comparison_refuses_stochastic_protocol():
             t_end=1.0,
             n_steps=10,
         )
+
+
+def test_source_action_bngl_truncates_events_beyond_the_horizon():
+    """A long event schedule beyond the comparison horizon is not integrated."""
+    from scripts.ci.validate_published_biomodels import _source_action_bngl
+
+    bngl = """begin model
+begin molecule types
+  A()
+end molecule types
+begin observables
+  Species A_obs A()
+end observables
+begin actions
+  simulate({method=>"ode", t_start=>0, t_end=>60000, n_steps=>1})
+  setParameter("k", "1")
+  simulate({continue=>1, method=>"ode", t_start=>60000, t_end=>90001, n_steps=>1})
+end actions
+end model
+"""
+    result = _source_action_bngl(
+        bngl, rtol=1e-7, atol=1e-12, max_step=0.0, t_end=1.0, n_steps=10
+    )
+    assert "t_end=>60000" not in result
+    assert "setParameter" not in result
+    assert "t_end=>1," in result or "t_end=>1}" in result

@@ -1295,6 +1295,49 @@ def _source_action_bngl(
 ) -> str:
     """Add the requested comparison grid to generated deterministic ODE actions."""
 
+    # A model whose scheduled events lie beyond the requested horizon still
+    # emits actions for the whole (potentially very long) event schedule.  The
+    # comparison only needs the first interval up to ``t_end``; integrating to
+    # the model's full horizon can exhaust the solver's step budget without
+    # adding any evidence.  When the first simulation already runs past the
+    # horizon, no event can act before it, so truncate the remaining actions.
+    action_block = re.search(
+        r"(?im)^(?P<head>\s*begin actions\s*\n)(?P<body>.*?)(?P<tail>^\s*end actions\s*$)",
+        bngl,
+        re.DOTALL,
+    )
+    if action_block is not None:
+        body = action_block.group("body")
+        first_sim = re.search(
+            r"(?im)^(?P<line>\s*simulate(?:_ode)?\s*\(\s*\{(?P<args>[^}\n]*)\}\s*\))\s*$",
+            body,
+        )
+        if first_sim is not None:
+            end_match = re.search(
+                r"(?i)(?<![A-Za-z0-9_])t_end\s*=>\s*([^,\s}]+)",
+                first_sim.group("args"),
+            )
+            if end_match is not None:
+                try:
+                    first_end = float(end_match.group(1).strip(" '\""))
+                except (TypeError, ValueError):
+                    first_end = math.inf
+                if math.isfinite(first_end) and first_end > t_end:
+                    line = first_sim.group("line")
+                    line = re.sub(
+                        r"(?i)(?<![A-Za-z0-9_])t_end\s*=>\s*[^,}\s]+",
+                        f"t_end=>{t_end:.17g}",
+                        line,
+                        count=1,
+                    )
+                    truncated = (
+                        bngl[: action_block.start("body")]
+                        + line
+                        + "\nend actions"
+                        + bngl[action_block.end("tail") :]
+                    )
+                    bngl = truncated
+
     pattern = re.compile(
         r"(?im)^(?P<prefix>\s*simulate(?:_ode|_ssa|_nf|_pla|_psa)?\s*\(\s*\{)"
         r"(?P<arguments>[^}\n]*)(?P<suffix>\}\s*\))\s*$"
