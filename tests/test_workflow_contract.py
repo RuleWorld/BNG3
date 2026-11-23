@@ -522,6 +522,11 @@ PUBLIC_RUNNER_LABELS = frozenset(
     }
 )
 
+SELF_HOSTED_RUNNER_LABELS = {
+    ("gpu-device-qualification.yml:cuda-device", label)
+    for label in ("self-hosted", "linux", "x64", "cuda")
+}
+
 
 def _runner_labels() -> list[tuple[str, str]]:
     """Every concrete runner label a workflow asks for, with its job."""
@@ -558,7 +563,9 @@ def test_no_workflow_requests_a_retired_runner_label():
         for where, label in _runner_labels()
         # `${{ matrix.os }}` is indirect: its concrete values are collected from
         # `strategy.matrix.include[].os` above and checked there.
-        if "${{" not in label and label not in PUBLIC_RUNNER_LABELS
+        if "${{" not in label
+        and label not in PUBLIC_RUNNER_LABELS
+        and (where, label) not in SELF_HOSTED_RUNNER_LABELS
     ]
     assert not offenders, (
         "retired or unknown runner labels; GitHub will never schedule these "
@@ -566,3 +573,28 @@ def test_no_workflow_requests_a_retired_runner_label():
         + "\n  ".join(offenders)
         + "\nSee docs.github.com/en/actions/reference/runners/github-hosted-runners"
     )
+
+
+def test_cuda_device_workflow_is_manual_and_retains_receipts():
+    """The hardware-only job is gated by dispatch and uses its runner contract."""
+    path = REPO / ".github" / "workflows" / "gpu-device-qualification.yml"
+    workflow = parse_workflow(path)
+    triggers = workflow.get("on", workflow.get(True))
+    job = workflow["jobs"]["cuda-device"]
+    dependency_install = next(
+        step for step in job["steps"] if "pip install" in step.get("run", "")
+    )
+
+    assert list(triggers) == ["workflow_dispatch"]
+    assert job["runs-on"] == ["self-hosted", "linux", "x64", "cuda"]
+    assert all(
+        package in dependency_install["run"].split()
+        for package in ("numpy", "scipy", "pytest")
+    )
+    upload = next(
+        step
+        for step in job["steps"]
+        if step.get("uses") == "actions/upload-artifact@v4"
+    )
+    assert upload["if"] == "always()"
+    assert upload["with"]["retention-days"] == 90

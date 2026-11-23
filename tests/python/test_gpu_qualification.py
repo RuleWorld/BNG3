@@ -99,3 +99,42 @@ def test_device_result_contract_rejects_false_qualification(gate, defect):
             4,
             np.array([0.0, 1.0]),
         )
+
+
+def test_poisson_count_oracle_accepts_the_declared_immigration_death_law(gate):
+    sample = np.random.default_rng(20261120).poisson(4.5, size=5000)
+
+    report = gate.evaluate_poisson_count_sample(sample, expected_mean=4.5)
+
+    assert report["status"] == "PASS"
+    assert report["chi_square_p"] >= gate.POISSON_CHI2_ALPHA
+    assert abs(report["mean_z"]) <= gate.POISSON_MEAN_Z_LIMIT
+    assert gate.POISSON_VARIANCE_RATIO_MIN <= report["variance_ratio"]
+    assert report["variance_ratio"] <= gate.POISSON_VARIANCE_RATIO_MAX
+
+
+def test_poisson_count_oracle_rejects_immigration_without_death(gate):
+    # With the same immigration rate but omitted death, N(t) is Poisson(lambda*t)
+    # instead of Poisson(lambda/mu * (1-exp(-mu*t))).
+    wrong_sample = np.random.default_rng(20261120).poisson(8.0, size=5000)
+
+    report = gate.evaluate_poisson_count_sample(wrong_sample, expected_mean=4.5)
+
+    assert report["status"] == "FAIL"
+    assert abs(report["mean_z"]) > gate.POISSON_MEAN_Z_LIMIT
+
+
+@pytest.mark.parametrize(
+    "sample",
+    [
+        np.array([0.0, 1.5, 2.0]),
+        np.array([0.0, -1.0, 2.0]),
+        np.array([0.0, np.nan, 2.0]),
+        np.array([1.0]),
+    ],
+)
+def test_poisson_count_oracle_rejects_malformed_samples(gate, sample):
+    report = gate.evaluate_poisson_count_sample(sample, expected_mean=1.0)
+
+    assert report["status"] == "FAIL"
+    assert report["reason"]

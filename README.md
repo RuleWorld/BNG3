@@ -53,6 +53,11 @@ and [`docs/migration_guide.md`](docs/migration_guide.md) for API changes.
 - **NFnext** — the next-generation surface defines NFIR, rule families,
   dependency scheduling, generic matching, transformations, validation,
   caching, replay, and batched trajectories as independently testable seams.
+  `BioNetGenModel.simulate_nfnext_gpu()` exposes an explicit, fail-closed
+  Metal batch for one ordinary molecule type with one stateful site and static
+  elementary state-change rules. It does not imply general NFnext GPU support;
+  `bionetgen.gpu_backend_capabilities()` reports the compiled routes and
+  physical-device availability.
 - **Atomizer and SBML Multi** — SBML import and structured Multi metadata are
   handled in the modern Python atomizer, with unsupported or ambiguous forms
   kept explicit until independent execution evidence exists.

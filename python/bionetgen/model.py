@@ -46,7 +46,7 @@ except ModuleNotFoundError as exc:
         if _package is not None:
             setattr(_package, "_bionetgen_cpp", _cpp)
 
-from bionetgen.result import SimResult
+from bionetgen.result import GpuBatchSimResult, SimResult
 
 
 @dataclass(frozen=True)
@@ -1073,6 +1073,70 @@ class BioNetGenModel:
             self._continuation_network = None
         self._network_from_continuation = carrying_session
         return self._network
+
+    def simulate_nfnext_gpu(
+        self,
+        sample_times,
+        *,
+        seed: int = 0,
+        batch_size: int = 1024,
+        backend: str = "metal",
+        max_events: int = 1_000_000,
+        max_particles: int = 1_000_000,
+    ) -> GpuBatchSimResult:
+        """Run an explicit network-free GPU batch from this model.
+
+        The current GPU implementation supports one molecule type,
+        one stateful site, fixed integer seed populations, static elementary
+        state-change rates, and one-term ``Molecules`` observables. It has no
+        CPU fallback; ``backend`` must select a compiled GPU route with a
+        usable device. Sample times must be exactly representable as float32.
+
+        Each observable array has shape ``(batch_size, len(sample_times))``.
+        ``max_events`` is a per-trajectory event limit and ``max_particles``
+        bounds the compiled seed population.
+        """
+        if _cpp is None or not hasattr(_cpp, "simulate_nfnext_gpu"):
+            raise RuntimeError(
+                "this installation does not include the NFnext GPU entry point"
+            )
+        if not isinstance(backend, str):
+            raise TypeError("backend must be a string")
+        try:
+            times = [float(value) for value in sample_times]
+        except (TypeError, ValueError) as exc:
+            raise TypeError("sample_times must be a sequence of numbers") from exc
+        if not times:
+            raise ValueError("sample_times must not be empty")
+
+        def integer_option(value, name: str, minimum: int) -> int:
+            if isinstance(value, bool):
+                raise TypeError(f"{name} must be an integer")
+            try:
+                result = operator.index(value)
+            except TypeError as exc:
+                raise TypeError(f"{name} must be an integer") from exc
+            if result < minimum:
+                qualifier = "positive" if minimum == 1 else "non-negative"
+                raise ValueError(f"{name} must be {qualifier}")
+            return result
+
+        seed = integer_option(seed, "seed", 0)
+        if seed > (1 << 64) - 1:
+            raise ValueError("seed must fit an unsigned 64-bit integer")
+        batch_size = integer_option(batch_size, "batch_size", 1)
+        max_events = integer_option(max_events, "max_events", 1)
+        max_particles = integer_option(max_particles, "max_particles", 0)
+        raw = _cpp.simulate_nfnext_gpu(
+            self._model,
+            times,
+            seed=seed,
+            batch_size=batch_size,
+            backend=backend,
+            max_events=max_events,
+            max_particles=max_particles,
+        )
+        return GpuBatchSimResult(raw)
 
     def simulate(
         self,

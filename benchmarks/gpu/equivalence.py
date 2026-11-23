@@ -41,6 +41,7 @@ the numbers it prints can be audited in one file.
 from __future__ import annotations
 
 import math
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, Sequence
 
@@ -198,10 +199,10 @@ def _var(xs: Sequence[float], mean: float | None = None) -> float:
 
 
 def mean_z_test(
-    mean_a: Sequence[float],
-    std_a: Sequence[float],
-    mean_b: Sequence[float],
-    std_b: Sequence[float],
+    mean_a: Sequence[Sequence[float]],
+    std_a: Sequence[Sequence[float]],
+    mean_b: Sequence[Sequence[float]],
+    std_b: Sequence[Sequence[float]],
     names: Sequence[str],
     n_a: int,
     n_b: int,
@@ -232,7 +233,11 @@ def mean_z_test(
             mb = float(mean_b[o][t])
             sa = float(std_a[o][t])
             sb = float(std_b[o][t])
-            se = math.sqrt((sa * sa) / n_a + (sb * sb) / n_b) if n_a and n_b else 0.0
+            se = (
+                math.hypot(sa / math.sqrt(n_a), sb / math.sqrt(n_b))
+                if n_a and n_b
+                else 0.0
+            )
             if se <= 0.0:
                 # Both sides have no spread at this cell; identical means mean
                 # agreement, differing means mean a real difference. Only the
@@ -333,6 +338,9 @@ def moment_test(
     z = (ma - mb) / se if se > 0 else (0.0 if ma == mb else float("inf"))
     mean_rel = (ma - mb) / abs(ma) if ma != 0 else (0.0 if mb == 0 else float("inf"))
     var_ratio = (vb / va) if va > 0 else float("nan")
+    shape_flag = None
+    if va > 0:
+        shape_flag = var_ratio < (1.0 / 1.5) or var_ratio > 1.5
     return {
         "testable": True,
         "n_a": na,
@@ -345,9 +353,7 @@ def moment_test(
         "variance_ratio": var_ratio,
         "mean_z": z,
         "passes": abs(z) <= 3.0,
-        "shape_flag": (
-            None if not (va > 0) else abs(math.log(var_ratio)) > math.log(1.5)
-        ),
+        "shape_flag": shape_flag,
     }
 
 
@@ -367,7 +373,7 @@ def compare_runs(
 
     `result_a` is the host run, `result_b` the other run (typically an
     accelerator run). Both are the dicts `simulate_batch_ssa_*` returns, so this
-    reads `observable_means`, `observable_stds`, `final_observables`,
+    reads `observable_means`, `observable_stds`, `final_observables`, `time`,
     `observable_names` and `batch_size` straight from the engine.
 
     Only the first `ks_observables` observables get a KS test: the final-state
@@ -380,13 +386,13 @@ def compare_runs(
     means_b = result_b.get("observable_means")
     std_a = result_a.get("observable_stds")
     std_b = result_b.get("observable_stds")
-    names = list(
-        result_b.get("observable_names") or result_a.get("observable_names") or []
-    )
+    names_a = list(result_a.get("observable_names") or [])
+    names_b = list(result_b.get("observable_names") or [])
+    names = names_a
     n_a = int(result_a.get("batch_size", 0))
     n_b = int(result_b.get("batch_size", 0))
 
-    if means_a is None or means_b is None:
+    def invalid(note: str) -> EquivalenceResult:
         return EquivalenceResult(
             passed=False,
             n_trajectories_a=n_a,
@@ -396,15 +402,174 @@ def compare_runs(
             z_passes=0,
             z_cells=0,
             worst_observable=None,
-            notes=[
-                "observable means are absent from at least one result; the "
-                "engine did not produce the grids this test needs, so no "
-                "equivalence claim is licensed"
-            ],
+            alpha=alpha,
+            notes=[note],
         )
 
+    if n_a <= 0 or n_b <= 0:
+        return invalid("both results must contain at least one trajectory")
+    if not names_a or not names_b:
+        return invalid("observable_names is absent from at least one result")
+    if len(set(names_a)) != len(names_a) or len(set(names_b)) != len(names_b):
+        return invalid("observable_names contains duplicates")
+    if set(names_a) != set(names_b):
+        return invalid("host and comparison observable names differ")
+
+    def order_observables(
+        values: Any, field_name: str, side: str, side_names: Sequence[str]
+    ) -> tuple[Sequence[Sequence[float]], str | None]:
+        if isinstance(values, Mapping):
+            missing = [name for name in names if name not in values]
+            if missing:
+                return [], f"{side} {field_name} is missing observables: {missing}"
+            unexpected = [name for name in values if name not in side_names]
+            if unexpected:
+                return (
+                    [],
+                    f"{side} {field_name} has unreported observables: {unexpected}",
+                )
+            return [values[name] for name in names], None
+        if values is None:
+            return [], f"{side} {field_name} is absent"
+        try:
+            value_count = len(values)
+        except TypeError:
+            return [], f"{side} {field_name} is not a sequence or mapping"
+        if value_count != len(side_names):
+            return [], (
+                f"{side} {field_name} has {len(values)} observables but "
+                f"observable_names has {len(side_names)}"
+            )
+        source_indices = [side_names.index(name) for name in names]
+        return [values[index] for index in source_indices], None
+
+    ordered: dict[str, Sequence[Sequence[float]]] = {}
+    for field_name, values_a, values_b in (
+        ("observable_means", means_a, means_b),
+        ("observable_stds", std_a, std_b),
+    ):
+        ordered_a, error_a = order_observables(values_a, field_name, "host", names_a)
+        ordered_b, error_b = order_observables(
+            values_b, field_name, "comparison", names_b
+        )
+        errors = [error for error in (error_a, error_b) if error]
+        if errors:
+            return invalid("; ".join(errors))
+        ordered[field_name] = ordered_a
+        ordered[f"{field_name}_comparison"] = ordered_b
+
+    time_grid_lengths: list[int] = []
+    for side in ("host", "comparison"):
+        means = ordered[
+            "observable_means" if side == "host" else "observable_means_comparison"
+        ]
+        stds = ordered[
+            "observable_stds" if side == "host" else "observable_stds_comparison"
+        ]
+        for name, mean_values, std_values in zip(names, means, stds):
+            try:
+                mean_length = len(mean_values)
+                std_length = len(std_values)
+            except TypeError:
+                return invalid(f"{side} statistics for {name} are not sequences")
+            if mean_length != std_length:
+                return invalid(
+                    f"{side} mean and standard deviation time-grid lengths differ "
+                    f"for {name}"
+                )
+            time_grid_lengths.append(mean_length)
+    if not time_grid_lengths or 0 in time_grid_lengths:
+        return invalid("observable statistics contain an empty time grid")
+    if len(set(time_grid_lengths)) != 1:
+        return invalid("observable statistics time-grid lengths differ")
+
+    for side in ("host", "comparison"):
+        means = ordered[
+            "observable_means" if side == "host" else "observable_means_comparison"
+        ]
+        stds = ordered[
+            "observable_stds" if side == "host" else "observable_stds_comparison"
+        ]
+        for name, mean_values, std_values in zip(names, means, stds):
+            for time_index, (mean_value, std_value) in enumerate(
+                zip(mean_values, std_values)
+            ):
+                for label, value in (
+                    ("mean", mean_value),
+                    ("standard deviation", std_value),
+                ):
+                    if isinstance(value, (str, bytes)) or isinstance(value, Iterable):
+                        return invalid(
+                            f"{side} {label} for {name} at time index {time_index} "
+                            "is not a numeric scalar"
+                        )
+                    try:
+                        numeric = float(value)
+                    except (TypeError, ValueError, OverflowError):
+                        return invalid(
+                            f"{side} {label} for {name} at time index {time_index} "
+                            "is not numeric"
+                        )
+                    if not math.isfinite(numeric):
+                        return invalid(
+                            f"{side} {label} for {name} at time index {time_index} "
+                            "is non-finite"
+                        )
+                    if label == "standard deviation" and numeric < 0:
+                        return invalid(
+                            f"{side} has a negative standard deviation for {name} "
+                            f"at time index {time_index}"
+                        )
+
+    def read_time_grid(
+        result: dict[str, Any], side: str
+    ) -> tuple[list[float], str | None]:
+        values = result.get("time")
+        if values is None:
+            return [], f"{side} reported time grid is absent"
+        try:
+            raw_times = list(values)
+        except TypeError:
+            return [], f"{side} reported time grid is not a one-dimensional sequence"
+        if any(
+            isinstance(value, (str, bytes)) or isinstance(value, Iterable)
+            for value in raw_times
+        ):
+            return [], f"{side} reported time grid is not a one-dimensional sequence"
+        try:
+            times = [float(value) for value in raw_times]
+        except (TypeError, ValueError, OverflowError):
+            return [], f"{side} reported time grid contains non-numeric values"
+        if not times or not all(math.isfinite(value) for value in times):
+            return [], f"{side} reported time grid is empty or non-finite"
+        return times, None
+
+    times_a, error_a = read_time_grid(result_a, "host")
+    times_b, error_b = read_time_grid(result_b, "comparison")
+    errors = [error for error in (error_a, error_b) if error]
+    if errors:
+        return invalid("; ".join(errors))
+    if len(times_a) != len(times_b):
+        return invalid("reported time-grid lengths differ")
+    if len(times_a) != time_grid_lengths[0]:
+        return invalid("reported time-grid length differs from observable statistics")
+    # CPU and accelerator time arrays can differ by float32 rounding even when
+    # they describe the same requested sample grid.
+    if any(
+        not math.isclose(a, b, rel_tol=1e-6, abs_tol=0.0)
+        for a, b in zip(times_a, times_b)
+    ):
+        return invalid("reported time points differ")
+
     cells, max_z, threshold, worst_name = mean_z_test(
-        means_a, std_a, means_b, std_b, names, n_a, n_b, alpha
+        ordered["observable_means"],
+        ordered["observable_stds"],
+        ordered["observable_means_comparison"],
+        ordered["observable_stds_comparison"],
+        names,
+        n_a,
+        n_b,
+        alpha,
     )
     failures = [c for c in cells if not c["passes"]]
 
@@ -413,8 +578,63 @@ def compare_runs(
     final_a = result_a.get("final_observables")
     final_b = result_b.get("final_observables")
 
+    if final_a is None or final_b is None:
+        return invalid("final_observables is absent from at least one result")
+
+    final_width: int | None = None
     if final_a is not None and final_b is not None:
-        g = min(len(final_a), len(final_b), max(1, ks_observables))
+        widths: list[int] = []
+        for side, values, expected_rows in (
+            ("host", final_a, n_a),
+            ("comparison", final_b, n_b),
+        ):
+            try:
+                row_count = len(values)
+                row_widths = [len(row) for row in values]
+            except TypeError:
+                return invalid(f"{side} final_observables is not a 2D array")
+            if row_count != expected_rows:
+                return invalid(
+                    f"{side} final_observables has {row_count} rows for "
+                    f"batch_size={expected_rows}"
+                )
+            if not row_widths or len(set(row_widths)) != 1:
+                return invalid(f"{side} final_observables has empty or ragged rows")
+            expected_width = len(names_a if side == "host" else names_b)
+            if row_widths[0] != expected_width:
+                return invalid(
+                    f"{side} final_observables has {row_widths[0]} columns for "
+                    f"{expected_width} named observables"
+                )
+            for row_index, row in enumerate(values):
+                for column_index, value in enumerate(row):
+                    if isinstance(value, (str, bytes)) or isinstance(value, Iterable):
+                        return invalid(
+                            f"{side} final_observables[{row_index}][{column_index}] "
+                            "is not a numeric scalar"
+                        )
+                    try:
+                        numeric = float(value)
+                    except (TypeError, ValueError, OverflowError):
+                        return invalid(
+                            f"{side} final_observables[{row_index}][{column_index}] "
+                            "is not numeric"
+                        )
+                    if not math.isfinite(numeric):
+                        return invalid(
+                            f"{side} final_observables[{row_index}][{column_index}] "
+                            "is non-finite"
+                        )
+            widths.append(row_widths[0])
+        if widths[0] != widths[1]:
+            return invalid("final_observables column counts differ between results")
+        final_width = widths[0]
+
+    if final_a is not None and final_b is not None:
+        comparison_indices = [names_b.index(name) for name in names]
+        if comparison_indices != list(range(len(names))):
+            final_b = [[row[index] for index in comparison_indices] for row in final_b]
+        g = min(final_width or 0, max(1, ks_observables))
         for o in range(g):
             col_a = [row[o] for row in final_a[:max_trajectories_for_ks]]
             col_b = [row[o] for row in final_b[:max_trajectories_for_ks]]
@@ -426,17 +646,11 @@ def compare_runs(
             moment_results.append(moment)
 
     notes: list[str] = []
-    if ks_results:
-        notes.append(
-            f"KS and moment tests covered {len(ks_results)} of "
-            f"{len(names) or 'unreported'} observables; the remainder are "
-            f"covered only by the mean z-test"
-        )
-    else:
-        notes.append(
-            "no final-observable arrays were available, so only the mean z-test "
-            "ran; shape differences in the final state would not be detected"
-        )
+    notes.append(
+        f"KS and moment tests covered {len(ks_results)} of "
+        f"{len(names)} observables; the remainder are "
+        f"covered only by the mean z-test"
+    )
 
     ks_ok = all(r.get("passes", True) for r in ks_results)
     moment_ok = all(r.get("passes", True) for r in moment_results)

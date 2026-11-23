@@ -25,15 +25,33 @@ no arm caches, reorders or memoises work the other does not.
 
 from __future__ import annotations
 
-import os
 import resource
 import time
 from dataclasses import dataclass, field
-from typing import Any, Callable
+from typing import Any
 
 from . import device as device_mod
 from .measure import TimingSample
 from .precision import PrecisionClaim, describe_dtype
+
+_NATIVE_METRIC_KEYS = (
+    "total_events",
+    "model_prep_time_ms",
+    "h2d_transfer_ms",
+    "sim_time_ms",
+    "d2h_transfer_ms",
+    "total_wall_time_ms",
+    "trajectories_per_sec_sim",
+    "trajectories_per_sec_total",
+    "events_per_sec_sim",
+    "events_per_sec_total",
+    "memory_usage_bytes",
+)
+
+
+def _native_metrics(result: dict[str, Any]) -> dict[str, Any]:
+    """Keep the engine's timing, throughput and allocation fields in reports."""
+    return {key: result[key] for key in _NATIVE_METRIC_KEYS if key in result}
 
 
 def _self_cpu() -> float:
@@ -127,6 +145,7 @@ class CpuPoolArm:
         sample = TimingSample(
             wall_s=wall, child_cpu_s=cpu, self_cpu_s=cpu, label=self.label
         )
+        sample.extra["native_metrics"] = _native_metrics(out)
         # Read the dtype off a returned array, never off an input: an input can
         # declare a precision the computation did not use.
         host_dtype = describe_dtype(out.get("time"))
@@ -175,6 +194,7 @@ class AcceleratorArm:
             False,
             "not yet probed: no model was available at construction",
         )
+        self.first_gpu_call: dict[str, Any] | None = None
 
     def prepare(self, model: Any, network: Any) -> None:
         """Probe fail-closed behaviour and flatten the network, both untimed.
@@ -201,7 +221,9 @@ class AcceleratorArm:
                 f"binary would be indistinguishable from a host run, so the arm "
                 f"refuses to measure."
             )
-        self._cpp.simulate_batch_ssa_gpu(
+        cpu0 = _self_cpu()
+        t0 = time.perf_counter()
+        out = self._cpp.simulate_batch_ssa_gpu(
             model,
             network,
             batch_size=1,
@@ -210,6 +232,22 @@ class AcceleratorArm:
             base_seed=self.cfg.base_seed,
             backend=self.resolved_backend,
         )
+        self.first_gpu_call = {
+            "batch_size": 1,
+            "backend": str(out.get("backend", "")),
+            "wall_s": time.perf_counter() - t0,
+            "self_cpu_s": _self_cpu() - cpu0,
+            "native_metrics": _native_metrics(out),
+            "scope": (
+                "first successful device call in an already loaded process; "
+                "BNGL parsing and network generation are outside this timing"
+            ),
+        }
+        if self.first_gpu_call["backend"] != self.resolved_backend:
+            raise device_mod.DeviceAssertionError(
+                f"first device call requested {self.resolved_backend!r} but the "
+                f"engine reported {self.first_gpu_call['backend']!r}"
+            )
 
     def run(self, model: Any, network: Any) -> ArmResult:
         cpp = self._cpp
@@ -231,6 +269,7 @@ class AcceleratorArm:
         sample = TimingSample(
             wall_s=wall, child_cpu_s=cpu, self_cpu_s=cpu, label=self.label
         )
+        sample.extra["native_metrics"] = _native_metrics(out)
 
         reported = str(out.get("backend", ""))
         if reported != self.resolved_backend:
