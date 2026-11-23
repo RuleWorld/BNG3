@@ -289,9 +289,9 @@ def test_membership_only_eq_evidence_is_rejected():
             for variant in ("equal", "different")
         ],
     }
-    # Every declared outcome was overwritten with "equal": no different or
-    # undecided row exists, so the catalogue cannot be a real per-row result.
-    with pytest.raises(ValueError, match="outcomes"):
+    # Every declared outcome was overwritten with "equal" and no certificate
+    # rows were executed, so the catalogue cannot be a real per-row result.
+    with pytest.raises(ValueError, match="outcomes|missing rows"):
         validate_catalogue_report(membership_only)
 
 

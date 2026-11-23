@@ -35,6 +35,7 @@ if str(REPO_ROOT) not in sys.path:
 
 from tests.validation.eq_catalogue import (  # noqa: E402
     CASES,
+    CERTIFICATES,
     validate_catalogue_report,
 )
 
@@ -401,7 +402,7 @@ def test_release_capability_coverage_156(eq_catalogue_report):
     validate_catalogue_report(eq_catalogue_report)
     rows = eq_catalogue_report["results"]
     assert eq_catalogue_report["case_count"] == len(CASES)
-    assert eq_catalogue_report["row_count"] == len(rows) == 2 * len(CASES)
+    assert eq_catalogue_report["row_count"] == len(rows) == 2 * len(CASES) + len(CERTIFICATES)
     assert all(row["status"] == "PASS" for row in rows)
     assert all(row["oracle"] for row in rows)
     by_case = {}

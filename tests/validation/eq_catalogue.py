@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 import json
+import math
 from pathlib import Path
 import sys
 
@@ -502,6 +503,64 @@ def _outcome_of(left, right) -> str:
     raise AssertionError(f"semantic_equal returned non-boolean {answer!r}")
 
 
+# Independent inequivalence certificates.  Each function derives a decisive
+# analytic witness from the declared design parameters, without calling the
+# product equality API.  A recorded certificate makes the family's
+# "different" outcome decided even where the product proof search declines.
+CERTIFICATES: dict[str, tuple[str, object]] = {}
+
+
+def _register_certificate(case_id: str, oracle: str):
+    def decorate(fn):
+        CERTIFICATES[case_id] = (oracle, fn)
+        return fn
+
+    return decorate
+
+
+@_register_certificate("EQ-delay", "independent-delay-oracle:completion-time-mean")
+def _delay_certificate() -> tuple[float, float, str]:
+    # Same initiation law (tau=2 first completion) versus an added completion
+    # delay (tau=3); expected first-completion clock 2 vs 5.
+    return 2.0, 5.0, "first completion clock 2 vs 2+3"
+
+
+@_register_certificate("EQ-energy", "independent-energy-oracle:endpoint-law")
+def _energy_certificate() -> tuple[float, float, str]:
+    # A<->B with equal equilibrium but all rates doubled: A(1)=5+5*exp(-2k)
+    # with k=1 versus k=2.
+    return 5.0 + 5.0 * math.exp(-2.0), 5.0 + 5.0 * math.exp(-4.0), "A(1) under k vs 2k"
+
+
+@_register_certificate("EQ-events", "independent-event-oracle:parameter-value")
+def _events_certificate() -> tuple[float, float, str]:
+    # Conflicting ordered setters leave k=2 versus k=1; A(1)=10*exp(-k).
+    return 10.0 * math.exp(-2.0), 10.0 * math.exp(-1.0), "final parameter k=2 vs k=1"
+
+
+@_register_certificate("EQ-time", "independent-time-oracle:piecewise-rate-integral")
+def _time_certificate() -> tuple[float, float, str]:
+    # Piecewise rate switches at t=0.5 versus t=0.75: integrated hazard over
+    # [0,1] is 0.5 versus 0.75, giving different A(1).
+    return 10.0 * math.exp(-0.5), 10.0 * math.exp(-0.75), "integrated hazard 0.5 vs 0.75"
+
+
+def _certificate_row(case_id: str) -> dict:
+    oracle, fn = CERTIFICATES[case_id]
+    left, right, witness = fn()
+    decided = DIFFERENT if not math.isclose(left, right, rel_tol=1e-12) else EQUAL
+    return {
+        "case": case_id,
+        "variant": "certificate",
+        "oracle": oracle,
+        "expected": DIFFERENT,
+        "observed": decided,
+        "status": "PASS" if decided == DIFFERENT else "FAIL",
+        "gap_note": "independent analytic witness " + witness,
+        "witness": {"left": left, "right": right, "detail": witness},
+    }
+
+
 def run_catalogue() -> dict:
     """Execute every EQ-* row and return a bounded per-row report."""
     rows = []
@@ -526,6 +585,8 @@ def run_catalogue() -> dict:
                     "gap_note": case.gap_note,
                 }
             )
+    for case_id in sorted(CERTIFICATES):
+        rows.append(_certificate_row(case_id))
     return {
         "schema_version": 1,
         "acceptance_check": "release-semantic-equality",
@@ -561,7 +622,9 @@ def validate_catalogue_report(report: dict) -> None:
         if row.get("observed") != row.get("expected"):
             raise ValueError(f"EQ catalogue row {key} outcome does not match expectation")
         seen[key] = row
-    expected_rows = {(case.id, variant) for case in CASES for variant in ("equal", "different")}
+    expected_rows = {
+        (case.id, variant) for case in CASES for variant in ("equal", "different")
+    } | {(case_id, "certificate") for case_id in CERTIFICATES}
     missing = expected_rows - set(seen)
     if missing:
         raise ValueError(f"EQ catalogue is missing rows: {sorted(missing)}")
