@@ -539,6 +539,19 @@ def _events_certificate() -> tuple[float, float, str]:
     return 10.0 * math.exp(-2.0), 10.0 * math.exp(-1.0), "final parameter k=2 vs k=1"
 
 
+@_register_certificate("EQ-order", "independent-event-oracle:final-parameter-value")
+def _order_certificate() -> tuple[float, float, str]:
+    # Opposed setters leave k=2 versus k=1; A(1)=10*exp(-k).
+    return 10.0 * math.exp(-2.0), 10.0 * math.exp(-1.0), "final k=2 vs k=1"
+
+
+@_register_certificate("EQ-noop", "independent-reaction-count:expected-fireings")
+def _noop_certificate() -> tuple[float, float, str]:
+    # Adding A()->A() k yields k*A0*(1-exp(-k*t)) firings over [0,1]; the
+    # counter-free model has no such channel.
+    return 10.0 * (1.0 - math.exp(-1.0)), 0.0, "self-loop firing count > 0 vs 0"
+
+
 @_register_certificate("EQ-time", "independent-time-oracle:piecewise-rate-integral")
 def _time_certificate() -> tuple[float, float, str]:
     # Piecewise rate switches at t=0.5 versus t=0.75: integrated hazard over
