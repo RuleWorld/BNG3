@@ -342,6 +342,7 @@ public:
         compiled.bidirectional_ = rule.isBidirectional();
         compiled.delayExpression_ = rule.getDelayExpression();
         compiled.nonConsuming_ = rule.isNonConsuming();
+        compiled.absoluteFlux_ = rule.isAbsoluteFlux();
         if (compiled.delayExpression_.has_value()) {
             SymbolTable emptySymbols;
             const SymbolTable* syms = symbols != nullptr ? symbols : &emptySymbols;

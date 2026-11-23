@@ -82,18 +82,7 @@ struct LegacyNetworkRuleKernel::Impl {
               compile::lowerPatternsToSpeciesGraphs(direction.reactantPatterns, context),
               compile::lowerPatternsToSpeciesGraphs(direction.productPatterns, context)),
           state(rule.createExecutionState()) {
-        // The lowered execution rule is reconstructed from compiled data, so
-        // the AST-level absolute-flux marker is not carried over.  Restore it
-        // from the compiled TotalRate modifier: an absolute flux states the
-        // complete extent rate and must not receive a reactant permutation
-        // factor during network expansion.
-        if (std::any_of(
-                compiledRule.modifiers().begin(), compiledRule.modifiers().end(),
-                [](const compile::CompiledModifier& modifier) {
-                    return modifier.source == "TotalRate";
-                })) {
-            rule.setAbsoluteFlux(true);
-        }
+        rule.setAbsoluteFlux(compiledRule.isAbsoluteFlux());
         if (compiledRule.delayExpression()) {
             rule.setDelay(*compiledRule.delayExpression(), compiledRule.isNonConsuming());
         }
