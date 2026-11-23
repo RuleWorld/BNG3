@@ -9,6 +9,7 @@ on:
       - 'provenance/upstreams.lock.yml'
       - 'scripts/ci/validate_sbml_test_suite.py'
       - 'scripts/ci/validate_published_biomodels.py'
+      - 'scripts/ci/record_issue162_release.py'
       - 'scripts/ci/install_biomodels_source_bundle.py'
       - 'scripts/ci/curated_biomodels_corpus_inventory.py'
       - 'scripts/ci/imported_package_guard.py'
@@ -24,6 +25,7 @@ on:
       - 'tests/test_ci_contract.py'
       - 'tests/test_harness_contracts.py'
       - 'tests/test_biomodels_source_bundle.py'
+      - 'tests/test_issue162_biomodels_receipt.py'
       - 'tests/test_ssts_selected_gate.py'
       - 'tests/test_ssts_feature_selection.py'
       - 'tests/test_ssts_isolation.py'
@@ -1074,6 +1076,23 @@ jobs:
             echo 'One or both BioModels reports were not produced.'
             exit 1
           fi
+
+      - name: Consume the full BioModels release evidence
+        if: always() && inputs.biomodels_only_id == '' && !inputs.biomodels_stage_replay
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "$BNG3_SOURCE_REVISION"
+          test -z "$(git status --porcelain --untracked-files=no)"
+          artifacts="$RUNNER_TEMP/biomodels-artifacts"
+          python scripts/ci/record_issue162_release.py \
+            --revision "$BNG3_SOURCE_REVISION" \
+            --inventory provenance/curated-biomodels-query-inventory.json \
+            --bundle-manifest provenance/curated-biomodels-source-bundle.json \
+            --bundle-receipt "$artifacts/source-bundle-receipt.json" \
+            --package-identity "$RUNNER_TEMP/biomodels-package-identity.json" \
+            --flat-report "$artifacts/flat-report.json" \
+            --atomized-report "$artifacts/atomized-report.json" \
+            --output "$artifacts/issue162-release-receipt.json"
 
       - name: Upload BioModels reports and provenance
         if: always()
