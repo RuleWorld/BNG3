@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "snapshot": "single-issue #474 body with state CLOSED",
+  "snapshots": {
+    "issue": "/tmp/bng3-474-evidence/issue-474-closed.json",
+    "dependencies": "/tmp/bng3-474-evidence/issue474-dependencies.json"
+  },
+  "runs": [
+    {
+      "name": "exact-main",
+      "revision": "641a2e144a4ce8cc8cf20305fd289288477c6524",
+      "exit_code": 1,
+      "report": "issue-474-report-main-641a2e14.json",
+      "criteria": {
+        "release-metal-device": "PASS",
+        "release-metal-performance": "PASS",
+        "release-cuda-device": "NOT_TESTED",
+        "release-cuda-performance": "NOT_TESTED",
+        "release-nf-gpu": "NOT_TESTED",
+        "release-capability-coverage-474": "NOT_TESTED"
+      },
+      "demonstrated": [
+        "release-metal-device",
+        "release-metal-performance"
+      ]
+    },
+    {
+      "name": "local-branch-revision",
+      "revision": "69bcb8041963bc6ed8e28d02ad12b748a8318d3f",
+      "exit_code": 1,
+      "report": "issue-474-report-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+      "criteria": {
+        "release-metal-device": "PASS",
+        "release-metal-performance": "PASS",
+        "release-cuda-device": "NOT_TESTED",
+        "release-cuda-performance": "NOT_TESTED",
+        "release-nf-gpu": "NOT_TESTED",
+        "release-capability-coverage-474": "NOT_TESTED"
+      },
+      "demonstrated": [
+        "release-metal-device",
+        "release-metal-performance"
+      ]
+    }
+  ],
+  "blockers": [
+    "No local NVIDIA device or compiler and no usable hosted CUDA runner; CUDA device and performance checks externally blocked.",
+    "Network-free CUDA execution is unimplemented; bounded Metal route has analytic and pinned-native NFsim evidence but not the full corpus.",
+    "backend.gpu capability coverage requires backend-specific CUDA executions."
+  ],
+  "note": "The gate is a dry-run evidence audit; no GitHub state was mutated. #474 remains OPEN."
+}
