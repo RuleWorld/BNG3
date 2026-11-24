@@ -52,7 +52,7 @@ def _mode_for(stages: dict[str, str]) -> dict[str, Any]:
         mode["native_reader"] = {
             "success": True,
             "species_count": 2,
-            "reaction_count": 3,
+            "reaction_count": 3 if stages["roundtrip_structure"] == "passed" else 0,
         }
     if stages["independent_comparison"] == "passed":
         mode["simulation_comparison"] = {
@@ -689,3 +689,32 @@ def test_the_manifests_gap_counts_agree_with_its_per_record_gaps():
     assert sum(sides.values()) == len(
         [entry for entry in manifest["cases"].values() if entry.get("gap")]
     )
+
+
+def test_verified_archive_without_sbml_xml_maps_to_no_usable_sbml():
+    """Archives verified to lack SBML XML documents map to format:no-usable-sbml."""
+
+    construct = inventory.corpus_construct(
+        "verified source archive contains no SBML XML document"
+    )
+    assert construct == "format:no-usable-sbml"
+    assert inventory.corpus_gap_side(construct) == "not-applicable"
+
+
+def test_synthetic_report_preserves_failed_roundtrip_structure():
+    """Synthetic fixture reports distinguish passed and failed roundtrip_structure."""
+
+    cases = {
+        "BIOMD0000000001": {
+            "conversion": "passed",
+            "roundtrip_structure": "passed",
+            "independent_comparison": "passed",
+        },
+        "BIOMD0000000006": {
+            "conversion": "passed",
+            "roundtrip_structure": "failed",
+            "independent_comparison": "passed",
+        },
+    }
+    observed = inventory.corpus_expectation_cases(_report_from_cases(cases))
+    assert observed == cases
