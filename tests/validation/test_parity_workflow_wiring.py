@@ -854,3 +854,17 @@ def test_nfnext_ensemble_rng_isolation_step_is_wired():
     tokens = shlex.split(run)
     assert "--noconftest" in tokens
     assert not {"-k", "--deselect", "--runxfail"} & set(tokens)
+
+
+def test_issue_queue_upload_retains_bngir_receipts():
+    workflow = yaml.load(PARITY_WORKFLOW.read_text(), Loader=_StrictLoader)
+    upload = next(
+        step
+        for job in workflow["jobs"].values()
+        for step in job["steps"]
+        if step.get("name") == "Upload issue queue and provenance observations"
+    )
+    assert upload["if"] == "always()"
+    paths = upload["with"]["path"].splitlines()
+    for directory in ("bng3-bngir-roundtrip-release", "bng3-issue-155-release"):
+        assert "${{ runner.temp }}/" + directory + "/" in paths
