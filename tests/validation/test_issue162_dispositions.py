@@ -67,11 +67,7 @@ def _pinned_record(mode_name, *, status="failed", failed=None, metrics=None):
         {
             "name": name,
             "status": "passed" if name not in comparison_stages else "failed",
-            **(
-                {"error": disp.SOURCE_ERROR}
-                if name in comparison_stages
-                else {}
-            ),
+            **({"error": disp.SOURCE_ERROR} if name in comparison_stages else {}),
         }
         for name in (
             "source-xml-validation",
@@ -151,14 +147,13 @@ def _write_json(path, data):
 
 
 def _refusal_fixtures(mode_name):
-    """The full 43 pinned refusal records plus the harness by_cause view."""
+    """The full 44 pinned refusal records plus the harness by_cause view."""
     by_cause = {
         "events": {"count": 36, "ids": sorted(disp.PINNED_REFUSAL_IDS["events"])},
         "fast_reactions": {
             "count": 5,
             "ids": sorted(
-                disp.PINNED_REFUSAL_IDS["fast_reaction"]
-                | {"BIOMD0000000137"}
+                disp.PINNED_REFUSAL_IDS["fast_reaction"] | {"BIOMD0000000137"}
             ),
         },
         "other": {
@@ -394,7 +389,10 @@ def test_real_reports_produce_the_disposition_when_available():
     )
     assert row["id"] == "numerical-limit:issue-162/BIOMD0000000943"
     assert row["supported_execution"] is False
-    assert row["evidence"]["source"]["metrics"]["max_abs_difference"] == 5.195749186702531e-11
+    assert (
+        row["evidence"]["source"]["metrics"]["max_abs_difference"]
+        == 5.195749186702531e-11
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -437,9 +435,9 @@ def test_refusal_counts_are_pinned_from_the_real_report():
     assert disp.PINNED_REFUSAL_COUNTS == {
         "events": 36,
         "fast_reaction": 4,
-        "other": 3,
+        "other": 4,
     }
-    assert sum(disp.PINNED_REFUSAL_COUNTS.values()) == 43
+    assert sum(disp.PINNED_REFUSAL_COUNTS.values()) == 44
 
 
 def test_receipt_refuses_mismatched_counts():
@@ -494,11 +492,11 @@ def test_recorder_keeps_three_result_rows_with_evidence_backed_dispositions(tmp_
     record = _run_recorder(_write_full_inputs(tmp_path))
     assert [row["id"] for row in record["results"]] == list(recorder.CHECKS)
     assert all(row["status"] == "PASS" for row in record["results"])
-    assert all(row["evidence_kind"] == "supported-execution" for row in record["results"])
+    assert all(
+        row["evidence_kind"] == "supported-execution" for row in record["results"]
+    )
     numerical = [
-        row
-        for row in record["dispositions"]
-        if row["id"] == disp.NUMERICAL_ID
+        row for row in record["dispositions"] if row["id"] == disp.NUMERICAL_ID
     ]
     assert len(numerical) == 1
     assert numerical[0]["counts_as_pass"] is False
@@ -535,3 +533,39 @@ def test_numerical_disposition_accepts_bounded_hosted_roundoff():
     assert row["id"] == "numerical-limit:issue-162/BIOMD0000000943"
     assert row["supported_execution"] is False
     assert row["counts_as_pass"] is False
+
+
+def test_platform_sensitive_disposition_from_hosted_reports():
+    """The hosted 8e4c79fa reports yield a non-PASS 0537 disposition."""
+    base = Path(
+        "/private/var/folders/cl/rt1592vn0sq5jw5vv4shrs4m0000gn/T/opencode/"
+        "qual-artifacts/curated-8e4c/_temp/biomodels-artifacts"
+    )
+    pair = []
+    for mode in ("flat", "atomized"):
+        path = base / f"{mode}-report.json"
+        if not path.is_file():
+            pytest.skip("hosted 8e4c79fa reports are not available")
+        report = json.loads(path.read_text())
+        pair.append({r["id"]: r for r in report["records"]}.get(disp.PLATFORM_MODEL_ID))
+    row = disp.classify_platform_sensitive_limit(*pair)
+    assert row["status"] == "NON_COMPARABLE"
+    assert row["supported_execution"] is False
+    assert row["counts_as_pass"] is False
+    assert row["evidence"]["flat"]["retry_count"] >= disp.PLATFORM_RETRY_COUNT
+
+
+def test_platform_sensitive_disposition_fails_closed():
+    """A changed CRN or single-mode failure cannot use the 0537 bucket."""
+    base = Path(
+        "/private/var/folders/cl/rt1592vn0sq5jw5vv4shrs4m0000gn/T/opencode/"
+        "qual-artifacts/curated-8e4c/_temp/biomodels-artifacts"
+    )
+    pair = []
+    for mode in ("flat", "atomized"):
+        report = json.loads((base / f"{mode}-report.json").read_text())
+        pair.append({r["id"]: r for r in report["records"]}[disp.PLATFORM_MODEL_ID])
+    flat, atomized = pair
+    atomized["modes"][0]["generated_network"] = {"species": 41, "reactions": 91}
+    with pytest.raises(ValueError):
+        disp.classify_platform_sensitive_limit(flat, atomized)
