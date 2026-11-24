@@ -367,6 +367,126 @@ def test_oracle_gate_counts_only_a_consumed_and_byte_compared_artifact_set(
     assert report["result"] == "pass"
 
 
+def test_canonical_net_comparator_and_cross_platform_oracle_lock(tmp_path: Path):
+    oracle_net = (
+        "# Created by BioNetGen 2.9.3\n"
+        "begin parameters\n"
+        "  1 k 0.1\n"
+        "end parameters\n"
+        "begin species\n"
+        "  1 A() 10\n"
+        "end species\n"
+        "begin reactions\n"
+        "  1 1 0 k\n"
+        "end reactions\n"
+    ).encode("utf-8")
+    consumer_net = (
+        "# Created by bng_cpp\n"
+        "begin parameters\n"
+        "  1 k 0.1\n"
+        "end parameters\n"
+        "begin species\n"
+        "  1 A() 10\n"
+        "end species\n"
+        "begin reactions\n"
+        "  1 1 0 k\n"
+        "end reactions\n"
+    ).encode("utf-8")
+    producer_bngl = b"begin model\nend model\n"
+
+    row = {
+        "id": "bngl.model-blocks",
+        "status": "implemented",
+        "oracle": "pinned BNG2; native NFsim for local/TFUN execution",
+    }
+    artifacts = tmp_path / "artifacts"
+    (artifacts / "producer").mkdir(parents=True)
+    (artifacts / "oracle").mkdir(parents=True)
+    (artifacts / "consumer").mkdir(parents=True)
+    (artifacts / "producer/model.bngl").write_bytes(producer_bngl)
+    (artifacts / "oracle/expected.net").write_bytes(oracle_net)
+    (artifacts / "consumer/result.net").write_bytes(consumer_net)
+
+    root = tmp_path / "repo-root"
+    root.mkdir()
+    (root / "provenance").mkdir(parents=True)
+    (root / "provenance/upstreams.lock.yml").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "sources": {
+                    "bionetgen": {
+                        "revision": BNG2_SOURCE_REVISION,
+                        "status": "accepted",
+                    }
+                },
+                "oracles": {
+                    "bng2": {
+                        "source": "bionetgen",
+                        "status": "locked",
+                        "build_recipe": "make (AppleClang 21.0.0.21000334, macOS arm64).",
+                        "artifact_digest": f"sha256:{BNG2_EXECUTABLE_SHA256}",
+                    }
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    receipt = _valid_receipt("bngl.model-blocks", "a" * 40)
+    receipt["comparator"] = "release-oracle-net-canonical-v1"
+    receipt["oracle"]["path"] = "oracle/expected.net"
+    receipt["oracle"]["artifact_sha256"] = hashlib.sha256(oracle_net).hexdigest()
+    receipt["oracle"]["build_platform"] = "linux-x86_64"
+    receipt["oracle"]["source_clean"] = True
+    receipt["oracle"]["executable_sha256"] = "f" * 64
+    receipt["producer"] = {
+        "path": "producer/model.bngl",
+        "output_sha256": hashlib.sha256(producer_bngl).hexdigest(),
+    }
+    receipt["consumer"]["path"] = "consumer/result.net"
+    receipt["consumer"]["output_sha256"] = hashlib.sha256(consumer_net).hexdigest()
+    receipt["consumer"]["consumed_producer_sha256"] = hashlib.sha256(
+        producer_bngl
+    ).hexdigest()
+
+    errors, comparison = checks._oracle_receipt_errors(
+        row, receipt, "a" * 40, artifacts, root
+    )
+    assert errors == []
+    assert comparison is not None
+    assert comparison["id"] == "release-oracle-net-canonical-v1"
+    assert comparison["consumer_equals_oracle"] is True
+
+    # Cross-platform checkout must verify clean source; macOS requires exact digest.
+    dirty_receipt = json.loads(json.dumps(receipt))
+    dirty_receipt["oracle"]["source_clean"] = False
+    dirty_errors, _ = checks._oracle_receipt_errors(
+        row, dirty_receipt, "a" * 40, artifacts, root
+    )
+    assert any("not verified clean" in err for err in dirty_errors)
+
+    macos_mismatch = json.loads(json.dumps(receipt))
+    macos_mismatch["oracle"]["build_platform"] = "macos-arm64"
+    macos_errors, _ = checks._oracle_receipt_errors(
+        row, macos_mismatch, "a" * 40, artifacts, root
+    )
+    assert any("executable digest does not match" in err for err in macos_errors)
+
+    # Altered reaction count in consumer .net fails closed despite valid SHAs.
+    bad_consumer_net = consumer_net.replace(b"  1 1 0 k\n", b"")
+    (artifacts / "consumer/result.net").write_bytes(bad_consumer_net)
+    mismatch_receipt = json.loads(json.dumps(receipt))
+    mismatch_receipt["consumer"]["output_sha256"] = hashlib.sha256(
+        bad_consumer_net
+    ).hexdigest()
+    mismatch_errors, mismatch_cmp = checks._oracle_receipt_errors(
+        row, mismatch_receipt, "a" * 40, artifacts, root
+    )
+    assert any("consumer output differs" in err for err in mismatch_errors)
+    assert mismatch_cmp is not None and mismatch_cmp["consumer_equals_oracle"] is False
+
+
 def test_oracle_gate_requires_nonempty_matrix_and_independent_inventory_ids(
     tmp_path: Path,
 ):
