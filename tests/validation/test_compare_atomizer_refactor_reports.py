@@ -152,16 +152,52 @@ def test_unstable_failure_count_is_reported(tmp_path):
     assert "biomodels:case/00001" in result["record_comparison"]["stale"]
 
 
-def test_timeout_involving_difference_is_not_a_blocking_change(tmp_path):
-    """A load-sensitive timeout is not a verdict and must not fail a match."""
+def test_timeout_recovery_to_passed_is_not_a_blocking_change(tmp_path):
+    """A load-sensitive before timeout that now passes is reported without blocking."""
     specs = {
         "before_bm": {"case/00001": "timeout", "case/00002": "passed"},
-        "after_bm": {"case/00001": "failed", "case/00002": "passed"},
+        "after_bm": {"case/00001": "passed", "case/00002": "passed"},
     }
     before_ssts, after_ssts, before_bm, after_bm = _reports(tmp_path, **specs)
     result = comparator.compare(before_ssts, after_ssts, before_bm, after_bm, AFTER)
     assert result["record_comparison"]["all_match"] is True
     assert "biomodels:case/00001" in result["record_comparison"]["timeout_difference"]
+
+
+@pytest.mark.parametrize(
+    ("before_status", "after_status", "bucket"),
+    [
+        ("passed", "timeout", "status_changed"),
+        ("timeout", "failed", "status_changed"),
+        ("unsupported", "timeout", "status_changed"),
+        ("timeout", "unsupported", "stale"),
+    ],
+)
+def test_timeout_hiding_lost_execution_or_failure_blocks(
+    tmp_path, before_status, after_status, bucket
+):
+    specs = {
+        "before_bm": {"case/00001": before_status, "case/00002": "passed"},
+        "after_bm": {"case/00001": after_status, "case/00002": "passed"},
+    }
+    before_ssts, after_ssts, before_bm, after_bm = _reports(tmp_path, **specs)
+    result = comparator.compare(before_ssts, after_ssts, before_bm, after_bm, AFTER)
+    assert result["record_comparison"]["all_match"] is False
+    assert "biomodels:case/00001" in result["record_comparison"][bucket]
+    assert (
+        "biomodels:case/00001" not in result["record_comparison"]["timeout_difference"]
+    )
+
+
+def test_ssts_passed_to_timeout_blocks(tmp_path):
+    specs = {
+        "before_ssts": {"case/00001": "passed", "case/00002": "passed"},
+        "after_ssts": {"case/00001": "timeout", "case/00002": "passed"},
+    }
+    before_ssts, after_ssts, before_bm, after_bm = _reports(tmp_path, **specs)
+    result = comparator.compare(before_ssts, after_ssts, before_bm, after_bm, AFTER)
+    assert result["record_comparison"]["all_match"] is False
+    assert "ssts:case/00001" in result["record_comparison"]["status_changed"]
 
 
 def test_real_verdict_change_still_blocks(tmp_path):

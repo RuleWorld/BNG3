@@ -27,10 +27,11 @@ BLOCKING_VERDICTS = {
     "invalid-source",
 }
 PASSED_VERDICTS = {"passed", "pass", "compared", "PASS"}
-# A timeout is not a verdict (see compare_biomodels_suite_reports.py): the
-# per-model budget is sized for an unloaded machine, so on a shared machine a
-# timeout only records that the machine was busy.  A change whose before or
-# after side is a timeout is reported separately and never blocks a match.
+# A timeout is not a passing verdict: an after-side timeout (``passed -> timeout``)
+# or a timeout-to-failure transition (``timeout -> failed``) hides lost
+# execution or a new failure and must block ``all_match``.  Only a transition
+# from a load-sensitive before timeout to an explicit passing after verdict
+# (``timeout -> passed``) is recorded in ``timeout_difference`` without blocking.
 TIMEOUT_VERDICTS = {"timeout", "timed-out"}
 STATUS_FIELDS = (
     "verdict",
@@ -189,7 +190,7 @@ def compare(
         for key, change in changed.items():
             if (
                 change["before"] in TIMEOUT_VERDICTS
-                or change["after"] in TIMEOUT_VERDICTS
+                and change["after"] in PASSED_VERDICTS
             ):
                 timeout_difference[f"{kind}:{key}"] = change
             elif (
