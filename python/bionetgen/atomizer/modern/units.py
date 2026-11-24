@@ -567,7 +567,24 @@ def apply_unit_scaling(model: SBMLModel) -> list[Dict[str, Any]]:
         species = model.species.get(symbol)
         if species is not None:
             compartment = model.compartments.get(str(species.compartment or ""))
-            if compartment is not None:
+            # The extra division is only needed when the assignment reads a
+            # species: those operands are already rewritten in normalized
+            # amount coordinates, and the writer multiplies the whole seed
+            # expression by the compartment size. A parameter/constant-only
+            # right-hand side is a concentration in the target's coordinate;
+            # dividing it by the compartment factor would multiply the seed
+            # amount by 1/volume twice (e.g. a 1 L compartment declared with
+            # litre units becomes 0.001 m^3, producing a 1000x seed error).
+            expression = str(getattr(assignment, "math", "") or "")
+            species_ids = {str(identifier) for identifier in model.species}
+            standardized_ids = {
+                standardize_name(identifier) for identifier in species_ids
+            }
+            reads_species = any(
+                identifier in species_ids or identifier in standardized_ids
+                for identifier in re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression)
+            )
+            if compartment is not None and reads_species:
                 volume_factor = compartment_factors.get(
                     str(species.compartment or ""), 1.0
                 )
