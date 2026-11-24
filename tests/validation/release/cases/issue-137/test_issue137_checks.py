@@ -76,13 +76,26 @@ def test_coverage_requires_every_row_with_a_pinned_oracle(tmp_path):
     assert checks.coverage_gaps([json.loads(path.read_text())], REVISION) == []
 
 
-@pytest.mark.parametrize("mutated", ["drop-row", "stale-revision", "loss-diagnostic"])
+@pytest.mark.parametrize(
+    "mutated",
+    [
+        "drop-row",
+        "stale-revision",
+        "loss-diagnostic",
+        "missing-bionetgen-pin",
+        "missing-second-pin",
+    ],
+)
 def test_coverage_rejects_missing_or_unverifiable_results(tmp_path, mutated):
     report = _report(checks.ROW_IDS)
     if mutated == "drop-row":
         report["results"] = report["results"][1:]
     elif mutated == "stale-revision":
         report["source"]["revision"] = "0" * 40
+    elif mutated == "missing-bionetgen-pin":
+        del report["references"]["bionetgen"]
+    elif mutated == "missing-second-pin":
+        del report["references"]["nfsim"]
     else:
         report["results"][0]["diagnostics"] = [{"severity": "approximated"}]
     path = tmp_path / "cases.json"

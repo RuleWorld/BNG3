@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import ast
+import json
 import os
 import subprocess
 import sys
@@ -80,7 +81,11 @@ def check_packaging_requirement(source_root: Path, installed: list[str]) -> None
         )
 
 
-def run_compatibility(source_root: Path, summary_file: Path | None = None) -> int:
+def run_compatibility(
+    source_root: Path,
+    summary_file: Path | None = None,
+    report_path: Path | None = None,
+) -> int:
     identity = inspect_installed_package()
     print("BNG3 installed package identity:")
     for key, value in identity.items():
@@ -158,6 +163,45 @@ def run_compatibility(source_root: Path, summary_file: Path | None = None) -> in
                 "- Pinned packaging requirement matches installed runtime metadata\n"
             )
             stream.write(f"- Compatibility test return code: `{result.returncode}`\n\n")
+    if report_path:
+        repo_head = subprocess.check_output(
+            ["git", "-C", str(REPO), "rev-parse", "HEAD"], text=True
+        ).strip()
+        repo_dirty = bool(
+            subprocess.check_output(
+                ["git", "-C", str(REPO), "status", "--porcelain"], text=True
+            ).strip()
+        )
+        upstream_rev = subprocess.check_output(
+            ["git", "-C", str(source_root), "rev-parse", "HEAD"], text=True
+        ).strip()
+        passed = result.returncode == 0
+        payload = {
+            "schema_version": 1,
+            "source": {"revision": repo_head, "dirty": repo_dirty},
+            "references": {
+                "pybionetgen": {"revision": upstream_rev},
+            },
+            "results": [
+                {
+                    "id": "release-capability[pybionetgen.api-cli-atomizer]",
+                    "status": "PASS" if passed else "FAIL",
+                    "evidence_kind": (
+                        "supported-execution" if passed else "observed-failure"
+                    ),
+                    "supported_execution": passed,
+                    "related_issues": [137],
+                    "selector": "scripts/ci/check_pybionetgen_compat.py",
+                    "detail": (
+                        "pinned PyBioNetGen source-derived symbols/signature and compatibility suite passed"
+                        if passed
+                        else f"compatibility suite exited with code {result.returncode}"
+                    ),
+                }
+            ],
+        }
+        report_path.parent.mkdir(parents=True, exist_ok=True)
+        report_path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return result.returncode
 
 
@@ -165,9 +209,12 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", required=True, type=Path)
     parser.add_argument("--summary-file", type=Path)
+    parser.add_argument("--report", type=Path)
     args = parser.parse_args()
     try:
-        return run_compatibility(args.source_root.resolve(), args.summary_file)
+        return run_compatibility(
+            args.source_root.resolve(), args.summary_file, args.report
+        )
     except (OSError, RuntimeError, UnicodeError, SyntaxError, ValueError) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 1

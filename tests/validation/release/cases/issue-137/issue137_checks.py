@@ -45,6 +45,11 @@ LOSS_SEVERITIES = {
     "untranslated",
     "error",
 }
+ORACLE_TOKENS = {
+    "bionetgen": ("bionetgen@", "bng2@"),
+    "nfsim": ("nfsim@",),
+    "pybionetgen": ("pybionetgen@",),
+}
 
 
 def _yaml(path):
@@ -185,18 +190,17 @@ def coverage_gaps(reports, revision, root=ROOT):
                     observed.setdefault(row_id, set()).add("NO_ANALYTIC_LAW")
                     continue
             elif kind == "external-source":
-                name = next(
-                    (
-                        n
-                        for n in ("bionetgen", "nfsim", "pybionetgen")
-                        if f"{n}@" in entry["oracle"]
-                    ),
-                    None,
-                )
-                ref = references.get(name or "", {})
-                if not isinstance(ref, dict) or ref.get("revision") != mapping[
-                    "pins"
-                ].get(name):
+                lowered_oracle = entry["oracle"].casefold()
+                names = [
+                    n
+                    for n, tokens in ORACLE_TOKENS.items()
+                    if any(tok in lowered_oracle for tok in tokens)
+                ]
+                if not names or any(
+                    not isinstance(references.get(name), dict)
+                    or references[name].get("revision") != mapping["pins"].get(name)
+                    for name in names
+                ):
                     observed.setdefault(row_id, set()).add("NO_PIN_ORACLE")
                     continue
             else:
