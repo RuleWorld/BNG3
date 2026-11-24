@@ -1204,6 +1204,10 @@ jobs:
           BNGSIM_LIBRARY_PATH=$(find "$RUNNER_TEMP/oracle-bngsim/build" -maxdepth 1 -name 'libbngsim.so*' | head -1)
           test -f "$BNGSIM_LIBRARY_PATH"
           echo "BNGSIM_LIBRARY_PATH=$BNGSIM_LIBRARY_PATH" >> "$GITHUB_ENV"
+          # The installed Python extension links libbngsim.so.0 by SONAME. The
+          # pinned native adapter is built outside the wheel, so expose its
+          # directory to the dynamic loader for every later step in this job.
+          echo "LD_LIBRARY_PATH=$(dirname "$BNGSIM_LIBRARY_PATH"):${LD_LIBRARY_PATH:-}" >> "$GITHUB_ENV"
 
       - name: Install BNG3 Python API as a regular package
         run: |
@@ -1950,7 +1954,7 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y cmake ninja-build
           }
-          python -m pip install scikit-build-core pybind11 pytest numpy
+          python -m pip install scikit-build-core pybind11 pytest numpy build
           python -m pip install ".[full,dev]"
         env:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF -DBUILD_NFSIM_CLI=OFF"
@@ -2056,7 +2060,7 @@ jobs:
             sudo apt-get update
             sudo apt-get install -y cmake ninja-build
           }
-          python -m pip install scikit-build-core pybind11 pytest numpy
+          python -m pip install scikit-build-core pybind11 pytest numpy build
           python -m pip install ".[full,dev]"
         env:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF -DBUILD_NFSIM_CLI=OFF"

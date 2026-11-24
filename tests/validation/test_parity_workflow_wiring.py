@@ -869,6 +869,7 @@ def test_issue_queue_upload_retains_bngir_receipts():
     for directory in ("bng3-bngir-roundtrip-release", "bng3-issue-155-release"):
         assert "${{ runner.temp }}/" + directory + "/" in paths
 
+
 def test_release_records_are_consumed_by_exact_revision_issue_queue():
     """Every live issue release record must reach the closure evidence queue.
 
@@ -933,3 +934,26 @@ def test_release_records_are_consumed_by_exact_revision_issue_queue():
     ):
         assert record in run
     assert '"${release_report_args[@]}"' in run
+
+
+def test_hosted_release_jobs_install_build_and_expose_bngsim_library():
+    """Release jobs must have the tools their own checks invoke.
+
+    The hosted parity run at d87222ff failed three receipt producers before any
+    scientific check ran: `python -m build` was missing in the PyBioNetGen and
+    migration-docs jobs, and the installed extension could not load the pinned
+    out-of-tree `libbngsim.so.0`. These assertions keep those environment
+    prerequisites visible to the wiring contract.
+    """
+    workflow = _parse_workflow()
+    for job_name in ("pybionetgen-compat", "migration-docs"):
+        commands = "\n".join(
+            str(step.get("run", "")) for step in workflow["jobs"][job_name]["steps"]
+        )
+        assert "pip install scikit-build-core pybind11 pytest numpy build" in commands
+
+    nfsim = "\n".join(
+        str(step.get("run", "")) for step in workflow["jobs"]["nfsim-parity"]["steps"]
+    )
+    assert 'echo "BNGSIM_LIBRARY_PATH=$BNGSIM_LIBRARY_PATH"' in nfsim
+    assert 'echo "LD_LIBRARY_PATH=$(dirname "$BNGSIM_LIBRARY_PATH"' in nfsim
