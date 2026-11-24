@@ -8439,6 +8439,12 @@ def synthesize_event_actions(
                         trajectory = context.resolve_affine_rate_for_event(
                             identifier, event
                         )
+                        if trajectory is None:
+                            # Events sharing this trigger cannot have changed
+                            # the state before its first rising edge.
+                            trajectory = context.resolve_affine_priority_rate(
+                                identifier, event
+                            )
                 if (
                     trajectory is None
                     and not rate_of_threshold

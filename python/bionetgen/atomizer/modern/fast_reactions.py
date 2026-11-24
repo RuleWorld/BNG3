@@ -507,6 +507,163 @@ def _reduce_bimolecular_equilibrium(
     )
 
 
+def _zero_switch_coefficient(
+    model: SBMLModel,
+    term: _SymbolicTerm,
+    analysis: Any,
+    reactant_id: str,
+    reactant_species: SBMLSpecies,
+) -> Optional[str]:
+    """Identify a rate constant that switches from zero to positive by events."""
+    if set(term.species) != {(reactant_id, 1)}:
+        return None
+    if _term_sign(term, analysis) != "0+":
+        return None
+    if _species_amount(model, reactant_species) != 0.0:
+        return None
+    names = {
+        node.id
+        for factor in term.factors
+        for node in ast.walk(ast.parse(ast.unparse(factor), mode="eval"))
+        if isinstance(node, ast.Name)
+    }
+    candidates = []
+    for name in names:
+        key = standardize_name(name)
+        if key in analysis._rate_rules or key in analysis._assignment_rules:
+            return None
+        values = analysis._event_values.get(key)
+        if not values:
+            return None
+        numbers = [_fast_number(value) for value in values]
+        if any(value is None for value in numbers):
+            return None
+        if any(value < 0 for value in numbers) or not any(
+            value > 0 for value in numbers
+        ):
+            return None
+        if 0.0 not in numbers:
+            return None
+        candidates.append(name)
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _reduce_zero_switch(
+    model: SBMLModel,
+    reaction: SBMLReaction,
+    reactant: Any,
+    product: Any,
+    coefficient: str,
+) -> FastReactionOutcome:
+    """Lower a fast reaction that is inactive until its rate constant turns on.
+
+    While the coefficient is zero the fast reaction carries no flux and the
+    converted species follows the slow reactions. Once it is positive the fast
+    reaction holds the reactant at zero and the conserved pool puts the added
+    amount entirely into the product. An event that turns the coefficient on
+    transfers the reactant's amount at that instant.
+    """
+    reactant_id, product_id = reactant.species, product.species
+    reactant_species = model.species.get(reactant_id)
+    product_species = model.species.get(product_id)
+    if reactant_species is None or product_species is None:
+        return FastReactionOutcome(reaction.id, False, reason="undefined fast species")
+    if reactant_species.has_only_substance_units is not True:
+        return FastReactionOutcome(
+            reaction.id, False, reason="the zero-switch reduction needs substance units"
+        )
+    for species in (reactant_species, product_species):
+        if species.compartment != reactant_species.compartment:
+            return FastReactionOutcome(
+                reaction.id, False, reason="the fast species are in different compartments"
+            )
+    amount_r = _species_amount(model, reactant_species)
+    amount_p = _species_amount(model, product_species)
+    if amount_r is None or amount_p is None:
+        return FastReactionOutcome(reaction.id, False, reason="no usable initial amount")
+    pool = amount_r + amount_p
+    numerator_r = abs(float(reactant.stoichiometry))
+    numerator_p = abs(float(product.stoichiometry))
+    if numerator_r <= 0 or numerator_p <= 0:
+        return FastReactionOutcome(reaction.id, False, reason="invalid stoichiometry")
+
+    slow = 0.0
+    for other in model.reactions.values():
+        if other.id == reaction.id or other.fast:
+            continue
+        sigma = _signed_stoichiometry(other, reactant_id)
+        if sigma == 0:
+            continue
+        law = _global_kinetic_law(other)
+        if law is None:
+            return FastReactionOutcome(
+                reaction.id, False, reason="a slow reaction has no reducible rate"
+            )
+        constant = _constant_value(law, _ConstantResolver(model, other))
+        if constant is None:
+            return FastReactionOutcome(
+                reaction.id, False, reason="a slow reaction rate is not constant"
+            )
+        slow += sigma * constant
+
+    from .types import SBMLRule
+
+    reduced_state = pool / numerator_p
+    # Before the fast coefficient turns on, the source trajectory of the held
+    # species is affine. Record it so the event lowering can prove the first
+    # trigger crossing on the exact source dynamics.
+    model.event_affine_source_trajectory = {reactant_id: (0.0, slow)}
+    _set_species_amount(model, reactant_species, 0.0)
+    _set_species_amount(model, product_species, reduced_state)
+    model.rules.append(
+        SBMLRule(
+            type="rate",
+            variable=reactant_id,
+            math=f"if(gt({coefficient}, 0), 0, {format_number(slow)})",
+        )
+    )
+    model.rules.append(
+        SBMLRule(
+            type="assignment",
+            variable=product_id,
+            math=(
+                f"(({format_number(pool)}) - "
+                f"({_amount_symbol(reactant_species, 1.0)})) * "
+                f"{format_number(numerator_r / numerator_p)}"
+            ),
+        )
+    )
+    transferred = False
+    for event in model.events:
+        for assignment in event.assignments:
+            variable = getattr(assignment, "variable", None)
+            expression = getattr(assignment, "math", "")
+            if variable is None or standardize_name(str(variable)) != standardize_name(coefficient):
+                continue
+            value = _fast_number(expression)
+            if value is None or value <= 0:
+                continue
+            from .types import SBMLEventAssignment
+
+            event.assignments.append(
+                SBMLEventAssignment(variable=reactant_id, math="0")
+            )
+            transferred = True
+    if not transferred:
+        return FastReactionOutcome(
+            reaction.id, False, reason="no event turns the fast coefficient on"
+        )
+    return FastReactionOutcome(
+        reaction.id,
+        True,
+        detail=(
+            f'the fast reaction is inactive while "{coefficient}" is zero; '
+            f'"{reactant_id}" is held at zero when it turns on and the pool '
+            f"is conserved"
+        ),
+    )
+
+
 def _reduce_to_completion(
     model: SBMLModel,
     reaction: SBMLReaction,
@@ -1878,6 +2035,14 @@ def _reduce_with_pool(
             "with coefficients that do not depend on the species"
         )
     active = [term for term in terms if term.coefficient != 0.0]
+    if len(active) == 1:
+        zero_switch = _zero_switch_coefficient(
+            model, active[0], analysis, reactant_id, reactant_species
+        )
+        if zero_switch is not None:
+            return _reduce_zero_switch(
+                model, reaction, reactant, product, zero_switch
+            )
     participants = {reactant_id, product_id}
     for term in active:
         if not set(term.species_ids) <= participants:

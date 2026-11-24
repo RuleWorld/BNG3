@@ -9077,9 +9077,9 @@ def generate_bngl(
                     and event_context is not None
                     and str(candidate.trigger or "").strip()
                     == str(event_context.trigger or "").strip()
-                    and str(candidate.delay or "").strip()
-                    == str(event_context.delay or "").strip()
                 ):
+                    # Before this trigger's first rising edge, no event that
+                    # shares the trigger can have executed, whatever its delay.
                     return False
                 return True
 
@@ -9169,7 +9169,15 @@ def generate_bngl(
                     )
 
                     def resolve_immutable(symbol: str) -> Optional[float]:
-                        if not is_compile_time_constant(symbol):
+                        if not is_compile_time_constant(symbol) and (
+                            has_prior_event_controlled_dependency(symbol)
+                            or any(
+                                rule.variable
+                                and standardize_name(str(rule.variable))
+                                == standardize_name(symbol)
+                                for rule in model.rules
+                            )
+                        ):
                             return None
                         return resolve_event_parameter(symbol)
 
@@ -9215,7 +9223,15 @@ def generate_bngl(
                     )
 
                     def resolve_immutable(symbol: str) -> Optional[float]:
-                        if not is_compile_time_constant(symbol):
+                        if not is_compile_time_constant(symbol) and (
+                            has_prior_event_controlled_dependency(symbol)
+                            or any(
+                                rule.variable
+                                and standardize_name(str(rule.variable))
+                                == standardize_name(symbol)
+                                for rule in model.rules
+                            )
+                        ):
                             return None
                         return resolve_event_parameter(symbol)
 
@@ -9239,6 +9255,11 @@ def generate_bngl(
                 species = model.species.get(species_id) if species_id else None
                 if species is None:
                     return None
+                source_trajectory = getattr(
+                    model, "event_affine_source_trajectory", {}
+                ).get(species_id)
+                if source_trajectory is not None and ignore_simultaneous:
+                    return tuple(float(value) for value in source_trajectory)
                 rate_rules = [
                     rule
                     for rule in model.rules
@@ -9362,7 +9383,37 @@ def generate_bngl(
                     if not references:
                         continue
                     affecting_reaction = True
-                    if reaction.fast or reaction.conversion_factor:
+                    if reaction.fast:
+                        # A fast reaction that is provably inactive until the
+                        # event being lowered does not change the trajectory
+                        # before that event's rising edge.
+                        law = str(
+                            getattr(getattr(reaction, "kinetic_law", None), "math", "")
+                            or ""
+                        )
+                        symbols = {
+                            node.id
+                            for node in ast.walk(
+                                ast.parse(law, mode="eval") if law.strip() else ast.parse("0", mode="eval")
+                            )
+                            if isinstance(node, ast.Name)
+                        }
+                        if any(
+                            has_prior_event_controlled_dependency(symbol)
+                            for symbol in symbols
+                        ):
+                            return None
+
+                        def resolve_initial(symbol: str) -> Optional[float]:
+                            if standardize_name(symbol) == standardize_name(species_id):
+                                return resolve_initial_event_value(species_id)
+                            return resolve_event_parameter(symbol)
+
+                        flux = fold_numeric(law, resolve_initial)
+                        if flux is None or flux != 0.0:
+                            return None
+                        continue
+                    if reaction.conversion_factor:
                         return None
                     net_coefficient = 0.0
                     for sign, side in (
