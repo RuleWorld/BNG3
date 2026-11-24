@@ -3491,9 +3491,7 @@ def _native_comparison_expression(
     return None
 
 
-def _native_is_clock_window(
-    trigger: str, context: EventTranslationContext
-) -> bool:
+def _native_is_clock_window(trigger: str, context: EventTranslationContext) -> bool:
     """True when a trigger is a conjunction of clock-vs-literal comparisons."""
 
     terms = _split_call_arguments(str(trigger or "").strip())

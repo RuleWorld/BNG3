@@ -575,12 +575,16 @@ def _reduce_zero_switch(
     for species in (reactant_species, product_species):
         if species.compartment != reactant_species.compartment:
             return FastReactionOutcome(
-                reaction.id, False, reason="the fast species are in different compartments"
+                reaction.id,
+                False,
+                reason="the fast species are in different compartments",
             )
     amount_r = _species_amount(model, reactant_species)
     amount_p = _species_amount(model, product_species)
     if amount_r is None or amount_p is None:
-        return FastReactionOutcome(reaction.id, False, reason="no usable initial amount")
+        return FastReactionOutcome(
+            reaction.id, False, reason="no usable initial amount"
+        )
     pool = amount_r + amount_p
     numerator_r = abs(float(reactant.stoichiometry))
     numerator_p = abs(float(product.stoichiometry))
@@ -638,7 +642,9 @@ def _reduce_zero_switch(
         for assignment in event.assignments:
             variable = getattr(assignment, "variable", None)
             expression = getattr(assignment, "math", "")
-            if variable is None or standardize_name(str(variable)) != standardize_name(coefficient):
+            if variable is None or standardize_name(str(variable)) != standardize_name(
+                coefficient
+            ):
                 continue
             value = _fast_number(expression)
             if value is None or value <= 0:
@@ -793,7 +799,9 @@ def _reduce_to_completion(
     # Sec. 4.11.7: the rate of change of a species' amount is its conversion
     # factor times the stoichiometry-weighted extent rate).
     extent = consumed_amount / (consumed_factor * consumed_stoichiometry)
-    reduced_produced = produced_amount + produced_factor * produced_stoichiometry * extent
+    reduced_produced = (
+        produced_amount + produced_factor * produced_stoichiometry * extent
+    )
     _set_species_amount(model, consumed_species, 0.0)
     _set_species_amount(model, produced_species, reduced_produced)
     _rewrite_fast_reduction_delays(
@@ -1713,9 +1721,7 @@ def _fast_number(text: object) -> Optional[float]:
     return value if math.isfinite(value) else None
 
 
-_DELAY_CALL = re.compile(
-    r"\bdelay\s*\(\s*([A-Za-z_][A-Za-z_0-9]*)\s*,\s*([^()]+)\)"
-)
+_DELAY_CALL = re.compile(r"\bdelay\s*\(\s*([A-Za-z_][A-Za-z_0-9]*)\s*,\s*([^()]+)\)")
 
 
 def _delay_is_rewritable(model: SBMLModel, species_id: str) -> bool:
@@ -1732,9 +1738,7 @@ def _delay_is_rewritable(model: SBMLModel, species_id: str) -> bool:
         if rule.type != "assignment" or not rule.variable:
             continue
         standardized_target = standardize_name(str(rule.variable))
-        if standardized_target in {
-            standardize_name(name) for name in model.species
-        }:
+        if standardized_target in {standardize_name(name) for name in model.species}:
             continue
         for match in _DELAY_CALL.finditer(str(rule.math or "")):
             if standardize_name(match.group(1)) != standardize_name(species_id):
@@ -1804,15 +1808,11 @@ def _event_stoichiometry_transfer(
         increment = added / (new_stoich * volume)
         replaced = False
         for assignment in event.assignments:
-            if (
-                not replaced
-                and standardize_name(str(getattr(assignment, "variable", "") or ""))
-                == standardize_name(held_id)
-            ):
+            if not replaced and standardize_name(
+                str(getattr(assignment, "variable", "") or "")
+            ) == standardize_name(held_id):
                 assignment.variable = state_id
-                assignment.math = (
-                    f"(({state_id}) + {format_number(increment)})"
-                )
+                assignment.math = f"(({state_id}) + {format_number(increment)})"
                 replaced = True
         changed = True
     return changed
@@ -2040,9 +2040,7 @@ def _reduce_with_pool(
             model, active[0], analysis, reactant_id, reactant_species
         )
         if zero_switch is not None:
-            return _reduce_zero_switch(
-                model, reaction, reactant, product, zero_switch
-            )
+            return _reduce_zero_switch(model, reaction, reactant, product, zero_switch)
     participants = {reactant_id, product_id}
     for term in active:
         if not set(term.species_ids) <= participants:
@@ -2081,10 +2079,13 @@ def _reduce_with_pool(
     if isinstance(plan, str):
         return refuse(plan)
     varying_reference = (
-        reactant if reactant.variable_stoichiometry else
-        product if product.variable_stoichiometry else None
+        reactant
+        if reactant.variable_stoichiometry
+        else product if product.variable_stoichiometry else None
     )
-    stoich_id = str(getattr(varying_reference, "id", "") or "") if varying_reference else ""
+    stoich_id = (
+        str(getattr(varying_reference, "id", "") or "") if varying_reference else ""
+    )
     held_id, state_id = {
         "forward": (reactant_id, product_id),
         "backward": (product_id, reactant_id),

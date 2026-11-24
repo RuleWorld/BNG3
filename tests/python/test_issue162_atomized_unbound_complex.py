@@ -41,9 +41,7 @@ def _deleting_complex_model() -> str:
 
 
 def test_atomized_unbound_complex_product_generates_the_source_reaction():
-    report = compare_flat_and_atomized(
-        _deleting_complex_model(), t_end=2.0, n_steps=5
-    )
+    report = compare_flat_and_atomized(_deleting_complex_model(), t_end=2.0, n_steps=5)
 
     assert report["flat_success"], report["flat_error"]
     assert report["atomized_success"], report["atomized_error"]
@@ -81,9 +79,7 @@ def test_without_species_identity_marker_reproduces_missing_reaction(monkeypatch
     import bionetgen.atomizer.modern.core as core
 
     monkeypatch.setattr(core, "_connect_unbound_molecules", lambda structure: None)
-    report = compare_flat_and_atomized(
-        _deleting_complex_model(), t_end=2.0, n_steps=5
-    )
+    report = compare_flat_and_atomized(_deleting_complex_model(), t_end=2.0, n_steps=5)
 
     assert report["flat_success"], report["flat_error"]
     assert report["atomized_success"], report["atomized_error"]

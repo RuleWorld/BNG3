@@ -12,8 +12,6 @@ from bionetgen.atomizer.modern import Atomizer
 FIXTURE = Path(__file__).parent / "fixtures" / "sbml_01000.xml"
 
 
-
-
 def test_rate_ruled_parameter_is_native_event_target_and_window_stays_scheduled():
     atomizer = Atomizer({"quietMode": True, "logLevel": "INFO", "t_end": 10})
     result = atomizer.atomize(FIXTURE.read_text(encoding="utf-8"))
@@ -63,9 +61,9 @@ def test_zero_interval_fast_coefficient_lowers_exactly():
     # gated by the coefficient, B keeps the conserved pool, and the event that
     # turns the coefficient on also transfers A to the pool.
     assert "__rate_rule__A()" in bngl
-    assert "setParameter(\"k2\", \"1\")" in bngl
+    assert 'setParameter("k2", "1")' in bngl
     assert 'setConcentration("@comp:M_A()", "0")' in bngl
-    assert "setParameter(\"k2\", \"0\")" in bngl
+    assert 'setParameter("k2", "0")' in bngl
     assert "remain untranslated" not in bngl
     assert not [
         warning
