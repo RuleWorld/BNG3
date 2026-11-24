@@ -9239,7 +9239,10 @@
           ],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/test_bngir_adversarial_native.py (compartment and bonded-complex controls)"
+          ]
         },
         {
           "id": "issue:155:live-acceptance:release-obligation-155",
@@ -9437,7 +9440,10 @@
           ],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/eq_catalogue.py (per-row EQ-* outcomes with named oracles)"
+          ]
         },
         {
           "id": "issue:156:live-acceptance:release-capability-coverage-156",
@@ -9469,7 +9475,10 @@
           ],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/eq_catalogue.py (per-row oracle identities)"
+          ]
         }
       ]
     },
@@ -16438,7 +16447,10 @@
           ],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/pybionetgen_row_map.py (per-row pinned-oracle surface comparison)"
+          ]
         },
         {
           "id": "issue:171:live-acceptance:release-python-install",
@@ -16471,7 +16483,10 @@
           ],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
-          "unmapped_scope": []
+          "unmapped_scope": [],
+          "not_reapplied_from_recorded_revision": [
+            "tests/validation/release/cases/issue-171/test_python_install_matrix.py (wheel and sdist fresh-environment matrix)"
+          ]
         },
         {
           "id": "issue:171:live-acceptance:release-capability-coverage-171",
