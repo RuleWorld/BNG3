@@ -630,6 +630,10 @@ def _certificate_row(case_id: str) -> dict:
 
 def run_catalogue() -> dict:
     """Execute every EQ-* row and return a bounded per-row report."""
+    if _cpp is None:
+        raise RuntimeError(
+            "EQ catalogue requires the native BNG3 binding; it is unavailable"
+        )
     rows = []
     for case in CASES:
         for kind, pair, expected in (

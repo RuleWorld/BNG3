@@ -111,4 +111,7 @@ def test_bounded_native_roundtrip_cannot_qualify_all_constructs(monkeypatch):
     results = {row["id"]: row for row in report["results"]}
     assert results["release-bngir-roundtrip"]["status"] == "NOT_TESTED"
     assert not results["release-bngir-roundtrip"]["supported_execution"]
-    assert results["release-bngir-version"]["status"] == "PASS"
+    # run_tests was replaced by a no-op, so no BNGIR version test executed.
+    # A PASS here would certify an unexecuted check.
+    assert results["release-bngir-version"]["status"] == "NOT_TESTED"
+    assert not results["release-bngir-version"]["supported_execution"]
