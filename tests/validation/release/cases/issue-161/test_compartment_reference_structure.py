@@ -70,17 +70,14 @@ def test_species_type_instance_compartment_reference_structure_is_independent():
     assert cref.getCompartment() != parent.getCompartment()
 
 
-def test_species_type_instance_is_explicitly_unsupported_not_a_pass():
-    """BNG3 refuses the cross-compartment instance; record that, do not pass it."""
+def test_species_type_instance_is_executable_with_preserved_placement():
+    """The nested sub-compartment instance is valid and represented literally."""
     parsed = parse_multi_package(MULTI_COMP_INSTANCE_XML)
-    assert parsed.executable is False
-    assert any("different compartment" in w.message for w in parsed.warnings)
-    # A dropped refusal is diagnostic evidence only, never supported execution.
-    assert all(
-        w.severity == "dropped"
-        for w in parsed.warnings
-        if "different compartment" in w.message
-    )
+    assert parsed.executable is True
+    assert not [w for w in parsed.warnings if w.severity == "dropped"]
+    assert "A(xType)@c1" in parsed.bngl_molecule_types
+    placement = parsed.binding_site_placements.get("AType", {}).get("x")
+    assert placement == {"reference": "inside", "compartment": "c2"}
 
 
 def test_multispecies_compartment_reference_is_not_a_defined_attribute():
@@ -159,9 +156,9 @@ def test_valid_pair_from_936_is_distinguished_by_representation():
 
     PR #936 lowered both to byte-identical BNGL, losing the placement; the
     maintainer closed that lowering. This check requires libSBML to see the
-    structural difference and requires the exact-main representation to keep
-    the two sources distinguishable, with the nested-reference row recorded as
-    explicitly unsupported rather than a silent supported PASS.
+    structural difference and requires the representation to keep the two
+    sources distinguishable through retained placement provenance even though
+    their executable BNGL is identical.
     """
     same, nested = _pair_sources()
     placements = []
@@ -181,10 +178,13 @@ def test_valid_pair_from_936_is_distinguished_by_representation():
     same_parsed = parse_multi_package(same)
     nested_parsed = parse_multi_package(nested)
     assert same_parsed.executable is True
-    # Exact main distinguishes the pair; the nested placement is not collapsed
-    # into a nominally supported row (that was the rejected PR #936 lowering).
-    assert nested_parsed.executable is False
-    assert any(
-        w.severity == "dropped" and "different compartment" in w.message
-        for w in nested_parsed.warnings
-    )
+    assert nested_parsed.executable is True
+    # Both lower to the same executable BNGL (the molecule stays in the parent
+    # compartment), but the representation preserves the binding-site placement
+    # so downstream checks can distinguish the two libSBML-valid sources.
+    assert same_parsed.bngl_molecule_types == nested_parsed.bngl_molecule_types
+    assert same_parsed.binding_site_placements.get("AType", {}).get("x") is None
+    assert nested_parsed.binding_site_placements.get("AType", {}).get("x") == {
+        "reference": "inside",
+        "compartment": "c2",
+    }

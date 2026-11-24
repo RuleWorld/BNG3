@@ -4402,6 +4402,7 @@ class SBMLParser:
         result.multi_component_aliases = dict(multi.component_aliases)
         result.multi_reaction_mappings = dict(multi.reaction_product_maps)
         result.multi_compartment_references = dict(multi.compartment_references)
+        result.multi_binding_site_placements = dict(multi.binding_site_placements)
         result.multi_numeric_values = dict(multi.numeric_values)
         result.multi_executable = multi.executable
         constraints = SBMLParser._xml_items(model, "listOfConstraints", "constraint")

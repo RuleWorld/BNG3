@@ -136,6 +136,11 @@ class MultiParseResult:
     )
     reaction_product_maps: Dict[str, Dict[str, List[Any]]] = field(default_factory=dict)
     compartment_references: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    # Binding-site instances placed in a sub-compartment declared by their
+    # parent compartment (SBML Multi L3V1 3.6/3.11.3).  Kept as non-executable
+    # representation so sources that differ only in placement remain
+    # distinguishable even when their executable BNGL is identical.
+    binding_site_placements: Dict[str, Dict[str, str]] = field(default_factory=dict)
     numeric_values: Dict[str, str] = field(default_factory=dict)
     executable: bool = False
     warnings: List[SBMLImportWarning] = field(default_factory=list)
@@ -1067,15 +1072,12 @@ def _flatten_type(
                             "dropped",
                         )
                     )
-                elif effective_compartment and resolved != effective_compartment:
-                    warnings.append(
-                        _warning(
-                            "A binding-site component resolves to a different "
-                            "compartment than its containing BNGL molecule; this "
-                            "Multi structure is not executable.",
-                            "dropped",
-                        )
-                    )
+                # SBML Multi L3V1 3.6/3.11.3: a compartmentReference declared by
+                # the containing compartment names a sub-compartment of that
+                # composite.  A binding-site instance placed there is part of the
+                # BNGL molecule in its parent compartment; the placement is
+                # retained in ``binding_site_placements`` by the package parser.
+                # An unknown reference is still refused above.
             target_compartment = target.compartment
             if (
                 not instance.compartment_reference
@@ -4097,6 +4099,20 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
         component_aliases=component_aliases,
         reaction_product_maps=reaction_product_maps,
         compartment_references=compartment_references,
+        binding_site_placements={
+            species_type.id: {
+                instance.id: {
+                    "reference": instance.compartment_reference,
+                    "compartment": compartment_references.get(
+                        species_type.compartment, {}
+                    ).get(instance.compartment_reference, ""),
+                }
+                for instance in species_type.instances
+                if instance.compartment_reference and instance.type_id in types
+                and types[instance.type_id].is_binding_site
+            }
+            for species_type in types.values()
+        },
         numeric_values={
             value_id: parameter_id
             for species_type in types.values()
