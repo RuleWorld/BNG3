@@ -617,7 +617,9 @@ def _reduce_to_completion(
 
     delayed = _delayed_species(model)
     for identifier in (consumed, produced):
-        if standardize_name(identifier) in delayed:
+        if standardize_name(identifier) in delayed and not _delay_is_rewritable(
+            model, identifier
+        ):
             return refuse(
                 f'species "{identifier}" is read by a delay expression, whose '
                 "value before the delay elapses is the species' declared "
@@ -634,11 +636,14 @@ def _reduce_to_completion(
     # Sec. 4.11.7: the rate of change of a species' amount is its conversion
     # factor times the stoichiometry-weighted extent rate).
     extent = consumed_amount / (consumed_factor * consumed_stoichiometry)
+    reduced_produced = produced_amount + produced_factor * produced_stoichiometry * extent
     _set_species_amount(model, consumed_species, 0.0)
-    _set_species_amount(
+    _set_species_amount(model, produced_species, reduced_produced)
+    _rewrite_fast_reduction_delays(
         model,
-        produced_species,
-        produced_amount + produced_factor * produced_stoichiometry * extent,
+        {consumed: consumed_amount, produced: produced_amount},
+        _compartment_volume(model, consumed_species),
+        {consumed: "0", produced: format_number(reduced_produced)},
     )
     return FastReactionOutcome(
         reaction.id,
@@ -1543,6 +1548,107 @@ def _infix(node: ast.AST) -> str:
     return re.sub(r"\bbng_(if|and|or|not)\(", r"\1(", text)
 
 
+def _fast_number(text: object) -> Optional[float]:
+    try:
+        value = float(str(text).strip())
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) else None
+
+
+_DELAY_CALL = re.compile(
+    r"\bdelay\s*\(\s*([A-Za-z_][A-Za-z_0-9]*)\s*,\s*([^()]+)\)"
+)
+
+
+def _delay_is_rewritable(model: SBMLModel, species_id: str) -> bool:
+    """True when every delayed read of a fast species has a constant history.
+
+    The fast reduction changes a species' amount instantly at t=0. A delayed
+    read before the delay elapses must then report the source's original
+    value, not the reduced steady state. That history is exact when the read
+    lives in an assignment rule with a constant delay and a target outside
+    the fast subsystem, so it can be replaced by a time piecewise.
+    """
+    found = False
+    for rule in model.rules:
+        if rule.type != "assignment" or not rule.variable:
+            continue
+        standardized_target = standardize_name(str(rule.variable))
+        if standardized_target in {
+            standardize_name(name) for name in model.species
+        }:
+            continue
+        for match in _DELAY_CALL.finditer(str(rule.math or "")):
+            if standardize_name(match.group(1)) != standardize_name(species_id):
+                continue
+            if _fast_number(match.group(2)) is None:
+                return False
+            found = True
+    # Any delayed read outside such a rule still needs the live history.
+    for expression in _model_expressions(model):
+        for match in _DELAY_CALL.finditer(expression):
+            if standardize_name(match.group(1)) != standardize_name(species_id):
+                continue
+            if not any(
+                rule.type == "assignment"
+                and str(rule.math or "") == expression
+                and rule.variable
+                and standardize_name(str(rule.variable))
+                not in {standardize_name(name) for name in model.species}
+                for rule in model.rules
+            ):
+                return False
+    return found
+
+
+def _rewrite_fast_reduction_delays(
+    model: SBMLModel,
+    original_amounts: Mapping[str, float],
+    volume: float,
+    reduced_expressions: Optional[Mapping[str, str]] = None,
+) -> None:
+    """Keep the source's pre-reduction history for delayed reads."""
+
+    for rule in model.rules:
+        if rule.type != "assignment" or not rule.variable:
+            continue
+        text = str(rule.math or "")
+
+        def replace(match: "re.Match[str]") -> str:
+            species_id = match.group(1)
+            if species_id not in original_amounts:
+                return match.group(0)
+            delay = _fast_number(match.group(2))
+            if delay is None or delay < 0:
+                return match.group(0)
+            reduced = (reduced_expressions or {}).get(species_id)
+            if reduced is None:
+                reduced = next(
+                    (
+                        str(other.math or "")
+                        for other in model.rules
+                        if other.type == "assignment"
+                        and other.variable
+                        and standardize_name(str(other.variable))
+                        == standardize_name(species_id)
+                    ),
+                    None,
+                )
+            if not reduced:
+                return match.group(0)
+            species = model.species.get(species_id)
+            original = original_amounts[species_id]
+            if species is not None and not species.has_only_substance_units:
+                original = original / volume
+            return (
+                f"if(time() <= {format_number(delay)}, "
+                f"{format_number(original)}, ({reduced}))"
+            )
+
+        rule.math = _DELAY_CALL.sub(replace, text)
+
+
 def _reduce_with_pool(
     model: SBMLModel,
     reaction: SBMLReaction,
@@ -1638,7 +1744,9 @@ def _reduce_with_pool(
                 f'species "{species.id}" is reassigned by a rule, an initial '
                 "assignment, or an event"
             )
-        if standardize_name(species.id) in delayed:
+        if standardize_name(species.id) in delayed and not _delay_is_rewritable(
+            model, species.id
+        ):
             return refuse(
                 f'species "{species.id}" is read by a delay expression, whose '
                 "value before the delay elapses is the species' declared "
@@ -1897,6 +2005,11 @@ def _reduce_with_pool(
             )
         )
     model.rules.extend(rules)
+    _rewrite_fast_reduction_delays(
+        model,
+        {reactant_id: initial_r, product_id: initial_p},
+        volume,
+    )
     # The slow reactions keep reading the two species, but the reduction's
     # rules own their values, so they become modifiers.
     for other in model.reactions.values():
