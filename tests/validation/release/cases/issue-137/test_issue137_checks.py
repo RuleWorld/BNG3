@@ -150,3 +150,10 @@ def test_structural_gaps_uses_supplied_root_oracle_map(tmp_path):
 
 def test_declaration_only_cannot_qualify_coverage():
     assert checks.coverage_gaps([], REVISION)
+
+
+def test_pybionetgen_oracle_token_does_not_require_bionetgen_pin():
+    report = _report(["pybionetgen.api-cli-atomizer"])
+    report["references"] = {"pybionetgen": report["references"]["pybionetgen"]}
+    gaps = checks.coverage_gaps([report], REVISION)
+    assert all(not gap.startswith("pybionetgen.api-cli-atomizer:") for gap in gaps)

@@ -1325,7 +1325,9 @@ jobs:
           for record in \
             "$RUNNER_TEMP"/release-records/issue137-inventory-*/report.json \
             "$RUNNER_TEMP"/release-records/issue181-corpus-*/report.json \
+            "$RUNNER_TEMP"/release-records/issue181-corpus-*/issue181-corpus/report.json \
             "$RUNNER_TEMP"/release-records/issue471-acceptance-*/report.json \
+            "$RUNNER_TEMP"/release-records/issue471-acceptance-*/issue471-acceptance/report.json \
             "$RUNNER_TEMP"/release-records/issue184-cpu-release-*/report.json \
             "$RUNNER_TEMP"/release-records/issue176-cpu-ensemble-*/issue-176-release-report.json \
             "$RUNNER_TEMP"/release-records/issue152-energy-protocol-release-*/issue-152-release-report.json \
