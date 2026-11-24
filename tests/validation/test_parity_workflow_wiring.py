@@ -940,3 +940,25 @@ def test_release_records_are_consumed_by_exact_revision_issue_queue():
     ):
         assert record in run
     assert '"${release_report_args[@]}"' in run
+
+
+def test_bngsim_adapter_oracle_excludes_broken_vendored_nfsim_teardown():
+    """The BNGSIM adapter oracle must not load its unused vendored NFsim .so.
+
+    The pinned BNGSIM oracle's vendored NFsim shared library registers a static
+    std::queue destructor that double-frees at glibc interpreter exit. With the
+    BNGSIM-enabled BNG3 extension loaded, that abort returned exit 134 after
+    the route checks passed, skipping the NFnext contract build and all of the
+    receipts produced downstream. Only BNGSIM's finite ODE/SSA routes are used
+    by the adapter, so the unused vendored NFsim component is excluded while
+    the pinned source revision and ODE/SSA semantics are preserved.
+    """
+    workflow = _parse_workflow()
+    job = workflow["jobs"]["nfsim-parity"]
+    step = next(
+        item
+        for item in job["steps"]
+        if item.get("name") == "Checkout and build locked BNGSIM oracle"
+    )
+    assert "-DBNGSIM_BUILD_PYTHON=OFF" in step["run"]
+    assert "-DBNGSIM_BUILD_NFSIM=OFF" in step["run"]
