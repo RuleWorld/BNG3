@@ -376,7 +376,9 @@ class SBMLModel:
     multi_component_aliases: Mapping[str, Any] = field(default_factory=OrderedDict)
     multi_reaction_mappings: Mapping[str, Any] = field(default_factory=OrderedDict)
     multi_compartment_references: Mapping[str, Any] = field(default_factory=OrderedDict)
-    multi_binding_site_placements: Mapping[str, Any] = field(default_factory=OrderedDict)
+    multi_binding_site_placements: Mapping[str, Any] = field(
+        default_factory=OrderedDict
+    )
     multi_numeric_values: Mapping[str, str] = field(default_factory=OrderedDict)
     multi_executable: bool = False
     # The BNGL function that states each reaction's rate, keyed by the

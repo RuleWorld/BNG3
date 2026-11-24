@@ -869,6 +869,7 @@ def test_issue_queue_upload_retains_bngir_receipts():
     for directory in ("bng3-bngir-roundtrip-release", "bng3-issue-155-release"):
         assert "${{ runner.temp }}/" + directory + "/" in paths
 
+
 def test_release_records_are_consumed_by_exact_revision_issue_queue():
     """Every live issue release record must reach the closure evidence queue.
 
