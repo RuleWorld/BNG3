@@ -1204,7 +1204,6 @@ jobs:
           BNGSIM_LIBRARY_PATH=$(find "$RUNNER_TEMP/oracle-bngsim/build" -maxdepth 1 -name 'libbngsim.so*' | head -1)
           test -f "$BNGSIM_LIBRARY_PATH"
           echo "BNGSIM_LIBRARY_PATH=$BNGSIM_LIBRARY_PATH" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/oracle-bngsim/build" >> "$GITHUB_ENV"
 
       - name: Install BNG3 Python API as a regular package
         run: |
@@ -1212,7 +1211,7 @@ jobs:
           python -m pip install ".[full,dev]"
         env:
           SKBUILD_BUILD_DIR: build
-          CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=ON -DBUILD_NFSIM_CLI=ON -DBUILD_BNGSIM_ADAPTER=ON -DBNGSIM_INCLUDE_DIR=${{ runner.temp }}/oracle-bngsim/include -DBNGSIM_LIBRARY=${{ env.BNGSIM_LIBRARY_PATH }}"
+          CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=ON -DBUILD_NFSIM_CLI=ON"
 
       - name: Replay upstream NFsim XML and molecularity regressions
         env:
@@ -1608,8 +1607,25 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Build BNGSIM-enabled extension for route evidence (#178)
+        env:
+          BNGSIM_INCLUDE_DIR: ${{ runner.temp }}/oracle-bngsim/include
+        run: |
+          set -euo pipefail
+          cmake -S . -B build-bngsim -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DBUILD_TESTS=OFF \
+            -DBUILD_BNGSIM_ADAPTER=ON \
+            -DBNGSIM_INCLUDE_DIR="$BNGSIM_INCLUDE_DIR" \
+            -DBNGSIM_LIBRARY="$BNGSIM_LIBRARY_PATH"
+          cmake --build build-bngsim -j 2
+          SITE=$(python -c 'import bionetgen,os; print(os.path.dirname(bionetgen.__file__))')
+          cp "$SITE"/_bionetgen_cpp*.so "$RUNNER_TEMP/original_bionetgen_cpp.so"
+          cp build-bngsim/cpp/_bionetgen_cpp*.so "$SITE"/
+
       - name: Emit backend and format route reports (#178)
         env:
+          LD_LIBRARY_PATH: ${{ runner.temp }}/oracle-bngsim/build
           BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
           BNG3_ISSUE178_RELEASE_INTERFACE_PARITY_REPORT: ${{ runner.temp }}/issue178-parity.json
           BNG3_ISSUE178_RELEASE_BACKEND_CONTRACT_REPORT: ${{ runner.temp }}/issue178-contract.json
@@ -1630,6 +1646,14 @@ jobs:
             --route-report release-backend-oracles="$RUNNER_TEMP/issue178-oracles.json" \
             --output "$RUNNER_TEMP/issue-178-release-report.json" \
             --summary-file "$GITHUB_STEP_SUMMARY"
+
+      - name: Restore standard native extension after route evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          SITE=$(python -c 'import bionetgen,os; print(os.path.dirname(bionetgen.__file__))')
+          cp "$RUNNER_TEMP/original_bionetgen_cpp.so" "$SITE"/
 
       - name: Upload Issue 178 shared decisions evidence
         if: always()
