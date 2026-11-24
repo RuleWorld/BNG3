@@ -10,13 +10,13 @@ A limitation is **not** a defect. It is a case the Atomizer refuses, and a refus
 
 | Field | Value |
 | --- | --- |
-| Generated on | 2026-11-21 |
-| Tree described | `48fa89a01dd1e3619f7824254e2c6d9a5dff7b9a` |
-| Measured at commit | `48fa89a01dd1e3619f7824254e2c6d9a5dff7b9a` |
+| Generated on | 2026-11-24 |
+| Tree described | `d8d21dfcc6aadc8cce8b279f121239eba9a170ea` |
+| Measured at commit | `d8d21dfcc6aadc8cce8b279f121239eba9a170ea` |
 | Official suite revision | `cf38585fac5de8e0e90112febb62851ee2181816` (https://github.com/sbmlteam/sbml-test-suite.git) |
-| Report SHA-256 | `eb69228718054ed99e43fd6c2cf34fa0be0ff35d9f7643bdde837940469cd748` |
+| Report SHA-256 | `0d4f0fd58fbd5d451c829c9f27b488e8eebcba85893d60732e18538b2747cbf7` |
 | BNG3 version | 3.0.0a1 |
-| Native extension SHA-256 | `abc8f082338549a8e722673330e8a13f1d27f15c915a6cdd091842202aab5a05` |
+| Native extension SHA-256 | `f1b24b61afa8b7f75e382d1731f8d50371fe7d2d3477a932af8bab7d8216f8dc` |
 | Source tree of the measurement | `/home/runner/work/_temp/ssts-venv/lib/python3.12/site-packages/bionetgen/__init__.py` |
 
 The measurement is a full run of the pinned official SBML Test Suite; its per-case verdicts are recorded in the expectation manifest, which the campaign regenerates whenever a merge changes a verdict.
@@ -45,17 +45,17 @@ Every limitation below carries the date it was recorded. A limitation that is cl
 
 | Construct | Side | Cases | What it is | First recorded |
 | --- | --- | --- | --- | --- |
-| `events:untranslated` | atomizer | 62 | An event the Atomizer cannot lower, or cannot order | 2026-10-20 |
+| `events:untranslated` | atomizer | 61 | An event the Atomizer cannot lower, or cannot order | 2026-10-20 |
 | `package:fbc` | atomizer | 34 | The fbc package: a flux-balance model, not a time course | 2026-10-20 |
-| `fast-reaction:no-fast-equilibrium-solve` | atomizer | 4 | A fast reaction whose pseudo steady state cannot be used | 2026-10-20 |
-| `other` | atomizer | 3 | Refusals the cause taxonomy does not yet name | 2026-10-20 |
-| `events:state-trigger-not-schedulable` | atomizer | 2 | A state trigger the runtime cannot schedule | 2026-10-20 |
+| `fast-reaction:no-fast-equilibrium-solve` | atomizer | 2 | A fast reaction whose pseudo steady state cannot be used | 2026-10-20 |
+| `events:state-trigger-not-schedulable` | atomizer | 1 | A state trigger the runtime cannot schedule | 2026-10-20 |
+| `other` | atomizer | 1 | Refusals the cause taxonomy does not yet name | 2026-10-20 |
 | `harness:random-event-execution` | harness | 16 | The official reference is one draw of a random execution order | 2026-10-21 |
 | `harness:scheduled-action-phase-boundary` | harness | 2 | The official reference samples a scheduled-action phase boundary | 2026-10-22 |
 | `harness:stochastic-ensemble-budget-not-comparable` | harness | 2 | Projected stochastic work exceeds the comparison-planning threshold | 2026-10-22 |
 | `reference:not-applicable` | not-applicable | 34 | The suite says the case has no official time-course reference | 2026-10-20 |
 
-Cases with a recorded gap: 105 atomizer-side, 20 harness-side, 34 not-applicable-side. A case may carry a gap at more than one stage, so the counts above count distinct cases per construct.
+Cases with a recorded gap: 99 atomizer-side, 20 harness-side, 34 not-applicable-side. A case may carry a gap at more than one stage, so the counts above count distinct cases per construct.
 
 ## The Atomizer's limitations
 
@@ -64,7 +64,7 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 ### An event the Atomizer cannot lower, or cannot order
 
 - **Construct**: `events:untranslated`
-- **Cases**: 62 — semantic/01000 stochastic/00040 stochastic/00041 stochastic/00042 stochastic/00043 stochastic/00044 stochastic/00045 stochastic/00046 stochastic/00047 stochastic/00048 stochastic/00049 stochastic/00050 stochastic/00051 stochastic/00052 stochastic/00053 stochastic/00054 stochastic/00055 stochastic/00056 stochastic/00057 stochastic/00058 stochastic/00059 stochastic/00060 stochastic/00061 stochastic/00062 … (38 more)
+- **Cases**: 61 — stochastic/00040 stochastic/00041 stochastic/00042 stochastic/00043 stochastic/00044 stochastic/00045 stochastic/00046 stochastic/00047 stochastic/00048 stochastic/00049 stochastic/00050 stochastic/00051 stochastic/00052 stochastic/00053 stochastic/00054 stochastic/00055 stochastic/00056 stochastic/00057 stochastic/00058 stochastic/00059 stochastic/00060 stochastic/00061 stochastic/00062 stochastic/00063 … (37 more)
 - **First recorded**: 2026-10-20
 - **What SBML requires**: SBML Level 3 Version 2 Core Sec. 4.12 defines an Event as a two-phase operation: a Trigger (Sec. 4.12.2) decides when the event may fire, and the execution phase applies the EventAssignments (Sec. 4.12.5). Sec. 4.12.7 says the order in which events occur is resolved, that this order can be significant for a simulation's outcome, and that an event may carry a special priority through a Priority subobject (Sec. 4.12.3).
 - **Citation**: SBML Level 3 Version 2 Core Sec. 4.12, Sec. 4.12.2, Sec. 4.12.3, Sec. 4.12.7
@@ -84,32 +84,32 @@ These are the constructs BNG3's SBML Atomizer cannot represent exactly today. Ea
 ### A fast reaction whose pseudo steady state cannot be used
 
 - **Construct**: `fast-reaction:no-fast-equilibrium-solve`
-- **Cases**: 4 — semantic/01398 semantic/01539 semantic/01568 semantic/01570
+- **Cases**: 2 — semantic/01568 semantic/01570
 - **First recorded**: 2026-10-20
 - **What SBML requires**: SBML Level 3 Version 1 Core Sec. 4.11 asks that software tools use a pseudo steady-state approximation for the set of reactions whose fast attribute is true. SBML Level 3 Version 2 removed the fast attribute (Sec. 4.11), so a Level 3 Version 2 model says nothing about fast reactions.
 - **Citation**: SBML Level 3 Version 1 Core Sec. 4.11; SBML Level 3 Version 2 Core Sec. 4.11
 - **What BNG3 does instead**: The Atomizer reduces a fast reaction to its pseudo steady state where it can (PR #370, 2026-10-21) and refuses the remainder, saying that it treats such a reaction as an ordinary reaction and that this changes the trajectory.
 - **Reducible?**: Largely reduced already: the reduction closed most of these cases. The remainder needs a fast reaction whose pseudo steady state cannot be written as a BNGL rule.
 
-### Refusals the cause taxonomy does not yet name
-
-- **Construct**: `other`
-- **Cases**: 3 — semantic/00965 semantic/01590 stochastic/00033
-- **First recorded**: 2026-10-20
-- **What SBML requires**: No single construct: each case is refused for a reason the campaign's cause taxonomy has no label for yet.
-- **Citation**: SBML Level 3 Version 2 Core, the section the case's own reason names
-- **What BNG3 does instead**: The Atomizer refuses the case and reports the reason; the campaign's classification records it as "other" because no known construct class matches.
-- **Reducible?**: Unknown until each reason is read. This bucket is a request to extend the taxonomy, not a claim that the cases are alike.
-
 ### A state trigger the runtime cannot schedule
 
 - **Construct**: `events:state-trigger-not-schedulable`
-- **Cases**: 2 — semantic/00988 semantic/01466
+- **Cases**: 1 — semantic/01466
 - **First recorded**: 2026-10-20
 - **What SBML requires**: SBML Level 3 Version 2 Core Sec. 4.12.2 requires the Trigger to be evaluated against the model's current state, and Sec. 4.12.7 requires the event to be executed when the trigger becomes true.
 - **Citation**: SBML Level 3 Version 2 Core Sec. 4.12.2, Sec. 4.12.7
 - **What BNG3 does instead**: The Atomizer refuses the event and says why: "trigger is not a simple time threshold (state-dependent triggers cannot be scheduled)", or, when the trigger names an identifier that is not a legal SBML SId, that the identifier "contains a character outside the SBML SId class and cannot be matched".
 - **Reducible?**: Yes, in two directions. A trigger the native event runtime can evaluate is lowered rather than refused (PR #328, 2026-10-21); an identifier that is not a legal SId is a source defect the user can fix by renaming it, and the diagnostic says so.
+
+### Refusals the cause taxonomy does not yet name
+
+- **Construct**: `other`
+- **Cases**: 1 — stochastic/00033
+- **First recorded**: 2026-10-20
+- **What SBML requires**: No single construct: each case is refused for a reason the campaign's cause taxonomy has no label for yet.
+- **Citation**: SBML Level 3 Version 2 Core, the section the case's own reason names
+- **What BNG3 does instead**: The Atomizer refuses the case and reports the reason; the campaign's classification records it as "other" because no known construct class matches.
+- **Reducible?**: Unknown until each reason is read. This bucket is a request to extend the taxonomy, not a claim that the cases are alike.
 
 ## The harness's measurement limits
 

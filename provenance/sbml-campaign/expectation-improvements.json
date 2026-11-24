@@ -401,6 +401,97 @@
      }
     }
    }
+  },
+  {
+   "suite_revision": "cf38585fac5de8e0e90112febb62851ee2181816",
+   "tested_commit": "d8d21dfcc6aadc8cce8b279f121239eba9a170ea",
+   "report_sha256": "0d4f0fd58fbd5d451c829c9f27b488e8eebcba85893d60732e18538b2747cbf7",
+   "workflow_run_id": 45431796452,
+   "job_id": 138578851545,
+   "artifact_id": 14942590858,
+   "note": "Exact-main full SSTS campaign 45431796452; advances semantic/00988, semantic/01000, semantic/01398, and semantic/01539 to passed across all four stages while preserving semantic/01705 as passed and stochastic/00003 official failure at pinned seed base 1000000.",
+   "cases": {
+    "semantic/00988": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "independent_comparison": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/01000": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "independent_comparison": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/01398": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "independent_comparison": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    },
+    "semantic/01539": {
+     "stages": {
+      "conversion": {
+       "from": "unsupported",
+       "to": "passed"
+      },
+      "roundtrip_structure": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "independent_comparison": {
+       "from": "not_tested",
+       "to": "passed"
+      },
+      "official_reference": {
+       "from": "unsupported",
+       "to": "passed"
+      }
+     }
+    }
+   }
   }
  ]
 }
