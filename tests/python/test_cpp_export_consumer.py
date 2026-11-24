@@ -42,13 +42,19 @@ writeCPPfile({overwrite=>1})
 """
 
 HARNESS = """#include "m_cvode.h"
+#include <future>
 #include <iostream>
 int main() {
     vector<double> tp; tp.push_back(0.0); tp.push_back(0.5); tp.push_back(1.0);
     vector<double> si; si.push_back(10.0);
     vector<double> pa; pa.push_back(0.1);
-    Result r = simulate(tp, si, pa);
-    if (r.status != 0) return 2;
+    auto first = std::async(std::launch::async, simulate, tp, si, pa);
+    auto second = std::async(std::launch::async, simulate, tp, si, pa);
+    const Result r = first.get();
+    const Result other = second.get();
+    if (r.status != 0 || other.status != 0 || r.observables != other.observables) {
+        return 2;
+    }
     std::cout.precision(12);
     std::cout << r.observables[0][2] << "\\n";
     return 0;
@@ -56,25 +62,26 @@ int main() {
 """
 
 
-def test_exported_cpp_compiles_and_matches_analytic_law(tmp_path):
+@pytest.mark.parametrize(
+    "options", ["stiff=>1,sparse=>0", "stiff=>1,sparse=>1", "stiff=>0"]
+)
+def test_exported_cpp_compiles_and_matches_analytic_law(tmp_path, options):
     source = tmp_path / "m.bngl"
-    source.write_text(MODEL)
+    source.write_text(MODEL.replace("writeCPPfile({", f"writeCPPfile({{{options},"))
     bionetgen.load(str(source)).execute()
 
     header = tmp_path / "m_cvode.h"
     assert header.is_file()
-    text = header.read_text()
-    assert "#include <sundials/sundials_linearsolver.h>" in text
-    assert "SUNLinSol_Dense" in text
-    assert "int return_status = 0;" in text
-    assert "#include <cvode/cvode_dense.h>" not in text
-
     build = ROOT / "build" / "_deps" / "sundials-build"
     include = ROOT / "build" / "_deps" / "sundials-src" / "include"
     gpp = shutil.which("g++")
     libs = [
         build / "src/cvode/libsundials_cvode.a",
         build / "src/nvector/serial/libsundials_nvecserial.a",
+        build / "src/sunnonlinsol/fixedpoint/libsundials_sunnonlinsolfixedpoint.a",
+        build / "src/sunlinsol/dense/libsundials_sunlinsoldense.a",
+        build / "src/sunlinsol/spgmr/libsundials_sunlinsolspgmr.a",
+        build / "src/sunmatrix/dense/libsundials_sunmatrixdense.a",
         build / "src/sundials/libsundials_core.a",
     ]
     if (
@@ -90,7 +97,7 @@ def test_exported_cpp_compiles_and_matches_analytic_law(tmp_path):
         [
             gpp,
             "-std=c++17",
-            "-w",
+            "-pthread",
             "-I.",
             f"-I{include}",
             f"-I{build / 'include'}",
