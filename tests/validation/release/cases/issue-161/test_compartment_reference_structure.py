@@ -111,3 +111,80 @@ def test_species_reference_compartment_reference_preserves_product_compartment()
     parsed = parse_multi_package(MULTI_COMPARTMENT_XML)
     assert parsed.executable
     assert parsed.compartment_references["c1"]["inside"] == "c2"
+
+
+PAIR_BASE = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
+      xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
+      level="3" version="1" multi:required="true">
+  <model id="m">
+    <listOfCompartments>
+      <compartment id="c1" size="1" spatialDimensions="3" constant="true" multi:isType="false">
+        <multi:listOfCompartmentReferences>
+          <multi:compartmentReference multi:id="inside" multi:compartment="c2"/>
+        </multi:listOfCompartmentReferences>
+      </compartment>
+      <compartment id="c2" size="1" spatialDimensions="3" constant="true" multi:isType="false"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="A" compartment="c1" initialAmount="0" hasOnlySubstanceUnits="true"
+        boundaryCondition="false" constant="false" multi:speciesType="AType"/>
+    </listOfSpecies>
+    <multi:listOfSpeciesTypes>
+      {bst}
+      <multi:speciesType multi:id="AType" multi:name="A" multi:compartment="c1">
+        <multi:listOfSpeciesTypeInstances>
+          <multi:speciesTypeInstance multi:id="x" multi:speciesType="xType" {cref}/>
+        </multi:listOfSpeciesTypeInstances>
+      </multi:speciesType>
+    </multi:listOfSpeciesTypes>
+  </model>
+</sbml>"""
+
+
+def _pair_sources():
+    same = PAIR_BASE.format(
+        bst='<multi:bindingSiteSpeciesType multi:id="xType" multi:compartment="c1"/>',
+        cref="",
+    )
+    nested = PAIR_BASE.format(
+        bst='<multi:bindingSiteSpeciesType multi:id="xType" multi:compartment="c2"/>',
+        cref='multi:compartmentReference="inside"',
+    )
+    return same, nested
+
+
+def test_valid_pair_from_936_is_distinguished_by_representation():
+    """The two libSBML-valid sources differ only in binding-site placement.
+
+    PR #936 lowered both to byte-identical BNGL, losing the placement; the
+    maintainer closed that lowering. This check requires libSBML to see the
+    structural difference and requires the exact-main representation to keep
+    the two sources distinguishable, with the nested-reference row recorded as
+    explicitly unsupported rather than a silent supported PASS.
+    """
+    same, nested = _pair_sources()
+    placements = []
+    for xml in (same, nested):
+        doc = _document(xml)
+        plugin = doc.getModel().getPlugin("multi")
+        cref = None
+        for index in range(plugin.getNumMultiSpeciesTypes()):
+            species_type = plugin.getMultiSpeciesType(index)
+            for j in range(species_type.getNumSpeciesTypeInstances()):
+                instance = species_type.getSpeciesTypeInstance(j)
+                if instance.getCompartmentReference():
+                    cref = instance.getCompartmentReference()
+        placements.append(cref)
+    assert placements == [None, "inside"]
+
+    same_parsed = parse_multi_package(same)
+    nested_parsed = parse_multi_package(nested)
+    assert same_parsed.executable is True
+    # Exact main distinguishes the pair; the nested placement is not collapsed
+    # into a nominally supported row (that was the rejected PR #936 lowering).
+    assert nested_parsed.executable is False
+    assert any(
+        w.severity == "dropped" and "different compartment" in w.message
+        for w in nested_parsed.warnings
+    )
