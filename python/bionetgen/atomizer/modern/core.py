@@ -2294,6 +2294,18 @@ def disambiguate_colliding_species(
     for species_ids in groups.values():
         if len(set(species_ids)) < 2:
             continue
+        distinct_raw_molecules = (
+            len(
+                {
+                    tuple(
+                        molecule.name
+                        for molecule in sct.entries[species_id].structure.molecules
+                    )
+                    for species_id in species_ids
+                }
+            )
+            > 1
+        )
         for species_id in species_ids:
             entry = sct.entries[species_id]
             molecule = entry.structure.molecules[0]
@@ -2301,11 +2313,12 @@ def disambiguate_colliding_species(
                 discriminator = Component("__sp", states=[standardize_name(species_id)])
                 discriminator.set_active_state(standardize_name(species_id))
                 molecule.add_component(discriminator)
-            # BNGL declares molecule types by name, so a component alone is
-            # not enough: two species whose names normalize to the same BNGL
-            # molecule (e.g. "C" -> M_C and "M_C" -> M_C) still need distinct
-            # type names or the writer emits a duplicate declaration.
-            molecule.name = f"{molecule.name}__{standardize_name(species_id)}"
+            if distinct_raw_molecules:
+                # BNGL declares molecule types by name, so a component alone is
+                # not enough: two species whose names normalize to the same BNGL
+                # molecule (e.g. "C" -> M_C and "M_C" -> M_C) still need distinct
+                # type names or the writer emits a duplicate declaration.
+                molecule.name = f"{molecule.name}__{standardize_name(species_id)}"
             count += 1
     return count
 

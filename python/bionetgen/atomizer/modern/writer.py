@@ -12155,24 +12155,61 @@ def generate_bngl(
             if lowered_static_events is not None:
                 event_translation_events = lowered_static_events
 
-        def _fixed_target_value(variable: str) -> Optional[float]:
-            """Value of a target that cannot change except by an event."""
+        def _fixed_target_value(
+            variable: str, event_context: Optional[SBMLEvent] = None
+        ) -> Optional[float]:
+            """Value of a target that cannot change before or during simulation."""
             standardized = standardize_name(variable)
+            if any(
+                (rule.variable and standardize_name(str(rule.variable)) == standardized)
+                or rule.type == "algebraic"
+                for rule in model.rules
+            ):
+                return None
+            if any(
+                standardize_name(assignment_var) == standardized
+                for other_event in model.events
+                if other_event is not event_context
+                for assignment in other_event.assignments
+                for assignment_var, _ in [_event_assignment(assignment)]
+            ):
+                return None
             for species in model.species.values():
                 if standardize_name(species.id) != standardized:
                     continue
                 if not (species.constant or species.boundary_condition):
                     return None
-                declared = (
-                    species.initial_amount
-                    if species.initial_amount_set
-                    else species.initial_concentration
-                )
-                return _numeric_value(declared)
+                if not species.has_only_substance_units and species.compartment:
+                    compartment_id = species.compartment
+                    compartment = model.compartments.get(compartment_id)
+                    comp_std = standardize_name(compartment_id)
+                    if (
+                        compartment is None
+                        or not compartment.constant
+                        or any(
+                            rule.variable
+                            and standardize_name(str(rule.variable)) == comp_std
+                            for rule in model.rules
+                        )
+                        or any(
+                            standardize_name(ia.symbol) == comp_std
+                            for ia in model.initial_assignments
+                        )
+                        or any(
+                            standardize_name(a_var) == comp_std
+                            for other_event in model.events
+                            for a in other_event.assignments
+                            for a_var, _ in [_event_assignment(a)]
+                        )
+                    ):
+                        return None
+                return resolve_initial_event_value(species.id)
             for parameter_id, parameter in model.parameters.items():
                 if standardize_name(str(parameter_id)) != standardized:
                     continue
-                return _numeric_value(parameter.value) if parameter.constant else None
+                if not parameter.constant:
+                    return None
+                return resolve_initial_event_value(str(parameter_id))
             return None
 
         def _event_is_proven_noop(event: SBMLEvent) -> bool:
@@ -12182,7 +12219,7 @@ def generate_bngl(
             if not assignments:
                 return False
             for variable, expression in assignments:
-                fixed = _fixed_target_value(variable)
+                fixed = _fixed_target_value(variable, event_context=event)
                 if fixed is None:
                     return False
                 value = fold_numeric(
