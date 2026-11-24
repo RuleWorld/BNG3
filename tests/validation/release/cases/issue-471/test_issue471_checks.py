@@ -514,5 +514,50 @@ def test_release_ci_topology_all_maintained_workflows():
     assert report["static_result"] == "pass"
     assert report["errors"] == []
     assert len(report["audited_workflows"]) >= 13
+    assert len(report["audited_independent_groups"]) >= 7
     assert report["acceptance_result"] == "fail"
     assert report["result"] == "fail"
+
+
+def _replay_receipt(revision: str) -> dict:
+    return {
+        "schema_version": 1,
+        "source_revision": revision,
+        "selection_digest": "sha256:" + "a" * 64,
+        "cases": {"michment": {"verdicts_match_clean": True}},
+        "phases": {
+            "resume": {"actions": {"michment": "reused"}},
+            "stale_control": {"action": "stale-discarded-and-executed"},
+        },
+    }
+
+
+def test_release_ci_topology_consumes_an_exact_revision_replay_receipt():
+    revision = "b" * 40
+    receipt = _replay_receipt(revision)
+    report = checks.check_workflows_topology(
+        ROOT / ".github/workflows", revision=revision, replay_receipts=[receipt]
+    )
+    assert report["static_result"] == "pass"
+    assert report["acceptance_result"] == "pass"
+    assert report["result"] == "pass"
+
+
+@pytest.mark.parametrize(
+    "mutation", ["stale-revision", "no-reuse", "stale-not-discarded"]
+)
+def test_release_ci_topology_rejects_unverifiable_replay_receipts(mutation):
+    revision = "c" * 40
+    receipt = _replay_receipt(revision)
+    if mutation == "stale-revision":
+        receipt["source_revision"] = "d" * 40
+    elif mutation == "no-reuse":
+        receipt["phases"]["resume"]["actions"] = {"michment": "executed"}
+    else:
+        receipt["phases"]["stale_control"]["action"] = "reused"
+    report = checks.check_workflows_topology(
+        ROOT / ".github/workflows", revision=revision, replay_receipts=[receipt]
+    )
+    assert report["static_result"] == "pass"
+    assert report["acceptance_result"] == "fail"
+    assert report["acceptance_gaps"]

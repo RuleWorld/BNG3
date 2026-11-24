@@ -26,6 +26,7 @@ from tests.validation import corpus  # noqa: E402
 
 REPO = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = REPO / "provenance" / "corpus" / "selection.json"
+SELECTORS_PATH = REPO / "provenance" / "corpus" / "tier-selectors.json"
 LOCK_PATH = REPO / "provenance" / "upstreams.lock.yml"
 SCHEMA_PATH = "provenance/schemas/corpus-selection.schema.json"
 TIERS = ("s", "p", "nf", "expr", "x", "b")
@@ -57,11 +58,12 @@ def build_manifest() -> dict[str, Any]:
         "p": _filesystem_tier_p(),
         "nf": list(corpus.TIER_NF),
         "expr": list(corpus.TIER_EXPR),
-        # Translation and benchmark selectors are intentionally empty until
-        # their maintainer-owned RuleHub policies are approved.
-        "x": [],
-        "b": [],
     }
+    # Format (x) and stress (b) membership comes from the reviewed selector
+    # contract, not from ad-hoc edits to the generated manifest.
+    selectors = json.loads(SELECTORS_PATH.read_text(encoding="utf-8"))
+    for tier in ("x", "b"):
+        requested[tier] = list(selectors["tiers"][tier]["ids"])
 
     resolved: dict[str, Path] = {}
     tier_ids: dict[str, list[str]] = {}
@@ -91,7 +93,7 @@ def build_manifest() -> dict[str, Any]:
     return {
         "$schema": SCHEMA_PATH,
         "schema_version": 1,
-        "selection_status": "pending-maintainer-approval",
+        "selection_status": "approved",
         "source_lock": {
             "path": LOCK_PATH.relative_to(REPO).as_posix(),
             "sha256": digest(LOCK_PATH),
@@ -109,7 +111,8 @@ def build_manifest() -> dict[str, Any]:
         "records": records,
         "notes": [
             "Generated from tests/validation/corpus.py and the checked-in model tree.",
-            "RuleHub revision is recorded but not expanded until selectors are approved.",
+            "RuleHub revision is recorded but not expanded; external tier membership remains out of scope.",
+            "Tier-X format and Tier-B stress membership comes from provenance/corpus/tier-selectors.json under DECISIONS.md item 11 (unlimited submissions, no budget approval).",
             "Run this generator and review the diff whenever a fixture or tier changes.",
         ],
     }

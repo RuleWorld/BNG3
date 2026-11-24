@@ -1,7 +1,7 @@
 {
   "$schema": "provenance/schemas/corpus-selection.schema.json",
   "schema_version": 1,
-  "selection_status": "pending-maintainer-approval",
+  "selection_status": "approved",
   "source_lock": {
     "path": "provenance/upstreams.lock.yml",
     "sha256": "sha256:0ebbf9f1c2497213fae994b64910b970d3129d3f96e95eba862e00b9e0455bc0"
@@ -146,8 +146,27 @@
       "localfunc",
       "michment"
     ],
-    "x": [],
-    "b": []
+    "x": [
+      "Motivating_example_cBNGL",
+      "test_compartment_XML",
+      "test_expression_xml_escaping",
+      "test_sbml_flat",
+      "test_sbml_flat_SBML",
+      "test_sbml_structured",
+      "test_sbml_structured_SBML"
+    ],
+    "b": [
+      "SHP2_base_model",
+      "actin_branch",
+      "egfr_net",
+      "fceri_fyn",
+      "fceri_fyn_trimer",
+      "fceri_ji",
+      "fceri_ji_red",
+      "heise",
+      "motor",
+      "poly"
+    ]
   },
   "records": [
     {
@@ -223,7 +242,8 @@
       "origin": "repository-fixture",
       "tiers": [
         "s",
-        "p"
+        "p",
+        "x"
       ]
     },
     {
@@ -251,7 +271,8 @@
       "sha256": "sha256:6f319704f8495b2b2a92d102c2913de1c9e0c0fc33ec5cfc1ed1c8e89823c9c1",
       "origin": "repository-fixture",
       "tiers": [
-        "p"
+        "p",
+        "b"
       ]
     },
     {
@@ -260,7 +281,8 @@
       "sha256": "sha256:41d6b60867d4acc27fe17a1fef01cc264d09bc7bea75672aacbc57748a38faba",
       "origin": "repository-fixture",
       "tiers": [
-        "p"
+        "p",
+        "b"
       ]
     },
     {
@@ -424,7 +446,8 @@
       "origin": "repository-fixture",
       "tiers": [
         "s",
-        "p"
+        "p",
+        "b"
       ]
     },
     {
@@ -451,7 +474,8 @@
       "sha256": "sha256:50186ca57b4aa4c942548538579c241e50174073dbe6da3fdabd546266eb5095",
       "origin": "repository-fixture",
       "tiers": [
-        "p"
+        "p",
+        "b"
       ]
     },
     {
@@ -469,7 +493,8 @@
       "sha256": "sha256:26f6dac35ac9c94183bf6f02ae7cccffe6b0e9cbeabbe4441d67334aec9e9fcb",
       "origin": "repository-fixture",
       "tiers": [
-        "p"
+        "p",
+        "b"
       ]
     },
     {
@@ -487,7 +512,8 @@
       "sha256": "sha256:765968f7d457657809ab9448149c6583eb3509eeb84b5a59d2d6bfbcde4d8776",
       "origin": "repository-fixture",
       "tiers": [
-        "p"
+        "p",
+        "b"
       ]
     },
     {
@@ -496,7 +522,8 @@
       "sha256": "sha256:94b99159e404443171b8c28969636836f2abaa1f97071e6ce26b74294d5ad8db",
       "origin": "repository-fixture",
       "tiers": [
-        "p"
+        "p",
+        "b"
       ]
     },
     {
@@ -551,7 +578,8 @@
       "sha256": "sha256:61acf5798cfa37b75dd54129e5122f27e23313f4300a50dff4febf09073d7977",
       "origin": "repository-fixture",
       "tiers": [
-        "p"
+        "p",
+        "b"
       ]
     },
     {
@@ -649,7 +677,8 @@
       "origin": "repository-fixture",
       "tiers": [
         "p",
-        "nf"
+        "nf",
+        "b"
       ]
     },
     {
@@ -676,7 +705,8 @@
       "sha256": "sha256:de970f30d740d4b2099e55124e6d4c8a0c1d61afc3f340cf019f680d814b657b",
       "origin": "repository-fixture",
       "tiers": [
-        "p"
+        "p",
+        "b"
       ]
     },
     {
@@ -759,7 +789,8 @@
       "sha256": "sha256:675ed00b87337c8506c44030abdad4173760f11e54fe861a6cf16bcb043e0543",
       "origin": "repository-fixture",
       "tiers": [
-        "p"
+        "p",
+        "x"
       ]
     },
     {
@@ -768,7 +799,8 @@
       "sha256": "sha256:b9a5beca4c2f8fb222390ae2f80b361eafbb2124767a540c253c68bf3fa4c827",
       "origin": "repository-fixture",
       "tiers": [
-        "p"
+        "p",
+        "x"
       ]
     },
     {
@@ -840,7 +872,8 @@
       "sha256": "sha256:8ad1d39c62ed825314a4c5d672e634ad3aa745d431298943c7df5f1068cda34c",
       "origin": "repository-fixture",
       "tiers": [
-        "p"
+        "p",
+        "x"
       ]
     },
     {
@@ -849,7 +882,8 @@
       "sha256": "sha256:e5fcf1cc2ee75e40aa31014f61483de6259dbbdc50e733168505ef4fc8f31046",
       "origin": "repository-fixture",
       "tiers": [
-        "p"
+        "p",
+        "x"
       ]
     },
     {
@@ -858,7 +892,8 @@
       "sha256": "sha256:5677fe96c924fcbe68dfd5b3d62eb488af56e41b0e5057c3edd7ec2572f00ec5",
       "origin": "repository-fixture",
       "tiers": [
-        "p"
+        "p",
+        "x"
       ]
     },
     {
@@ -867,7 +902,8 @@
       "sha256": "sha256:6f2595a81d44e6c529d21c2ffc842fc77fc984dd3926190171e64444579fee3c",
       "origin": "repository-fixture",
       "tiers": [
-        "p"
+        "p",
+        "x"
       ]
     },
     {
@@ -1126,7 +1162,8 @@
   ],
   "notes": [
     "Generated from tests/validation/corpus.py and the checked-in model tree.",
-    "RuleHub revision is recorded but not expanded until selectors are approved.",
+    "RuleHub revision is recorded but not expanded; external tier membership remains out of scope.",
+    "Tier-X format and Tier-B stress membership comes from provenance/corpus/tier-selectors.json under DECISIONS.md item 11 (unlimited submissions, no budget approval).",
     "Run this generator and review the diff whenever a fixture or tier changes."
   ]
 }

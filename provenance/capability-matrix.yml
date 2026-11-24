@@ -10196,7 +10196,7 @@
       "upstream": "provenance/capability-matrix.yml at audited main",
       "bng3": "provenance/capability-matrix.yml",
       "check": "release-capability[bngl.ast.model]",
-      "oracle": "canonical source or analytic specification as appropriate",
+      "oracle": "pinned BNG2@9601746f8884ed19ab2acea49fe87fc4660ace46 parser/AST network generation",
       "status": "unassessed",
       "issue": 137,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
@@ -10207,7 +10207,7 @@
       "upstream": "provenance/capability-matrix.yml at audited main",
       "bng3": "provenance/capability-matrix.yml",
       "check": "release-capability[nfsim.options.parameters]",
-      "oracle": "canonical source or analytic specification as appropriate",
+      "oracle": "pinned native NFsim@8c449bbccc4a0c54586ae562f46f4955e65fe876 typed parameter/unit option contract",
       "status": "unassessed",
       "issue": 137,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
@@ -10218,7 +10218,7 @@
       "upstream": "provenance/capability-matrix.yml at audited main",
       "bng3": "provenance/capability-matrix.yml",
       "check": "release-capability[nfsim.compartments]",
-      "oracle": "canonical source or analytic specification as appropriate",
+      "oracle": "pinned native NFsim@8c449bbccc4a0c54586ae562f46f4955e65fe876 hierarchy, nested volume and placement semantics",
       "status": "unassessed",
       "issue": 137,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
@@ -10229,7 +10229,7 @@
       "upstream": "provenance/capability-matrix.yml at audited main",
       "bng3": "provenance/capability-matrix.yml",
       "check": "release-capability[nfsim.molecule-types]",
-      "oracle": "canonical source or analytic specification as appropriate",
+      "oracle": "pinned native NFsim@8c449bbccc4a0c54586ae562f46f4955e65fe876 integer state expansion and symmetric-site renaming",
       "status": "unassessed",
       "issue": 137,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
@@ -10240,7 +10240,7 @@
       "upstream": "provenance/capability-matrix.yml at audited main",
       "bng3": "provenance/capability-matrix.yml",
       "check": "release-capability[nfsim.global-functions.safe-subset]",
-      "oracle": "canonical source or analytic specification as appropriate",
+      "oracle": "pinned native NFsim@8c449bbccc4a0c54586ae562f46f4955e65fe876 TFUN/local-function contract plus BNG2@9601746f8884ed19ab2acea49fe87fc4660ace46 expression evaluator",
       "status": "unassessed",
       "issue": 137,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
@@ -10251,7 +10251,7 @@
       "upstream": "provenance/capability-matrix.yml at audited main",
       "bng3": "provenance/capability-matrix.yml",
       "check": "release-capability[nfsim.seed-species]",
-      "oracle": "canonical source or analytic specification as appropriate",
+      "oracle": "pinned native NFsim@8c449bbccc4a0c54586ae562f46f4955e65fe876 seed state and observable comparison",
       "status": "unassessed",
       "issue": 137,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
@@ -10262,7 +10262,7 @@
       "upstream": "provenance/capability-matrix.yml at audited main",
       "bng3": "provenance/capability-matrix.yml",
       "check": "release-capability[nfsim.observables]",
-      "oracle": "canonical source or analytic specification as appropriate",
+      "oracle": "pinned native NFsim@8c449bbccc4a0c54586ae562f46f4955e65fe876 molecule/species counting modes, symmetry and stoichiometry",
       "status": "unassessed",
       "issue": 137,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
@@ -10273,7 +10273,7 @@
       "upstream": "provenance/capability-matrix.yml at audited main",
       "bng3": "provenance/capability-matrix.yml",
       "check": "release-capability[nfsim.reaction-rules]",
-      "oracle": "canonical source or analytic specification as appropriate",
+      "oracle": "pinned native NFsim@8c449bbccc4a0c54586ae562f46f4955e65fe876 reaction centers, rates and seeded execution matrix",
       "status": "unassessed",
       "issue": 137,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
@@ -10284,7 +10284,7 @@
       "upstream": "provenance/capability-matrix.yml at audited main",
       "bng3": "provenance/capability-matrix.yml",
       "check": "release-capability[nfsim.energy-and-time-functions]",
-      "oracle": "canonical source or analytic specification as appropriate",
+      "oracle": "independently derived analytic detailed-balance, cycle-affinity and stationary-law derivations in docs/nonequilibrium_energy.md (canonical tools do not implement the extensions)",
       "status": "unassessed",
       "issue": 137,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
@@ -10295,7 +10295,7 @@
       "upstream": "provenance/capability-matrix.yml at audited main",
       "bng3": "provenance/capability-matrix.yml",
       "check": "release-capability[io.sbml.structured-bng2]",
-      "oracle": "canonical source or analytic specification as appropriate",
+      "oracle": "pinned BNG2@9601746f8884ed19ab2acea49fe87fc4660ace46 source-generated structured SBML fixture plus independent downstream consumer",
       "status": "unassessed",
       "issue": 137,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
@@ -10306,7 +10306,7 @@
       "upstream": "provenance/capability-matrix.yml at audited main",
       "bng3": "provenance/capability-matrix.yml",
       "check": "release-capability[pybionetgen.api-cli-atomizer]",
-      "oracle": "canonical source or analytic specification as appropriate",
+      "oracle": "pinned PyBioNetGen@28bf351a9bbfc197e19487c26dedda683716bb64 public API/CLI behavior and artifacts",
       "status": "unassessed",
       "issue": 137,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
@@ -10317,7 +10317,7 @@
       "upstream": "provenance/capability-matrix.yml at audited main",
       "bng3": "provenance/capability-matrix.yml",
       "check": "release-capability[validation.oracles-goldens-release]",
-      "oracle": "canonical source or analytic specification as appropriate",
+      "oracle": "provenance/golden/README.md source/oracle/version/command/seed/digest manifest contract with accepted pins from #179",
       "status": "unassessed",
       "issue": 137,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
@@ -10328,7 +10328,7 @@
       "upstream": "provenance/capability-matrix.yml at audited main",
       "bng3": "provenance/capability-matrix.yml",
       "check": "release-capability[core.graph.canonicalization.single-nauty]",
-      "oracle": "canonical source or analytic specification as appropriate",
+      "oracle": "nauty single-library build/linkage structural contract; cross-domain graph identity parity remains a separate #142 obligation",
       "status": "unassessed",
       "issue": 137,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
@@ -10339,7 +10339,7 @@
       "upstream": "provenance/capability-matrix.yml at audited main",
       "bng3": "provenance/capability-matrix.yml",
       "check": "release-capability[expression.builtins.shared-table]",
-      "oracle": "canonical source or analytic specification as appropriate",
+      "oracle": "pinned BNG2@9601746f8884ed19ab2acea49fe87fc4660ace46 expression evaluator differential over the shared builtin table",
       "status": "unassessed",
       "issue": 137,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
@@ -10350,7 +10350,7 @@
       "upstream": "provenance/capability-matrix.yml at audited main",
       "bng3": "provenance/capability-matrix.yml",
       "check": "release-capability[bngl.actions.setoption]",
-      "oracle": "canonical source or analytic specification as appropriate",
+      "oracle": "pinned BNG2@9601746f8884ed19ab2acea49fe87fc4660ace46 setOption accepted values and resulting execution semantics",
       "status": "unassessed",
       "issue": 137,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
@@ -10361,7 +10361,7 @@
       "upstream": "provenance/capability-matrix.yml at audited main",
       "bng3": "provenance/capability-matrix.yml",
       "check": "release-capability[bngl.observables.counting-modes]",
-      "oracle": "canonical source or analytic specification as appropriate",
+      "oracle": "pinned BNG2@9601746f8884ed19ab2acea49fe87fc4660ace46 Molecules/Species counting comparison with symmetry and disjoint-pattern fixtures",
       "status": "unassessed",
       "issue": 137,
       "evidence": "Implementation/check completion will be established by the named release check; no fresh scientific run in this audit."
