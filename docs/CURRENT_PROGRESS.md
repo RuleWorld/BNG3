@@ -679,8 +679,8 @@ species value; SBML prefix routing.
 Ownership + honesty receipts certified `release-atomizer-modules` and all
 characterization/closure checks. Gate `/tmp/gate164-branch/issue-queue.json`
 at `a58352da`: **exit 1**; gaps `issue:164:acceptance:2/3`,
-`release-atomizer-refactor`, `release-obligation-164`,
-`release-boundary-extraction-164`. Cause: no clean before/after SSTS+BioModels
+`release-atomizer-refactor`, `release-obligation-164`, and the historical `#164`
+boundary-extraction obligation (`provenance/issue-obligations.json`). Cause: no clean before/after SSTS+BioModels
 comparison at the candidate revision. Session 2's retained campaign artifacts
 fail closed because intervening product fixes changed verdicts. No value,
 tolerance, seed, skip or exclusion was altered.
