@@ -24,9 +24,19 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import bionetgen
-from bionetgen.bngir import EqualityUndecided
-from bionetgen.model import _cpp
+# Import the product runtime only when a catalogue row actually executes. The
+# negative recorder tests import this module in the oracle-lock CI job, which
+# deliberately does not install BNG3; a top-level product import there turns a
+# recorder-contract check into a false prerequisite failure.
+
+
+def _runtime():
+    import bionetgen
+    from bionetgen.bngir import EqualityUndecided
+    from bionetgen.model import _cpp
+
+    return bionetgen, EqualityUndecided, _cpp
+
 
 # An outcome is one of: equal, different, undecided.
 EQUAL = "equal"
@@ -505,10 +515,12 @@ CASES: tuple[EqCase, ...] = (
 
 
 def _build(source: str):
+    bionetgen, _, _cpp = _runtime()
     return bionetgen.BioNetGenModel(_cpp.parse_string(source))
 
 
 def _serialization_models(kind: str) -> tuple:
+    bionetgen, _, _ = _runtime()
     source = _model("  A() -> B() k\n", seed="  A() 4\n")
     model = _build(source)
     left = bionetgen.from_bngir(bionetgen.to_bngir(model, version="0.1"))
@@ -523,6 +535,7 @@ def _serialization_models(kind: str) -> tuple:
 
 
 def _outcome_of(left, right) -> str:
+    bionetgen, EqualityUndecided, _ = _runtime()
     try:
         answer = bionetgen.semantic_equal(left, right)
     except EqualityUndecided:
@@ -630,6 +643,7 @@ def _certificate_row(case_id: str) -> dict:
 
 def run_catalogue() -> dict:
     """Execute every EQ-* row and return a bounded per-row report."""
+    _, _, _cpp = _runtime()
     if _cpp is None:
         raise RuntimeError(
             "EQ catalogue requires the native BNG3 binding; it is unavailable"
