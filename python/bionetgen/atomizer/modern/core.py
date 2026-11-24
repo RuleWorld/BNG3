@@ -1044,6 +1044,44 @@ def _report_unparsed_fragments(
         )
 
 
+def _connect_unbound_molecules(structure: Species) -> None:
+    """Connect a name-derived complex whose molecules have no bonds.
+
+    A dot-separated BNGL pattern with no bonds is a set of disconnected
+    molecules, not one species.  Seeding it works, but a rule that deletes a
+    molecule while producing such a pattern generates no reaction: network
+    generation splits the product into fragments and rejects the extra
+    fragments.  Bind consecutive molecules so the declared complex stays one
+    connected species; the new sites carry no state and affect only identity.
+    """
+
+    has_bonds = bool(structure.bonds) or any(
+        component.bonds
+        for molecule in structure.molecules
+        for component in molecule.components
+    )
+    if has_bonds or len(structure.molecules) < 2:
+        return
+    added = False
+    for index, (left, right) in enumerate(
+        zip(structure.molecules, structure.molecules[1:]), 1
+    ):
+        site = f"__link{index}"
+        while left.contains(site) or right.contains(site):
+            site = f"_{site}"
+        left_component = Component(site, f"{left.idx}_{site}")
+        right_component = Component(site, f"{right.idx}_{site}")
+        left.add_component(left_component)
+        right.add_component(right_component)
+        bond = max(structure.get_bond_numbers() or [0]) + 1
+        left_component.add_bond(bond)
+        right_component.add_bond(bond)
+        structure.bonds.append((left_component.idx, right_component.idx))
+        added = True
+    if added:
+        structure.renumber_bonds()
+
+
 def _explicit_pattern_structure(name: str) -> Tuple[Optional[Species], List[str]]:
     """Parse a species name as an explicit BNGL molecular pattern.
 
@@ -1061,6 +1099,7 @@ def _explicit_pattern_structure(name: str) -> Tuple[Optional[Species], List[str]
     if not parsed.molecules:
         return None, unparsed
     if len(parsed.molecules) >= 2:
+        _connect_unbound_molecules(parsed)
         return parsed, unparsed
     if any(molecule.components for molecule in parsed.molecules):
         return parsed, unparsed
@@ -2297,13 +2336,17 @@ def structural_report(sct: SpeciesCompositionTable) -> Dict[str, Any]:
             molecules = structure.get_molecule_names()
             for molecule in structure.molecules:
                 for component in molecule.components:
-                    if component.name == "__sp":
+                    if component.name == "__sp" or component.name.startswith("__link"):
                         continue
                     if component.name not in sites:
                         sites.append(component.name)
                     if component.active_state:
                         states[component.name] = component.active_state
-            bonds = list(structure.bonds)
+            bonds = [
+                bond
+                for bond in structure.bonds
+                if not any("__link" in component for component in bond)
+            ]
         species[species_id] = {
             "species": inference.species_id,
             "name": inference.name,
