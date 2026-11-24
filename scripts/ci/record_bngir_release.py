@@ -132,8 +132,17 @@ def build_release_record(
         validate_catalogue_report(eq_catalogue)
         artifact_path = eq_catalogue_path
     elif not skip_tests:
-        eq_catalogue = run_catalogue()
-        validate_catalogue_report(eq_catalogue)
+        try:
+            eq_catalogue = run_catalogue()
+        except RuntimeError as exc:
+            if "native BNG3 binding" not in str(exc):
+                raise
+            # A job without the optional native binding cannot execute the EQ
+            # catalogue. Keep the receipt but mark dependent checks NOT_TESTED
+            # rather than failing the whole CI prerequisite or claiming PASS.
+            eq_catalogue = None
+        if eq_catalogue is not None:
+            validate_catalogue_report(eq_catalogue)
 
     tested_cases: set[str] = set()
     if junit_path is not None:
@@ -186,7 +195,7 @@ def build_release_record(
     }
     for row in results:
         expected_case = case_map.get(row["id"])
-        if skip_tests or expected_case not in tested_cases:
+        if skip_tests or eq_catalogue is None or expected_case not in tested_cases:
             row["status"] = "NOT_TESTED"
             row["supported_execution"] = False
             row["evidence_kind"] = "not-tested"
