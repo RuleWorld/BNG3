@@ -209,13 +209,20 @@ def record(args: argparse.Namespace) -> dict:
         _require(_sha256(native) == sha, "built extension does not match build identity")
 
     parity = _validate_parity(args.parity, revision, device, sha)
-    nfnext = _validate_nfnext(args.nfnext, revision, sha)
+    # The finite Metal lane can be recorded on an exact-main checkout that has
+    # no network-free device receipt; in that case the unqualified nf-gpu row
+    # says so explicitly instead of borrowing the finite result.
+    nfnext = (
+        _validate_nfnext(args.nfnext, revision, sha) if args.nfnext else None
+    )
     performance = _validate_performance(args.performance, revision, sha)
     crossover = _validate_crossover(args.crossover, revision, sha)
     cuda = _read(args.cuda_probe)
     _require(cuda.get("schema_version") == 1, "invalid CUDA availability probe")
 
-    receipts = [args.parity, args.performance, args.nfnext, args.build_identity, args.cuda_probe, *args.crossover]
+    receipts = [args.parity, args.performance, args.build_identity, args.cuda_probe, *args.crossover]
+    if args.nfnext:
+        receipts.append(args.nfnext)
     pinned = None
     if args.pinned_nfsim:
         pinned = _read(args.pinned_nfsim)
@@ -263,10 +270,14 @@ def record(args: argparse.Namespace) -> dict:
         _row(
             "release-nf-gpu",
             "NOT_TESTED",
-            "Bounded Metal unary-state route passes analytic"
-            + (" and pinned native NFsim" if pinned else "")
-            + " checks, but the full network-free GPU corpus and CUDA reporting are not qualified.",
-            ([args.nfnext, args.pinned_nfsim] if pinned else [args.nfnext]),
+            (
+                "Bounded Metal unary-state route passes analytic"
+                + (" and pinned native NFsim" if pinned else "")
+                + " checks, but the full network-free GPU corpus and CUDA reporting are not qualified."
+                if nfnext
+                else "No network-free device receipt was consumed on this exact revision; finite Metal evidence cannot qualify this row."
+            ),
+            ([row for row in (args.nfnext, args.pinned_nfsim) if row]),
         ),
         _row(
             "release-capability-coverage-474",
@@ -293,11 +304,15 @@ def record(args: argparse.Namespace) -> dict:
             "native_sha256": sha,
         },
         "network_free": {
-            "metal": {
-                "device": nfnext["device"]["reported_device"],
-                "total_events": nfnext["total_events"],
-                "analytic_times": [row["time"] for row in nfnext["checks"]],
-            },
+            "metal": (
+                {
+                    "device": nfnext["device"]["reported_device"],
+                    "total_events": nfnext["total_events"],
+                    "analytic_times": [row["time"] for row in nfnext["checks"]],
+                }
+                if nfnext
+                else None
+            ),
             "pinned_nfsim": pinned,
             "cuda": "UNSUPPORTED: network-free CUDA execution is not implemented",
         },
@@ -326,7 +341,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--revision", required=True)
     parser.add_argument("--parity", required=True, type=Path)
-    parser.add_argument("--nfnext", required=True, type=Path)
+    parser.add_argument("--nfnext", type=Path)
     parser.add_argument("--performance", required=True, type=Path)
     parser.add_argument("--crossover", required=True, type=Path, action="append")
     parser.add_argument("--pinned-nfsim", type=Path)
