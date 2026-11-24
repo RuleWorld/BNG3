@@ -505,10 +505,15 @@ CASES: tuple[EqCase, ...] = (
 
 
 def _build(source: str):
+    import bionetgen
+    from bionetgen.model import _cpp
+
     return bionetgen.BioNetGenModel(_cpp.parse_string(source))
 
 
 def _serialization_models(kind: str) -> tuple:
+    import bionetgen
+
     source = _model("  A() -> B() k\n", seed="  A() 4\n")
     model = _build(source)
     left = bionetgen.from_bngir(bionetgen.to_bngir(model, version="0.1"))
@@ -523,6 +528,9 @@ def _serialization_models(kind: str) -> tuple:
 
 
 def _outcome_of(left, right) -> str:
+    import bionetgen
+    from bionetgen.bngir import EqualityUndecided
+
     try:
         answer = bionetgen.semantic_equal(left, right)
     except EqualityUndecided:
@@ -630,6 +638,12 @@ def _certificate_row(case_id: str) -> dict:
 
 def run_catalogue() -> dict:
     """Execute every EQ-* row and return a bounded per-row report."""
+    try:
+        from bionetgen.model import _cpp
+    except ModuleNotFoundError as exc:
+        if exc.name != "bionetgen":
+            raise
+        _cpp = None
     if _cpp is None:
         raise RuntimeError(
             "EQ catalogue requires the native BNG3 binding; it is unavailable"

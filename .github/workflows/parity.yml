@@ -1018,6 +1018,8 @@ jobs:
           path: |
             ${{ runner.temp }}/bng3-issue-queue/
             ${{ runner.temp }}/bng3-issues.json
+            ${{ runner.temp }}/bng3-bngir-roundtrip-release/
+            ${{ runner.temp }}/bng3-issue-155-release/
           if-no-files-found: warn
           retention-days: 30
 
