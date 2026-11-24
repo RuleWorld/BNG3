@@ -17,7 +17,7 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[4]
+ROOT = Path(__file__).resolve().parents[5]
 REPORT_ENV = "BNG3_ISSUE474_REPORT"
 RECORDER = ROOT / "scripts/ci/record_issue474_release.py"
 
