@@ -1350,18 +1350,24 @@ jobs:
           fi
           receipt_dirs=("$RUNNER_TEMP"/release-records/issue471-bng2-receipts-*/receipts)
           artifact_dirs=("$RUNNER_TEMP"/release-records/issue471-bng2-receipts-*/artifacts)
-          tamper_reports=("$RUNNER_TEMP"/release-records/issue471-acceptance-*/tamper.json)
-          topology_reports=("$RUNNER_TEMP"/release-records/issue471-acceptance-*/topology.json)
+          tamper_reports=(
+            "$RUNNER_TEMP"/release-records/issue471-acceptance-*/tamper.json
+            "$RUNNER_TEMP"/release-records/issue471-acceptance-*/issue471-acceptance/tamper.json
+          )
+          topology_reports=(
+            "$RUNNER_TEMP"/release-records/issue471-acceptance-*/topology.json
+            "$RUNNER_TEMP"/release-records/issue471-acceptance-*/issue471-acceptance/topology.json
+          )
           if (( ${#receipt_dirs[@]} > 0 && ${#artifact_dirs[@]} > 0 && ${#tamper_reports[@]} > 0 && ${#topology_reports[@]} > 0 )); then
             mkdir -p "$RUNNER_TEMP/issue471-combined"
-            python tests/validation/release/cases/issue-471/issue471_checks.py oracle \
+            PYTHONPATH=. python tests/validation/release/cases/issue-471/issue471_checks.py oracle \
               --root . \
               --receipts "${receipt_dirs[0]}" \
               --artifacts "${artifact_dirs[0]}" \
               --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
               --report "$RUNNER_TEMP/issue471-combined/oracle.json" || true
             if [[ -s "$RUNNER_TEMP/issue471-combined/oracle.json" ]]; then
-              python scripts/ci/record_issue471_release.py \
+              PYTHONPATH=. python scripts/ci/record_issue471_release.py \
                 --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
                 --oracle-report "$RUNNER_TEMP/issue471-combined/oracle.json" \
                 --topology-report "${topology_reports[0]}" \

@@ -681,3 +681,60 @@ def test_release_ci_topology_rejects_unverifiable_replay_receipts(mutation):
     assert report["static_result"] == "pass"
     assert report["acceptance_result"] == "fail"
     assert report["acceptance_gaps"]
+
+
+def test_issue471_cli_net_comparator_runs_without_pythonpath(tmp_path):
+    """Standalone CLI execution must locate tests.validation.compare without PYTHONPATH."""
+    import os
+    import subprocess
+    import sys
+
+    assert (checks.REPO_ROOT / "tests/validation/compare.py").is_file()
+    out_report = tmp_path / "oracle.json"
+    env = dict(os.environ)
+    env.pop("PYTHONPATH", None)
+    proc = subprocess.run(
+        [
+            sys.executable,
+            str(Path(checks.__file__)),
+            "oracle",
+            "--root",
+            str(ROOT),
+            "--receipts",
+            str(tmp_path / "empty_receipts"),
+            "--artifacts",
+            str(tmp_path / "empty_artifacts"),
+            "--revision",
+            "a" * 40,
+            "--report",
+            str(out_report),
+        ],
+        cwd=str(ROOT),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert "ModuleNotFoundError" not in proc.stderr, proc.stderr
+    assert out_report.is_file(), proc.stderr
+    # Also verify _compare_net_bytes works in a fresh subprocess without PYTHONPATH.
+    probe = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import importlib.util; "
+                f"spec = importlib.util.spec_from_file_location('c', {str(checks.__file__)!r}); "
+                "m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m); "
+                "ok, detail = m._compare_net_bytes(b'begin species\\n1 A() 10\\nend species\\nbegin reactions\\nend reactions\\n', "
+                "b'begin species\\n1 A() 10\\nend species\\nbegin reactions\\nend reactions\\n'); "
+                "assert ok, detail"
+            ),
+        ],
+        cwd=str(tmp_path),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert probe.returncode == 0, probe.stderr

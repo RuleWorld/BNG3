@@ -14,7 +14,7 @@ from typing import Any
 
 import yaml
 
-REPO_ROOT = Path(__file__).resolve().parents[4]
+REPO_ROOT = Path(__file__).resolve().parents[5]
 SUPPORTED_COMPARATORS = (
     "release-oracle-byte-equality-v1",
     "release-oracle-net-canonical-v1",
