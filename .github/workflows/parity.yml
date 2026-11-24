@@ -1680,6 +1680,7 @@ jobs:
           retention-days: 30
 
       - name: Measure current CPU benchmark with identity and correctness (#174)
+        if: always()
         env:
           BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
           BNG3_CURRENT_BENCHMARK_REPORT: ${{ runner.temp }}/issue174-current-benchmark.json
@@ -1688,6 +1689,7 @@ jobs:
           tests/validation/release/cases/issue-174/test_cpu_benchmark_current.py
 
       - name: Record Issue 174 CPU benchmark release acceptance
+        if: always()
         env:
           BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
           BNG3_CPU_BENCHMARK_REPORT: ${{ runner.temp }}/issue174-benchmark-record.json
