@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "scope": "Job groups that must remain schedulable independently at the exact revision. Serializing any pair in a group is a release-ci-topology failure.",
+  "groups": {
+    "parity.yml": [
+      ["bng2-parity", "nfsim-parity", "pybionetgen-compat"],
+      ["oracle-lock", "issue-137-inventory", "upstream-reconciliation-history"]
+    ],
+    "ci.yml": [
+      ["lint", "harness"],
+      ["windows-harness-reexec", "cpp-build", "cpp-asan", "python-native-lifecycle", "cpp-cuda", "batch-ssa-cpu-reference", "python-jax"]
+    ],
+    "sbml-conformance.yml": [["conformance", "curated-biomodels"]],
+    "weekly.yml": [
+      ["bng-validation", "nfsim-execution-smoke", "python-full", "release-mutation-ratchet", "benchmarks", "cross-validation"]
+    ],
+    "formal.yml": [["lean-kernel", "issue167-correspondence"]],
+    "release.yml": [["build-binaries", "build-wheels", "build-sdist"]],
+    "issue-acceptance.yml": [["issue-157", "issue-161", "issue-160", "semantic-00966"]]
+  }
+}

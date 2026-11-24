@@ -492,13 +492,100 @@ def check_workflow_topology(path: Path) -> dict[str, Any]:
     }
 
 
-def check_workflows_topology(workflows_dir: Path) -> dict[str, Any]:
+REQUIRED_WORKFLOWS = (
+    "ci.yml",
+    "parity.yml",
+    "sbml-conformance.yml",
+    "weekly.yml",
+    "formal.yml",
+    "codeql.yml",
+    "autofix.yml",
+    "release.yml",
+    "issue-acceptance.yml",
+    "issue-472-docs-acceptance.yml",
+    "regenerate-bng2-ensembles.yml",
+    "release-policy.yml",
+)
+TOPOLOGY_CONTRACT = Path(__file__).resolve().parent / "topology-contract.json"
+
+
+def _transitive_needs(jobs: dict[str, Any], name: str) -> set[str]:
+    seen: set[str] = set()
+    stack = [name]
+    while stack:
+        current = stack.pop()
+        spec = jobs.get(current, {})
+        needs = spec.get("needs", []) if isinstance(spec, dict) else []
+        needs = [needs] if isinstance(needs, str) else needs
+        for need in needs:
+            if need not in seen:
+                seen.add(need)
+                stack.append(need)
+    return seen
+
+
+def replay_errors(receipts: list[dict[str, Any]], revision: str | None) -> list[str]:
+    """Require a bounded, revision-bound receipt that partial cases survived interruption."""
+    errors: list[str] = []
+    if not revision:
+        return ["no exact revision was supplied for the interrupted-run replay receipt"]
+    if not receipts:
+        return ["no interrupted-run replay receipt was consumed"]
+    for receipt in receipts:
+        if receipt.get("schema_version") != 1:
+            errors.append("replay receipt schema_version is not 1")
+            continue
+        if receipt.get("source_revision") != revision:
+            errors.append(
+                f"replay receipt revision {receipt.get('source_revision')} != {revision}"
+            )
+            continue
+        phases = receipt.get("phases", {})
+        actions = phases.get("resume", {}).get("actions", {})
+        if not isinstance(actions, dict) or "reused" not in actions.values():
+            errors.append("resume did not reuse an already completed per-case artifact")
+        if phases.get("stale_control", {}).get("action") != "stale-discarded-and-executed":
+            errors.append("stale partial artifact was not identified and discarded")
+        cases = receipt.get("cases", {})
+        if not cases or not all(
+            isinstance(case, dict) and case.get("verdicts_match_clean") is True
+            for case in cases.values()
+        ):
+            errors.append("resumed per-case verdicts do not match the clean run")
+    return errors
+
+
+def check_workflows_topology(
+    workflows_dir: Path,
+    *,
+    revision: str | None = None,
+    replay_receipts: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
     workflow_paths = sorted(workflows_dir.glob("*.yml"))
+    present = {path.name for path in workflow_paths}
+    missing = [name for name in REQUIRED_WORKFLOWS if name not in present]
     per_workflow: list[dict[str, Any]] = []
-    upload_errors: list[str] = []
+    static_errors: list[str] = [f"maintained workflow missing: {name}" for name in missing]
+    contract = json.loads(TOPOLOGY_CONTRACT.read_text())["groups"]
+    audited_groups: list[str] = []
     for path in workflow_paths:
         workflow = yaml.load(path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
         errs = topology_errors(workflow)
+        jobs = workflow.get("jobs", {})
+        for group in contract.get(path.name, []):
+            audited_groups.append(f"{path.name}:{','.join(group)}")
+            for name in group:
+                if name not in jobs:
+                    errs.append(f"{path.name}: independent job is missing: {name}")
+            for index, name in enumerate(group):
+                if name not in jobs:
+                    continue
+                required = _transitive_needs(jobs, name)
+                for other in group[index + 1 :]:
+                    if other in required or name in _transitive_needs(jobs, other):
+                        errs.append(
+                            f"{path.name}: independent jobs are serialized: {name} -> {other}"
+                        )
         per_workflow.append(
             {
                 "workflow": path.name,
@@ -506,32 +593,33 @@ def check_workflows_topology(workflows_dir: Path) -> dict[str, Any]:
                 "errors": errs,
             }
         )
-        upload_errors.extend(f"{path.name}: {err}" for err in errs)
+        static_errors.extend(f"{path.name}: {error}" for error in errs)
     parity = workflows_dir / "parity.yml"
     parity_report = (
         check_workflow_topology(parity)
         if parity.is_file()
         else {"static_result": "fail", "errors": ["parity.yml missing"]}
     )
+    replay = replay_errors(replay_receipts or [], revision)
+    static_ok = not static_errors and parity_report.get("static_result") == "pass"
+    gaps = list(replay)
+    if static_errors:
+        gaps.append("workflow topology has static errors")
     return {
-        "schema_version": 2,
+        "schema_version": 3,
         "check_id": "release-ci-topology",
+        "evaluated_revision": revision,
+        "working_tree_dirty": False,
         "workflows_dir": str(workflows_dir),
-        "audited_workflows": [p.name for p in workflow_paths],
+        "audited_workflows": sorted(present),
+        "audited_independent_groups": audited_groups,
         "per_workflow": per_workflow,
         "parity": parity_report,
-        "static_result": (
-            "pass"
-            if not upload_errors and parity_report.get("static_result") == "pass"
-            else "fail"
-        ),
-        "acceptance_result": "fail",
-        "acceptance_gaps": [
-            "parallel-job serialization audit is not yet complete for all maintained workflows",
-            "no interrupted-run replay receipt was consumed",
-        ],
-        "errors": upload_errors + list(parity_report.get("errors", [])),
-        "result": "fail",
+        "static_result": "pass" if static_ok else "fail",
+        "acceptance_gaps": gaps,
+        "errors": static_errors + list(parity_report.get("errors", [])),
+        "acceptance_result": "pass" if static_ok and not gaps else "fail",
+        "result": "pass" if static_ok and not gaps else "fail",
     }
 
 
@@ -557,6 +645,8 @@ def main() -> int:
     )
     topology.add_argument("--workflows-dir", type=Path)
     topology.add_argument("--all-workflows", action="store_true")
+    topology.add_argument("--revision")
+    topology.add_argument("--replay-receipt", type=Path, action="append", default=[])
     topology.add_argument("--report", type=Path, required=True)
     args = parser.parse_args()
     if args.check == "oracle":
@@ -568,7 +658,10 @@ def main() -> int:
         if args.all_workflows and workflows_dir is None:
             workflows_dir = Path(".github/workflows")
         if workflows_dir is not None:
-            report = check_workflows_topology(workflows_dir)
+            receipts = [json.loads(p.read_bytes()) for p in args.replay_receipt]
+            report = check_workflows_topology(
+                workflows_dir, revision=args.revision, replay_receipts=receipts
+            )
         else:
             report = check_workflow_topology(args.workflow)
     write_report(report, args.report)
