@@ -10,7 +10,18 @@ from pathlib import Path
 import re
 import sys
 
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
+
+from scripts.ci import sbml_162_disposition as disposition
+
 CHECKS = ("release-biomodels", "release-biomodels-triage", "release-obligation-162")
+
+# Verdicts the recorder already treats as resolved without this module's
+# dispositions. Everything else must be an explicit, evidence-backed
+# disposition or remains unresolved and fails the gate.
+BASE_DISPOSED = {"compared", "non-sbml-source", "invalid-source", "not_comparable"}
 
 
 def _read(path: Path) -> tuple[dict, str]:
@@ -175,7 +186,7 @@ def build_release_record(
     ):
         raise ValueError("BioModels source bundle and pinned membership do not agree")
 
-    modes = {}
+    loaded = {}
     for mode_name in ("flat", "atomized"):
         report, report_hash = _read(reports[mode_name])
         if report["runtime_provenance"]["native_extension_sha256"] != native_hash:
@@ -192,24 +203,66 @@ def build_release_record(
             or completeness["expected_records"] != len(pinned)
         ):
             raise ValueError(f"{mode_name}: incomplete or foreign BioModels inventory")
-        outcomes = {
+        loaded[mode_name] = (report, report_hash, records)
+
+    raw_outcomes = {
+        mode_name: {
             key: _case_verdict(records[key], bundled[key], mode_name)
             for key in sorted(records)
         }
+        for mode_name, (_, _, records) in loaded.items()
+    }
+    # Only the recorder's ordinary unresolved refusals are eligible for a
+    # REFUSAL disposition. A genuine failure, timeout or excluded package
+    # cannot be laundered into one.
+    unresolved_refusals = {
+        mode_name: {
+            key
+            for key, verdict in raw_outcomes[mode_name].items()
+            if verdict == "unresolved-refusal"
+        }
+        for mode_name in loaded
+    }
+    disposition_rows, disposition_receipt = disposition.build_disposition_receipt(
+        loaded["flat"][0],
+        loaded["flat"][2],
+        loaded["atomized"][0],
+        loaded["atomized"][2],
+        unresolved_refusals,
+    )
+
+    modes = {}
+    for mode_name in ("flat", "atomized"):
+        report, report_hash, records = loaded[mode_name]
+        bucket = disposition_receipt["modes"][mode_name]
+        outcomes = dict(raw_outcomes[mode_name])
+        for model_id in bucket["refusal_ids"]:
+            outcomes[model_id] = "refusal:" + bucket["refusal_classes"][model_id]
+        if disposition.MODEL_ID in outcomes:
+            outcomes[disposition.MODEL_ID] = "numerical-limit-non-comparable"
         unresolved = [
             key
             for key, verdict in outcomes.items()
-            if verdict not in {"compared", "non-sbml-source", "invalid-source"}
+            if verdict not in BASE_DISPOSED
             and not verdict.startswith("decision-excluded-package:")
+            and not verdict.startswith("refusal:")
+            and verdict not in {"timeout", "numerical-limit-non-comparable"}
         ]
         modes[mode_name] = {
             "report_sha256": report_hash,
             "counts": dict(Counter(outcomes.values())),
             "unresolved": unresolved,
             "outcomes": outcomes,
+            "timeout_ids": bucket["timeout_ids"],
+            "refusal_counts": bucket["refusal_counts"],
         }
-    passed = all(
-        m["counts"].get("compared") and not m["unresolved"] for m in modes.values()
+    passed = (
+        all(
+            m["counts"].get("compared") and not m["unresolved"]
+            for m in modes.values()
+        )
+        and disposition_receipt["agreement"]["flat_atomized_match"]
+        and disposition_receipt["agreement"]["report_receipt_match"]
     )
     return {
         "schema_version": 1,
@@ -221,6 +274,10 @@ def build_release_record(
             "package_identity_sha256": package_hash,
             "native_extension_sha256": native_hash,
         },
+        # Explicit non-PASS disposition rows, carried outside ``results`` so
+        # the closure gate cannot mistake them for supported execution.
+        "dispositions": disposition_rows,
+        "disposition_receipt": disposition_receipt,
         "results": [
             {
                 "id": check,
@@ -228,7 +285,12 @@ def build_release_record(
                 "evidence_kind": "supported-execution",
                 "supported_execution": passed,
                 "related_issues": [162],
-                "detail": "Flat and atomized comparison and disposition outcomes are retained per model.",
+                "detail": (
+                    "Flat and atomized comparison and disposition outcomes are "
+                    f"retained per model; {len(disposition_rows)} explicit "
+                    "disposition rows (numerical limit, timeout and valid-input "
+                    "refusals) are non-passes and count as no supported execution."
+                ),
             }
             for check in CHECKS
         ],

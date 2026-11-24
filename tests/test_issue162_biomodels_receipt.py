@@ -5,10 +5,118 @@ import json
 
 import pytest
 
+from scripts.ci import sbml_162_disposition as disp
+
 
 def _write(path, document):
     path.write_text(json.dumps(document), encoding="utf-8")
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _pinned_943(mode_name):
+    """The evidence-backed numerical-limit case required in a full corpus."""
+    metrics = {"finite": True, "undefined": False, "undefined_at": [], "passed": False}
+    stages = [
+        {"name": name, "status": "passed"}
+        for name in (
+            "source-xml-validation",
+            "source-sbml-parse",
+            "atomizer-translation",
+            "network-generation",
+            "sbml-export",
+            "written-sbml-validation",
+            "roundtrip-sbml-parse",
+            "roundtrip-atomizer-translation",
+            "roundtrip-network-generation",
+            "native-sbml-readback",
+        )
+    ]
+    stages += [
+        {
+            "name": name,
+            "status": "failed",
+            "error": disp.SOURCE_ERROR,
+        }
+        for name in (
+            "cross-engine-comparison",
+            "cross-engine-comparison-retry",
+            "original-source-sbml-comparison",
+        )
+    ]
+    return {
+        "id": disp.MODEL_ID,
+        "format": "SBML",
+        "filename": "Hat2016.xml",
+        "sha256": disp.MODEL_SHA256,
+        "status": "failed",
+        "source_artifact": {"sha256": disp.MODEL_SHA256},
+        "modes": [
+            {
+                "mode": mode_name,
+                "status": "failed",
+                "error": disp.SOURCE_ERROR,
+                "generated_network": dict(disp.NETWORK_SIGNATURE),
+                "native_reader": {
+                    "success": True,
+                    "species_count": 43,
+                    "reaction_count": 83,
+                },
+                "stage_results": stages,
+                "simulation_comparison": {
+                    "passed": False,
+                    "comparison_scope": disp.WRITTEN_SCOPE,
+                    "error": disp.CROSS_ENGINE_ERROR,
+                    "failed_observables": list(disp.WRITTEN_FAILED_OBSERVABLES),
+                    "t_start": 0.0,
+                    "t_end": 1.0,
+                    "observables": {
+                        disp.FAILED_OBSERVABLE: {**metrics, **disp.WRITTEN_METRICS}
+                    },
+                },
+                "source_simulation_comparison": {
+                    "passed": False,
+                    "comparison_scope": disp.SOURCE_SCOPE,
+                    "error": disp.SOURCE_ERROR,
+                    "failed_observables": list(disp.SOURCE_FAILED_OBSERVABLES),
+                    "t_start": 0.0,
+                    "t_end": 1.0,
+                    "observables": {
+                        disp.FAILED_OBSERVABLE: {**metrics, **disp.SOURCE_METRICS}
+                    },
+                },
+            }
+        ],
+    }
+
+
+def _pinned_refusals():
+    by_cause = {
+        "events": {"count": 36, "ids": sorted(disp.PINNED_REFUSAL_IDS["events"])},
+        "fast_reactions": {
+            "count": 5,
+            "ids": sorted(
+                disp.PINNED_REFUSAL_IDS["fast_reaction"] | {"BIOMD0000000137"}
+            ),
+        },
+        "other": {
+            "count": 3,
+            "ids": sorted(disp.PINNED_REFUSAL_IDS["other"] - {"BIOMD0000000696"}),
+        },
+        "mathml": {"count": 1, "ids": ["BIOMD0000000696"]},
+    }
+    records = [
+        {
+            "id": model_id,
+            "format": "SBML",
+            "filename": f"{model_id}.xml",
+            "sha256": "e" * 64,
+            "status": "unsupported",
+            "unsupported_reason": "pinned valid-input refusal",
+            "source_artifact": {"sha256": "e" * 64},
+        }
+        for model_id in sorted(set().union(*disp.PINNED_REFUSAL_IDS.values()))
+    ]
+    return records, by_cause
 
 
 @pytest.mark.parametrize(
@@ -30,15 +138,36 @@ def test_receipt_consumes_the_two_source_comparisons(tmp_path, fault):
     model_hash = "c" * 64
     inventory = tmp_path / "inventory.json"
     model = {"id": "MODEL", "format": "SBML", "filename": "m.xml", "sha256": model_hash}
-    inventory_hash = _write(inventory, {"matches": 1, "models": [model]})
+    refusals, by_cause = _pinned_refusals()
+    pinned_models = [
+        {
+            "id": disp.MODEL_ID,
+            "format": "SBML",
+            "filename": "Hat2016.xml",
+            "sha256": disp.MODEL_SHA256,
+        },
+        *[
+            {
+                "id": row["id"],
+                "format": row["format"],
+                "filename": row["filename"],
+                "sha256": row["sha256"],
+            }
+            for row in refusals
+        ],
+    ]
+    all_models = [model, *pinned_models]
+    inventory_hash = _write(
+        inventory, {"matches": len(all_models), "models": all_models}
+    )
     bundle_manifest = tmp_path / "bundle-manifest.json"
     bundle_hash = _write(
         bundle_manifest,
         {
             "bundle_sha256": "d" * 64,
             "inventory_sha256": inventory_hash,
-            "payload_count": 1,
-            "records": [model],
+            "payload_count": len(all_models),
+            "records": all_models,
         },
     )
     receipt = tmp_path / "source-receipt.json"
@@ -49,9 +178,9 @@ def test_receipt_consumes_the_two_source_comparisons(tmp_path, fault):
             "bundle_sha256": "d" * 64,
             "bundle_manifest_sha256": bundle_hash,
             "inventory_sha256": inventory_hash,
-            "records_verified": 1,
-            "payloads_verified": 1,
-            "payloads_installed": 1,
+            "records_verified": len(all_models),
+            "payloads_verified": len(all_models),
+            "payloads_installed": len(all_models),
             "selected_id": None,
         },
     )
@@ -118,11 +247,20 @@ def test_receipt_consumes_the_two_source_comparisons(tmp_path, fault):
             reports[mode],
             {
                 "mode": mode,
-                "records": [record],
+                "records": [
+                    record,
+                    _pinned_943(mode),
+                    *[
+                        {**row, "modes": [{"mode": mode}]}
+                        for row in refusals
+                    ],
+                ],
+                "summary": {"timeout_records": 0},
+                "unsupported_summary": {"by_cause": by_cause},
                 "completeness": {
                     "partial_run": False,
                     "counts_match": True,
-                    "expected_records": 1,
+                    "expected_records": len(all_models),
                 },
                 "runtime_provenance": {
                     "native_extension_sha256": (
