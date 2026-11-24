@@ -103,3 +103,36 @@ def test_resource_fallback_when_posix_resource_is_unavailable(monkeypatch):
     monkeypatch.undo()
     importlib.reload(measure_mod)
     importlib.reload(arms_mod)
+
+
+def test_win32_peak_rss_configures_handle_argtypes_and_restype(monkeypatch):
+    import ctypes
+    from ctypes import wintypes
+    import gpu.measure as measure_mod
+
+    def fake_get_current_process():
+        return -1
+
+    def fake_k32_get_process_memory_info(handle, counters_ref, cb):
+        assert fake_get_current_process.restype is wintypes.HANDLE
+        assert fake_get_current_process.argtypes == []
+        assert fake_k32_get_process_memory_info.restype is wintypes.BOOL
+        assert len(fake_k32_get_process_memory_info.argtypes) == 3
+        assert fake_k32_get_process_memory_info.argtypes[0] is wintypes.HANDLE
+        assert fake_k32_get_process_memory_info.argtypes[2] is wintypes.DWORD
+        assert handle == -1
+        assert cb == ctypes.sizeof(counters_ref._obj)
+        counters_ref._obj.PeakWorkingSetSize = 654321
+        return 1
+
+    fake_kernel32 = SimpleNamespace(
+        GetCurrentProcess=fake_get_current_process,
+        K32GetProcessMemoryInfo=fake_k32_get_process_memory_info,
+    )
+    monkeypatch.setattr(measure_mod, "resource", None)
+    monkeypatch.setattr(measure_mod.sys, "platform", "win32")
+    monkeypatch.setattr(
+        ctypes, "windll", SimpleNamespace(kernel32=fake_kernel32), raising=False
+    )
+
+    assert measure_mod._process_peak_rss_bytes() == 654321

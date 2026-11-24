@@ -677,8 +677,18 @@ def _process_peak_rss_bytes() -> int:
         counters = _ProcessMemoryCounters()
         counters.cb = ctypes.sizeof(counters)
         kernel32 = ctypes.windll.kernel32
-        if kernel32.K32GetProcessMemoryInfo(
-            kernel32.GetCurrentProcess(),
+        get_current_process = kernel32.GetCurrentProcess
+        get_current_process.argtypes = []
+        get_current_process.restype = wintypes.HANDLE
+        get_process_memory_info = kernel32.K32GetProcessMemoryInfo
+        get_process_memory_info.argtypes = [
+            wintypes.HANDLE,
+            ctypes.POINTER(_ProcessMemoryCounters),
+            wintypes.DWORD,
+        ]
+        get_process_memory_info.restype = wintypes.BOOL
+        if get_process_memory_info(
+            get_current_process(),
             ctypes.byref(counters),
             counters.cb,
         ):
