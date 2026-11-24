@@ -65,7 +65,14 @@ def _observed_results(reports, revision):
             key = result.get("id")
             if not key or result.get("aggregate"):
                 continue
-            observed.setdefault(key, set()).add(result.get("status"))
+            status = result.get("status")
+            if key.startswith("corpus-case[") and status == "PASS":
+                if (
+                    result.get("supported_execution") is not True
+                    or result.get("evidence_kind") != "supported-execution"
+                ):
+                    status = "UNQUALIFIED_PASS"
+            observed.setdefault(key, set()).add(status)
     return observed
 
 

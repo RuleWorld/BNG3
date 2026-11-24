@@ -596,6 +596,69 @@ def _model(name, source, args, directory, reference, env):
     return rows
 
 
+def _corpus_case_result(
+    name: str, case_rows: list[dict], expected_ids: list[str]
+) -> dict:
+    """Summarize one conformance model's executed stages for #181 corpus consumers."""
+    by_id = {row.get("id"): row for row in case_rows if row.get("id")}
+    missing = [cid for cid in expected_ids if cid not in by_id]
+    bad = [row for row in case_rows if row.get("status") in reporting.BAD]
+    common = {
+        "model": name,
+        "reference": "bionetgen",
+        "capabilities": [],
+        "aggregate": False,
+        "related_issues": [181],
+    }
+    if missing or bad:
+        if missing or any(row.get("status") == "HARNESS_ERROR" for row in bad):
+            status = "HARNESS_ERROR"
+        elif any(row.get("status") == "TIMEOUT" for row in bad):
+            status = "TIMEOUT"
+        else:
+            status = "FAIL"
+        detail = (
+            f"missing contract rows: {', '.join(missing)}"
+            if missing
+            else f"{len(bad)} failing stage(s)"
+        )
+        return _result(
+            f"corpus-case[{name}]",
+            "corpus-case",
+            status,
+            detail,
+            supported_execution=False,
+            evidence_kind="observed-failure",
+            **common,
+        )
+    unexecuted = [
+        row
+        for row in case_rows
+        if row.get("status") != "PASS" and row.get("applicability") != "no-observables"
+    ]
+    if unexecuted:
+        return _result(
+            f"corpus-case[{name}]",
+            "corpus-case",
+            "NOT_TESTED",
+            f"{len(unexecuted)} stage(s) did not execute",
+            supported_execution=False,
+            evidence_kind="not-tested",
+            applicability="not-applicable",
+            blocked_by=[row["id"] for row in unexecuted if row.get("id")],
+            **common,
+        )
+    return _result(
+        f"corpus-case[{name}]",
+        "corpus-case",
+        "PASS",
+        f"all {len(expected_ids)} case contract checks passed",
+        supported_execution=True,
+        evidence_kind="supported-execution",
+        **common,
+    )
+
+
 def _resume_case(
     name: str,
     source: Path,
@@ -1028,6 +1091,7 @@ def main(argv=None):
                     resume_actions.append({"case_id": name, "action": action})
                     print(f"  {name}: {action}", flush=True)
                     results.extend(case_rows)
+                    results.append(_corpus_case_result(name, case_rows, case_expected))
             except (ValueError, OSError, KeyError) as exc:
                 results.append(
                     _result("corpus", "selection", "HARNESS_ERROR", str(exc))
