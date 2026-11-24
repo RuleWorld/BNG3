@@ -18961,14 +18961,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-corpus-coverage.",
-                "No revision-locked consuming receipt producer is declared for required live check release-corpus-coverage."
-              ]
+              "selector": "tests/validation/release/cases/issue-181/corpus_release_checks.py",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#issue-181-corpus",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -18998,14 +18995,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-corpus-results.",
-                "No revision-locked consuming receipt producer is declared for required live check release-corpus-results."
-              ]
+              "selector": "tests/validation/release/cases/issue-181/corpus_release_checks.py",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#issue-181-corpus",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -19035,14 +19029,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-obligation-181.",
-                "No revision-locked consuming receipt producer is declared for required live check release-obligation-181."
-              ]
+              "selector": "tests/validation/release/cases/issue-181/corpus_release_checks.py",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#issue-181-corpus",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -19662,14 +19653,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-oracle-independence.",
-                "No revision-locked consuming receipt producer is declared for required live check release-oracle-independence."
-              ]
+              "selector": "tests/validation/release/cases/issue-471/issue471_checks.py oracle",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#issue-471-oracle-protection",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -19708,14 +19696,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-oracle-tamper.",
-                "No revision-locked consuming receipt producer is declared for required live check release-oracle-tamper."
-              ]
+              "selector": "scripts/ci/record_issue471_tamper.py",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#issue-471-oracle-protection",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -19754,14 +19739,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-ci-topology.",
-                "No revision-locked consuming receipt producer is declared for required live check release-ci-topology."
-              ]
+              "selector": "tests/validation/release/cases/issue-471/issue471_checks.py topology",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#issue-471-oracle-protection",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
