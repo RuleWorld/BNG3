@@ -19060,17 +19060,20 @@
             {
               "id": "qualification:issue:184:require-approved-provenance-corpora-scheduled-nfsim-results-clea",
               "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Exact-revision disposition emitted by scripts/ci/record_issue184_candidate.py for this #184 scope.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "scripts/ci/record_issue184_candidate.py"
             }
           ],
           "test_references": [
             "tests/validation/test_worker_package_identity.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
-          "decisions": [],
+          "decisions": [
+            "Decision recorded in docs/DECISIONS.md item 17: CPU milestone scope excludes GPU-specific acceptance (#474); release-candidate dispositions name exact evidence and leave gaps explicit."
+          ],
           "unmapped_scope": [
             "Missing required qualification ID: qualification:issue:184:require-approved-provenance-corpora-scheduled-nfsim-results-clea.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
@@ -19096,58 +19099,65 @@
             {
               "id": "release-candidate:license-inventory",
               "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'release-candidate' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "expectation": "Every shipped wheel in the exact-revision artifact set contains its dist-info/licenses/LICENSE entry.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "scripts/ci/record_issue184_candidate.py"
             },
             {
               "id": "release-candidate:notice-inventory",
               "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'release-candidate' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "expectation": "The NOTICE inventory of the shipped artifacts is examined and recorded; an empty inventory is reported explicitly, never as a missing pass.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "scripts/ci/record_issue184_candidate.py"
             },
             {
               "id": "release-candidate:memory-contract",
               "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'release-candidate' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "expectation": "The exact-revision #174 benchmark receipt carries cold/warm measurements and correctness controls.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "scripts/ci/record_issue184_candidate.py"
             },
             {
               "id": "release-candidate:sanitizer-configuration",
               "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'release-candidate' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "expectation": "Hosted CI declares a successful ASan job at the exact revision.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "scripts/ci/record_issue184_candidate.py"
             },
             {
               "id": "release-candidate:platform-matrix-shape",
               "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'release-candidate' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "expectation": "Hosted CI covers ubuntu, macos and windows at the exact revision.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "scripts/ci/record_issue184_candidate.py"
             },
             {
               "id": "release-candidate:hosted-evidence",
               "evidence_kind": "disposition",
-              "expectation": "Not discharged on this tree: the 'release-candidate' check family is not implemented here, so the named check cannot run and the obligation stays open. The disposition is recorded in the obligation's decisions.",
+              "expectation": "Hosted CI and Cross-tool parity runs are recorded at the exact revision.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "scripts/ci/record_issue184_candidate.py"
             },
             {
               "id": "qualification:issue:184:verify-final-candidate-platform-sanitizer-memory-licenses-notice",
               "evidence_kind": "supported-execution",
-              "expectation": "The arms one host can decide are decided by named checks, and the arms that need the hosted matrix are recorded as evidence to collect with their command and their artefact.",
+              "expectation": "Exact-revision disposition emitted by scripts/ci/record_issue184_candidate.py for this #184 scope.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "scripts/ci/record_issue184_candidate.py"
             }
           ],
           "test_references": [
@@ -19157,7 +19167,9 @@
             "tests/validation/release_candidate.py"
           ],
           "completion_condition": "Exact-revision result satisfies this obligation.",
-          "decisions": [],
+          "decisions": [
+            "Decision recorded in docs/DECISIONS.md item 17: CPU milestone scope excludes GPU-specific acceptance (#474); release-candidate dispositions name exact evidence and leave gaps explicit."
+          ],
           "unmapped_scope": [
             "The sanitizer runs and the per-platform results need the hosted matrix; they are recorded as evidence to collect in the report's hosted-evidence artefact, and the release maintainer owns their collection.",
             "The reproducible-build evidence of the hosted artefacts is not decided here; the hosted arms produce the digests.",
@@ -19187,15 +19199,18 @@
             {
               "id": "qualification:issue:184:closure-record",
               "evidence_kind": "disposition",
-              "expectation": "Execute a retained exact-revision check for this scope.",
+              "expectation": "Exact-revision disposition emitted by scripts/ci/record_issue184_candidate.py for this #184 scope.",
               "identity_requirements": [
                 "source.revision"
-              ]
+              ],
+              "selector": "scripts/ci/record_issue184_candidate.py"
             }
           ],
           "test_references": [],
           "completion_condition": "Exact-revision result satisfies this obligation.",
-          "decisions": [],
+          "decisions": [
+            "Decision recorded in docs/DECISIONS.md item 17: CPU milestone scope excludes GPU-specific acceptance (#474); release-candidate dispositions name exact evidence and leave gaps explicit."
+          ],
           "unmapped_scope": [
             "Missing required qualification ID: qualification:issue:184:closure-record.",
             "Producer/consumer boundary and feature combinations require review; issue-level test references are relevance only."
