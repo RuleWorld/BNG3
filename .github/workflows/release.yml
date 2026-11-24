@@ -329,9 +329,10 @@ jobs:
           patterns = ('artifacts/bionetgen-*/*.tar.gz',
                       'artifacts/wheels-*/*.whl', 'artifacts/sdist/*.tar.gz')
           for pattern in patterns:
-              for p in sorted(pathlib.Path('.').glob(pattern)):
-                  if not p.is_file():
-                      continue
+              matches = [p for p in sorted(pathlib.Path('.').glob(pattern)) if p.is_file()]
+              if not matches:
+                  sys.exit(f'missing release assets for {pattern}')
+              for p in matches:
                   sources.append(p)
                   groups.setdefault(p.name, []).append(
                       (str(p), hashlib.sha256(p.read_bytes()).hexdigest()))
@@ -391,7 +392,7 @@ jobs:
           groups = {}
           sources = []
           for p in sorted(pathlib.Path('dist').rglob('*')):
-              if p.is_file() and p.suffix in ('.whl', '.gz'):
+              if p.is_file() and p.name.endswith(('.whl', '.tar.gz')):
                   sources.append(p)
                   groups.setdefault(p.name, []).append(
                       (str(p), hashlib.sha256(p.read_bytes()).hexdigest()))

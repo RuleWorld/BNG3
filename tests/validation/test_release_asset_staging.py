@@ -124,3 +124,14 @@ def test_pypi_staging_rejects_collision_before_flatten(tmp_path):
     assert "PyPI dist basename collision" in result.stderr
     assert WHEEL in result.stderr
     assert not (tmp_path / "flat-dist").exists()
+
+
+def test_github_release_staging_rejects_missing_cli_archive(tmp_path):
+    _release_artifacts(tmp_path, collision=False)
+    (tmp_path / f"artifacts/bionetgen-linux-x86_64/{CLI}").unlink()
+
+    result = _run_step(tmp_path, "Organize release assets")
+
+    assert result.returncode != 0
+    assert "missing release assets" in result.stderr
+    assert list((tmp_path / "release-assets").iterdir()) == []
