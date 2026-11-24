@@ -26,17 +26,26 @@ def _report(rows):
         "references": {
             "bionetgen": {
                 "revision": checks.json.loads(
-                    (checks.ROOT / "provenance/reconciliation/inventory-oracle-map.json").read_text()
+                    (
+                        checks.ROOT
+                        / "provenance/reconciliation/inventory-oracle-map.json"
+                    ).read_text()
                 )["pins"]["bionetgen"]
             },
             "nfsim": {
                 "revision": checks.json.loads(
-                    (checks.ROOT / "provenance/reconciliation/inventory-oracle-map.json").read_text()
+                    (
+                        checks.ROOT
+                        / "provenance/reconciliation/inventory-oracle-map.json"
+                    ).read_text()
                 )["pins"]["nfsim"]
             },
             "pybionetgen": {
                 "revision": checks.json.loads(
-                    (checks.ROOT / "provenance/reconciliation/inventory-oracle-map.json").read_text()
+                    (
+                        checks.ROOT
+                        / "provenance/reconciliation/inventory-oracle-map.json"
+                    ).read_text()
                 )["pins"]["pybionetgen"]
             },
             "analytic": {"law": "independent detailed-balance derivation"},

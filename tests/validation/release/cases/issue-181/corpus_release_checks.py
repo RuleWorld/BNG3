@@ -77,17 +77,23 @@ def result_gaps(reports, revision, replay_receipts, root=ROOT):
     for case_id in all_cases:
         identity = f"corpus-case[{case_id}]"
         if observed.get(identity) != {"PASS"}:
-            gaps.append(f"{case_id}: no exact-revision independently checked case result")
+            gaps.append(
+                f"{case_id}: no exact-revision independently checked case result"
+            )
     for key, statuses in observed.items():
         if len(statuses) > 1:
             gaps.append(f"{key}: conflicting results {sorted(statuses)}")
         if statuses & {"FAIL", "HARNESS_ERROR", "TIMEOUT"}:
-            gaps.append(f"{key}: unresolved {sorted(statuses & {'FAIL', 'HARNESS_ERROR', 'TIMEOUT'})}")
+            gaps.append(
+                f"{key}: unresolved {sorted(statuses & {'FAIL', 'HARNESS_ERROR', 'TIMEOUT'})}"
+            )
     if not replay_receipts:
         gaps.append("no interrupted-run per-case replay receipt was consumed")
     for receipt in replay_receipts:
         if receipt.get("source_revision") != revision:
-            gaps.append("replay receipt revision differs from the qualification revision")
+            gaps.append(
+                "replay receipt revision differs from the qualification revision"
+            )
         actions = receipt.get("phases", {}).get("resume", {}).get("actions", {})
         if "reused" not in actions.values():
             gaps.append("replay did not reuse a completed per-case artifact")
@@ -118,8 +124,12 @@ def main(argv=None):
     parser.add_argument("--replay-receipt", type=Path, action="append", default=[])
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args(argv)
-    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=args.root, text=True).strip()
-    dirty = subprocess.check_output(["git", "status", "--porcelain"], cwd=args.root, text=True)
+    head = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=args.root, text=True
+    ).strip()
+    dirty = subprocess.check_output(
+        ["git", "status", "--porcelain"], cwd=args.root, text=True
+    )
     if head != args.revision or dirty:
         parser.error("corpus acceptance requires the requested clean revision")
     reports = [json.loads(p.read_bytes()) for p in args.case_report]

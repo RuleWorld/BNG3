@@ -35,10 +35,7 @@ def _receipts(paths, revision):
             row.get("id", "?")
             for row in results
             if row.get("status") not in {"PASS", "SKIPPED", "NOT_TESTED"}
-            or (
-                row.get("status") == "PASS"
-                and row.get("supported_execution") is False
-            )
+            or (row.get("status") == "PASS" and row.get("supported_execution") is False)
         ]
         accepted.append(
             {
@@ -99,7 +96,11 @@ def _result(check_id, gaps):
         "evidence_kind": "supported-execution",
         "supported_execution": not gaps,
         "related_issues": [184],
-        "detail": f"{len(gaps)} unresolved gap(s)" if gaps else "CPU release contract satisfied",
+        "detail": (
+            f"{len(gaps)} unresolved gap(s)"
+            if gaps
+            else "CPU release contract satisfied"
+        ),
         "gaps": gaps,
     }
 
@@ -112,8 +113,12 @@ def main(argv=None):
     parser.add_argument("--install-receipt", type=Path, action="append", default=[])
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args(argv)
-    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=args.root, text=True).strip()
-    dirty = subprocess.check_output(["git", "status", "--porcelain"], cwd=args.root, text=True)
+    head = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=args.root, text=True
+    ).strip()
+    dirty = subprocess.check_output(
+        ["git", "status", "--porcelain"], cwd=args.root, text=True
+    )
     if head != args.revision or dirty:
         parser.error("CPU release evidence requires the requested clean revision")
     scientific, sci_rejected = _receipts(args.scientific_receipt, args.revision)
