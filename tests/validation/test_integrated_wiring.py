@@ -15,7 +15,15 @@ def test_integrated_validation_job_runs_locked_oracles_and_retains_strict_eviden
     workflow = yaml.safe_load(WORKFLOW.read_text(encoding="utf-8"))
     job = workflow["jobs"]["integrated-semantic-validation"]
 
-    assert set(job["needs"]) == {"oracle-lock", "release-obligation-142"}
+    # The sibling release-record producers must complete before this job builds
+    # the exact-revision issue queue; extra producers may be added without
+    # weakening this requirement.
+    assert {
+        "oracle-lock",
+        "release-obligation-142",
+        "pybionetgen-compat",
+        "migration-docs",
+    }.issubset(set(job["needs"]))
     assert job["timeout-minutes"] >= 30
     checkout = next(
         step
