@@ -182,7 +182,7 @@ Because the GPU prototype achieves **6.41× aggregate simulation throughput** an
 - `cpp/engine/gpu/CudaSsaBackend.cu`: NVIDIA CUDA backend. Statement-for-statement port of the Metal kernel (same PCG32 seeding and draw order, same two-pass propensity accumulation), so both backends produce identical trajectories for a given seed. It uses `cudaMalloc`/`cudaMemcpy` rather than unified memory, and keeps the working population in the per-trajectory device slice rather than a register array.
 - `cpp/bindings/bind_engine.cpp`: Python pybind11 bindings exposing `simulate_batch_ssa_cpu`, `simulate_batch_ssa_gpu(..., backend=...)`, `gpu_backends()`, and `default_gpu_backend()`. These are available on every platform, not only on Apple.
 - `tests/test_batch_ssa_statistical_parity.py`: Automated statistical validation harness testing Z-scores, two-sample KS tests, and Chi-square goodness-of-fit.
-- `benchmark_gpu_batch_ssa.py`: Parameterized benchmark runner generating JSON results across batch sizes and execution backends.
+- `benchmarks/gpu/run_gpu_bench.py`: Parameterized benchmark runner generating JSON results across batch sizes and execution backends.
 
 ### 7.1 Accelerator selection and configuration
 
@@ -193,6 +193,15 @@ through the backend registry:
   Metal) and falls back to the CPU thread pool otherwise;
 - `cuda` / `metal` request one specific backend and raise if it is unavailable;
 - `none` forces the CPU pool. An unrecognised name is an error, never a silent fallback.
+
+**Current boundary (verified at `69bcb804` on the Apple Metal lane):** the qualified
+finite-GPU entry point is `simulate_batch_ssa_gpu(...)`, which returns the
+backend-specific batch result consumed by the statistical harness. The
+`simulate_ssa(..., batch_size=N, batch_gpu_backend=...)` convenience still selects a
+backend, but with `n_steps > 0` the accelerator metrics contain only final-state species
+while the `OdeResult` consumer requires a `[time][species]` grid. That path therefore
+rejects the device result and silently falls back to the CPU pool; it must not be used
+as GPU execution evidence until the kernels emit the full species time course.
 
 Backends are compiled in at configure time: Metal on Apple platforms, CUDA when
 `-DBNG3_ENABLE_CUDA=ON` is given or a CUDA compiler is found (`BNG3_ENABLE_CUDA=AUTO`,
