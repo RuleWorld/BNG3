@@ -92,7 +92,16 @@ def main(argv=None) -> int:
                     "evidence_kind": "supported-execution",
                     "supported_execution": True,
                     "stage": "sbml-multi",
-                    "detail": f"All 45 assigned Multi inventory rows executed and passed against libSBML validity and independent structural or explicit-Core oracles ({test}).",
+                    "detail": (
+                        "All 45 assigned Multi inventory rows executed: 44 supported "
+                        "rows verified against libSBML validity and independent "
+                        "structural/explicit-Core oracles, plus one explicit "
+                        "undefined-attribute diagnostic row "
+                        "(sbml.multi.MultiSpecies.compartmentReference, not defined "
+                        "by SBML Multi L3V1 3.15/3.22). "
+                        f"Valid nested compartmentReference placement is retained in "
+                        f"the representation. ({test})"
+                    ),
                     "selector": f"{NODE}::{test}",
                 }
             )
