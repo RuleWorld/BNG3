@@ -520,10 +520,12 @@ def classify_timeout(mode_name: str, record: dict[str, Any]) -> dict[str, Any]:
 # Valid-input refusals: per-class bucket, never a pass
 # ---------------------------------------------------------------------------
 
-# Pinned from the hosted full campaign run 45395453806 at exact main
-# 8e4c79fa (the product revision carried into ae3f945e).  Earlier campaign
-# 45376941368 at 71888b93 differed on BIOMD0000001098; the disposition is
-# fail-closed per exact revision, so a mismatching report cannot be consumed.  Class assignment follows the harness's own
+# Pinned from the hosted full campaign run 45405226438 at exact main
+# ae3f945e.  Earlier campaigns at 8e4c79fa (run 45395453806) and 71888b93
+# (run 45376941368) recorded BIOMD0000001098 as a valid-input refusal; at
+# ae3f945e that model times out instead, so the pinned "other" class has three
+# members, not four. The disposition is fail-closed per exact revision, so a
+# mismatching report cannot be consumed.  Class assignment follows the harness's own
 # unsupported_summary.by_cause with events taking precedence over
 # fast_reactions (BIOMD0000000137 lists both and the harness records it as an
 # event refusal).
@@ -580,7 +582,6 @@ PINNED_REFUSAL_IDS = {
         {
             "BIOMD0000000696",
             "BIOMD0000001075",
-            "BIOMD0000001098",
             "BIOMD0000001099",
         }
     ),

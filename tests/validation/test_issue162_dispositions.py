@@ -435,9 +435,9 @@ def test_refusal_counts_are_pinned_from_the_real_report():
     assert disp.PINNED_REFUSAL_COUNTS == {
         "events": 36,
         "fast_reaction": 4,
-        "other": 4,
+        "other": 3,
     }
-    assert sum(disp.PINNED_REFUSAL_COUNTS.values()) == 44
+    assert sum(disp.PINNED_REFUSAL_COUNTS.values()) == 43
 
 
 def test_receipt_refuses_mismatched_counts():
