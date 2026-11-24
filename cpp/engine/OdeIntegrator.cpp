@@ -5218,6 +5218,21 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                         if (!zeroRootStrictGroups_[groupIndex]) continue;
                         if (eventRootValue(nativeEventGroups_[groupIndex].trigger,
                                            t, pollState.data()) <= 0.0) continue;
+                        // CVODE may have localized the same rising edge and
+                        // queued this group already.  An initially-zero
+                        // strict trigger must fire once, not once per path.
+                        bool alreadyRose = false;
+                        for (const auto eventIndex :
+                             nativeEventGroups_[groupIndex].events) {
+                            if (triggerRoseAt_[eventIndex] > opts.tStart) {
+                                alreadyRose = true;
+                                break;
+                            }
+                        }
+                        if (alreadyRose) {
+                            zeroRootStrictGroups_[groupIndex] = false;
+                            continue;
+                        }
                         queueTriggeredGroup(groupIndex, t, pollState);
                         zeroRootStrictGroups_[groupIndex] = false;
                     }
@@ -5245,6 +5260,12 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                         const auto rootIndex = static_cast<std::size_t>(
                             root - rootsFound.begin());
                         const auto group = nativeEventRoots_[rootIndex].first;
+                        // This group's rising edge was localized by CVODE;
+                        // the initially-zero strict-trigger poll must not
+                        // queue it a second time on a later accepted step.
+                        if (group < zeroRootStrictGroups_.size()) {
+                            zeroRootStrictGroups_[group] = false;
+                        }
                         // A conjunction rises only when every surface holds.
                         // At this root, the selected surface is exactly zero;
                         // its positive direction makes it conceptually true.
@@ -5279,7 +5300,12 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                                 break;
                             }
                         }
-                        if (conjunctionHolds) queueTriggeredGroup(group, t, state);
+                        if (conjunctionHolds) {
+                            if (group < zeroRootStrictGroups_.size()) {
+                                zeroRootStrictGroups_[group] = false;
+                            }
+                            queueTriggeredGroup(group, t, state);
+                        }
                         // Another group may have crossed in the same step:
                         // the solver reports one crossing per step, so the
                         // other groups are compared against the value their
@@ -5308,7 +5334,12 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                                     nativeEventGroups_[other].trigger, t, state.data(),
                                     derivatives) > 0.0;
                             }
-                            if (crossed) queueTriggeredGroup(other, t, state);
+                            if (crossed) {
+                                if (other < zeroRootStrictGroups_.size()) {
+                                    zeroRootStrictGroups_[other] = false;
+                                }
+                                queueTriggeredGroup(other, t, state);
+                            }
                         }
                         for (std::size_t other = 0; other < nativeEventGroups_.size(); ++other) {
                             lastRootValues_[other] = eventRootValue(
