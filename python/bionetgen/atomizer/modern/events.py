@@ -3324,6 +3324,46 @@ def _native_time_minus_state_comparison(
     return f"time {symbol} {state_text} + {threshold_text}"
 
 
+def _native_state_minus_time_comparison(
+    left_text: str,
+    right_text: str,
+    operator: str,
+    context: EventTranslationContext,
+) -> Optional[str]:
+    """Rewrite ``state - time OP constant`` as a moving time threshold.
+
+    ``state - time <= c`` holds exactly when ``time >= state - c``.  Reversing
+    the subtraction turns the SBML form into the native trigger orientation,
+    so the runtime locates the same rising edge with its existing root finder.
+    Only a single state symbol minus the clock is accepted: a general
+    expression could reverse its derivative and make the non-strict edge
+    ambiguous.
+    """
+    flipped = {">": "<", ">=": "<=", "<": ">", "<=": ">="}.get(operator)
+    if flipped is None:
+        return None
+    try:
+        left = ast.parse(context.expand_functions(left_text), mode="eval").body
+    except (TypeError, ValueError, SyntaxError):
+        return None
+    if not (
+        isinstance(left, ast.BinOp)
+        and isinstance(left.op, ast.Sub)
+        and isinstance(left.left, ast.Name)
+        and isinstance(left.right, ast.Name)
+        and left.right.id.lower() in {"time", "t"}
+    ):
+        return None
+    target = context.resolve_native_state(left.left.id)
+    threshold = _native_static_text(right_text, context)
+    if target is None or threshold is None:
+        return None
+    state_text = target.observable
+    if target.amount_factor != 1.0:
+        state_text = f"({state_text} / {_format_number(target.amount_factor)})"
+    return f"time {flipped} {state_text} - ({threshold})"
+
+
 def _native_scaled_static(
     expression: str, factor: float, context: EventTranslationContext
 ) -> Optional[str]:
@@ -3426,6 +3466,10 @@ def _native_comparison_expression(
     time_rewrite = _native_time_minus_state_comparison(
         left_text, right_text, symbol, context
     )
+    if time_rewrite is None:
+        time_rewrite = _native_state_minus_time_comparison(
+            left_text, right_text, symbol, context
+        )
     if time_rewrite is not None:
         return time_rewrite
     left_dynamic = _native_continuous_expression(left_text, context)
@@ -3536,8 +3580,17 @@ def _native_trigger_expression(
             return None
         threshold = right_text if left_text.lower() in {"time", "t"} else left_text
         instant = _native_fold_term_text(threshold, context)
-        if instant is not None and math.isfinite(instant) and instant > 0.0:
-            return f"time >= {_format_number(instant)}"
+        if instant is not None and math.isfinite(instant):
+            if instant > 0.0:
+                return f"time >= {_format_number(instant)}"
+            if instant == 0.0:
+                # The clock equals zero only at the initial instant.  The
+                # native runtime's startup check executes a non-strict trigger
+                # that holds at t=0 only when its initialValue is false, which
+                # is exactly the SBML rising edge for eq(time, 0).  With
+                # initialValue=true there is no edge, and the clock never
+                # returns to zero, so this form never executes again.
+                return "time <= 0"
         return None
     # A standalone non-strict inequality can fire on a tangential contact,
     # which the root finder cannot distinguish from a crossing.  Keep those
@@ -3579,6 +3632,10 @@ def _native_trigger_expression(
             right_text,
             _NATIVE_COMPARISON_OPERATORS[operator],
             context,
+        )
+        is None
+        and _native_state_minus_time_comparison(
+            left_text, right_text, _NATIVE_COMPARISON_OPERATORS[operator], context
         )
         is None
     ):
