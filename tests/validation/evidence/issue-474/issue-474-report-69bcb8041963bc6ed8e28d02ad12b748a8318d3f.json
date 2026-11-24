@@ -1,0 +1,455 @@
+{
+  "schema_version": 1,
+  "source": {
+    "revision": "69bcb8041963bc6ed8e28d02ad12b748a8318d3f",
+    "dirty": false
+  },
+  "artifact": {
+    "name": "issue-474-gpu-device-qualification-69bcb8041963bc6ed8e28d02ad12b748a8318d3f",
+    "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "host": {
+      "device": "Apple M5 Pro",
+      "metal_support": "Metal 4",
+      "os": {
+        "name": "macOS",
+        "version": "27.0.1",
+        "build": "26A434"
+      },
+      "hardware": {
+        "model": "MacBook Pro",
+        "chip": "Apple M5 Pro",
+        "gpu_cores": 16,
+        "memory_gb": 24
+      },
+      "compiler": "Apple clang version 21.0.0 (clang-2100.3.34.2)",
+      "sdk": "27.0",
+      "cmake": "cmake version 4.4.3",
+      "ninja": "1.13.2",
+      "python": "3.14.6",
+      "configure_options": [
+        "-DCMAKE_BUILD_TYPE=Release",
+        "-DBNG3_ENABLE_METAL=ON",
+        "-DBNG3_ENABLE_CUDA=OFF",
+        "-DBUILD_PYTHON_BINDINGS=ON",
+        "-DBUILD_CLI=ON",
+        "-DBUILD_TESTS=ON"
+      ],
+      "native_binary": "/tmp/bng3-474/build/cpp/_bionetgen_cpp.cpython-314-darwin.so",
+      "native_binary_sha256": "2247d3beecf9c57f2ec2c4c159fce7e25559405507f076e8e937dfd0a4ad3123",
+      "metal_objects": [
+        {
+          "path": "/tmp/bng3-474/build/cpp/CMakeFiles/bng_engine.dir/engine/gpu/NfnextMetalBackend.mm.o",
+          "sha256": "8159abd8005170fb146e6de7150e5d36be2d7a9135837640f4e1482b4fc11b38"
+        },
+        {
+          "path": "/tmp/bng3-474/build/cpp/CMakeFiles/bng_engine.dir/engine/gpu/MetalSsaBackend.mm.o",
+          "sha256": "02963f394f177a046a576fbe96e718e88b3bcc88b20cd86a07617b3a7cd26834"
+        }
+      ]
+    }
+  },
+  "results": [
+    {
+      "id": "release-metal-device",
+      "status": "PASS",
+      "stage": "issue-474-device-qualification",
+      "check": "release-metal-device",
+      "related_issues": [
+        474
+      ],
+      "evidence_kind": "supported-execution",
+      "supported_execution": true,
+      "detail": "Metal finite batch SSA executed on the recorded Apple device with analytic, conservation, reproducibility and distributional checks.",
+      "receipts": [
+        {
+          "path": "/tmp/bng3-474-evidence/metal-device-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+          "sha256": "7c41cf2c77cb0ebd616aca09c36e40bf5e580d0c97005095c4827fb4d4ec55c4",
+          "display_path": "tests/validation/evidence/issue-474/metal-device-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+        },
+        {
+          "path": "/tmp/bng3-474-evidence/build-identity-metal.json",
+          "sha256": "ebd6a6686313206717d92c51b9e82af94c340f31a7bdd1281739d542f9cee03e",
+          "display_path": "tests/validation/evidence/issue-474/build-identity-metal.json"
+        }
+      ]
+    },
+    {
+      "id": "release-metal-performance",
+      "status": "PASS",
+      "stage": "issue-474-device-qualification",
+      "check": "release-metal-performance",
+      "related_issues": [
+        474
+      ],
+      "evidence_kind": "supported-execution",
+      "supported_execution": true,
+      "detail": "Paired CPU/Metal measurements with A/A null, statistical equivalence, transfer costs, memory, startup and crossover ladder.",
+      "receipts": [
+        {
+          "path": "/tmp/bng3-474-evidence/metal-performance-egfr-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+          "sha256": "72e6c37890373f5eba1c50dab6559bc6c28ff0e19ea906629426420afcff906a",
+          "display_path": "tests/validation/evidence/issue-474/metal-performance-egfr-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+        },
+        {
+          "path": "/tmp/bng3-474-evidence/metal-crossover-b1-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+          "sha256": "ce9f45dc40d4a6ba0f7f5f139d6293c25dca59d054223df1debce95222d1f990",
+          "display_path": "tests/validation/evidence/issue-474/metal-crossover-b1-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+        },
+        {
+          "path": "/tmp/bng3-474-evidence/metal-crossover-b10-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+          "sha256": "f1c1bf7e11e8f035bde41427cb2db5d19a8032c2da5a141f227e964283e956f5",
+          "display_path": "tests/validation/evidence/issue-474/metal-crossover-b10-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+        },
+        {
+          "path": "/tmp/bng3-474-evidence/metal-crossover-b100-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+          "sha256": "8fb7bd1344bf40a53cfd74199c54faddf9ac1428a2f1bf0dea788590ece8b48b",
+          "display_path": "tests/validation/evidence/issue-474/metal-crossover-b100-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+        },
+        {
+          "path": "/tmp/bng3-474-evidence/metal-crossover-b300-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+          "sha256": "e66ae80f0f20cc110c347bc475a021fa17c1728904543cd6b9746e54ccd673bf",
+          "display_path": "tests/validation/evidence/issue-474/metal-crossover-b300-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+        },
+        {
+          "path": "/tmp/bng3-474-evidence/metal-crossover-b500-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+          "sha256": "ccdc1515dd6eb696d206afcd1e33af82c46e05db3ffa0b593e91e82219bce026",
+          "display_path": "tests/validation/evidence/issue-474/metal-crossover-b500-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+        },
+        {
+          "path": "/tmp/bng3-474-evidence/metal-crossover-b1000-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+          "sha256": "14761f0101f258681035ba6ec859a3807b6639eb0d095eb5c202e1601f47a5a6",
+          "display_path": "tests/validation/evidence/issue-474/metal-crossover-b1000-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+        }
+      ]
+    },
+    {
+      "id": "release-cuda-device",
+      "status": "NOT_TESTED",
+      "stage": "issue-474-device-qualification",
+      "check": "release-cuda-device",
+      "related_issues": [
+        474
+      ],
+      "evidence_kind": "diagnostic-only",
+      "supported_execution": false,
+      "detail": "No CUDA device execution: No local NVIDIA device/CUDA compiler and no usable hosted CUDA runner were observed; CUDA device execution is externally blocked.",
+      "receipts": [
+        {
+          "path": "/tmp/bng3-474-evidence/cuda-probe-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+          "sha256": "1197ef841f09d6ea93e62dbe6e0c42409580daa936ee047fa069c2fa8df16ed3",
+          "display_path": "tests/validation/evidence/issue-474/cuda-probe-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+        }
+      ]
+    },
+    {
+      "id": "release-cuda-performance",
+      "status": "NOT_TESTED",
+      "stage": "issue-474-device-qualification",
+      "check": "release-cuda-performance",
+      "related_issues": [
+        474
+      ],
+      "evidence_kind": "diagnostic-only",
+      "supported_execution": false,
+      "detail": "No CUDA device measurement: No local NVIDIA device/CUDA compiler and no usable hosted CUDA runner were observed; CUDA device execution is externally blocked.",
+      "receipts": [
+        {
+          "path": "/tmp/bng3-474-evidence/cuda-probe-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+          "sha256": "1197ef841f09d6ea93e62dbe6e0c42409580daa936ee047fa069c2fa8df16ed3",
+          "display_path": "tests/validation/evidence/issue-474/cuda-probe-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+        }
+      ]
+    },
+    {
+      "id": "release-nf-gpu",
+      "status": "NOT_TESTED",
+      "stage": "issue-474-device-qualification",
+      "check": "release-nf-gpu",
+      "related_issues": [
+        474
+      ],
+      "evidence_kind": "diagnostic-only",
+      "supported_execution": false,
+      "detail": "Bounded Metal unary-state route passes analytic and pinned native NFsim checks, but the full network-free GPU corpus and CUDA reporting are not qualified.",
+      "receipts": [
+        {
+          "path": "/tmp/bng3-474-evidence/nfnext-metal-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+          "sha256": "797d48b069735e8a7d5ec9639f3ea08df833dacc69a1e355197c5ee36e8f4577",
+          "display_path": "tests/validation/evidence/issue-474/nfnext-metal-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+        },
+        {
+          "path": "/tmp/bng3-474-evidence/pinned-nfsim-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+          "sha256": "ed3ed28c0f03f75ebf23fbb49b63cf7de2580e7f3488f8261511757ed262838a",
+          "display_path": "tests/validation/evidence/issue-474/pinned-nfsim-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+        }
+      ]
+    },
+    {
+      "id": "release-capability-coverage-474",
+      "status": "NOT_TESTED",
+      "stage": "issue-474-device-qualification",
+      "check": "release-capability-coverage-474",
+      "related_issues": [
+        474
+      ],
+      "evidence_kind": "diagnostic-only",
+      "supported_execution": false,
+      "detail": "backend.gpu is not fully covered: Metal executions recorded, CUDA device execution externally blocked and network-free CUDA unimplemented.",
+      "receipts": [
+        {
+          "path": "/tmp/bng3-474-evidence/cuda-probe-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+          "sha256": "1197ef841f09d6ea93e62dbe6e0c42409580daa936ee047fa069c2fa8df16ed3",
+          "display_path": "tests/validation/evidence/issue-474/cuda-probe-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+        }
+      ]
+    }
+  ],
+  "metal": {
+    "device": "Apple M5 Pro",
+    "finite_models": [
+      "isomerization",
+      "gene_expr_simple",
+      "toy-jim",
+      "egfr_net",
+      "gpu_immigration_death"
+    ],
+    "crossover": [
+      {
+        "path": "/tmp/bng3-474-evidence/metal-crossover-b1-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+        "sha256": "ce9f45dc40d4a6ba0f7f5f139d6293c25dca59d054223df1debce95222d1f990",
+        "batch_size": 1,
+        "cpu_effect": 1.6140624999999886,
+        "wall_effect": 2.922569558592899,
+        "clock_divergence": false
+      },
+      {
+        "path": "/tmp/bng3-474-evidence/metal-crossover-b10-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+        "sha256": "f1c1bf7e11e8f035bde41427cb2db5d19a8032c2da5a141f227e964283e956f5",
+        "batch_size": 10,
+        "cpu_effect": 0.22456732798649587,
+        "wall_effect": 2.181657575035845,
+        "clock_divergence": true
+      },
+      {
+        "path": "/tmp/bng3-474-evidence/metal-crossover-b100-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+        "sha256": "8fb7bd1344bf40a53cfd74199c54faddf9ac1428a2f1bf0dea788590ece8b48b",
+        "batch_size": 100,
+        "cpu_effect": 0.11971197119712691,
+        "wall_effect": 1.7951473181298805,
+        "clock_divergence": true
+      },
+      {
+        "path": "/tmp/bng3-474-evidence/metal-crossover-b300-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+        "sha256": "e66ae80f0f20cc110c347bc475a021fa17c1728904543cd6b9746e54ccd673bf",
+        "batch_size": 300,
+        "cpu_effect": 0.10388190267905062,
+        "wall_effect": 1.6886970799491803,
+        "clock_divergence": true
+      },
+      {
+        "path": "/tmp/bng3-474-evidence/metal-crossover-b500-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+        "sha256": "ccdc1515dd6eb696d206afcd1e33af82c46e05db3ffa0b593e91e82219bce026",
+        "batch_size": 500,
+        "cpu_effect": 0.08573111223288338,
+        "wall_effect": 1.4999212245171911,
+        "clock_divergence": true
+      },
+      {
+        "path": "/tmp/bng3-474-evidence/metal-crossover-b1000-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+        "sha256": "14761f0101f258681035ba6ec859a3807b6639eb0d095eb5c202e1601f47a5a6",
+        "batch_size": 1000,
+        "cpu_effect": 0.07538091419406892,
+        "wall_effect": 1.1753510755527123,
+        "clock_divergence": true
+      }
+    ],
+    "native_sha256": "2247d3beecf9c57f2ec2c4c159fce7e25559405507f076e8e937dfd0a4ad3123"
+  },
+  "network_free": {
+    "metal": {
+      "device": "Apple M5 Pro",
+      "total_events": 416398,
+      "analytic_times": [
+        0.5,
+        1.0,
+        2.0,
+        5.0
+      ]
+    },
+    "pinned_nfsim": {
+      "schema_version": 1,
+      "check": "pinned-native-nfsim-bounded-reference",
+      "status": "PASS",
+      "source": {
+        "nfsim_source": "/tmp/nfsim-pinned-474",
+        "nfsim_revision": "8c449bbccc4a0c54586ae562f46f4955e65fe876",
+        "nfsim_executable": "/tmp/nfsim-pinned-474/build/NFsim",
+        "nfsim_sha256": "caf0ad15f23169d13ff9634a5075337e915a0931a823522d3b0c5ca10253800a",
+        "lock_digest": "caf0ad15f23169d13ff9634a5075337e915a0931a823522d3b0c5ca10253800a",
+        "bng3_revision": "69bcb8041963bc6ed8e28d02ad12b748a8318d3f"
+      },
+      "device": {
+        "backend": "metal",
+        "name": "Apple M5 Pro",
+        "reported_device": "Apple M5 Pro"
+      },
+      "budget": {
+        "native_runs": 256,
+        "native_first_seed": 1000,
+        "metal_batch_size": 2048,
+        "metal_seed": 474141,
+        "alpha": 0.001,
+        "bonferroni_z_threshold": 3.836106931176034
+      },
+      "analytic_law": "P(t)/N = kf/(kf+kr) * (1 - exp(-(kf+kr)t))",
+      "checks": [
+        {
+          "time": 0.5,
+          "analytic_mean": 20.60499712277254,
+          "native_mean": 20.98046875,
+          "native_variance": 18.003538602941177,
+          "native_mean_z": 1.485300215193469,
+          "native_variance_ratio": 1.1005053223171952,
+          "metal_mean": 20.7265625,
+          "metal_native_mean_z": -0.9071918452399861,
+          "pass": true
+        },
+        {
+          "time": 1.0,
+          "analytic_mean": 34.416939742673655,
+          "native_mean": 34.81640625,
+          "native_variance": 24.652435661764706,
+          "native_mean_z": 1.3452976709760538,
+          "native_variance_ratio": 1.0921842378057294,
+          "metal_mean": 34.39404296875,
+          "metal_native_mean_z": -1.2891061951074492,
+          "pass": true
+        },
+        {
+          "time": 2.0,
+          "analytic_mean": 49.88146762533404,
+          "native_mean": 49.48828125,
+          "native_variance": 24.36064644607843,
+          "native_mean_z": -1.2581999365965517,
+          "native_variance_ratio": 0.9744313341175515,
+          "metal_mean": 49.92333984375,
+          "metal_native_mean_z": 1.328149617933509,
+          "pass": true
+        },
+        {
+          "time": 5.0,
+          "analytic_mean": 61.35527256945411,
+          "native_mean": 61.55859375,
+          "native_variance": 22.60047487745098,
+          "native_mean_z": 0.6680847157600305,
+          "native_variance_ratio": 0.9531811085176771,
+          "metal_mean": 61.2490234375,
+          "metal_native_mean_z": -0.9792150290571672,
+          "pass": true
+        }
+      ],
+      "wrong_law_rejected": true,
+      "scope": "bounded one-type one-site static unary state-change route only; not the full network-free corpus and not CUDA"
+    },
+    "cuda": "UNSUPPORTED: network-free CUDA execution is not implemented"
+  },
+  "cuda": {
+    "schema_version": 1,
+    "checked_at": "2026-11-24T06:51:22.698609+00:00",
+    "host": {
+      "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+      "python": "3.14.6"
+    },
+    "local_device": {
+      "nvidia_smi": null,
+      "nvcc": null,
+      "available": false
+    },
+    "hosted_runner": {
+      "api": {
+        "ok": false,
+        "returncode": 1,
+        "stdout": "{\"message\":\"You must have repository read permissions or have the repository runners fine-grained permission.\",\"documentation_url\":\"https://docs.github.com/rest/actions/self-hosted-runners#list-self-hosted-runners-for-a-repository\",\"status\":\"403\"}",
+        "stderr": "gh: You must have repository read permissions or have the repository runners fine-grained permission. (HTTP 403)"
+      },
+      "available": false
+    },
+    "workflow": {
+      "path": ".github/workflows/gpu-device-qualification.yml",
+      "runs": {
+        "ok": true,
+        "returncode": 0,
+        "stdout": "0",
+        "stderr": ""
+      },
+      "total_runs": 0
+    },
+    "verdict": {
+      "cuda_execution_available": false,
+      "status": "BLOCKED",
+      "detail": "No local NVIDIA device/CUDA compiler and no usable hosted CUDA runner were observed; CUDA device execution is externally blocked."
+    }
+  },
+  "receipts": [
+    {
+      "path": "/tmp/bng3-474-evidence/metal-device-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+      "sha256": "7c41cf2c77cb0ebd616aca09c36e40bf5e580d0c97005095c4827fb4d4ec55c4",
+      "display_path": "tests/validation/evidence/issue-474/metal-device-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+    },
+    {
+      "path": "/tmp/bng3-474-evidence/metal-performance-egfr-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+      "sha256": "72e6c37890373f5eba1c50dab6559bc6c28ff0e19ea906629426420afcff906a",
+      "display_path": "tests/validation/evidence/issue-474/metal-performance-egfr-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+    },
+    {
+      "path": "/tmp/bng3-474-evidence/nfnext-metal-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+      "sha256": "797d48b069735e8a7d5ec9639f3ea08df833dacc69a1e355197c5ee36e8f4577",
+      "display_path": "tests/validation/evidence/issue-474/nfnext-metal-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+    },
+    {
+      "path": "/tmp/bng3-474-evidence/build-identity-metal.json",
+      "sha256": "ebd6a6686313206717d92c51b9e82af94c340f31a7bdd1281739d542f9cee03e",
+      "display_path": "tests/validation/evidence/issue-474/build-identity-metal.json"
+    },
+    {
+      "path": "/tmp/bng3-474-evidence/cuda-probe-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+      "sha256": "1197ef841f09d6ea93e62dbe6e0c42409580daa936ee047fa069c2fa8df16ed3",
+      "display_path": "tests/validation/evidence/issue-474/cuda-probe-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+    },
+    {
+      "path": "/tmp/bng3-474-evidence/metal-crossover-b1-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+      "sha256": "ce9f45dc40d4a6ba0f7f5f139d6293c25dca59d054223df1debce95222d1f990",
+      "display_path": "tests/validation/evidence/issue-474/metal-crossover-b1-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+    },
+    {
+      "path": "/tmp/bng3-474-evidence/metal-crossover-b10-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+      "sha256": "f1c1bf7e11e8f035bde41427cb2db5d19a8032c2da5a141f227e964283e956f5",
+      "display_path": "tests/validation/evidence/issue-474/metal-crossover-b10-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+    },
+    {
+      "path": "/tmp/bng3-474-evidence/metal-crossover-b100-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+      "sha256": "8fb7bd1344bf40a53cfd74199c54faddf9ac1428a2f1bf0dea788590ece8b48b",
+      "display_path": "tests/validation/evidence/issue-474/metal-crossover-b100-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+    },
+    {
+      "path": "/tmp/bng3-474-evidence/metal-crossover-b300-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+      "sha256": "e66ae80f0f20cc110c347bc475a021fa17c1728904543cd6b9746e54ccd673bf",
+      "display_path": "tests/validation/evidence/issue-474/metal-crossover-b300-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+    },
+    {
+      "path": "/tmp/bng3-474-evidence/metal-crossover-b500-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+      "sha256": "ccdc1515dd6eb696d206afcd1e33af82c46e05db3ffa0b593e91e82219bce026",
+      "display_path": "tests/validation/evidence/issue-474/metal-crossover-b500-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+    },
+    {
+      "path": "/tmp/bng3-474-evidence/metal-crossover-b1000-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+      "sha256": "14761f0101f258681035ba6ec859a3807b6639eb0d095eb5c202e1601f47a5a6",
+      "display_path": "tests/validation/evidence/issue-474/metal-crossover-b1000-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+    },
+    {
+      "path": "/tmp/bng3-474-evidence/pinned-nfsim-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json",
+      "sha256": "ed3ed28c0f03f75ebf23fbb49b63cf7de2580e7f3488f8261511757ed262838a",
+      "display_path": "tests/validation/evidence/issue-474/pinned-nfsim-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+    }
+  ]
+}

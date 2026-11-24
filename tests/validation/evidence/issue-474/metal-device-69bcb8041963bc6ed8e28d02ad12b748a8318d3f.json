@@ -1,0 +1,166 @@
+{
+  "schema_version": 1,
+  "command": [
+    "/opt/anaconda3/bin/python3",
+    "tests/test_batch_ssa_statistical_parity.py",
+    "--mode",
+    "gpu",
+    "--backend",
+    "metal",
+    "--require-device",
+    "--json",
+    "/tmp/bng3-474-evidence/metal-device-69bcb8041963bc6ed8e28d02ad12b748a8318d3f.json"
+  ],
+  "native_module": "/private/tmp/bng3-474/build/cpp/_bionetgen_cpp.cpython-314-darwin.so",
+  "native_sha256": "2247d3beecf9c57f2ec2c4c159fce7e25559405507f076e8e937dfd0a4ad3123",
+  "source_revision": "69bcb8041963bc6ed8e28d02ad12b748a8318d3f",
+  "source_dirty": false,
+  "gpu": {
+    "backend": "metal",
+    "inventory": [
+      {
+        "name": "cuda",
+        "compiled": false,
+        "available": false,
+        "detail": "not compiled into this build"
+      },
+      {
+        "name": "metal",
+        "compiled": true,
+        "available": true,
+        "detail": "Apple M5 Pro"
+      }
+    ],
+    "models": [
+      {
+        "model": "isomerization",
+        "status": "PASS",
+        "backend": "metal",
+        "batch_size": 2000,
+        "model_sha256": "98da79720d49acc88894858020daf0117bfbb954d0a7f88cba49ca229bdbb40f",
+        "cpu_base_seed": 1000,
+        "gpu_base_seed": 5000,
+        "species": 2,
+        "reactions": 2,
+        "cpu_wall_time_ms": 4.771417,
+        "gpu_wall_time_ms": 4.754917,
+        "gpu_sim_time_ms": 4.662709,
+        "gpu_events": 263120,
+        "seed_reproducible": true
+      },
+      {
+        "model": "gene_expr_simple",
+        "status": "PASS",
+        "backend": "metal",
+        "batch_size": 2000,
+        "model_sha256": "6fc64dc44c46189127f39704f847aeb8571b5b00b11ae655e373c7ef2bba5f4f",
+        "cpu_base_seed": 1000,
+        "gpu_base_seed": 5000,
+        "species": 2,
+        "reactions": 4,
+        "cpu_wall_time_ms": 2.226875,
+        "gpu_wall_time_ms": 4.054666,
+        "gpu_sim_time_ms": 3.982833,
+        "gpu_events": 17007,
+        "seed_reproducible": true
+      },
+      {
+        "model": "toy-jim",
+        "status": "PASS",
+        "backend": "metal",
+        "batch_size": 2000,
+        "model_sha256": "70dc8143abbef33af495d21926b6a79d0d0a8db516975adce333673a14f13b64",
+        "cpu_base_seed": 1000,
+        "gpu_base_seed": 5000,
+        "species": 25,
+        "reactions": 101,
+        "cpu_wall_time_ms": 25.573583,
+        "gpu_wall_time_ms": 5.3285,
+        "gpu_sim_time_ms": 5.131458,
+        "gpu_events": 20126,
+        "seed_reproducible": true
+      },
+      {
+        "model": "egfr_net",
+        "status": "PASS",
+        "backend": "metal",
+        "batch_size": 2000,
+        "model_sha256": "892ab7f2a183ebbbccf400438484961d5703a927b22aa1f414dd597a41a75ca3",
+        "cpu_base_seed": 1000,
+        "gpu_base_seed": 5000,
+        "species": 356,
+        "reactions": 3749,
+        "cpu_wall_time_ms": 854.143583,
+        "gpu_wall_time_ms": 93.936834,
+        "gpu_sim_time_ms": 93.242166,
+        "gpu_events": 141230,
+        "seed_reproducible": true
+      },
+      {
+        "model": "gpu_immigration_death",
+        "status": "PASS",
+        "backend": "metal",
+        "batch_size": 5000,
+        "base_seed": 240474,
+        "model_sha256": "fff22a9deeae69cd3226a94802bd3aec919d1a78a438fef3dc2561d2413b389d",
+        "initial_population": 0,
+        "immigration_rate": 4.0,
+        "death_rate": 0.7,
+        "time_checks": [
+          {
+            "time": 0.5,
+            "expected_mean": 1.6874966301787804,
+            "observed_mean": 1.7101999521255493,
+            "mean_z": 1.2358135502670842,
+            "variance_ratio": 1.0293449359679114
+          },
+          {
+            "time": 1.0,
+            "expected_mean": 2.8766554069062313,
+            "observed_mean": 2.9072000980377197,
+            "mean_z": 1.273435109565345,
+            "variance_ratio": 0.9978908280548922
+          },
+          {
+            "time": 1.5,
+            "expected_mean": 3.7146414336505402,
+            "observed_mean": 3.7432000637054443,
+            "mean_z": 1.0477650882002982,
+            "variance_ratio": 0.9877813908681808
+          },
+          {
+            "time": 2.0,
+            "expected_mean": 4.3051602060479635,
+            "observed_mean": 4.371600151062012,
+            "mean_z": 2.264225138732256,
+            "variance_ratio": 1.0231240656375191
+          }
+        ],
+        "final_count_law": "Poisson(lambda/mu * (1-exp(-mu*t)))",
+        "final_count_fit": {
+          "status": "PASS",
+          "sample_size": 5000,
+          "expected_mean": 4.3051602060479635,
+          "observed_mean": 4.3716,
+          "mean_z": 2.264219990648456,
+          "variance_ratio": 1.023328830532886,
+          "chi_square": 19.51841595833147,
+          "chi_square_p": 0.07676212557344661,
+          "bins": 13,
+          "reason": ""
+        },
+        "no_death_wrong_law_rejected": true,
+        "repeated_after_interleaving": true,
+        "trajectory_index_prefix_equal_at_batch_sizes": [
+          63,
+          64,
+          65,
+          255,
+          256,
+          257
+        ]
+      }
+    ],
+    "status": "PASS"
+  }
+}

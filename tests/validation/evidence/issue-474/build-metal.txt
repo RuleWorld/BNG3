@@ -1,0 +1,1097 @@
+[0/2] Re-checking globbed directories...
+[1/695] Building C object cpp/CMakeFiles/nauty.dir/nauty/nautil.c.o
+[2/695] Building C object cpp/CMakeFiles/nauty.dir/nauty/nauty.c.o
+/tmp/bng3-474/cpp/nauty/nauty.c:911:17: warning: add explicit braces to avoid dangling else [-Wdangling-else]
+  911 |                 else
+      |                 ^
+1 warning generated.
+[3/695] Building C object cpp/CMakeFiles/nauty.dir/nauty/nausparse.c.o
+[4/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/ANTLRErrorListener.cpp.o
+[5/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/ANTLRErrorStrategy.cpp.o
+[6/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/ANTLRFileStream.cpp.o
+[7/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/BailErrorStrategy.cpp.o
+[8/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/ANTLRInputStream.cpp.o
+[9/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/BaseErrorListener.cpp.o
+[10/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/CharStream.cpp.o
+[11/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/BufferedTokenStream.cpp.o
+[12/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/CommonTokenStream.cpp.o
+[13/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/CommonTokenFactory.cpp.o
+[14/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/CommonToken.cpp.o
+[15/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/ConsoleErrorListener.cpp.o
+[16/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/Exceptions.cpp.o
+[17/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/DiagnosticErrorListener.cpp.o
+[18/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/DefaultErrorStrategy.cpp.o
+[19/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/FailedPredicateException.cpp.o
+[20/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/IntStream.cpp.o
+[21/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/InputMismatchException.cpp.o
+[22/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/InterpreterRuleContext.cpp.o
+[23/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/Lexer.cpp.o
+[24/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/LexerNoViableAltException.cpp.o
+[25/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/ListTokenSource.cpp.o
+[26/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/LexerInterpreter.cpp.o
+[27/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/NoViableAltException.cpp.o
+[28/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/ParserRuleContext.cpp.o
+[29/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/ProxyErrorListener.cpp.o
+[30/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/ParserInterpreter.cpp.o
+[31/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/RecognitionException.cpp.o
+[32/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/RuleContext.cpp.o
+[33/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/Parser.cpp.o
+[34/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/RuleContextWithAltNum.cpp.o
+[35/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/Recognizer.cpp.o
+[36/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/RuntimeMetaData.cpp.o
+[37/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/Token.cpp.o
+[38/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/TokenSource.cpp.o
+[39/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/TokenStream.cpp.o
+[40/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/UnbufferedCharStream.cpp.o
+/tmp/bng3-474/build/_deps/antlr4_runtime-src/runtime/Cpp/runtime/src/UnbufferedCharStream.cpp:101:41: warning: comparison of integers of different signs: 'value_type' (aka 'char32_t') and 'int_type' (aka 'int') [-Wsign-compare]
+  101 |   if (_data[static_cast<size_t>(index)] == std::char_traits<wchar_t>::eof()) {
+      |       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ^  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+1 warning generated.
+[41/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/UnbufferedTokenStream.cpp.o
+[42/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/WritableToken.cpp.o
+[43/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/Vocabulary.cpp.o
+[44/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/TokenStreamRewriter.cpp.o
+[45/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/ATNConfig.cpp.o
+[46/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/ATN.cpp.o
+[47/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/ATNDeserializationOptions.cpp.o
+[48/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/ATNConfigSet.cpp.o
+[49/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/ATNState.cpp.o
+[50/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/ATNSimulator.cpp.o
+[51/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/ATNStateType.cpp.o
+[52/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/ActionTransition.cpp.o
+[53/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/AmbiguityInfo.cpp.o
+[54/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/AtomTransition.cpp.o
+[55/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/ATNDeserializer.cpp.o
+[56/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/ArrayPredictionContext.cpp.o
+[57/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/ContextSensitivityInfo.cpp.o
+[58/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/DecisionEventInfo.cpp.o
+[59/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/DecisionInfo.cpp.o
+[60/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/DecisionState.cpp.o
+[61/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/EpsilonTransition.cpp.o
+[62/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/ErrorInfo.cpp.o
+[63/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/LexerAction.cpp.o
+[64/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/LexerATNConfig.cpp.o
+[65/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/LL1Analyzer.cpp.o
+[66/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/LexerChannelAction.cpp.o
+[67/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/LexerCustomAction.cpp.o
+[68/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/LexerActionExecutor.cpp.o
+[69/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/LexerATNSimulator.cpp.o
+[70/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/LexerIndexedCustomAction.cpp.o
+[71/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/LexerModeAction.cpp.o
+[72/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/LexerMoreAction.cpp.o
+[73/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/LexerPopModeAction.cpp.o
+[74/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/LexerPushModeAction.cpp.o
+[75/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/LexerSkipAction.cpp.o
+[76/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/LexerTypeAction.cpp.o
+[77/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/LookaheadEventInfo.cpp.o
+[78/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/NotSetTransition.cpp.o
+[79/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/OrderedATNConfigSet.cpp.o
+[80/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/ParseInfo.cpp.o
+[81/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/PrecedencePredicateTransition.cpp.o
+[82/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/PredicateEvalInfo.cpp.o
+[83/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/PredicateTransition.cpp.o
+[84/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/PredictionContextCache.cpp.o
+[85/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/PredictionContextMergeCache.cpp.o
+[86/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/RangeTransition.cpp.o
+[87/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/ParserATNSimulator.cpp.o
+[88/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/RuleTransition.cpp.o
+[89/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/PredictionContext.cpp.o
+[90/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/PredictionMode.cpp.o
+[91/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/ProfilingATNSimulator.cpp.o
+[92/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/SetTransition.cpp.o
+[93/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/SingletonPredictionContext.cpp.o
+[94/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/SemanticContext.cpp.o
+[95/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/StarLoopbackState.cpp.o
+[96/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/Transition.cpp.o
+[97/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/TransitionType.cpp.o
+[98/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/atn/WildcardTransition.cpp.o
+[99/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/dfa/DFA.cpp.o
+[100/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/internal/Synchronization.cpp.o
+[101/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/dfa/LexerDFASerializer.cpp.o
+[102/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/dfa/DFASerializer.cpp.o
+[103/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/misc/Interval.cpp.o
+[104/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/dfa/DFAState.cpp.o
+[105/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/misc/InterpreterDataReader.cpp.o
+[106/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/misc/MurmurHash.cpp.o
+[107/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/misc/IntervalSet.cpp.o
+[108/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/misc/Predicate.cpp.o
+[109/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/support/Any.cpp.o
+[110/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/support/Arrays.cpp.o
+[111/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/support/StringUtils.cpp.o
+[112/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/support/CPPUtils.cpp.o
+[113/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/support/Utf8.cpp.o
+[114/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/ParseTreeListener.cpp.o
+[115/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/ErrorNodeImpl.cpp.o
+[116/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/ParseTree.cpp.o
+[117/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/IterativeParseTreeWalker.cpp.o
+[118/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/ParseTreeVisitor.cpp.o
+[119/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/ParseTreeWalker.cpp.o
+[120/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/TerminalNodeImpl.cpp.o
+[121/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/pattern/Chunk.cpp.o
+[122/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/Trees.cpp.o
+[123/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/pattern/ParseTreeMatch.cpp.o
+[124/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/pattern/ParseTreePattern.cpp.o
+[125/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/pattern/TagChunk.cpp.o
+[126/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/pattern/RuleTagToken.cpp.o
+[127/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/pattern/TextChunk.cpp.o
+[128/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/pattern/ParseTreePatternMatcher.cpp.o
+[129/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/pattern/TokenTagToken.cpp.o
+[130/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/xpath/XPathElement.cpp.o
+[131/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/xpath/XPathLexerErrorListener.cpp.o
+[132/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/xpath/XPathRuleAnywhereElement.cpp.o
+[133/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundatanode/sundatanode_inmem.c.o
+[134/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/xpath/XPath.cpp.o
+[135/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_adaptcontroller.c.o
+[136/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/xpath/XPathRuleElement.cpp.o
+[137/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_adjointcheckpointscheme.c.o
+[138/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_adjointstepper.c.o
+[139/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/xpath/XPathLexer.cpp.o
+/tmp/bng3-474/build/_deps/antlr4_runtime-src/runtime/Cpp/runtime/src/tree/xpath/XPathLexer.cpp:158:48: warning: unused parameter 'context' [-Wunused-parameter]
+  158 | void XPathLexer::IDAction(antlr4::RuleContext *context, size_t actionIndex) {
+      |                                                ^
+1 warning generated.
+[140/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/xpath/XPathTokenAnywhereElement.cpp.o
+[141/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_cli.c.o
+[142/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_context.c.o
+[143/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_band.c.o
+[144/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_datanode.c.o
+[145/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_direct.c.o
+[146/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_errors.c.o
+[147/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_domeigestimator.c.o
+[148/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_futils.c.o
+[149/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/xpath/XPathTokenElement.cpp.o
+[150/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_linearsolver.c.o
+[151/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_hashmap.c.o
+[152/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_math.c.o
+[153/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_dense.c.o
+[154/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_logger.c.o
+[155/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/xpath/XPathWildcardAnywhereElement.cpp.o
+[156/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_iterative.c.o
+[157/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_matrix.c.o
+[158/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_memory.c.o
+[159/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_nonlinearsolver.c.o
+[160/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_nvector_senswrapper.c.o
+[161/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_stepper.c.o
+[162/695] Building CXX object _deps/antlr4_runtime-build/runtime/CMakeFiles/antlr4_static.dir/src/tree/xpath/XPathWildcardElement.cpp.o
+[163/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_version.c.o
+[164/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_profiler.c.o
+[165/695] Building C object _deps/sundials-build/src/sundials/CMakeFiles/sundials_core_obj_static.dir/sundials_nvector.c.o
+[166/695] Linking C static library cpp/libnauty.a
+[167/695] Building CXX object cpp/CMakeFiles/bng_core.dir/core/NodeType.cpp.o
+[168/695] Building CXX object cpp/CMakeFiles/bng_core.dir/core/State.cpp.o
+[169/695] Building CXX object cpp/CMakeFiles/bng_core.dir/core/PatternMatching.cpp.o
+[170/695] Building CXX object cpp/CMakeFiles/bng_core.dir/core/Map.cpp.o
+[171/695] Building CXX object cpp/CMakeFiles/bng_core.dir/core/Node.cpp.o
+[172/695] Linking CXX static library _deps/antlr4_runtime-build/runtime/libantlr4-runtime.a
+[173/695] Linking C static library _deps/sundials-build/src/sundials/libsundials_core.a
+[174/695] Building CXX object cpp/CMakeFiles/bng_units.dir/units/Unit.cpp.o
+[175/695] Linking CXX static library cpp/libbng_units.a
+[176/695] Building CXX object cpp/CMakeFiles/bng_core.dir/core/IdentityContract.cpp.o
+[177/695] Building CXX object cpp/CMakeFiles/bng_core.dir/core/StateType.cpp.o
+[178/695] Building CXX object cpp/CMakeFiles/bng_core.dir/core/Transformation.cpp.o
+[179/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/Compartment.cpp.o
+[180/695] Building CXX object cpp/CMakeFiles/bng_core.dir/core/Ullmann.cpp.o
+[181/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/BarrierPattern.cpp.o
+[182/695] Building CXX object cpp/CMakeFiles/bng_core.dir/core/PatternGraph.cpp.o
+[183/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/EnergyPattern.cpp.o
+[184/695] Linking CXX static library cpp/libbng_core.a
+[185/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/ExpressionEval.cpp.o
+[186/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/Function.cpp.o
+[187/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/Molecule.cpp.o
+[188/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/Observable.cpp.o
+[189/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/GraphTypeRegistry.cpp.o
+[190/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/Parameter.cpp.o
+[191/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/MoleculeType.cpp.o
+[192/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/Expression.cpp.o
+[193/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/Rxn.cpp.o
+[194/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/ParameterList.cpp.o
+[195/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/RxnList.cpp.o
+[196/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/SeedSpecies.cpp.o
+[197/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/Species.cpp.o
+[198/695] Building C object _deps/sundials-build/src/sunmatrix/band/CMakeFiles/sundials_sunmatrixband_obj_static.dir/sunmatrix_band.c.o
+/tmp/bng3-474/build/_deps/sundials-src/src/sunmatrix/band/sunmatrix_band.c:92:38: warning: 'SUNMatSpace_Band' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+   92 |   A->ops->space                    = SUNMatSpace_Band;
+      |                                      ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sunmatrix/sunmatrix_band.h:130:1: note: 'SUNMatSpace_Band' has been explicitly marked deprecated here
+  130 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+1 warning generated.
+[199/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/Model.cpp.o
+[200/695] Building C object _deps/sundials-build/src/sunmatrix/dense/CMakeFiles/sundials_sunmatrixdense_obj_static.dir/sunmatrix_dense.c.o
+/tmp/bng3-474/build/_deps/sundials-src/src/sunmatrix/dense/sunmatrix_dense.c:76:38: warning: 'SUNMatSpace_Dense' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+   76 |   A->ops->space                    = SUNMatSpace_Dense;
+      |                                      ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sunmatrix/sunmatrix_dense.h:108:1: note: 'SUNMatSpace_Dense' has been explicitly marked deprecated here
+  108 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+1 warning generated.
+[201/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/SpeciesGraph.cpp.o
+[202/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/SpeciesList.cpp.o
+[203/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/PopulationMappingRule.cpp.o
+[204/695] Building CXX object cpp/CMakeFiles/bng_parser.dir/parser/generated/BNGParserBaseVisitor.cpp.o
+[205/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/RefineRule.cpp.o
+[206/695] Building CXX object cpp/CMakeFiles/bng_parser.dir/parser/generated/BNGParserVisitor.cpp.o
+[207/695] Building CXX object cpp/CMakeFiles/bng_parser.dir/parser/generated/BNGLexer.cpp.o
+[208/695] Linking C static library _deps/sundials-build/src/sunmatrix/band/libsundials_sunmatrixband.a
+[209/695] Linking C static library _deps/sundials-build/src/sunmatrix/dense/libsundials_sunmatrixdense.a
+[210/695] Building CXX object cpp/CMakeFiles/bng_parser.dir/parser/ThermoSourceNormalization.cpp.o
+[211/695] Building CXX object cpp/CMakeFiles/bng_parser.dir/parser/ThermoModelFinalize.cpp.o
+[212/695] Building CXX object cpp/CMakeFiles/bng_parser.dir/parser/PatternGraphBuilder.cpp.o
+[213/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/MacroBNGModel.cpp.o
+[214/695] Building CXX object cpp/CMakeFiles/bng_compile.dir/compile/Capabilities.cpp.o
+[215/695] Building CXX object cpp/CMakeFiles/bng_ast.dir/ast/ReactionRule.cpp.o
+[216/695] Linking CXX static library cpp/libbng_ast.a
+[217/695] Building CXX object cpp/CMakeFiles/bng_compile.dir/compile/LegacyAstLowering.cpp.o
+[218/695] Building CXX object cpp/CMakeFiles/bng_compile.dir/compile/PatternLowering.cpp.o
+[219/695] Building CXX object cpp/CMakeFiles/bng_compile.dir/compile/PatternDescriptor.cpp.o
+[220/695] Building CXX object cpp/CMakeFiles/bng_compile.dir/compile/energy/EnergyDeltaPlan.cpp.o
+[221/695] Building CXX object cpp/CMakeFiles/bng_compile.dir/compile/SymbolTable.cpp.o
+[222/695] Building CXX object cpp/CMakeFiles/bng_compile.dir/compile/energy/DrivenEnergy.cpp.o
+[223/695] Building CXX object cpp/CMakeFiles/bng_parser.dir/parser/generated/BNGParser.cpp.o
+[224/695] Building CXX object cpp/CMakeFiles/bng_compile.dir/compile/energy/BarrierTable.cpp.o
+[225/695] Building CXX object cpp/CMakeFiles/bng_compile.dir/compile/Document.cpp.o
+[226/695] Building CXX object cpp/CMakeFiles/bng_compile.dir/compile/energy/ThermodynamicConstraints.cpp.o
+[227/695] Building CXX object cpp/CMakeFiles/bng_compile.dir/compile/UnitAnalysis.cpp.o
+[228/695] Building CXX object cpp/CMakeFiles/bng_compile.dir/compile/energy/BarrierCompiler.cpp.o
+[229/695] Building C object _deps/sundials-build/src/sunmatrix/sparse/CMakeFiles/sundials_sunmatrixsparse_obj_static.dir/sunmatrix_sparse.c.o
+/tmp/bng3-474/build/_deps/sundials-src/src/sunmatrix/sparse/sunmatrix_sparse.c:96:38: warning: 'SUNMatSpace_Sparse' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+   96 |   A->ops->space                    = SUNMatSpace_Sparse;
+      |                                      ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sunmatrix/sunmatrix_sparse.h:190:1: note: 'SUNMatSpace_Sparse' has been explicitly marked deprecated here
+  190 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+1 warning generated.
+[230/695] Building C object _deps/sundials-build/src/sunlinsol/band/CMakeFiles/sundials_sunlinsolband_obj_static.dir/sunlinsol_band.c.o
+/tmp/bng3-474/build/_deps/sundials-src/src/sunlinsol/band/sunlinsol_band.c:86:24: warning: 'SUNLinSolSpace_Band' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+   86 |   S->ops->space      = SUNLinSolSpace_Band;
+      |                        ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sunlinsol/sunlinsol_band.h:79:1: note: 'SUNLinSolSpace_Band' has been explicitly marked deprecated here
+   79 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+1 warning generated.
+[231/695] Building C object _deps/sundials-build/src/sunlinsol/dense/CMakeFiles/sundials_sunlinsoldense_obj_static.dir/sunlinsol_dense.c.o
+/tmp/bng3-474/build/_deps/sundials-src/src/sunlinsol/dense/sunlinsol_dense.c:82:24: warning: 'SUNLinSolSpace_Dense' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+   82 |   S->ops->space      = SUNLinSolSpace_Dense;
+      |                        ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sunlinsol/sunlinsol_dense.h:84:1: note: 'SUNLinSolSpace_Dense' has been explicitly marked deprecated here
+   84 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+1 warning generated.
+[232/695] Building C object _deps/sundials-build/src/sunlinsol/pcg/CMakeFiles/sundials_sunlinsolpcg_obj_static.dir/sunlinsol_pcg.c.o
+/tmp/bng3-474/build/_deps/sundials-src/src/sunlinsol/pcg/sunlinsol_pcg.c:103:31: warning: 'SUNLinSolSpace_PCG' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+  103 |   S->ops->space             = SUNLinSolSpace_PCG;
+      |                               ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sunlinsol/sunlinsol_pcg.h:127:1: note: 'SUNLinSolSpace_PCG' has been explicitly marked deprecated here
+  127 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+1 warning generated.
+[233/695] Building C object _deps/sundials-build/src/sunlinsol/spbcgs/CMakeFiles/sundials_sunlinsolspbcgs_obj_static.dir/sunlinsol_spbcgs.c.o
+/tmp/bng3-474/build/_deps/sundials-src/src/sunlinsol/spbcgs/sunlinsol_spbcgs.c:112:31: warning: 'SUNLinSolSpace_SPBCGS' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+  112 |   S->ops->space             = SUNLinSolSpace_SPBCGS;
+      |                               ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sunlinsol/sunlinsol_spbcgs.h:109:1: note: 'SUNLinSolSpace_SPBCGS' has been explicitly marked deprecated here
+  109 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+1 warning generated.
+[234/695] Building C object _deps/sundials-build/src/nvector/serial/CMakeFiles/sundials_nvecserial_obj_static.dir/nvector_serial.c.o
+/tmp/bng3-474/build/_deps/sundials-src/src/nvector/serial/nvector_serial.c:100:31: warning: 'N_VSpace_Serial' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+  100 |   v->ops->nvspace           = N_VSpace_Serial;
+      |                               ^
+/tmp/bng3-474/build/_deps/sundials-src/include/nvector/nvector_serial.h:120:1: note: 'N_VSpace_Serial' has been explicitly marked deprecated here
+  120 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+1 warning generated.
+[235/695] Building C object _deps/sundials-build/src/sunlinsol/spfgmr/CMakeFiles/sundials_sunlinsolspfgmr_obj_static.dir/sunlinsol_spfgmr.c.o
+/tmp/bng3-474/build/_deps/sundials-src/src/sunlinsol/spfgmr/sunlinsol_spfgmr.c:113:31: warning: 'SUNLinSolSpace_SPFGMR' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+  113 |   S->ops->space             = SUNLinSolSpace_SPFGMR;
+      |                               ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sunlinsol/sunlinsol_spfgmr.h:119:1: note: 'SUNLinSolSpace_SPFGMR' has been explicitly marked deprecated here
+  119 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+1 warning generated.
+[236/695] Building C object _deps/sundials-build/src/sunlinsol/spgmr/CMakeFiles/sundials_sunlinsolspgmr_obj_static.dir/sunlinsol_spgmr.c.o
+/tmp/bng3-474/build/_deps/sundials-src/src/sunlinsol/spgmr/sunlinsol_spgmr.c:111:31: warning: 'SUNLinSolSpace_SPGMR' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+  111 |   S->ops->space             = SUNLinSolSpace_SPGMR;
+      |                               ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sunlinsol/sunlinsol_spgmr.h:118:1: note: 'SUNLinSolSpace_SPGMR' has been explicitly marked deprecated here
+  118 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+1 warning generated.
+[237/695] Building C object _deps/sundials-build/src/sunlinsol/sptfqmr/CMakeFiles/sundials_sunlinsolsptfqmr_obj_static.dir/sunlinsol_sptfqmr.c.o
+/tmp/bng3-474/build/_deps/sundials-src/src/sunlinsol/sptfqmr/sunlinsol_sptfqmr.c:110:31: warning: 'SUNLinSolSpace_SPTFQMR' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+  110 |   S->ops->space             = SUNLinSolSpace_SPTFQMR;
+      |                               ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sunlinsol/sunlinsol_sptfqmr.h:111:1: note: 'SUNLinSolSpace_SPTFQMR' has been explicitly marked deprecated here
+  111 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+1 warning generated.
+[238/695] Building C object _deps/sundials-build/src/sunnonlinsol/newton/CMakeFiles/sundials_sunnonlinsolnewton_obj_static.dir/sunnonlinsol_newton.c.o
+[239/695] Building C object _deps/sundials-build/src/sunmemory/system/CMakeFiles/sundials_sunmemsys_obj_static.dir/sundials_system_memory.c.o
+[240/695] Building CXX object cpp/CMakeFiles/bng_compile.dir/compile/TotalRate.cpp.o
+[241/695] Building C object _deps/sundials-build/src/sunnonlinsol/fixedpoint/CMakeFiles/sundials_sunnonlinsolfixedpoint_obj_static.dir/sunnonlinsol_fixedpoint.c.o
+[242/695] Building CXX object cpp/CMakeFiles/bng_parser.dir/parser/BNGAstVisitor.cpp.o
+[243/695] Building C object _deps/sundials-build/src/cvode/CMakeFiles/sundials_cvode_obj_static.dir/cvode_bandpre.c.o
+[244/695] Building C object _deps/sundials-build/src/cvode/CMakeFiles/sundials_cvode_obj_static.dir/cvode_cli.c.o
+[245/695] Linking CXX static library cpp/libbng_parser.a
+[246/695] Building C object _deps/sundials-build/src/cvode/CMakeFiles/sundials_cvode_obj_static.dir/cvode_bbdpre.c.o
+/tmp/bng3-474/build/_deps/sundials-src/src/cvode/cvode_bbdpre.c:263:5: warning: 'N_VSpace' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+  263 |     N_VSpace(cv_mem->cv_tempv, &lrw1, &liw1);
+      |     ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sundials/sundials_nvector.h:228:1: note: 'N_VSpace' has been explicitly marked deprecated here
+  228 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+/tmp/bng3-474/build/_deps/sundials-src/src/cvode/cvode_bbdpre.c:269:5: warning: 'N_VSpace' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+  269 |     N_VSpace(pdata->rlocal, &lrw1, &liw1);
+      |     ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sundials/sundials_nvector.h:228:1: note: 'N_VSpace' has been explicitly marked deprecated here
+  228 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+/tmp/bng3-474/build/_deps/sundials-src/src/cvode/cvode_bbdpre.c:275:12: warning: 'SUNMatSpace' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+  275 |     flag = SUNMatSpace(pdata->savedJ, &lrw, &liw);
+      |            ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sundials/sundials_matrix.h:161:1: note: 'SUNMatSpace' has been explicitly marked deprecated here
+  161 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+/tmp/bng3-474/build/_deps/sundials-src/src/cvode/cvode_bbdpre.c:281:12: warning: 'SUNMatSpace' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+  281 |     flag = SUNMatSpace(pdata->savedP, &lrw, &liw);
+      |            ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sundials/sundials_matrix.h:161:1: note: 'SUNMatSpace' has been explicitly marked deprecated here
+  161 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+/tmp/bng3-474/build/_deps/sundials-src/src/cvode/cvode_bbdpre.c:287:12: warning: 'SUNLinSolSpace' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+  287 |     flag = SUNLinSolSpace(pdata->LS, &lrw, &liw);
+      |            ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sundials/sundials_linearsolver.h:219:1: note: 'SUNLinSolSpace' has been explicitly marked deprecated here
+  219 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+5 warnings generated.
+[247/695] Building C object _deps/sundials-build/src/cvode/CMakeFiles/sundials_cvode_obj_static.dir/cvode_diag.c.o
+[248/695] Building C object _deps/sundials-build/src/cvode/CMakeFiles/sundials_cvode_obj_static.dir/cvode_nls.c.o
+[249/695] Building C object _deps/sundials-build/src/cvode/CMakeFiles/sundials_cvode_obj_static.dir/cvode_proj.c.o
+[250/695] Building C object _deps/sundials-build/src/cvode/CMakeFiles/sundials_cvode_obj_static.dir/cvode_io.c.o
+[251/695] Building C object _deps/sundials-build/src/cvode/CMakeFiles/sundials_cvode_obj_static.dir/cvode_ls.c.o
+[252/695] Building C object _deps/sundials-build/src/cvode/CMakeFiles/sundials_cvode_obj_static.dir/cvode_resize.c.o
+[253/695] Building C object _deps/sundials-build/src/ida/CMakeFiles/sundials_ida_obj_static.dir/ida_cli.c.o
+[254/695] Building C object _deps/sundials-build/src/ida/CMakeFiles/sundials_ida_obj_static.dir/ida_bbdpre.c.o
+/tmp/bng3-474/build/_deps/sundials-src/src/ida/ida_bbdpre.c:266:5: warning: 'N_VSpace' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+  266 |     N_VSpace(IDA_mem->ida_tempv1, &lrw1, &liw1);
+      |     ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sundials/sundials_nvector.h:228:1: note: 'N_VSpace' has been explicitly marked deprecated here
+  228 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+/tmp/bng3-474/build/_deps/sundials-src/src/ida/ida_bbdpre.c:272:5: warning: 'N_VSpace' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+  272 |     N_VSpace(pdata->rlocal, &lrw1, &liw1);
+      |     ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sundials/sundials_nvector.h:228:1: note: 'N_VSpace' has been explicitly marked deprecated here
+  228 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+/tmp/bng3-474/build/_deps/sundials-src/src/ida/ida_bbdpre.c:278:12: warning: 'SUNMatSpace' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+  278 |     flag = SUNMatSpace(pdata->PP, &lrw, &liw);
+      |            ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sundials/sundials_matrix.h:161:1: note: 'SUNMatSpace' has been explicitly marked deprecated here
+  161 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+/tmp/bng3-474/build/_deps/sundials-src/src/ida/ida_bbdpre.c:284:12: warning: 'SUNLinSolSpace' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+  284 |     flag = SUNLinSolSpace(pdata->LS, &lrw, &liw);
+      |            ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sundials/sundials_linearsolver.h:219:1: note: 'SUNLinSolSpace' has been explicitly marked deprecated here
+  219 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+4 warnings generated.
+[255/695] Building CXX object cpp/CMakeFiles/bng_compile.dir/compile/CompiledRateLaw.cpp.o
+[256/695] Building C object _deps/sundials-build/src/cvode/CMakeFiles/sundials_cvode_obj_static.dir/cvode.c.o
+/tmp/bng3-474/build/_deps/sundials-src/src/cvode/cvode.c:429:35: warning: 'N_VSpace' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+  429 |   if (y0->ops->nvspace != NULL) { N_VSpace(y0, &lrw1, &liw1); }
+      |                                   ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sundials/sundials_nvector.h:228:1: note: 'N_VSpace' has been explicitly marked deprecated here
+  228 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+1 warning generated.
+[257/695] Building C object _deps/sundials-build/src/ida/CMakeFiles/sundials_ida_obj_static.dir/ida_ic.c.o
+[258/695] Building C object _deps/sundials-build/src/ida/CMakeFiles/sundials_ida_obj_static.dir/ida_nls.c.o
+[259/695] Building C object _deps/sundials-build/src/ida/CMakeFiles/sundials_ida_obj_static.dir/ida_io.c.o
+[260/695] Building C object _deps/sundials-build/src/ida/CMakeFiles/sundials_ida_obj_static.dir/ida_ls.c.o
+[261/695] Building C object _deps/sundials-build/src/ida/CMakeFiles/sundials_ida_obj_static.dir/ida.c.o
+/tmp/bng3-474/build/_deps/sundials-src/src/ida/ida.c:442:36: warning: 'N_VSpace' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+  442 |   if (yy0->ops->nvspace != NULL) { N_VSpace(yy0, &lrw1, &liw1); }
+      |                                    ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sundials/sundials_nvector.h:228:1: note: 'N_VSpace' has been explicitly marked deprecated here
+  228 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+1 warning generated.
+[262/695] Building CXX object cpp/CMakeFiles/bng_nfnext.dir/nfnext/src/compiler.cpp.o
+[263/695] Building CXX object cpp/CMakeFiles/bng_compile.dir/compile/CompiledRule.cpp.o
+[264/695] Building CXX object cpp/CMakeFiles/bng_nfnext.dir/nfnext/src/cache_v2.cpp.o
+[265/695] Building CXX object cpp/CMakeFiles/bng_nfnext.dir/nfnext/src/cache.cpp.o
+[266/695] Building CXX object cpp/CMakeFiles/bng_nfnext.dir/nfnext/src/lattice.cpp.o
+[267/695] Building CXX object cpp/CMakeFiles/bng_nfnext.dir/nfnext/src/family_compiler.cpp.o
+[268/695] Building CXX object cpp/CMakeFiles/bng_nfnext.dir/nfnext/src/rule_family.cpp.o
+[269/695] Building CXX object cpp/CMakeFiles/bng_nfnext.dir/nfnext/src/generic_state.cpp.o
+[270/695] Building CXX object cpp/CMakeFiles/bng_nfnext.dir/nfnext/src/nfir.cpp.o
+[271/695] Linking C static library _deps/sundials-build/src/nvector/serial/libsundials_nvecserial.a
+[272/695] Linking C static library _deps/sundials-build/src/sunlinsol/dense/libsundials_sunlinsoldense.a
+[273/695] Linking C static library _deps/sundials-build/src/sunlinsol/spgmr/libsundials_sunlinsolspgmr.a
+[274/695] Linking C static library _deps/sundials-build/src/sunnonlinsol/fixedpoint/libsundials_sunnonlinsolfixedpoint.a
+[275/695] Building CXX object cpp/CMakeFiles/bng_nfnext.dir/nfnext/src/canonical.cpp.o
+[276/695] Linking C static library _deps/sundials-build/src/ida/libsundials_ida.a
+[277/695] Linking C static library _deps/sundials-build/src/cvode/libsundials_cvode.a
+[278/695] Building CXX object cpp/CMakeFiles/bng_nfnext.dir/nfnext/src/trajectory.cpp.o
+[279/695] Building CXX object cpp/CMakeFiles/bng_nfnext.dir/nfnext/src/generic_matcher.cpp.o
+[280/695] Building CXX object cpp/CMakeFiles/bng_compile.dir/compile/CompiledModel.cpp.o
+[281/695] Linking CXX static library cpp/libbng_compile.a
+[282/695] Building CXX object cpp/CMakeFiles/bng_nfnext.dir/nfnext/src/validator.cpp.o
+[283/695] Building CXX object cpp/CMakeFiles/bng_nfnext.dir/nfnext/src/transformation.cpp.o
+[284/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/engine/LegacyNetworkRuleKernel.cpp.o
+[285/695] Building CXX object cpp/CMakeFiles/bng_finite_backend.dir/engine/FiniteBackend.cpp.o
+[286/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/engine/ObservableProjection.cpp.o
+[287/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/engine/EventClock.cpp.o
+[288/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/engine/gpu/GpuSsaBackend.cpp.o
+[289/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/engine/NetworkGenerator.cpp.o
+[290/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/engine/NetworkRulePlan.cpp.o
+[291/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/engine/BatchSsa.cpp.o
+[292/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/engine/gpu/NfnextGpuBackend.cpp.o
+[293/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/engine/PlaSimulator.cpp.o
+[294/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/NetReader.cpp.o
+[295/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/engine/HybridModelGenerator.cpp.o
+[296/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/engine/PsaSimulator.cpp.o
+[297/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/SbmlUnitWriter.cpp.o
+[298/695] Building CXX object cpp/CMakeFiles/bng_nfnext.dir/nfnext/src/from_bng.cpp.o
+[299/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/SbmlReader.cpp.o
+[300/695] Linking CXX static library cpp/libbng_nfnext.a
+[301/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/EnergyExportGuard.cpp.o
+[302/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/BnglWriter.cpp.o
+[303/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/MatlabWriter.cpp.o
+[304/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/CppExportWriter.cpp.o
+[305/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/NetWriter.cpp.o
+[306/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/PythonExportWriter.cpp.o
+[307/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/SbmlMultiWriter.cpp.o
+[308/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/SbmlWriter.cpp.o
+[309/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/engine/OdeIntegrator.cpp.o
+[310/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/ContactMapWriter.cpp.o
+[311/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/ReactionNetworkGraphWriter.cpp.o
+[312/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/RulevizPatternWriter.cpp.o
+[313/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/XmlWriter.cpp.o
+[314/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/MexWriter.cpp.o
+[315/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/RulevizOperationWriter.cpp.o
+[316/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/RegulatoryGraphWriter.cpp.o
+[317/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/ProcessGraphWriter.cpp.o
+[318/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/RuleInfluenceGraphWriter.cpp.o
+[319/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/MdlWriter.cpp.o
+[320/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/SscWriter.cpp.o
+[321/695] Linking CXX static library cpp/libbng_finite_backend.a
+[322/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/io/LatexWriter.cpp.o
+[323/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/cli/BatchRunner.cpp.o
+[324/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/console/Console.cpp.o
+[325/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFcore/compartment.cpp.o
+[326/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/engine/gpu/NfnextMetalBackend.mm.o
+[327/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFcore/complexList.cpp.o
+[328/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/engine/BngsimAdapter.cpp.o
+[329/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFcore/complex.cpp.o
+[330/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/engine/gpu/MetalSsaBackend.mm.o
+[331/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFcore/energyPattern.cpp.o
+[332/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFcore/molecule.cpp.o
+[333/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFcore/observable.cpp.o
+[334/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFcore/reactionClass.cpp.o
+[335/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFcore/profile.cpp.o
+[336/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFcore/systemSnapshot.cpp.o
+[337/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFcore/system.cpp.o
+[338/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFcore/moleculeLists/moleculeList.cpp.o
+[339/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFcore/templateMolecule.cpp.o
+[340/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFcore/reactionSelector/fixedPointSelector.cpp.o
+[341/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFcore/reactionSelector/logClassSelector.cpp.o
+[342/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFcore/reactionSelector/directSelector.cpp.o
+[343/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFcore/moleculeType.cpp.o
+[344/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFinput/NFinput_energy.cpp.o
+[345/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFinput/NFinput_fromModel.cpp.o
+[346/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFinput/commandLineParser.cpp.o
+[347/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFinput/parseFuncXML.cpp.o
+[348/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFinput/rnfRunner.cpp.o
+[349/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFinput/speciesStream.cpp.o
+[350/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFinput/TinyXML/tinystr.cpp.o
+[351/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFinput/parseSymRxns.cpp.o
+[352/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp.o
+[353/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFinput/NFinput_fromCompiled.cpp.o
+[354/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFinput/TinyXML/tinyxml.cpp.o
+[355/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFinput/TinyXML/tinyxmlerror.cpp.o
+[356/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFinput/TinyXML/tinyxmlparser.cpp.o
+[357/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFinput/walk.cpp.o
+[358/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFreactions/NFreactions.cpp.o
+[359/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFreactions/transformations/moleculeCreator.cpp.o
+[360/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFreactions/transformations/speciesCreator.cpp.o
+/tmp/bng3-474/cpp/nfsim/NFreactions/transformations/speciesCreator.cpp:65:3: warning: ignoring return value of function declared with 'nodiscard' attribute [-Wunused-result]
+   65 |                 err.what();
+      |                 ^~~~~~~~
+1 warning generated.
+[361/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFreactions/transformations/transformation.cpp.o
+[362/695] Building CXX object cpp/CMakeFiles/bng_engine.dir/actions/ActionDispatch.cpp.o
+[363/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFinput/NFinput.cpp.o
+[364/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFreactions/reactions/DORreaction.cpp.o
+[365/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFreactions/transformations/transformationSet.cpp.o
+[366/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFreactions/reactantLists/reactantList.cpp.o
+[367/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFreactions/reactantLists/reactantTree.cpp.o
+[368/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFreactions/reactions/reaction.cpp.o
+[369/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFreactions/mappings/mapping.cpp.o
+[370/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFreactions/mappings/mappingGenerator.cpp.o
+[371/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFinput/NFinput_fromAst.cpp.o
+[372/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFscheduler/NFstream.cpp.o
+[373/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFreactions/mappings/mappingSet.cpp.o
+[374/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFfunction/funcParser.cpp.o
+[375/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFfunction/compositeFunction.cpp.o
+[376/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFoutput/NFoutput.cpp.o
+[377/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFutil/MTrand/mtrand.cpp.o
+[378/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFutil/MTrand/mttest.cpp.o
+[379/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFfunction/function.cpp.o
+[380/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFutil/random.cpp.o
+[381/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFutil/conversion.cpp.o
+[382/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFfunction/localFunction.cpp.o
+[383/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/generators/catch_generator_exception.cpp.o
+[384/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFutil/stringOperations.cpp.o
+[385/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/benchmark/detail/catch_benchmark_function.cpp.o
+[386/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/benchmark/catch_chronometer.cpp.o
+[387/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/benchmark/detail/catch_run_for_at_least.cpp.o
+[388/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFscheduler/Scheduler.cpp.o
+[389/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/generators/catch_generators.cpp.o
+[390/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/generators/catch_generators_random.cpp.o
+[391/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/benchmark/detail/catch_stats.cpp.o
+[392/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_common_base.cpp.o
+[393/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_automake.cpp.o
+[394/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_compact.cpp.o
+[395/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_event_listener.cpp.o
+[396/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_registrars.cpp.o
+[397/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_cumulative_base.cpp.o
+[398/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_console.cpp.o
+[399/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_helpers.cpp.o
+[400/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_multi.cpp.o
+[401/695] Building CXX object cpp/CMakeFiles/nfsim_core.dir/nfsim/NFcore2/nfsim_pattern_lowering.cpp.o
+[402/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_junit.cpp.o
+[403/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_sonarqube.cpp.o
+[404/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_streaming_base.cpp.o
+[405/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_config.cpp.o
+[406/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_tap.cpp.o
+[407/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_capture.cpp.o
+[408/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_exception.cpp.o
+[409/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_teamcity.cpp.o
+[410/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_generatortracker.cpp.o
+[411/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_registry_hub.cpp.o
+[412/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/reporters/catch_reporter_xml.cpp.o
+[413/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_reporter_factory.cpp.o
+[414/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_testcase.cpp.o
+[415/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_approx.cpp.o
+/tmp/bng3-474/build/_deps/catch2-src/src/catch2/catch_approx.cpp:73:24: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+   73 |     Approx operator "" _a(long double val) {
+      |            ~~~~~~~~~~~~^~
+      |            operator""_a
+/tmp/bng3-474/build/_deps/catch2-src/src/catch2/catch_approx.cpp:76:24: warning: identifier '_a' preceded by whitespace in a literal operator declaration is deprecated [-Wdeprecated-literal-operator]
+   76 |     Approx operator "" _a(unsigned long long val) {
+      |            ~~~~~~~~~~~~^~
+      |            operator""_a
+2 warnings generated.
+[416/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_assertion_result.cpp.o
+[417/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/interfaces/catch_interfaces_reporter.cpp.o
+[418/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_get_random_seed.cpp.o
+[419/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_message.cpp.o
+[420/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_tag_alias_autoregistrar.cpp.o
+[421/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_registry_hub.cpp.o
+[422/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_totals.cpp.o
+[423/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_config.cpp.o
+[424/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_timer.cpp.o
+[425/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_test_case_info.cpp.o
+[426/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_test_spec.cpp.o
+[427/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_translate_exception.cpp.o
+[428/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_version.cpp.o
+[429/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_tostring.cpp.o
+[430/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_context.cpp.o
+[431/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_case_insensitive_comparisons.cpp.o
+[432/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_assertion_handler.cpp.o
+[433/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/catch_session.cpp.o
+[434/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_console_colour.cpp.o
+[435/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_errno_guard.cpp.o
+[436/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_debug_console.cpp.o
+[437/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_debugger.cpp.o
+[438/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_enforce.cpp.o
+[439/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_decomposer.cpp.o
+[440/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_enum_values_registry.cpp.o
+[441/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_getenv.cpp.o
+[442/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_floating_point_helpers.cpp.o
+[443/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_leak_detector.cpp.o
+[444/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_fatal_condition_handler.cpp.o
+[445/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_exception_translator_registry.cpp.o
+[446/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_clara.cpp.o
+[447/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_lazy_expr.cpp.o
+[448/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_polyfills.cpp.o
+[449/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_random_number_generator.cpp.o
+[450/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_istream.cpp.o
+[451/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_message_info.cpp.o
+[452/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_result_type.cpp.o
+[453/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_parse_numbers.cpp.o
+[454/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_list.cpp.o
+[455/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_output_redirect.cpp.o
+[456/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_commandline.cpp.o
+[457/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_random_seed_generation.cpp.o
+[458/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_reporter_spec_parser.cpp.o
+[459/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_reusable_string_stream.cpp.o
+[460/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_singletons.cpp.o
+[461/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_reporter_registry.cpp.o
+[462/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_section.cpp.o
+[463/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_source_line_info.cpp.o
+[464/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_startup_exception_registry.cpp.o
+[465/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_run_context.cpp.o
+[466/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_stdstreams.cpp.o
+[467/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_case_info_hasher.cpp.o
+[468/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_stringref.cpp.o
+[469/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_string_manip.cpp.o
+[470/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_uncaught_exceptions.cpp.o
+[471/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_tag_alias_registry.cpp.o
+[472/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_registry.cpp.o
+[473/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_failure_exception.cpp.o
+[474/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_case_tracker.cpp.o
+[475/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_spec_parser.cpp.o
+[476/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_wildcard_pattern.cpp.o
+[477/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_textflow.cpp.o
+[478/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_test_case_registry_impl.cpp.o
+[479/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/internal/catch_xmlwriter.cpp.o
+[480/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers.cpp.o
+[481/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_container_properties.cpp.o
+[482/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_exception.cpp.o
+[483/695] Linking CXX static library cpp/libbng_engine.a
+[484/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_quantifiers.cpp.o
+[485/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_predicate.cpp.o
+[486/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_floating_point.cpp.o
+[487/695] Linking CXX static library cpp/libnfsim_core.a
+[488/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_templated.cpp.o
+[489/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/internal/catch_matchers_impl.cpp.o
+[490/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2WithMain.dir/catch2/internal/catch_main.cpp.o
+[491/695] Building CXX object cpp/CMakeFiles/bng_nfcore2.dir/nfsim/NFcore2/executable_model.cpp.o
+[492/695] Building CXX object cpp/CMakeFiles/bng_nfcore2.dir/nfsim/NFcore2/compiled_model.cpp.o
+[493/695] Building CXX object cpp/CMakeFiles/bng_cpp.dir/main.cpp.o
+[494/695] Building CXX object cpp/CMakeFiles/bng_nfcore2.dir/nfsim/NFcore2/engine.cpp.o
+[495/695] Building CXX object _deps/catch2-build/src/CMakeFiles/Catch2.dir/catch2/matchers/catch_matchers_string.cpp.o
+[496/695] Linking CXX static library _deps/catch2-build/src/libCatch2.a
+[497/695] Building CXX object cpp/CMakeFiles/bng_nfcore2.dir/nfsim/NFcore2/matcher.cpp.o
+[498/695] Building CXX object cpp/CMakeFiles/bng_nfcore2.dir/nfsim/NFcore2/driver.cpp.o
+[499/695] Building CXX object cpp/CMakeFiles/bng_nfcore2.dir/nfsim/NFcore2/nfsim_system_reader.cpp.o
+[500/695] Building CXX object cpp/CMakeFiles/bng_nfcore2.dir/nfsim/NFcore2/nfsim_transform_decoder.cpp.o
+[501/695] Building CXX object cpp/CMakeFiles/bng_nfcore2.dir/nfsim/NFcore2/model_image.cpp.o
+[502/695] Building CXX object cpp/CMakeFiles/bng_nfcore2.dir/nfsim/NFcore2/seed.cpp.o
+[503/695] Building CXX object cpp/CMakeFiles/bng_nfcore2.dir/nfsim/NFcore2/scheduler.cpp.o
+[504/695] Building CXX object cpp/CMakeFiles/bng_nfcore2.dir/nfsim/NFcore2/legacy_bridge.cpp.o
+[505/695] Building CXX object cpp/CMakeFiles/bng_nfcore2.dir/nfsim/NFcore2/nfsim_adapter_contract.cpp.o
+/tmp/bng3-474/cpp/nfsim/NFcore2/nfsim_adapter_contract.cpp:249:25: warning: add explicit braces to avoid dangling else [-Wdangling-else]
+  249 |                         else
+      |                         ^
+1 warning generated.
+[506/695] Linking CXX static library _deps/catch2-build/src/libCatch2Main.a
+[507/695] Building CXX object cpp/CMakeFiles/bng_nfcore2.dir/nfsim/NFcore2/rule_compiler.cpp.o
+[508/695] Building CXX object cpp/CMakeFiles/bng_nfcore2.dir/nfsim/NFcore2/scaffold.cpp.o
+[509/695] Building C object _deps/sundials-build/src/sundomeigest/power/CMakeFiles/sundials_sundomeigestpower_obj_static.dir/sundomeigest_power.c.o
+[510/695] Building C object _deps/sundials-build/src/nvector/manyvector/CMakeFiles/sundials_nvecmanyvector_obj_static.dir/nvector_manyvector.c.o
+/tmp/bng3-474/build/_deps/sundials-src/src/nvector/manyvector/nvector_manyvector.c:332:27: warning: 'N_VSpace_ManyVector' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+  332 |   v->ops->nvspace       = N_VSpace_ManyVector;
+      |                           ^
+/tmp/bng3-474/build/_deps/sundials-src/include/nvector/nvector_manyvector.h:108:1: note: 'N_VSpace_ManyVector' has been explicitly marked deprecated here
+  108 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+1 warning generated.
+[511/695] Building CXX object cpp/CMakeFiles/bng_nfcore2.dir/nfsim/NFcore2/shadow.cpp.o
+[512/695] Building CXX object cpp/CMakeFiles/bng_nfcore2.dir/nfsim/NFcore2/simulation_state.cpp.o
+[513/695] Building CXX object cpp/CMakeFiles/bng_nfcore2.dir/nfsim/NFcore2/transform.cpp.o
+[514/695] Building CXX object cpp/CMakeFiles/bng_nfcore2.dir/nfsim/NFcore2/nfsim_native_reader.cpp.o
+[515/695] Linking CXX static library cpp/libbng_nfcore2.a
+[516/695] Building CXX object cpp/CMakeFiles/_bionetgen_cpp.dir/bindings/module.cpp.o
+[517/695] Building CXX object cpp/CMakeFiles/_bionetgen_cpp.dir/bindings/bind_parser.cpp.o
+[518/695] Building CXX object cpp/CMakeFiles/_bionetgen_cpp.dir/bindings/bind_compile_snapshot.cpp.o
+[519/695] Building CXX object cpp/CMakeFiles/_bionetgen_cpp.dir/bindings/bind_model.cpp.o
+[520/695] Building CXX object cpp/CMakeFiles/_bionetgen_cpp.dir/bindings/bind_nfsim.cpp.o
+[521/695] Building CXX object cpp/CMakeFiles/_bionetgen_cpp.dir/bindings/bind_bngir.cpp.o
+[522/695] Building CXX object cpp/CMakeFiles/_bionetgen_cpp.dir/bindings/bind_nfnext.cpp.o
+[523/695] Building CXX object tests/cpp/CMakeFiles/localfunc_test.dir/localfunc_test.cpp.o
+[524/695] Building CXX object tests/cpp/CMakeFiles/test_run_network.dir/test_run_network.cpp.o
+[525/695] Building CXX object cpp/CMakeFiles/_bionetgen_cpp.dir/bindings/bind_io.cpp.o
+[526/695] Building CXX object cpp/CMakeFiles/_bionetgen_cpp.dir/bindings/bind_engine.cpp.o
+[527/695] Building CXX object cpp/CMakeFiles/_bionetgen_cpp.dir/bindings/bind_viz.cpp.o
+[528/695] Building CXX object cpp/CMakeFiles/_bionetgen_cpp.dir/bindings/bind_jax_ssa.cpp.o
+[529/695] Building CXX object tests/cpp/CMakeFiles/test_psa_simulator.dir/test_psa_simulator.cpp.o
+[530/695] Building CXX object cpp/CMakeFiles/_bionetgen_cpp.dir/bindings/bind_graph_identity.cpp.o
+[531/695] Building CXX object tests/cpp/CMakeFiles/test_pla_simulator.dir/test_pla_simulator.cpp.o
+[532/695] Building CXX object tests/cpp/CMakeFiles/test_cvode_adams_fallback.dir/test_cvode_adams_fallback.cpp.o
+[533/695] Linking CXX executable cpp/bng_cpp
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[534/695] Building CXX object tests/cpp/CMakeFiles/test_ode_function_index.dir/test_ode_function_index.cpp.o
+[535/695] Building CXX object tests/cpp/CMakeFiles/test_gpu_batch_ssa_backend.dir/test_gpu_batch_ssa_backend.cpp.o
+[536/695] Building CXX object tests/cpp/CMakeFiles/test_pk_rate_laws.dir/test_pk_rate_laws.cpp.o
+[537/695] Building CXX object tests/cpp/CMakeFiles/test_batch_runner.dir/test_batch_runner.cpp.o
+[538/695] Building CXX object tests/cpp/CMakeFiles/test_ode_options.dir/test_ode_options.cpp.o
+[539/695] Building CXX object tests/cpp/CMakeFiles/test_node_operator.dir/test_node_operator.cpp.o
+[540/695] Building CXX object tests/cpp/CMakeFiles/test_batch_ssa_reproducibility.dir/test_batch_ssa_reproducibility.cpp.o
+[541/695] Building CXX object tests/cpp/CMakeFiles/test_units.dir/test_units.cpp.o
+[542/695] Building CXX object tests/cpp/CMakeFiles/test_model_options.dir/test_model_options.cpp.o
+[543/695] Building CXX object tests/cpp/CMakeFiles/test_signaling_rate_laws.dir/test_signaling_rate_laws.cpp.o
+[544/695] Building CXX object tests/cpp/CMakeFiles/test_observable_counting.dir/test_observable_counting.cpp.o
+[545/695] Building CXX object tests/cpp/CMakeFiles/test_expression_evaluator.dir/test_expression_evaluator.cpp.o
+[546/695] Building CXX object tests/cpp/CMakeFiles/test_network_generator.dir/test_network_generator.cpp.o
+[547/695] Building CXX object tests/cpp/CMakeFiles/test_hybrid_model_generator.dir/test_hybrid_model_generator.cpp.o
+[548/695] Building CXX object tests/cpp/CMakeFiles/test_symbol_table.dir/test_symbol_table.cpp.o
+[549/695] Building CXX object tests/cpp/CMakeFiles/test_parser_units.dir/test_parser_units.cpp.o
+[550/695] Building CXX object tests/cpp/CMakeFiles/test_dae_ida.dir/test_dae_ida.cpp.o
+[551/695] Building CXX object tests/cpp/CMakeFiles/test_graph_identity_contract.dir/test_graph_identity_contract.cpp.o
+[552/695] Building CXX object tests/cpp/CMakeFiles/test_sbml_units.dir/test_sbml_units.cpp.o
+[553/695] Building CXX object tests/cpp/CMakeFiles/test_ullmann.dir/test_ullmann.cpp.o
+[554/695] Building CXX object tests/cpp/CMakeFiles/test_hnauty.dir/test_hnauty.cpp.o
+[555/695] Building CXX object tests/cpp/CMakeFiles/test_nfsim_profile.dir/test_nfsim_profile.cpp.o
+[556/695] Building CXX object tests/cpp/CMakeFiles/test_compartment_transport.dir/test_compartment_transport.cpp.o
+[557/695] Building CXX object tests/cpp/CMakeFiles/test_nfcore2_parity.dir/test_nfcore2_parity.cpp.o
+[558/695] Building CXX object tests/cpp/CMakeFiles/test_reaction_rule_expansion.dir/test_reaction_rule_expansion.cpp.o
+[559/695] Building CXX object tests/cpp/CMakeFiles/test_sbml_delay_writer.dir/test_sbml_delay_writer.cpp.o
+[560/695] Building CXX object tests/cpp/CMakeFiles/test_sbml_reader.dir/test_sbml_reader.cpp.o
+[561/695] Building CXX object tests/cpp/CMakeFiles/test_nfsim_reactant_tree.dir/test_nfsim_reactant_tree.cpp.o
+[562/695] Building CXX object tests/cpp/CMakeFiles/test_node_label_parity.dir/test_node_label_parity.cpp.o
+[563/695] Building CXX object tests/cpp/CMakeFiles/test_total_rate_capability.dir/test_total_rate_capability.cpp.o
+[564/695] Building CXX object tests/cpp/CMakeFiles/test_finite_backend.dir/test_finite_backend.cpp.o
+[565/695] Building CXX object tests/cpp/CMakeFiles/test_xml_writer.dir/test_xml_writer.cpp.o
+[566/695] Building CXX object tests/cpp/CMakeFiles/test_gdat_output_format.dir/test_gdat_output_format.cpp.o
+[567/695] Building CXX object tests/cpp/CMakeFiles/test_delayed_reactions.dir/test_delayed_reactions.cpp.o
+[568/695] Building CXX object tests/energy/tests/cpp/CMakeFiles/test_energy_compiler_contracts.dir/future_thermodynamic_constraints.cpp.o
+[569/695] Building CXX object tests/energy/tests/cpp/CMakeFiles/test_energy_compiler_contracts.dir/future_barrier_driving_syntax.cpp.o
+[570/695] Building CXX object tests/cpp/CMakeFiles/test_correctness_regressions.dir/test_correctness_regressions.cpp.o
+[571/695] Building CXX object tests/energy/tests/cpp/CMakeFiles/test_energy_compiler_contracts.dir/test_thermo_source_normalization.cpp.o
+[572/695] Building CXX object tests/energy/tests/cpp/CMakeFiles/test_energy_compiler_contracts.dir/test_energy_compiler_phase1.cpp.o
+[573/695] Building CXX object tests/energy/tests/cpp/CMakeFiles/test_energy_compiler_contracts.dir/test_barrier_and_driven_energy.cpp.o
+[574/695] Building CXX object tests/energy/tests/cpp/CMakeFiles/test_energy_compiler_contracts.dir/test_energy_delta_plan_property.cpp.o
+[575/695] Building CXX object tests/energy/tests/cpp/CMakeFiles/test_energy_compiler_contracts.dir/test_thermo_model_finalize.cpp.o
+[576/695] Building CXX object tests/energy/tests/cpp/CMakeFiles/test_energy_compiler_contracts.dir/test_energy_delta_plan_edge_cases.cpp.o
+[577/695] Building CXX object tests/energy/tests/cpp/CMakeFiles/test_energy_compiler_contracts.dir/test_energy_export_guard.cpp.o
+[578/695] Building CXX object tests/energy/tests/cpp/CMakeFiles/test_energy_compiler_contracts.dir/test_pattern_descriptor_contracts.cpp.o
+[579/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_compiled_scheduler.cpp.o
+[580/695] Building CXX object tests/energy/tests/cpp/CMakeFiles/test_energy_compiler_contracts.dir/test_compiled_rate_law_contracts.cpp.o
+[581/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_exhaustive_matcher_matrix.cpp.o
+[582/695] Building CXX object tests/energy/tests/cpp/CMakeFiles/test_energy_compiler_contracts.dir/test_compiled_model_contracts.cpp.o
+[583/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_dependency_exhaustive.cpp.o
+[584/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_graph_state_machine_extended.cpp.o
+[585/695] Building CXX object tests/energy/tests/cpp/CMakeFiles/test_energy_compiler_original.dir/test_energy_compiler_original.cpp.o
+[586/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_main.cpp.o
+[587/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_ids_state.cpp.o
+[588/695] Building CXX object tests/cpp/CMakeFiles/test_nfsim_ast_adapter.dir/test_nfsim_ast_adapter.cpp.o
+[589/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_nfsim_transform_decoder.cpp.o
+[590/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_paged_mapping.cpp.o
+[591/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_nfsim_pattern_lowering.cpp.o
+[592/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_nfsim_system_reader.cpp.o
+[593/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_rule_family_stress.cpp.o
+[594/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_model_image_shadow.cpp.o
+[595/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_scaffold_reference_model.cpp.o
+[596/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_randomized_invariants.cpp.o
+[597/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_scaffold_matcher.cpp.o
+[598/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_scheduler_reference_model.cpp.o
+[599/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_shadow_semantic_matrix.cpp.o
+[600/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_rule_legacy.cpp.o
+[601/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_nfsim_adapter_contract.cpp.o
+[602/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_ssa_driver.cpp.o
+[603/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfnext_reference_tests.dir/nfnext/test_nfnext.cpp.o
+[604/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_transform_engine.cpp.o
+[605/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfcore2_reference_tests.dir/nfcore2/test_validation_dependency.cpp.o
+[606/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfnext_canonicalization_contract.dir/nfnext/future_contract/test_nfir_canonicalization_contract.cpp.o
+[607/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfnext_dependency_scheduler_contract.dir/nfnext/future_contract/test_dependency_scheduler_contract.cpp.o
+/tmp/bng3-474/tests/architecture_contracts/nfnext/future_contract/test_dependency_scheduler_contract.cpp:168:65: warning: implicit conversion from 'type' (aka 'unsigned long long') to 'double' changes value from 18446744073709551615 to 18446744073709551616 [-Wimplicit-const-int-float-conversion]
+  168 |             const double target = (static_cast<double>(rng()) / std::numeric_limits<std::uint64_t>::max()) * std::nextafter(total,0.0);
+      |                                                               ~ ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+1 warning generated.
+[608/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfnext_generic_matcher_contract.dir/nfnext/future_contract/test_generic_matcher_contract.cpp.o
+[609/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfnext_execution_boundary.dir/nfnext/test_execution_boundary.cpp.o
+[610/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfnext_memory_arena_contract.dir/nfnext/future_contract/test_memory_arena_contract.cpp.o
+[611/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfnext_cache_contract.dir/nfnext/future_contract/test_cache_contract.cpp.o
+[612/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfnext_transformations_contract.dir/nfnext/future_contract/test_transformations_contract.cpp.o
+[613/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfnext_lattice_interval_contract.dir/nfnext/future_contract/test_lattice_interval_contract.cpp.o
+[614/695] Linking C static library _deps/sundials-build/src/nvector/manyvector/libsundials_nvecmanyvector.a
+[615/695] Linking C static library _deps/sundials-build/src/sunmatrix/sparse/libsundials_sunmatrixsparse.a
+[616/695] Linking C static library _deps/sundials-build/src/sunlinsol/band/libsundials_sunlinsolband.a
+[617/695] Linking C static library _deps/sundials-build/src/sunlinsol/pcg/libsundials_sunlinsolpcg.a
+[618/695] Linking C static library _deps/sundials-build/src/sunlinsol/spbcgs/libsundials_sunlinsolspbcgs.a
+[619/695] Linking C static library _deps/sundials-build/src/sunlinsol/spfgmr/libsundials_sunlinsolspfgmr.a
+[620/695] Linking C static library _deps/sundials-build/src/sunlinsol/sptfqmr/libsundials_sunlinsolsptfqmr.a
+[621/695] Linking C static library _deps/sundials-build/src/sunnonlinsol/newton/libsundials_sunnonlinsolnewton.a
+[622/695] Building C object _deps/sundials-build/src/sunadaptcontroller/imexgus/CMakeFiles/sundials_sunadaptcontrollerimexgus_obj_static.dir/sunadaptcontroller_imexgus.c.o
+/tmp/bng3-474/build/_deps/sundials-src/src/sunadaptcontroller/imexgus/sunadaptcontroller_imexgus.c:100:26: warning: 'SUNAdaptController_Space_ImExGus' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+  100 |   C->ops->space        = SUNAdaptController_Space_ImExGus;
+      |                          ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sunadaptcontroller/sunadaptcontroller_imexgus.h:87:1: note: 'SUNAdaptController_Space_ImExGus' has been explicitly marked deprecated here
+   87 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+1 warning generated.
+[623/695] Building C object _deps/sundials-build/src/sunadaptcontroller/soderlind/CMakeFiles/sundials_sunadaptcontrollersoderlind_obj_static.dir/sunadaptcontroller_soderlind.c.o
+/tmp/bng3-474/build/_deps/sundials-src/src/sunadaptcontroller/soderlind/sunadaptcontroller_soderlind.c:113:26: warning: 'SUNAdaptController_Space_Soderlind' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+  113 |   C->ops->space        = SUNAdaptController_Space_Soderlind;
+      |                          ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sunadaptcontroller/sunadaptcontroller_soderlind.h:94:1: note: 'SUNAdaptController_Space_Soderlind' has been explicitly marked deprecated here
+   94 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+1 warning generated.
+[624/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfnext_compartment_rate_contract.dir/nfnext/future_contract/test_compartment_rate_contract.cpp.o
+[625/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfnext_rng_replay_contract.dir/nfnext/future_contract/test_rng_replay_concurrency_contract.cpp.o
+[626/695] Building C object _deps/sundials-build/src/sunadaptcontroller/mrihtol/CMakeFiles/sundials_sunadaptcontrollermrihtol_obj_static.dir/sunadaptcontroller_mrihtol.c.o
+/tmp/bng3-474/build/_deps/sundials-src/src/sunadaptcontroller/mrihtol/sunadaptcontroller_mrihtol.c:107:29: warning: 'SUNAdaptController_Space_MRIHTol' is deprecated: Work space functions will be removed in version 8.0.0 [-Wdeprecated-declarations]
+  107 |   C->ops->space           = SUNAdaptController_Space_MRIHTol;
+      |                             ^
+/tmp/bng3-474/build/_deps/sundials-src/include/sunadaptcontroller/sunadaptcontroller_mrihtol.h:96:1: note: 'SUNAdaptController_Space_MRIHTol' has been explicitly marked deprecated here
+   96 | SUNDIALS_DEPRECATED_EXPORT_MSG(
+      | ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:38:63: note: expanded from macro 'SUNDIALS_DEPRECATED_EXPORT_MSG'
+   38 | #  define SUNDIALS_DEPRECATED_EXPORT_MSG(msg) SUNDIALS_EXPORT SUNDIALS_DEPRECATED_MSG(msg)
+      |                                                               ^
+/tmp/bng3-474/build/_deps/sundials-build/include/sundials/sundials_config.h:34:56: note: expanded from macro 'SUNDIALS_DEPRECATED_MSG'
+   34 | #  define SUNDIALS_DEPRECATED_MSG(msg) __attribute__ ((__deprecated__(msg)))
+      |                                                        ^
+1 warning generated.
+[627/695] Building C object _deps/sundials-build/src/sunadjointcheckpointscheme/fixed/CMakeFiles/sundials_adjointcheckpointscheme_fixed_obj_static.dir/sunadjointcheckpointscheme_fixed.c.o
+[628/695] Linking C static library _deps/sundials-build/src/sundomeigest/power/libsundials_sundomeigestpower.a
+[629/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfnext_future_contract.dir/nfnext/future_contract/test_rule_family_contract.cpp.o
+[630/695] Linking CXX executable tests/cpp/localfunc_test
+[631/695] Linking CXX executable tests/cpp/test_batch_runner
+[632/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfnext_population_hybrid_contract.dir/nfnext/future_contract/test_population_hybrid_contract.cpp.o
+[633/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfnext_bng_lowering_bridge.dir/nfnext/test_bng_lowering_bridge.cpp.o
+[634/695] Linking CXX executable tests/cpp/test_run_network
+[635/695] Linking CXX executable tests/cpp/test_pla_simulator
+ld: warning: ignoring duplicate libraries: '_deps/antlr4_runtime-build/runtime/libantlr4-runtime.a', 'cpp/libbng_ast.a', 'cpp/libbng_core.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[636/695] Linking CXX executable tests/cpp/test_cvode_adams_fallback
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_ast.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[637/695] Linking CXX executable tests/cpp/test_ode_options
+ld: warning: ignoring duplicate libraries: '_deps/antlr4_runtime-build/runtime/libantlr4-runtime.a', 'cpp/libbng_ast.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[638/695] Building CXX object tests/architecture_contracts/CMakeFiles/bng3_nfnext_observable_function_contract.dir/nfnext/future_contract/test_observable_function_contract.cpp.o
+[639/695] Linking CXX executable tests/cpp/test_psa_simulator
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_ast.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[640/695] Linking CXX executable tests/cpp/test_ode_function_index
+ld: warning: ignoring duplicate libraries: '_deps/antlr4_runtime-build/runtime/libantlr4-runtime.a', 'cpp/libbng_ast.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[641/695] Linking CXX executable tests/cpp/test_node_operator
+[642/695] Linking CXX executable tests/cpp/test_pk_rate_laws
+ld: warning: ignoring duplicate libraries: '_deps/antlr4_runtime-build/runtime/libantlr4-runtime.a', 'cpp/libbng_ast.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[643/695] Linking CXX executable tests/cpp/test_gpu_batch_ssa_backend
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[644/695] Linking CXX executable tests/cpp/test_batch_ssa_reproducibility
+ld: warning: ignoring duplicate libraries: '_deps/antlr4_runtime-build/runtime/libantlr4-runtime.a', 'cpp/libbng_ast.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[645/695] Linking CXX executable tests/cpp/test_network_generator
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_ast.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[646/695] Linking CXX executable tests/cpp/test_hybrid_model_generator
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_ast.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[647/695] Linking CXX executable tests/cpp/test_units
+[648/695] Linking CXX executable tests/cpp/test_model_options
+[649/695] Linking CXX executable tests/cpp/test_expression_evaluator
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_ast.a'
+[650/695] Linking CXX executable tests/cpp/test_signaling_rate_laws
+[651/695] Linking CXX executable tests/cpp/test_observable_counting
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_compile.a', 'cpp/libbng_core.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a', 'cpp/libbng_parser.a'
+[652/695] Linking CXX executable tests/cpp/test_parser_units
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_compile.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a', 'cpp/libbng_parser.a'
+[653/695] Linking CXX executable tests/cpp/test_symbol_table
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_ast.a'
+[654/695] Linking CXX executable tests/cpp/test_dae_ida
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[655/695] Linking CXX executable tests/cpp/test_reaction_rule_expansion
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_ast.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[656/695] Linking CXX executable tests/cpp/test_ullmann
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_ast.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[657/695] Linking CXX executable tests/cpp/test_compartment_transport
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_ast.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[658/695] Linking CXX executable tests/cpp/test_sbml_units
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[659/695] Linking CXX executable tests/cpp/test_nfsim_profile
+[660/695] Linking CXX executable tests/cpp/test_hnauty
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_ast.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[661/695] Linking CXX executable tests/cpp/test_graph_identity_contract
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_ast.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[662/695] Linking CXX executable tests/cpp/test_nfcore2_parity
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a', 'cpp/libbng_parser.a'
+[663/695] Linking CXX executable tests/cpp/test_nfsim_reactant_tree
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a', 'cpp/libbng_parser.a'
+[664/695] Linking CXX executable tests/cpp/test_total_rate_capability
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[665/695] Linking CXX executable tests/cpp/test_sbml_delay_writer
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[666/695] Linking CXX executable tests/cpp/test_finite_backend
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_ast.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[667/695] Linking CXX executable tests/cpp/test_node_label_parity
+[668/695] Linking CXX executable tests/cpp/test_gdat_output_format
+ld: warning: ignoring duplicate libraries: '_deps/antlr4_runtime-build/runtime/libantlr4-runtime.a', 'cpp/libbng_ast.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[669/695] Linking CXX executable tests/cpp/test_correctness_regressions
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_ast.a', 'cpp/libbng_compile.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a', 'cpp/libbng_parser.a'
+[670/695] Linking CXX executable tests/cpp/test_xml_writer
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_ast.a', 'cpp/libbng_compile.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a', 'cpp/libbng_parser.a'
+[671/695] Building CXX object tests/architecture_contracts/CMakeFiles/test_nfcore2_native_reader.dir/test_native_reader.cpp.o
+[672/695] Linking CXX executable tests/architecture_contracts/bng3_nfnext_reference_tests
+[673/695] Linking CXX executable tests/architecture_contracts/bng3_nfnext_bng_lowering_bridge
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_parser.a'
+[674/695] Linking CXX executable tests/architecture_contracts/bng3_nfnext_execution_boundary
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_parser.a'
+[675/695] Linking CXX executable tests/architecture_contracts/bng3_nfnext_canonicalization_contract
+[676/695] Linking CXX executable tests/architecture_contracts/bng3_nfnext_dependency_scheduler_contract
+[677/695] Linking CXX executable tests/architecture_contracts/bng3_nfnext_generic_matcher_contract
+[678/695] Linking CXX executable tests/architecture_contracts/bng3_nfnext_transformations_contract
+[679/695] Linking CXX executable tests/architecture_contracts/bng3_nfnext_memory_arena_contract
+[680/695] Linking CXX executable tests/architecture_contracts/bng3_nfnext_cache_contract
+[681/695] Linking CXX executable tests/architecture_contracts/bng3_nfnext_observable_function_contract
+[682/695] Linking CXX executable tests/architecture_contracts/bng3_nfnext_lattice_interval_contract
+[683/695] Linking CXX executable tests/energy/tests/cpp/test_energy_compiler_original
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_compile.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a', 'cpp/libbng_parser.a'
+[684/695] Linking CXX executable tests/architecture_contracts/bng3_nfnext_compartment_rate_contract
+[685/695] Linking CXX executable tests/architecture_contracts/bng3_nfnext_population_hybrid_contract
+[686/695] Linking CXX executable tests/architecture_contracts/bng3_nfnext_rng_replay_contract
+[687/695] Linking CXX executable tests/architecture_contracts/bng3_nfnext_future_contract
+[688/695] Linking CXX executable tests/energy/tests/cpp/test_energy_compiler_contracts
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_compile.a', 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a', 'cpp/libbng_parser.a'
+[689/695] Linking CXX executable tests/architecture_contracts/bng3_nfcore2_reference_tests
+[690/695] Linking CXX executable tests/architecture_contracts/test_nfcore2_native_reader
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_parser.a'
+[691/695] Linking CXX executable tests/cpp/test_nfsim_ast_adapter
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a', 'cpp/libbng_parser.a'
+[692/695] Linking CXX executable tests/cpp/test_sbml_reader
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[693/695] Linking CXX executable tests/cpp/test_delayed_reactions
+ld: warning: ignoring duplicate libraries: 'cpp/libbng_engine.a', 'cpp/libbng_finite_backend.a'
+[694/695] Linking CXX shared module cpp/_bionetgen_cpp.cpython-314-darwin.so

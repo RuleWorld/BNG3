@@ -1,0 +1,931 @@
+{
+  "benchmark_lock": {
+    "detail": "held: benchlock: acquired slot.0 for gpuharness (gpu bench cpu:0,metal batch=500)\nBENCHLOCK_EVENT ACQUIRED slot=0 agent=gpuharness pid=23355 epoch=1795503114.027098",
+    "held": true
+  },
+  "capabilities": {
+    "default_backend": "metal",
+    "engine_backends": [
+      {
+        "available": false,
+        "compiled": false,
+        "detail": "not compiled into this build",
+        "name": "cuda"
+      },
+      {
+        "available": true,
+        "compiled": true,
+        "detail": "Apple M5 Pro",
+        "name": "metal"
+      }
+    ],
+    "engine_source": "_bionetgen_cpp from /private/tmp/bng3-474/build/cpp/_bionetgen_cpp.cpython-314-darwin.so (via explicit) [neutralised import redirectors: DistutilsMetaFinder]",
+    "jax": {
+      "backend_reported": "METAL",
+      "devices": [
+        "METAL:0"
+      ],
+      "fingerprint_differs": null,
+      "framework": "jax",
+      "notes": "default_backend='METAL'",
+      "result_devices": [
+        "METAL:0"
+      ]
+    },
+    "known_device_limits": {
+      "float64": "not supported by the device frameworks on this class of host: a float64 array is an error, not a slow kernel, and with the default single-precision configuration a float64 input is silently narrowed at the device boundary with no warning. Any result requiring double precision must be computed on the host.",
+      "sparse_accelerate_matrices": "no sparse matrix API is available against the installed SDK; every sparse entry point fails to compile. Dense single precision is the only accelerator formulation available here, so a sparse formulation must not be attempted on this device."
+    },
+    "torch": {
+      "available": false,
+      "error": "ModuleNotFoundError: No module named 'torch'"
+    }
+  },
+  "config": {
+    "arms": [
+      "cpu(threads=0)",
+      "gpu:metal"
+    ],
+    "base_seed": 12345,
+    "batch_size": 500,
+    "max_sim_steps": 0,
+    "n_steps": 10,
+    "null_enabled": true,
+    "rounds": 5,
+    "t_end": 10.0,
+    "t_start": 0.0,
+    "warmups": 2
+  },
+  "contention": {
+    "interpretation": "host load was stable and the benchmark lock was held; no contention concern beyond the measured A/A band",
+    "load_ratio_max_over_min": 1.0,
+    "loadavg_1min": {
+      "drift": 0.0,
+      "end": 16.22802734375,
+      "max": 16.22802734375,
+      "min": 16.22802734375,
+      "start": 16.22802734375
+    },
+    "loadavg_5min": {
+      "drift": 0.0,
+      "end": 15.13427734375,
+      "max": 15.13427734375,
+      "min": 15.13427734375,
+      "start": 15.13427734375
+    },
+    "lock_detail": "held: benchlock: acquired slot.0 for gpuharness (gpu bench cpu:0,metal batch=500)\nBENCHLOCK_EVENT ACQUIRED slot=0 agent=gpuharness pid=23355 epoch=1795503114.027098",
+    "lock_held": true,
+    "lock_path": "/private/tmp/bng3-474/tools/benchlock/benchlock",
+    "n": 29
+  },
+  "device_assertions": [
+    {
+      "backend_reported": "metal",
+      "devices": [
+        "Apple M5 Pro"
+      ],
+      "fail_closed_probe": [
+        true,
+        "backend='none' raised RuntimeError: No batched-SSA GPU backend selected (backend='none')"
+      ],
+      "fingerprint_differs": null,
+      "first_gpu_call": {
+        "backend": "metal",
+        "batch_size": 1,
+        "native_metrics": {
+          "d2h_transfer_ms": 0.001125,
+          "events_per_sec_sim": 16422.88940210418,
+          "events_per_sec_total": 16340.425531914894,
+          "h2d_transfer_ms": 0.013,
+          "memory_usage_bytes": 320,
+          "model_prep_time_ms": 1.80425,
+          "sim_time_ms": 2.92275,
+          "total_events": 48,
+          "total_wall_time_ms": 2.9375,
+          "trajectories_per_sec_sim": 342.1435292105038,
+          "trajectories_per_sec_total": 340.4255319148936
+        },
+        "scope": "first successful device call in an already loaded process; BNGL parsing and network generation are outside this timing",
+        "self_cpu_s": 0.0047459999999999725,
+        "wall_s": 0.00515466695651412
+      },
+      "framework": "c++-metal",
+      "notes": "cuda compiled=False available=False detail='not compiled into this build'; metal compiled=True available=True detail='Apple M5 Pro'",
+      "result_devices": [
+        "Apple M5 Pro"
+      ]
+    }
+  ],
+  "device_precision": {
+    "closed_form_caveat": null,
+    "closed_form_dtype": null,
+    "comparability_basis": "same-dtype",
+    "device_dtype": "float32",
+    "host_dtype": "float32",
+    "notes": "dtype read off the arrays this run returned; the engine's accelerator path is single-precision by construction, so a host/device comparison cannot be bit-identity",
+    "reason": "both sides computed in 'float32'; bit-identity is a meaningful claim to test, though for a stochastic algorithm a different RNG stream alone will break it",
+    "strongest_claim": "bit-identity-possible"
+  },
+  "equivalence": null,
+  "events_per_trajectory": 65.124,
+  "harness_version": "1.0.0",
+  "host": {
+    "cpu_count": 15,
+    "host_process_peak_rss_bytes": 178487296,
+    "loadavg_drift_1min": 0.0,
+    "loadavg_end": [
+      16.22802734375,
+      15.13427734375,
+      12.39892578125
+    ],
+    "loadavg_start": [
+      16.22802734375,
+      15.13427734375,
+      12.39892578125
+    ],
+    "machine": "arm64",
+    "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "processor": "arm",
+    "python": "3.14.6"
+  },
+  "host_precision": {
+    "closed_form_caveat": null,
+    "closed_form_dtype": null,
+    "comparability_basis": "same-run",
+    "device_dtype": null,
+    "host_dtype": "float32",
+    "notes": "host pool arithmetic dtype as reported by the engine",
+    "reason": "no accelerator side in this comparison; only same-input reproducibility is testable",
+    "strongest_claim": "exact"
+  },
+  "measurement": {
+    "arm_a": "cpu(threads=0)",
+    "arm_b": "gpu:metal",
+    "clock_divergence": {
+      "agree": false,
+      "cpu_clears_null": true,
+      "cpu_direction": "B faster",
+      "cpu_effect": 0.08573111223288338,
+      "licenses_speedup_claim": false,
+      "primary_metric": "self_cpu_s",
+      "verdict": "CLOCK DIVERGENCE: self_cpu_s says B faster (0.086x) but wall clock says B slower (1.500x). The two clocks disagree in DIRECTION. No single speedup number is licensed. This is the expected shape for an accelerator that offloads work: the device consumes little host CPU while still consuming elapsed time. Report the host-resource cost and the elapsed-time cost as two separate numbers, and do not quote the more flattering one.",
+      "wall_clears_null": true,
+      "wall_direction": "B slower",
+      "wall_effect": 1.4999212245171911
+    },
+    "config": {
+      "min_band_halfwidth": 0.01,
+      "null": true,
+      "null_every": 1,
+      "null_rounds": 5,
+      "rounds": 5,
+      "warmups": 2
+    },
+    "effect_summary": {
+      "child_cpu_s": {
+        "max": 0.10359464119910197,
+        "mean": 0.0858676809845236,
+        "median": 0.08573111223288338,
+        "min": 0.07356507679870743,
+        "n": 5,
+        "p10": 0.07574408636015662,
+        "p90": 0.09713077431529914,
+        "spread": 1.4082040787174464
+      },
+      "self_cpu_s": {
+        "max": 0.10359464119910197,
+        "mean": 0.0858676809845236,
+        "median": 0.08573111223288338,
+        "min": 0.07356507679870743,
+        "n": 5,
+        "p10": 0.07574408636015662,
+        "p90": 0.09713077431529914,
+        "spread": 1.4082040787174464
+      },
+      "wall_s": {
+        "max": 2.5711784042155785,
+        "mean": 1.718440440663608,
+        "median": 1.4999212245171911,
+        "min": 1.4634580666828498,
+        "n": 5,
+        "p10": 1.46870403309167,
+        "p90": 2.175135652608355,
+        "spread": 1.7569197661013582
+      }
+    },
+    "null_band_floor_applied": {
+      "child_cpu_s": false,
+      "self_cpu_s": false,
+      "wall_s": false
+    },
+    "null_band_floor_halfwidth": 0.01,
+    "null_band_floor_note": "null_band_floor_applied[m] is true when the A/A band for metric m was widened to the configured floor rather than being set by the measurement. A floor-bound band means the instrument could not resolve better than the floor this run - more rounds or a quieter host are needed before a smaller effect becomes claimable. A measurement-bound band means the observed scatter dominates and is the real noise floor.",
+    "null_rounds": [
+      {
+        "a": {
+          "child_cpu_s": 0.010678999999999994,
+          "extra": {
+            "harness_child_cpu_s": 0.0,
+            "harness_self_cpu_s": 0.01075599999999996,
+            "harness_wall_s": 0.001415083184838295,
+            "native_metrics": {
+              "d2h_transfer_ms": 0.0,
+              "events_per_sec_sim": 29579418.494903408,
+              "events_per_sec_total": 24747862.435873076,
+              "h2d_transfer_ms": 0.0,
+              "memory_usage_bytes": 11016,
+              "model_prep_time_ms": 0.214083,
+              "sim_time_ms": 1.100833,
+              "total_events": 32562,
+              "total_wall_time_ms": 1.31575,
+              "trajectories_per_sec_sim": 454201.5001367147,
+              "trajectories_per_sec_total": 380011.40034201025
+            },
+            "timing_source": "arm"
+          },
+          "label": "cpu(threads=0)",
+          "self_cpu_s": 0.010678999999999994,
+          "wall_s": 0.001348000019788742
+        },
+        "b": {
+          "child_cpu_s": 0.010384000000000004,
+          "extra": {
+            "harness_child_cpu_s": 0.0,
+            "harness_self_cpu_s": 0.010456000000000035,
+            "harness_wall_s": 0.0013912906870245934,
+            "native_metrics": {
+              "d2h_transfer_ms": 0.0,
+              "events_per_sec_sim": 30031819.229882408,
+              "events_per_sec_total": 25068595.659765527,
+              "h2d_transfer_ms": 0.0,
+              "memory_usage_bytes": 11016,
+              "model_prep_time_ms": 0.213916,
+              "sim_time_ms": 1.08425,
+              "total_events": 32562,
+              "total_wall_time_ms": 1.298916,
+              "trajectories_per_sec_sim": 461148.2591653217,
+              "trajectories_per_sec_total": 384936.36232058116
+            },
+            "timing_source": "arm"
+          },
+          "label": "cpu(threads=0)",
+          "self_cpu_s": 0.010384000000000004,
+          "wall_s": 0.001330208033323288
+        },
+        "index": 0,
+        "order": "A,B",
+        "ratios": {
+          "child_cpu_s": 0.9723756906077358,
+          "self_cpu_s": 0.9723756906077358,
+          "wall_s": 0.9868011971778439
+        }
+      },
+      {
+        "a": {
+          "child_cpu_s": 0.009989999999999943,
+          "extra": {
+            "harness_child_cpu_s": 0.0,
+            "harness_self_cpu_s": 0.01006499999999999,
+            "harness_wall_s": 0.0013286666944622993,
+            "native_metrics": {
+              "d2h_transfer_ms": 0.0,
+              "events_per_sec_sim": 31472272.562522653,
+              "events_per_sec_total": 26562251.453043744,
+              "h2d_transfer_ms": 0.0,
+              "memory_usage_bytes": 11016,
+              "model_prep_time_ms": 0.190333,
+              "sim_time_ms": 1.034625,
+              "total_events": 32562,
+              "total_wall_time_ms": 1.225875,
+              "trajectories_per_sec_sim": 483266.88413676457,
+              "trajectories_per_sec_total": 407871.92821454065
+            },
+            "timing_source": "arm"
+          },
+          "label": "cpu(threads=0)",
+          "self_cpu_s": 0.009989999999999943,
+          "wall_s": 0.0012585003860294819
+        },
+        "b": {
+          "child_cpu_s": 0.009740000000000026,
+          "extra": {
+            "harness_child_cpu_s": 0.0,
+            "harness_self_cpu_s": 0.009816000000000005,
+            "harness_wall_s": 0.001273707952350378,
+            "native_metrics": {
+              "d2h_transfer_ms": 0.0,
+              "events_per_sec_sim": 33004792.293408368,
+              "events_per_sec_total": 27852575.178515833,
+              "h2d_transfer_ms": 0.0,
+              "memory_usage_bytes": 11016,
+              "model_prep_time_ms": 0.181584,
+              "sim_time_ms": 0.986584,
+              "total_events": 32562,
+              "total_wall_time_ms": 1.169084,
+              "trajectories_per_sec_sim": 506799.21831288567,
+              "trajectories_per_sec_total": 427685.26470296405
+            },
+            "timing_source": "arm"
+          },
+          "label": "cpu(threads=0)",
+          "self_cpu_s": 0.009740000000000026,
+          "wall_s": 0.0012037497945129871
+        },
+        "index": 1,
+        "order": "B,A",
+        "ratios": {
+          "child_cpu_s": 0.9749749749749832,
+          "self_cpu_s": 0.9749749749749832,
+          "wall_s": 0.9564953716945367
+        }
+      },
+      {
+        "a": {
+          "child_cpu_s": 0.010306000000000037,
+          "extra": {
+            "harness_child_cpu_s": 0.0,
+            "harness_self_cpu_s": 0.010396000000000002,
+            "harness_wall_s": 0.001436959020793438,
+            "native_metrics": {
+              "d2h_transfer_ms": 0.0,
+              "events_per_sec_sim": 29391402.45966377,
+              "events_per_sec_total": 24541144.21332602,
+              "h2d_transfer_ms": 0.0,
+              "memory_usage_bytes": 11016,
+              "model_prep_time_ms": 0.218083,
+              "sim_time_ms": 1.107875,
+              "total_events": 32562,
+              "total_wall_time_ms": 1.326833,
+              "trajectories_per_sec_sim": 451314.45334536844,
+              "trajectories_per_sec_total": 376837.1754395618
+            },
+            "timing_source": "arm"
+          },
+          "label": "cpu(threads=0)",
+          "self_cpu_s": 0.010306000000000037,
+          "wall_s": 0.0013594171032309532
+        },
+        "b": {
+          "child_cpu_s": 0.009785999999999961,
+          "extra": {
+            "harness_child_cpu_s": 0.0,
+            "harness_self_cpu_s": 0.009864999999999985,
+            "harness_wall_s": 0.001453292090445757,
+            "native_metrics": {
+              "d2h_transfer_ms": 0.0,
+              "events_per_sec_sim": 28828685.258964147,
+              "events_per_sec_total": 24102146.558105107,
+              "h2d_transfer_ms": 0.0,
+              "memory_usage_bytes": 11016,
+              "model_prep_time_ms": 0.218167,
+              "sim_time_ms": 1.1295,
+              "total_events": 32562,
+              "total_wall_time_ms": 1.351,
+              "trajectories_per_sec_sim": 442673.7494466579,
+              "trajectories_per_sec_total": 370096.22501850483
+            },
+            "timing_source": "arm"
+          },
+          "label": "cpu(threads=0)",
+          "self_cpu_s": 0.009785999999999961,
+          "wall_s": 0.001383709255605936
+        },
+        "index": 2,
+        "order": "A,B",
+        "ratios": {
+          "child_cpu_s": 0.9495439549776757,
+          "self_cpu_s": 0.9495439549776757,
+          "wall_s": 1.0178695356393908
+        }
+      },
+      {
+        "a": {
+          "child_cpu_s": 0.008210999999999968,
+          "extra": {
+            "harness_child_cpu_s": 0.0,
+            "harness_self_cpu_s": 0.008294000000000037,
+            "harness_wall_s": 0.0015189163386821747,
+            "native_metrics": {
+              "d2h_transfer_ms": 0.0,
+              "events_per_sec_sim": 27245685.59774082,
+              "events_per_sec_total": 22994414.87539925,
+              "h2d_transfer_ms": 0.0,
+              "memory_usage_bytes": 11016,
+              "model_prep_time_ms": 0.210708,
+              "sim_time_ms": 1.195125,
+              "total_events": 32562,
+              "total_wall_time_ms": 1.416083,
+              "trajectories_per_sec_sim": 418366.27967785794,
+              "trajectories_per_sec_total": 353086.6481696341
+            },
+            "timing_source": "arm"
+          },
+          "label": "cpu(threads=0)",
+          "self_cpu_s": 0.008210999999999968,
+          "wall_s": 0.0014476659707725048
+        },
+        "b": {
+          "child_cpu_s": 0.010372999999999966,
+          "extra": {
+            "harness_child_cpu_s": 0.0,
+            "harness_self_cpu_s": 0.010457000000000022,
+            "harness_wall_s": 0.001420208252966404,
+            "native_metrics": {
+              "d2h_transfer_ms": 0.0,
+              "events_per_sec_sim": 29112203.844434507,
+              "events_per_sec_total": 24763540.208241284,
+              "h2d_transfer_ms": 0.0,
+              "memory_usage_bytes": 11016,
+              "model_prep_time_ms": 0.195583,
+              "sim_time_ms": 1.1185,
+              "total_events": 32562,
+              "total_wall_time_ms": 1.314917,
+              "trajectories_per_sec_sim": 447027.2686633884,
+              "trajectories_per_sec_total": 380252.1375873915
+            },
+            "timing_source": "arm"
+          },
+          "label": "cpu(threads=0)",
+          "self_cpu_s": 0.010372999999999966,
+          "wall_s": 0.0013480419293045998
+        },
+        "index": 3,
+        "order": "B,A",
+        "ratios": {
+          "child_cpu_s": 1.2633053221288522,
+          "self_cpu_s": 1.2633053221288522,
+          "wall_s": 0.931182991464016
+        }
+      },
+      {
+        "a": {
+          "child_cpu_s": 0.01123500000000005,
+          "extra": {
+            "harness_child_cpu_s": 0.0,
+            "harness_self_cpu_s": 0.011317000000000008,
+            "harness_wall_s": 0.0013371664099395275,
+            "native_metrics": {
+              "d2h_transfer_ms": 0.0,
+              "events_per_sec_sim": 31459592.94405444,
+              "events_per_sec_total": 26356217.694166858,
+              "h2d_transfer_ms": 0.0,
+              "memory_usage_bytes": 11016,
+              "model_prep_time_ms": 0.199416,
+              "sim_time_ms": 1.035042,
+              "total_events": 32562,
+              "total_wall_time_ms": 1.235458,
+              "trajectories_per_sec_sim": 483072.18451038696,
+              "trajectories_per_sec_total": 404708.2134722508
+            },
+            "timing_source": "arm"
+          },
+          "label": "cpu(threads=0)",
+          "self_cpu_s": 0.01123500000000005,
+          "wall_s": 0.0012665418907999992
+        },
+        "b": {
+          "child_cpu_s": 0.007699999999999929,
+          "extra": {
+            "harness_child_cpu_s": 0.0,
+            "harness_self_cpu_s": 0.007781000000000024,
+            "harness_wall_s": 0.0014278339222073555,
+            "native_metrics": {
+              "d2h_transfer_ms": 0.0,
+              "events_per_sec_sim": 28965473.07070308,
+              "events_per_sec_total": 24524970.85202469,
+              "h2d_transfer_ms": 0.0,
+              "memory_usage_bytes": 11016,
+              "model_prep_time_ms": 0.202708,
+              "sim_time_ms": 1.124166,
+              "total_events": 32562,
+              "total_wall_time_ms": 1.327708,
+              "trajectories_per_sec_sim": 444774.17036274,
+              "trajectories_per_sec_total": 376588.82826645614
+            },
+            "timing_source": "arm"
+          },
+          "label": "cpu(threads=0)",
+          "self_cpu_s": 0.007699999999999929,
+          "wall_s": 0.0013577500358223915
+        },
+        "index": 4,
+        "order": "A,B",
+        "ratios": {
+          "child_cpu_s": 0.685358255451704,
+          "self_cpu_s": 0.685358255451704,
+          "wall_s": 1.0720135241360091
+        }
+      }
+    ],
+    "null_summary": {
+      "child_cpu_s": {
+        "max": 1.2633053221288522,
+        "mean": 0.9691116396281902,
+        "median": 0.9723756906077358,
+        "min": 0.685358255451704,
+        "n": 5,
+        "p10": 0.7910325352620927,
+        "p90": 1.1479731832673046,
+        "spread": 1.8432773109243958
+      },
+      "self_cpu_s": {
+        "max": 1.2633053221288522,
+        "mean": 0.9691116396281902,
+        "median": 0.9723756906077358,
+        "min": 0.685358255451704,
+        "n": 5,
+        "p10": 0.7910325352620927,
+        "p90": 1.1479731832673046,
+        "spread": 1.8432773109243958
+      },
+      "wall_s": {
+        "max": 1.0720135241360091,
+        "mean": 0.9928725240223593,
+        "median": 0.9868011971778439,
+        "min": 0.931182991464016,
+        "n": 5,
+        "p10": 0.9413079435562243,
+        "p90": 1.0503559287373618,
+        "spread": 1.1512383000580562
+      }
+    },
+    "order_log": [
+      "round 0: A,B",
+      "round 0: A,B (null)",
+      "round 1: B,A",
+      "round 1: B,A (null)",
+      "round 2: A,B",
+      "round 2: A,B (null)",
+      "round 3: B,A",
+      "round 3: B,A (null)",
+      "round 4: A,B",
+      "round 4: A,B (null)"
+    ],
+    "primary_metric": "self_cpu_s",
+    "primary_metric_rationale": "child CPU time is contention-immune: it counts CPU actually consumed and ignores time the process spent waiting for a core. On this host wall clock has pointed in the opposite direction to CPU time for the same binary pair, which is why wall clock is recorded but never decides a verdict.",
+    "rounds": [
+      {
+        "a": {
+          "child_cpu_s": 0.00999599999999995,
+          "extra": {
+            "harness_child_cpu_s": 0.0,
+            "harness_self_cpu_s": 0.01007899999999999,
+            "harness_wall_s": 0.0013801250606775284,
+            "native_metrics": {
+              "d2h_transfer_ms": 0.0,
+              "events_per_sec_sim": 31658405.78216543,
+              "events_per_sec_total": 25539644.804264296,
+              "h2d_transfer_ms": 0.0,
+              "memory_usage_bytes": 11016,
+              "model_prep_time_ms": 0.245042,
+              "sim_time_ms": 1.028542,
+              "total_events": 32562,
+              "total_wall_time_ms": 1.274959,
+              "trajectories_per_sec_sim": 486125.01968806324,
+              "trajectories_per_sec_total": 392169.4736850361
+            },
+            "timing_source": "arm"
+          },
+          "label": "cpu(threads=0)",
+          "self_cpu_s": 0.00999599999999995,
+          "wall_s": 0.0013097920455038548
+        },
+        "b": {
+          "child_cpu_s": 0.0008739999999999859,
+          "extra": {
+            "harness_child_cpu_s": 0.0,
+            "harness_self_cpu_s": 0.001226999999999992,
+            "harness_wall_s": 0.002727582585066557,
+            "native_metrics": {
+              "d2h_transfer_ms": 0.03675,
+              "events_per_sec_sim": 24909177.27195393,
+              "events_per_sec_total": 23959279.000161428,
+              "h2d_transfer_ms": 0.01425,
+              "memory_usage_bytes": 72176,
+              "model_prep_time_ms": 0.458709,
+              "sim_time_ms": 1.298959,
+              "total_events": 32356,
+              "total_wall_time_ms": 1.350458,
+              "trajectories_per_sec_sim": 384923.61960616155,
+              "trajectories_per_sec_total": 370244.76140687085
+            },
+            "timing_source": "arm"
+          },
+          "label": "gpu:metal",
+          "self_cpu_s": 0.0008739999999999859,
+          "wall_s": 0.002070874907076359
+        },
+        "index": 0,
+        "order": "A,B",
+        "ratios": {
+          "child_cpu_s": 0.08743497398959488,
+          "self_cpu_s": 0.08743497398959488,
+          "wall_s": 1.5810715251975198
+        }
+      },
+      {
+        "a": {
+          "child_cpu_s": 0.011885999999999952,
+          "extra": {
+            "harness_child_cpu_s": 0.0,
+            "harness_self_cpu_s": 0.012008000000000019,
+            "harness_wall_s": 0.0016445829533040524,
+            "native_metrics": {
+              "d2h_transfer_ms": 0.0,
+              "events_per_sec_sim": 25414243.902439024,
+              "events_per_sec_total": 21926032.46685036,
+              "h2d_transfer_ms": 0.0,
+              "memory_usage_bytes": 11016,
+              "model_prep_time_ms": 0.203084,
+              "sim_time_ms": 1.28125,
+              "total_events": 32562,
+              "total_wall_time_ms": 1.485084,
+              "trajectories_per_sec_sim": 390243.90243902436,
+              "trajectories_per_sec_total": 336681.29210199555
+            },
+            "timing_source": "arm"
+          },
+          "label": "cpu(threads=0)",
+          "self_cpu_s": 0.011885999999999952,
+          "wall_s": 0.0015170411206781864
+        },
+        "b": {
+          "child_cpu_s": 0.0010190000000000476,
+          "extra": {
+            "harness_child_cpu_s": 0.0,
+            "harness_self_cpu_s": 0.0012110000000000176,
+            "harness_wall_s": 0.0043364581651985645,
+            "native_metrics": {
+              "d2h_transfer_ms": 0.015,
+              "events_per_sec_sim": 22767877.561790835,
+              "events_per_sec_total": 22308713.26381108,
+              "h2d_transfer_ms": 0.0135,
+              "memory_usage_bytes": 72176,
+              "model_prep_time_ms": 2.19075,
+              "sim_time_ms": 1.421125,
+              "total_events": 32356,
+              "total_wall_time_ms": 1.450375,
+              "trajectories_per_sec_sim": 351833.9343829712,
+              "trajectories_per_sec_total": 344738.4297164526
+            },
+            "timing_source": "arm"
+          },
+          "label": "gpu:metal",
+          "self_cpu_s": 0.0010190000000000476,
+          "wall_s": 0.003900583367794752
+        },
+        "index": 1,
+        "order": "B,A",
+        "ratios": {
+          "child_cpu_s": 0.08573111223288338,
+          "self_cpu_s": 0.08573111223288338,
+          "wall_s": 2.5711784042155785
+        }
+      },
+      {
+        "a": {
+          "child_cpu_s": 0.009681999999999968,
+          "extra": {
+            "harness_child_cpu_s": 0.0,
+            "harness_self_cpu_s": 0.009757000000000043,
+            "harness_wall_s": 0.0013897079043090343,
+            "native_metrics": {
+              "d2h_transfer_ms": 0.0,
+              "events_per_sec_sim": 29514615.907545887,
+              "events_per_sec_total": 25151684.85082553,
+              "h2d_transfer_ms": 0.0,
+              "memory_usage_bytes": 11016,
+              "model_prep_time_ms": 0.190584,
+              "sim_time_ms": 1.10325,
+              "total_events": 32562,
+              "total_wall_time_ms": 1.294625,
+              "trajectories_per_sec_sim": 453206.43553138454,
+              "trajectories_per_sec_total": 386212.22361687745
+            },
+            "timing_source": "arm"
+          },
+          "label": "cpu(threads=0)",
+          "self_cpu_s": 0.009681999999999968,
+          "wall_s": 0.0013255416415631771
+        },
+        "b": {
+          "child_cpu_s": 0.0007649999999999602,
+          "extra": {
+            "harness_child_cpu_s": 0.0,
+            "harness_self_cpu_s": 0.0009479999999999905,
+            "harness_wall_s": 0.0023273746483027935,
+            "native_metrics": {
+              "d2h_transfer_ms": 0.00775,
+              "events_per_sec_sim": 26527660.718794987,
+              "events_per_sec_total": 26061140.098361555,
+              "h2d_transfer_ms": 0.013375,
+              "memory_usage_bytes": 72176,
+              "model_prep_time_ms": 0.477209,
+              "sim_time_ms": 1.219708,
+              "total_events": 32356,
+              "total_wall_time_ms": 1.241542,
+              "trajectories_per_sec_sim": 409934.18096790375,
+              "trajectories_per_sec_total": 402724.9984293725
+            },
+            "timing_source": "arm"
+          },
+          "label": "gpu:metal",
+          "self_cpu_s": 0.0007649999999999602,
+          "wall_s": 0.0019398746080696583
+        },
+        "index": 2,
+        "order": "A,B",
+        "ratios": {
+          "child_cpu_s": 0.07901260070233038,
+          "self_cpu_s": 0.07901260070233038,
+          "wall_s": 1.4634580666828498
+        }
+      },
+      {
+        "a": {
+          "child_cpu_s": 0.01113300000000006,
+          "extra": {
+            "harness_child_cpu_s": 0.0,
+            "harness_self_cpu_s": 0.011216000000000004,
+            "harness_wall_s": 0.0014094999060034752,
+            "native_metrics": {
+              "d2h_transfer_ms": 0.0,
+              "events_per_sec_sim": 30339622.641509436,
+              "events_per_sec_total": 24941365.34864447,
+              "h2d_transfer_ms": 0.0,
+              "memory_usage_bytes": 11016,
+              "model_prep_time_ms": 0.231584,
+              "sim_time_ms": 1.07325,
+              "total_events": 32562,
+              "total_wall_time_ms": 1.305542,
+              "trajectories_per_sec_sim": 465874.6797111577,
+              "trajectories_per_sec_total": 382982.69990547985
+            },
+            "timing_source": "arm"
+          },
+          "label": "cpu(threads=0)",
+          "self_cpu_s": 0.01113300000000006,
+          "wall_s": 0.0013392497785389423
+        },
+        "b": {
+          "child_cpu_s": 0.0008190000000000142,
+          "extra": {
+            "harness_child_cpu_s": 0.0,
+            "harness_self_cpu_s": 0.0010239999999999971,
+            "harness_wall_s": 0.0024320418015122414,
+            "native_metrics": {
+              "d2h_transfer_ms": 0.010333,
+              "events_per_sec_sim": 25798797.129887804,
+              "events_per_sec_total": 25173243.042853486,
+              "h2d_transfer_ms": 0.020208,
+              "memory_usage_bytes": 72176,
+              "model_prep_time_ms": 0.449875,
+              "sim_time_ms": 1.254167,
+              "total_events": 32356,
+              "total_wall_time_ms": 1.285333,
+              "trajectories_per_sec_sim": 398670.99038644775,
+              "trajectories_per_sec_total": 389004.2502604383
+            },
+            "timing_source": "arm"
+          },
+          "label": "gpu:metal",
+          "self_cpu_s": 0.0008190000000000142,
+          "wall_s": 0.0019775000400841236
+        },
+        "index": 3,
+        "order": "B,A",
+        "ratios": {
+          "child_cpu_s": 0.07356507679870743,
+          "self_cpu_s": 0.07356507679870743,
+          "wall_s": 1.4765729827049006
+        }
+      },
+      {
+        "a": {
+          "child_cpu_s": 0.007539000000000018,
+          "extra": {
+            "harness_child_cpu_s": 0.0,
+            "harness_self_cpu_s": 0.007616999999999971,
+            "harness_wall_s": 0.0013867919333279133,
+            "native_metrics": {
+              "d2h_transfer_ms": 0.0,
+              "events_per_sec_sim": 29384771.573604062,
+              "events_per_sec_total": 25242682.319889486,
+              "h2d_transfer_ms": 0.0,
+              "memory_usage_bytes": 11016,
+              "model_prep_time_ms": 0.180875,
+              "sim_time_ms": 1.108125,
+              "total_events": 32562,
+              "total_wall_time_ms": 1.289958,
+              "trajectories_per_sec_sim": 451212.6339537507,
+              "trajectories_per_sec_total": 387609.51906961313
+            },
+            "timing_source": "arm"
+          },
+          "label": "cpu(threads=0)",
+          "self_cpu_s": 0.007539000000000018,
+          "wall_s": 0.0013182079419493675
+        },
+        "b": {
+          "child_cpu_s": 0.0007810000000000317,
+          "extra": {
+            "harness_child_cpu_s": 0.0,
+            "harness_self_cpu_s": 0.0009849999999999859,
+            "harness_wall_s": 0.0024943752214312553,
+            "native_metrics": {
+              "d2h_transfer_ms": 0.008208,
+              "events_per_sec_sim": 25952275.917385202,
+              "events_per_sec_total": 25451293.21296226,
+              "h2d_transfer_ms": 0.015792,
+              "memory_usage_bytes": 72176,
+              "model_prep_time_ms": 0.487459,
+              "sim_time_ms": 1.24675,
+              "total_events": 32356,
+              "total_wall_time_ms": 1.271291,
+              "trajectories_per_sec_sim": 401042.7110487267,
+              "trajectories_per_sec_total": 393300.98301647697
+            },
+            "timing_source": "arm"
+          },
+          "label": "gpu:metal",
+          "self_cpu_s": 0.0007810000000000317,
+          "wall_s": 0.0019772080704569817
+        },
+        "index": 4,
+        "order": "A,B",
+        "ratios": {
+          "child_cpu_s": 0.10359464119910197,
+          "self_cpu_s": 0.10359464119910197,
+          "wall_s": 1.4999212245171911
+        }
+      }
+    ],
+    "verdicts": {
+      "child_cpu_s": {
+        "clears_null": true,
+        "direction": "B faster",
+        "effect_ratio_b_over_a": 0.08573111223288338,
+        "metric": "child_cpu_s",
+        "n_null_rounds": 5,
+        "n_rounds": 5,
+        "null_band": [
+          0.7910325352620927,
+          1.1479731832673046
+        ],
+        "time_ratio_b_over_a": 0.08573111223288338,
+        "verdict": "B FASTER (0.086x the time of A, below the band bottom 0.791x; equivalently A is 11.66x slower)"
+      },
+      "self_cpu_s": {
+        "clears_null": true,
+        "direction": "B faster",
+        "effect_ratio_b_over_a": 0.08573111223288338,
+        "metric": "self_cpu_s",
+        "n_null_rounds": 5,
+        "n_rounds": 5,
+        "null_band": [
+          0.7910325352620927,
+          1.1479731832673046
+        ],
+        "time_ratio_b_over_a": 0.08573111223288338,
+        "verdict": "B FASTER (0.086x the time of A, below the band bottom 0.791x; equivalently A is 11.66x slower)"
+      },
+      "wall_s": {
+        "clears_null": true,
+        "direction": "B slower",
+        "effect_ratio_b_over_a": 1.4999212245171911,
+        "metric": "wall_s",
+        "n_null_rounds": 5,
+        "n_rounds": 5,
+        "null_band": [
+          0.9413079435562243,
+          1.0503559287373618
+        ],
+        "time_ratio_b_over_a": 1.4999212245171911,
+        "verdict": "B SLOWER (1.500x the time of A, above the band top 1.050x; equivalently A is 1.50x faster)"
+      }
+    }
+  },
+  "memory_accounting": {
+    "host_process_peak_rss_bytes": "process lifetime peak resident set size at report end; includes the Python runtime and all benchmark arms",
+    "memory_usage_bytes": "backend-reported buffer allocation estimate, not an OS measurement of peak physical GPU memory; Metal shares unified memory with the host"
+  },
+  "model": {
+    "R": 2,
+    "S": 2,
+    "event_density_target": null,
+    "path": "/private/tmp/bng3-474/models/isomerization.bngl",
+    "source": "file",
+    "t_end": 10.0
+  },
+  "outcome": "B FASTER (0.086x the time of A, below the band bottom 0.791x; equivalently A is 11.66x slower)",
+  "source_identity": {
+    "native_binary_path": "/private/tmp/bng3-474/build/cpp/_bionetgen_cpp.cpython-314-darwin.so",
+    "native_binary_sha256": "2247d3beecf9c57f2ec2c4c159fce7e25559405507f076e8e937dfd0a4ad3123",
+    "revision": "69bcb8041963bc6ed8e28d02ad12b748a8318d3f",
+    "source_dirty": false
+  },
+  "total_events": {
+    "cpu(threads=0)": 32562,
+    "gpu:metal": 32356
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "device": "Apple M5 Pro",
+  "metal_support": "Metal 4",
+  "os": {
+    "name": "macOS",
+    "version": "27.0.1",
+    "build": "26A434"
+  },
+  "hardware": {
+    "model": "MacBook Pro",
+    "chip": "Apple M5 Pro",
+    "gpu_cores": 16,
+    "memory_gb": 24
+  },
+  "compiler": "Apple clang version 21.0.0 (clang-2100.3.34.2)",
+  "sdk": "27.0",
+  "cmake": "cmake version 4.4.3",
+  "ninja": "1.13.2",
+  "python": "3.14.6",
+  "configure_options": [
+    "-DCMAKE_BUILD_TYPE=Release",
+    "-DBNG3_ENABLE_METAL=ON",
+    "-DBNG3_ENABLE_CUDA=OFF",
+    "-DBUILD_PYTHON_BINDINGS=ON",
+    "-DBUILD_CLI=ON",
+    "-DBUILD_TESTS=ON"
+  ],
+  "native_binary": "/tmp/bng3-474/build/cpp/_bionetgen_cpp.cpython-314-darwin.so",
+  "native_binary_sha256": "2247d3beecf9c57f2ec2c4c159fce7e25559405507f076e8e937dfd0a4ad3123",
+  "metal_objects": [
+    {
+      "path": "/tmp/bng3-474/build/cpp/CMakeFiles/bng_engine.dir/engine/gpu/NfnextMetalBackend.mm.o",
+      "sha256": "8159abd8005170fb146e6de7150e5d36be2d7a9135837640f4e1482b4fc11b38"
+    },
+    {
+      "path": "/tmp/bng3-474/build/cpp/CMakeFiles/bng_engine.dir/engine/gpu/MetalSsaBackend.mm.o",
+      "sha256": "02963f394f177a046a576fbe96e718e88b3bcc88b20cd86a07617b3a7cd26834"
+    }
+  ]
+}
