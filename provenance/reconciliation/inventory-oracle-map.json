@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "scope": "Resolve the 16 capability rows assigned to #137 from the generic declaration 'canonical source or analytic specification as appropriate' to a named independent oracle and an existing executable selector.",
+  "derived_from": "docs/archive/CAPABILITY_UNION_INVENTORY-pre-release-decisions.md rows 58-73 (reviewed pre-release support boundaries), provenance/upstreams.lock.yml, and selectors present at the audited revision",
+  "acceptance_contract": "A declaration is a mapping, not an execution result. A row counts as covered only when an exact-revision release-capability[ID] case result consumes the named oracle and passes. No BNG3-generated expected answer is an oracle.",
+  "pins": {
+    "bionetgen": "9601746f8884ed19ab2acea49fe87fc4660ace46",
+    "nfsim": "8c449bbccc4a0c54586ae562f46f4955e65fe876",
+    "pybionetgen": "28bf351a9bbfc197e19487c26dedda683716bb64"
+  },
+  "rows": {
+    "bngl.ast.model": {
+      "oracle": "pinned BNG2@9601746f8884ed19ab2acea49fe87fc4660ace46 parser/AST network generation",
+      "oracle_kind": "external-source",
+      "selector": "tests/validation/test_parity_net.py",
+      "reviewed_boundary": "supported for grammar/model forms with named tests only"
+    },
+    "nfsim.options.parameters": {
+      "oracle": "pinned native NFsim@8c449bbccc4a0c54586ae562f46f4955e65fe876 typed parameter/unit option contract",
+      "oracle_kind": "external-source",
+      "selector": "tests/cpp/test_nfsim_ast_adapter.cpp",
+      "reviewed_boundary": "supported for the named mapped forms only; other options gated"
+    },
+    "nfsim.compartments": {
+      "oracle": "pinned native NFsim@8c449bbccc4a0c54586ae562f46f4955e65fe876 hierarchy, nested volume and placement semantics",
+      "oracle_kind": "external-source",
+      "selector": "tests/cpp/test_nfsim_ast_adapter.cpp",
+      "reviewed_boundary": "decision required until nested-volume/placement differential parity"
+    },
+    "nfsim.molecule-types": {
+      "oracle": "pinned native NFsim@8c449bbccc4a0c54586ae562f46f4955e65fe876 integer state expansion and symmetric-site renaming",
+      "oracle_kind": "external-source",
+      "selector": "tests/validation/test_reconciliation_nfsim.py",
+      "reviewed_boundary": "supported only for tested expansions; other type features unclassified"
+    },
+    "nfsim.global-functions.safe-subset": {
+      "oracle": "pinned native NFsim@8c449bbccc4a0c54586ae562f46f4955e65fe876 TFUN/local-function contract plus BNG2@9601746f8884ed19ab2acea49fe87fc4660ace46 expression evaluator",
+      "oracle_kind": "external-source",
+      "selector": "tests/validation/test_parity_expressions.py",
+      "reviewed_boundary": "experimental for expanded nested/local/TFUN forms until family-specific parity"
+    },
+    "nfsim.seed-species": {
+      "oracle": "pinned native NFsim@8c449bbccc4a0c54586ae562f46f4955e65fe876 seed state and observable comparison",
+      "oracle_kind": "external-source",
+      "selector": "tests/validation/test_reconciliation_nfsim.py",
+      "reviewed_boundary": "supported only for represented seed forms with independent native evidence"
+    },
+    "nfsim.observables": {
+      "oracle": "pinned native NFsim@8c449bbccc4a0c54586ae562f46f4955e65fe876 molecule/species counting modes, symmetry and stoichiometry",
+      "oracle_kind": "external-source",
+      "selector": "tests/validation/test_reconciliation_nfsim.py",
+      "reviewed_boundary": "supported per exact tested mode; remaining matching forms decision required"
+    },
+    "nfsim.reaction-rules": {
+      "oracle": "pinned native NFsim@8c449bbccc4a0c54586ae562f46f4955e65fe876 reaction centers, rates and seeded execution matrix",
+      "oracle_kind": "external-source",
+      "selector": "tests/cpp/test_nfsim_ast_adapter.cpp",
+      "reviewed_boundary": "supported per individually qualified reaction/rate family"
+    },
+    "nfsim.energy-and-time-functions": {
+      "oracle": "independently derived analytic detailed-balance, cycle-affinity and stationary-law derivations in docs/nonequilibrium_energy.md (canonical tools do not implement the extensions)",
+      "oracle_kind": "analytic",
+      "selector": "tests/validation/release/cases/issue-177/contract.json",
+      "reviewed_boundary": "experimental until independent analytic/native parity closes the stated limitation"
+    },
+    "io.sbml.structured-bng2": {
+      "oracle": "pinned BNG2@9601746f8884ed19ab2acea49fe87fc4660ace46 source-generated structured SBML fixture plus independent downstream consumer",
+      "oracle_kind": "external-source",
+      "selector": "tests/validation/release/cases/issue-163/contract.json",
+      "reviewed_boundary": "compatibility-only for the named dialect and current refusal boundary"
+    },
+    "pybionetgen.api-cli-atomizer": {
+      "oracle": "pinned PyBioNetGen@28bf351a9bbfc197e19487c26dedda683716bb64 public API/CLI behavior and artifacts",
+      "oracle_kind": "external-source",
+      "selector": "scripts/ci/check_pybionetgen_compat.py",
+      "reviewed_boundary": "split by surface: modern API supported at tested contract; legacy compatibility-only; Atomizer follows SBML rows"
+    },
+    "validation.oracles-goldens-release": {
+      "oracle": "provenance/golden/README.md source/oracle/version/command/seed/digest manifest contract with accepted pins from #179",
+      "oracle_kind": "structural-contract",
+      "selector": "scripts/regen_golden.py",
+      "reviewed_boundary": "cross-cutting release prerequisite; not a product capability and not an implementation status"
+    },
+    "core.graph.canonicalization.single-nauty": {
+      "oracle": "nauty single-library build/linkage structural contract; cross-domain graph identity parity remains a separate #142 obligation",
+      "oracle_kind": "structural-contract",
+      "selector": "tests/python/test_single_nauty_contract.py",
+      "reviewed_boundary": "supported as build/linkage contract only; does not establish cross-domain identity semantics"
+    },
+    "expression.builtins.shared-table": {
+      "oracle": "pinned BNG2@9601746f8884ed19ab2acea49fe87fc4660ace46 expression evaluator differential over the shared builtin table",
+      "oracle_kind": "external-source",
+      "selector": "tests/validation/test_parity_expressions.py",
+      "reviewed_boundary": "supported for tested builtins and meanings only; remaining names/contexts decision required"
+    },
+    "bngl.actions.setoption": {
+      "oracle": "pinned BNG2@9601746f8884ed19ab2acea49fe87fc4660ace46 setOption accepted values and resulting execution semantics",
+      "oracle_kind": "external-source",
+      "selector": "tests/cpp/test_model_options.cpp",
+      "reviewed_boundary": "supported for exact validated option semantics; deprecated spellings pending migration window"
+    },
+    "bngl.observables.counting-modes": {
+      "oracle": "pinned BNG2@9601746f8884ed19ab2acea49fe87fc4660ace46 Molecules/Species counting comparison with symmetry and disjoint-pattern fixtures",
+      "oracle_kind": "external-source",
+      "selector": "tests/validation/test_parity_net.py",
+      "reviewed_boundary": "supported only for the two exact algorithms and tested fixture surface"
+    }
+  }
+}

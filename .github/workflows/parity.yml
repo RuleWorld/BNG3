@@ -95,6 +95,7 @@ jobs:
             tests/validation/test_integrated_matrix.py \
             tests/validation/test_integrated_consumers.py \
             tests/validation/test_issue_queue.py \
+            tests/validation/release/cases/issue-137/test_issue137_checks.py \
             tests/validation/test_acceptance_queue.py \
             tests/validation/test_sprint_s1_contract_projection.py \
             tests/validation/test_reporting.py \
@@ -118,6 +119,45 @@ jobs:
             tests/validation/test_harness_paths.py::test_required_oracle_fails_in_strict_ci \
             tests/validation/test_harness_paths.py::test_api_fixture_fails_in_strict_ci_and_skips_locally \
             -q -ra
+
+  issue-137-inventory:
+    name: Issue 137 capability-inventory reconciliation
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install validation dependencies
+        run: python -m pip install pytest pyyaml jsonschema
+
+      - name: Run independent inventory-consumer controls
+        run: python -m pytest -q tests/validation/release/cases/issue-137/test_issue137_checks.py
+
+      - name: Record exact-revision inventory acceptance
+        id: inventory
+        continue-on-error: true
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/issue137-inventory"
+          python tests/validation/release/cases/issue-137/issue137_checks.py inventory \
+            --root . --revision "$BNG3_SOURCE_REVISION" \
+            --report "$RUNNER_TEMP/issue137-inventory/report.json"
+
+      - name: Retain inventory acceptance record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue137-inventory-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/issue137-inventory/report.json
+          if-no-files-found: error
+          retention-days: 30
 
   upstream-reconciliation-history:
     name: release-reconciliation-pins
@@ -935,6 +975,8 @@ jobs:
           # download-artifact@v4 takes ONE glob, not a newline-separated list.
           # A multiline pattern silently matched zero artifacts, so sibling
           # receipts were uploaded but never consumed by the issue queue.
+          # This single glob also matches the issue-137/181/471/184 acceptance
+          # records wired by this branch.
           pattern: issue*-*
           path: ${{ runner.temp }}/release-records
 
@@ -1019,6 +1061,7 @@ jobs:
           # rather than converting a passing process into a passing contract.
           shopt -s nullglob
           for record in \
+            "$RUNNER_TEMP"/release-records/issue137-inventory-*/report.json \
             "$RUNNER_TEMP"/release-records/issue176-cpu-ensemble-*/issue-176-release-report.json \
             "$RUNNER_TEMP"/release-records/issue152-energy-protocol-release-*/issue-152-release-report.json \
             "$RUNNER_TEMP"/release-records/issue178-shared-decisions-release-*/issue-178-release-report.json \

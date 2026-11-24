@@ -1,6 +1,6 @@
 # BNG3 convergence checklist
 
-**Release scope:** [Capability inventory](CAPABILITY_UNION_INVENTORY.md). **Final policy:** [Maintainer decisions](DECISIONS.md). Every inventory row is a release requirement; completion requires the issue acceptance checks and exact-main evidence recorded in [current progress](CURRENT_PROGRESS.md).
+**Release scope:** [Capability inventory](CAPABILITY_UNION_INVENTORY.md) · [Machine-readable capability matrix](../provenance/capability-matrix.yml). **Final policy:** [Maintainer decisions](DECISIONS.md). Every inventory row is a release requirement; completion requires the issue acceptance checks and exact-main evidence recorded in [current progress](CURRENT_PROGRESS.md).
 
 **Status:** task index only. Issue state and exact-main check evidence are tracked in
 [current progress](CURRENT_PROGRESS.md) and each live issue. The historical audit
