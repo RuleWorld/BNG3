@@ -151,7 +151,7 @@ def _write_json(path, data):
 
 
 def _refusal_fixtures(mode_name):
-    """The full 44 pinned refusal records plus the harness by_cause view."""
+    """The full 43 pinned refusal records plus the harness by_cause view."""
     by_cause = {
         "events": {"count": 36, "ids": sorted(disp.PINNED_REFUSAL_IDS["events"])},
         "fast_reactions": {
@@ -437,9 +437,9 @@ def test_refusal_counts_are_pinned_from_the_real_report():
     assert disp.PINNED_REFUSAL_COUNTS == {
         "events": 36,
         "fast_reaction": 4,
-        "other": 4,
+        "other": 3,
     }
-    assert sum(disp.PINNED_REFUSAL_COUNTS.values()) == 44
+    assert sum(disp.PINNED_REFUSAL_COUNTS.values()) == 43
 
 
 def test_receipt_refuses_mismatched_counts():
@@ -513,3 +513,25 @@ def test_recorder_rejects_unrelated_genuine_failure(tmp_path):
     assert all(row["status"] == "FAIL" for row in record["results"])
     assert OTHER_ID in record["modes"]["flat"]["unresolved"]
     assert all(row.get("case") != OTHER_ID for row in record["dispositions"])
+
+
+def test_numerical_disposition_accepts_bounded_hosted_roundoff():
+    """Hosted Linux roundoff stays in the pinned platform band.
+
+    The locally observed macOS residual is ~5.2e-11; hosted Linux at the same
+    exact revision observes ~1.8e-10 for the same cancellation.  The identity
+    band must accept that difference without accepting a 10x-mutated metric.
+    """
+    flat, atomized = _pinned_pair()
+    for record in (flat, atomized):
+        obs = record["modes"][0]["source_simulation_comparison"]["observables"][
+            disp.FAILED_OBSERVABLE
+        ]
+        obs["comparison_scale"] *= 1.0009
+        obs["tolerance"] *= 1.0009
+        obs["max_abs_difference"] *= 3.44
+        obs["max_scaled_error"] *= 3.44
+    row = disp.classify_numerical_limit(flat, atomized)
+    assert row["id"] == "numerical-limit:issue-162/BIOMD0000000943"
+    assert row["supported_execution"] is False
+    assert row["counts_as_pass"] is False
