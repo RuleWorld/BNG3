@@ -898,18 +898,24 @@ def test_release_records_are_consumed_by_exact_revision_issue_queue():
     assert download["uses"].startswith("actions/download-artifact@")
     assert download["if"] == "always()"
     assert download.get("continue-on-error") is True
+    # actions/download-artifact@v4 accepts a single glob. A newline-separated
+    # list matched zero artifacts and hid sibling receipts from the queue.
     patterns = download["with"]["pattern"]
-    for prefix in (
-        "issue176-cpu-ensemble-",
-        "issue152-energy-protocol-release-",
-        "issue178-shared-decisions-release-",
-        "issue174-cpu-benchmark-",
-        "issue171-release-record-",
-        "issue172-release-record-",
-        "issue186-release-record-",
-        "eq-catalogue-",
-    ):
-        assert prefix in patterns
+    assert "\n" not in patterns
+    assert patterns == "issue*-*"
+
+    eq_download = next(
+        (
+            item
+            for item in steps
+            if item.get("name")
+            == "Download EQ catalogue for the exact-revision issue queue"
+        ),
+        None,
+    )
+    assert eq_download is not None
+    assert eq_download["with"]["pattern"] == "eq-catalogue-*"
+    assert "\n" not in eq_download["with"]["pattern"]
 
     queue = next(
         (
