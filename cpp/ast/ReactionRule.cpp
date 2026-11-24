@@ -3172,7 +3172,7 @@ bool ReactionRule::buildReaction(
             // different product is declared first; assuming identity order
             // then gives each product graph the wrong species-level
             // compartment. Match patterns to graphs by isomorphism instead.
-            std::vector<SpeciesGraph> orderedProducts;
+            std::vector<std::size_t> matchedGraphIndices;
             std::vector<bool> used(productGraphs.size(), false);
             for (std::size_t pi = 0; pi < productPatterns_.size(); ++pi) {
                 const auto& prodPat = productPatterns_[pi];
@@ -3183,7 +3183,7 @@ bool ReactionRule::buildReaction(
                     BNGcore::List<BNGcore::Map> maps;
                     matcher.find_maps(maps);
                     if (maps.begin() != maps.end()) {
-                        orderedProducts.push_back(std::move(productGraphs[gi]));
+                        matchedGraphIndices.push_back(gi);
                         productPatternIndices.push_back(pi);
                         used[gi] = true;
                         found = true;
@@ -3194,11 +3194,18 @@ bool ReactionRule::buildReaction(
                     for (std::size_t i = 0; i < productPatterns_.size(); ++i) {
                         productPatternIndices.push_back(i);
                     }
-                    orderedProducts.clear();
                     break;
                 }
             }
-            if (orderedProducts.size() == productPatterns_.size()) {
+            if (matchedGraphIndices.size() == productPatterns_.size()) {
+                // Move only after every pattern has a graph. Moving during the
+                // search leaves moved-from empty graphs behind when a later
+                // pattern fails to match, which then become spurious species.
+                std::vector<SpeciesGraph> orderedProducts;
+                orderedProducts.reserve(matchedGraphIndices.size());
+                for (std::size_t gi : matchedGraphIndices) {
+                    orderedProducts.push_back(std::move(productGraphs[gi]));
+                }
                 productGraphs = std::move(orderedProducts);
             } else {
                 productPatternIndices.clear();
