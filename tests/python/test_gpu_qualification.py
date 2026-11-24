@@ -138,3 +138,99 @@ def test_poisson_count_oracle_rejects_malformed_samples(gate, sample):
 
     assert report["status"] == "FAIL"
     assert report["reason"]
+
+
+def test_public_gpu_inventory_and_batch_ssa_cpu_route():
+    import bionetgen
+
+    backends = bionetgen.gpu_backends()
+    capabilities = bionetgen.gpu_backend_capabilities()
+    default = bionetgen.default_gpu_backend()
+    assert [row["name"] for row in backends] == ["cuda", "metal"]
+    assert [row["name"] for row in capabilities] == ["cuda", "metal"]
+    assert default in {"none", "cuda", "metal"}
+
+    model = bionetgen.load("models/isomerization.bngl")
+    cpu_batch = model.simulate_batch_ssa(
+        batch_size=32, t_end=2.0, n_steps=4, base_seed=77, backend="none"
+    )
+    assert cpu_batch["batch_size"] == 32
+    assert len(cpu_batch["time"]) == 5
+    np.testing.assert_allclose(cpu_batch["observable_means"]["A_total"], 20.0)
+
+    with pytest.raises(RuntimeError, match="Unknown GPU backend"):
+        model.simulate_batch_ssa(batch_size=8, backend="opencl")
+    with pytest.raises(
+        ValueError, match="batch_size is supported only for method='ssa'"
+    ):
+        model.simulate(method="ode", t_end=1.0, n_steps=2, batch_size=8)
+
+
+def test_public_batch_ssa_preserves_custom_sample_times():
+    import bionetgen
+
+    # toy-jim has >50 reactions, so batch_size=1000 clears the GPU launch
+    # threshold; custom sample_times must never be replaced by a uniform grid.
+    model = bionetgen.load("models/toy-jim.bngl")
+    custom_times = [0.0, 0.25, 1.0]
+    res = model.simulate(
+        method="ssa",
+        t_end=1.0,
+        n_steps=0,
+        sample_times=custom_times,
+        seed=123,
+        batch_size=1000,
+        batch_gpu_backend="auto",
+    )
+    np.testing.assert_allclose(res.time, custom_times)
+    assert res.batch_size == 1000
+    assert res.concentrations.shape == (len(custom_times), 25)
+    np.testing.assert_allclose(res.observables["A_total"], 1.0)
+
+
+def test_public_batch_ssa_metal_route_and_species_grid():
+    import bionetgen
+
+    metal = next(
+        (row for row in bionetgen.gpu_backends() if row["name"] == "metal"), None
+    )
+    model = bionetgen.load("models/toy-jim.bngl")
+    if not metal or not metal["available"]:
+        with pytest.raises(RuntimeError):
+            model.simulate_batch_ssa(
+                batch_size=1000,
+                t_end=5.0,
+                n_steps=5,
+                base_seed=474001,
+                backend="metal",
+            )
+        return
+
+    res = model.simulate(
+        method="ssa",
+        t_end=5.0,
+        n_steps=5,
+        seed=474001,
+        batch_size=1000,
+        batch_gpu_backend="metal",
+    )
+    assert res.backend == "metal"
+    assert res.batch_size == 1000
+    assert res.concentrations.shape == (6, 25)
+    assert np.isfinite(res.concentrations).all()
+    assert (res.concentrations >= 0).all()
+    np.testing.assert_allclose(res.observables["A_total"], 1.0, atol=1e-5)
+    assert len(res.batch_std_devs["Rec_A"]) == 6
+
+    batch_dict = model.simulate_batch_ssa(
+        batch_size=1000,
+        t_end=5.0,
+        n_steps=5,
+        base_seed=474001,
+        backend="metal",
+    )
+    assert batch_dict["backend"] == "metal"
+    assert batch_dict["batch_size"] == 1000
+    np.testing.assert_allclose(
+        batch_dict["observable_means"]["A_total"], 1.0, atol=1e-5
+    )

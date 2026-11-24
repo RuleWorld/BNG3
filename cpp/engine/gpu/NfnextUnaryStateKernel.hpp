@@ -23,6 +23,10 @@ struct NfnextMetalOutput {
     std::vector<std::uint64_t> eventCounts;
     double wallTimeMs{0.0};
     double dispatchWaitTimeMs{0.0};
+    // Shader compilation, pipeline creation and device-buffer allocation are
+    // cold-start costs; dispatchWaitTimeMs covers only the kernel execution.
+    double setupTimeMs{0.0};
+    std::size_t deviceMemoryBytes{0};
 };
 
 NfnextMetalOutput simulateNfnextUnaryStateMetal(

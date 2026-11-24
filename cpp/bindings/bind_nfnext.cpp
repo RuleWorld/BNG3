@@ -139,6 +139,8 @@ void bind_nfnext(py::module_& m) {
         out["device"] = result.device;
         out["wall_time_ms"] = result.wallTimeMs;
         out["dispatch_wait_time_ms"] = result.dispatchWaitTimeMs;
+        out["setup_time_ms"] = result.setupTimeMs;
+        out["device_memory_bytes"] = result.deviceMemoryBytes;
         out["engine"] = "nfnext-gpu";
         return out;
     },

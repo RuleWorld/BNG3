@@ -38,6 +38,22 @@ else:
             )
         return _native_cpp.gpu_backend_capabilities()
 
+    def gpu_backends():
+        """Report finite-network batched-SSA GPU backend compilation and availability."""
+        if _native_cpp is None or not hasattr(_native_cpp, "gpu_backends"):
+            raise RuntimeError(
+                "this installation does not include GPU backend metadata"
+            )
+        return _native_cpp.gpu_backends()
+
+    def default_gpu_backend() -> str:
+        """Return the default available finite-network batched-SSA GPU backend name."""
+        if _native_cpp is None or not hasattr(_native_cpp, "default_gpu_backend"):
+            raise RuntimeError(
+                "this installation does not include GPU backend metadata"
+            )
+        return _native_cpp.default_gpu_backend()
+
     _RUN_OUT_MISSING = object()
     _LEGACY_RUN_POSITIONALS = (
         "suppress",
@@ -292,6 +308,8 @@ if not _USE_LEGACY:
             "CRNRateLaw",
             "CRNReaction",
             "GpuBatchSimResult",
+            "default_gpu_backend",
             "gpu_backend_capabilities",
+            "gpu_backends",
         ]
     )

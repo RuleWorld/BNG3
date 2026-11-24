@@ -4462,7 +4462,8 @@ OdeResult OdeIntegrator::integrateBatchSSA(const OdeOptions& opts) {
     const bool hasDelayedReactions = std::any_of(
         compiledRxns_.begin(), compiledRxns_.end(),
         [](const CompiledReaction& reaction) { return reaction.delay > 0.0; });
-    if (opts.batchGpuPreferred && !hasDelayedReactions) {
+    if (opts.batchGpuPreferred && !hasDelayedReactions &&
+        opts.sampleTimes.empty() && opts.outputStepInterval == 0) {
         const GpuBackendKind requested = gpuBackendFromName(opts.batchGpuBackend);
         const GpuBackendKind selected =
             (requested == GpuBackendKind::Auto) ? defaultGpuBackend() : requested;
@@ -4490,6 +4491,7 @@ OdeResult OdeIntegrator::integrateBatchSSA(const OdeOptions& opts) {
 
                         // Convert BatchSsaMetrics -> OdeResult (mean trajectory + std devs)
                         OdeResult result;
+                        result.backend         = gpuBackendName(selected);
                         result.batchSize       = opts.batchSize;
                         result.timePoints      = metrics.timePointsDouble;
                         result.concentrations  = metrics.meanSpecies;

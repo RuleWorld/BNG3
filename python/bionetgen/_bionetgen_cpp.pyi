@@ -402,6 +402,11 @@ def simulate_ssa(
     sample_times: List[float] = [],
     max_sim_steps: int = 0,
     output_step_interval: int = 0,
+    batch_size: int = 0,
+    batch_gpu_preferred: bool = True,
+    batch_gpu_backend: str = "auto",
+    continue_simulation: bool = False,
+    fresh_from_initial_state: bool = False,
 ) -> Dict[str, object]:
     """Run SSA (stochastic) simulation on a generated network.
 
@@ -587,6 +592,34 @@ def gpu_backend_capabilities() -> List[Dict[str, object]]:
 
 def default_gpu_backend() -> str:
     """Name the default finite-network batched-SSA GPU backend, if any."""
+    ...
+
+def simulate_batch_ssa_cpu(
+    model: Model,
+    network: GeneratedNetwork,
+    batch_size: int = 1000,
+    t_end: float = 10.0,
+    n_steps: int = 10,
+    t_start: float = 0.0,
+    base_seed: int = 42,
+    threads: int = 1,
+    max_sim_steps: int = 0,
+) -> Dict[str, object]:
+    """Run batched SSA simulation on CPU (single-worker or multi-core)."""
+    ...
+
+def simulate_batch_ssa_gpu(
+    model: Model,
+    network: GeneratedNetwork,
+    batch_size: int = 1000,
+    t_end: float = 10.0,
+    n_steps: int = 10,
+    t_start: float = 0.0,
+    base_seed: int = 42,
+    max_sim_steps: int = 0,
+    backend: str = "auto",
+) -> Dict[str, object]:
+    """Run batched SSA on an explicit GPU backend ('auto', 'cuda', or 'metal')."""
     ...
 
 def execute(
