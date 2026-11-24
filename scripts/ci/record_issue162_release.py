@@ -21,7 +21,13 @@ CHECKS = ("release-biomodels", "release-biomodels-triage", "release-obligation-1
 # Verdicts the recorder already treats as resolved without this module's
 # dispositions. Everything else must be an explicit, evidence-backed
 # disposition or remains unresolved and fails the gate.
-BASE_DISPOSED = {"compared", "non-sbml-source", "invalid-source", "not_comparable", "platform-sensitive-limit-non-comparable"}
+BASE_DISPOSED = {
+    "compared",
+    "non-sbml-source",
+    "invalid-source",
+    "not_comparable",
+    "platform-sensitive-limit-non-comparable",
+}
 
 
 def _read(path: Path) -> tuple[dict, str]:
@@ -241,7 +247,9 @@ def build_release_record(
         if disposition.MODEL_ID in outcomes:
             outcomes[disposition.MODEL_ID] = "numerical-limit-non-comparable"
         if disposition.PLATFORM_MODEL_ID in outcomes:
-            outcomes[disposition.PLATFORM_MODEL_ID] = "platform-sensitive-limit-non-comparable"
+            outcomes[disposition.PLATFORM_MODEL_ID] = (
+                "platform-sensitive-limit-non-comparable"
+            )
         unresolved = [
             key
             for key, verdict in outcomes.items()
@@ -259,10 +267,7 @@ def build_release_record(
             "refusal_counts": bucket["refusal_counts"],
         }
     passed = (
-        all(
-            m["counts"].get("compared") and not m["unresolved"]
-            for m in modes.values()
-        )
+        all(m["counts"].get("compared") and not m["unresolved"] for m in modes.values())
         and disposition_receipt["agreement"]["flat_atomized_match"]
         and disposition_receipt["agreement"]["report_receipt_match"]
     )

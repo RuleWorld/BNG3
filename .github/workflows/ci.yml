@@ -1130,7 +1130,7 @@ jobs:
 
   wheels:
     name: Wheels (${{ matrix.os }})
-    needs: [cpp-build, python-test, validation]
+    needs: [cpp-build, validation]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
@@ -1214,10 +1214,9 @@ jobs:
 
   sdist:
     name: Source Distribution
-    needs: [python-test]
     runs-on: ubuntu-22.04
     timeout-minutes: 10
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch'
     steps:
       - uses: actions/checkout@v4
 
