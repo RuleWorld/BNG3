@@ -1623,7 +1623,7 @@ jobs:
             -DBNGSIM_LIBRARY="$BNGSIM_LIBRARY_PATH"
           cmake --build build-bngsim -j 2
           SITE=$(python -c 'import bionetgen,os; print(os.path.dirname(bionetgen.__file__))')
-          cp "$SITE"/_bionetgen_cpp*.so "$RUNNER_TEMP/original_bionetgen_cpp.so"
+          cp "$SITE"/_bionetgen_cpp*.so "$RUNNER_TEMP"/
           cp build-bngsim/cpp/_bionetgen_cpp*.so "$SITE"/
 
       - name: Emit backend and format route reports (#178)
@@ -1656,7 +1656,7 @@ jobs:
         run: |
           set -euo pipefail
           SITE=$(python -c 'import bionetgen,os; print(os.path.dirname(bionetgen.__file__))')
-          cp "$RUNNER_TEMP/original_bionetgen_cpp.so" "$SITE"/
+          cp "$RUNNER_TEMP"/_bionetgen_cpp*.so "$SITE"/
 
       - name: Upload Issue 178 shared decisions evidence
         if: always()
