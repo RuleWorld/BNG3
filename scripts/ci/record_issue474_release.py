@@ -70,7 +70,10 @@ def _git(*args: str) -> str:
 
 def _validate_source(source: dict, revision: str, label: str) -> None:
     _require(source.get("revision") == revision, f"{label}: stale source revision")
-    _require(source.get("dirty") is False, f"{label}: receipt from a dirty checkout")
+    # The benchmark harness calls the cleanliness field ``source_dirty`` while
+    # the standalone device receipts use ``dirty``; both mean the same check.
+    dirty = source.get("dirty", source.get("source_dirty"))
+    _require(dirty is False, f"{label}: receipt from a dirty checkout")
 
 
 def _row(check: str, status: str, detail: str, receipts: list[Path]) -> dict:
@@ -274,7 +277,7 @@ def record(args: argparse.Namespace) -> dict:
         ),
     ]
 
-    return {
+    report = {
         "schema_version": 1,
         "source": {"revision": revision, "dirty": False},
         "artifact": {
@@ -303,6 +306,20 @@ def record(args: argparse.Namespace) -> dict:
             {"path": str(path), "sha256": _sha256(path)} for path in receipts
         ],
     }
+    if args.display_base:
+        base = Path(args.display_base)
+
+        def add_display_path(entry: dict) -> None:
+            # Keep the original path for provenance; add the portable location
+            # where the receipt is retained in the repository.
+            entry["display_path"] = str(base / Path(entry["path"]).name)
+
+        for row in report["results"]:
+            for entry in row.get("receipts", []):
+                add_display_path(entry)
+        for entry in report["receipts"]:
+            add_display_path(entry)
+    return report
 
 
 def main() -> int:
@@ -316,6 +333,10 @@ def main() -> int:
     parser.add_argument("--cuda-probe", required=True, type=Path)
     parser.add_argument("--build-identity", required=True, type=Path)
     parser.add_argument("--json", required=True, type=Path)
+    parser.add_argument(
+        "--display-base",
+        help="repository-relative directory where receipts are retained",
+    )
     args = parser.parse_args()
     report = record(args)
     args.json.parent.mkdir(parents=True, exist_ok=True)

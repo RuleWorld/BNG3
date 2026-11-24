@@ -34,6 +34,9 @@ def _rows(report: dict) -> dict:
 
 
 def _head() -> str:
+    expected = os.environ.get("BNG3_ISSUE474_REVISION")
+    if expected:
+        return expected
     return subprocess.check_output(
         ["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True
     ).strip()
@@ -97,7 +100,9 @@ def test_capability_coverage_acknowledges_cuda_gap():
 def test_receipt_digests_match_the_files(tmp_path):
     report = _report()
     for entry in report["receipts"]:
-        path = Path(entry["path"])
+        path = Path(entry.get("display_path", entry["path"]))
+        if not path.is_absolute():
+            path = ROOT / path
         assert path.is_file(), path
         assert hashlib.sha256(path.read_bytes()).hexdigest() == entry["sha256"]
 
