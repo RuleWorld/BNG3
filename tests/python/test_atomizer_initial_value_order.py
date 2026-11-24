@@ -437,7 +437,13 @@ def test_assignment_rule_reads_initial_assignment_value():
     assert res.success, res.error
     seeds = _bngl_seed_lines(res.bngl)
     assert seeds["S1"] == pytest.approx(8.0, abs=1e-9), seeds
-    assert _bngl_function(res.bngl, "p") == "3 + 1", res.bngl
+    # ``p`` is declared constant="true", so SBML fixes it at t=0. The writer
+    # folds a constant parameter's assignment rule to that value instead of
+    # emitting a live BNGL function; a live function would make p track a
+    # dynamic species and change the trajectory. The fold must still give
+    # p = q + 1 = 4, which the S1 = 2*p seed above verifies, and must not
+    # leave a second, live definition of p behind.
+    assert re.search(r"(?m)^\s*p\(\)\s*=", res.bngl) is None, res.bngl
 
 
 def test_parameter_without_value_is_not_silently_seeded_zero():

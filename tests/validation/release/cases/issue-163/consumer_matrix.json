@@ -12,7 +12,9 @@
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.visualize.help",
@@ -20,7 +22,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeBNGL",
@@ -28,7 +32,25 @@
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "unassessed",
       "execution_class": "consumer-executed",
-      "executed_route": "BioNetGen parser + engine (re-import, closed-form ODE)"
+      "executed_route": "BioNetGen parser + engine (re-import, closed-form ODE)",
+      "semantic_facts_preserved": [
+        {
+          "fact": "Exported BNGL re-imports through the public parser; the source entities (parameters, molecule types, seed species, observables and reaction rules) are preserved.",
+          "assertion": "_model_entities(restored), _model_entities(model)",
+          "source": "tests/validation/export_format_tier.py"
+        },
+        {
+          "fact": "The re-imported BNGL engine reproduces the source observable A_obs endpoint 10*exp(-0.1) at t=1 for k=0.1, A(0)=10 (rel=1e-5).",
+          "assertion": "10 * math.exp(-0.1), rel=1e-5",
+          "source": "tests/validation/release/cases/issue-163/test_write_actions_consumers.py"
+        },
+        {
+          "fact": "The re-imported model reproduces the case's closed-form law on the tier time grid, not merely a writer echo.",
+          "assertion": "_compare_values(values, law, rtol=LAW_RTOL, atol=LAW_ATOL)",
+          "source": "tests/validation/export_format_tier.py"
+        }
+      ],
+      "semantic_facts_basis": "derived from consumer assertions in the named test files"
     },
     {
       "row": "action.writeCPPfile",
@@ -36,7 +58,9 @@
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPPfile.atol",
@@ -44,7 +68,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPPfile.max_conv_fails",
@@ -52,7 +78,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPPfile.max_err_test_fails",
@@ -60,7 +88,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPPfile.max_num_steps",
@@ -68,7 +98,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPPfile.max_step",
@@ -76,7 +108,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPPfile.n_steps",
@@ -84,7 +118,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPPfile.prefix",
@@ -92,7 +128,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPPfile.rtol",
@@ -100,7 +138,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPPfile.sparse",
@@ -108,7 +148,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPPfile.stiff",
@@ -116,7 +158,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPPfile.suffix",
@@ -124,7 +168,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPPfile.t_end",
@@ -132,7 +178,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPPfile.t_start",
@@ -140,7 +188,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPYfile",
@@ -148,7 +198,20 @@
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "unassessed",
       "execution_class": "consumer-executed",
-      "executed_route": "Python/SciPy runtime (exported .py + .gdat)"
+      "executed_route": "Python/SciPy runtime (exported .py + .gdat)",
+      "semantic_facts_preserved": [
+        {
+          "fact": "The exported Python/ODE consumer writes a gdat with exactly the time and A_total observable columns.",
+          "assertion": "columns == [\"time\", \"A_total\"]",
+          "source": "tests/validation/release/cases/issue-163/test_export_format_release.py"
+        },
+        {
+          "fact": "The consumer trajectory matches 12*exp(-0.4*(t-0.25)) on linspace(0.25, 1.75, 6) with rtol=1e-7.",
+          "assertion": "np.testing.assert_allclose(observables[:, 1], expected_amounts, rtol=1e-7)",
+          "source": "tests/validation/release/cases/issue-163/test_export_format_release.py"
+        }
+      ],
+      "semantic_facts_basis": "derived from consumer assertions in the named test files"
     },
     {
       "row": "action.writeCPYfile.atol",
@@ -156,7 +219,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPYfile.max_conv_fails",
@@ -164,7 +229,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPYfile.max_err_test_fails",
@@ -172,7 +239,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPYfile.max_num_steps",
@@ -180,7 +249,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPYfile.max_step",
@@ -188,7 +259,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPYfile.n_steps",
@@ -196,7 +269,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPYfile.prefix",
@@ -204,7 +279,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPYfile.rtol",
@@ -212,7 +289,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPYfile.sparse",
@@ -220,7 +299,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPYfile.stiff",
@@ -228,7 +309,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPYfile.suffix",
@@ -236,7 +319,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPYfile.t_end",
@@ -244,7 +329,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeCPYfile.t_start",
@@ -252,7 +339,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeFile",
@@ -260,7 +349,20 @@
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "unassessed",
       "execution_class": "consumer-executed",
-      "executed_route": "BNG parser + engine (re-import exported .bngl, closed-form ODE)"
+      "executed_route": "BNG parser + engine (re-import exported .bngl, closed-form ODE)",
+      "semantic_facts_preserved": [
+        {
+          "fact": "The exported BNGL contains a model document and re-imports through the public parser.",
+          "assertion": "\"begin model\" in exported.read_text()",
+          "source": "tests/validation/release/cases/issue-163/test_write_file_model_consumers.py"
+        },
+        {
+          "fact": "The re-imported model reproduces observable A_obs endpoint 10*exp(-0.1) at t=1 for k=0.1, A(0)=10 (rel=1e-5).",
+          "assertion": "10 * math.exp(-0.1), rel=1e-5",
+          "source": "tests/validation/release/cases/issue-163/test_write_file_model_consumers.py"
+        }
+      ],
+      "semantic_facts_basis": "derived from consumer assertions in the named test files"
     },
     {
       "row": "action.writeLaTeXfile",
@@ -268,7 +370,9 @@
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeLatex",
@@ -276,7 +380,9 @@
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeLatex.prefix",
@@ -284,7 +390,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeLatex.suffix",
@@ -292,7 +400,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMDL",
@@ -300,7 +410,9 @@
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMDL.prefix",
@@ -308,7 +420,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMDL.suffix",
@@ -316,7 +430,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMEXfile",
@@ -324,7 +440,15 @@
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "unassessed",
       "execution_class": "consumer-executed",
-      "executed_route": "g++ compile + execute generated MEX C with mxArray ABI shim"
+      "executed_route": "g++ compile + execute generated MEX C with mxArray ABI shim",
+      "semantic_facts_preserved": [
+        {
+          "fact": "The generated MEX C source compiles against the mxArray ABI shim and executes; its third time-point observable matches 10*exp(-0.1) with rel=1e-6.",
+          "assertion": "10 * math.exp(-0.1), rel=1e-6",
+          "source": "tests/validation/release/cases/issue-163/test_mex_consumer.py"
+        }
+      ],
+      "semantic_facts_basis": "derived from consumer assertions in the named test files"
     },
     {
       "row": "action.writeMexfile",
@@ -332,7 +456,15 @@
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "unassessed",
       "execution_class": "consumer-executed",
-      "executed_route": "g++ compile + execute generated MEX C with mxArray ABI shim"
+      "executed_route": "g++ compile + execute generated MEX C with mxArray ABI shim",
+      "semantic_facts_preserved": [
+        {
+          "fact": "The generated MEX C source compiles against the mxArray ABI shim and executes; its third time-point observable matches 10*exp(-0.1) with rel=1e-6.",
+          "assertion": "10 * math.exp(-0.1), rel=1e-6",
+          "source": "tests/validation/release/cases/issue-163/test_mex_consumer.py"
+        }
+      ],
+      "semantic_facts_basis": "derived from consumer assertions in the named test files"
     },
     {
       "row": "action.writeMexfile.atol",
@@ -340,7 +472,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMexfile.max_conv_fails",
@@ -348,7 +482,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMexfile.max_err_test_fails",
@@ -356,7 +492,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMexfile.max_num_steps",
@@ -364,7 +502,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMexfile.max_step",
@@ -372,7 +512,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMexfile.n_steps",
@@ -380,7 +522,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMexfile.prefix",
@@ -388,7 +532,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMexfile.rtol",
@@ -396,7 +542,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMexfile.sparse",
@@ -404,7 +552,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMexfile.stiff",
@@ -412,7 +562,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMexfile.suffix",
@@ -420,7 +572,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMexfile.t_end",
@@ -428,7 +582,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMexfile.t_start",
@@ -436,7 +592,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile",
@@ -444,7 +602,9 @@
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile.atol",
@@ -452,7 +612,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile.bdf",
@@ -460,7 +622,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile.maxOrder",
@@ -468,7 +632,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile.max_step",
@@ -476,7 +642,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile.n_steps",
@@ -484,7 +652,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile.prefix",
@@ -492,7 +662,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile.rtol",
@@ -500,7 +672,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile.stats",
@@ -508,7 +682,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile.suffix",
@@ -516,7 +692,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile.t_end",
@@ -524,7 +702,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile.t_start",
@@ -532,7 +712,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile_all",
@@ -540,7 +722,9 @@
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile_all.atol",
@@ -548,7 +732,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile_all.bdf",
@@ -556,7 +742,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile_all.maxOrder",
@@ -564,7 +752,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile_all.max_step",
@@ -572,7 +762,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile_all.n_steps",
@@ -580,7 +772,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile_all.prefix",
@@ -588,7 +782,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile_all.rtol",
@@ -596,7 +792,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile_all.stats",
@@ -604,7 +802,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile_all.suffix",
@@ -612,7 +812,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile_all.t_end",
@@ -620,7 +822,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeMfile_all.t_start",
@@ -628,7 +832,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeModel",
@@ -636,7 +842,20 @@
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "unassessed",
       "execution_class": "consumer-executed",
-      "executed_route": "BNG parser + engine (re-import exported .bngl, closed-form ODE)"
+      "executed_route": "BNG parser + engine (re-import exported .bngl, closed-form ODE)",
+      "semantic_facts_preserved": [
+        {
+          "fact": "The exported BNGL contains a model document and re-imports through the public parser.",
+          "assertion": "\"begin model\" in exported.read_text()",
+          "source": "tests/validation/release/cases/issue-163/test_write_file_model_consumers.py"
+        },
+        {
+          "fact": "The re-imported model reproduces observable A_obs endpoint 10*exp(-0.1) at t=1 for k=0.1, A(0)=10 (rel=1e-5).",
+          "assertion": "10 * math.exp(-0.1), rel=1e-5",
+          "source": "tests/validation/release/cases/issue-163/test_write_file_model_consumers.py"
+        }
+      ],
+      "semantic_facts_basis": "derived from consumer assertions in the named test files"
     },
     {
       "row": "action.writeNET",
@@ -644,7 +863,20 @@
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "partial",
       "execution_class": "consumer-executed",
-      "executed_route": "native bng_cpp CLI (readFile + simulate_ode)"
+      "executed_route": "native bng_cpp CLI (readFile + simulate_ode)",
+      "semantic_facts_preserved": [
+        {
+          "fact": "The native CLI consumes the exported .net, regenerates the source network and reports the same species and reaction count.",
+          "assertion": "network.n_reactions != source_network.num_reactions",
+          "source": "tests/validation/export_format_tier.py"
+        },
+        {
+          "fact": "The .net consumer reproduces observable A_obs at t=2 with 10*exp(-0.2) for k=0.1, A(0)=10 (rel=1e-4).",
+          "assertion": "10 * math.exp(-0.2), rel=1e-4",
+          "source": "tests/validation/release/cases/issue-163/test_write_actions_consumers.py"
+        }
+      ],
+      "semantic_facts_basis": "derived from consumer assertions in the named test files"
     },
     {
       "row": "action.writeNetwork",
@@ -652,7 +884,20 @@
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "partial",
       "execution_class": "consumer-executed",
-      "executed_route": "native bng_cpp CLI (network regeneration)"
+      "executed_route": "native bng_cpp CLI (network regeneration)",
+      "semantic_facts_preserved": [
+        {
+          "fact": "The action-produced network artifact is consumed by the native CLI with the same species and reaction count as the source network.",
+          "assertion": "network.n_reactions != source_network.num_reactions",
+          "source": "tests/validation/export_format_tier.py"
+        },
+        {
+          "fact": "The regenerated network consumer reproduces observable A_obs at t=2 with 10*exp(-0.2) for k=0.1, A(0)=10 (rel=1e-4).",
+          "assertion": "10 * math.exp(-0.2), rel=1e-4",
+          "source": "tests/validation/release/cases/issue-163/test_write_actions_consumers.py"
+        }
+      ],
+      "semantic_facts_basis": "derived from consumer assertions in the named test files"
     },
     {
       "row": "action.writeSBML",
@@ -660,7 +905,20 @@
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "unassessed",
       "execution_class": "consumer-executed",
-      "executed_route": "libSBML validation + libRoadRunner simulation"
+      "executed_route": "libSBML validation + libRoadRunner simulation",
+      "semantic_facts_preserved": [
+        {
+          "fact": "libSBML-valid exported SBML preserves species names and initial amounts and the source reaction count.",
+          "assertion": "structure[\"species\"] != expected_species",
+          "source": "tests/validation/export_format_tier.py"
+        },
+        {
+          "fact": "The independent libRoadRunner consumer reproduces the case's closed-form law from the exported SBML.",
+          "assertion": "_compare_values(values, law, rtol=LAW_RTOL, atol=LAW_ATOL)",
+          "source": "tests/validation/export_format_tier.py"
+        }
+      ],
+      "semantic_facts_basis": "derived from consumer assertions in the named test files"
     },
     {
       "row": "action.writeSBML.prefix",
@@ -668,7 +926,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeSBML.suffix",
@@ -676,7 +936,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeSBMLMulti",
@@ -684,7 +946,9 @@
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeSBMLMulti.prefix",
@@ -692,7 +956,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeSBMLMulti.suffix",
@@ -700,7 +966,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeSSC",
@@ -708,7 +976,9 @@
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeSSC.prefix",
@@ -716,7 +986,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeSSC.suffix",
@@ -724,7 +996,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeSSCcfg",
@@ -732,7 +1006,9 @@
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeSSCcfg.prefix",
@@ -740,7 +1016,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeSSCcfg.suffix",
@@ -748,7 +1026,9 @@
       "oracle": "pinned BNG2 argument/default/error behavior",
       "matrix_status": "unassessed",
       "execution_class": "unmeasured-or-structure-only",
-      "executed_route": null
+      "executed_route": null,
+      "semantic_facts_preserved": [],
+      "semantic_facts_basis": "no consumer assertion: row remains unmeasured"
     },
     {
       "row": "action.writeXML",
@@ -756,12 +1036,31 @@
       "oracle": "pinned BNG2 action execution and produced artifact consumer",
       "matrix_status": "unassessed",
       "execution_class": "consumer-executed",
-      "executed_route": "native NFsim fixed-seed fact (one detector case)"
+      "executed_route": "native NFsim fixed-seed fact (one detector case)",
+      "semantic_facts_preserved": [
+        {
+          "fact": "The exported BNG-XML marks the $-prefixed seed A() as Fixed=1.",
+          "assertion": "s.get(\"Fixed\") == \"1\"",
+          "source": "tests/validation/test_xml_export_fixed_seed_nfsim_consumer.py"
+        },
+        {
+          "fact": "Pinned native NFsim keeps the fixed pool Atot at exactly 5 at every sample while the product grows.",
+          "assertion": "all(value == FIXED_COUNT for value in baseline[\"Atot\"])",
+          "source": "tests/validation/test_xml_export_fixed_seed_nfsim_consumer.py"
+        },
+        {
+          "fact": "Control: rewriting the exported observable pattern changes the consumer's observable, so the fact follows the exported bytes.",
+          "assertion": "control[\"Btot\"][-1] != baseline[\"Btot\"][-1]",
+          "source": "tests/validation/test_xml_export_fixed_seed_nfsim_consumer.py"
+        }
+      ],
+      "semantic_facts_basis": "derived from consumer assertions in the named test files"
     }
   ],
   "summary": {
     "total_rows": 94,
     "consumer_executed_rows": 10,
-    "missing_consumer_rows": 84
+    "missing_consumer_rows": 84,
+    "rows_with_semantic_facts": 10
   }
 }

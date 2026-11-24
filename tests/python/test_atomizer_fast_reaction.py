@@ -634,7 +634,7 @@ def test_fast_reaction_rate_over_an_unconverted_species_is_refused():
     assert "fasterReaction" in atomized.bngl
 
 
-def test_fast_reaction_read_by_a_delay_expression_is_refused():
+def test_fast_reaction_delay_history_keeps_the_source_initial_value():
     """A delay reports the declared initial value, so the reduction is unsafe."""
 
     xml = _model("""
@@ -676,10 +676,18 @@ def test_fast_reaction_read_by_a_delay_expression_is_refused():
         </listOfRules>
         """)
 
+    # SBML L3V1 4.11 fast equilibrium holds S1 at zero from t=0. A delayed
+    # read of S1 must nevertheless report the source's initial amount until
+    # the delay elapses (official SBML Test Suite case 01539). The reduction
+    # preserves that history as an exact time piecewise and is no longer a
+    # loss diagnostic.
     warnings = _fast_warnings(xml)
-    assert len(warnings) == 1
-    assert warnings[0].severity == "approximated"
-    assert "read by a delay expression" in warnings[0].message
+    assert all(w.severity == "info" for w in warnings)
+    atomized = Atomizer({"quietMode": True, "logLevel": "INFO", "t_end": 10}).atomize(
+        xml
+    )
+    assert "P1() = if(time() <= 1.5, 2, (0))" in atomized.bngl
+    assert "@C:M_S2() 5" in atomized.bngl
 
 
 def test_several_fast_reactions_are_reduced_independently():

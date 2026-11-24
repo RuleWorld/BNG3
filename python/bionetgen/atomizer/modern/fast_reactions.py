@@ -507,6 +507,169 @@ def _reduce_bimolecular_equilibrium(
     )
 
 
+def _zero_switch_coefficient(
+    model: SBMLModel,
+    term: _SymbolicTerm,
+    analysis: Any,
+    reactant_id: str,
+    reactant_species: SBMLSpecies,
+) -> Optional[str]:
+    """Identify a rate constant that switches from zero to positive by events."""
+    if set(term.species) != {(reactant_id, 1)}:
+        return None
+    if _term_sign(term, analysis) != "0+":
+        return None
+    if _species_amount(model, reactant_species) != 0.0:
+        return None
+    names = {
+        node.id
+        for factor in term.factors
+        for node in ast.walk(ast.parse(ast.unparse(factor), mode="eval"))
+        if isinstance(node, ast.Name)
+    }
+    candidates = []
+    for name in names:
+        key = standardize_name(name)
+        if key in analysis._rate_rules or key in analysis._assignment_rules:
+            return None
+        values = analysis._event_values.get(key)
+        if not values:
+            return None
+        numbers = [_fast_number(value) for value in values]
+        if any(value is None for value in numbers):
+            return None
+        if any(value < 0 for value in numbers) or not any(
+            value > 0 for value in numbers
+        ):
+            return None
+        if 0.0 not in numbers:
+            return None
+        candidates.append(name)
+    return candidates[0] if len(candidates) == 1 else None
+
+
+def _reduce_zero_switch(
+    model: SBMLModel,
+    reaction: SBMLReaction,
+    reactant: Any,
+    product: Any,
+    coefficient: str,
+) -> FastReactionOutcome:
+    """Lower a fast reaction that is inactive until its rate constant turns on.
+
+    While the coefficient is zero the fast reaction carries no flux and the
+    converted species follows the slow reactions. Once it is positive the fast
+    reaction holds the reactant at zero and the conserved pool puts the added
+    amount entirely into the product. An event that turns the coefficient on
+    transfers the reactant's amount at that instant.
+    """
+    reactant_id, product_id = reactant.species, product.species
+    reactant_species = model.species.get(reactant_id)
+    product_species = model.species.get(product_id)
+    if reactant_species is None or product_species is None:
+        return FastReactionOutcome(reaction.id, False, reason="undefined fast species")
+    if reactant_species.has_only_substance_units is not True:
+        return FastReactionOutcome(
+            reaction.id, False, reason="the zero-switch reduction needs substance units"
+        )
+    for species in (reactant_species, product_species):
+        if species.compartment != reactant_species.compartment:
+            return FastReactionOutcome(
+                reaction.id,
+                False,
+                reason="the fast species are in different compartments",
+            )
+    amount_r = _species_amount(model, reactant_species)
+    amount_p = _species_amount(model, product_species)
+    if amount_r is None or amount_p is None:
+        return FastReactionOutcome(
+            reaction.id, False, reason="no usable initial amount"
+        )
+    pool = amount_r + amount_p
+    numerator_r = abs(float(reactant.stoichiometry))
+    numerator_p = abs(float(product.stoichiometry))
+    if numerator_r <= 0 or numerator_p <= 0:
+        return FastReactionOutcome(reaction.id, False, reason="invalid stoichiometry")
+
+    slow = 0.0
+    for other in model.reactions.values():
+        if other.id == reaction.id or other.fast:
+            continue
+        sigma = _signed_stoichiometry(other, reactant_id)
+        if sigma == 0:
+            continue
+        law = _global_kinetic_law(other)
+        if law is None:
+            return FastReactionOutcome(
+                reaction.id, False, reason="a slow reaction has no reducible rate"
+            )
+        constant = _constant_value(law, _ConstantResolver(model, other))
+        if constant is None:
+            return FastReactionOutcome(
+                reaction.id, False, reason="a slow reaction rate is not constant"
+            )
+        slow += sigma * constant
+
+    from .types import SBMLRule
+
+    reduced_state = pool / numerator_p
+    # Before the fast coefficient turns on, the source trajectory of the held
+    # species is affine. Record it so the event lowering can prove the first
+    # trigger crossing on the exact source dynamics.
+    model.event_affine_source_trajectory = {reactant_id: (0.0, slow)}
+    _set_species_amount(model, reactant_species, 0.0)
+    _set_species_amount(model, product_species, reduced_state)
+    model.rules.append(
+        SBMLRule(
+            type="rate",
+            variable=reactant_id,
+            math=f"if(gt({coefficient}, 0), 0, {format_number(slow)})",
+        )
+    )
+    model.rules.append(
+        SBMLRule(
+            type="assignment",
+            variable=product_id,
+            math=(
+                f"(({format_number(pool)}) - "
+                f"({_amount_symbol(reactant_species, 1.0)})) * "
+                f"{format_number(numerator_r / numerator_p)}"
+            ),
+        )
+    )
+    transferred = False
+    for event in model.events:
+        for assignment in event.assignments:
+            variable = getattr(assignment, "variable", None)
+            expression = getattr(assignment, "math", "")
+            if variable is None or standardize_name(str(variable)) != standardize_name(
+                coefficient
+            ):
+                continue
+            value = _fast_number(expression)
+            if value is None or value <= 0:
+                continue
+            from .types import SBMLEventAssignment
+
+            event.assignments.append(
+                SBMLEventAssignment(variable=reactant_id, math="0")
+            )
+            transferred = True
+    if not transferred:
+        return FastReactionOutcome(
+            reaction.id, False, reason="no event turns the fast coefficient on"
+        )
+    return FastReactionOutcome(
+        reaction.id,
+        True,
+        detail=(
+            f'the fast reaction is inactive while "{coefficient}" is zero; '
+            f'"{reactant_id}" is held at zero when it turns on and the pool '
+            f"is conserved"
+        ),
+    )
+
+
 def _reduce_to_completion(
     model: SBMLModel,
     reaction: SBMLReaction,
@@ -617,7 +780,9 @@ def _reduce_to_completion(
 
     delayed = _delayed_species(model)
     for identifier in (consumed, produced):
-        if standardize_name(identifier) in delayed:
+        if standardize_name(identifier) in delayed and not _delay_is_rewritable(
+            model, identifier
+        ):
             return refuse(
                 f'species "{identifier}" is read by a delay expression, whose '
                 "value before the delay elapses is the species' declared "
@@ -634,11 +799,16 @@ def _reduce_to_completion(
     # Sec. 4.11.7: the rate of change of a species' amount is its conversion
     # factor times the stoichiometry-weighted extent rate).
     extent = consumed_amount / (consumed_factor * consumed_stoichiometry)
+    reduced_produced = (
+        produced_amount + produced_factor * produced_stoichiometry * extent
+    )
     _set_species_amount(model, consumed_species, 0.0)
-    _set_species_amount(
+    _set_species_amount(model, produced_species, reduced_produced)
+    _rewrite_fast_reduction_delays(
         model,
-        produced_species,
-        produced_amount + produced_factor * produced_stoichiometry * extent,
+        {consumed: consumed_amount, produced: produced_amount},
+        _compartment_volume(model, consumed_species),
+        {consumed: "0", produced: format_number(reduced_produced)},
     )
     return FastReactionOutcome(
         reaction.id,
@@ -1543,6 +1713,158 @@ def _infix(node: ast.AST) -> str:
     return re.sub(r"\bbng_(if|and|or|not)\(", r"\1(", text)
 
 
+def _fast_number(text: object) -> Optional[float]:
+    try:
+        value = float(str(text).strip())
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) else None
+
+
+_DELAY_CALL = re.compile(r"\bdelay\s*\(\s*([A-Za-z_][A-Za-z_0-9]*)\s*,\s*([^()]+)\)")
+
+
+def _delay_is_rewritable(model: SBMLModel, species_id: str) -> bool:
+    """True when every delayed read of a fast species has a constant history.
+
+    The fast reduction changes a species' amount instantly at t=0. A delayed
+    read before the delay elapses must then report the source's original
+    value, not the reduced steady state. That history is exact when the read
+    lives in an assignment rule with a constant delay and a target outside
+    the fast subsystem, so it can be replaced by a time piecewise.
+    """
+    found = False
+    for rule in model.rules:
+        if rule.type != "assignment" or not rule.variable:
+            continue
+        standardized_target = standardize_name(str(rule.variable))
+        if standardized_target in {standardize_name(name) for name in model.species}:
+            continue
+        for match in _DELAY_CALL.finditer(str(rule.math or "")):
+            if standardize_name(match.group(1)) != standardize_name(species_id):
+                continue
+            if _fast_number(match.group(2)) is None:
+                return False
+            found = True
+    # Any delayed read outside such a rule still needs the live history.
+    for expression in _model_expressions(model):
+        for match in _DELAY_CALL.finditer(expression):
+            if standardize_name(match.group(1)) != standardize_name(species_id):
+                continue
+            if not any(
+                rule.type == "assignment"
+                and str(rule.math or "") == expression
+                and rule.variable
+                and standardize_name(str(rule.variable))
+                not in {standardize_name(name) for name in model.species}
+                for rule in model.rules
+            ):
+                return False
+    return found
+
+
+def _event_stoichiometry_transfer(
+    model: SBMLModel,
+    held_id: str,
+    state_id: str,
+    stoich_id: str,
+    volume: float,
+) -> bool:
+    """Re-express event writes to the held fast species as pool-state writes.
+
+    When an event changes the fast reaction's stoichiometry and simultaneously
+    adds some of the species the reduction holds at zero, that amount joins
+    the non-held species scaled by the new stoichiometry. The pool's state is
+    the non-held species, so the event is rewritten to add the source amount
+    divided by the new stoichiometry to that state. Returns False unless every
+    event that writes the held species also writes a constant stoichiometry.
+    """
+    changed = False
+    for event in model.events:
+        variables = [
+            standardize_name(str(getattr(assignment, "variable", "") or ""))
+            for assignment in event.assignments
+        ]
+        if standardize_name(held_id) not in variables:
+            continue
+        held_values = [
+            str(getattr(assignment, "math", "") or "")
+            for assignment in event.assignments
+            if standardize_name(str(getattr(assignment, "variable", "") or ""))
+            == standardize_name(held_id)
+        ]
+        stoich_values = [
+            str(getattr(assignment, "math", "") or "")
+            for assignment in event.assignments
+            if standardize_name(str(getattr(assignment, "variable", "") or ""))
+            == standardize_name(stoich_id)
+        ]
+        if len(held_values) != 1 or len(stoich_values) != 1:
+            return False
+        added = _fast_number(held_values[0])
+        new_stoich = _fast_number(stoich_values[0])
+        if added is None or new_stoich is None or new_stoich <= 0:
+            return False
+        increment = added / (new_stoich * volume)
+        replaced = False
+        for assignment in event.assignments:
+            if not replaced and standardize_name(
+                str(getattr(assignment, "variable", "") or "")
+            ) == standardize_name(held_id):
+                assignment.variable = state_id
+                assignment.math = f"(({state_id}) + {format_number(increment)})"
+                replaced = True
+        changed = True
+    return changed
+
+
+def _rewrite_fast_reduction_delays(
+    model: SBMLModel,
+    original_amounts: Mapping[str, float],
+    volume: float,
+    reduced_expressions: Optional[Mapping[str, str]] = None,
+) -> None:
+    """Keep the source's pre-reduction history for delayed reads."""
+
+    for rule in model.rules:
+        if rule.type != "assignment" or not rule.variable:
+            continue
+        text = str(rule.math or "")
+
+        def replace(match: "re.Match[str]") -> str:
+            species_id = match.group(1)
+            if species_id not in original_amounts:
+                return match.group(0)
+            delay = _fast_number(match.group(2))
+            if delay is None or delay < 0:
+                return match.group(0)
+            reduced = (reduced_expressions or {}).get(species_id)
+            if reduced is None:
+                reduced = next(
+                    (
+                        str(other.math or "")
+                        for other in model.rules
+                        if other.type == "assignment"
+                        and other.variable
+                        and standardize_name(str(other.variable))
+                        == standardize_name(species_id)
+                    ),
+                    None,
+                )
+            if not reduced:
+                return match.group(0)
+            species = model.species.get(species_id)
+            original = original_amounts[species_id]
+            if species is not None and not species.has_only_substance_units:
+                original = original / volume
+            return (
+                f"if(time() <= {format_number(delay)}, "
+                f"{format_number(original)}, ({reduced}))"
+            )
+
+        rule.math = _DELAY_CALL.sub(replace, text)
+
+
 def _reduce_with_pool(
     model: SBMLModel,
     reaction: SBMLReaction,
@@ -1633,12 +1955,9 @@ def _reduce_with_pool(
             )
         if not (species.initial_amount_set or species.initial_concentration_set):
             return refuse(f'species "{species.id}" has no initial value')
-        if standardize_name(species.id) in controlled:
-            return refuse(
-                f'species "{species.id}" is reassigned by a rule, an initial '
-                "assignment, or an event"
-            )
-        if standardize_name(species.id) in delayed:
+        if standardize_name(species.id) in delayed and not _delay_is_rewritable(
+            model, species.id
+        ):
             return refuse(
                 f'species "{species.id}" is read by a delay expression, whose '
                 "value before the delay elapses is the species' declared "
@@ -1716,6 +2035,12 @@ def _reduce_with_pool(
             "with coefficients that do not depend on the species"
         )
     active = [term for term in terms if term.coefficient != 0.0]
+    if len(active) == 1:
+        zero_switch = _zero_switch_coefficient(
+            model, active[0], analysis, reactant_id, reactant_species
+        )
+        if zero_switch is not None:
+            return _reduce_zero_switch(model, reaction, reactant, product, zero_switch)
     participants = {reactant_id, product_id}
     for term in active:
         if not set(term.species_ids) <= participants:
@@ -1753,6 +2078,33 @@ def _reduce_with_pool(
         )
     if isinstance(plan, str):
         return refuse(plan)
+    varying_reference = (
+        reactant
+        if reactant.variable_stoichiometry
+        else product if product.variable_stoichiometry else None
+    )
+    stoich_id = (
+        str(getattr(varying_reference, "id", "") or "") if varying_reference else ""
+    )
+    held_id, state_id = {
+        "forward": (reactant_id, product_id),
+        "backward": (product_id, reactant_id),
+    }.get(plan.kind, (None, None))
+    transfer_stoichiometry = False
+    for species in (reactant_species, product_species):
+        if standardize_name(species.id) not in controlled:
+            continue
+        if (
+            held_id
+            and stoich_id
+            and standardize_name(species.id) == standardize_name(held_id)
+        ):
+            transfer_stoichiometry = True
+            continue
+        return refuse(
+            f'species "{species.id}" is reassigned by a rule, an initial '
+            "assignment, or an event"
+        )
     varying = any(term.factors for term in active)
     if stoichiometry_ids and varying:
         return refuse(
@@ -1897,6 +2249,18 @@ def _reduce_with_pool(
             )
         )
     model.rules.extend(rules)
+    _rewrite_fast_reduction_delays(
+        model,
+        {reactant_id: initial_r, product_id: initial_p},
+        volume,
+    )
+    if transfer_stoichiometry and not _event_stoichiometry_transfer(
+        model, held_id, state_id, stoich_id, volume
+    ):
+        return refuse(
+            "an event changes the stoichiometry and the held species without "
+            "a constant amount it can transfer to the pool state"
+        )
     # The slow reactions keep reading the two species, but the reduction's
     # rules own their values, so they become modifiers.
     for other in model.reactions.values():

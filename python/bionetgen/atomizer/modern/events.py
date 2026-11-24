@@ -462,6 +462,10 @@ class EventTranslationContext:
     # scheduled phase boundary, whose relative order the two mechanisms do
     # not share.
     scheduled_events_present: bool = False
+    # The fixed times of those scheduled actions. A native fixed-time event
+    # whose own execution instant is provably different from every one of
+    # them has a defined order and need not be refused.
+    scheduled_execution_times: Tuple[float, ...] = ()
     # The seed the caller asked for.  A generated schedule must carry it into
     # every generated ``simulate`` phase, otherwise the seed the caller asked
     # for is silently dropped and the run is no longer reproducible.
@@ -741,6 +745,7 @@ class EventTranslationResult:
     converted: int
     untranslated: List[Tuple[SBMLEvent, str]]
     horizon_limited: int = 0
+    scheduled_times: Tuple[float, ...] = ()
 
     @property
     def actionsBlock(self):
@@ -3319,6 +3324,46 @@ def _native_time_minus_state_comparison(
     return f"time {symbol} {state_text} + {threshold_text}"
 
 
+def _native_state_minus_time_comparison(
+    left_text: str,
+    right_text: str,
+    operator: str,
+    context: EventTranslationContext,
+) -> Optional[str]:
+    """Rewrite ``state - time OP constant`` as a moving time threshold.
+
+    ``state - time <= c`` holds exactly when ``time >= state - c``.  Reversing
+    the subtraction turns the SBML form into the native trigger orientation,
+    so the runtime locates the same rising edge with its existing root finder.
+    Only a single state symbol minus the clock is accepted: a general
+    expression could reverse its derivative and make the non-strict edge
+    ambiguous.
+    """
+    flipped = {">": "<", ">=": "<=", "<": ">", "<=": ">="}.get(operator)
+    if flipped is None:
+        return None
+    try:
+        left = ast.parse(context.expand_functions(left_text), mode="eval").body
+    except (TypeError, ValueError, SyntaxError):
+        return None
+    if not (
+        isinstance(left, ast.BinOp)
+        and isinstance(left.op, ast.Sub)
+        and isinstance(left.left, ast.Name)
+        and isinstance(left.right, ast.Name)
+        and left.right.id.lower() in {"time", "t"}
+    ):
+        return None
+    target = context.resolve_native_state(left.left.id)
+    threshold = _native_static_text(right_text, context)
+    if target is None or threshold is None:
+        return None
+    state_text = target.observable
+    if target.amount_factor != 1.0:
+        state_text = f"({state_text} / {_format_number(target.amount_factor)})"
+    return f"time {flipped} {state_text} - ({threshold})"
+
+
 def _native_scaled_static(
     expression: str, factor: float, context: EventTranslationContext
 ) -> Optional[str]:
@@ -3421,6 +3466,10 @@ def _native_comparison_expression(
     time_rewrite = _native_time_minus_state_comparison(
         left_text, right_text, symbol, context
     )
+    if time_rewrite is None:
+        time_rewrite = _native_state_minus_time_comparison(
+            left_text, right_text, symbol, context
+        )
     if time_rewrite is not None:
         return time_rewrite
     left_dynamic = _native_continuous_expression(left_text, context)
@@ -3442,6 +3491,25 @@ def _native_comparison_expression(
     return None
 
 
+def _native_is_clock_window(trigger: str, context: EventTranslationContext) -> bool:
+    """True when a trigger is a conjunction of clock-vs-literal comparisons."""
+
+    terms = _split_call_arguments(str(trigger or "").strip())
+    if terms is None or len(terms) < 2:
+        return False
+    for term in terms:
+        comparison = _match_comparison_call(term)
+        if comparison is None:
+            return False
+        arguments = _split_arguments(comparison[1])
+        if arguments is None or len(arguments) != 2:
+            return False
+        left_text, right_text = (_strip_outer_parens(arg) for arg in arguments)
+        if not _native_time_against_static(left_text, right_text, context):
+            return False
+    return True
+
+
 def _native_conjunction_expression(
     trigger: str, event: SBMLEvent, context: EventTranslationContext
 ) -> Optional[str]:
@@ -3454,6 +3522,12 @@ def _native_conjunction_expression(
     """
     terms = _split_call_arguments(str(trigger or "").strip())
     if terms is None or len(terms) < 2:
+        return None
+    # A conjunction whose every conjunct compares the clock with a literal
+    # is a fixed time window. Its rising and falling edges are exact schedule
+    # times, which the action dispatcher represents directly; the native
+    # root finder can miss the opening edge of such a window.
+    if _native_is_clock_window(str(trigger or ""), context):
         return None
     rendered: List[str] = []
     for term in terms:
@@ -3504,8 +3578,17 @@ def _native_trigger_expression(
             return None
         threshold = right_text if left_text.lower() in {"time", "t"} else left_text
         instant = _native_fold_term_text(threshold, context)
-        if instant is not None and math.isfinite(instant) and instant > 0.0:
-            return f"time >= {_format_number(instant)}"
+        if instant is not None and math.isfinite(instant):
+            if instant > 0.0:
+                return f"time >= {_format_number(instant)}"
+            if instant == 0.0:
+                # The clock equals zero only at the initial instant.  The
+                # native runtime's startup check executes a non-strict trigger
+                # that holds at t=0 only when its initialValue is false, which
+                # is exactly the SBML rising edge for eq(time, 0).  With
+                # initialValue=true there is no edge, and the clock never
+                # returns to zero, so this form never executes again.
+                return "time <= 0"
         return None
     # A standalone non-strict inequality can fire on a tangential contact,
     # which the root finder cannot distinguish from a crossing.  Keep those
@@ -3547,6 +3630,10 @@ def _native_trigger_expression(
             right_text,
             _NATIVE_COMPARISON_OPERATORS[operator],
             context,
+        )
+        is None
+        and _native_state_minus_time_comparison(
+            left_text, right_text, _NATIVE_COMPARISON_OPERATORS[operator], context
         )
         is None
     ):
@@ -3828,6 +3915,33 @@ _NATIVE_UNORDERED_EVENT_REFUSAL = (
 )
 
 
+def _native_fixed_trigger_instant(
+    trigger: str, context: EventTranslationContext
+) -> Optional[float]:
+    """Return the literal instant of a ``time OP constant`` trigger, if any."""
+
+    comparison = _match_comparison_call(str(trigger or "").strip())
+    if comparison is None:
+        return None
+    operator, arguments_text = comparison
+    if operator not in _NATIVE_COMPARISON_OPERATORS:
+        return None
+    arguments = _split_arguments(arguments_text)
+    if arguments is None or len(arguments) != 2:
+        return None
+    left_text, right_text = (_strip_outer_parens(arg) for arg in arguments)
+    time_left = left_text.strip().lower() in {"time", "t"}
+    time_right = right_text.strip().lower() in {"time", "t"}
+    if time_left == time_right:
+        return None
+    value = _native_fold_term_text(right_text if time_left else left_text, context)
+    if value is None or not math.isfinite(value):
+        return None
+    if operator in {"gt", "lt"}:
+        value += -1e-9 if operator == "lt" else 1e-9
+    return value
+
+
 def _lower_native_event(
     event: SBMLEvent, context: EventTranslationContext
 ) -> Optional[NativeEventEntry]:
@@ -3842,11 +3956,13 @@ def _lower_native_event(
         if priority is None or not math.isfinite(priority):
             return None
     delay: Optional[str] = None
+    delay_seconds = 0.0
     if event.delay:
         static_delay = _native_fold_term_text(event.delay, context)
         if static_delay is not None:
             if not math.isfinite(static_delay) or static_delay < 0:
                 return None
+            delay_seconds = static_delay
             if static_delay > 0:
                 delay = _format_number(static_delay)
         else:
@@ -3854,7 +3970,21 @@ def _lower_native_event(
             if dynamic_delay is None:
                 return None
             delay = dynamic_delay[0]
-    trigger = _native_trigger_expression(event, context, instantaneous=delay is None)
+    trigger_context = context
+    if context.scheduled_events_present:
+        instant = _native_fixed_trigger_instant(event.trigger, context)
+        if instant is not None:
+            execution_instant = instant + delay_seconds
+            if all(
+                abs(execution_instant - scheduled) > 1e-9
+                for scheduled in context.scheduled_execution_times
+            ):
+                # This event cannot execute at a scheduled phase boundary,
+                # so the two mechanisms have a defined order.
+                trigger_context = replace(context, scheduled_events_present=False)
+    trigger = _native_trigger_expression(
+        event, trigger_context, instantaneous=delay is None
+    )
     if trigger is None:
         return None
     assignments: List[Tuple[str, str]] = []
@@ -4059,6 +4189,7 @@ def synthesize_event_actions(
         ]
     ] = []
     scheduled_values: List[Tuple[float, str, float]] = []
+    scheduled_times: Tuple[float, ...] = ()
     horizon_limited = 0
     distribution_events: List[SBMLEvent] = []
     remaining_events: List[SBMLEvent] = []
@@ -8363,6 +8494,12 @@ def synthesize_event_actions(
                         trajectory = context.resolve_affine_rate_for_event(
                             identifier, event
                         )
+                        if trajectory is None:
+                            # Events sharing this trigger cannot have changed
+                            # the state before its first rising edge.
+                            trajectory = context.resolve_affine_priority_rate(
+                                identifier, event
+                            )
                 if (
                     trajectory is None
                     and not rate_of_threshold
@@ -9164,6 +9301,7 @@ def synthesize_event_actions(
         item if len(item) == 6 else (item[0], item[1], item[2], None, False, [])
         for item in scheduled
     ]
+    scheduled_times = tuple(float(item[0]) for item in normalized_scheduled)
     ordered_scheduled: List[
         Tuple[
             float,
@@ -9440,6 +9578,7 @@ def synthesize_event_actions(
             periodic_converted + normal_converted,
             untranslated,
             horizon_limited,
+            scheduled_times,
         )
 
     last_fire = merged[-1][0]
@@ -9594,6 +9733,7 @@ def synthesize_event_actions(
         periodic_converted + normal_converted,
         untranslated,
         horizon_limited,
+        scheduled_times,
     )
 
 

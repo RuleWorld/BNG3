@@ -1044,6 +1044,44 @@ def _report_unparsed_fragments(
         )
 
 
+def _connect_unbound_molecules(structure: Species) -> None:
+    """Connect a name-derived complex whose molecules have no bonds.
+
+    A dot-separated BNGL pattern with no bonds is a set of disconnected
+    molecules, not one species.  Seeding it works, but a rule that deletes a
+    molecule while producing such a pattern generates no reaction: network
+    generation splits the product into fragments and rejects the extra
+    fragments.  Bind consecutive molecules so the declared complex stays one
+    connected species; the new sites carry no state and affect only identity.
+    """
+
+    has_bonds = bool(structure.bonds) or any(
+        component.bonds
+        for molecule in structure.molecules
+        for component in molecule.components
+    )
+    if has_bonds or len(structure.molecules) < 2:
+        return
+    added = False
+    for index, (left, right) in enumerate(
+        zip(structure.molecules, structure.molecules[1:]), 1
+    ):
+        site = f"__link{index}"
+        while left.contains(site) or right.contains(site):
+            site = f"_{site}"
+        left_component = Component(site, f"{left.idx}_{site}")
+        right_component = Component(site, f"{right.idx}_{site}")
+        left.add_component(left_component)
+        right.add_component(right_component)
+        bond = max(structure.get_bond_numbers() or [0]) + 1
+        left_component.add_bond(bond)
+        right_component.add_bond(bond)
+        structure.bonds.append((left_component.idx, right_component.idx))
+        added = True
+    if added:
+        structure.renumber_bonds()
+
+
 def _explicit_pattern_structure(name: str) -> Tuple[Optional[Species], List[str]]:
     """Parse a species name as an explicit BNGL molecular pattern.
 
@@ -1061,6 +1099,7 @@ def _explicit_pattern_structure(name: str) -> Tuple[Optional[Species], List[str]
     if not parsed.molecules:
         return None, unparsed
     if len(parsed.molecules) >= 2:
+        _connect_unbound_molecules(parsed)
         return parsed, unparsed
     if any(molecule.components for molecule in parsed.molecules):
         return parsed, unparsed
@@ -2209,13 +2248,32 @@ def _written_molecule_name(name: str) -> str:
 
 
 def disambiguate_colliding_species(
-    sct: SpeciesCompositionTable, model: SBMLModel
+    sct: SpeciesCompositionTable, model: SBMLModel, atomize: bool = False
 ) -> int:
     if model.multi_executable:
         # SBML Multi deliberately permits several fully-defined species and a
         # pattern species to share one speciesType.  Their identity is carried
         # by the Multi feature/binding semantics, not by synthetic BNGL state.
         return 0
+    count = 0
+    if atomize:
+        # An SBML species is an independent state variable.  A rule pattern
+        # inferred for one species must never match a different source species
+        # as a substructure: that would generate reactions and species the
+        # source does not declare.  Give each atomized multi-molecule species
+        # an exact identity marker so its rule pattern matches only itself;
+        # single-molecule patterns are already exact source species.
+        for species_id, entry in sct.entries.items():
+            if len(entry.structure.molecules) < 2:
+                continue
+            first = entry.structure.molecules[0]
+            if any(component.name == "__sp" for component in first.components):
+                continue
+            state = standardize_name(species_id)
+            discriminator = Component("__sp", states=[state])
+            discriminator.set_active_state(state)
+            first.add_component(discriminator)
+            count += 1
     groups: Dict[Tuple[str, str], List[str]] = OrderedDict()
     for species_id, entry in sct.entries.items():
         if not entry.structure.molecules:
@@ -2233,16 +2291,16 @@ def disambiguate_colliding_species(
         )
         compartment = model.species.get(species_id, SBMLSpecies(species_id)).compartment
         groups.setdefault((compartment, pattern), []).append(species_id)
-    count = 0
     for species_ids in groups.values():
         if len(set(species_ids)) < 2:
             continue
         for species_id in species_ids:
             entry = sct.entries[species_id]
-            discriminator = Component("__sp", states=[standardize_name(species_id)])
-            discriminator.set_active_state(standardize_name(species_id))
             molecule = entry.structure.molecules[0]
-            molecule.add_component(discriminator)
+            if not any(component.name == "__sp" for component in molecule.components):
+                discriminator = Component("__sp", states=[standardize_name(species_id)])
+                discriminator.set_active_state(standardize_name(species_id))
+                molecule.add_component(discriminator)
             # BNGL declares molecule types by name, so a component alone is
             # not enough: two species whose names normalize to the same BNGL
             # molecule (e.g. "C" -> M_C and "M_C" -> M_C) still need distinct
@@ -2278,13 +2336,17 @@ def structural_report(sct: SpeciesCompositionTable) -> Dict[str, Any]:
             molecules = structure.get_molecule_names()
             for molecule in structure.molecules:
                 for component in molecule.components:
-                    if component.name == "__sp":
+                    if component.name == "__sp" or component.name.startswith("__link"):
                         continue
                     if component.name not in sites:
                         sites.append(component.name)
                     if component.active_state:
                         states[component.name] = component.active_state
-            bonds = list(structure.bonds)
+            bonds = [
+                bond
+                for bond in structure.bonds
+                if not any("__link" in component for component in bond)
+            ]
         species[species_id] = {
             "species": inference.species_id,
             "name": inference.name,

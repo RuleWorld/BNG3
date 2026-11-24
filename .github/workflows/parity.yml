@@ -932,15 +932,18 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          pattern: |
-            issue176-cpu-ensemble-*
-            issue152-energy-protocol-release-*
-            issue178-shared-decisions-release-*
-            issue174-cpu-benchmark-*
-            issue171-release-record-*
-            issue172-release-record-*
-            issue186-release-record-*
-            eq-catalogue-*
+          # download-artifact@v4 takes ONE glob, not a newline-separated list.
+          # A multiline pattern silently matched zero artifacts, so sibling
+          # receipts were uploaded but never consumed by the issue queue.
+          pattern: issue*-*
+          path: ${{ runner.temp }}/release-records
+
+      - name: Download EQ catalogue for the exact-revision issue queue
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: eq-catalogue-*
           path: ${{ runner.temp }}/release-records
 
       - name: Build exact-revision issue and provenance evidence queue
@@ -1199,12 +1202,19 @@ jobs:
             -B "$RUNNER_TEMP/oracle-bngsim/build" \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
-            -DBNGSIM_BUILD_PYTHON=OFF
+            -DBNGSIM_BUILD_PYTHON=OFF \
+            -DBNGSIM_BUILD_NFSIM=OFF
+          # The pinned BNGSIM oracle's vendored NFsim shared library has a
+          # glibc teardown fault: its static std::queue destructor double-frees
+          # at interpreter exit (gdb backtrace in hosted run 45359245523).
+          # BNG3's BNGSIM adapter uses only the finite ODE/SSA routes; this
+          # vendored NFsim component is unused. Excluding it keeps the pinned
+          # source and ODE/SSA semantics while avoiding the abort that skipped
+          # receipt generation and the NFnext test-contract build.
           cmake --build "$RUNNER_TEMP/oracle-bngsim/build" --target bngsim --parallel 2
           BNGSIM_LIBRARY_PATH=$(find "$RUNNER_TEMP/oracle-bngsim/build" -maxdepth 1 -name 'libbngsim.so*' | head -1)
           test -f "$BNGSIM_LIBRARY_PATH"
           echo "BNGSIM_LIBRARY_PATH=$BNGSIM_LIBRARY_PATH" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/oracle-bngsim/build" >> "$GITHUB_ENV"
 
       - name: Install BNG3 Python API as a regular package
         run: |
@@ -1212,7 +1222,7 @@ jobs:
           python -m pip install ".[full,dev]"
         env:
           SKBUILD_BUILD_DIR: build
-          CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=ON -DBUILD_NFSIM_CLI=ON -DBUILD_BNGSIM_ADAPTER=ON -DBNGSIM_INCLUDE_DIR=${{ runner.temp }}/oracle-bngsim/include -DBNGSIM_LIBRARY=${{ env.BNGSIM_LIBRARY_PATH }}"
+          CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=ON -DBUILD_NFSIM_CLI=ON"
 
       - name: Replay upstream NFsim XML and molecularity regressions
         env:
@@ -1608,8 +1618,25 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+      - name: Build BNGSIM-enabled extension for route evidence (#178)
+        env:
+          BNGSIM_INCLUDE_DIR: ${{ runner.temp }}/oracle-bngsim/include
+        run: |
+          set -euo pipefail
+          cmake -S . -B build-bngsim -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
+            -DBUILD_TESTS=OFF \
+            -DBUILD_BNGSIM_ADAPTER=ON \
+            -DBNGSIM_INCLUDE_DIR="$BNGSIM_INCLUDE_DIR" \
+            -DBNGSIM_LIBRARY="$BNGSIM_LIBRARY_PATH"
+          cmake --build build-bngsim -j 2
+          SITE=$(python -c 'import bionetgen,os; print(os.path.dirname(bionetgen.__file__))')
+          cp "$SITE"/_bionetgen_cpp*.so "$RUNNER_TEMP"/
+          cp build-bngsim/cpp/_bionetgen_cpp*.so "$SITE"/
+
       - name: Emit backend and format route reports (#178)
         env:
+          LD_LIBRARY_PATH: ${{ runner.temp }}/oracle-bngsim/build
           BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
           BNG3_ISSUE178_RELEASE_INTERFACE_PARITY_REPORT: ${{ runner.temp }}/issue178-parity.json
           BNG3_ISSUE178_RELEASE_BACKEND_CONTRACT_REPORT: ${{ runner.temp }}/issue178-contract.json
@@ -1631,6 +1658,14 @@ jobs:
             --output "$RUNNER_TEMP/issue-178-release-report.json" \
             --summary-file "$GITHUB_STEP_SUMMARY"
 
+      - name: Restore standard native extension after route evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          SITE=$(python -c 'import bionetgen,os; print(os.path.dirname(bionetgen.__file__))')
+          cp "$RUNNER_TEMP"/_bionetgen_cpp*.so "$SITE"/
+
       - name: Upload Issue 178 shared decisions evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -1645,6 +1680,7 @@ jobs:
           retention-days: 30
 
       - name: Measure current CPU benchmark with identity and correctness (#174)
+        if: always()
         env:
           BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
           BNG3_CURRENT_BENCHMARK_REPORT: ${{ runner.temp }}/issue174-current-benchmark.json
@@ -1653,6 +1689,7 @@ jobs:
           tests/validation/release/cases/issue-174/test_cpu_benchmark_current.py
 
       - name: Record Issue 174 CPU benchmark release acceptance
+        if: always()
         env:
           BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
           BNG3_CPU_BENCHMARK_REPORT: ${{ runner.temp }}/issue174-benchmark-record.json
@@ -1952,7 +1989,7 @@ jobs:
             sudo apt-get install -y cmake ninja-build
           }
           python -m pip install build scikit-build-core pybind11 pytest numpy
-          python -m pip install ".[full,dev]"
+          python -m pip install ".[full,dev,notebook]" nbclient nbformat libroadrunner
         env:
           CMAKE_ARGS: "-DBUILD_TESTS=OFF -DBUILD_CLI=OFF -DBUILD_NFSIM_CLI=OFF"
 

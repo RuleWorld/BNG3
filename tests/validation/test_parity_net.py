@@ -10,6 +10,7 @@ import pytest
 
 from scripts.cross_validate import _stage_model
 from tests.validation import compare, corpus, exception_ledger, oracle_perl, runner
+from tests.validation.contracts import strict_network
 from tests.validation.strict import require_oracle
 
 EXCEPTIONS = exception_ledger.load_ledger()
@@ -102,3 +103,25 @@ def test_network_generation_bounds_match_live_bng2_counts(
     observed = (reference.n_species, reference.n_reactions)
     assert observed == expected_counts, f"BNG2 oracle count changed: {observed}"
     assert (actual.n_species, actual.n_reactions) == expected_counts
+
+
+def test_blbr_network_has_no_empty_species_row(bng_cpp, work_dir):
+    """A failed product-pattern match must not leave a moved-from species.
+
+    The reverse of blbr's chain-elongation rule has two product patterns. When
+    one pattern could not be matched during ordering, the old loop had already
+    moved its graph into the reordered vector, leaving an empty species behind.
+    That produced a spurious species row and extra reactions. Keep this case:
+    it is the smallest network that exercises the symmetric match fallback.
+    """
+    source = corpus.REPO / "tests" / "validation" / "Validate" / "blbr.bngl"
+    require_oracle(source.is_file(), f"model blbr not on disk: {source}")
+    staged = _stage_model(source, source.parent, work_dir / "input")
+    actual_path, _, error = runner.run_cli_path(bng_cpp, staged, work_dir / "bng3")
+    assert actual_path is not None, f"BNG3 produced no .net: {error}"
+
+    # strict_network rejects an empty graph or truncated species row.
+    strict_network(actual_path)
+    network = compare.parse_net(actual_path)
+    assert network is not None, "could not parse BNG3 .net"
+    assert (network.n_species, network.n_reactions) == (20, 92)

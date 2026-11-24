@@ -869,6 +869,7 @@ def test_issue_queue_upload_retains_bngir_receipts():
     for directory in ("bng3-bngir-roundtrip-release", "bng3-issue-155-release"):
         assert "${{ runner.temp }}/" + directory + "/" in paths
 
+
 def test_release_records_are_consumed_by_exact_revision_issue_queue():
     """Every live issue release record must reach the closure evidence queue.
 
@@ -897,18 +898,24 @@ def test_release_records_are_consumed_by_exact_revision_issue_queue():
     assert download["uses"].startswith("actions/download-artifact@")
     assert download["if"] == "always()"
     assert download.get("continue-on-error") is True
+    # actions/download-artifact@v4 accepts a single glob. A newline-separated
+    # list matched zero artifacts and hid sibling receipts from the queue.
     patterns = download["with"]["pattern"]
-    for prefix in (
-        "issue176-cpu-ensemble-",
-        "issue152-energy-protocol-release-",
-        "issue178-shared-decisions-release-",
-        "issue174-cpu-benchmark-",
-        "issue171-release-record-",
-        "issue172-release-record-",
-        "issue186-release-record-",
-        "eq-catalogue-",
-    ):
-        assert prefix in patterns
+    assert "\n" not in patterns
+    assert patterns == "issue*-*"
+
+    eq_download = next(
+        (
+            item
+            for item in steps
+            if item.get("name")
+            == "Download EQ catalogue for the exact-revision issue queue"
+        ),
+        None,
+    )
+    assert eq_download is not None
+    assert eq_download["with"]["pattern"] == "eq-catalogue-*"
+    assert "\n" not in eq_download["with"]["pattern"]
 
     queue = next(
         (
@@ -933,3 +940,25 @@ def test_release_records_are_consumed_by_exact_revision_issue_queue():
     ):
         assert record in run
     assert '"${release_report_args[@]}"' in run
+
+
+def test_bngsim_adapter_oracle_excludes_broken_vendored_nfsim_teardown():
+    """The BNGSIM adapter oracle must not load its unused vendored NFsim .so.
+
+    The pinned BNGSIM oracle's vendored NFsim shared library registers a static
+    std::queue destructor that double-frees at glibc interpreter exit. With the
+    BNGSIM-enabled BNG3 extension loaded, that abort returned exit 134 after
+    the route checks passed, skipping the NFnext contract build and all of the
+    receipts produced downstream. Only BNGSIM's finite ODE/SSA routes are used
+    by the adapter, so the unused vendored NFsim component is excluded while
+    the pinned source revision and ODE/SSA semantics are preserved.
+    """
+    workflow = _parse_workflow()
+    job = workflow["jobs"]["nfsim-parity"]
+    step = next(
+        item
+        for item in job["steps"]
+        if item.get("name") == "Checkout and build locked BNGSIM oracle"
+    )
+    assert "-DBNGSIM_BUILD_PYTHON=OFF" in step["run"]
+    assert "-DBNGSIM_BUILD_NFSIM=OFF" in step["run"]
