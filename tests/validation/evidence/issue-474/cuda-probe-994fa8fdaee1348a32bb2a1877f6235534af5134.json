@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "checked_at": "2026-11-24T15:17:38.733613+00:00",
+  "host": {
+    "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "python": "3.14.6"
+  },
+  "local_device": {
+    "nvidia_smi": null,
+    "nvcc": null,
+    "available": false
+  },
+  "hosted_runner": {
+    "api": {
+      "ok": false,
+      "returncode": 1,
+      "stdout": "{\"message\":\"You must have repository read permissions or have the repository runners fine-grained permission.\",\"documentation_url\":\"https://docs.github.com/rest/actions/self-hosted-runners#list-self-hosted-runners-for-a-repository\",\"status\":\"403\"}",
+      "stderr": "gh: You must have repository read permissions or have the repository runners fine-grained permission. (HTTP 403)"
+    },
+    "available": false
+  },
+  "workflow": {
+    "path": ".github/workflows/gpu-device-qualification.yml",
+    "runs": {
+      "ok": true,
+      "returncode": 0,
+      "stdout": "0",
+      "stderr": ""
+    },
+    "total_runs": 0
+  },
+  "verdict": {
+    "cuda_execution_available": false,
+    "status": "BLOCKED",
+    "detail": "No local NVIDIA device/CUDA compiler and no usable hosted CUDA runner were observed; CUDA device execution is externally blocked."
+  }
+}

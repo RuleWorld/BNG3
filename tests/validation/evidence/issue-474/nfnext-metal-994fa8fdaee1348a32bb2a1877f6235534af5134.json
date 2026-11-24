@@ -1,0 +1,94 @@
+{
+  "schema_version": 1,
+  "check": "release-nf-gpu",
+  "status": "PASS",
+  "backend": "metal",
+  "scope": "bounded one-type one-site static unary state-change route",
+  "source": {
+    "revision": "994fa8fdaee1348a32bb2a1877f6235534af5134",
+    "dirty": false,
+    "native_module": "/private/tmp/bng3-474/build/cpp/_bionetgen_cpp.cpython-314-darwin.so",
+    "native_sha256": "1fd04b8ce3fcbed6c35a87cb46bf02a45ebfd1978d0edc56c327625944de190a",
+    "device_test": "tests/python/nfnext/test_nfnext_gpu_unary_state.py",
+    "device_test_sha256": "e638897b5d4003313bedbeb0b534cd8450a39488318a2911772f6bd07298f545"
+  },
+  "host": {
+    "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "python": "3.14.6",
+    "compiler": "Apple clang version 21.0.0 (clang-2100.3.34.2)"
+  },
+  "device": {
+    "name": "Apple M5 Pro",
+    "compiled": true,
+    "available": true,
+    "reported_device": "Apple M5 Pro",
+    "engine": "nfnext-gpu"
+  },
+  "protocol": {
+    "sample_times": [
+      0.0,
+      0.5,
+      1.0,
+      2.0,
+      5.0
+    ],
+    "seed": 474141,
+    "batch_size": 2048,
+    "particles": 100,
+    "kf": 0.5,
+    "kr": 0.3
+  },
+  "analytic_law": "P(t)/N = kf/(kf+kr) * (1 - exp(-(kf+kr)t))",
+  "checks": [
+    {
+      "time": 0.5,
+      "analytic_mean": 20.60499712277254,
+      "observed_mean": 20.7265625,
+      "mean_z": 1.360166313552413,
+      "analytic_variance": 16.359338058477896,
+      "observed_variance": 16.399059295654297,
+      "variance_ratio": 1.0024280467237987,
+      "pass": true
+    },
+    {
+      "time": 1.0,
+      "analytic_mean": 34.416939742673655,
+      "observed_mean": 34.39404296875,
+      "mean_z": -0.21810082455476038,
+      "analytic_variance": 22.571682330165363,
+      "observed_variance": 22.629709243774414,
+      "variance_ratio": 1.0025707837262756,
+      "pass": true
+    },
+    {
+      "time": 2.0,
+      "analytic_mean": 49.88146762533404,
+      "observed_mean": 49.92333984375,
+      "mean_z": 0.3789851236351206,
+      "analytic_variance": 24.99985950076156,
+      "observed_variance": 24.86612892150879,
+      "variance_ratio": 0.994650746767249,
+      "pass": true
+    },
+    {
+      "time": 5.0,
+      "analytic_mean": 61.35527256945411,
+      "observed_mean": 61.2490234375,
+      "mean_z": -0.9874595119295961,
+      "analytic_variance": 23.71057784873403,
+      "observed_variance": 23.884218215942383,
+      "variance_ratio": 1.007323329204211,
+      "pass": true
+    }
+  ],
+  "conserved": true,
+  "total_events": 416398,
+  "timings": {
+    "wall_time_ms": 22.575667,
+    "dispatch_wait_time_ms": 17.790834
+  },
+  "cuda": {
+    "status": "UNSUPPORTED",
+    "detail": "network-free CUDA execution is not implemented"
+  }
+}

@@ -1,0 +1,404 @@
+{
+  "schema_version": 1,
+  "check": "release-nf-gpu-workloads",
+  "status": "PASS",
+  "scope": "bounded unary single-site state-change Metal route: two-state CTMC, three-state chain and bounded particle-heavy ensemble; unsupported workload classes are explicitly refused",
+  "source": {
+    "revision": "994fa8fdaee1348a32bb2a1877f6235534af5134",
+    "dirty": false,
+    "native_module": "/private/tmp/bng3-474/build/cpp/_bionetgen_cpp.cpython-314-darwin.so",
+    "native_sha256": "1fd04b8ce3fcbed6c35a87cb46bf02a45ebfd1978d0edc56c327625944de190a",
+    "recorder": "tests/validation/release/cases/issue-474/verify_nfnext_workloads.py"
+  },
+  "host": {
+    "platform": "macOS-27.0.1-arm64-arm-64bit-Mach-O",
+    "python": "3.14.6",
+    "compiler": "Apple clang version 21.0.0 (clang-2100.3.34.2)"
+  },
+  "device": {
+    "name": "Apple M5 Pro",
+    "backend": "metal",
+    "compiled": true,
+    "available": true
+  },
+  "budget": {
+    "alpha": 0.001,
+    "variance_ratio_min": 0.85,
+    "variance_ratio_max": 1.15,
+    "conservation_atol": 1e-05
+  },
+  "workloads": [
+    {
+      "class": "two_state_ctmc",
+      "law": "two-state reversible CTMC, P(t)/N = kf/(kf+kr)(1-exp(-(kf+kr)t))",
+      "device": "Apple M5 Pro",
+      "seed": 474910,
+      "batch_size": 2048,
+      "particles": 100,
+      "sample_times": [
+        0.0,
+        0.5,
+        1.0,
+        2.0,
+        5.0
+      ],
+      "comparisons": 8,
+      "z_limit": 3.836106931176034,
+      "checks": [
+        {
+          "time": 0.5,
+          "observable": "U",
+          "expected_mean": 79.39500287722745,
+          "observed_mean": 79.287109375,
+          "mean_z": -1.207194931056642,
+          "variance_ratio": 0.9846395126633835,
+          "pass": true
+        },
+        {
+          "time": 0.5,
+          "observable": "P",
+          "expected_mean": 20.60499712277254,
+          "observed_mean": 20.712890625,
+          "mean_z": 1.2071949310566819,
+          "variance_ratio": 0.9846395126633832,
+          "pass": true
+        },
+        {
+          "time": 1.0,
+          "observable": "U",
+          "expected_mean": 65.58306025732634,
+          "observed_mean": 65.619140625,
+          "mean_z": 0.3436797675560249,
+          "variance_ratio": 0.996508890434335,
+          "pass": true
+        },
+        {
+          "time": 1.0,
+          "observable": "P",
+          "expected_mean": 34.416939742673655,
+          "observed_mean": 34.380859375,
+          "mean_z": -0.34367976755595725,
+          "variance_ratio": 0.996508890434335,
+          "pass": true
+        },
+        {
+          "time": 2.0,
+          "observable": "U",
+          "expected_mean": 50.11853237466596,
+          "observed_mean": 50.1611328125,
+          "mean_z": 0.38557623193161633,
+          "variance_ratio": 1.0211063965619287,
+          "pass": true
+        },
+        {
+          "time": 2.0,
+          "observable": "P",
+          "expected_mean": 49.88146762533404,
+          "observed_mean": 49.8388671875,
+          "mean_z": -0.38557623193161633,
+          "variance_ratio": 1.021106396561929,
+          "pass": true
+        },
+        {
+          "time": 5.0,
+          "observable": "U",
+          "expected_mean": 38.64472743054589,
+          "observed_mean": 38.7861328125,
+          "mean_z": 1.3141951080497543,
+          "variance_ratio": 0.9912388618351164,
+          "pass": true
+        },
+        {
+          "time": 5.0,
+          "observable": "P",
+          "expected_mean": 61.35527256945411,
+          "observed_mean": 61.2138671875,
+          "mean_z": -1.3141951080497543,
+          "variance_ratio": 0.9912388618351166,
+          "pass": true
+        }
+      ],
+      "conserved": true,
+      "total_events": 416536,
+      "timings_ms": {
+        "setup": 61.834125,
+        "dispatch_wait": 97.011792,
+        "wall": 158.996375
+      },
+      "device_memory_bytes": 5841392,
+      "events_per_sec_dispatch": 4293663.599163285,
+      "pathwise_claim": false,
+      "same_kernel_replay": true
+    },
+    {
+      "class": "three_state_chain",
+      "law": "three-state reversible chain, p(t) = p(0) expm(Q t)",
+      "device": "Apple M5 Pro",
+      "seed": 474911,
+      "batch_size": 2048,
+      "particles": 64,
+      "sample_times": [
+        0.0,
+        0.5,
+        1.0,
+        2.0,
+        5.0
+      ],
+      "comparisons": 12,
+      "z_limit": 3.9346058615604638,
+      "checks": [
+        {
+          "time": 0.5,
+          "observable": "U",
+          "expected_mean": 43.73628011365336,
+          "observed_mean": 43.76123046875,
+          "mean_z": 0.303424878141562,
+          "variance_ratio": 1.035199388300479,
+          "pass": true
+        },
+        {
+          "time": 0.5,
+          "observable": "P",
+          "expected_mean": 16.557469322053116,
+          "observed_mean": 16.521484375,
+          "mean_z": -0.4648308332979498,
+          "variance_ratio": 1.048336022697019,
+          "pass": true
+        },
+        {
+          "time": 0.5,
+          "observable": "Q",
+          "expected_mean": 3.7062505642935286,
+          "observed_mean": 3.71728515625,
+          "mean_z": 0.2672438421952917,
+          "variance_ratio": 1.0151048965784155,
+          "pass": true
+        },
+        {
+          "time": 1.0,
+          "observable": "U",
+          "expected_mean": 30.972783813991647,
+          "observed_mean": 31.0029296875,
+          "mean_z": 0.34123748343359395,
+          "variance_ratio": 1.0112393377735305,
+          "pass": true
+        },
+        {
+          "time": 1.0,
+          "observable": "P",
+          "expected_mean": 22.078834451405573,
+          "observed_mean": 21.9365234375,
+          "mean_z": -1.6935137608986282,
+          "variance_ratio": 1.0289812494163508,
+          "pass": true
+        },
+        {
+          "time": 1.0,
+          "observable": "Q",
+          "expected_mean": 10.948381734602782,
+          "observed_mean": 11.060546875,
+          "mean_z": 1.684956074819181,
+          "variance_ratio": 0.9415974040702545,
+          "pass": true
+        },
+        {
+          "time": 2.0,
+          "observable": "U",
+          "expected_mean": 17.010527520067498,
+          "observed_mean": 16.97314453125,
+          "mean_z": -0.4787070332567709,
+          "variance_ratio": 1.000935216534291,
+          "pass": true
+        },
+        {
+          "time": 2.0,
+          "observable": "P",
+          "expected_mean": 21.705562939479982,
+          "observed_mean": 21.66796875,
+          "mean_z": -0.44920909196784087,
+          "variance_ratio": 0.9948838309919115,
+          "pass": true
+        },
+        {
+          "time": 2.0,
+          "observable": "Q",
+          "expected_mean": 25.28390954045251,
+          "observed_mean": 25.35888671875,
+          "mean_z": 0.8675933076643207,
+          "variance_ratio": 1.0065763605463727,
+          "pass": true
+        },
+        {
+          "time": 5.0,
+          "observable": "U",
+          "expected_mean": 5.188541711065677,
+          "observed_mean": 5.181640625,
+          "mean_z": -0.14302724603513872,
+          "variance_ratio": 0.9986203793351422,
+          "pass": true
+        },
+        {
+          "time": 5.0,
+          "observable": "P",
+          "expected_mean": 14.264701201585094,
+          "observed_mean": 14.3046875,
+          "mean_z": 0.543503644567923,
+          "variance_ratio": 1.0005405809255243,
+          "pass": true
+        },
+        {
+          "time": 5.0,
+          "observable": "Q",
+          "expected_mean": 44.54675708734924,
+          "observed_mean": 44.513671875,
+          "mean_z": -0.4068973277883486,
+          "variance_ratio": 1.0110630042161386,
+          "pass": true
+        }
+      ],
+      "conserved": true,
+      "total_events": 396182,
+      "timings_ms": {
+        "setup": 1.989542,
+        "dispatch_wait": 7.8955,
+        "wall": 9.963458
+      },
+      "device_memory_bytes": 3817848,
+      "events_per_sec_dispatch": 50178202.77373187,
+      "pathwise_claim": false
+    },
+    {
+      "class": "particle_heavy",
+      "law": "two-state reversible CTMC with a bounded 256-particle population",
+      "device": "Apple M5 Pro",
+      "seed": 474912,
+      "batch_size": 1024,
+      "particles": 256,
+      "sample_times": [
+        0.0,
+        0.25,
+        0.5,
+        1.0,
+        2.0
+      ],
+      "comparisons": 8,
+      "z_limit": 3.836106931176034,
+      "checks": [
+        {
+          "time": 0.25,
+          "observable": "U",
+          "expected_mean": 226.9969204924771,
+          "observed_mean": 226.9794921875,
+          "mean_z": -0.10997477261555232,
+          "variance_ratio": 0.9428268546321771,
+          "pass": true
+        },
+        {
+          "time": 0.25,
+          "observable": "P",
+          "expected_mean": 29.00307950752291,
+          "observed_mean": 29.0205078125,
+          "mean_z": 0.10997477261548504,
+          "variance_ratio": 0.9428268546321769,
+          "pass": true
+        },
+        {
+          "time": 0.5,
+          "observable": "U",
+          "expected_mean": 203.2512073657023,
+          "observed_mean": 203.18359375,
+          "mean_z": -0.33433457640394554,
+          "variance_ratio": 0.9535594559959468,
+          "pass": true
+        },
+        {
+          "time": 0.5,
+          "observable": "P",
+          "expected_mean": 52.74879263429771,
+          "observed_mean": 52.81640625,
+          "mean_z": 0.3343345764039104,
+          "variance_ratio": 0.9535594559959467,
+          "pass": true
+        },
+        {
+          "time": 1.0,
+          "observable": "U",
+          "expected_mean": 167.89263425875544,
+          "observed_mean": 167.93359375,
+          "mean_z": 0.17242593297896913,
+          "variance_ratio": 0.9805279338230767,
+          "pass": true
+        },
+        {
+          "time": 1.0,
+          "observable": "P",
+          "expected_mean": 88.10736574124455,
+          "observed_mean": 88.06640625,
+          "mean_z": -0.1724259329789093,
+          "variance_ratio": 0.9805279338230768,
+          "pass": true
+        },
+        {
+          "time": 2.0,
+          "observable": "U",
+          "expected_mean": 128.30344287914485,
+          "observed_mean": 128.46484375,
+          "mean_z": 0.6456052975641883,
+          "variance_ratio": 1.0104641094807156,
+          "pass": true
+        },
+        {
+          "time": 2.0,
+          "observable": "P",
+          "expected_mean": 127.69655712085515,
+          "observed_mean": 127.53515625,
+          "mean_z": -0.6456052975641883,
+          "variance_ratio": 1.0104641094807156,
+          "pass": true
+        }
+      ],
+      "conserved": true,
+      "total_events": 229762,
+      "timings_ms": {
+        "setup": 1.642459,
+        "dispatch_wait": 22.843709,
+        "wall": 24.642959
+      },
+      "device_memory_bytes": 7394400,
+      "events_per_sec_dispatch": 10057998.900266152,
+      "pathwise_claim": false
+    }
+  ],
+  "refusals": [
+    {
+      "class": "binding_topology",
+      "status": "REFUSED",
+      "reason": "NFnext GPU unsupported: requires one molecule type with one stateful site and the unary single-site state-change family"
+    },
+    {
+      "class": "bound_rule_constraint",
+      "status": "REFUSED",
+      "reason": "NFnext GPU unsupported: rules may match one state and an optional invariant free-site constraint only"
+    },
+    {
+      "class": "compartment",
+      "status": "REFUSED",
+      "reason": "NFnext GPU unsupported: compartments are outside the unary single-site state-change slice"
+    },
+    {
+      "class": "delayed_rule",
+      "status": "REFUSED",
+      "reason": "NFnext GPU unsupported: delayed rules are outside the unary single-site state-change slice"
+    },
+    {
+      "class": "cuda_backend",
+      "status": "REFUSED",
+      "reason": "NFnext GPU unsupported: network-free CUDA execution is not implemented"
+    }
+  ],
+  "cuda": {
+    "status": "UNSUPPORTED",
+    "detail": "network-free CUDA execution is not implemented"
+  },
+  "full_corpus_claimed": false
+}

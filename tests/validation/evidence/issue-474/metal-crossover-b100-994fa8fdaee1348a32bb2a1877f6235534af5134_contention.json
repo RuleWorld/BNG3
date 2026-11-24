@@ -1,0 +1,236 @@
+{
+  "summary": {
+    "n": 30,
+    "loadavg_1min": {
+      "start": 101.259765625,
+      "end": 98.99658203125,
+      "min": 98.99658203125,
+      "max": 101.259765625,
+      "drift": -2.26318359375
+    },
+    "loadavg_5min": {
+      "start": 111.5439453125,
+      "end": 110.90380859375,
+      "min": 110.90380859375,
+      "max": 111.5439453125,
+      "drift": -0.64013671875
+    },
+    "load_ratio_max_over_min": 1.0228612296234185,
+    "lock_path": "/private/tmp/bng3-474/tools/benchlock/benchlock",
+    "lock_held": true,
+    "lock_detail": "held: benchlock: acquired slot.0 for gpuharness (gpu bench cpu:0,metal batch=100)\nBENCHLOCK_EVENT ACQUIRED slot=0 agent=gpuharness pid=99674 epoch=1795533589.231061",
+    "interpretation": "host load was stable and the benchmark lock was held; no contention concern beyond the measured A/A band"
+  },
+  "samples": [
+    {
+      "t": 4043296.009721916,
+      "loadavg_1min": 101.259765625,
+      "loadavg_5min": 111.5439453125,
+      "loadavg_15min": 85.7763671875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043300.181993208,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043300.230719625,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043300.282930416,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043300.352039958,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043300.430686916,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043300.511554125,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043300.568333416,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043300.633054833,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043300.695065791,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043300.756683916,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043300.836986708,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043300.894190041,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043300.951203958,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043301.03036425,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043301.090939125,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043301.152746666,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043301.21535875,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043301.283759333,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043301.364449333,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043301.441698583,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043301.499863708,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043301.569458625,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043301.641906208,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043301.698984708,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043301.764854416,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043301.821163208,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043301.879865125,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043301.944058375,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    },
+    {
+      "t": 4043302.164244208,
+      "loadavg_1min": 98.99658203125,
+      "loadavg_5min": 110.90380859375,
+      "loadavg_15min": 85.701171875,
+      "runnable_threads": null
+    }
+  ]
+}

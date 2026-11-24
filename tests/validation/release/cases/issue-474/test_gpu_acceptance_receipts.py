@@ -73,7 +73,12 @@ def test_metal_performance_carries_cost_and_correctness_evidence():
 
 
 def test_public_simulate_ssa_route_is_attributed_and_qualified():
-    report = _report()
+    path = os.environ.get("BNG3_ISSUE474_PARITY")
+    if not path:
+        pytest.skip("set BNG3_ISSUE474_PARITY to the finite device receipt")
+    import json
+
+    report = json.loads(Path(path).read_text(encoding="utf-8"))
     rows = [row for row in report["gpu"]["models"] if row.get("model") == "toy-jim-public-route"]
     assert len(rows) == 1
     row = rows[0]
@@ -105,7 +110,7 @@ def test_cuda_build_probe_never_counts_as_device_execution():
         pytest.skip("no CUDA build probe was consumed")
     assert build["status"] == "BLOCKED"
     assert build["exit_code"] != 0
-    assert "no CUDA compiler" in " ".join(build["diagnostics"]).lower()
+    assert "no cuda compiler" in " ".join(build["diagnostics"]).lower()
     assert "CUDA device execution" in build["not_evidence_of"]
     for check in ("release-cuda-device", "release-cuda-performance"):
         row = _rows(report)[check]

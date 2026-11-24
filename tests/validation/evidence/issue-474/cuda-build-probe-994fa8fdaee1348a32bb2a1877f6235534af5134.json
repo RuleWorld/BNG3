@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "check": "cuda-compile-probe",
+  "status": "BLOCKED",
+  "source": {
+    "revision": "994fa8fdaee1348a32bb2a1877f6235534af5134"
+  },
+  "command": [
+    "cmake",
+    "-S",
+    ".",
+    "-B",
+    "/tmp/bng3-474-cuda-probe",
+    "-G",
+    "Ninja",
+    "-DCMAKE_BUILD_TYPE=Release",
+    "-DBNG3_ENABLE_METAL=OFF",
+    "-DBNG3_ENABLE_CUDA=ON",
+    "-DBUILD_PYTHON_BINDINGS=OFF",
+    "-DBUILD_CLI=OFF",
+    "-DBUILD_TESTS=OFF"
+  ],
+  "exit_code": 1,
+  "diagnostics": [
+    "-- Looking for a CUDA compiler",
+    "-- Looking for a CUDA compiler - NOTFOUND",
+    "  BNG3_ENABLE_CUDA=ON but no CUDA compiler was found.  Install the CUDA"
+  ],
+  "detail": "CUDA toolkit compiler (nvcc) is absent; CUDA backend cannot be compiled or executed on this host.",
+  "not_evidence_of": [
+    "CUDA device execution",
+    "CUDA performance",
+    "backend.gpu CUDA coverage"
+  ]
+}

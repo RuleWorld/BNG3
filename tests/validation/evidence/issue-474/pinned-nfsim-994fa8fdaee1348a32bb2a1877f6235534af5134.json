@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "check": "pinned-native-nfsim-bounded-reference",
+  "status": "PASS",
+  "source": {
+    "nfsim_source": "/tmp/nfsim-pinned-474",
+    "nfsim_revision": "8c449bbccc4a0c54586ae562f46f4955e65fe876",
+    "nfsim_executable": "/tmp/nfsim-pinned-474/build/NFsim",
+    "nfsim_sha256": "caf0ad15f23169d13ff9634a5075337e915a0931a823522d3b0c5ca10253800a",
+    "lock_digest": "caf0ad15f23169d13ff9634a5075337e915a0931a823522d3b0c5ca10253800a",
+    "bng3_revision": "994fa8fdaee1348a32bb2a1877f6235534af5134"
+  },
+  "device": {
+    "backend": "metal",
+    "name": "Apple M5 Pro",
+    "reported_device": "Apple M5 Pro"
+  },
+  "budget": {
+    "native_runs": 256,
+    "native_first_seed": 1000,
+    "metal_batch_size": 2048,
+    "metal_seed": 474141,
+    "alpha": 0.001,
+    "bonferroni_z_threshold": 3.836106931176034
+  },
+  "analytic_law": "P(t)/N = kf/(kf+kr) * (1 - exp(-(kf+kr)t))",
+  "checks": [
+    {
+      "time": 0.5,
+      "analytic_mean": 20.60499712277254,
+      "native_mean": 20.98046875,
+      "native_variance": 18.003538602941177,
+      "native_mean_z": 1.485300215193469,
+      "native_variance_ratio": 1.1005053223171952,
+      "metal_mean": 20.7265625,
+      "metal_native_mean_z": -0.9071918452399861,
+      "pass": true
+    },
+    {
+      "time": 1.0,
+      "analytic_mean": 34.416939742673655,
+      "native_mean": 34.81640625,
+      "native_variance": 24.652435661764706,
+      "native_mean_z": 1.3452976709760538,
+      "native_variance_ratio": 1.0921842378057294,
+      "metal_mean": 34.39404296875,
+      "metal_native_mean_z": -1.2891061951074492,
+      "pass": true
+    },
+    {
+      "time": 2.0,
+      "analytic_mean": 49.88146762533404,
+      "native_mean": 49.48828125,
+      "native_variance": 24.36064644607843,
+      "native_mean_z": -1.2581999365965517,
+      "native_variance_ratio": 0.9744313341175515,
+      "metal_mean": 49.92333984375,
+      "metal_native_mean_z": 1.328149617933509,
+      "pass": true
+    },
+    {
+      "time": 5.0,
+      "analytic_mean": 61.35527256945411,
+      "native_mean": 61.55859375,
+      "native_variance": 22.60047487745098,
+      "native_mean_z": 0.6680847157600305,
+      "native_variance_ratio": 0.9531811085176771,
+      "metal_mean": 61.2490234375,
+      "metal_native_mean_z": -0.9792150290571672,
+      "pass": true
+    }
+  ],
+  "wrong_law_rejected": true,
+  "scope": "bounded one-type one-site static unary state-change route only; not the full network-free corpus and not CUDA"
+}
