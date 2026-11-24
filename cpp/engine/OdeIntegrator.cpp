@@ -5320,7 +5320,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                                 1e-9 * (1.0 + std::abs(previous));
                             bool crossed = false;
                             if (value > tolerance) {
-                                crossed = previous <= 0.0;
+                                crossed = previous <= -tolerance;
                             } else if (value < -tolerance) {
                                 crossed = false;
                             } else {
@@ -5763,7 +5763,11 @@ OdeResult OdeIntegrator::integrateIda(const OdeOptions& opts) {
                             nativeEventGroups_[group].trigger, time, state.data());
                         const double previous = lastRootValues_[group];
                         const double tolerance = 1e-9 * (1.0 + std::abs(previous));
-                        bool crossed = value > tolerance && previous <= 0.0;
+                        // Root localization can leave `previous` a tiny negative
+                        // interpolation artifact. Require it negative beyond the
+                        // same tolerance as `value` so a later, unrelated event
+                        // instant is not reported as a second rising edge.
+                        bool crossed = value > tolerance && previous <= -tolerance;
                         if (std::abs(value) <= tolerance) {
                             crossed = eventRootDerivative(
                                 nativeEventGroups_[group].trigger, time, state.data(),
