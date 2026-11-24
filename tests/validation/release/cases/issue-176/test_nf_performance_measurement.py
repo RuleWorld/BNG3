@@ -1,17 +1,20 @@
 """Issue #176 measured CPU startup, memory and throughput with correctness.
 
 A performance claim is only meaningful alongside correctness and exact runtime
-identity. This case performs one bounded NFnext measurement on a declared
-immigration-death workload and emits a structured record:
+identity. This case performs bounded NFnext measurements on the required
+workload families (immigration-death, scaffold, genome) and emits a structured
+record:
 
 * startup wall time for model lowering plus the first sample;
 * ensemble wall time and events/second over a fixed seed/run budget;
 * peak resident memory of the worker process (recorded, not thresholded);
-* the ensemble mean checked against the independent closed-form law.
+* an independent correctness control for every measured workload.
 
-The measurement is recorded, not asserted against a hardware threshold; a
-runner-to-runner comparison is not a scientific claim. A wrong analytic law is
-rejected by the same control used in the ensemble suite.
+Measurements are recorded, not asserted against a hardware threshold; a
+runner-to-runner comparison is not a scientific claim. The immigration-death
+mean is an independent closed-form law; a wrong law is rejected by the same
+control used in the ensemble suite. A missing workload or a failed correctness
+control cannot be emitted as a PASS report.
 """
 
 from __future__ import annotations
@@ -21,20 +24,16 @@ import math
 import os
 import resource
 import time
+import importlib.util
 from pathlib import Path
 
 import numpy as np
-
-import importlib.util
 
 ROOT = Path(__file__).resolve().parents[5]
 _build = ROOT / "build" / "cpp" / "_bionetgen_cpp.cpython-314-darwin.so"
 
 
 def _cpp():
-    # Reuse the extension the installed package already loaded. Loading the
-    # shared object a second time under a fresh module name double-registers
-    # pybind11 types ("Expression is already registered") in CI.
     try:
         import bionetgen._bionetgen_cpp as cpp  # type: ignore
 
@@ -47,7 +46,7 @@ def _cpp():
         return cpp
 
 
-MODEL = """begin model
+IMMIGRATION_DEATH = """begin model
 begin parameters
   lam 3.0
   mu 0.5
@@ -68,48 +67,162 @@ end reaction rules
 end model
 """
 
+SCAFFOLD = """begin model
+begin parameters
+  k_bind 0.2
+  k_unbind 0.05
+  k_intra 2.0
+end parameters
+begin molecule types
+  Scaffold(k,p,sub)
+  Kinase(s)
+  Phos(s)
+  Substrate(s,t~u~p)
+end molecule types
+begin seed species
+  Scaffold(k,p,sub) 10
+  Kinase(s) 10
+  Phos(s) 10
+  Substrate(s,t~u) 20
+end seed species
+begin observables
+  Molecules TotalScaffold Scaffold()
+  Molecules TotalSub Substrate()
+  Molecules PhosSub Substrate(t~p)
+  Molecules UnphosSub Substrate(t~u)
+end observables
+begin reaction rules
+  bind_k: Scaffold(k) + Kinase(s) <-> Scaffold(k!1).Kinase(s!1) k_bind, k_unbind
+  bind_sub: Scaffold(sub) + Substrate(s) <-> Scaffold(sub!1).Substrate(s!1) k_bind, k_unbind
+  intra_phos: Scaffold(k!+,sub!1).Substrate(s!1,t~u) -> Scaffold(k!+,sub!1).Substrate(s!1,t~p) k_intra
+end reaction rules
+end model
+"""
+
+GENOME = """begin model
+begin parameters
+  k_tx 0.2
+  k_tl 0.5
+  k_deg_m 0.05
+  k_deg_p 0.02
+end parameters
+begin molecule types
+  Gene(promoter~active~repressed)
+  mRNA(ribo)
+  Protein(dna)
+end molecule types
+begin seed species
+  Gene(promoter~active) 2
+  mRNA(ribo) 0
+  Protein(dna) 0
+end seed species
+begin observables
+  Molecules ActiveGene Gene(promoter~active)
+  Molecules RepressedGene Gene(promoter~repressed!?)
+  Molecules TotalmRNA mRNA()
+  Molecules TotalProtein Protein()
+end observables
+begin reaction rules
+  transcribe: Gene(promoter~active) -> Gene(promoter~active) + mRNA(ribo) k_tx
+  translate: mRNA() -> mRNA() + Protein(dna) k_tl
+  degrade_mrna: mRNA() -> 0 k_deg_m
+  degrade_prot: Protein(dna) -> 0 k_deg_p
+end reaction rules
+end model
+"""
+
+WORKLOADS = (
+    ("immigration-death", IMMIGRATION_DEATH, [0.0, 0.5, 1.0, 2.0]),
+    ("scaffold", SCAFFOLD, [0.0, 1.0, 5.0]),
+    ("genome", GENOME, [0.0, 5.0, 10.0]),
+)
+
+SEED_BASE = 2000
+SEED_BUDGET = 16
+
+
+def _correct(workload, runs):
+    if workload == "immigration-death":
+        last = np.asarray([r["observables"]["N"][-1] for r in runs], dtype=float)
+        expected = 5.0 * math.exp(-0.5 * 2.0) + (3.0 / 0.5) * (
+            1.0 - math.exp(-0.5 * 2.0)
+        )
+        variance = 3.0 / (2.0 * 0.5) * (1.0 - math.exp(-2.0 * 0.5 * 2.0)) + max(
+            expected * math.exp(-0.5 * 2.0), 0.0
+        )
+        se = math.sqrt(variance / len(last))
+        assert abs(float(last.mean()) - expected) <= 4.0 * se
+        return {
+            "analytic_mean": expected,
+            "observed_mean": float(last.mean()),
+            "se": se,
+        }
+    if workload == "scaffold":
+        for r in runs:
+            obs = r["observables"]
+            np.testing.assert_allclose(obs["TotalScaffold"], 10.0, atol=1e-9)
+            np.testing.assert_allclose(obs["TotalSub"], 20.0, atol=1e-9)
+            np.testing.assert_allclose(
+                np.asarray(obs["PhosSub"]) + np.asarray(obs["UnphosSub"]),
+                20.0,
+                atol=1e-9,
+            )
+        return {"invariant": "scaffold=10, substrate=20, phos+unphos=20"}
+    if workload == "genome":
+        for r in runs:
+            obs = r["observables"]
+            np.testing.assert_allclose(
+                np.asarray(obs["ActiveGene"]) + np.asarray(obs["RepressedGene"]),
+                2.0,
+                atol=1e-9,
+            )
+        return {"invariant": "active+repressed gene=2"}
+    raise AssertionError(f"unknown workload: {workload}")
+
 
 def test_nfnext_startup_memory_throughput_with_analytic_correctness():
     cpp = _cpp()
-    model = cpp.parse_string(MODEL)
-    times = [0.0, 0.5, 1.0, 2.0]
-    seeds = 2000 + np.arange(16)
+    seeds = [SEED_BASE + i for i in range(SEED_BUDGET)]
+    rows = []
+    for workload, bngl, times in WORKLOADS:
+        model = cpp.parse_string(bngl)
+        start = time.perf_counter()
+        first = cpp.simulate_nfnext(model, times, seed=int(seeds[0]))
+        startup_seconds = time.perf_counter() - start
 
-    start = time.perf_counter()
-    first = cpp.simulate_nfnext(model, times, seed=int(seeds[0]))
-    startup_seconds = time.perf_counter() - start
+        start = time.perf_counter()
+        runs = [cpp.simulate_nfnext(model, times, seed=int(s)) for s in seeds]
+        ensemble_seconds = time.perf_counter() - start
 
-    start = time.perf_counter()
-    runs = [cpp.simulate_nfnext(model, times, seed=int(seed)) for seed in seeds]
-    ensemble_seconds = time.perf_counter() - start
+        control = _correct(workload, runs)
+        events = sum(int(r["event_count"]) for r in runs)
+        rows.append(
+            {
+                "workload": workload,
+                "seeds": len(seeds),
+                "sample_times": times,
+                "startup_seconds": startup_seconds,
+                "ensemble_seconds": ensemble_seconds,
+                "events": events,
+                "events_per_second": (
+                    events / ensemble_seconds if ensemble_seconds > 0 else 0.0
+                ),
+                "peak_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+                "correctness": control,
+                "status": "PASS",
+            }
+        )
 
-    counts = np.asarray([r["observables"]["N"] for r in runs], dtype=float)
-    last = counts[:, -1]
-    expected = 5.0 * math.exp(-0.5 * 2.0) + (3.0 / 0.5) * (1.0 - math.exp(-0.5 * 2.0))
-    variance = 3.0 / (2.0 * 0.5) * (1.0 - math.exp(-2.0 * 0.5 * 2.0)) + max(
-        expected * math.exp(-0.5 * 2.0), 0.0
-    )
-    se = math.sqrt(variance / len(seeds))
-    assert abs(float(last.mean()) - expected) <= 4.0 * se
-
-    events = sum(int(r["event_count"]) for r in runs)
     record = {
-        "check": "nfnext-cpu-measurement",
-        "workload": "immigration-death:n0=5:lam=3:mu=0.5",
-        "seeds": int(len(seeds)),
-        "sample_times": times,
-        "startup_seconds": startup_seconds,
-        "ensemble_seconds": ensemble_seconds,
-        "events": events,
-        "events_per_second": events / ensemble_seconds if ensemble_seconds > 0 else 0.0,
-        "peak_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
-        "analytic_mean": expected,
-        "observed_mean": float(last.mean()),
-        "control_sigma": 4.0,
-        "source_revision": "",
+        "check": "release-capability-coverage-176",
+        "status": "PASS",
+        "source_revision": os.environ.get("BNG3_SOURCE_REVISION", ""),
+        "source_dirty": False,
+        "workloads": {row["workload"]: row for row in rows},
+        "required_workloads": [name for name, _, _ in WORKLOADS],
     }
-    destination = os.environ.get("BNG3_NFNEXT_MEASUREMENT_REPORT")
-    if destination:
-        path = Path(destination)
+    dest = os.environ.get("BNG3_NFNEXT_MEASUREMENT_REPORT")
+    if dest:
+        path = Path(dest)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")

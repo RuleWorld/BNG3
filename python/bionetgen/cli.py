@@ -9,9 +9,32 @@ from pathlib import Path
 import click
 
 
+def _require_callback(ctx, param, value):
+    """Apply the pinned PyBioNetGen ``--require`` version guard."""
+    if value is None:
+        return None
+    from packaging.version import parse
+
+    from bionetgen.core.exc import BNGVersionError
+    from bionetgen.core.version import get_version
+
+    current = get_version()
+    if parse(current) < parse(value):
+        raise BNGVersionError(current, value)
+    return value
+
+
 @click.group()
-@click.version_option(package_name="bionetgen")
-def main():
+@click.version_option(None, "--version", package_name="bionetgen")
+@click.option(
+    "--require",
+    "-req",
+    callback=_require_callback,
+    is_eager=True,
+    default=None,
+    help="Require at least this BNG version before running a command.",
+)
+def main(require):
     """BioNetGen: Rule-based modeling of biochemical systems."""
     pass
 
@@ -436,7 +459,7 @@ def graphdiff(input_path, input2_path, output_path, output2_path, mode, colors_p
     "--input",
     "-i",
     "input_path",
-    required=True,
+    default=None,
     type=click.Path(exists=True, dir_okay=False),
 )
 @click.option("--output", "-o", "output_path", default=None, type=click.Path())
@@ -445,19 +468,136 @@ def graphdiff(input_path, input2_path, output_path, output2_path, mode, colors_p
     "--no-conversion", is_flag=True, help="Disable reaction conversion heuristics."
 )
 @click.option("--no-pathwaycommons", is_flag=True, help="Do not query Pathway Commons.")
-def atomize(input_path, output_path, atomize, no_conversion, no_pathwaycommons):
+@click.option("--input-file", "input_file", type=click.Path(exists=True), default=None)
+@click.option("--output-file", "output_file", type=click.Path(), default=None)
+@click.option("--annotation", is_flag=True, default=False)
+@click.option("--convention-file", type=click.Path(exists=True), default=None)
+@click.option("--naming-conventions", default=None)
+@click.option("--user-structures", default=None)
+@click.option("--molecule-id", "molecule_id", is_flag=True, default=False)
+@click.option("--isomorphism-check", is_flag=True, default=False)
+@click.option("--ignore", "ignore_errors", is_flag=True, default=False)
+@click.option("--memoized-resolver", is_flag=True, default=False)
+@click.option("--keep-local-parameters", is_flag=True, default=False)
+@click.option("--quiet-mode", is_flag=True, default=False)
+@click.option("--obs-map-file", type=click.Path(), default=None)
+@click.option(
+    "--log-level",
+    type=click.Choice(["CRITICAL", "ERROR", "WARNING", "INFO", "DEBUG"]),
+    default=None,
+)
+@click.option("--bionetgen-analysis", type=click.Path(), default=None)
+@click.option("--convert-units", is_flag=True, default=False)
+@click.option("--pathwaycommons", "use_pathwaycommons", is_flag=True, default=False)
+@click.option("--write-scts", is_flag=True, default=False)
+@click.option("--write-sct-graphs", is_flag=True, default=False)
+def atomize(
+    input_path,
+    output_path,
+    atomize,
+    no_conversion,
+    no_pathwaycommons,
+    input_file,
+    output_file,
+    annotation,
+    convention_file,
+    naming_conventions,
+    user_structures,
+    molecule_id,
+    isomorphism_check,
+    ignore_errors,
+    memoized_resolver,
+    keep_local_parameters,
+    quiet_mode,
+    obs_map_file,
+    log_level,
+    bionetgen_analysis,
+    convert_units,
+    use_pathwaycommons,
+    write_scts,
+    write_sct_graphs,
+):
     """Translate an SBML file to BNGL through the Python atomizer."""
     from bionetgen import sbml_to_bngl
 
-    try:
-        text = sbml_to_bngl(
-            input_path,
-            atomize=atomize,
-            no_conversion=no_conversion,
-            pathwaycommons=not no_pathwaycommons,
+    source = input_path or input_file
+    if source is None:
+        raise click.UsageError("an input model is required (--input or --input-file)")
+
+    options = {
+        "annotation": annotation,
+        "molecule_id": molecule_id,
+        "use_id": molecule_id,
+        "ignore": ignore_errors,
+        "no_conversion": no_conversion or not convert_units,
+        "pathwaycommons": not no_pathwaycommons and use_pathwaycommons,
+        "memoized_resolver": memoized_resolver,
+        "replace_local_parameters": not keep_local_parameters,
+        "quiet_mode": quiet_mode,
+    }
+    if log_level is not None:
+        options["log_level"] = log_level
+    for key, value in (
+        ("convention_file", convention_file),
+        ("naming_conventions", naming_conventions),
+        ("user_structures", user_structures),
+        ("isomorphism_check", isomorphism_check),
+        ("obs_map_file", obs_map_file),
+        ("bionetgen_analysis", bionetgen_analysis),
+    ):
+        if value is not None:
+            options[key] = value
+    if any(
+        key in options
+        for key in (
+            "convention_file",
+            "naming_conventions",
+            "user_structures",
+            "isomorphism_check",
+            "obs_map_file",
+            "bionetgen_analysis",
+            "log_level",
         )
+    ):
+        options["atomizer_backend"] = "legacy"
+
+    try:
+        if write_scts:
+            from bionetgen.sbml import atomize_sbml_with_sct
+
+            text, sct_tables = atomize_sbml_with_sct(
+                source, atomize=atomize, annotation=annotation, quiet_mode=quiet_mode
+            )
+            stem = Path(input_path or input_file or source).stem
+            sct_path = (
+                Path(output_path or output_file or source).parent
+            ) / f"{stem}_scts.json"
+            sct_path.write_text(
+                json.dumps(sct_tables, indent=2) + "\n", encoding="utf-8"
+            )
+            click.echo(f"SCT tables written to {sct_path}")
+            if write_sct_graphs:
+                try:
+                    import networkx as nx
+                except ImportError as exc:
+                    raise click.ClickException(
+                        "graphml SCT output requires the networkx extra"
+                    ) from exc
+                for graph_name, nodes in sct_tables.items():
+                    graph = nx.Graph()
+                    for node, neighbours in nodes.items():
+                        graph.add_node(node)
+                        for neighbour in neighbours:
+                            graph.add_edge(node, neighbour)
+                    graph_path = sct_path.with_name(f"{stem}_{graph_name}.graphml")
+                    nx.write_graphml(graph, graph_path)
+                    click.echo(f"SCT graph written to {graph_path}")
+        else:
+            text = sbml_to_bngl(source, atomize=atomize, **options)
     except Exception as exc:
         raise click.ClickException(str(exc)) from exc
+    if output_path is None:
+        output_path = output_file
 
     if output_path is None:
         output = Path(input_path).with_suffix(".bngl")

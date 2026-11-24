@@ -1636,7 +1636,6 @@ class BioNetGenModel:
                         sample_times=normalized_sample_times,
                         max_sim_steps=max_sim_steps,
                         output_step_interval=output_step_interval,
-                        continue_simulation=continue_simulation,
                     )
                     if isinstance(raw, dict) and "backend" not in raw:
                         raw["backend"] = "bngsim"

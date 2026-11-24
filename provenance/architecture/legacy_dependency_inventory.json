@@ -20,8 +20,10 @@
           "tests.python.test_pybionetgen_differential_behaviors",
           "tests.python.test_pybionetgen_runner_result_compat",
           "tests.python.test_regression",
+          "tests.python.test_rulemod_pybionetgen_parity",
           "tests.python.test_runner",
           "tests.python.test_sympy_odes",
+          "tests.python.test_xmlobj_resolve_ratelaw_parity",
           "tests.validation.integrated_worker",
           "tests.validation.release.cases.issue-171.test_pybionetgen_api_release",
           "tests.validation.release.cases.issue-172.test_python_consolidation_release"
@@ -90,6 +92,7 @@
         "product": [
           "bionetgen",
           "bionetgen.atomizer.atomizeTool",
+          "bionetgen.cli",
           "bionetgen.core.tools.visualize",
           "bionetgen.modelapi.bngfile",
           "bionetgen.modelapi.bngparser",

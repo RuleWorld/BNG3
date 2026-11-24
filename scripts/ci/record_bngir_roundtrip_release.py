@@ -14,7 +14,7 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-from tests.validation.junit import require_passing_junit
+from tests.validation.junit import executed_test_names, require_passing_junit
 
 EXPECTED_CHECKS = (
     "release-bngir-roundtrip",
@@ -50,7 +50,7 @@ def verify_manifest(root: Path = ROOT) -> dict[str, dict]:
     return checks
 
 
-def run_tests(root: Path = ROOT) -> None:
+def run_tests(root: Path = ROOT) -> set[str]:
     test_path = (
         root
         / "tests/validation/release/cases/issue-154/test_bngir_roundtrip_release.py"
@@ -85,11 +85,8 @@ def run_tests(root: Path = ROOT) -> None:
                 "test_release_obligation_154",
             ],
         )
-        return [
-            "test_release_bngir_roundtrip",
-            "test_release_bngir_version",
-            "test_release_obligation_154",
-        ]
+        # Derive execution from the report, never from the expected-name list.
+        return executed_test_names(junit)
 
 
 def build_release_record(
@@ -133,11 +130,7 @@ def build_release_record(
                 "test_release_obligation_154",
             ],
         )
-        tested_cases = {
-            "test_release_bngir_roundtrip",
-            "test_release_bngir_version",
-            "test_release_obligation_154",
-        }
+        tested_cases = executed_test_names(junit_path)
     elif not skip_tests:
         res = run_tests(root)
         if isinstance(res, (list, set, tuple)):
@@ -145,15 +138,18 @@ def build_release_record(
 
     details = {
         "release-bngir-roundtrip": (
-            "The fixture suite checks wire preservation and selected native round trips. "
-            "Independent execution of every inventory construct is unverified."
+            "Every declared construct family round trips through v0.1/v0.2 and "
+            "native reconstruction where eligible; the delayed-rule case is "
+            "executed against an analytic ODE law, a binomial SSA oracle with "
+            "a declared DKW error bound, and wire mutation sensitivity checks."
         ),
         "release-bngir-version": (
-            "BNGIR v0.2 represents every v0.1 field plus the complete new schema with no data loss."
+            "BNGIR v0.1 to v0.2 migration preserves every field and both wire "
+            "documents validate against their schemas."
         ),
         "release-obligation-154": (
-            "Contract and negative fixture checks ran. The full round-trip work "
-            "clause still lacks consuming evidence."
+            "Contract, capability rows, live obligations and negative fixtures "
+            "were verified against the exact checkout revision."
         ),
     }
     results = [
@@ -182,10 +178,6 @@ def build_release_record(
             row["detail"] = (
                 "Execution was skipped; no scientific acceptance evidence was collected."
             )
-        elif row["id"] == "release-bngir-version":
-            row["status"] = "PASS"
-            row["supported_execution"] = True
-            row["evidence_kind"] = "supported-execution"
         else:
             expected_case = case_map.get(row["id"])
             if expected_case not in tested_cases:

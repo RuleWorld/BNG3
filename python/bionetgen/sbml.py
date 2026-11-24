@@ -82,6 +82,45 @@ def _translate_modern_with_model(
     return result.bngl, atomizer.get_model()
 
 
+def atomize_sbml_with_sct(
+    sbml_path: str, atomize: bool = False, **options
+) -> tuple[str, dict]:
+    """Translate SBML and return BNG3's native species-composition tables.
+
+    The JSON shape is BNG3's own SCT representation (graph name -> node ->
+    connected species).  It is emitted by the ``--write-scts`` CLI flag; it is
+    not byte-identical to the historical PyBioNetGen dump.
+    """
+    from bionetgen.atomizer.modern import Atomizer
+
+    source = Path(sbml_path)
+    atomizer = Atomizer(
+        atomize=atomize,
+        use_id=bool(options.get("use_id", options.get("molecule_id", False))),
+        annotation=bool(options.get("annotation", False)),
+        quiet_mode=bool(options.get("quiet_mode", True)),
+        actions=str(options.get("actions", "")),
+        t_end=options.get("t_end", 10),
+        n_steps=options.get("n_steps", 100),
+        native_dae_runtime=False,
+    )
+    result = atomizer.atomize(
+        source.read_text(encoding="utf-8-sig"), source_path=source
+    )
+    if not result.success or not result.bngl:
+        raise BioNetGenError(
+            f"Modern SBML atomization failed for {source}: {result.error or 'no BNGL output'}"
+        )
+    table = atomizer.get_sct()
+    names = list(table.sorted_species or table.entries)
+    payload = {
+        "01_binding_sct": {
+            name: sorted(table.dependencies.get(name, set())) for name in names
+        }
+    }
+    return result.bngl, payload
+
+
 def _translate_sbml(sbml_path: str, atomize: bool = False, **options) -> str:
     backend = str(options.pop("atomizer_backend", "modern")).lower()
     if backend not in {"modern", "playground", "legacy", "native"}:
@@ -190,4 +229,4 @@ def from_sbml(sbml_path: str, atomize: bool = False, **options) -> BioNetGenMode
     )
 
 
-__all__ = ["BioNetGenError", "from_sbml", "sbml_to_bngl"]
+__all__ = ["BioNetGenError", "atomize_sbml_with_sct", "from_sbml", "sbml_to_bngl"]

@@ -72,17 +72,26 @@ def main(argv=None) -> int:
         "release-atomizer-refactor": "The Atomizer refactored pipeline executes successfully across characterization, SSTS and BioModels models with source semantics preserved.",
         "release-obligation-164": "Contract, manifest definitions, source identities, symbol resolution and seam ownership verified.",
     }
+    # The generated characterization rows exercise symbol resolution and seam
+    # ownership only. They cannot certify the live release checks, which also
+    # require SSTS/BioModels corpora, independent semantic oracles and boundary
+    # extraction evidence. Report those honestly as NOT_TESTED rather than
+    # inheriting a PASS from the bounded characterization run.
     for identity in LIVE_CHECKS:
         results.append(
             {
                 "id": identity,
-                "status": "PASS",
+                "status": "NOT_TESTED",
                 "check": identity,
                 "related_issues": [164],
-                "evidence_kind": "supported-execution",
-                "supported_execution": True,
+                "evidence_kind": "not-tested",
+                "supported_execution": False,
                 "stage": "atomizer-characterization",
-                "detail": scope[identity],
+                "detail": (
+                    "Characterization rows ran, but the live release check "
+                    "requires corpus and independent-oracle evidence that was "
+                    "not collected here. " + scope[identity]
+                ),
                 "selector": SELECTOR,
             }
         )
@@ -90,13 +99,16 @@ def main(argv=None) -> int:
     results.append(
         {
             "id": "release-boundary-extraction-164",
-            "status": "PASS",
+            "status": "NOT_TESTED",
             "check": "release-boundary-extraction-164",
             "related_issues": [164],
-            "evidence_kind": "supported-execution",
-            "supported_execution": True,
+            "evidence_kind": "not-tested",
+            "supported_execution": False,
             "stage": "atomizer-characterization",
-            "detail": "The total-rate seam and extracted boundaries have designated single owners and callers agree.",
+            "detail": (
+                "Boundary extraction is not exercised by the characterization "
+                "worker; no independent boundary evidence was collected."
+            ),
             "selector": SELECTOR,
         }
     )

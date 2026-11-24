@@ -56,6 +56,28 @@ class XMLObj:
         """ """
         raise NotImplementedError
 
+    def resolve_ratelaw(self, xml):
+        """Resolve a rate-law node exactly as pinned PyBioNetGen does.
+
+        Subclasses may override this for context-specific handling; the base
+        implementation preserves the public ``XMLObj.resolve_ratelaw`` entry
+        point and its fallback behaviour.
+        """
+        rate_type = xml.get("@type")
+        if rate_type == "Ele":
+            return xml["ListOfRateConstants"]["RateConstant"]["@value"]
+        if rate_type == "Function":
+            return xml["@name"]
+        if rate_type in {"MM", "Sat", "Hill", "Arrhenius"}:
+            args = xml["ListOfRateConstants"]["RateConstant"]
+            if isinstance(args, list):
+                arg_values = ",".join(arg["@value"] for arg in args)
+            else:
+                arg_values = args["@value"]
+            return f"{rate_type}({arg_values})"
+        print("don't recognize rate law type")
+        return ""
+
 
 ###### Fundamental parsing objects ######
 # This is for handling bond XMLs

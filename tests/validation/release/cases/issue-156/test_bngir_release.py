@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
+
 import pytest
 import yaml
 
@@ -28,6 +30,24 @@ from bionetgen.model import _cpp
 
 REPO_ROOT = Path(__file__).resolve().parents[5]
 CASE_DIR = Path(__file__).resolve().parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
+
+from tests.validation.eq_catalogue import (  # noqa: E402
+    CASES,
+    CERTIFICATES,
+    validate_catalogue_report,
+)
+
+
+@pytest.fixture(scope="module")
+def eq_catalogue_report():
+    """Execute every EQ-* row once for the module's release checks."""
+    from tests.validation.eq_catalogue import run_catalogue
+
+    report = run_catalogue()
+    validate_catalogue_report(report)
+    return report
 
 
 def _parse_model(bngl: str) -> bionetgen.BioNetGenModel:
@@ -113,7 +133,7 @@ end model
         jsonschema.validate(broken, schema_v02)
 
 
-def test_release_semantic_equality():
+def test_release_semantic_equality(eq_catalogue_report):
     """Validate release-semantic-equality.
 
     1. EQ-rename: consistent type/site/state renaming preserves equality.
@@ -324,13 +344,23 @@ end model
     with pytest.raises(EqualityUndecided):
         semantic_equal(m_poly1, m_poly2)
 
+    # Independent catalogue: every EQ-* family is executed with a declared
+    # outcome and a named oracle.  Membership in a design document is not
+    # evidence, so the strict validator is part of this check.
+    validate_catalogue_report(eq_catalogue_report)
+    assert {case.id for case in CASES} <= {
+        row["case"] for row in eq_catalogue_report["results"]
+    }
 
-def test_release_capability_coverage_156():
+
+def test_release_capability_coverage_156(eq_catalogue_report):
     """Validate release-capability-coverage-156.
 
-    1. Verify contract.json schema, issue number, and acceptance checks.
-    2. Verify mapped capability rows against provenance/capability-matrix.yml.
-    3. Verify live acceptance obligations in provenance/issue-obligations.json.
+    Each assigned inventory row must execute against its named independent
+    oracle.  Inventory membership and contract-file existence are necessary
+    bookkeeping, never a substitute for per-row results:
+      * bngir.v02  -> the EQ-serialization rows of the independent catalogue;
+      * bngir.equality -> all EQ-* rows with equal/different/undecided outcomes.
     """
     contract_path = CASE_DIR / "contract.json"
     assert contract_path.is_file(), "contract.json missing"
@@ -366,3 +396,25 @@ def test_release_capability_coverage_156():
         assert (
             req_ob in declared_ob_ids
         ), f"Obligation {req_ob} not found in issue-obligations for issue 156"
+
+    # Per-row executable evidence.  A document that only lists the inventory
+    # ids cannot satisfy this check: validate_catalogue_report rejects it.
+    validate_catalogue_report(eq_catalogue_report)
+    rows = eq_catalogue_report["results"]
+    assert eq_catalogue_report["case_count"] == len(CASES)
+    assert (
+        eq_catalogue_report["row_count"]
+        == len(rows)
+        == 2 * len(CASES) + len(CERTIFICATES)
+    )
+    assert all(row["status"] == "PASS" for row in rows)
+    assert all(row["oracle"] for row in rows)
+    by_case = {}
+    for row in rows:
+        by_case.setdefault(row["case"], []).append(row)
+    assert set(by_case) == {case.id for case in CASES}
+    serialization = by_case["EQ-serialization"]
+    assert {row["variant"] for row in serialization} == {"equal", "different"}
+    assert all(row["observed"] == row["expected"] for row in serialization)
+    outcomes = {row["observed"] for row in rows}
+    assert outcomes == {"equal", "different", "undecided"}

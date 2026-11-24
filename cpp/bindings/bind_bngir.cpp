@@ -1517,6 +1517,29 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
         model->addCompartment(Compartment(name, volume, dimension, parent));
     }
 
+    // A binding-only component is reconstructible when a seed completes it as
+    // part of a bonded complex: the exact bond supplies the site's semantics.
+    // Rule patterns cannot make that guarantee without an explicit bond change,
+    // so they remain gated by admittedBindingOnlyTypeIds below.
+    for (const auto& rawSeed : seeds) {
+        const auto seed = py::cast<py::dict>(rawSeed);
+        const auto seedPattern = py::cast<py::dict>(seed["pattern"]);
+        for (const auto& rawMolecule : py::cast<py::list>(seedPattern["molecules"])) {
+            const auto molecule = py::cast<py::dict>(rawMolecule);
+            const auto typeId = indexFromBngir(
+                molecule["type_id"], "bonded seed molecule type");
+            if (!bindingOnlyTypeIds.count(typeId)) continue;
+            for (const auto& rawSite : py::cast<py::list>(molecule["sites"])) {
+                const auto site = py::cast<py::dict>(rawSite);
+                const auto bond = py::cast<py::dict>(site["bond"]);
+                if (py::isinstance<py::str>(bond["kind"]) &&
+                    py::cast<std::string>(bond["kind"]) == "exact") {
+                    admittedBindingOnlyTypeIds.insert(typeId);
+                }
+            }
+        }
+    }
+
     for (const auto& rawSeed : seeds) {
         const auto seed = py::cast<py::dict>(rawSeed);
         auto graph = patternFromBngir(*model, py::cast<py::dict>(seed["pattern"]), true);
@@ -1610,8 +1633,26 @@ std::unique_ptr<Model> modelFromBngirV02(const py::dict& document) {
             }
         }
         if (usesBindingOnlyType && !bondChange) {
-            throw std::runtime_error(
-                "native BNGIR binding-only components are unsupported");
+            // A binding-only type may appear in a rule without a bond-changing
+            // mutation when a bonded seed has already admitted that type: the
+            // completed seed bond defines the site's semantics. The final
+            // bindingOnlyTypeIds/admittedBindingOnlyTypeIds check still refuses
+            // every other binding-only usage.
+            for (const auto& side : {reactants, products}) {
+                for (const auto& rawPattern : side) {
+                    for (const auto& rawMolecule :
+                         py::cast<py::list>(py::cast<py::dict>(rawPattern)["molecules"])) {
+                        const auto ruleTypeId = indexFromBngir(
+                            py::cast<py::dict>(rawMolecule)["type_id"],
+                            "binding-only rule molecule type");
+                        if (bindingOnlyTypeIds.count(ruleTypeId) &&
+                            !admittedBindingOnlyTypeIds.count(ruleTypeId)) {
+                            throw std::runtime_error(
+                                "native BNGIR binding-only components are unsupported");
+                        }
+                    }
+                }
+            }
         }
         for (const auto& rawReactant : reactants) {
             reactantGraphs.push_back(
