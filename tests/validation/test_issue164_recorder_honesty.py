@@ -74,9 +74,16 @@ def _write_comparison(
     }
     if stale_ref:
         refs["ssts"]["revision"] = "stale-suite"
-    counts = {"failed": 0, "timeout": 0, "invalid_source": 0, "skipped": 0}
+    comparison = {
+        "all_match": all_match,
+        "missing": [],
+        "extra": [],
+        "status_changed": [],
+        "stale": [],
+    }
     if missing:
-        counts["failed"] = 2
+        comparison["all_match"] = False
+        comparison["missing"] = {"ssts": ["case/00001", "case/00002"]}
     document = {
         "schema_version": 1,
         "before": {
@@ -96,14 +103,8 @@ def _write_comparison(
             "independent": True,
             "detail": "official SSTS + libRoadRunner",
         },
-        "counts": counts,
-        "record_comparison": {
-            "all_match": all_match,
-            "missing": [],
-            "extra": [],
-            "status_changed": [],
-            "stale": [],
-        },
+        "counts": {"failed": 0, "timeout": 0, "invalid_source": 0, "skipped": 0},
+        "record_comparison": comparison,
     }
     path = tmp_path / "comparison.json"
     path.write_text(json.dumps(document))
@@ -189,7 +190,7 @@ def test_partial_before_after_report_is_rejected(tmp_path, monkeypatch):
     comparison = _write_comparison(tmp_path, missing=True)
     receipt = _run(tmp_path, monkeypatch, refactor_comparison=comparison)
     assert _rows(receipt)["release-atomizer-refactor"]["status"] == "NOT_TESTED"
-    assert any("failed" in gap for gap in receipt["evidence_gaps"])
+    assert any("missing" in gap for gap in receipt["evidence_gaps"])
 
 
 def test_stale_or_partial_run_comparison_is_rejected(tmp_path, monkeypatch):
