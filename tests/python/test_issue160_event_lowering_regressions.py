@@ -29,3 +29,23 @@ def test_rate_ruled_parameter_is_native_event_target_and_window_stays_scheduled(
     assert "begin actions" in bngl
     assert "14.5" in bngl
     assert "remain untranslated" not in bngl
+
+
+STOICHIOMETRY_FIXTURE = Path(__file__).parent / "fixtures" / "sbml_01398.xml"
+
+
+def test_event_stoichiometry_change_transfers_the_added_amount_to_the_pool_state():
+    atomizer = Atomizer({"quietMode": True, "logLevel": "INFO", "t_end": 10})
+    result = atomizer.atomize(STOICHIOMETRY_FIXTURE.read_text(encoding="utf-8"))
+    assert result.success, result.error
+    bngl = result.bngl
+    # The fast equilibrium holds S1 at zero; the source event's S1 write is
+    # re-expressed as S2 += 5/5, and the stoichiometry parameter still changes.
+    assert 'setConcentration("@default_compartment:M_S2()", "6")' in bngl
+    assert 'setParameter("S1_stoichiometry", "5")' in bngl
+    assert "remain untranslated" not in bngl
+    assert not [
+        warning
+        for warning in atomizer.model.import_warnings
+        if warning.get("severity") in {"dropped", "approximated"}
+    ]
