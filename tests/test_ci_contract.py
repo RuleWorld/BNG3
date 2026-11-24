@@ -1348,10 +1348,13 @@ def test_release_run_qualification_requires_official_sbml_manual_run(
     "scenario",
     [
         "complete",
+        "dispositioned-non-pass",
         "no-artifacts",
+        "missing-issue162-receipt",
         "bounded",
         "wrong-product",
         "failed-mode",
+        "harness-error",
         "different-biomodels-cohorts",
     ],
 )
@@ -1459,8 +1462,16 @@ def test_release_qualification_cli_requires_both_full_sbml_artifacts(
                         "partial_run": False,
                         "expected_records": 2,
                     },
-                    "supported_surface_passed": not (
-                        mode == "atomized" and scenario == "failed-mode"
+                    "summary": {
+                        "harness_error_records": (
+                            1
+                            if mode == "atomized" and scenario == "harness-error"
+                            else 0
+                        ),
+                        "not_comparable_records": 0,
+                    },
+                    "supported_surface_passed": (
+                        scenario not in {"failed-mode", "dispositioned-non-pass"}
                     ),
                     "simulation_comparison_is_required": True,
                     "records": [
@@ -1484,6 +1495,44 @@ def test_release_qualification_cli_requires_both_full_sbml_artifacts(
                 "corpus": {"expected_total_records": 2},
             },
         )
+        if scenario != "missing-issue162-receipt":
+            receipt_passed = scenario != "failed-mode"
+            write_json(
+                biomodels / "issue162-release-receipt.json",
+                {
+                    "source": {"revision": sha, "dirty": False},
+                    "disposition_receipt": {
+                        "agreement": {
+                            "flat_atomized_match": True,
+                            "report_receipt_match": True,
+                        }
+                    },
+                    "results": [
+                        {
+                            "id": check,
+                            "status": "PASS" if receipt_passed else "FAIL",
+                            "supported_execution": receipt_passed,
+                        }
+                        for check in (
+                            "release-biomodels",
+                            "release-biomodels-triage",
+                            "release-obligation-162",
+                        )
+                    ],
+                    "modes": {
+                        mode: {
+                            "report_sha256": reports[mode]["sha256"],
+                            "counts": {"compared": 1},
+                            "unresolved": (
+                                ["B"]
+                                if mode == "atomized" and scenario == "failed-mode"
+                                else []
+                            ),
+                        }
+                        for mode in ("flat", "atomized")
+                    },
+                },
+            )
 
     command = [
         sys.executable,
@@ -1500,7 +1549,7 @@ def test_release_qualification_cli_requires_both_full_sbml_artifacts(
         sha,
     ]
     result = subprocess.run(command, capture_output=True, text=True, check=False)
-    if scenario == "complete":
+    if scenario in {"complete", "dispositioned-non-pass"}:
         assert result.returncode == 0, result.stderr
         assert "full SBML" in result.stdout
     else:
