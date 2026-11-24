@@ -348,6 +348,105 @@ def classify_numerical_limit(
 
 
 # ---------------------------------------------------------------------------
+# BIOMD0000000537: platform-sensitive cross-engine comparison
+# ---------------------------------------------------------------------------
+
+PLATFORM_MODEL_ID = "BIOMD0000000537"
+PLATFORM_ID = f"platform-sensitive-limit:issue-162/{PLATFORM_MODEL_ID}"
+PLATFORM_STATUS = "NON_COMPARABLE"
+PLATFORM_EVIDENCE_KIND = "platform-sensitive-non-comparable"
+PLATFORM_NETWORK = {"species": 40, "reactions": 91}
+PLATFORM_RETRY_COUNT = 5
+PLATFORM_SOURCE_SEMANTICS = (
+    "Both modes lower the same verified source to an identical 40-species / "
+    "91-reaction CRN, all non-comparison stages pass, and the host reports at "
+    "least five cross-engine comparison retries. A fresh local replay of the "
+    "same pinned payload and exact product revision passes in both modes, so "
+    "the hosted-only mismatch is a platform-sensitive numerical comparison "
+    "artifact, not a lowering or source-identity defect."
+)
+
+
+def classify_platform_sensitive_limit(
+    flat_record: dict[str, Any] | None, atomized_record: dict[str, Any] | None
+) -> dict[str, Any] | None:
+    """Fail-closed disposition for the pinned platform-sensitive case.
+
+    No other failed model can enter this bucket: identity, source validation,
+    CRN signature, both-mode failure and the repeated comparison retries are
+    all required. It is a NON_COMPARABLE row, never a scientific pass.
+    """
+    identity = f"issue-162/{PLATFORM_MODEL_ID}"
+    if flat_record is None or atomized_record is None:
+        return None
+    if flat_record.get("id") != PLATFORM_MODEL_ID or atomized_record.get("id") != PLATFORM_MODEL_ID:
+        raise ValueError(f"{identity}: disposition target identity mismatch")
+    if flat_record.get("status") != "failed" or atomized_record.get("status") != "failed":
+        raise ValueError(f"{identity}: both modes are not failed")
+    evidence = {}
+    for mode_name, record in (("flat", flat_record), ("atomized", atomized_record)):
+        source = record.get("source_validation") or {}
+        _require(
+            source.get("status") == "verified_sha256",
+            f"{mode_name}/{PLATFORM_MODEL_ID}",
+            "source was not SHA-verified",
+        )
+        mode = _single_mode(record, mode_name)
+        _require(
+            (mode.get("source_xml") or {}).get("passed") is True,
+            f"{mode_name}/{PLATFORM_MODEL_ID}",
+            "source XML did not validate",
+        )
+        _require(
+            mode.get("generated_network") == PLATFORM_NETWORK,
+            f"{mode_name}/{PLATFORM_MODEL_ID}",
+            "generated network signature is not the pinned value",
+        )
+        stages = mode.get("stage_results") or []
+        retries = [
+            stage
+            for stage in stages
+            if stage.get("name") == "cross-engine-comparison-retry"
+        ]
+        _require(
+            len(retries) >= PLATFORM_RETRY_COUNT
+            and all(stage.get("status") == "failed" for stage in retries),
+            f"{mode_name}/{PLATFORM_MODEL_ID}",
+            "required cross-engine comparison retries are absent or not failed",
+        )
+        for stage in stages:
+            if stage.get("name") not in {
+                "cross-engine-comparison",
+                "cross-engine-comparison-retry",
+            }:
+                _require(
+                    stage.get("status") == "passed",
+                    f"{mode_name}/{PLATFORM_MODEL_ID}",
+                    f"non-comparison stage {stage.get('name')!r} did not pass",
+                )
+        evidence[mode_name] = {
+            "network": mode.get("generated_network"),
+            "retry_count": len(retries),
+            "failed_stages": [stage.get("name") for stage in stages if stage.get("status") == "failed"],
+        }
+    return {
+        "id": PLATFORM_ID,
+        "status": PLATFORM_STATUS,
+        "classification": "PLATFORM_SENSITIVE_LIMIT",
+        "stage": DISPOSITION_STAGE,
+        "check": "release-biomodels-triage",
+        "related_issues": [162],
+        "evidence_kind": PLATFORM_EVIDENCE_KIND,
+        "supported_execution": False,
+        "counts_as_pass": False,
+        "mode": "both",
+        "case": PLATFORM_MODEL_ID,
+        "source_semantics": list(PLATFORM_SOURCE_SEMANTICS),
+        "evidence": evidence,
+    }
+
+
+# ---------------------------------------------------------------------------
 # Timeouts: explicit bucket, never a pass
 # ---------------------------------------------------------------------------
 
@@ -413,9 +512,10 @@ def classify_timeout(mode_name: str, record: dict[str, Any]) -> dict[str, Any]:
 # Valid-input refusals: per-class bucket, never a pass
 # ---------------------------------------------------------------------------
 
-# Pinned from the hosted full campaign run 45376941368 at exact main
-# 71888b93.  BIOMD0000001098 is no longer a refusal after the merged product
-# fixes, so the pinned "other" class has three members, not four.  Class assignment follows the harness's own
+# Pinned from the hosted full campaign run 45395453806 at exact main
+# 8e4c79fa (the product revision carried into ae3f945e).  Earlier campaign
+# 45376941368 at 71888b93 differed on BIOMD0000001098; the disposition is
+# fail-closed per exact revision, so a mismatching report cannot be consumed.  Class assignment follows the harness's own
 # unsupported_summary.by_cause with events taking precedence over
 # fast_reactions (BIOMD0000000137 lists both and the harness records it as an
 # event refusal).
@@ -472,6 +572,7 @@ PINNED_REFUSAL_IDS = {
         {
             "BIOMD0000000696",
             "BIOMD0000001075",
+            "BIOMD0000001098",
             "BIOMD0000001099",
         }
     ),
@@ -587,7 +688,12 @@ def build_disposition_receipt(
     numerical = classify_numerical_limit(
         flat_records.get(MODEL_ID), atomized_records.get(MODEL_ID)
     )
+    platform = classify_platform_sensitive_limit(
+        flat_records.get(PLATFORM_MODEL_ID), atomized_records.get(PLATFORM_MODEL_ID)
+    )
     rows: list[dict[str, Any]] = [numerical]
+    if platform is not None:
+        rows.append(platform)
     buckets: dict[str, Any] = {}
     for mode_name, report, records in (
         ("flat", flat_report, flat_records),
