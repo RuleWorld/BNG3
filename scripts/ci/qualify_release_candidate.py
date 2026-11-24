@@ -68,6 +68,11 @@ SBML_RECEIPTS = {
         "release-capability-coverage-160",
     },
 }
+BIOMODELS_RECEIPT_CHECKS = {
+    "release-biomodels",
+    "release-biomodels-triage",
+    "release-obligation-162",
+}
 
 
 def _read_artifact(directory: Path, name: str) -> tuple[dict, str]:
@@ -126,20 +131,44 @@ def verify_sbml_evidence(directory: Path, sha: str, biomodels_ids: set[str]) -> 
         raise ValueError("BioModels inventory revision does not match the candidate")
     if corpus["corpus"]["expected_total_records"] != len(biomodels_ids):
         raise ValueError("BioModels inventory size does not match the pinned corpus")
+    biomodels_receipt, _ = _read_artifact(biomodels, "issue162-release-receipt.json")
+    supported_biomodels = {
+        row["id"]
+        for row in biomodels_receipt.get("results") or []
+        if row["id"] in BIOMODELS_RECEIPT_CHECKS
+        and row["status"] == "PASS"
+        and row["supported_execution"] is True
+    }
+    agreement = (biomodels_receipt.get("disposition_receipt") or {}).get(
+        "agreement"
+    ) or {}
+    if (
+        biomodels_receipt.get("source") != {"revision": sha, "dirty": False}
+        or supported_biomodels != BIOMODELS_RECEIPT_CHECKS
+        or agreement.get("flat_atomized_match") is not True
+        or agreement.get("report_receipt_match") is not True
+    ):
+        raise ValueError("Issue 162 receipt does not qualify this BioModels report")
     for mode in ("flat", "atomized"):
         report, report_hash = _read_artifact(biomodels, f"{mode}-report.json")
         completeness = report["completeness"]
+        summary = report.get("summary") or {}
         ids = [row["id"] for row in report["records"]]
+        mode_receipt = (biomodels_receipt.get("modes") or {}).get(mode) or {}
         if (
             report_hash != measurement["reports"][mode]["sha256"]
             or report["mode"] != mode
-            or report["supported_surface_passed"] is not True
             or report["simulation_comparison_is_required"] is not True
             or completeness["counts_match"] is not True
             or completeness["partial_run"] is not False
+            or summary.get("harness_error_records", 0) != 0
+            or summary.get("not_comparable_records", 0) != 0
             or len(set(ids)) != len(ids)
             or set(ids) != biomodels_ids
             or len(ids) != completeness["expected_records"]
+            or mode_receipt.get("report_sha256") != report_hash
+            or bool(mode_receipt.get("unresolved"))
+            or ((mode_receipt.get("counts") or {}).get("compared") or 0) <= 0
         ):
             raise ValueError(f"BioModels {mode} evidence is incomplete or not passing")
 
