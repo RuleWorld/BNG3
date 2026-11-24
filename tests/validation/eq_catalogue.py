@@ -24,10 +24,6 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import bionetgen
-from bionetgen.bngir import EqualityUndecided
-from bionetgen.model import _cpp
-
 # An outcome is one of: equal, different, undecided.
 EQUAL = "equal"
 DIFFERENT = "different"
