@@ -1138,6 +1138,100 @@ class BioNetGenModel:
         )
         return GpuBatchSimResult(raw)
 
+    def simulate_batch_ssa(
+        self,
+        *,
+        batch_size: int = 1000,
+        t_end: float = 10.0,
+        n_steps: int = 10,
+        t_start: float = 0.0,
+        base_seed: int = 42,
+        max_sim_steps: int = 0,
+        backend: str = "auto",
+        threads: int = 0,
+    ) -> dict:
+        """Run finite-network batched direct SSA on GPU or CPU thread pool.
+
+        ``backend="auto"`` uses the default available GPU backend when present
+        and falls back to the CPU pool otherwise. Explicit ``"metal"`` and
+        ``"cuda"`` fail closed if that backend is unavailable; ``"none"`` or
+        ``"cpu"`` forces the CPU thread pool.
+        """
+        if _cpp is None:
+            raise RuntimeError("this installation does not include the C++ engine")
+        if not isinstance(backend, str):
+            raise TypeError("backend must be a string")
+        for name, value, minimum in (
+            ("batch_size", batch_size, 1),
+            ("n_steps", n_steps, 0),
+            ("base_seed", base_seed, 0),
+            ("max_sim_steps", max_sim_steps, 0),
+            ("threads", threads, 0),
+        ):
+            if isinstance(value, bool):
+                raise TypeError(f"{name} must be an integer")
+            try:
+                parsed = operator.index(value)
+            except TypeError as exc:
+                raise TypeError(f"{name} must be an integer") from exc
+            if parsed < minimum:
+                qualifier = "positive" if minimum == 1 else "non-negative"
+                raise ValueError(f"{name} must be {qualifier}")
+            if name == "batch_size":
+                batch_size = parsed
+            elif name == "n_steps":
+                n_steps = parsed
+            elif name == "base_seed":
+                base_seed = parsed
+            elif name == "max_sim_steps":
+                max_sim_steps = parsed
+            else:
+                threads = parsed
+        if not math.isfinite(float(t_start)) or not math.isfinite(float(t_end)):
+            raise ValueError("t_start and t_end must be finite")
+        if float(t_end) < float(t_start):
+            raise ValueError("t_end must be greater than or equal to t_start")
+
+        if self._network is None:
+            self.generate_network()
+
+        key = backend.strip().lower()
+        if key in ("none", "cpu", "off"):
+            return _cpp.simulate_batch_ssa_cpu(
+                self._model,
+                self._network,
+                batch_size=batch_size,
+                t_end=float(t_end),
+                n_steps=n_steps,
+                t_start=float(t_start),
+                base_seed=base_seed,
+                threads=threads,
+                max_sim_steps=max_sim_steps,
+            )
+        if key in ("", "auto") and _cpp.default_gpu_backend() == "none":
+            return _cpp.simulate_batch_ssa_cpu(
+                self._model,
+                self._network,
+                batch_size=batch_size,
+                t_end=float(t_end),
+                n_steps=n_steps,
+                t_start=float(t_start),
+                base_seed=base_seed,
+                threads=threads,
+                max_sim_steps=max_sim_steps,
+            )
+        return _cpp.simulate_batch_ssa_gpu(
+            self._model,
+            self._network,
+            batch_size=batch_size,
+            t_end=float(t_end),
+            n_steps=n_steps,
+            t_start=float(t_start),
+            base_seed=base_seed,
+            max_sim_steps=max_sim_steps,
+            backend=backend,
+        )
+
     def simulate(
         self,
         method: str = "ode",
@@ -1164,6 +1258,9 @@ class BioNetGenModel:
         backend: Optional[str] = None,
         continue_simulation: bool = False,
         population_threshold: int = 0,
+        batch_size: int = 0,
+        batch_gpu_preferred: bool = True,
+        batch_gpu_backend: str = "auto",
     ) -> SimResult:
         """Run a simulation using the specified method.
 
@@ -1309,6 +1406,20 @@ class BioNetGenModel:
             raise ValueError("equilibrate is supported only for method='nfcore'")
         if method != "nfcore" and traversal_limit != -1:
             raise ValueError("traversal_limit is supported only for method='nfcore'")
+        if isinstance(batch_size, bool):
+            raise TypeError("batch_size must be a non-negative integer")
+        try:
+            batch_size = operator.index(batch_size)
+        except TypeError as exc:
+            raise TypeError("batch_size must be a non-negative integer") from exc
+        if batch_size < 0:
+            raise ValueError("batch_size must be a non-negative integer")
+        if not isinstance(batch_gpu_preferred, bool):
+            raise TypeError("batch_gpu_preferred must be a boolean")
+        if not isinstance(batch_gpu_backend, str):
+            raise TypeError("batch_gpu_backend must be a string")
+        if batch_size > 0 and method != "ssa":
+            raise ValueError("batch_size is supported only for method='ssa'")
         for option_name, option_value in {
             "max_sim_steps": max_sim_steps,
             "output_step_interval": output_step_interval,
@@ -1625,6 +1736,11 @@ class BioNetGenModel:
                         raw["backend"] = "native"
             elif method == "ssa":
                 if use_bngsim:
+                    if batch_size > 0:
+                        raise RuntimeError(
+                            "BNGsim backend does not support batch_size; "
+                            "use backend='native' or 'auto'"
+                        )
                     raw = _cpp.simulate_ssa_bngsim(
                         self._model,
                         self._network,
@@ -1652,6 +1768,9 @@ class BioNetGenModel:
                             sample_times=normalized_sample_times,
                             max_sim_steps=max_sim_steps,
                             output_step_interval=output_step_interval,
+                            batch_size=batch_size,
+                            batch_gpu_preferred=batch_gpu_preferred,
+                            batch_gpu_backend=batch_gpu_backend,
                             continue_simulation=continue_simulation,
                             fresh_from_initial_state=native_fresh_run,
                         )

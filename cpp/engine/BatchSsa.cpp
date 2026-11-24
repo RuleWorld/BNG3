@@ -99,9 +99,11 @@ void fillDoubleFields(BatchSsaMetrics& m) {
             m.stdObservables[t][g]  = static_cast<double>(m.observableStdDevs[t][g]);
         }
 
-    // meanSpecies/stdSpecies: if finalSpecies is available, compute from it;
-    // otherwise leave empty (OdeResult concentrations field stays zero-sized).
-    if (!m.finalSpecies.empty() && m.batchSize > 0) {
+    // meanSpecies/stdSpecies: backends that record a full species time grid
+    // (including the GPU batch kernels) already populated these fields; never
+    // replace that grid with a single final-state row. Only derive a one-point
+    // grid for backends that expose finalSpecies alone.
+    if (m.meanSpecies.empty() && !m.finalSpecies.empty() && m.batchSize > 0) {
         const std::size_t S = m.finalSpecies.size() / m.batchSize;
         // We only have final-state species — build a single time-point vector.
         m.meanSpecies.assign(1, std::vector<double>(S, 0.0));

@@ -79,6 +79,26 @@ TEST_CASE("backend names round-trip and unknown names fail closed", "[gpu]") {
     }
 }
 
+TEST_CASE("a backend-provided full species grid is not collapsed", "[gpu]") {
+    // The finite-GPU kernels now emit a [time][species] grid. The shared
+    // converter must preserve it; only a final-state-only backend may be
+    // reduced to a single time point.
+    BatchSsaMetrics metrics;
+    metrics.batchSize = 2;
+    metrics.timePoints = {0.0f, 1.0f, 2.0f};
+    metrics.finalSpecies = {3, 4};
+    metrics.meanSpecies = {{1.0, 2.0}, {3.0, 4.0}, {5.0, 6.0}};
+    metrics.stdSpecies = {{0.5, 0.5}, {0.5, 0.5}, {0.5, 0.5}};
+
+    detail::fillDoubleFields(metrics);
+
+    REQUIRE(metrics.timePointsDouble.size() == 3);
+    REQUIRE(metrics.meanSpecies.size() == 3);
+    REQUIRE(metrics.stdSpecies.size() == 3);
+    CHECK(metrics.meanSpecies[2][1] == 6.0);
+    CHECK(metrics.stdSpecies[0][0] == 0.5);
+}
+
 TEST_CASE("selecting 'none' yields no backend instead of an error", "[gpu]") {
     CHECK(makeGpuSsaBackend(GpuBackendKind::None, emptyNetwork()) == nullptr);
 }

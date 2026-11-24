@@ -29,6 +29,8 @@ struct NfnextGpuResult {
     std::string device;
     double wallTimeMs{0.0};
     double dispatchWaitTimeMs{0.0};
+    double setupTimeMs{0.0};
+    std::size_t deviceMemoryBytes{0};
 };
 
 // Execute the bounded NFnext single-molecule, single-site state-change family

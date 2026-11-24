@@ -96,13 +96,22 @@ result = model.simulate(method="nf", t_end=100.0, n_steps=200, seed=42)
 
 Network-based methods (`ode`, `ssa`, `pla`, `psa`) automatically generate the network if needed.
 
+### Batch SSA and GPU backends
+
+Run batched direct SSA ensembles through `model.simulate(method="ssa", batch_size=..., batch_gpu_backend=...)` or `model.simulate_batch_ssa(...)`, and inspect compiled/available routes via `bionetgen.gpu_backend_capabilities()`, `bionetgen.gpu_backends()`, and `bionetgen.default_gpu_backend()`.
+
+- **Metal (Apple Silicon)**: finite-network batch SSA is qualified on Apple Metal hardware; `model.simulate_nfnext_gpu(...)` covers only the bounded unary single-site state-change route on Metal (not the full network-free corpus).
+- **CUDA (NVIDIA)**: compile-only CI verifies `CudaSsaBackend.cu` compilation and device-less CPU fallback, while real-device CUDA execution and network-free CUDA remain unqualified/externally blocked without NVIDIA hardware.
+
 ### Seeds and reproducibility
 
 Stochastic methods (`ssa`, `nf`) are reproducible for a given seed: the same
-model and the same seed produce the same trajectory, and the batch SSA pool
-(`_bionetgen_cpp.simulate_batch_ssa_cpu`) seeds trajectory *b* with
-`base_seed + b`, so one base seed determines a whole batch and the result does
-not depend on the worker count.
+model and the same seed produce the same trajectory, and the batch SSA pools
+(`_bionetgen_cpp.simulate_batch_ssa_cpu` and GPU batch kernels) derive each
+trajectory *b*'s seed deterministically from `(base_seed, b)` via SplitMix64
+(`batchTrajectorySeed` in `cpp/engine/BatchSsa.hpp`), so adjacent base seeds
+decorrelate while one base seed determines a whole batch independently of worker
+count.
 
 **`seed=0` is the exception and is not reproducible.** It means "use the system
 default", i.e. a fresh `std::random_device` draw, so two runs with `seed=0`

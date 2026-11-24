@@ -89,6 +89,7 @@ struct OdeResult {
     std::size_t batchSize = 0;                               // 0 = single trajectory
     std::vector<std::vector<double>> batchStdDevs;           // [timeIndex][speciesIndex] std dev (batch mode only)
     std::vector<std::vector<double>> batchObsStdDevs;        // [timeIndex][obsIndex] observable std dev (batch mode only)
+    std::string backend;                                     // executor when attributed (e.g. "metal", "cuda"); empty = native default
 };
 
 class OdeIntegrator {

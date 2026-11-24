@@ -39,6 +39,7 @@ import hashlib
 import json
 from pathlib import Path
 import subprocess
+import statistics
 import sys
 import math
 import numpy as np
@@ -774,6 +775,137 @@ def validate_immigration_death_gpu(backend, *, receipt=None):
     return True
 
 
+def validate_public_simulate_ssa_route(backend, *, receipt=None):
+    """Exercise the public convenience batch route on a physical device.
+
+    ``simulate_ssa(batch_size=N, n_steps>0)`` must return the device result and
+    the full ``[time][species]`` grid.  CPU and device RNGs use different draw
+    ordering, so the device/device mean comparison below is distributional
+    with a prespecified Bonferroni threshold and fixed budgets, never pathwise.
+    """
+    if backend in (None, "none"):
+        raise AssertionError("the public route requires an explicit GPU backend")
+    model_path = "models/toy-jim.bngl"
+    t_end = 10.0
+    n_steps = 10
+    batch_size = 1000
+    seed = 474474
+    expected_times = np.linspace(0.0, t_end, n_steps + 1).astype(np.float32)
+    alpha = 0.001
+    comparisons = 6
+    z_limit = float(statistics.NormalDist().inv_cdf(1.0 - alpha / (2 * comparisons)))
+
+    model = cpp.parse_file(model_path)
+    network = cpp.generate_network(model)
+
+    def run_convenience(base_seed):
+        return cpp.simulate_ssa(
+            model,
+            network,
+            t_end=t_end,
+            n_steps=n_steps,
+            t_start=0.0,
+            seed=base_seed,
+            batch_size=batch_size,
+            batch_gpu_preferred=True,
+            batch_gpu_backend=backend,
+        )
+
+    result = run_convenience(seed)
+    if result.get("backend") != backend:
+        raise AssertionError(
+            f"public batch route did not report device execution: {result.get('backend')}"
+        )
+    np.testing.assert_array_equal(result["time"], expected_times)
+    concentrations = np.asarray(result["concentrations"], dtype=float)
+    if concentrations.shape != (n_steps + 1, network.num_species):
+        raise AssertionError(
+            f"device result has a collapsed species grid: {concentrations.shape}"
+        )
+    for name, values in result["batch_std_devs"].items():
+        if np.asarray(values).shape != (n_steps + 1,):
+            raise AssertionError(f"collapsed std-dev trajectory for {name}")
+    for name in ("A_total", "K_total", "R_total", "L_total"):
+        conserved = np.asarray(result["observables"][name], dtype=float)
+        if conserved.shape != (n_steps + 1,) or not np.allclose(
+            conserved, conserved[0], rtol=0.0, atol=1e-5
+        ):
+            raise AssertionError(f"{name} conservation law failed on the device grid")
+    replay = run_convenience(seed)
+    for name in result["observables"]:
+        np.testing.assert_array_equal(
+            np.asarray(result["observables"][name]),
+            np.asarray(replay["observables"][name]),
+        )
+    np.testing.assert_array_equal(
+        np.asarray(result["batch_std_devs"]["A_total"]),
+        np.asarray(replay["batch_std_devs"]["A_total"]),
+    )
+
+    # Independent CPU SSA pool reference (separate RNG & implementation).
+    reference = cpp.simulate_batch_ssa_cpu(
+        model,
+        network,
+        batch_size=batch_size,
+        t_end=t_end,
+        n_steps=n_steps,
+        t_start=0.0,
+        base_seed=seed + 1,
+        threads=0,
+    )
+    check_device_result(reference, None, batch_size, expected_times)
+    checks = []
+    for name in ("Rec_A", "Rec_K"):
+        device_mean = np.asarray(result["observables"][name], dtype=float)
+        device_std = np.asarray(result["batch_std_devs"][name], dtype=float)
+        reference_mean = np.asarray(reference["observable_means"][name], dtype=float)
+        reference_std = np.asarray(reference["observable_stds"][name], dtype=float)
+        for index in (2, 5, 10):
+            standard_error = math.sqrt(
+                device_std[index] ** 2 / batch_size
+                + reference_std[index] ** 2 / batch_size
+            )
+            if standard_error == 0.0:
+                # Both samples are degenerate at this time point: an exact
+                # equality check is the only meaningful comparison.
+                passed = abs(device_mean[index] - reference_mean[index]) <= 1e-6
+                z = None
+            else:
+                z = (device_mean[index] - reference_mean[index]) / standard_error
+                passed = abs(z) <= z_limit
+            checks.append(
+                {
+                    "observable": name,
+                    "time": float(expected_times[index]),
+                    "mean_z": z,
+                    "pass": bool(passed),
+                }
+            )
+    if not all(item["pass"] for item in checks):
+        raise AssertionError(f"distributional device/CPU comparison failed: {checks}")
+
+    if receipt is not None:
+        receipt.update(
+            {
+                "status": "PASS",
+                "backend": backend,
+                "model": "toy-jim-public-route",
+                "batch_size": batch_size,
+                "n_steps": n_steps,
+                "seed": seed,
+                "reference_seed": seed + 1,
+                "comparison": f"distributional, {backend} device vs independent CPU SSA pool",
+                "alpha": alpha,
+                "bonferroni_comparisons": comparisons,
+                "z_limit": z_limit,
+                "checks": checks,
+                "device_grid_shape": list(concentrations.shape),
+                "seed_replay": True,
+            }
+        )
+    return True
+
+
 def validate_model(
     name, bngl_path, t_end, n_steps, batch_size=2000, *, backend="auto", receipt=None
 ):
@@ -1115,6 +1247,15 @@ def run_gpu_parity_gate(*, backend="auto", require_device=False, report=None):
     except Exception as exc:
         receipt["error"] = f"{type(exc).__name__}: {exc}"
         print(f"[FAIL] gpu_immigration_death: {receipt['error']}")
+        all_ok = False
+
+    receipt = {"model": "toy-jim-public-route", "status": "FAIL"}
+    report["models"].append(receipt)
+    try:
+        validate_public_simulate_ssa_route(selected, receipt=receipt)
+    except Exception as exc:
+        receipt["error"] = f"{type(exc).__name__}: {exc}"
+        print(f"[FAIL] toy-jim-public-route: {receipt['error']}")
         all_ok = False
     report["status"] = "PASS" if all_ok else "FAIL"
 

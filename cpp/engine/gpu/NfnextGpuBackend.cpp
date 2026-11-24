@@ -299,6 +299,8 @@ NfnextGpuResult simulateNfnextGpu(const bng::compile::CompiledModel& source,
     result.device = output.device;
     result.wallTimeMs = output.wallTimeMs;
     result.dispatchWaitTimeMs = output.dispatchWaitTimeMs;
+    result.setupTimeMs = output.setupTimeMs;
+    result.deviceMemoryBytes = output.deviceMemoryBytes;
     if (result.observables.size() != expectedValues ||
         result.eventCounts.size() != request.batchSize) {
         refuse("Metal kernel returned output with an invalid batch shape");
