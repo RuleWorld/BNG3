@@ -13,6 +13,8 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+from scripts.ci import sbml_noncomparable_disposition as disposition
+
 _RECORDER = ROOT / "scripts/ci/record_issue159_release.py"
 _spec = importlib.util.spec_from_file_location(
     "record_issue159_release", str(_RECORDER)
@@ -58,7 +60,26 @@ def _write_report(tmp_path, unsupported_case=None):
             {
                 "category": "semantic",
                 "id": cid,
-                "status": "unsupported" if cid == unsupported_case else "passed",
+                "status": (
+                    "unsupported"
+                    if cid == unsupported_case or cid == "00965"
+                    else "passed"
+                ),
+                **(
+                    {
+                        "official_conformance": {
+                            "status": "unsupported",
+                            "reason": disposition.REASON,
+                        },
+                        "unsupported_reason": disposition.REASON,
+                        "simulation_comparison": {
+                            "skipped": True,
+                            "skip_reason": disposition.REASON,
+                        },
+                    }
+                    if cid == "00965"
+                    else {}
+                ),
             }
             for cid in case_ids
         ],
@@ -222,7 +243,24 @@ def _synthetic_report(tmp_path, status_for=None):
             {
                 "category": "semantic",
                 "id": cid,
-                "status": (status_for or {}).get(cid, "passed"),
+                "status": (status_for or {}).get(
+                    cid, "unsupported" if cid == "00965" else "passed"
+                ),
+                **(
+                    {
+                        "official_conformance": {
+                            "status": "unsupported",
+                            "reason": disposition.REASON,
+                        },
+                        "unsupported_reason": disposition.REASON,
+                        "simulation_comparison": {
+                            "skipped": True,
+                            "skip_reason": disposition.REASON,
+                        },
+                    }
+                    if cid == "00965"
+                    else {}
+                ),
             }
             for cid in case_ids
         ]

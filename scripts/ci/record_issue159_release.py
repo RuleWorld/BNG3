@@ -12,6 +12,10 @@ analytic fixtures, and an exact-main full report in which *every* Core-row
 mapped case has status ``passed``. A missing, stale or negative input fails
 closed (no receipt is produced), so this recorder never self-issues a coverage
 PASS that the executable ``test_release_ssts_coverage`` selector would reject.
+The one pinned random-event-order case is carried as an explicit
+``NON_COMPARABLE`` disposition in ``receipt['dispositions']``, verified against
+the harness-generated reason and specification basis; it is never a pass and
+never a silent skip.
 """
 
 from __future__ import annotations
@@ -25,6 +29,8 @@ import sys
 ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
+
+from scripts.ci import sbml_noncomparable_disposition as disposition
 
 # The four suite-absent Core rows and the fixture identifiers produced by
 # tests/validation/release/cases/issue-159/test_core_analytic_fixtures.py.
@@ -45,15 +51,19 @@ def _verify_core_coverage(
     report: dict,
     mapping: dict,
     fixtures_report: dict,
-) -> tuple[list[str], dict]:
-    """Return (diagnostics, receipt) for release-ssts-coverage.
+) -> tuple[list[str], dict, list[dict]]:
+    """Return (diagnostics, receipt, dispositions) for release-ssts-coverage.
 
     Fails closed: a Core row is covered only when every mapped case executed
-    and passed and every suite-absent row has an affirmative fixture result.
-    ``diagnostics`` carries one entry per offending row/case so a failed
-    aggregate produces actionable per-case evidence rather than a bare PASS.
+    and passed, every suite-absent row has an affirmative fixture result, and
+    the sole spec-backed non-comparable case still carries the exact
+    harness-generated reason. ``diagnostics`` carries one entry per offending
+    row/case so a failed aggregate produces actionable per-case evidence rather
+    than a bare PASS. A disposition is explicit evidence, never a pass and
+    never a silent skip.
     """
     diagnostics: list[str] = []
+    dispositions: list[dict] = []
     records = {(r["category"], r["id"]): r for r in report.get("records", [])}
     fixture_results = fixtures_report.get("fixtures") or {}
     fixture_names = set(FIXTURE_NAMES.values())
@@ -82,6 +92,16 @@ def _verify_core_coverage(
             if record is None:
                 diagnostics.append(f"{row}: mapped case {case_id} missing from report")
                 continue
+            try:
+                disposition_row = disposition.classify(row, "semantic", case_id, record)
+            except ValueError as exc:
+                # A changed reason, missing reason or genuine failure fails
+                # closed rather than being reported as covered.
+                diagnostics.append(str(exc))
+                continue
+            if disposition_row is not None:
+                dispositions.append(disposition_row)
+                continue
             status = record.get("status")
             if status != "passed":
                 diagnostics.append(
@@ -94,8 +114,9 @@ def _verify_core_coverage(
         "case_inventory": report.get("case_inventory"),
         "core_rows_checked": checked_rows,
         "fixtures_report_sha256": report.get("_fixtures_report_sha256"),
+        "disposition_ids": [row["id"] for row in dispositions],
     }
-    return diagnostics, receipt
+    return diagnostics, receipt, dispositions
 
 
 def build_release_report(
@@ -192,7 +213,7 @@ def build_release_report(
     mapping = json.loads(mapping_path.read_text(encoding="utf-8"))
     report["_report_sha256"] = _sha256(suite_report)
     report["_fixtures_report_sha256"] = _sha256(core_fixtures_report)
-    diagnostics, coverage_receipt = _verify_core_coverage(
+    diagnostics, coverage_receipt, dispositions = _verify_core_coverage(
         report, mapping, fixtures_data
     )
     if diagnostics:
@@ -223,6 +244,10 @@ def build_release_report(
             "expectations": {"sha256": _sha256(expectations)},
         },
         "manifest_comparison": manifest_comparison,
+        # Explicit, non-PASS disposition rows. They are carried outside
+        # ``results`` so the closure gate cannot mistake them for supported
+        # execution of an acceptance check.
+        "dispositions": dispositions,
         "results": [
             {
                 "id": "release-ssts",
@@ -256,8 +281,11 @@ def build_release_report(
                 "supported_execution": True,
                 "detail": (
                     f"{coverage_receipt['core_rows_checked']} Core rows verified: "
-                    "every mapped case passed and all four analytic fixtures "
-                    "executed affirmatively"
+                    "every mapped case passed or carries an exact-identity "
+                    "spec-backed NON-COMPARABLE disposition, and all four "
+                    "analytic fixtures executed affirmatively; "
+                    f"{len(dispositions)} non-comparable case(s), not count(s) "
+                    "as passes"
                 ),
                 "receipt": coverage_receipt,
             },
