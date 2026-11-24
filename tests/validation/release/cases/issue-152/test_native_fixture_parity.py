@@ -57,9 +57,22 @@ def _native_xml(xml: Path, native_bin: Path, out: Path, t_end, n_steps, seed):
     removed = []
     for _ in range(12):
         proc = subprocess.run(
-            [str(native_bin), "-xml", str(xml), "-o", str(out),
-             "-sim", str(t_end), "-oSteps", str(n_steps), "-seed", str(seed)],
-            capture_output=True, text=True, timeout=300,
+            [
+                str(native_bin),
+                "-xml",
+                str(xml),
+                "-o",
+                str(out),
+                "-sim",
+                str(t_end),
+                "-oSteps",
+                str(n_steps),
+                "-seed",
+                str(seed),
+            ],
+            capture_output=True,
+            text=True,
+            timeout=300,
         )
         if proc.returncode == 0 and out.is_file():
             return removed
@@ -126,9 +139,9 @@ def _run_one_family(fixture, native_bin, work_dir):
         # Both sides constant: require the constants to agree exactly.
         assert diff == 0.0, f"{family}: constant distributions disagree"
     else:
-        assert diff <= Z_CONTROL * se, (
-            f"{family}: |mean diff| {diff:.3f} > {Z_CONTROL}*SE {Z_CONTROL*se:.3f}"
-        )
+        assert (
+            diff <= Z_CONTROL * se
+        ), f"{family}: |mean diff| {diff:.3f} > {Z_CONTROL}*SE {Z_CONTROL*se:.3f}"
     return {
         "fixture": fixture["id"],
         "observable": observable,
@@ -150,6 +163,7 @@ def test_canonical_fixtures_match_pinned_native_nfsim(tmp_path):
     expected = _native_revision()
     if not native_bin or declared != expected or not Path(native_bin).is_file():
         import pytest
+
         pytest.skip(f"pinned native NFsim not configured (revision {expected})")
 
     # Some canonical observables (e.g. fceri RecPgamma) are not constructible

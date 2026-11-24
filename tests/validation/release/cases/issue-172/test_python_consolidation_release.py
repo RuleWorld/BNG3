@@ -108,7 +108,9 @@ def verify_legacy_junit(path, modules=LEGACY_MODULES, expected=LEGACY_EXPECTED_C
         if any(case.find(tag) is not None for tag in ("failure", "error", "skipped"))
     ]
     assert not problems, f"compatibility cases skipped or failed: {problems}"
-    assert len(cases) == expected, f"expected {expected} executed cases, found {len(cases)}"
+    assert (
+        len(cases) == expected
+    ), f"expected {expected} executed cases, found {len(cases)}"
     classnames = {
         next(
             (part for part in case.get("classname", "").split(".") if part in modules),

@@ -114,7 +114,9 @@ def _selector_exists(selector: str) -> bool:
 
 def test_every_required_route_has_all_four_mapped_aspects():
     required = {name for routes in REQUIRED_ROUTES.values() for name in routes}
-    assert required <= set(ROUTE_TESTS), f"unmapped routes: {sorted(required - set(ROUTE_TESTS))}"
+    assert required <= set(
+        ROUTE_TESTS
+    ), f"unmapped routes: {sorted(required - set(ROUTE_TESTS))}"
     for route in required:
         aspects = ROUTE_TESTS[route]
         assert set(aspects) == set(ROUTE_ASPECTS), f"{route}: {sorted(aspects)}"

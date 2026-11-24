@@ -569,8 +569,12 @@ def atomize(
                 source, atomize=atomize, annotation=annotation, quiet_mode=quiet_mode
             )
             stem = Path(input_path or input_file or source).stem
-            sct_path = (Path(output_path or output_file or source).parent) / f"{stem}_scts.json"
-            sct_path.write_text(json.dumps(sct_tables, indent=2) + "\n", encoding="utf-8")
+            sct_path = (
+                Path(output_path or output_file or source).parent
+            ) / f"{stem}_scts.json"
+            sct_path.write_text(
+                json.dumps(sct_tables, indent=2) + "\n", encoding="utf-8"
+            )
             click.echo(f"SCT tables written to {sct_path}")
             if write_sct_graphs:
                 try:

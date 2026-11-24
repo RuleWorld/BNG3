@@ -31,9 +31,7 @@ TEST_FILE = "tests/validation/release/cases/issue-152/test_energy_protocols.py"
 
 # Only the structural / fail-closed check is genuinely covered by the leaf.
 MEASURED_LEAF_CHECKS = frozenset({"release-obligation-152"})
-REPORT_CHECKS = frozenset(
-    {"release-energy-protocols", "release-extension-protocols"}
-)
+REPORT_CHECKS = frozenset({"release-energy-protocols", "release-extension-protocols"})
 
 REQUIRED_FAMILIES = (
     "rna-uorf",
@@ -117,9 +115,15 @@ def verify_native_report(path: Path, revision: str) -> dict | None:
         report = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    if not isinstance(report, dict) or report.get("check") != "release-energy-protocols":
+    if (
+        not isinstance(report, dict)
+        or report.get("check") != "release-energy-protocols"
+    ):
         return None
-    if report.get("source_revision") != revision or report.get("source_dirty") is not False:
+    if (
+        report.get("source_revision") != revision
+        or report.get("source_dirty") is not False
+    ):
         return None
     if report.get("status") != "PASS":
         return None
@@ -145,9 +149,15 @@ def verify_extension_report(path: Path, revision: str) -> dict | None:
         report = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
-    if not isinstance(report, dict) or report.get("check") != "release-extension-protocols":
+    if (
+        not isinstance(report, dict)
+        or report.get("check") != "release-extension-protocols"
+    ):
         return None
-    if report.get("source_revision") != revision or report.get("source_dirty") is not False:
+    if (
+        report.get("source_revision") != revision
+        or report.get("source_dirty") is not False
+    ):
         return None
     if report.get("status") != "PASS":
         return None
@@ -193,8 +203,16 @@ def build_release_record(
     executed = (run_tests(root) if not skip_tests else {}) or {}
 
     reports = reports or {}
-    native = verify_native_report(Path(reports["release-energy-protocols"]), revision) if "release-energy-protocols" in reports else None
-    extension = verify_extension_report(Path(reports["release-extension-protocols"]), revision) if "release-extension-protocols" in reports else None
+    native = (
+        verify_native_report(Path(reports["release-energy-protocols"]), revision)
+        if "release-energy-protocols" in reports
+        else None
+    )
+    extension = (
+        verify_extension_report(Path(reports["release-extension-protocols"]), revision)
+        if "release-extension-protocols" in reports
+        else None
+    )
 
     results = []
     for check_id in EXPECTED_CHECKS:

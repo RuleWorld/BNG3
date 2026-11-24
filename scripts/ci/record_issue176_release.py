@@ -113,7 +113,10 @@ def _clean_report(path: Path, check_id: str, revision: str) -> dict | None:
         return None
     if report.get("status") != "PASS":
         return None
-    if report.get("source_revision") != revision or report.get("source_dirty") is not False:
+    if (
+        report.get("source_revision") != revision
+        or report.get("source_dirty") is not False
+    ):
         return None
     return report
 
@@ -158,14 +161,20 @@ def build_release_record(
 ) -> dict:
     head = subprocess.run(
         ["git", "-C", str(root), "rev-parse", "HEAD"],
-        check=True, capture_output=True, text=True, timeout=10,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
     ).stdout.strip()
     if expected_revision and head != expected_revision:
         _fail(f"stale Issue 176 evidence: HEAD {head} != {expected_revision}")
     revision = expected_revision or head
     dirty = subprocess.run(
         ["git", "-C", str(root), "status", "--porcelain"],
-        check=True, capture_output=True, text=True, timeout=10,
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=10,
     ).stdout.strip()
     if dirty and not allow_dirty:
         _fail(f"Issue 176 evidence checkout is dirty: {dirty}")
@@ -173,8 +182,18 @@ def build_release_record(
     manifest = verify_manifest(root)
     executed = (run_tests(root) if not skip_tests else {}) or {}
     reports = reports or {}
-    ensemble = verify_ensemble_report(Path(reports["release-nf-ensemble"]), revision) if "release-nf-ensemble" in reports else None
-    measurement = verify_measurement_report(Path(reports["release-capability-coverage-176"]), revision) if "release-capability-coverage-176" in reports else None
+    ensemble = (
+        verify_ensemble_report(Path(reports["release-nf-ensemble"]), revision)
+        if "release-nf-ensemble" in reports
+        else None
+    )
+    measurement = (
+        verify_measurement_report(
+            Path(reports["release-capability-coverage-176"]), revision
+        )
+        if "release-capability-coverage-176" in reports
+        else None
+    )
 
     results = []
     for check_id in EXPECTED_CHECKS:

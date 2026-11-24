@@ -221,7 +221,9 @@ def build_release_record(
                 "row_count": eq_catalogue["row_count"],
                 "cases": sorted({row["case"] for row in eq_catalogue["results"]}),
                 "oracles": sorted({row["oracle"] for row in eq_catalogue["results"]}),
-                "outcomes": sorted({row["observed"] for row in eq_catalogue["results"]}),
+                "outcomes": sorted(
+                    {row["observed"] for row in eq_catalogue["results"]}
+                ),
                 "artifact": (
                     str(artifact_path) if artifact_path else "generated-in-recorder"
                 ),

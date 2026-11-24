@@ -52,7 +52,15 @@ def test_release_migration_docs(tmp_path: Path):
     dist_dir = tmp_path / "dist"
     dist_dir.mkdir()
     build = subprocess.run(
-        [sys.executable, "-m", "build", "--wheel", "--no-isolation", "--outdir", str(dist_dir)],
+        [
+            sys.executable,
+            "-m",
+            "build",
+            "--wheel",
+            "--no-isolation",
+            "--outdir",
+            str(dist_dir),
+        ],
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,
@@ -73,13 +81,23 @@ def test_release_migration_docs(tmp_path: Path):
     )
     env_python = env_dir / "bin" / "python"
     install = subprocess.run(
-        [str(env_python), "-m", "pip", "install", "--no-deps", "--force-reinstall", str(wheel)],
+        [
+            str(env_python),
+            "-m",
+            "pip",
+            "install",
+            "--no-deps",
+            "--force-reinstall",
+            str(wheel),
+        ],
         cwd=str(REPO_ROOT),
         capture_output=True,
         text=True,
     )
     assert install.returncode == 0, f"wheel install failed:\n{install.stderr[-2000:]}"
-    installed_suite = REPO_ROOT / "tests/python/test_migration_guide_installed_example.py"
+    installed_suite = (
+        REPO_ROOT / "tests/python/test_migration_guide_installed_example.py"
+    )
     env = os.environ.copy()
     env.pop("PYTHONPATH", None)
     proc = subprocess.run(
@@ -89,9 +107,9 @@ def test_release_migration_docs(tmp_path: Path):
         text=True,
         env=env,
     )
-    assert proc.returncode == 0, (
-        f"installed migration examples failed:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
-    )
+    assert (
+        proc.returncode == 0
+    ), f"installed migration examples failed:\nSTDOUT:\n{proc.stdout}\nSTDERR:\n{proc.stderr}"
 
     # 2. Test every row of the migration table systematically
     model_path = tmp_path / "model.bngl"

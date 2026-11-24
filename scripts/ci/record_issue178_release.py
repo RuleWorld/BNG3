@@ -49,9 +49,7 @@ LEAF_TESTS = {
 }
 
 # Bounded architecture/documentation checks whose leaf genuinely covers them.
-MEASURED_LEAF_CHECKS = frozenset(
-    {"release-shared-decisions", "release-obligation-178"}
-)
+MEASURED_LEAF_CHECKS = frozenset({"release-shared-decisions", "release-obligation-178"})
 
 # Cross-backend/format checks need a consuming report with full route coverage.
 ROUTE_CHECKS = frozenset(
@@ -184,9 +182,7 @@ def run_tests(root: Path = ROOT) -> dict[str, dict]:
     return executed
 
 
-def verify_route_report(
-    path: Path, check_id: str, revision: str
-) -> dict | None:
+def verify_route_report(path: Path, check_id: str, revision: str) -> dict | None:
     """Validate a consuming route report, or return None if it is insufficient.
 
     A report qualifies only when it is exact-revision, clean, PASS, reports
@@ -202,7 +198,10 @@ def verify_route_report(
         return None
     if not isinstance(report, dict) or report.get("check") != check_id:
         return None
-    if report.get("source_revision") != revision or report.get("source_dirty") is not False:
+    if (
+        report.get("source_revision") != revision
+        or report.get("source_dirty") is not False
+    ):
         return None
     if report.get("status") != "PASS":
         return None

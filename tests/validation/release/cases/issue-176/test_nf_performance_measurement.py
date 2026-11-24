@@ -36,6 +36,7 @@ _build = ROOT / "build" / "cpp" / "_bionetgen_cpp.cpython-314-darwin.so"
 def _cpp():
     try:
         import bionetgen._bionetgen_cpp as cpp  # type: ignore
+
         return cpp
     except ImportError:
         spec = importlib.util.spec_from_file_location("_bionetgen_cpp", str(_build))
@@ -151,14 +152,20 @@ def _correct(workload, runs):
         )
         se = math.sqrt(variance / len(last))
         assert abs(float(last.mean()) - expected) <= 4.0 * se
-        return {"analytic_mean": expected, "observed_mean": float(last.mean()), "se": se}
+        return {
+            "analytic_mean": expected,
+            "observed_mean": float(last.mean()),
+            "se": se,
+        }
     if workload == "scaffold":
         for r in runs:
             obs = r["observables"]
             np.testing.assert_allclose(obs["TotalScaffold"], 10.0, atol=1e-9)
             np.testing.assert_allclose(obs["TotalSub"], 20.0, atol=1e-9)
             np.testing.assert_allclose(
-                np.asarray(obs["PhosSub"]) + np.asarray(obs["UnphosSub"]), 20.0, atol=1e-9
+                np.asarray(obs["PhosSub"]) + np.asarray(obs["UnphosSub"]),
+                20.0,
+                atol=1e-9,
             )
         return {"invariant": "scaffold=10, substrate=20, phos+unphos=20"}
     if workload == "genome":
@@ -197,7 +204,9 @@ def test_nfnext_startup_memory_throughput_with_analytic_correctness():
                 "startup_seconds": startup_seconds,
                 "ensemble_seconds": ensemble_seconds,
                 "events": events,
-                "events_per_second": events / ensemble_seconds if ensemble_seconds > 0 else 0.0,
+                "events_per_second": (
+                    events / ensemble_seconds if ensemble_seconds > 0 else 0.0
+                ),
                 "peak_rss_kib": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
                 "correctness": control,
                 "status": "PASS",

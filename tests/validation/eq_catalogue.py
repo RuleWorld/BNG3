@@ -28,7 +28,6 @@ import bionetgen
 from bionetgen.bngir import EqualityUndecided
 from bionetgen.model import _cpp
 
-
 # An outcome is one of: equal, different, undecided.
 EQUAL = "equal"
 DIFFERENT = "different"
@@ -62,8 +61,7 @@ def _typed(name: str, count: int = 4) -> str:
         f"  {name}(s~u) -> {name}(s~p) k\n",
         molecules=f"  {name}(s~u~p)\n  B()\n",
         seed=f"  {name}(s~u) {count}\n",
-        extra="begin observables\n"
-        f"  Molecules n {name}(s~u)\nend observables\n",
+        extra="begin observables\n" f"  Molecules n {name}(s~u)\nend observables\n",
     )
 
 
@@ -96,13 +94,11 @@ def _time_pair(*, different: bool) -> tuple[str, str]:
 
 
 def _energy_pair(*, shift: bool) -> tuple[str, str]:
-    extra = (
-        "begin energy patterns\n"
-        "  A() 0\n"
-        "end energy patterns\n"
-    )
+    extra = "begin energy patterns\n" "  A() 0\n" "end energy patterns\n"
     left = _model("  A() -> B() k\n", extra=extra)
-    right = _model("  A() -> B() k\n" + ("  B() -> A() k\n" if shift else ""), extra=extra)
+    right = _model(
+        "  A() -> B() k\n" + ("  B() -> A() k\n" if shift else ""), extra=extra
+    )
     return left, right
 
 
@@ -112,7 +108,8 @@ def _delay_pair(*, different_completion: bool) -> tuple[str, str]:
         params="  k 1\n  tau 2\n",
     )
     right = _model(
-        "  A() -> B() k delay=2\n" + ("  B() -> A() k delay=3\n" if different_completion else ""),
+        "  A() -> B() k delay=2\n"
+        + ("  B() -> A() k delay=3\n" if different_completion else ""),
         params="  k 1\n  tau 2\n",
     )
     return left, right
@@ -140,8 +137,12 @@ CASES: tuple[EqCase, ...] = (
         ),
         EQUAL,
         (
-            _model("  A() -> B() k\n", actions='setParameter("k",1)\nsetParameter("k",2)\n'),
-            _model("  A() -> B() k\n", actions='setParameter("k",2)\nsetParameter("k",1)\n'),
+            _model(
+                "  A() -> B() k\n", actions='setParameter("k",1)\nsetParameter("k",2)\n'
+            ),
+            _model(
+                "  A() -> B() k\n", actions='setParameter("k",2)\nsetParameter("k",1)\n'
+            ),
         ),
         UNDECIDED,
     ),
@@ -163,7 +164,11 @@ CASES: tuple[EqCase, ...] = (
         "EQ-refine",
         "independent-rational-generator:exhaustive-state-partition",
         (
-            _model("  A(s) -> B() k\n", molecules="  A(s~u~p)\n  B()\n", seed="  A(s~u) 4\n"),
+            _model(
+                "  A(s) -> B() k\n",
+                molecules="  A(s~u~p)\n  B()\n",
+                seed="  A(s~u) 4\n",
+            ),
             _model(
                 "  A(s~u) -> B() k\n  A(s~p) -> B() k\n",
                 molecules="  A(s~u~p)\n  B()\n",
@@ -172,7 +177,11 @@ CASES: tuple[EqCase, ...] = (
         ),
         EQUAL,
         (
-            _model("  A(s) -> B() k\n", molecules="  A(s~u~p)\n  B()\n", seed="  A(s~u) 2\n  A(s~p) 2\n"),
+            _model(
+                "  A(s) -> B() k\n",
+                molecules="  A(s~u~p)\n  B()\n",
+                seed="  A(s~u) 2\n  A(s~p) 2\n",
+            ),
             _model(
                 "  A(s~u) -> B() k\n",
                 molecules="  A(s~u~p)\n  B()\n",
@@ -226,7 +235,11 @@ CASES: tuple[EqCase, ...] = (
         EQUAL,
         (
             _model("  A() -> B() k\n"),
-            _model("  A(s~u) -> B(s~u) k\n", molecules="  A(s~u~p)\n  B(s~u~p)\n", seed="  A(s~u) 4\n"),
+            _model(
+                "  A(s~u) -> B(s~u) k\n",
+                molecules="  A(s~u~p)\n  B(s~u~p)\n",
+                seed="  A(s~u) 4\n",
+            ),
         ),
         UNDECIDED,
     ),
@@ -366,13 +379,25 @@ CASES: tuple[EqCase, ...] = (
         "EQ-observables",
         "independent-observable-count:Molecules-versus-Species",
         (
-            _model("  A() -> B() k\n", extra="begin observables\n  Molecules n A()\nend observables\n"),
-            _model("  A() -> B() k\n", extra="begin observables\n  Molecules n A()\nend observables\n"),
+            _model(
+                "  A() -> B() k\n",
+                extra="begin observables\n  Molecules n A()\nend observables\n",
+            ),
+            _model(
+                "  A() -> B() k\n",
+                extra="begin observables\n  Molecules n A()\nend observables\n",
+            ),
         ),
         EQUAL,
         (
-            _model("  A() -> B() k\n", extra="begin observables\n  Molecules n A()\nend observables\n"),
-            _model("  A() -> B() k\n", extra="begin observables\n  Species n A()\nend observables\n"),
+            _model(
+                "  A() -> B() k\n",
+                extra="begin observables\n  Molecules n A()\nend observables\n",
+            ),
+            _model(
+                "  A() -> B() k\n",
+                extra="begin observables\n  Species n A()\nend observables\n",
+            ),
         ),
         DIFFERENT,
     ),
@@ -447,7 +472,10 @@ CASES: tuple[EqCase, ...] = (
         EQUAL,
         (
             _model("  A() -> B() k\n"),
-            _model("  A() -> B() k\n  A() -> A() k\n", extra="begin observables\n  Molecules n A()\n  Counter firings A()\nend observables\n"),
+            _model(
+                "  A() -> B() k\n  A() -> A() k\n",
+                extra="begin observables\n  Molecules n A()\n  Counter firings A()\nend observables\n",
+            ),
         ),
         UNDECIDED,
     ),
@@ -577,7 +605,11 @@ def _noop_certificate() -> tuple[float, float, str]:
 def _time_certificate() -> tuple[float, float, str]:
     # Piecewise rate switches at t=0.5 versus t=0.75: integrated hazard over
     # [0,1] is 0.5 versus 0.75, giving different A(1).
-    return 10.0 * math.exp(-0.5), 10.0 * math.exp(-0.75), "integrated hazard 0.5 vs 0.75"
+    return (
+        10.0 * math.exp(-0.5),
+        10.0 * math.exp(-0.75),
+        "integrated hazard 0.5 vs 0.75",
+    )
 
 
 def _certificate_row(case_id: str) -> dict:
@@ -655,7 +687,9 @@ def validate_catalogue_report(report: dict) -> None:
         if row.get("expected") not in {EQUAL, DIFFERENT, UNDECIDED}:
             raise ValueError(f"EQ catalogue row {key} has no declared outcome")
         if row.get("observed") != row.get("expected"):
-            raise ValueError(f"EQ catalogue row {key} outcome does not match expectation")
+            raise ValueError(
+                f"EQ catalogue row {key} outcome does not match expectation"
+            )
         seen[key] = row
     expected_rows = {
         (case.id, variant) for case in CASES for variant in ("equal", "different")
@@ -667,7 +701,9 @@ def validate_catalogue_report(report: dict) -> None:
         raise ValueError("EQ catalogue contains rows outside the design catalogue")
     observed_outcomes = {row["observed"] for row in rows}
     if observed_outcomes != {EQUAL, DIFFERENT, UNDECIDED}:
-        raise ValueError("EQ catalogue must cover equal, different and undecided outcomes")
+        raise ValueError(
+            "EQ catalogue must cover equal, different and undecided outcomes"
+        )
     if report.get("case_count") != len(CASES) or report.get("row_count") != len(rows):
         raise ValueError("EQ catalogue counts are stale")
 
@@ -685,7 +721,9 @@ def main(argv=None) -> int:
         f"{len(report['results']) - len(failures)} pass, {len(failures)} fail"
     )
     for row in failures:
-        print(f"  {row['case']}/{row['variant']}: {row['expected']} != {row['observed']}")
+        print(
+            f"  {row['case']}/{row['variant']}: {row['expected']} != {row['observed']}"
+        )
     return 1 if failures else 0
 
 

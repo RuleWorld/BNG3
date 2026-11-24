@@ -87,7 +87,10 @@ def _cli_option_present(row_id: str) -> bool:
         return False
     option = row_id.rsplit(".", 1)[-1]
     text = ""
-    for path in (ROOT / "python/bionetgen/cli.py", ROOT / "python/bionetgen/core/main.py"):
+    for path in (
+        ROOT / "python/bionetgen/cli.py",
+        ROOT / "python/bionetgen/core/main.py",
+    ):
         if path.is_file():
             text += path.read_text(errors="ignore")
     for spelling in (f'"{option}"', f'"--{option}"', f'"--{option.replace("-", "_")}"'):

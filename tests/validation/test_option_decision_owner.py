@@ -29,7 +29,9 @@ def test_simulation_options_have_single_compile_owners():
     """Verify atol, rtol, and max_step decisions are single-owned in compile module."""
     header = (ROOT / "cpp" / "compile" / "Document.hpp").read_text(encoding="utf-8")
     source = (ROOT / "cpp" / "compile" / "Document.cpp").read_text(encoding="utf-8")
-    action = (ROOT / "cpp" / "actions" / "ActionDispatch.cpp").read_text(encoding="utf-8")
+    action = (ROOT / "cpp" / "actions" / "ActionDispatch.cpp").read_text(
+        encoding="utf-8"
+    )
 
     assert "positiveToleranceError" in header
     assert "positiveToleranceError(" in source

@@ -16,20 +16,24 @@ import pytest
 from scripts.ci import record_issue174_release as rec
 
 ROOT = Path(__file__).resolve().parents[2]
-REV = subprocess.check_output(
-    ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
-).strip()
+REV = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
 
 
 def _current(revision=REV, family=None, workloads=None):
     family = family or rec._expected_platform_family()
-    workloads = workloads if workloads is not None else {
-        name: {
-            "status": "PASS", "median": 0.01, "reps": [0.01],
-            "control": "independent control",
+    workloads = (
+        workloads
+        if workloads is not None
+        else {
+            name: {
+                "status": "PASS",
+                "median": 0.01,
+                "reps": [0.01],
+                "control": "independent control",
+            }
+            for name in rec.REQUIRED_WORKLOADS
         }
-        for name in rec.REQUIRED_WORKLOADS
-    }
+    )
     return {
         "check": "issue174-current-cpu-benchmark",
         "status": "PASS",
@@ -67,8 +71,12 @@ def _build(current=None, prior=None, executed=None, **kwargs):
     mp.setattr(rec, "run_tests", fake)
     try:
         record = rec.build_release_record(
-            expected_revision=REV, allow_dirty=True, root=ROOT,
-            current_report=current, issue176_report=prior, **kwargs
+            expected_revision=REV,
+            allow_dirty=True,
+            root=ROOT,
+            current_report=current,
+            issue176_report=prior,
+            **kwargs,
         )
     finally:
         mp.undo()
@@ -124,10 +132,16 @@ def test_missing_issue176_acceptance_blocks_final_acceptance(tmp_path):
 
 def test_partial_issue176_acceptance_blocks_final_acceptance(tmp_path):
     current = _write(tmp_path, "current.json", _current())
-    prior = _write(tmp_path, "prior.json", _prior(statuses={
-        "release-nf-ensemble": "PASS",
-        "release-capability-coverage-176": "NOT_TESTED",
-    }))
+    prior = _write(
+        tmp_path,
+        "prior.json",
+        _prior(
+            statuses={
+                "release-nf-ensemble": "PASS",
+                "release-capability-coverage-176": "NOT_TESTED",
+            }
+        ),
+    )
     rows = _build(current=current, prior=prior)
     assert rows["release-obligation-174"]["status"] == "NOT_TESTED"
 
