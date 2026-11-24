@@ -52,30 +52,25 @@ std::string CppExportWriter::write(const ast::Model& model, const engine::Genera
 
     // CVODE solver settings
     std::string linearMultistep = opts.stiff ? "CV_BDF" : "CV_ADAMS";
-    std::string nonlinearSolver = opts.stiff ? "CV_NEWTON" : "CV_FUNCTIONAL";
-
-    std::string linearSolverSetup;
-    if (opts.stiff && opts.sparse) {
-        linearSolverSetup =
-            "    flag = CVSpgmr(cvode_mem, PREC_NONE, 0);\n"
-            "    if (check_flag(&flag, \"CVSpgmr\", 1))";
+    std::string solverSetup;
+    if (!opts.stiff) {
+        solverSetup =
+            "    resources.nonlinear = SUNNonlinSol_FixedPoint(species, 0, resources.context);\n"
+            "    if (!resources.nonlinear) return failure();\n"
+            "    flag = CVodeSetNonlinearSolver(cvode_mem, resources.nonlinear);\n";
+    } else if (opts.sparse) {
+        solverSetup =
+            "    resources.linear = SUNLinSol_SPGMR(species, SUN_PREC_NONE, 0, resources.context);\n"
+            "    if (!resources.linear) return failure();\n"
+            "    flag = CVodeSetLinearSolver(cvode_mem, resources.linear, nullptr);\n";
     } else {
-        linearSolverSetup =
-            "    flag = CVDense(cvode_mem, __N_SPECIES__);\n"
-            "    if (check_flag(&flag, \"CVDense\", 1))";
+        solverSetup =
+            "    resources.matrix = SUNDenseMatrix(__N_SPECIES__, __N_SPECIES__, resources.context);\n"
+            "    if (!resources.matrix) return failure();\n"
+            "    resources.linear = SUNLinSol_Dense(species, resources.matrix, resources.context);\n"
+            "    if (!resources.linear) return failure();\n"
+            "    flag = CVodeSetLinearSolver(cvode_mem, resources.linear, resources.matrix);\n";
     }
-
-    // Cleanup memory snippet
-    std::string cleanupMemory =
-        "{\n"
-        "        N_VDestroy_Serial(expressions);\n"
-        "        N_VDestroy_Serial(observables);\n"
-        "        N_VDestroy_Serial(ratelaws);\n"
-        "        N_VDestroy_Serial(species);\n"
-        "        CVodeFree(&cvode_mem);\n"
-        "        return_status = 1;\n"
-        "        return Result {return_status, species_out, observables_out};\n"
-        "    }";
 
     // ===== Header comment =====
     out << "/*\n";
@@ -127,11 +122,19 @@ std::string CppExportWriter::write(const ast::Model& model, const engine::Genera
     out << "#include <math.h>\n";
     out << "#include <iostream>\n";
     out << "#include <vector>\n\n";
-    out << "#include <cvode/cvode.h>             /* prototypes for CVODE  */\n";
-    out << "#include <nvector/nvector_serial.h>  /* serial N_Vector       */\n";
-    out << "#include <cvode/cvode_dense.h>       /* prototype for CVDense */\n";
-    out << "#include <cvode/cvode_spgmr.h>       /* prototype for CVSpgmr */\n\n";
-    out << "using namespace std;\n\n";
+    out << R"(#include <cvode/cvode.h>             /* prototypes for CVODE  */
+#include <nvector/nvector_serial.h>  /* serial N_Vector       */
+#include <sundials/sundials_iterative.h>
+#include <sundials/sundials_linearsolver.h>
+#include <sunmatrix/sunmatrix_dense.h>
+#include <sunlinsol/sunlinsol_dense.h>
+#include <sunlinsol/sunlinsol_spgmr.h>
+
+#include <sunnonlinsol/sunnonlinsol_fixedpoint.h>
+
+using namespace std;
+
+)";
 
     // ===== Problem dimensions =====
     out << "/* Problem Dimensions */\n";
@@ -227,7 +230,7 @@ std::string CppExportWriter::write(const ast::Model& model, const engine::Genera
     // ===== calc_species_deriv =====
     out << "/* Calculate species derivatives */\n";
     out << "int\n";
-    out << "calc_species_deriv ( realtype time, N_Vector species, N_Vector Dspecies, void * f_data )\n";
+    out << "calc_species_deriv ( sunrealtype time, N_Vector species, N_Vector Dspecies, void * f_data )\n";
     out << "{\n";
     out << "    int         return_val;\n";
     out << "    N_Vector *  temp_data;\n";
@@ -367,22 +370,40 @@ std::string CppExportWriter::write(const ast::Model& model, const engine::Genera
     out << "    size_t    i;\n";
     out << "    size_t    j;\n";
     out << "\n";
-    out << "    /* intermediate data vectors */\n";
-    out << "    N_Vector  expressions;\n";
-    out << "    N_Vector  observables;\n";
-    out << "    N_Vector  ratelaws;\n";
-    out << "\n";
-    out << "    /* array to hold pointers to data vectors */\n";
-    out << "    N_Vector  temp_data[3];\n";
-    out << "\n";
-    out << "    /* CVODE specific variables */\n";
-    out << "    realtype  reltol;\n";
-    out << "    realtype  abstol;\n";
-    out << "    realtype  time;\n";
-    out << "    N_Vector  species;\n";
-    out << "    void *    cvode_mem;\n";
-    out << "    int       flag;\n";
-    out << "\n";
+    out << R"(    struct SolverResources {
+        SUNContext context = nullptr;
+        SUNMatrix matrix = nullptr;
+        SUNLinearSolver linear = nullptr;
+        SUNNonlinearSolver nonlinear = nullptr;
+        void* cvode = nullptr;
+        N_Vector expressions = nullptr;
+        N_Vector observables = nullptr;
+        N_Vector ratelaws = nullptr;
+        N_Vector species = nullptr;
+
+        ~SolverResources() {
+            if (cvode) CVodeFree(&cvode);
+            if (nonlinear) SUNNonlinSolFree(nonlinear);
+            if (linear) SUNLinSolFree(linear);
+            if (matrix) SUNMatDestroy(matrix);
+            if (species) N_VDestroy(species);
+            if (ratelaws) N_VDestroy(ratelaws);
+            if (observables) N_VDestroy(observables);
+            if (expressions) N_VDestroy(expressions);
+            if (context) SUNContext_Free(&context);
+        }
+    } resources;
+    auto& expressions = resources.expressions;
+    auto& observables = resources.observables;
+    auto& ratelaws = resources.ratelaws;
+    auto& species = resources.species;
+    auto& cvode_mem = resources.cvode;
+    N_Vector temp_data[3];
+    sunrealtype reltol, abstol, time;
+    int flag;
+
+)";
+
     out << "    /* make sure timepoints has correct dimensions */\n";
     out << "    if ( (timepoints.size() < 2) )\n";
     out << "    {  cout << \"TIMEPOINTS must be a vector with 2 or more elements.\" <<endl;  }\n";
@@ -399,45 +420,25 @@ std::string CppExportWriter::write(const ast::Model& model, const engine::Genera
     out << "    n_timepoints = timepoints.size();\n";
     out << "\n";
     out << "    /* Create output arrays */\n";
-    out << "    int return_status;\n";
     out << "    vector< vector<double> > species_out( __N_SPECIES__ , vector<double> (n_timepoints, 0));\n";
     out << "    vector< vector<double> > observables_out( __N_OBSERVABLES__ , vector<double> (n_timepoints, 0));\n";
     out << "\n";
-    out << "    double * ptr_parameters = &parameters[0];\n";
-    out << "    double * ptr_timepoints = &timepoints[0];\n";
-    out << "    double * ptr_species_init = &species_init[0];\n";
+    out << "    double * ptr_parameters = parameters.data();\n";
     out << "\n";
 
-    // Initialize intermediate data vectors
-    out << "    /* initialize intermediate data vectors */\n";
-    out << "    expressions  = NULL;\n";
-    out << "    expressions = N_VNew_Serial(__N_EXPRESSIONS__);\n";
-    out << "    if (check_flag((void *)expressions, \"N_VNew_Serial\", 0))\n";
-    out << "    {\n";
-    out << "        return_status = 1;\n";
-    out << "        return Result {return_status, species_out, observables_out};\n";
-    out << "    }\n";
-    out << "\n";
-    out << "    observables = NULL;\n";
-    out << "    observables = N_VNew_Serial(__N_OBSERVABLES__);\n";
-    out << "    if (check_flag((void *)observables, \"N_VNew_Serial\", 0))\n";
-    out << "    {\n";
-    out << "        N_VDestroy_Serial(expressions);\n";
-    out << "        return_status = 1;\n";
-    out << "        return Result {return_status, species_out, observables_out};\n";
-    out << "    }\n";
-    out << "\n";
-    out << "    ratelaws    = NULL;\n";
-    out << "    ratelaws = N_VNew_Serial(__N_RATELAWS__);\n";
-    out << "    if (check_flag((void *)ratelaws, \"N_VNew_Serial\", 0))\n";
-    out << "    {\n";
-    out << "        N_VDestroy_Serial(expressions);\n";
-    out << "        N_VDestroy_Serial(observables);\n";
-    out << "        return_status = 1;\n";
-    out << "        return Result {return_status, species_out, observables_out};\n";
-    out << "    }\n";
-    out << "\n";
-    out << "    /* set up pointers to intermediate data vectors */\n";
+    out << R"(    const auto failure = [&] {
+        return Result {1, species_out, observables_out};
+    };
+    flag = SUNContext_Create(SUN_COMM_NULL, &resources.context);
+    if (flag != SUN_SUCCESS) return failure();
+
+    expressions = N_VNew_Serial(__N_EXPRESSIONS__, resources.context);
+    observables = N_VNew_Serial(__N_OBSERVABLES__, resources.context);
+    ratelaws = N_VNew_Serial(__N_RATELAWS__, resources.context);
+    species = N_VNew_Serial(__N_SPECIES__, resources.context);
+    if (!expressions || !observables || !ratelaws || !species) return failure();
+
+)";
     out << "    temp_data[0] = expressions;\n";
     out << "    temp_data[1] = observables;\n";
     out << "    temp_data[2] = ratelaws;\n";
@@ -446,24 +447,13 @@ std::string CppExportWriter::write(const ast::Model& model, const engine::Genera
     out << "    calc_expressions( expressions, ptr_parameters );\n";
     out << "\n";
     out << "    /* SOLVE model equations! */\n";
-    out << "    species   = NULL;\n";
-    out << "    cvode_mem = NULL;\n";
     out << "\n";
     out << "    /* Set the scalar relative tolerance */\n";
     out << "    reltol = " << std::scientific << opts.rtol << ";\n";
     out << "    abstol = " << std::scientific << opts.atol << ";\n";
     out << std::defaultfloat;
     out << "\n";
-    out << "    /* Create serial vector for Species */\n";
-    out << "    species = N_VNew_Serial(__N_SPECIES__);\n";
-    out << "    if (check_flag((void *)species, \"N_VNew_Serial\", 0))\n";
-    out << "    {\n";
-    out << "        N_VDestroy_Serial(expressions);\n";
-    out << "        N_VDestroy_Serial(observables);\n";
-    out << "        N_VDestroy_Serial(ratelaws);\n";
-    out << "        return_status = 1;\n";
-    out << "        return Result {return_status, species_out, observables_out};\n";
-    out << "    }\n";
+    out << "    /* Initialize the species vector */\n";
     out << "    for ( i = 0; i < __N_SPECIES__; i++ )\n";
     out << "    {   NV_Ith_S(species,i) = species_init[i];   }\n";
     out << "\n";
@@ -480,12 +470,11 @@ std::string CppExportWriter::write(const ast::Model& model, const engine::Genera
     // CVodeCreate
     out << "    /*   Call CVodeCreate to create the solver memory:\n";
     out << "     *   CV_ADAMS or CV_BDF is the linear multistep method\n";
-    out << "     *   CV_FUNCTIONAL or CV_NEWTON is the nonlinear solver iteration\n";
     out << "     *   A pointer to the integrator problem memory is returned and stored in cvode_mem.\n";
     out << "     */\n";
-    out << "    cvode_mem = CVodeCreate(" << linearMultistep << ", " << nonlinearSolver << ");\n";
+    out << "    cvode_mem = CVodeCreate(" << linearMultistep << ", resources.context);\n";
     out << "    if (check_flag((void *)cvode_mem, \"CVodeCreate\", 0))\n";
-    out << "    " << cleanupMemory << "\n\n\n";
+    out << "        return failure();\n\n";
 
     // CVodeInit
     out << "    /*   Call CVodeInit to initialize the integrator memory:\n";
@@ -496,59 +485,49 @@ std::string CppExportWriter::write(const ast::Model& model, const engine::Genera
     out << "     */\n";
     out << "    flag = CVodeInit(cvode_mem, calc_species_deriv, timepoints[0], species);\n";
     out << "    if (check_flag(&flag, \"CVodeInit\", 1))\n";
-    out << "    " << cleanupMemory << "\n\n";
+    out << "        return failure();\n\n";
 
     // Tolerances
     out << "    /* Set scalar relative and absolute tolerances */\n";
     out << "    flag = CVodeSStolerances(cvode_mem, reltol, abstol);\n";
     out << "    if (check_flag(&flag, \"CVodeSStolerances\", 1))\n";
-    out << "    " << cleanupMemory << "\n\n";
+    out << "        return failure();\n\n";
 
     // User data
     out << "    /* pass params to rhs_func */\n";
     out << "    flag = CVodeSetUserData(cvode_mem, &temp_data);\n";
     out << "    if (check_flag(&flag, \"CVodeSetFdata\", 1))\n";
-    out << "    " << cleanupMemory << "\n\n";
+    out << "        return failure();\n\n";
 
-    // Linear solver
-    out << "    /* select linear solver */\n";
-    out << linearSolverSetup << "\n";
-    out << "    " << cleanupMemory << "\n\n";
+    // CVODE v7 uses explicit solver objects. Adams uses fixed-point
+    // iteration and sparse BDF uses matrix-free SPGMR.
+    out << solverSetup;
+    out << "    if (check_flag(&flag, \"CVODE solver setup\", 1))\n";
+    out << "        return failure();\n\n";
 
     // Solver options
     out << "    flag = CVodeSetMaxNumSteps(cvode_mem, " << opts.maxNumSteps << ");\n";
     out << "    if (check_flag(&flag, \"CVodeSetMaxNumSteps\", 1))\n";
-    out << "    " << cleanupMemory << "\n\n";
+    out << "        return failure();\n\n";
 
     out << "    flag = CVodeSetMaxErrTestFails(cvode_mem, " << opts.maxErrTestFails << ");\n";
     out << "    if (check_flag(&flag, \"CVodeSetMaxErrTestFails\", 1))\n";
-    out << "    " << cleanupMemory << "\n\n";
+    out << "        return failure();\n\n";
 
     out << "    flag = CVodeSetMaxConvFails(cvode_mem, " << opts.maxConvFails << ");\n";
     out << "    if (check_flag(&flag, \"CVodeSetMaxConvFails\", 1))\n";
-    out << "    " << cleanupMemory << "\n\n";
+    out << "        return failure();\n\n";
 
     out << "    flag = CVodeSetMaxStep(cvode_mem, " << opts.maxStep << ");\n";
     out << "    if (check_flag(&flag, \"CVodeSetMaxStep\", 1))\n";
-    out << "    " << cleanupMemory << "\n\n";
+    out << "        return failure();\n\n";
 
     // Integration loop
     out << "    /* integrate to each timepoint */\n";
     out << "    for ( i=1;  i < n_timepoints;  i++ )\n";
     out << "    {\n";
     out << "        flag = CVode(cvode_mem, timepoints[i], species, &time, CV_NORMAL);\n";
-    out << "        if (check_flag(&flag, \"CVode\", 1))\n";
-    out << "        {\n";
-    out << "            N_VDestroy_Serial(expressions);\n";
-    out << "            N_VDestroy_Serial(observables);\n";
-    out << "            N_VDestroy_Serial(ratelaws);\n";
-    out << "            N_VDestroy_Serial(species);\n";
-    out << "            CVodeFree(&cvode_mem);\n";
-    out << "            return_status = 1;\n";
-    out << "            return Result {return_status, species_out, observables_out} ;\n";
-    out << "        }\n";
-    out << "\n";
-    out << "        /* copy species output from nvector to output array */\n";
+    out << "        if (check_flag(&flag, \"CVode\", 1)) return failure();\n";
     out << "        for ( j = 0; j < __N_SPECIES__; j++ )\n";
     out << "        {   species_out[j][i] = NV_Ith_S(species,j);   }\n";
     out << "\n";
@@ -558,18 +537,7 @@ std::string CppExportWriter::write(const ast::Model& model, const engine::Genera
     out << "        {   observables_out[j][i] = NV_Ith_S(observables,j);   }\n";
     out << "    }\n\n";
 
-    // Cleanup
-    out << "    /* Free vectors */\n";
-    out << "    N_VDestroy_Serial(expressions);\n";
-    out << "    N_VDestroy_Serial(observables);\n";
-    out << "    N_VDestroy_Serial(ratelaws);\n";
-    out << "    N_VDestroy_Serial(species);\n";
-    out << "\n";
-    out << "    /* Free integrator memory */\n";
-    out << "    CVodeFree(&cvode_mem);\n";
-    out << "\n";
-    out << "    /* return status, species and observables */\n";
-    out << "    return Result {return_status, species_out, observables_out};\n";
+    out << "    return Result {0, species_out, observables_out};\n";
     out << "}\n";
 
     return out.str();
