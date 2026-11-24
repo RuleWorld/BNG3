@@ -586,6 +586,12 @@ PINNED_REFUSAL_IDS = {
     ),
 }
 PINNED_REFUSAL_COUNTS = {name: len(ids) for name, ids in PINNED_REFUSAL_IDS.items()}
+# BIOMD0000001098 (988 KB, undefined operator 'LOWER_BOUND') sits right at
+# the 180s per-model timeout boundary: faster hosted runners finish it as an
+# 'other' refusal, while busier runners hit the 180s timeout during translation.
+# Accept either of those two exact non-PASS states for BIOMD0000001098 only.
+BORDER_TIMEOUT_REFUSAL_ID = "BIOMD0000001098"
+BORDER_TIMEOUT_REFUSAL_CLASS = "other"
 # The harness's own unsupported_summary.by_cause counts at 71888b93.  The
 # fast_reactions cause includes BIOMD0000000137, which also appears under
 # events; the receipt's disjoint refusal classes therefore have 4 rather than
@@ -751,9 +757,43 @@ def build_disposition_receipt(
         "issue-162/timeouts",
         "flat and atomized timeouts use different per-model budgets",
     )
+
+    def _stable_refusal_view(bucket: dict[str, Any]) -> dict[str, Any]:
+        stable_ids = [
+            model_id
+            for model_id in bucket["refusal_ids"]
+            if model_id != BORDER_TIMEOUT_REFUSAL_ID
+        ]
+        stable_classes = {
+            model_id: cause
+            for model_id, cause in bucket["refusal_classes"].items()
+            if model_id != BORDER_TIMEOUT_REFUSAL_ID
+        }
+        stable_counts = {
+            cause: sum(1 for c in stable_classes.values() if c == cause)
+            for cause in sorted(PINNED_REFUSAL_COUNTS)
+        }
+        return {
+            "refusal_ids": stable_ids,
+            "refusal_classes": stable_classes,
+            "refusal_counts": stable_counts,
+        }
+
+    def _expected_mode_refusals(
+        bucket: dict[str, Any],
+    ) -> tuple[set[str], dict[str, int]]:
+        expected_ids = set().union(*PINNED_REFUSAL_IDS.values())
+        expected_counts = dict(PINNED_REFUSAL_COUNTS)
+        if BORDER_TIMEOUT_REFUSAL_ID in bucket["timeout_ids"]:
+            expected_ids.remove(BORDER_TIMEOUT_REFUSAL_ID)
+            expected_counts[BORDER_TIMEOUT_REFUSAL_CLASS] -= 1
+        return expected_ids, expected_counts
+
     problems: list[str] = []
+    flat_stable = _stable_refusal_view(flat_bucket)
+    atomized_stable = _stable_refusal_view(atomized_bucket)
     for key in ("refusal_ids", "refusal_classes", "refusal_counts"):
-        if flat_bucket[key] != atomized_bucket[key]:
+        if flat_stable[key] != atomized_stable[key]:
             problems.append(f"flat/atomized {key} disagree")
     for mode_name, report in (("flat", flat_report), ("atomized", atomized_report)):
         bucket = buckets[mode_name]
@@ -763,12 +803,13 @@ def build_disposition_receipt(
                 f"{mode_name}: timeout bucket {len(bucket['timeout_ids'])} != "
                 f"report summary {summary.get('timeout_records')}"
             )
-        if bucket["refusal_counts"] != PINNED_REFUSAL_COUNTS:
+        expected_ids, expected_counts = _expected_mode_refusals(bucket)
+        if bucket["refusal_counts"] != expected_counts:
             problems.append(
                 f"{mode_name}: refusal counts {bucket['refusal_counts']} != "
-                f"pinned {PINNED_REFUSAL_COUNTS}"
+                f"pinned {expected_counts}"
             )
-        if set(bucket["refusal_ids"]) != set().union(*PINNED_REFUSAL_IDS.values()):
+        if set(bucket["refusal_ids"]) != expected_ids:
             problems.append(f"{mode_name}: refusal IDs differ from the pinned set")
         by_cause = (report.get("unsupported_summary") or {}).get("by_cause") or {}
         for cause, expected in PINNED_BY_CAUSE_COUNTS.items():

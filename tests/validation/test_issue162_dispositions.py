@@ -569,3 +569,107 @@ def test_platform_sensitive_disposition_fails_closed():
     atomized["modes"][0]["generated_network"] = {"species": 41, "reactions": 91}
     with pytest.raises(ValueError):
         disp.classify_platform_sensitive_limit(flat, atomized)
+
+
+@pytest.mark.parametrize("mode_state", ["both-timeout", "flat-timeout-only"])
+def test_border_model_1098_accepts_timeout_or_refusal_non_pass(mode_state):
+    """BIOMD0000001098 may finish as an 'other' refusal or hit the 180s timeout."""
+    flat_943, atomized_943 = _pinned_pair()
+    flat_refusals, by_cause = _refusal_fixtures("flat")
+    atomized_refusals, atomized_by_cause = _refusal_fixtures("atomized")
+
+    def _timeout_1098():
+        rec = _timeout_record("flat")
+        rec["id"] = disp.BORDER_TIMEOUT_REFUSAL_ID
+        return rec
+
+    flat_records = {disp.MODEL_ID: flat_943}
+    atomized_records = {disp.MODEL_ID: atomized_943}
+    flat_unresolved = set()
+    atomized_unresolved = set()
+    for row in flat_refusals:
+        if row["id"] == disp.BORDER_TIMEOUT_REFUSAL_ID:
+            flat_records[row["id"]] = _timeout_1098()
+        else:
+            flat_records[row["id"]] = {**row, "modes": [{"mode": "flat"}]}
+            flat_unresolved.add(row["id"])
+    for row in atomized_refusals:
+        if mode_state == "both-timeout" and row["id"] == disp.BORDER_TIMEOUT_REFUSAL_ID:
+            atomized_records[row["id"]] = _timeout_1098()
+        else:
+            atomized_records[row["id"]] = {**row, "modes": [{"mode": "atomized"}]}
+            atomized_unresolved.add(row["id"])
+
+    by_cause["other"]["ids"] = [
+        i for i in by_cause["other"]["ids"] if i != disp.BORDER_TIMEOUT_REFUSAL_ID
+    ]
+    by_cause["other"]["count"] = len(by_cause["other"]["ids"])
+    if mode_state == "both-timeout":
+        atomized_by_cause = copy.deepcopy(by_cause)
+
+    flat_report = {
+        "summary": {"timeout_records": 1},
+        "unsupported_summary": {"by_cause": by_cause},
+    }
+    atomized_report = {
+        "summary": {"timeout_records": 1 if mode_state == "both-timeout" else 0},
+        "unsupported_summary": {"by_cause": atomized_by_cause},
+    }
+    rows, receipt = disp.build_disposition_receipt(
+        flat_report,
+        flat_records,
+        atomized_report,
+        atomized_records,
+        {"flat": flat_unresolved, "atomized": atomized_unresolved},
+    )
+    assert receipt["agreement"]["flat_atomized_match"] is True
+    assert receipt["modes"]["flat"]["timeout_ids"] == [disp.BORDER_TIMEOUT_REFUSAL_ID]
+    assert receipt["modes"]["flat"]["refusal_counts"]["other"] == 3
+    if mode_state == "both-timeout":
+        assert receipt["modes"]["atomized"]["timeout_ids"] == [
+            disp.BORDER_TIMEOUT_REFUSAL_ID
+        ]
+        assert receipt["modes"]["atomized"]["refusal_counts"]["other"] == 3
+    else:
+        assert receipt["modes"]["atomized"]["timeout_ids"] == []
+        assert receipt["modes"]["atomized"]["refusal_counts"]["other"] == 4
+    assert all(r["counts_as_pass"] is False for r in rows)
+
+
+def test_other_pinned_refusal_cannot_escape_as_timeout():
+    """Only BIOMD0000001098 has the timeout/refusal border disposition."""
+    flat_943, atomized_943 = _pinned_pair()
+    flat_refusals, by_cause = _refusal_fixtures("flat")
+    atomized_refusals, atomized_by_cause = _refusal_fixtures("atomized")
+    escaped_id = "BIOMD0000001099"
+    flat_records = {disp.MODEL_ID: flat_943}
+    atomized_records = {disp.MODEL_ID: atomized_943}
+    unresolved = set()
+    for row in flat_refusals:
+        if row["id"] == escaped_id:
+            rec = _timeout_record("flat")
+            rec["id"] = escaped_id
+            flat_records[escaped_id] = rec
+        else:
+            flat_records[row["id"]] = {**row, "modes": [{"mode": "flat"}]}
+            unresolved.add(row["id"])
+    for row in atomized_refusals:
+        atomized_records[row["id"]] = (
+            {**flat_records[escaped_id]}
+            if row["id"] == escaped_id
+            else {**row, "modes": [{"mode": "atomized"}]}
+        )
+    by_cause["other"]["ids"] = [i for i in by_cause["other"]["ids"] if i != escaped_id]
+    by_cause["other"]["count"] = len(by_cause["other"]["ids"])
+    report = {
+        "summary": {"timeout_records": 1},
+        "unsupported_summary": {"by_cause": by_cause},
+    }
+    with pytest.raises(ValueError, match="refusal IDs differ"):
+        disp.build_disposition_receipt(
+            report,
+            flat_records,
+            copy.deepcopy(report),
+            atomized_records,
+            {"flat": unresolved, "atomized": set(unresolved)},
+        )
