@@ -124,3 +124,29 @@ def test_dirty_or_partial_input_is_reported(tmp_path, flag):
     result = comparator.compare(before_ssts, after_ssts, before_bm, after_bm, AFTER)
     assert result["record_comparison"]["all_match"] is False
     assert any(flag in problem for problem in result["problems"])
+
+
+def test_stable_expected_failure_counts_are_accepted(tmp_path):
+    """Full corpora contain stable failed/timeout records; these are not a
+    partial or stale comparison when both sides agree."""
+    specs = {
+        "before_bm__counts": {"failed": 17, "timeout": 20},
+        "after_bm__counts": {"failed": 17, "timeout": 20},
+    }
+    before_ssts, after_ssts, before_bm, after_bm = _reports(tmp_path, **specs)
+    result = comparator.compare(before_ssts, after_ssts, before_bm, after_bm, AFTER)
+    assert result["record_comparison"]["all_match"] is True
+    assert result["problems"] == []
+
+
+def test_unstable_failure_count_is_reported(tmp_path):
+    specs = {
+        "before_bm": {"case/00001": "failed", "case/00002": "passed"},
+        "after_bm": {"case/00001": "passed", "case/00002": "passed"},
+        "before_bm__counts": {"failed": 1, "timeout": 0},
+        "after_bm__counts": {"failed": 0, "timeout": 0},
+    }
+    before_ssts, after_ssts, before_bm, after_bm = _reports(tmp_path, **specs)
+    result = comparator.compare(before_ssts, after_ssts, before_bm, after_bm, AFTER)
+    assert result["record_comparison"]["all_match"] is False
+    assert "biomodels:case/00001" in result["record_comparison"]["stale"]

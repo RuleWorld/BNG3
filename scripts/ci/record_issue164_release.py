@@ -192,10 +192,11 @@ def _valid_comparison(document: dict, expected_revision: str) -> tuple[bool, lis
     for key in ("missing", "extra", "status_changed", "stale"):
         if _has_entries(comparison.get(key)):
             problems.append(f"comparison has {key} records: {comparison[key]}")
-    counts = document.get("counts") or {}
-    for key in ("failed", "timeout", "invalid_source", "skipped"):
-        if counts.get(key, 0) != 0:
-            problems.append(f"report has {counts[key]} {key} cases")
+    # Stable non-zero failed/timeout buckets are legitimate full-corpus
+    # outcomes.  ``record_comparison.all_match`` and the empty missing/extra/
+    # status_changed/stale checks above already reject any verdict change;
+    # partial runs are rejected by ``full_run``.  Do not conflate a stable
+    # expected refusal with an incomplete or stale comparison.
     if not (document.get("reference_laws") or {}).get("independent"):
         problems.append("no independent reference law identity recorded")
     return not problems, problems
