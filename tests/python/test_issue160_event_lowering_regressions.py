@@ -70,3 +70,119 @@ def test_zero_interval_fast_coefficient_lowers_exactly():
         for warning in atomizer.model.import_warnings
         if warning.get("severity") in {"dropped", "approximated"}
     ]
+
+
+def test_rate_ruled_boundary_species_event_to_initial_value_is_not_dropped():
+    """An event restoring a rate-ruled boundary species to its initial value is not a no-op."""
+    sbml = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="boundary_rate_rule_priority">
+    <listOfCompartments>
+      <compartment id="C" spatialDimensions="3" size="2" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="S1" compartment="C" initialAmount="10"
+               hasOnlySubstanceUnits="true" boundaryCondition="true" constant="false"/>
+    </listOfSpecies>
+    <listOfRules>
+      <rateRule variable="S1">
+        <math xmlns="http://www.w3.org/1998/Math/MathML">
+          <cn type="integer"> -1 </cn>
+        </math>
+      </rateRule>
+    </listOfRules>
+    <listOfEvents>
+      <event id="E0" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><geq/><csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/time"> time </csymbol><cn> 2.5 </cn></apply>
+          </math>
+        </trigger>
+        <priority>
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><ci> S1 </ci></math>
+        </priority>
+        <listOfEventAssignments>
+          <eventAssignment variable="S1">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn type="integer"> 5 </cn></math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+      <event id="E1" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><geq/><csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/time"> time </csymbol><cn> 2.5 </cn></apply>
+          </math>
+        </trigger>
+        <priority>
+          <math xmlns="http://www.w3.org/1998/Math/MathML"><cn> 7.4 </cn></math>
+        </priority>
+        <listOfEventAssignments>
+          <eventAssignment variable="S1">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn type="integer"> 10 </cn></math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>"""
+    atomizer = Atomizer({"quietMode": True, "logLevel": "INFO", "t_end": 10})
+    result = atomizer.atomize(sbml)
+    assert result.success, result.error
+    bngl = result.bngl
+    assert "remain untranslated" not in bngl
+    idx_five = bngl.index('setConcentration("@C:M_S1()", "5")')
+    idx_ten = bngl.index('setConcentration("@C:M_S1()", "10")')
+    assert idx_five < idx_ten
+    assert not [
+        warning
+        for warning in atomizer.model.import_warnings
+        if warning.get("severity") in {"dropped", "approximated"}
+    ]
+
+
+def test_event_restoring_prior_event_target_to_initial_value_is_not_dropped():
+    """An event restoring a species changed by another event is not a no-op."""
+    sbml = """<?xml version="1.0" encoding="UTF-8"?>
+<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+  <model id="boundary_two_events_restore">
+    <listOfCompartments>
+      <compartment id="C" spatialDimensions="3" size="1" constant="true"/>
+    </listOfCompartments>
+    <listOfSpecies>
+      <species id="S1" compartment="C" initialAmount="10"
+               hasOnlySubstanceUnits="true" boundaryCondition="true" constant="false"/>
+    </listOfSpecies>
+    <listOfEvents>
+      <event id="E0" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><geq/><csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/time"> time </csymbol><cn> 1 </cn></apply>
+          </math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="S1">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn type="integer"> 5 </cn></math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+      <event id="E1" useValuesFromTriggerTime="true">
+        <trigger initialValue="true" persistent="true">
+          <math xmlns="http://www.w3.org/1998/Math/MathML">
+            <apply><geq/><csymbol encoding="text" definitionURL="http://www.sbml.org/sbml/symbols/time"> time </csymbol><cn> 3 </cn></apply>
+          </math>
+        </trigger>
+        <listOfEventAssignments>
+          <eventAssignment variable="S1">
+            <math xmlns="http://www.w3.org/1998/Math/MathML"><cn type="integer"> 10 </cn></math>
+          </eventAssignment>
+        </listOfEventAssignments>
+      </event>
+    </listOfEvents>
+  </model>
+</sbml>"""
+    atomizer = Atomizer({"quietMode": True, "logLevel": "INFO", "t_end": 5})
+    result = atomizer.atomize(sbml)
+    assert result.success, result.error
+    bngl = result.bngl
+    assert 'setConcentration("@C:M_S1()", "5")' in bngl
+    assert 'setConcentration("@C:M_S1()", "10")' in bngl

@@ -4685,6 +4685,56 @@ def test_species_names_colliding_after_m_prefix_are_distinct_pools():
     assert "M_C__C(__sp~C)" in result.bngl, result.bngl[:800]
 
 
+def test_disambiguate_colliding_species_keeps_shared_molecule_name():
+    """Colliding species with identical raw molecule names keep that molecule name."""
+    from bionetgen.atomizer.modern import Atomizer
+
+    model = """<sbml xmlns="http://www.sbml.org/sbml/level3/version2/core" level="3" version="2">
+      <model id="shared_molecule_collision">
+        <listOfCompartments>
+          <compartment id="c" spatialDimensions="3" size="1" constant="true"/>
+        </listOfCompartments>
+        <listOfSpecies>
+          <species id="A" name="A" compartment="c" initialAmount="10"
+                   hasOnlySubstanceUnits="true" constant="false"/>
+          <species id="AP" name="A-P" compartment="c" initialAmount="4"
+                   hasOnlySubstanceUnits="true" constant="false" sboTerm="SBO:0000216"/>
+          <species id="A0" name="A0" compartment="c" initialAmount="1"
+                   hasOnlySubstanceUnits="true" constant="false" sboTerm="SBO:0000330"/>
+        </listOfSpecies>
+        <listOfParameters>
+          <parameter id="kcat" value="0.1" constant="true"/>
+          <parameter id="kdp" value="0.05" constant="true"/>
+        </listOfParameters>
+        <listOfReactions>
+          <reaction id="phos" reversible="false">
+            <listOfReactants><speciesReference species="A"/></listOfReactants>
+            <listOfProducts><speciesReference species="AP"/></listOfProducts>
+            <kineticLaw>
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><times/><ci>kcat</ci><ci>A</ci></apply>
+              </math>
+            </kineticLaw>
+          </reaction>
+          <reaction id="dephos" reversible="false">
+            <listOfReactants><speciesReference species="AP"/></listOfReactants>
+            <listOfProducts><speciesReference species="A0"/></listOfProducts>
+            <kineticLaw>
+              <math xmlns="http://www.w3.org/1998/Math/MathML">
+                <apply><times/><ci>kdp</ci><ci>AP</ci></apply>
+              </math>
+            </kineticLaw>
+          </reaction>
+        </listOfReactions>
+      </model>
+    </sbml>"""
+    result = Atomizer(atomize=True, quiet_mode=True).atomize(model)
+    assert result.success, result.error
+    assert result.structural_inference is not None
+    assert result.structural_inference["species"]["A0"]["molecules"] == ["A"]
+    assert "A__A0" not in result.bngl
+
+
 def test_volume_inside_membrane_compartment_parent_is_preserved():
     """A volume enclosed by a 2D membrane must declare that parent in BNGL.
 
