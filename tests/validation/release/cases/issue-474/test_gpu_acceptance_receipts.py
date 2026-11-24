@@ -133,7 +133,7 @@ def test_stale_parity_receipt_is_rejected(tmp_path):
             "gpu": {"status": "PASS", "backend": "metal", "inventory": [], "models": []},
         },
     )
-    with pytest.raises(ValueError, match="stale source revision"):
+    with pytest.raises(ValueError, match="parity receipt: stale revision"):
         recorder._validate_parity(receipt, "1" * 40, "Apple M5 Pro", "a" * 64)
 
 
