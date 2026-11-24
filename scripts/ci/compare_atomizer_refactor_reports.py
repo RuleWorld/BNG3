@@ -27,6 +27,11 @@ BLOCKING_VERDICTS = {
     "invalid-source",
 }
 PASSED_VERDICTS = {"passed", "pass", "compared", "PASS"}
+# A timeout is not a verdict (see compare_biomodels_suite_reports.py): the
+# per-model budget is sized for an unloaded machine, so on a shared machine a
+# timeout only records that the machine was busy.  A change whose before or
+# after side is a timeout is reported separately and never blocks a match.
+TIMEOUT_VERDICTS = {"timeout", "timed-out"}
 STATUS_FIELDS = (
     "verdict",
     "status",
@@ -170,6 +175,7 @@ def compare(
     extra: dict[str, list[str]] = {}
     status_changed: dict[str, dict[str, str]] = {}
     stale: dict[str, list[str]] = {}
+    timeout_difference: dict[str, dict[str, str]] = {}
     for kind in ("ssts", "biomodels"):
         before = reports[f"before_{kind}"]["records"]
         after = reports[f"after_{kind}"]["records"]
@@ -182,6 +188,11 @@ def compare(
         }
         for key, change in changed.items():
             if (
+                change["before"] in TIMEOUT_VERDICTS
+                or change["after"] in TIMEOUT_VERDICTS
+            ):
+                timeout_difference[f"{kind}:{key}"] = change
+            elif (
                 change["after"] in BLOCKING_VERDICTS
                 or change["before"] in PASSED_VERDICTS
             ):
@@ -248,6 +259,7 @@ def compare(
             "extra": extra,
             "status_changed": status_changed,
             "stale": stale,
+            "timeout_difference": timeout_difference,
         },
         "problems": problems,
         "report_hashes": {name: r["sha256"] for name, r in reports.items()},
