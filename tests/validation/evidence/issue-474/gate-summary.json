@@ -41,12 +41,36 @@
         "release-metal-device",
         "release-metal-performance"
       ]
+    },
+    {
+      "name": "exact-source-revision-with-current-device-reports",
+      "revision": "994fa8fdaee1348a32bb2a1877f6235534af5134",
+      "exit_code": 1,
+      "report": "issue-474-report-994fa8fdaee1348a32bb2a1877f6235534af5134.json",
+      "criteria": {
+        "release-metal-device": "PASS",
+        "release-metal-performance": "PASS",
+        "release-cuda-device": "NOT_TESTED",
+        "release-cuda-performance": "NOT_TESTED",
+        "release-nf-gpu": "NOT_TESTED",
+        "release-capability-coverage-474": "NOT_TESTED"
+      },
+      "demonstrated": [
+        "release-metal-device",
+        "release-metal-performance"
+      ],
+      "not_tested": [
+        "release-cuda-device",
+        "release-cuda-performance",
+        "release-nf-gpu",
+        "release-capability-coverage-474"
+      ]
     }
   ],
   "blockers": [
-    "No local NVIDIA device or compiler and no usable hosted CUDA runner; CUDA device and performance checks externally blocked.",
-    "Network-free CUDA execution is unimplemented; bounded Metal route has analytic and pinned-native NFsim evidence but not the full corpus.",
-    "backend.gpu capability coverage requires backend-specific CUDA executions."
+    "No NVIDIA device or nvcc locally; authenticated runner enumeration returns HTTP 403 and gpu-device-qualification.yml has no runs. CUDA compile configure exits 1.",
+    "Network-free CUDA execution is unimplemented; bounded Metal workload classes have analytic and pinned-native evidence but the full corpus is not claimed.",
+    "backend.gpu capability coverage requires actual CUDA device executions and consuming receipts."
   ],
-  "note": "The gate is a dry-run evidence audit; no GitHub state was mutated. #474 remains OPEN."
+  "note": "Single-issue CLOSED dry run only; no GitHub state mutated. #474 stays OPEN with four unmet acceptance checks."
 }

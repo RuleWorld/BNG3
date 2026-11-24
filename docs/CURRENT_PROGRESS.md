@@ -1,5 +1,24 @@
 # BNG3 current progress
 
+## GPU workstream #474 (2026-11-24, source `994fa8fd`)
+
+The finite batch-SSA device route now emits the full `[time][species]` grid on Metal and in the
+CUDA source, so `simulate_ssa(batch_size>1, n_steps>0)` no longer silently falls back to the CPU
+pool, and a device result is attributed with `backend="metal"`/`backend="cuda"`. On an actual
+Apple M5 Pro, the revalidated Metal SSA harness (including the public-route check) passes, and
+the paired performance receipts retain A/A null, 143/143 Bonferroni equivalence cells, transfer,
+memory, startup and crossover measurements with host-contention caveats. Bounded network-free
+Metal coverage now includes a two-state CTMC, a three-state chain and a particle-heavy ensemble
+with analytic laws, conservation, fixed seeds, setup time, memory and throughput; pinned native
+NFsim comparison is unchanged and scope remains bounded to the unary state-change route.
+
+CUDA remains externally blocked: no local `nvidia-smi`/`nvcc`, runner enumeration HTTP 403, zero
+device-qualification workflow runs, and CUDA configure exits 1 for lack of a compiler. The
+single-issue CLOSED dry run at `994fa8fd` demonstrates `release-metal-device` and
+`release-metal-performance`; `release-cuda-device`, `release-cuda-performance`, `release-nf-gpu`
+and `release-capability-coverage-474` remain NOT_TESTED. #474 stays OPEN; artifacts and the
+Gemini handoff are under `tests/validation/evidence/issue-474/`.
+
 ## Gap resolved — all four network-free issues closed (2026-11-22)
 
 The gap described in the capability inventory is fully resolved:
