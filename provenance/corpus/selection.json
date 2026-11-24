@@ -157,6 +157,7 @@
     ],
     "b": [
       "SHP2_base_model",
+      "actin_branch",
       "egfr_net",
       "fceri_fyn",
       "fceri_fyn_trimer",
@@ -280,7 +281,8 @@
       "sha256": "sha256:41d6b60867d4acc27fe17a1fef01cc264d09bc7bea75672aacbc57748a38faba",
       "origin": "repository-fixture",
       "tiers": [
-        "p"
+        "p",
+        "b"
       ]
     },
     {
@@ -1160,8 +1162,8 @@
   ],
   "notes": [
     "Generated from tests/validation/corpus.py and the checked-in model tree.",
-    "RuleHub revision is recorded but not expanded; external tier membership remains out of scope for this CPU milestone.",
-    "Tier-X format cases and Tier-B stress cases are selected from the committed 106-model corpus with their recorded sha256 digests; membership is justified by export/consumer and large-network/ensemble semantics respectively (docs/DECISIONS.md item 11, H03: unlimited submissions, no budget approval).",
+    "RuleHub revision is recorded but not expanded; external tier membership remains out of scope.",
+    "Tier-X format and Tier-B stress membership comes from provenance/corpus/tier-selectors.json under DECISIONS.md item 11 (unlimited submissions, no budget approval).",
     "Run this generator and review the diff whenever a fixture or tier changes."
   ]
 }

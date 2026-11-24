@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "authority": "docs/DECISIONS.md item 11 (H03): job submissions and corpus size are unlimited; no budget approval is required",
+  "tiers": {
+    "x": {
+      "ids": [
+        "Motivating_example_cBNGL",
+        "test_compartment_XML",
+        "test_expression_xml_escaping",
+        "test_sbml_flat",
+        "test_sbml_flat_SBML",
+        "test_sbml_structured",
+        "test_sbml_structured_SBML"
+      ],
+      "justification": "Format/conversion tier: BNGL-with-actions, compartment XML, XML escaping and structured/flat SBML export-and-reimport cases selected from the committed corpus with recorded source digests."
+    },
+    "b": {
+      "ids": [
+        "SHP2_base_model",
+        "actin_branch",
+        "egfr_net",
+        "fceri_fyn",
+        "fceri_fyn_trimer",
+        "fceri_ji",
+        "fceri_ji_red",
+        "heise",
+        "motor",
+        "poly"
+      ],
+      "justification": "Benchmark/stress tier: large or symmetry-heavy networks that exercise generation, observable counting and ensemble execution beyond the smoke set."
+    }
+  }
+}
