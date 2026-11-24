@@ -9,8 +9,15 @@ recorded identities. No scientific expectation or verdict is authored here.
 import json
 import os
 from pathlib import Path
+import sys
 
 import pytest
+
+_ROOT = Path(__file__).resolve().parents[5]
+if str(_ROOT) not in sys.path:
+    sys.path.insert(0, str(_ROOT))
+
+from scripts.ci import sbml_noncomparable_disposition as disposition
 
 _SUITE_REPORT = os.environ.get("BNG3_SSTS_FULL_REPORT")
 _RECEIPT = os.environ.get("BNG3_ISSUE159_RECEIPT")
@@ -78,6 +85,19 @@ def test_release_obligation_159_receipt():
     # ungrounded, self-authored coverage PASS cannot satisfy this check.
     expected = {"release-ssts", "release-ssts-coverage", "release-obligation-159"}
     assert set(rows) == expected
+    # The random-event-order case is an explicit non-comparable disposition,
+    # never an acceptance PASS and never a silent skip.
+    dispositions = receipt.get("dispositions") or []
+    assert len(dispositions) == 1
+    row = dispositions[0]
+    assert row["id"] == "non-comparable:semantic/00965"
+    assert row["status"] == disposition.DISPOSITION_STATUS
+    assert row["evidence_kind"] == disposition.DISPOSITION_EVIDENCE_KIND
+    assert row["supported_execution"] is False
+    assert row["counts_as_pass"] is False
+    assert row["reason"] == disposition.REASON
+    assert row["spec_basis"] == list(disposition.SPEC_BASIS)
+    assert rows["release-ssts-coverage"]["receipt"]["disposition_ids"] == [row["id"]]
     assert rows["release-ssts"]["evidence_kind"] == "supported-execution"
     assert rows["release-ssts"]["supported_execution"] is True
     coverage = rows["release-ssts-coverage"]
@@ -100,7 +120,10 @@ def test_release_ssts_coverage():
     to the fixture list, XML presence, a clean process, or an ``unsupported``
     verdict cannot qualify a row: each mapped case must have actually executed
     and passed, and each suite-absent row must be backed by a real fixture
-    execution report, not just the fixture file.
+    execution report, not just the fixture file. The single pinned random-event
+    order case is the only exception: it qualifies only through an exact
+    identity check of the harness-generated reason and spec basis and is
+    recorded as NON_COMPARABLE, never as a pass.
     """
     if not _SUITE_REPORT and not os.environ.get("BNG3_CORE_FIXTURES_REPORT"):
         pytest.skip("no full SSTS report or Core fixture execution report provided")
@@ -151,7 +174,20 @@ def test_release_ssts_coverage():
             assert report is not None
             records = {(r["category"], r["id"]): r for r in report["records"]}
             for case_id in cases:
-                record = records[("semantic", case_id)]
+                key = ("semantic", case_id)
+                assert key in records, f"{row}: mapped case {case_id} missing"
+                record = records[key]
+                try:
+                    noncomparable = disposition.classify(
+                        row, "semantic", case_id, record
+                    )
+                except ValueError as exc:
+                    raise AssertionError(
+                        f"{row}: mapped case {case_id} non-comparable identity "
+                        f"mismatch: {exc}"
+                    ) from exc
+                if noncomparable is not None:
+                    continue
                 assert record["status"] == "passed", (
                     f"{row}: mapped case {case_id} status={record['status']}; "
                     "unsupported/not-tested cannot qualify row coverage"
