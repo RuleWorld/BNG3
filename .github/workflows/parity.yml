@@ -1865,7 +1865,9 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          SITE=$(python -c 'import bionetgen,os; print(os.path.dirname(bionetgen.__file__))')
+          # Do not import bionetgen here: the BNGSIM-enabled extension is still
+          # installed at this point and cannot load without its library path.
+          SITE=$(python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')
           cp "$RUNNER_TEMP/original_bionetgen_cpp.so" "$SITE"/
 
       - name: Upload Issue 178 shared decisions evidence
