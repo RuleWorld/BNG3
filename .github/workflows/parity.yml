@@ -284,6 +284,45 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  issue-184-cpu-release:
+    name: Issue 184 CPU release qualification consumer
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install validation dependencies
+        run: python -m pip install pytest pyyaml tomli
+
+      - name: Run independent CPU-release consumer controls
+        run: python -m pytest -q tests/validation/release/cases/issue-184/
+
+      - name: Record exact-revision CPU release qualification
+        id: release
+        continue-on-error: true
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/issue184-release"
+          python tests/validation/release/cases/issue-184/cpu_release_checks.py \
+            --root . --revision "$BNG3_SOURCE_REVISION" \
+            --report "$RUNNER_TEMP/issue184-release/report.json"
+
+      - name: Retain CPU release qualification record
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue184-cpu-release-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/issue184-release/report.json
+          if-no-files-found: error
+          retention-days: 30
+
   upstream-reconciliation-history:
     name: release-reconciliation-pins
     runs-on: ubuntu-22.04
@@ -1189,6 +1228,7 @@ jobs:
             "$RUNNER_TEMP"/release-records/issue137-inventory-*/report.json \
             "$RUNNER_TEMP"/release-records/issue181-corpus-*/report.json \
             "$RUNNER_TEMP"/release-records/issue471-acceptance-*/report.json \
+            "$RUNNER_TEMP"/release-records/issue184-cpu-release-*/report.json \
             "$RUNNER_TEMP"/release-records/issue176-cpu-ensemble-*/issue-176-release-report.json \
             "$RUNNER_TEMP"/release-records/issue152-energy-protocol-release-*/issue-152-release-report.json \
             "$RUNNER_TEMP"/release-records/issue178-shared-decisions-release-*/issue-178-release-report.json \
