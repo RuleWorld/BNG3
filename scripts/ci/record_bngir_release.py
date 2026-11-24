@@ -121,17 +121,32 @@ def build_release_record(
     # Per-row EQ evidence is part of the acceptance check, not an optional
     # attachment.  Run the independent catalogue and keep its row identities
     # and oracle names in the receipt; a membership-only document fails here.
-    from tests.validation.eq_catalogue import run_catalogue, validate_catalogue_report
+    try:
+        from tests.validation.eq_catalogue import (
+            run_catalogue,
+            validate_catalogue_report,
+        )
+    except ModuleNotFoundError as exc:
+        if exc.name != "bionetgen":
+            raise
+        # The prerequisite job runs without the installed BNG3 package. The EQ
+        # catalogue cannot execute there; keep the receipt but leave dependent
+        # checks NOT_TESTED instead of failing the whole prerequisite or
+        # claiming PASS. This mirrors the missing-native-binding disposition.
+        run_catalogue = None
+        validate_catalogue_report = None
 
     eq_catalogue = None
     artifact_path = None
     if eq_catalogue_path is not None:
+        if run_catalogue is None:
+            _fail("EQ catalogue artifact supplied but BNG3 package is unavailable")
         if not eq_catalogue_path.is_file():
             _fail(f"missing EQ catalogue artifact: {eq_catalogue_path}")
         eq_catalogue = json.loads(eq_catalogue_path.read_text())
         validate_catalogue_report(eq_catalogue)
         artifact_path = eq_catalogue_path
-    elif not skip_tests:
+    elif not skip_tests and run_catalogue is not None:
         try:
             eq_catalogue = run_catalogue()
         except RuntimeError as exc:
