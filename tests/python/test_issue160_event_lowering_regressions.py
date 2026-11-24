@@ -1,0 +1,31 @@
+"""Focused regressions for SBML event lowering used by conversionFactor rows.
+
+The fixture is the pinned source of official SBML Test Suite case 01000.
+The assertion is a product regression: it checks exact lowering, not
+acceptance answers or corpus membership.
+"""
+
+from pathlib import Path
+
+from bionetgen.atomizer.modern import Atomizer
+
+FIXTURE = Path(__file__).parent / "fixtures" / "sbml_01000.xml"
+
+
+
+
+def test_rate_ruled_parameter_is_native_event_target_and_window_stays_scheduled():
+    atomizer = Atomizer({"quietMode": True, "logLevel": "INFO", "t_end": 10})
+    result = atomizer.atomize(FIXTURE.read_text(encoding="utf-8"))
+    assert result.success, result.error
+    bngl = result.bngl
+    assert "begin bng3_events version 1" in bngl
+    # A rate-ruled parameter is a native state even with a non-unit default
+    # compartment, and its assignment reads the other promoted state.
+    assert "assignment: k4_amt = k3_amt" in bngl
+    assert "assignment: k5_amt = k4_amt" in bngl
+    assert "assignment: k3_amt = k5_amt" in bngl
+    # The pure clock window is exact as a scheduled action.
+    assert "begin actions" in bngl
+    assert "14.5" in bngl
+    assert "remain untranslated" not in bngl

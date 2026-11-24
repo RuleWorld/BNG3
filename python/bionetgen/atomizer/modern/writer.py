@@ -39,6 +39,9 @@ from .events import (
     parse_time_threshold,
     synthesize_event_actions,
     lower_native_events,
+    _lower_native_event,
+    _native_is_clock_window,
+    _native_fixed_trigger_instant,
 )
 from .rate_rule_constants import (
     ASSIGN_RULE_META_PREFIX,
@@ -7901,6 +7904,63 @@ def write_reaction_rules_flat_v2(
     )
 
 
+def _native_event_ids_for_promotion(
+    events: Sequence[SBMLEvent],
+    untranslated: Sequence[SBMLEvent],
+    context: "EventTranslationContext",
+) -> Set[str]:
+    """Select the events that must share the native runtime after promotion.
+
+    Only the events that could not be lowered to scheduled actions need the
+    native runtime. A scheduled event whose execution instant coincides with
+    one of theirs must join it: the two mechanisms have no shared order at
+    that instant. Events with distinct instants keep the scheduled path.
+    """
+
+    def execution_instant(event: SBMLEvent) -> Optional[float]:
+        trigger_time = _native_fixed_trigger_instant(str(event.trigger or ""), context)
+        if trigger_time is None:
+            return None
+        delay_text = str(event.delay or "").strip()
+        delay = _numeric_value(delay_text) if delay_text else 0.0
+        if delay is None or delay < 0:
+            return None
+        return round(trigger_time + delay, 9)
+
+    native_ids = {str(event.id) for event in untranslated}
+    coincident = {
+        instant
+        for event in untranslated
+        if (instant := execution_instant(event)) is not None
+    }
+    for event in events:
+        if str(event.id) in native_ids:
+            continue
+        instant = execution_instant(event)
+        if instant is not None and instant in coincident:
+            native_ids.add(str(event.id))
+    # The native runtime orders simultaneous events by priority. If two of
+    # them share an instant without distinct priorities, their order is a
+    # random draw the source leaves undefined; keep the scheduled lowering
+    # and the explicit untranslated diagnostic instead.
+    by_instant: Dict[float, List[Optional[float]]] = {}
+    for event in events:
+        if str(event.id) not in native_ids:
+            continue
+        instant = execution_instant(event)
+        if instant is None:
+            continue
+        priority_text = str(getattr(event, "priority", None) or "").strip()
+        by_instant.setdefault(instant, []).append(_numeric_value(priority_text))
+    for priorities in by_instant.values():
+        if len(priorities) > 1 and (
+            any(priority is None for priority in priorities)
+            or len(set(priorities)) != len(priorities)
+        ):
+            return set()
+    return native_ids
+
+
 def generate_bngl(
     model: SBMLModel,
     sct: SpeciesCompositionTable,
@@ -7914,6 +7974,8 @@ def generate_bngl(
     _promoted_event_parameters: Optional[Set[str]] = None,
     _allow_event_parameter_promotion: bool = True,
     native_dae_runtime: bool = False,
+    _force_all_native_events: bool = False,
+    _native_event_ids: Optional[Set[str]] = None,
 ) -> BNGLGenerationResult:
     import_warnings_before_generation = copy.deepcopy(model.import_warnings)
     unsupported_import = next(
@@ -8403,9 +8465,14 @@ def generate_bngl(
     for variable in sorted(synthetic_state_variables):
         pattern = species_to_pattern.get(variable)
         if pattern:
-            observable_lines.append(
-                f"Species {standardize_name(variable)}_amt {pattern}"
-            )
+            visible_name = standardize_name(variable)
+            observable_lines.append(f"Species {visible_name}_amt {pattern}")
+            if variable in promoted_event_parameters:
+                # The source declares this symbol as a parameter, so official
+                # result files name it directly. Promotion turns it into a
+                # state; expose the original name alongside the amount alias
+                # so the generated model keeps the source's result symbols.
+                observable_lines.append(f"Species {visible_name} {pattern}")
     if observable_lines:
         sections.append(_section("observables", observable_lines))
     function_lines = write_functions(
@@ -8684,7 +8751,19 @@ def generate_bngl(
                 # A rate-rule parameter becomes a state species whose seed is
                 # its SBML value; a compartment would rescale that seed, so
                 # only a unit-sized default compartment preserves the value.
-                if default_compartment and identifier not in promoted_event_parameters:
+                # A rate-rule parameter is not a compartment: its seed and its
+                # amount observable are already in SBML parameter units, so
+                # the default compartment's size does not rescale it.
+                parameter_state = (
+                    identifier in synthetic_rate_rule_variables
+                    and identifier not in rate_ruled_compartment_ids
+                    and identifier in model.parameters
+                )
+                if (
+                    default_compartment
+                    and identifier not in promoted_event_parameters
+                    and not parameter_state
+                ):
                     compartment = model.compartments.get(default_compartment)
                     if compartment is None or not compartment.constant:
                         return None
@@ -12038,6 +12117,83 @@ def generate_bngl(
             )
             if lowered_static_events is not None:
                 event_translation_events = lowered_static_events
+        def _fixed_target_value(variable: str) -> Optional[float]:
+            """Value of a target that cannot change except by an event."""
+            standardized = standardize_name(variable)
+            for species in model.species.values():
+                if standardize_name(species.id) != standardized:
+                    continue
+                if not (species.constant or species.boundary_condition):
+                    return None
+                declared = (
+                    species.initial_amount
+                    if species.initial_amount_set
+                    else species.initial_concentration
+                )
+                return _numeric_value(declared)
+            for parameter_id, parameter in model.parameters.items():
+                if standardize_name(str(parameter_id)) != standardized:
+                    continue
+                return _numeric_value(parameter.value) if parameter.constant else None
+            return None
+
+        def _event_is_proven_noop(event: SBMLEvent) -> bool:
+            assignments = [
+                _event_assignment(assignment) for assignment in event.assignments
+            ]
+            if not assignments:
+                return False
+            for variable, expression in assignments:
+                fixed = _fixed_target_value(variable)
+                if fixed is None:
+                    return False
+                value = fold_numeric(
+                    str(expression or "").strip(),
+                    lambda identifier: (
+                        _numeric_value(model.parameters[identifier].value)
+                        if identifier in model.parameters
+                        and model.parameters[identifier].constant
+                        else None
+                    ),
+                )
+                if value is None or abs(value - fixed) > 1e-12:
+                    return False
+            return True
+
+        # An event that only writes a fixed value back to a boundary/constant
+        # species or a constant parameter cannot change the trajectory. Such
+        # an event is certified inert rather than refused: its target has no
+        # native state representation, but no execution is needed either.
+        event_translation_events = [
+            event
+            for event in event_translation_events
+            if not _event_is_proven_noop(event)
+        ]
+
+        # A pure time-window conjunction has a fixed schedule and is lowered
+        # as actions; only events the native runtime can execute are routed
+        # to it. This split is explicit so the two mechanisms never need to
+        # order executions at the same instant.
+        native_selected_events = [
+            event
+            for event in event_translation_events
+            if _native_event_ids and str(event.id) in _native_event_ids
+        ]
+        scheduled_event_candidates = (
+            [
+                event
+                for event in event_translation_events
+                if str(event.id) not in (_native_event_ids or set())
+            ]
+            if _native_event_ids
+            else event_translation_events
+        )
+        native_event_candidates = (
+            native_selected_events
+            if _native_event_ids is not None
+            else event_translation_events
+        )
+
         event_targets = {
             standardize_name(variable)
             for event in event_translation_events
@@ -12419,7 +12575,20 @@ def generate_bngl(
             resolve_native_state=resolve_native_state,
             resolve_native_parameter=resolve_native_parameter,
         )
-        if native_dae_runtime and any(rule.type == "algebraic" for rule in model.rules):
+        if _force_all_native_events:
+            scheduled_result = (
+                synthesize_event_actions(scheduled_event_candidates, event_context)
+                if scheduled_event_candidates
+                else None
+            )
+            event_result = EventTranslationResult(
+                scheduled_result.actions_block if scheduled_result else None,
+                0,
+                [(event, "native event runtime") for event in native_event_candidates],
+                0,
+                tuple(scheduled_result.scheduled_times) if scheduled_result else (),
+            )
+        elif native_dae_runtime and any(rule.type == "algebraic" for rule in model.rules):
             event_result = EventTranslationResult(
                 None,
                 0,
@@ -12430,7 +12599,7 @@ def generate_bngl(
             )
         else:
             event_result = synthesize_event_actions(
-                event_translation_events,
+                scheduled_event_candidates,
                 event_context,
             )
         native_event_block = None
@@ -12441,14 +12610,31 @@ def generate_bngl(
             native_context = event_context
             if event_result.actions_block:
                 native_context = dataclasses.replace(
-                    event_context, scheduled_events_present=True
+                    event_context,
+                    scheduled_events_present=True,
+                    scheduled_execution_times=tuple(event_result.scheduled_times),
                 )
             native_lowering = lower_native_events(native_events, native_context)
             native_event_block = native_lowering.block
             native_event_refusal = native_lowering.reason
             if native_event_block:
                 native_event_count = len(native_events)
-            elif _allow_event_parameter_promotion:
+            else:
+                # A mixed scheduled/native lowering has no defined order when
+                # their execution instants coincide. When every event can be
+                # executed by the native runtime instead, use that single
+                # mechanism: its priorities then order every execution point.
+                all_native = lower_native_events(
+                    native_event_candidates, event_context
+                )
+                if all_native.block:
+                    native_event_block = all_native.block
+                    native_event_refusal = None
+                    native_event_count = len(native_event_candidates)
+                    event_result = EventTranslationResult(
+                        None, 0, [], event_result.horizon_limited
+                    )
+            if not native_event_block and _allow_event_parameter_promotion:
 
                 def is_promotable_parameter(identifier: str) -> bool:
                     standardized = standardize_name(identifier)
@@ -12504,6 +12690,12 @@ def generate_bngl(
                         _promoted_event_parameters=assigned_parameters,
                         _allow_event_parameter_promotion=False,
                         native_dae_runtime=native_dae_runtime,
+                        _force_all_native_events=True,
+                        _native_event_ids=_native_event_ids_for_promotion(
+                            event_translation_events,
+                            native_events,
+                            event_context,
+                        ),
                     )
                     if "begin bng3_events version 1" in promoted.bngl:
                         model.import_warnings = promoted_model.import_warnings
