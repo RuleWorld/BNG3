@@ -4882,6 +4882,19 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                 pendingEvents_.push_back(std::move(pending));
             }
         }
+        // Any group whose event already queued its rising edge at tStart must
+        // not be queued a second time by the initially-zero strict-trigger
+        // poll on a later step.
+        for (std::size_t groupIndex = 0;
+             groupIndex < nativeEventGroups_.size(); ++groupIndex) {
+            if (!zeroRootStrictGroups_[groupIndex]) continue;
+            for (const auto eventIndex : nativeEventGroups_[groupIndex].events) {
+                if (triggerRoseAt_[eventIndex] >= opts.tStart) {
+                    zeroRootStrictGroups_[groupIndex] = false;
+                    break;
+                }
+            }
+        }
         // The events that trigger at the start of the simulation are executed
         // before the solver takes its first step.
         if (applyDueEvents(opts.tStart, initialState)) {
@@ -5224,7 +5237,7 @@ OdeResult OdeIntegrator::integrateCvode(const OdeOptions& opts,
                         bool alreadyRose = false;
                         for (const auto eventIndex :
                              nativeEventGroups_[groupIndex].events) {
-                            if (triggerRoseAt_[eventIndex] > opts.tStart) {
+                            if (triggerRoseAt_[eventIndex] >= opts.tStart) {
                                 alreadyRose = true;
                                 break;
                             }
