@@ -182,15 +182,17 @@ def coverage_gaps(reports, revision):
                     continue
             elif kind == "external-source":
                 name = next(
-                    (n for n in ("bionetgen", "nfsim", "pybionetgen") if f"{n}@" in entry["oracle"]),
+                    (
+                        n
+                        for n in ("bionetgen", "nfsim", "pybionetgen")
+                        if f"{n}@" in entry["oracle"]
+                    ),
                     None,
                 )
                 ref = references.get(name or "", {})
-                if (
-                    not isinstance(ref, dict)
-                    or ref.get("revision")
-                    != json.loads(MAP_PATH.read_text())["pins"].get(name)
-                ):
+                if not isinstance(ref, dict) or ref.get("revision") != json.loads(
+                    MAP_PATH.read_text()
+                )["pins"].get(name):
                     observed.setdefault(row_id, set()).add("NO_PIN_ORACLE")
                     continue
             else:
@@ -224,7 +226,9 @@ def _result(check_id, gaps, detail):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("command", nargs="?", default="inventory", choices=["inventory"])
+    parser.add_argument(
+        "command", nargs="?", default="inventory", choices=["inventory"]
+    )
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--revision", required=True)
     parser.add_argument("--case-report", type=Path, action="append", default=[])

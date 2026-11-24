@@ -19,8 +19,12 @@ def main(argv=None) -> int:
     parser.add_argument("--revision", required=True)
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args(argv)
-    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
-    dirty = subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True)
+    head = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+    ).strip()
+    dirty = subprocess.check_output(
+        ["git", "status", "--porcelain"], cwd=ROOT, text=True
+    )
     if head != args.revision or dirty:
         parser.error("tamper evidence requires the requested clean revision")
     proc = subprocess.run(
@@ -43,12 +47,16 @@ def main(argv=None) -> int:
         text=True,
     )
     baseline = json.loads(BASELINE.read_bytes())
-    verdict = "pass" if (
-        proc.returncode == 0
-        and baseline.get("status") == "verified"
-        and baseline.get("caught", 0) >= baseline.get("denominator", 1)
-        and baseline.get("denominator", 0) > 0
-    ) else "fail"
+    verdict = (
+        "pass"
+        if (
+            proc.returncode == 0
+            and baseline.get("status") == "verified"
+            and baseline.get("caught", 0) >= baseline.get("denominator", 1)
+            and baseline.get("denominator", 0) > 0
+        )
+        else "fail"
+    )
     report = {
         "schema_version": 1,
         "check_id": "release-oracle-tamper",
@@ -56,7 +64,10 @@ def main(argv=None) -> int:
         "working_tree_dirty": False,
         "result": verdict,
         "detail": proc.stdout.strip(),
-        "protected_checks": ["release-protected-expectations", "release-no-product-fixture-names"],
+        "protected_checks": [
+            "release-protected-expectations",
+            "release-no-product-fixture-names",
+        ],
         "mutation": {
             "source_revision": baseline.get("revision"),
             "baseline_sha256": hashlib.sha256(BASELINE.read_bytes()).hexdigest(),

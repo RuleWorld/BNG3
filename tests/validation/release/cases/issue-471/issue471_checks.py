@@ -544,7 +544,10 @@ def replay_errors(receipts: list[dict[str, Any]], revision: str | None) -> list[
         actions = phases.get("resume", {}).get("actions", {})
         if not isinstance(actions, dict) or "reused" not in actions.values():
             errors.append("resume did not reuse an already completed per-case artifact")
-        if phases.get("stale_control", {}).get("action") != "stale-discarded-and-executed":
+        if (
+            phases.get("stale_control", {}).get("action")
+            != "stale-discarded-and-executed"
+        ):
             errors.append("stale partial artifact was not identified and discarded")
         cases = receipt.get("cases", {})
         if not cases or not all(
@@ -565,7 +568,9 @@ def check_workflows_topology(
     present = {path.name for path in workflow_paths}
     missing = [name for name in REQUIRED_WORKFLOWS if name not in present]
     per_workflow: list[dict[str, Any]] = []
-    static_errors: list[str] = [f"maintained workflow missing: {name}" for name in missing]
+    static_errors: list[str] = [
+        f"maintained workflow missing: {name}" for name in missing
+    ]
     contract = json.loads(TOPOLOGY_CONTRACT.read_text())["groups"]
     audited_groups: list[str] = []
     for path in workflow_paths:

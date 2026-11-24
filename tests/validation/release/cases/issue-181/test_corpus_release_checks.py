@@ -31,7 +31,9 @@ def test_corpus_tiers_and_identities_are_complete():
 
 
 def test_results_require_every_case_and_a_partial_replay(tmp_path):
-    selection = json.loads((checks.ROOT / "provenance/corpus/selection.json").read_text())
+    selection = json.loads(
+        (checks.ROOT / "provenance/corpus/selection.json").read_text()
+    )
     report = {
         "source": {"revision": REVISION, "dirty": False},
         "results": [
@@ -47,9 +49,13 @@ def test_results_require_every_case_and_a_partial_replay(tmp_path):
     assert checks.result_gaps([report], REVISION, [_receipt()]) == []
 
 
-@pytest.mark.parametrize("mutation", ["missing-case", "stale-report", "no-reuse", "conflict"])
+@pytest.mark.parametrize(
+    "mutation", ["missing-case", "stale-report", "no-reuse", "conflict"]
+)
 def test_results_reject_incomplete_or_unverifiable_evidence(mutation):
-    selection = json.loads((checks.ROOT / "provenance/corpus/selection.json").read_text())
+    selection = json.loads(
+        (checks.ROOT / "provenance/corpus/selection.json").read_text()
+    )
     results = [
         {
             "id": f"corpus-case[{row['id']}]",

@@ -11,7 +11,6 @@ import argparse
 import hashlib
 import json
 import subprocess
-import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -46,8 +45,12 @@ def main(argv=None) -> int:
     parser.add_argument("--tamper-report", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args(argv)
-    head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
-    dirty = subprocess.check_output(["git", "status", "--porcelain"], cwd=ROOT, text=True)
+    head = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=ROOT, text=True
+    ).strip()
+    dirty = subprocess.check_output(
+        ["git", "status", "--porcelain"], cwd=ROOT, text=True
+    )
     if head != args.revision or dirty:
         parser.error("issue 471 evidence requires the requested clean revision")
 
@@ -59,7 +62,8 @@ def main(argv=None) -> int:
     ):
         parser.error("oracle report identity or revision is invalid")
     if topology.get("check_id") != "release-ci-topology" or (
-        str(topology.get("evaluated_revision") or topology.get("revision")) != args.revision
+        str(topology.get("evaluated_revision") or topology.get("revision"))
+        != args.revision
     ):
         parser.error("topology report identity or revision is invalid")
     if tamper.get("check_id") != "release-oracle-tamper":
