@@ -1551,18 +1551,18 @@ def test_multi_rejects_duplicate_outward_binding_site_ids():
     )
 
 
-def test_multi_reports_spec_valid_cross_compartment_component_as_nonrepresentable():
+def test_multi_represents_nested_subcompartment_binding_site():
     xml = """<sbml xmlns="http://www.sbml.org/sbml/level3/version1/core"
       xmlns:multi="http://www.sbml.org/sbml/level3/version1/multi/version1"
       multi:required="true">
   <model id="cross_compartment_component">
     <listOfCompartments>
-      <compartment id="cc" size="1">
+      <compartment id="cc" size="1" multi:isType="false">
         <multi:listOfCompartmentReferences>
           <multi:compartmentReference multi:id="inside" multi:compartment="c"/>
         </multi:listOfCompartmentReferences>
       </compartment>
-      <compartment id="c" size="1"/>
+      <compartment id="c" size="1" multi:isType="false"/>
     </listOfCompartments>
     <listOfSpecies><species id="A0" compartment="cc"
       multi:speciesType="AType"/></listOfSpecies>
@@ -1580,11 +1580,16 @@ def test_multi_reports_spec_valid_cross_compartment_component_as_nonrepresentabl
 
     result = parse_multi_package(xml)
 
+    # The containing compartment declares ``inside`` -> ``c``, so ``c`` is a
+    # sub-compartment of ``cc`` (SBML Multi 3.6/3.11.3).  The site stays in the
+    # parent BNGL molecule and its placement is retained in the representation.
     assert result.present is True
-    assert result.executable is False
-    assert any(
-        "different compartment" in warning.message for warning in result.warnings
-    )
+    assert result.executable is True
+    assert not [w for w in result.warnings if w.severity == "dropped"]
+    assert result.binding_site_placements["AType"]["x"] == {
+        "reference": "inside",
+        "compartment": "c",
+    }
 
 
 def test_multi_accepts_species_in_instance_of_species_type_compartment():

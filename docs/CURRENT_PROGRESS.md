@@ -615,3 +615,82 @@ Remaining step when hosted capacity clears: consume the wired EQ catalogue,
 py-row map, install matrix and migration-docs artifacts into hosted consuming
 reports, rerun all six CLOSED gates with a linked green run ID, and fix or
 reopen any issue whose gate then fails.
+
+## Session 2026-11-23 — #161 / #163 / #164 verification and closure gates
+
+Worktree: `codex/close-161-163-164`, based on exact main
+`00baf950e5c9125aaa668ff0db159a088b01d25e`. Original checkout left untouched.
+Hosted runs for these PRs were all `queued`, so evidence was executed locally at
+the exact revision with a fresh native build/CLI.
+
+### Carried-forward PR evidence (all verified locally)
+
+- PR #960 (`test_compartment_reference_structure.py`): 4 passed at exact main;
+  one additional pair-distinction test added and passing (5 total).
+- PR #959 (94-row consumer matrix + consumer tests): 9 passed at exact main.
+  Matrix summary: 94 rows, 10 consumer-executed, 84 unmeasured.
+  Added route verification for the merged LaTeX (`pdflatex` → PDF, amsmath/
+  amssymb preamble), C++/SUNDIALS (compile + execute vs analytic law) and
+  prefixed SBML (libRoadRunner consumes `m_suf.xml`-prefixed export, no suffix
+  collision): 5 passed.
+- PR #961 (ownership receipt + comparator + honesty): 25 passed at exact main.
+  `record_atomizer_ownership.py` produced a revision-bound receipt
+  (`dirty=false`, `release-atomizer-modules` PASS). The comparator was executed
+  end to end on Session 2's full before/after SSTS + BioModels artifacts
+  (`/tmp/bng3-refactor-evidence/`, 1923 SSTS records and 1096 BioModels records
+  per side, identical pins `cf38585f…` and bundle `3eff2067…`): it correctly
+  **failed closed** with 74 before/17 after BioModels failures, 29/20 timeouts,
+  18 status changes and 212 stale changes — i.e. intervening product fixes make
+  those artifacts unusable as a clean refactor certificate. Unit tests confirm
+  clean-match acceptance (including empty per-corpus buckets), stale-pin and
+  partial/dirty rejection.
+
+### #161 — valid-pair and specification disposition
+
+Two libSBML-valid sources differing only in binding-site sub-compartment
+placement were executed at exact main and on retained PR #936 branch `90366c42`:
+- exact main: same-compartment → executable, `M_A(xType)`; nested-reference →
+  refused with `dropped` diagnostic, `M_A()`. The pair is distinguished.
+- #936 branch: both executable, **byte-identical** BNGL `M_A(xType)`; the
+  maintainer closed that lowering because placement is lost.
+`sbml.multi.MultiSpecies.compartmentReference` is **not defined** by SBML Multi
+L3V1: §3.15 Extended Species defines only `speciesType` plus two list children;
+§3.22 defines `compartmentReference` on SimpleSpeciesReference, and §3.11.3 on
+SpeciesTypeInstance. BNG3's "Unexpected Multi attribute" diagnostic is the
+correct disposition; it is not a supported row.
+
+Exact-main receipt `/tmp/exact-ev/161.json` (31 rows). Single-issue CLOSED gate
+with approved dependencies OPEN: **exit 0, `closed_acceptance_gaps: []`**,
+report `/tmp/gate161-main/issue-queue.json`.
+
+### #163 — gate
+
+Exact-main receipts `/tmp/exact-ev/163.json`, `/tmp/exact-ev/154.json`,
+`/tmp/exact-ev/native/report.json`, `/tmp/exact-ev/156.json`. Gate
+`/tmp/gate163-main/issue-queue.json`: **exit 0, zero gaps**; all 10 #163
+obligations DEMONSTRATED. Consumer facts verified: BNGL/NET/SBML reimport and
+closed-form species law; native CLI network regeneration; libSBML validity;
+libRoadRunner final species `10*exp(-0.1)`; MEX C compiled/executed; LaTeX PDF
+compiles; exported C++ compiled against pinned SUNDIALS and matches analytic
+species value; SBML prefix routing.
+
+### #164 — gate blocked (kept open)
+
+Ownership + honesty receipts certified `release-atomizer-modules` and all
+characterization/closure checks. Gate `/tmp/gate164-branch/issue-queue.json`
+at `a58352da`: **exit 1**; gaps `issue:164:acceptance:2/3`,
+`release-atomizer-refactor`, `release-obligation-164`,
+`release-boundary-extraction-164`. Cause: no clean before/after SSTS+BioModels
+comparison at the candidate revision. Session 2's retained campaign artifacts
+fail closed because intervening product fixes changed verdicts. No value,
+tolerance, seed, skip or exclusion was altered.
+
+### Remaining gaps
+
+- #161: the release row suite still counts the two compartment rows as PASS via
+  warning-text checks, while the independent structure evidence records them as
+  unsupported/diagnostic. A placement-preserving representation (PR #936 was
+  rejected) is not on main. Gate passes, but this work clause is not discharged;
+  keep open rather than silently changing the existing expectation.
+- #164: full before/after corpus comparison at the candidate revision is
+  required; unavailable locally this session (hosted corpus runs queued).

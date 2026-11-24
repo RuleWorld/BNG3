@@ -412,19 +412,29 @@ def validate_multi_feature_row(row_id: str, tmp_path: Path) -> dict:
         return {"row_id": row_id, "status": "PASS", "libsbml_valid": True}
 
     if row_id == "sbml.multi.SpeciesTypeInstance.compartmentReference":
+        # SBML Multi L3V1 3.11.3: the reference names a sub-compartment of the
+        # containing compartment.  Require executable translation plus retained
+        # placement provenance, not a warning string.
         _check_libsbml_validity(MULTI_COMP_INSTANCE_XML)
         parsed = parse_multi_package(MULTI_COMP_INSTANCE_XML)
-        assert any(
-            "cross-compartment" in w.message or "different compartment" in w.message
-            for w in parsed.warnings
-        )
+        assert parsed.executable is True
+        assert "A(xType)@c1" in parsed.bngl_molecule_types
+        placement = parsed.binding_site_placements.get("AType", {}).get("x")
+        assert placement == {"reference": "inside", "compartment": "c2"}
         return {"row_id": row_id, "status": "PASS", "libsbml_valid": True}
 
     if row_id == "sbml.multi.MultiSpecies.compartmentReference":
+        # libSBML MultiSpeciesPlugin defines no compartmentReference attribute;
+        # this row is an undefined-attribute diagnostic, never a support PASS.
         _check_libsbml_validity(MULTI_COMP_SPECIES_XML)
         parsed = parse_multi_package(MULTI_COMP_SPECIES_XML)
         assert any("compartmentReference" in w.message for w in parsed.warnings)
-        return {"row_id": row_id, "status": "PASS", "libsbml_valid": True}
+        return {
+            "row_id": row_id,
+            "status": "UNSUPPORTED",
+            "libsbml_valid": True,
+            "diagnostic": "undefined SBML Multi attribute",
+        }
 
     # Model 5: SubListOfSpeciesFeatures (2 rows)
     sublist_rows = {
@@ -449,11 +459,18 @@ def validate_multi_feature_row(row_id: str, tmp_path: Path) -> dict:
     raise ValueError(f"Unmapped Multi inventory row: {row_id}")
 
 
+# The extended Species has no compartmentReference attribute in SBML Multi
+# L3V1 (3.15/3.22); its correct disposition is an explicit diagnostic, not a
+# supported-execution row.
+DIAGNOSTIC_ROWS = {"sbml.multi.MultiSpecies.compartmentReference"}
+
+
 @pytest.mark.parametrize("row_id", MULTI_45_FEATURE_ROWS)
 def test_multi_feature_row(row_id: str, tmp_path: Path):
     """Validate named row-level structural and execution results for Multi feature."""
     result = validate_multi_feature_row(row_id, tmp_path)
-    assert result["status"] == "PASS"
+    expected = "UNSUPPORTED" if row_id in DIAGNOSTIC_ROWS else "PASS"
+    assert result["status"] == expected
     assert result["libsbml_valid"] is True
 
 
@@ -545,8 +562,10 @@ def test_release_capability_coverage_161(tmp_path: Path):
             req_ob in declared_ob_ids
         ), f"Obligation {req_ob} not found in provenance for issue 161"
 
-    # Execute row-level verification for all 45 rows
+    # Execute row-level verification for all 45 rows: 44 supported rows and
+    # one explicitly diagnosed undefined-attribute row.
     for row_id in MULTI_45_FEATURE_ROWS:
         res = validate_multi_feature_row(row_id, tmp_path)
-        assert res["status"] == "PASS", f"Row {row_id} failed validation"
+        expected = "UNSUPPORTED" if row_id in DIAGNOSTIC_ROWS else "PASS"
+        assert res["status"] == expected, f"Row {row_id} failed validation"
         assert res["libsbml_valid"] is True
