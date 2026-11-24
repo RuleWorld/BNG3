@@ -926,6 +926,69 @@ def test_flat_and_atomized_networks_match_for_a_nested_complex():
     assert report["flat_reactions"] == report["atomized_reactions"]
 
 
+def _substructure_overinstantiation_model():
+    """A species whose inferred pattern is contained in another species.
+
+    ``IX`` is inferred as ``X.Xa`` and ``IXa`` as ``X.Xa.Xa`` from the naming
+    conventions.  Without an exact species identity, the atomized rule that
+    consumes ``IX`` also matches the larger ``IXa`` complex and generates a
+    reaction the source does not declare.
+    """
+
+    return build_sbml(
+        "substructure_overinstantiation",
+        [
+            ("X", "X", 10.0, None),
+            ("Xa", "Xa", 2.0, None),
+            ("IX", "IX", 1.0, None),
+            ("IXa", "IXa", 1.0, None),
+        ],
+        [_reaction("consume", ["IX"], ["X"], "k")],
+        [("k", 0.5)],
+    )
+
+
+def test_atomized_species_identity_prevents_substructure_overinstantiation():
+    report = compare_flat_and_atomized(_substructure_overinstantiation_model())
+
+    assert report["flat_success"], report["flat_error"]
+    assert report["atomized_success"], report["atomized_error"]
+    assert report["flat_species"] == report["atomized_species"] == 4
+    assert report["flat_reactions"] == report["atomized_reactions"] == 1
+    assert report["equivalent"], report
+
+
+def test_atomized_multi_molecule_species_carries_identity_marker():
+    result = _atomize(_substructure_overinstantiation_model())
+
+    assert result.success, result.error
+    assert "__sp~IX" in result.bngl
+    assert "__sp~IXa" in result.bngl
+    # The identity marker is not reported as an inferred molecular feature.
+    for species_id in ("IX", "IXa"):
+        assert "__sp" not in result.structural_inference["species"][species_id]["sites"]
+
+
+def test_without_species_identity_marker_reproduces_overinstantiation(monkeypatch):
+    """Negative control: the legacy disambiguation path restores the defect."""
+
+    import bionetgen.atomizer.modern as modern_atomizer
+    from bionetgen.atomizer.modern.core import disambiguate_colliding_species
+
+    def legacy_disambiguation(sct, model, atomize=False):
+        return disambiguate_colliding_species(sct, model, atomize=False)
+
+    monkeypatch.setattr(
+        modern_atomizer, "disambiguate_colliding_species", legacy_disambiguation
+    )
+    report = compare_flat_and_atomized(_substructure_overinstantiation_model())
+
+    assert report["flat_reactions"] == 1
+    assert report["atomized_reactions"] == 2
+    assert not report["equivalent"]
+    assert any("reaction count differs" in problem for problem in report["problems"])
+
+
 def _reaction(
     reaction_id,
     reactants,
