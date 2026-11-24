@@ -50,6 +50,12 @@ ORACLE_TOKENS = {
     "nfsim": ("nfsim@",),
     "pybionetgen": ("pybionetgen@",),
 }
+ORACLE_TOKEN_PATTERNS = {
+    name: re.compile(
+        r"(?<![a-z0-9_])(?:" + "|".join(re.escape(tok) for tok in tokens) + r")"
+    )
+    for name, tokens in ORACLE_TOKENS.items()
+}
 
 
 def _yaml(path):
@@ -193,8 +199,8 @@ def coverage_gaps(reports, revision, root=ROOT):
                 lowered_oracle = entry["oracle"].casefold()
                 names = [
                     n
-                    for n, tokens in ORACLE_TOKENS.items()
-                    if any(tok in lowered_oracle for tok in tokens)
+                    for n, pattern in ORACLE_TOKEN_PATTERNS.items()
+                    if pattern.search(lowered_oracle)
                 ]
                 if not names or any(
                     not isinstance(references.get(name), dict)
