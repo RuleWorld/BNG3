@@ -579,7 +579,12 @@ jobs:
 
   integrated-semantic-validation:
     name: Integrated semantic validation (Atomizer, BNG3, BNG2, PyBioNetGen, NFsim)
-    needs: [oracle-lock, release-obligation-142]
+    # The release records for #171/#172/#186 are produced in sibling jobs; the
+    # release records for #152/#174/#176/#178 are produced in nfsim-parity.
+    # Wait for them so the exact-revision issue queue can consume every live
+    # acceptance receipt, even when one producer step failed.
+    needs: [oracle-lock, release-obligation-142, pybionetgen-compat, migration-docs]
+    if: always()
     runs-on: ubuntu-22.04
     timeout-minutes: 90
     env:
@@ -922,6 +927,22 @@ jobs:
           name: issue149-release-record-${{ github.run_id }}
           path: ${{ runner.temp }}/bng3-issue-149-release
 
+      - name: Download release records for the exact-revision issue queue
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: |
+            issue176-cpu-ensemble-*
+            issue152-energy-protocol-release-*
+            issue178-shared-decisions-release-*
+            issue174-cpu-benchmark-*
+            issue171-release-record-*
+            issue172-release-record-*
+            issue186-release-record-*
+            eq-catalogue-*
+          path: ${{ runner.temp }}/release-records
+
       - name: Build exact-revision issue and provenance evidence queue
         if: always()
         run: |
@@ -939,6 +960,7 @@ jobs:
           issue155_args=()
           hybrid_args=()
           issue147_args=()
+          release_report_args=()
           if [[ "${{ github.event_name }}" == "schedule" || "${{ github.event_name }}" == "workflow_dispatch" ]]; then
             head_args=(--collect-upstream-heads)
           fi
@@ -989,6 +1011,22 @@ jobs:
           if [[ -s "$RUNNER_TEMP/bng3-issue-149-release/report.json" ]]; then
             issue149_args+=(--report "$RUNNER_TEMP/bng3-issue-149-release/report.json")
           fi
+          # Each sibling-job release record is a standalone exact-revision
+          # receipt; a missing/failed producer leaves its check unverified
+          # rather than converting a passing process into a passing contract.
+          shopt -s nullglob
+          for record in \
+            "$RUNNER_TEMP"/release-records/issue176-cpu-ensemble-*/issue-176-release-report.json \
+            "$RUNNER_TEMP"/release-records/issue152-energy-protocol-release-*/issue-152-release-report.json \
+            "$RUNNER_TEMP"/release-records/issue178-shared-decisions-release-*/issue-178-release-report.json \
+            "$RUNNER_TEMP"/release-records/issue174-cpu-benchmark-*/issue174-benchmark-record.json \
+            "$RUNNER_TEMP"/release-records/issue171-release-record-*/issue-171.json \
+            "$RUNNER_TEMP"/release-records/issue172-release-record-*/issue-172.json \
+            "$RUNNER_TEMP"/release-records/issue186-release-record-*/issue-186.json \
+            "$RUNNER_TEMP"/release-records/eq-catalogue-*/report.json; do
+            release_report_args+=(--report "$record")
+          done
+          shopt -u nullglob
           python -m tests.validation.issue_queue \
             --issues-json "$RUNNER_TEMP/bng3-issues.json" \
             --report "$RUNNER_TEMP/bng3-integrated-validation/report.json" \
@@ -1006,6 +1044,7 @@ jobs:
             "${issue147_args[@]}" \
             "${issue148_args[@]}" \
             "${issue149_args[@]}" \
+            "${release_report_args[@]}" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --output-dir "$RUNNER_TEMP/bng3-issue-queue" "${head_args[@]}"
           cat "$RUNNER_TEMP/bng3-issue-queue/issue-queue.md" >> "$GITHUB_STEP_SUMMARY"

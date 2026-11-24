@@ -868,3 +868,68 @@ def test_issue_queue_upload_retains_bngir_receipts():
     paths = upload["with"]["path"].splitlines()
     for directory in ("bng3-bngir-roundtrip-release", "bng3-issue-155-release"):
         assert "${{ runner.temp }}/" + directory + "/" in paths
+
+def test_release_records_are_consumed_by_exact_revision_issue_queue():
+    """Every live issue release record must reach the closure evidence queue.
+
+    The release records are produced in sibling jobs (nfsim-parity,
+    pybionetgen-compat, migration-docs) and the #156 EQ record is uploaded from
+    the integrated job. A producer that uploads but never feeds the queue lets
+    a green CI run claim more verified acceptance than it actually consumed.
+    """
+    workflow = _parse_workflow()
+    integrated = workflow["jobs"]["integrated-semantic-validation"]
+    for dependency in ("pybionetgen-compat", "migration-docs"):
+        assert dependency in integrated["needs"]
+    assert integrated["if"] == "always()"
+
+    steps = integrated["steps"]
+    download = next(
+        (
+            item
+            for item in steps
+            if item.get("name")
+            == "Download release records for the exact-revision issue queue"
+        ),
+        None,
+    )
+    assert download is not None
+    assert download["uses"].startswith("actions/download-artifact@")
+    assert download["if"] == "always()"
+    assert download.get("continue-on-error") is True
+    patterns = download["with"]["pattern"]
+    for prefix in (
+        "issue176-cpu-ensemble-",
+        "issue152-energy-protocol-release-",
+        "issue178-shared-decisions-release-",
+        "issue174-cpu-benchmark-",
+        "issue171-release-record-",
+        "issue172-release-record-",
+        "issue186-release-record-",
+        "eq-catalogue-",
+    ):
+        assert prefix in patterns
+
+    queue = next(
+        (
+            item
+            for item in steps
+            if item.get("name")
+            == "Build exact-revision issue and provenance evidence queue"
+        ),
+        None,
+    )
+    assert queue is not None
+    run = queue["run"]
+    for record in (
+        "issue-176-release-report.json",
+        "issue-152-release-report.json",
+        "issue-178-release-report.json",
+        "issue174-benchmark-record.json",
+        "issue-171.json",
+        "issue-172.json",
+        "issue-186.json",
+        "eq-catalogue-*/report.json",
+    ):
+        assert record in run
+    assert '"${release_report_args[@]}"' in run
