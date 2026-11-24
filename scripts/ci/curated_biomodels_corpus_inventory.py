@@ -534,18 +534,32 @@ def _conversion_status(record: dict[str, Any]) -> str:
     return "not_tested"
 
 
+_ROUNDTRIP_STAGE_NAMES: frozenset[str] = frozenset(
+    {
+        "written-sbml-validation",
+        "roundtrip-sbml-parse",
+        "roundtrip-atomizer-translation",
+        "roundtrip-network-generation",
+        "native-sbml-readback",
+    }
+)
+
+
 def _roundtrip_status(mode: dict[str, Any] | None) -> str:
     """Return the verdict of the structural round trip.
 
-    The round trip is the corpus gate's own check: the written SBML is valid
-    and the native reader reads back the generated network's species and
-    reaction counts.  A stage that produced no verdict at all -- the record
-    was refused before the model was written, or the worker was killed -- is
-    ``not_tested``.
+    The round trip is the corpus gate's own check: the written SBML is valid,
+    no round-trip stage failed, and the native reader reads back the generated
+    network's species count and the written SBML document's reaction count
+    (``reimport_parser['reactions']`` when recorded, because native rate rules
+    replace synthetic network reactions during export; falling back to
+    ``generated_network['reactions']`` when ``reimport_parser`` is absent).  A
+    stage that produced no verdict at all -- the record was refused before the
+    model was written, or the worker was killed -- is ``not_tested``.
 
-    The Python re-import's own counts are *not* a verdict: the corpus gate
-    records them but does not compare them, so a manifest that called them a
-    failure would report a verdict the gate does not produce.
+    The Python re-import network's own counts are *not* a verdict: the corpus
+    gate records them but does not compare them, so a manifest that called them
+    a failure would report a verdict the gate does not produce.
     """
 
     if not mode:
@@ -553,12 +567,26 @@ def _roundtrip_status(mode: dict[str, Any] | None) -> str:
     written = mode.get("written_xml") or {}
     if written.get("passed") is False:
         return "failed"
+    for stage in mode.get("stage_results") or ():
+        if (
+            isinstance(stage, dict)
+            and stage.get("name") in _ROUNDTRIP_STAGE_NAMES
+            and stage.get("status") == "failed"
+        ):
+            return "failed"
     generated = mode.get("generated_network") or {}
+    reimport_parser = mode.get("reimport_parser") or {}
     native = mode.get("native_reader") or {}
+    expected_reactions = (
+        reimport_parser.get("reactions")
+        if "reactions" in reimport_parser
+        else generated.get("reactions")
+    )
     if native.get("success") is True and generated:
-        if native.get("species_count") != generated.get("species") or native.get(
-            "reaction_count"
-        ) != generated.get("reactions"):
+        if (
+            native.get("species_count") != generated.get("species")
+            or native.get("reaction_count") != expected_reactions
+        ):
             return "failed"
         return "passed"
     if native and native.get("success") is False:
@@ -808,9 +836,11 @@ def corpus_expectations_from_report(
                 "and is not a verdict"
             ),
             "roundtrip_structure": (
-                "the written SBML re-imports with the generated network's "
-                "species and reaction counts; a stage that produced no "
-                "verdict maps to not_tested"
+                "the written SBML is valid and the native reader reads back "
+                "the generated network's species count and the written SBML "
+                "document's reaction count (falling back to "
+                "generated_network.reactions when reimport_parser is absent); "
+                "a stage that produced no verdict maps to not_tested"
             ),
             "independent_comparison": (
                 "simulation_comparison.passed; a skipped comparison maps to "
