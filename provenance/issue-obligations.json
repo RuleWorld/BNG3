@@ -20025,12 +20025,12 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
+              "selector": "tests/validation/release/cases/issue-474/test_gpu_acceptance_receipts.py::test_cuda_rows_are_never_promoted_without_a_device",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/gpu-device-qualification.yml#cuda-device",
+              "receipt_producer_status": "CONSUMER_READY",
               "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
+                "CUDA device execution externally blocked: no local NVIDIA device or self-hosted runner observed"
               ]
             }
           ],
@@ -20073,12 +20073,12 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
+              "selector": "tests/validation/release/cases/issue-474/test_gpu_acceptance_receipts.py::test_cuda_rows_are_never_promoted_without_a_device",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/gpu-device-qualification.yml#cuda-device",
+              "receipt_producer_status": "CONSUMER_READY",
               "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
+                "CUDA device measurements require external NVIDIA device access"
               ]
             }
           ],
@@ -20121,13 +20121,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
-              ]
+              "selector": "tests/validation/release/cases/issue-474/test_gpu_acceptance_receipts.py::test_metal_rows_are_supported_device_execution",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue474_release.py#local-Apple-Metal-device-lane",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -20165,13 +20163,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
-              ]
+              "selector": "tests/validation/release/cases/issue-474/test_gpu_acceptance_receipts.py::test_metal_performance_carries_cost_and_correctness_evidence",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue474_release.py#local-Apple-Metal-device-lane",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -20209,12 +20205,12 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
+              "selector": "tests/validation/release/cases/issue-474/test_gpu_acceptance_receipts.py::test_nf_gpu_does_not_claim_the_full_corpus_or_cuda",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue474_release.py#local-Apple-Metal-device-lane",
+              "receipt_producer_status": "CONSUMER_READY",
               "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
+                "Bounded Metal analytic and pinned NFsim reference passed; full network-free corpus and CUDA reporting remain unqualified"
               ]
             }
           ],
@@ -20253,12 +20249,12 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
+              "selector": "tests/validation/release/cases/issue-474/test_gpu_acceptance_receipts.py::test_capability_coverage_acknowledges_cuda_gap",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue474_release.py#local-Apple-Metal-device-lane",
+              "receipt_producer_status": "CONSUMER_READY",
               "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
+                "backend.gpu requires backend-specific executions for both backends; CUDA device evidence absent"
               ]
             }
           ],
