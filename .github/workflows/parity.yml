@@ -932,15 +932,18 @@ jobs:
         continue-on-error: true
         uses: actions/download-artifact@v4
         with:
-          pattern: |
-            issue176-cpu-ensemble-*
-            issue152-energy-protocol-release-*
-            issue178-shared-decisions-release-*
-            issue174-cpu-benchmark-*
-            issue171-release-record-*
-            issue172-release-record-*
-            issue186-release-record-*
-            eq-catalogue-*
+          # download-artifact@v4 takes ONE glob, not a newline-separated list.
+          # A multiline pattern silently matched zero artifacts, so sibling
+          # receipts were uploaded but never consumed by the issue queue.
+          pattern: issue*-*
+          path: ${{ runner.temp }}/release-records
+
+      - name: Download EQ catalogue for the exact-revision issue queue
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: eq-catalogue-*
           path: ${{ runner.temp }}/release-records
 
       - name: Build exact-revision issue and provenance evidence queue

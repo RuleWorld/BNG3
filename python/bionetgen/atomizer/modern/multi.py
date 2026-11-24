@@ -4108,7 +4108,8 @@ def _parse_multi_package_complete(document: Union[str, Any]) -> MultiParseResult
                     ).get(instance.compartment_reference, ""),
                 }
                 for instance in species_type.instances
-                if instance.compartment_reference and instance.type_id in types
+                if instance.compartment_reference
+                and instance.type_id in types
                 and types[instance.type_id].is_binding_site
             }
             for species_type in types.values()
