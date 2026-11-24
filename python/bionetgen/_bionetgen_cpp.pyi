@@ -402,6 +402,11 @@ def simulate_ssa(
     sample_times: List[float] = [],
     max_sim_steps: int = 0,
     output_step_interval: int = 0,
+    batch_size: int = 0,
+    batch_gpu_preferred: bool = True,
+    batch_gpu_backend: str = "auto",
+    continue_simulation: bool = False,
+    fresh_from_initial_state: bool = False,
 ) -> Dict[str, object]:
     """Run SSA (stochastic) simulation on a generated network.
 

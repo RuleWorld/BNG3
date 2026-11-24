@@ -194,14 +194,25 @@ through the backend registry:
 - `cuda` / `metal` request one specific backend and raise if it is unavailable;
 - `none` forces the CPU pool. An unrecognised name is an error, never a silent fallback.
 
-**Current boundary (verified at `69bcb804` on the Apple Metal lane):** the qualified
-finite-GPU entry point is `simulate_batch_ssa_gpu(...)`, which returns the
+**Finite-device entry points:** `simulate_batch_ssa_gpu(...)` returns the
 backend-specific batch result consumed by the statistical harness. The
-`simulate_ssa(..., batch_size=N, batch_gpu_backend=...)` convenience still selects a
-backend, but with `n_steps > 0` the accelerator metrics contain only final-state species
-while the `OdeResult` consumer requires a `[time][species]` grid. That path therefore
-rejects the device result and silently falls back to the CPU pool; it must not be used
-as GPU execution evidence until the kernels emit the full species time course.
+`simulate_ssa(..., batch_size=N, batch_gpu_backend=...)` convenience also runs
+on the selected device when the launch thresholds are met. Both Metal and CUDA
+kernels now record the species state at every output time and return the full
+`[time][species]` mean/std grid required by `OdeResult`, so `n_steps > 0` no
+longer forces a silent CPU fallback. A device-produced result reports
+`backend="metal"` or `backend="cuda"`; a CPU result leaves the field unset.
+Backends that cannot provide the full grid are still rejected rather than
+approximated, and a device that is unavailable remains an explicit refusal.
+The public-route check is part of `tests/test_batch_ssa_statistical_parity.py`
+(`--mode gpu --require-device`); no equal-seed pathwise CPU/GPU claim is made.
+
+**Network-free boundary:** `simulate_nfnext_gpu` executes the bounded unary
+single-site state-change route on Metal only. Extended device evidence covers
+a two-state CTMC, a three-state chain and a bounded particle-heavy ensemble
+with analytic laws, conservation, fixed seeds and distributional thresholds;
+binding/topology, compartments, delays and CUDA are explicit refusals. This is
+not the full network-free GPU corpus and is not CUDA evidence.
 
 Backends are compiled in at configure time: Metal on Apple platforms, CUDA when
 `-DBNG3_ENABLE_CUDA=ON` is given or a CUDA compiler is found (`BNG3_ENABLE_CUDA=AUTO`,

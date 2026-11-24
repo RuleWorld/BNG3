@@ -304,6 +304,7 @@ NfnextMetalOutput simulateNfnextUnaryStateMetal(
             throw std::runtime_error("NFnext Metal backend: failed to allocate device buffers");
         }
         std::memset([flagsBuffer contents], 0, flagBytes);
+        const auto setupEnd = std::chrono::steady_clock::now();
 
         const auto dispatchStart = std::chrono::steady_clock::now();
         id<MTLCommandBuffer> command = [queue commandBuffer];
@@ -352,6 +353,19 @@ NfnextMetalOutput simulateNfnextUnaryStateMetal(
         std::memcpy(output.eventCounts.data(), [eventsBuffer contents], eventBytes);
         output.dispatchWaitTimeMs = std::chrono::duration<double, std::milli>(
             dispatchEnd - dispatchStart).count();
+        output.setupTimeMs = std::chrono::duration<double, std::milli>(
+            setupEnd - wallStart).count();
+        output.deviceMemoryBytes =
+            sizeof(params) +
+            checkedBytes(plan.transitionOffsets.size(), sizeof(std::uint32_t)) +
+            checkedBytes(plan.transitionDestinations.size(), sizeof(std::int32_t)) +
+            checkedBytes(plan.transitionRates.size(), sizeof(float)) +
+            checkedBytes(plan.initialStates.size(), sizeof(std::int32_t)) +
+            checkedBytes(plan.observableStates.size(), sizeof(std::int32_t)) +
+            timeBytes + stateBytes + outputBytes + eventBytes + flagBytes +
+            checkedBytes(particleSlots, sizeof(float)) +
+            checkedBytes(particleSlots, sizeof(std::int32_t)) +
+            2 * checkedBytes(particleSlots, sizeof(std::uint64_t));
         output.wallTimeMs = std::chrono::duration<double, std::milli>(
             std::chrono::steady_clock::now() - wallStart).count();
         return output;

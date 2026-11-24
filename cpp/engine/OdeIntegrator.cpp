@@ -4490,6 +4490,7 @@ OdeResult OdeIntegrator::integrateBatchSSA(const OdeOptions& opts) {
 
                         // Convert BatchSsaMetrics -> OdeResult (mean trajectory + std devs)
                         OdeResult result;
+                        result.backend         = gpuBackendName(selected);
                         result.batchSize       = opts.batchSize;
                         result.timePoints      = metrics.timePointsDouble;
                         result.concentrations  = metrics.meanSpecies;

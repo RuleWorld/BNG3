@@ -134,6 +134,8 @@ class GpuBatchSimResult:
         self.device: str = raw["device"]
         self.wall_time_ms = float(raw["wall_time_ms"])
         self.dispatch_wait_time_ms = float(raw["dispatch_wait_time_ms"])
+        self.setup_time_ms = float(raw.get("setup_time_ms", 0.0))
+        self.device_memory_bytes = int(raw.get("device_memory_bytes", 0))
         self.engine: str = raw["engine"]
 
     @property

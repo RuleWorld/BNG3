@@ -72,6 +72,20 @@ def test_metal_performance_carries_cost_and_correctness_evidence():
     assert report["network_free"]["metal"]["total_events"] > 0
 
 
+def test_public_simulate_ssa_route_is_attributed_and_qualified():
+    report = _report()
+    rows = [row for row in report["gpu"]["models"] if row.get("model") == "toy-jim-public-route"]
+    assert len(rows) == 1
+    row = rows[0]
+    assert row["status"] == "PASS"
+    assert row["backend"] == "metal"
+    assert row["device_grid_shape"] == [11, 25]
+    assert row["seed_replay"] is True
+    assert row["n_steps"] > 0 and row["batch_size"] > 0
+    assert row["comparison"].startswith("distributional")
+    assert all(check["pass"] for check in row["checks"])
+
+
 def test_cuda_rows_are_never_promoted_without_a_device():
     rows = _rows(_report())
     for check in ("release-cuda-device", "release-cuda-performance"):
@@ -82,6 +96,20 @@ def test_cuda_rows_are_never_promoted_without_a_device():
 
 def report_cuda_status(report: dict) -> str:
     return report["cuda"]["verdict"]["status"]
+
+
+def test_cuda_build_probe_never_counts_as_device_execution():
+    report = _report()
+    build = report.get("cuda_build")
+    if build is None:
+        pytest.skip("no CUDA build probe was consumed")
+    assert build["status"] == "BLOCKED"
+    assert build["exit_code"] != 0
+    assert "no CUDA compiler" in " ".join(build["diagnostics"]).lower()
+    assert "CUDA device execution" in build["not_evidence_of"]
+    for check in ("release-cuda-device", "release-cuda-performance"):
+        row = _rows(report)[check]
+        assert row["status"] == "NOT_TESTED" and row["supported_execution"] is False
 
 
 def test_nf_gpu_does_not_claim_the_full_corpus_or_cuda():
@@ -95,6 +123,32 @@ def test_capability_coverage_acknowledges_cuda_gap():
     row = _rows(_report())["release-capability-coverage-474"]
     assert row["status"] == "NOT_TESTED"
     assert "CUDA" in row["detail"]
+
+
+def test_workload_receipt_keeps_extended_scope_when_supplied():
+    path = os.environ.get("BNG3_ISSUE474_NF_WORKLOADS")
+    if not path:
+        pytest.skip("set BNG3_ISSUE474_NF_WORKLOADS to a recorded workload receipt")
+    import json
+
+    data = json.loads(Path(path).read_text(encoding="utf-8"))
+    assert data["status"] == "PASS"
+    assert data["device"]["backend"] == "metal"
+    assert data["cuda"]["status"] == "UNSUPPORTED"
+    assert data["full_corpus_claimed"] is False
+    assert len(data["workloads"]) >= 3
+    assert {row["class"] for row in data["workloads"]} >= {
+        "two_state_ctmc",
+        "three_state_chain",
+        "particle_heavy",
+    }
+    assert all(row["status"] == "REFUSED" for row in data["refusals"])
+    for row in data["workloads"]:
+        assert row["total_events"] > 0
+        assert row["device_memory_bytes"] > 0
+        assert row["events_per_sec_dispatch"] > 0
+        assert row["timings_ms"]["setup"] >= 0.0
+        assert all(check["pass"] for check in row["checks"])
 
 
 def test_receipt_digests_match_the_files(tmp_path):

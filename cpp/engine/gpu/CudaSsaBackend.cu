@@ -50,6 +50,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -57,6 +58,12 @@
 namespace bng::engine {
 
 namespace {
+
+std::size_t checkedCudaBytes(std::size_t count, std::size_t itemSize) {
+    if (count != 0 && itemSize > std::numeric_limits<std::size_t>::max() / count)
+        throw std::runtime_error("CUDA backend: batch output buffer size overflow");
+    return count * itemSize;
+}
 
 const char* cudaErrorText(cudaError_t status) {
     const char* text = cudaGetErrorString(status);
@@ -191,8 +198,17 @@ __device__ void recordObservables(
     const unsigned int* __restrict__ obsSpecies,
     const float* __restrict__ obsWeights,
     const int* __restrict__ y,
-    float* __restrict__ trajectoryObservables
+    float* __restrict__ trajectoryObservables,
+    int* __restrict__ trajectorySpecies
 ) {
+    // The species grid is part of the common result contract even when the
+    // model declares no observables.
+    int* speciesOut = trajectorySpecies +
+        (static_cast<size_t>(trajId) * params.numOutputPoints + timeIdx) *
+            params.numSpecies;
+    for (unsigned int s = 0; s < params.numSpecies; ++s) {
+        speciesOut[s] = y[s];
+    }
     if (params.numObservables == 0) return;
     float* obsOut = trajectoryObservables +
         (static_cast<size_t>(trajId) * params.numOutputPoints + timeIdx) *
@@ -225,7 +241,8 @@ __global__ void cuda_batch_direct_ssa(
     const int* __restrict__ initialSpecies,
     int* __restrict__ trajectoryStates,
     float* __restrict__ trajectoryObservables,
-    unsigned int* __restrict__ trajectoryEventCounts
+    unsigned int* __restrict__ trajectoryEventCounts,
+    int* __restrict__ trajectorySpecies
 ) {
     const unsigned int trajId = blockIdx.x * blockDim.x + threadIdx.x;
     if (trajId >= params.batchSize) return;
@@ -246,7 +263,7 @@ __global__ void cuda_batch_direct_ssa(
     while (nextOutputTime < params.numOutputPoints &&
            outputTimes[nextOutputTime] <= t + 1e-6f) {
         recordObservables(trajId, nextOutputTime, params, obsOffsets, obsSpecies, obsWeights,
-                          y, trajectoryObservables);
+                          y, trajectoryObservables, trajectorySpecies);
         ++nextOutputTime;
     }
 
@@ -255,7 +272,7 @@ __global__ void cuda_batch_direct_ssa(
         while (nextOutputTime < params.numOutputPoints &&
                outputTimes[nextOutputTime] <= t + 1e-6f) {
             recordObservables(trajId, nextOutputTime, params, obsOffsets, obsSpecies, obsWeights,
-                              y, trajectoryObservables);
+                              y, trajectoryObservables, trajectorySpecies);
             ++nextOutputTime;
         }
 
@@ -288,7 +305,7 @@ __global__ void cuda_batch_direct_ssa(
         while (nextOutputTime < params.numOutputPoints &&
                outputTimes[nextOutputTime] < eventTime - 1e-6f) {
             recordObservables(trajId, nextOutputTime, params, obsOffsets, obsSpecies, obsWeights,
-                              y, trajectoryObservables);
+                              y, trajectoryObservables, trajectorySpecies);
             ++nextOutputTime;
         }
 
@@ -327,7 +344,7 @@ __global__ void cuda_batch_direct_ssa(
         while (nextOutputTime < params.numOutputPoints &&
                outputTimes[nextOutputTime] <= t + 1e-6f) {
             recordObservables(trajId, nextOutputTime, params, obsOffsets, obsSpecies, obsWeights,
-                              y, trajectoryObservables);
+                              y, trajectoryObservables, trajectorySpecies);
             ++nextOutputTime;
         }
     }
@@ -335,7 +352,7 @@ __global__ void cuda_batch_direct_ssa(
     // Fill remaining output points through tEnd
     while (nextOutputTime < params.numOutputPoints) {
         recordObservables(trajId, nextOutputTime, params, obsOffsets, obsSpecies, obsWeights,
-                          y, trajectoryObservables);
+                          y, trajectoryObservables, trajectorySpecies);
         ++nextOutputTime;
     }
 
@@ -404,8 +421,11 @@ BatchSsaMetrics CudaSsaBackend::simulate(const FlattenedReactionNetwork& net,
     params.tEnd = static_cast<float>(options.tEnd);
     params.baseSeed = options.baseSeed;
 
-    const std::size_t stateBytes = batchSize * numSpecies * sizeof(int32_t);
-    const std::size_t obsBytes = batchSize * numPoints * numObs * sizeof(float);
+    const std::size_t stateBytes = checkedCudaBytes(batchSize, numSpecies * sizeof(int32_t));
+    const std::size_t obsBytes = checkedCudaBytes(
+        checkedCudaBytes(batchSize, numPoints), numObs * sizeof(float));
+    const std::size_t speciesBytes = checkedCudaBytes(
+        checkedCudaBytes(batchSize, numPoints), numSpecies * sizeof(int32_t));
     const std::size_t eventBytes = batchSize * sizeof(uint32_t);
     const std::size_t timesBytes = numPoints * sizeof(float);
 
@@ -426,6 +446,7 @@ BatchSsaMetrics CudaSsaBackend::simulate(const FlattenedReactionNetwork& net,
     CudaBuffer dStates(stateBytes);
     CudaBuffer dObservables(obsBytes);
     CudaBuffer dEventCounts(eventBytes);
+    CudaBuffer dSpeciesHistory(speciesBytes);
     const auto tEndPrep = std::chrono::high_resolution_clock::now();
     metrics.modelPrepTimeMs =
         std::chrono::duration<double, std::milli>(tEndPrep - tStartPrep).count();
@@ -437,7 +458,7 @@ BatchSsaMetrics CudaSsaBackend::simulate(const FlattenedReactionNetwork& net,
         dObsSpecies.bytes() + dObsWeights.bytes() + dInitialSpecies.bytes();
     metrics.memoryUsageBytes =
         staticBytes + dOutputTimes.bytes() + dStates.bytes() + dObservables.bytes() +
-        dEventCounts.bytes();
+        dSpeciesHistory.bytes() + dEventCounts.bytes();
 
     // Host -> Device
     const auto tStartH2D = std::chrono::high_resolution_clock::now();
@@ -480,7 +501,8 @@ BatchSsaMetrics CudaSsaBackend::simulate(const FlattenedReactionNetwork& net,
         static_cast<const int*>(dInitialSpecies.get()),
         static_cast<int*>(dStates.get()),
         static_cast<float*>(dObservables.get()),
-        static_cast<unsigned int*>(dEventCounts.get()));
+        static_cast<unsigned int*>(dEventCounts.get()),
+        static_cast<int*>(dSpeciesHistory.get()));
     checkCudaLast("kernel launch failed");
     checkCuda(cudaDeviceSynchronize(), "kernel execution failed");
     const auto tEndSim = std::chrono::high_resolution_clock::now();
@@ -543,6 +565,32 @@ BatchSsaMetrics CudaSsaBackend::simulate(const FlattenedReactionNetwork& net,
                 const double variance = std::max(0.0, (sumSq / N) - (mean * mean));
                 metrics.observableMeans[step][g] = static_cast<float>(mean);
                 metrics.observableStdDevs[step][g] = static_cast<float>(std::sqrt(variance));
+            }
+        }
+    }
+    // Full [time][species] grid required by the common OdeResult contract.
+    // Host-side aggregation does not alter device RNG state or draw order.
+    if (speciesBytes > 0) {
+        std::vector<int32_t> allSpecies;
+        allSpecies.resize(speciesBytes / sizeof(int32_t));
+        dSpeciesHistory.download(allSpecies.data(), speciesBytes);
+        metrics.meanSpecies.assign(numPoints, std::vector<double>(numSpecies, 0.0));
+        metrics.stdSpecies.assign(numPoints, std::vector<double>(numSpecies, 0.0));
+        const double N = static_cast<double>(batchSize);
+        for (std::size_t step = 0; step < numPoints; ++step) {
+            for (std::size_t s = 0; s < numSpecies; ++s) {
+                double sum = 0.0;
+                double sumSq = 0.0;
+                for (std::size_t b = 0; b < batchSize; ++b) {
+                    const double value = static_cast<double>(
+                        allSpecies[(b * numPoints + step) * numSpecies + s]);
+                    sum += value;
+                    sumSq += value * value;
+                }
+                const double mean = sum / N;
+                metrics.meanSpecies[step][s] = mean;
+                metrics.stdSpecies[step][s] =
+                    std::sqrt(std::max(0.0, sumSq / N - mean * mean));
             }
         }
     }

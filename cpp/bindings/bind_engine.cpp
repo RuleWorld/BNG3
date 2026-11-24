@@ -258,6 +258,11 @@ py::dict result_to_dict(const OdeResult& result, const Model& model) {
         }
     }
 
+    // Device attribution: only set when an accelerator actually produced the
+    // result. CPU/native results keep the field absent so callers cannot claim
+    // a device execution that did not happen.
+    if (!result.backend.empty()) d["backend"] = result.backend;
+
     // Batch SSA fields (populated only when opts.batchSize > 0)
     d["batch_size"] = result.batchSize;
     if (result.batchSize > 0 && !result.batchObsStdDevs.empty()) {

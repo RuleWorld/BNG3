@@ -25,6 +25,7 @@
 #include <chrono>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <stdexcept>
 #include <string>
 
@@ -89,6 +90,7 @@ struct TrajectoryContext {
     device int* y;
     device float* trajectoryObservables;
     device uint* trajectoryEventCounts;
+    device int* trajectorySpecies;
     int local_y[64];
 
     float compute_prop(uint r) {
@@ -104,7 +106,18 @@ struct TrajectoryContext {
         return prop;
     }
 
+    void recordSpecies(uint timeIdx) {
+        device int* speciesOut = trajectorySpecies +
+            (trajId * params.numOutputPoints + timeIdx) * params.numSpecies;
+        for (uint s = 0; s < params.numSpecies; ++s) {
+            speciesOut[s] = (params.numSpecies <= 64) ? local_y[s] : y[s];
+        }
+    }
+
     void recordObservables(uint timeIdx) {
+        // The species grid is part of the common result contract even for
+        // models without observables, so it is recorded on every output point.
+        recordSpecies(timeIdx);
         if (params.numObservables == 0) return;
         device float* obsOut = trajectoryObservables + (trajId * params.numOutputPoints * params.numObservables + timeIdx * params.numObservables);
         for (uint g = 0; g < params.numObservables; ++g) {
@@ -266,6 +279,7 @@ kernel void metal_batch_direct_ssa(
     device int* trajectoryStates [[buffer(14)]],
     device float* trajectoryObservables [[buffer(15)]],
     device uint* trajectoryEventCounts [[buffer(16)]],
+    device int* trajectorySpecies [[buffer(17)]],
     uint trajId [[thread_position_in_grid]])
 {
     if (trajId >= params.batchSize) return;
@@ -275,13 +289,19 @@ kernel void metal_batch_direct_ssa(
         trajId, params, rateConstants, reactantOffsets, reactantSpecies, reactantStoichOffsets,
         reactChangeOffsets, reactChangeSpecies, prodChangeOffsets, prodChangeSpecies,
         obsOffsets, obsSpecies, obsWeights, outputTimes, y, trajectoryObservables, trajectoryEventCounts,
-        {}
+        trajectorySpecies, {}
     };
     ctx.run(initialSpecies);
 }
 )";
 
 namespace {
+
+std::size_t checkedBufferBytes(std::size_t count, std::size_t itemSize) {
+    if (count != 0 && itemSize > std::numeric_limits<std::size_t>::max() / count)
+        throw std::runtime_error("Metal backend: batch output buffer size overflow");
+    return count * itemSize;
+}
 
 struct MetalSimulatorImpl {
     id<MTLDevice> device = nil;
@@ -408,13 +428,16 @@ BatchSsaMetrics MetalSsaBackend::run(const BatchSsaOptions& options) {
     params.tEnd = static_cast<float>(options.tEnd);
     params.baseSeed = options.baseSeed;
 
-    const std::size_t stateBytes = batchSize * numSpecies * sizeof(int32_t);
-    const std::size_t obsBytes = batchSize * numPoints * numObs * sizeof(float);
+    const std::size_t stateBytes = checkedBufferBytes(batchSize, numSpecies * sizeof(int32_t));
+    const std::size_t obsBytes = checkedBufferBytes(
+        checkedBufferBytes(batchSize, numPoints), numObs * sizeof(float));
+    const std::size_t speciesBytes = checkedBufferBytes(
+        checkedBufferBytes(batchSize, numPoints), numSpecies * sizeof(int32_t));
     const std::size_t eventBytes = batchSize * sizeof(uint32_t);
     const std::size_t timesBytes = numPoints * sizeof(float);
 
-    metrics.memoryUsageBytes =
-        impl_->staticMemoryBytes + stateBytes + obsBytes + eventBytes + timesBytes;
+    metrics.memoryUsageBytes = impl_->staticMemoryBytes + stateBytes + obsBytes +
+        speciesBytes + eventBytes + timesBytes;
 
     // Host -> Device Transfer
     const auto tStartH2D = std::chrono::high_resolution_clock::now();
@@ -424,6 +447,7 @@ BatchSsaMetrics MetalSsaBackend::run(const BatchSsaOptions& options) {
     id<MTLBuffer> bufStates = nil;
     id<MTLBuffer> bufObservables = nil;
     id<MTLBuffer> bufEventCounts = nil;
+    id<MTLBuffer> bufSpeciesHistory = nil;
 
     @autoreleasepool {
         bufParams = [impl_->device newBufferWithBytes:&params length:sizeof(GpuSimParams) options:MTLResourceStorageModeShared];
@@ -431,6 +455,11 @@ BatchSsaMetrics MetalSsaBackend::run(const BatchSsaOptions& options) {
         bufStates = [impl_->device newBufferWithLength:stateBytes options:MTLResourceStorageModeShared];
         bufObservables = [impl_->device newBufferWithLength:(obsBytes > 0 ? obsBytes : sizeof(float)) options:MTLResourceStorageModeShared];
         bufEventCounts = [impl_->device newBufferWithLength:eventBytes options:MTLResourceStorageModeShared];
+        bufSpeciesHistory = [impl_->device newBufferWithLength:(speciesBytes > 0 ? speciesBytes : sizeof(int32_t)) options:MTLResourceStorageModeShared];
+    }
+    if (!bufParams || !bufOutputTimes || !bufStates || !bufObservables ||
+        !bufEventCounts || !bufSpeciesHistory) {
+        throw std::runtime_error("Metal backend: failed to allocate batch buffers");
     }
 
     const auto tEndH2D = std::chrono::high_resolution_clock::now();
@@ -462,6 +491,7 @@ BatchSsaMetrics MetalSsaBackend::run(const BatchSsaOptions& options) {
         [enc setBuffer:bufStates offset:0 atIndex:14];
         [enc setBuffer:bufObservables offset:0 atIndex:15];
         [enc setBuffer:bufEventCounts offset:0 atIndex:16];
+        [enc setBuffer:bufSpeciesHistory offset:0 atIndex:17];
 
         MTLSize gridSize = MTLSizeMake(batchSize, 1, 1);
         const NSUInteger maxThreads = impl_->pipelineState.maxTotalThreadsPerThreadgroup;
@@ -538,6 +568,33 @@ BatchSsaMetrics MetalSsaBackend::run(const BatchSsaOptions& options) {
                 const double variance = std::max(0.0, (sumSq / N) - (mean * mean));
                 metrics.observableMeans[step][g] = static_cast<float>(mean);
                 metrics.observableStdDevs[step][g] = static_cast<float>(std::sqrt(variance));
+            }
+        }
+    }
+    // Aggregate the device-side species history into the full [time][species]
+    // grid required by the common OdeResult contract. This is read back once
+    // and converted on the host; it does not change RNG state or draw order.
+    if (speciesBytes > 0) {
+        std::vector<int32_t> allSpecies;
+        allSpecies.resize(speciesBytes / sizeof(int32_t));
+        std::memcpy(allSpecies.data(), [bufSpeciesHistory contents], speciesBytes);
+        metrics.meanSpecies.assign(numPoints, std::vector<double>(numSpecies, 0.0));
+        metrics.stdSpecies.assign(numPoints, std::vector<double>(numSpecies, 0.0));
+        const double N = static_cast<double>(batchSize);
+        for (uint32_t step = 0; step < numPoints; ++step) {
+            for (uint32_t s = 0; s < numSpecies; ++s) {
+                double sum = 0.0;
+                double sumSq = 0.0;
+                for (uint32_t b = 0; b < batchSize; ++b) {
+                    const double value = static_cast<double>(
+                        allSpecies[(static_cast<std::size_t>(b) * numPoints + step) * numSpecies + s]);
+                    sum += value;
+                    sumSq += value * value;
+                }
+                const double mean = sum / N;
+                metrics.meanSpecies[step][s] = mean;
+                metrics.stdSpecies[step][s] =
+                    std::sqrt(std::max(0.0, sumSq / N - mean * mean));
             }
         }
     }

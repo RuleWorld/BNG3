@@ -219,10 +219,45 @@ def record(args: argparse.Namespace) -> dict:
     crossover = _validate_crossover(args.crossover, revision, sha)
     cuda = _read(args.cuda_probe)
     _require(cuda.get("schema_version") == 1, "invalid CUDA availability probe")
+    cuda_build = None
+    if args.cuda_build_probe:
+        cuda_build = _read(args.cuda_build_probe)
+        _require(cuda_build.get("status") == "BLOCKED", "CUDA build probe is not BLOCKED")
+        _require(
+            (cuda_build.get("source") or {}).get("revision") == revision,
+            "CUDA build probe: stale source revision",
+        )
 
     receipts = [args.parity, args.performance, args.build_identity, args.cuda_probe, *args.crossover]
+    if cuda_build:
+        receipts.append(args.cuda_build_probe)
     if args.nfnext:
         receipts.append(args.nfnext)
+    workloads = None
+    if args.nfnext_workloads:
+        workloads = _read(args.nfnext_workloads)
+        _require(workloads.get("status") == "PASS", "workload receipt did not pass")
+        _require(workloads["device"]["backend"] == "metal", "workload receipt is not Metal")
+        _require(
+            workloads.get("full_corpus_claimed") is False,
+            "workload receipt must not claim the full network-free corpus",
+        )
+        _require(workloads["cuda"]["status"] == "UNSUPPORTED", "workload receipt claims CUDA")
+        _require(len(workloads.get("workloads", [])) >= 3, "workload receipt has too few classes")
+        _require(workloads.get("refusals"), "workload receipt has no explicit refusals")
+        _require(
+            all(
+                row.get("device_memory_bytes", 0) > 0 and row.get("total_events", 0) > 0
+                for row in workloads["workloads"]
+            ),
+            "workload receipt is missing device/memory/throughput evidence",
+        )
+        _validate_source(workloads.get("source") or {}, revision, "NFnext workload receipt")
+        _require(
+            (workloads["source"]).get("native_sha256") == sha,
+            "NFnext workload receipt: native binary mismatch",
+        )
+        receipts.append(args.nfnext_workloads)
     pinned = None
     if args.pinned_nfsim:
         pinned = _read(args.pinned_nfsim)
@@ -259,13 +294,13 @@ def record(args: argparse.Namespace) -> dict:
             "release-cuda-device",
             "NOT_TESTED",
             "No CUDA device execution: " + cuda_detail,
-            [args.cuda_probe],
+            [args.cuda_probe] + ([args.cuda_build_probe] if cuda_build else []),
         ),
         _row(
             "release-cuda-performance",
             "NOT_TESTED",
             "No CUDA device measurement: " + cuda_detail,
-            [args.cuda_probe],
+            [args.cuda_probe] + ([args.cuda_build_probe] if cuda_build else []),
         ),
         _row(
             "release-nf-gpu",
@@ -273,11 +308,18 @@ def record(args: argparse.Namespace) -> dict:
             (
                 "Bounded Metal unary-state route passes analytic"
                 + (" and pinned native NFsim" if pinned else "")
+                + (" across extended bounded workload classes" if workloads else "")
                 + " checks, but the full network-free GPU corpus and CUDA reporting are not qualified."
                 if nfnext
                 else "No network-free device receipt was consumed on this exact revision; finite Metal evidence cannot qualify this row."
             ),
-            ([row for row in (args.nfnext, args.pinned_nfsim) if row]),
+            (
+                [
+                    row
+                    for row in (args.nfnext, args.nfnext_workloads, args.pinned_nfsim)
+                    if row
+                ]
+            ),
         ),
         _row(
             "release-capability-coverage-474",
@@ -314,9 +356,11 @@ def record(args: argparse.Namespace) -> dict:
                 else None
             ),
             "pinned_nfsim": pinned,
+            "bounded_workloads": workloads,
             "cuda": "UNSUPPORTED: network-free CUDA execution is not implemented",
         },
         "cuda": cuda,
+        "cuda_build": cuda_build,
         "receipts": [
             {"path": str(path), "sha256": _sha256(path)} for path in receipts
         ],
@@ -342,10 +386,12 @@ def main() -> int:
     parser.add_argument("--revision", required=True)
     parser.add_argument("--parity", required=True, type=Path)
     parser.add_argument("--nfnext", type=Path)
+    parser.add_argument("--nfnext-workloads", type=Path)
     parser.add_argument("--performance", required=True, type=Path)
     parser.add_argument("--crossover", required=True, type=Path, action="append")
     parser.add_argument("--pinned-nfsim", type=Path)
     parser.add_argument("--cuda-probe", required=True, type=Path)
+    parser.add_argument("--cuda-build-probe", type=Path)
     parser.add_argument("--build-identity", required=True, type=Path)
     parser.add_argument("--json", required=True, type=Path)
     parser.add_argument(
