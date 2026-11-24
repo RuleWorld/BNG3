@@ -1727,7 +1727,13 @@ def test_pybionetgen_compatibility_runs_against_a_regular_installed_package():
     """Editable finders and inherited source paths must not mask wheel code."""
 
     job = _workflow_job_from(PARITY_WORKFLOW, "pybionetgen-compat")
-    assert 'python -m pip install ".[full,dev]"' in job
+    # Optional integrations needed by executed compatibility rows may be added
+    # as extras (for example the notebook kernel); the package itself must
+    # still be installed as a regular wheel, never editable.
+    assert (
+        'python -m pip install ".[full,dev]"' in job
+        or 'python -m pip install ".[full,dev,notebook]"' in job
+    ), job
     assert "pip install -e" not in job
     assert "BNG3_PYTHON_TEST_MODE: installed" in job
     job_doc = parse_workflow(PARITY_WORKFLOW)["jobs"]["pybionetgen-compat"]
