@@ -9077,9 +9077,9 @@ def generate_bngl(
                     and event_context is not None
                     and str(candidate.trigger or "").strip()
                     == str(event_context.trigger or "").strip()
+                    and str(candidate.delay or "").strip()
+                    == str(event_context.delay or "").strip()
                 ):
-                    # Before this trigger's first rising edge, no event that
-                    # shares the trigger can have executed, whatever its delay.
                     return False
                 return True
 
@@ -9169,15 +9169,7 @@ def generate_bngl(
                     )
 
                     def resolve_immutable(symbol: str) -> Optional[float]:
-                        if not is_compile_time_constant(symbol) and (
-                            has_prior_event_controlled_dependency(symbol)
-                            or any(
-                                rule.variable
-                                and standardize_name(str(rule.variable))
-                                == standardize_name(symbol)
-                                for rule in model.rules
-                            )
-                        ):
+                        if not is_compile_time_constant(symbol):
                             return None
                         return resolve_event_parameter(symbol)
 
@@ -9223,15 +9215,7 @@ def generate_bngl(
                     )
 
                     def resolve_immutable(symbol: str) -> Optional[float]:
-                        if not is_compile_time_constant(symbol) and (
-                            has_prior_event_controlled_dependency(symbol)
-                            or any(
-                                rule.variable
-                                and standardize_name(str(rule.variable))
-                                == standardize_name(symbol)
-                                for rule in model.rules
-                            )
-                        ):
+                        if not is_compile_time_constant(symbol):
                             return None
                         return resolve_event_parameter(symbol)
 
@@ -12632,10 +12616,19 @@ def generate_bngl(
                 if scheduled_event_candidates
                 else None
             )
+            # Events that could not be scheduled must join the native block;
+            # dropping them here would silently lose their execution.
+            native_candidates = list(native_event_candidates)
+            known = {id(event) for event in native_candidates}
+            if scheduled_result is not None:
+                for event, _reason in scheduled_result.untranslated:
+                    if id(event) not in known:
+                        native_candidates.append(event)
+                        known.add(id(event))
             event_result = EventTranslationResult(
                 scheduled_result.actions_block if scheduled_result else None,
                 0,
-                [(event, "native event runtime") for event in native_event_candidates],
+                [(event, "native event runtime") for event in native_candidates],
                 0,
                 tuple(scheduled_result.scheduled_times) if scheduled_result else (),
             )
