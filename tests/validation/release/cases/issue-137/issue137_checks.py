@@ -91,7 +91,8 @@ def structural_gaps(root=ROOT):
     if len(rows) != 997:
         gaps.append(f"matrix row count changed: {len(rows)} (expected 997)")
 
-    mapping = json.loads(MAP_PATH.read_text())
+    mapping_path = root / "provenance/reconciliation/inventory-oracle-map.json"
+    mapping = json.loads(mapping_path.read_text())
     mapped = mapping["rows"]
     if set(mapped) != set(ROW_IDS):
         gaps.append("oracle map does not cover exactly the 16 #137 rows")
@@ -145,8 +146,11 @@ def link_gaps(root=ROOT):
     return gaps
 
 
-def coverage_gaps(reports, revision):
+def coverage_gaps(reports, revision, root=ROOT):
     """Consume genuine exact-revision case results; declarations never qualify."""
+    mapping = json.loads(
+        (root / "provenance/reconciliation/inventory-oracle-map.json").read_text()
+    )
     observed = {}
     for report in reports:
         source = report.get("source", {})
@@ -172,7 +176,7 @@ def coverage_gaps(reports, revision):
             ):
                 observed.setdefault(row_id, set()).add("LOSS_DIAGNOSTIC")
                 continue
-            entry = json.loads(MAP_PATH.read_text())["rows"][row_id]
+            entry = mapping["rows"][row_id]
             kind = entry["oracle_kind"]
             references = report.get("references", {})
             if kind == "analytic":
@@ -190,9 +194,9 @@ def coverage_gaps(reports, revision):
                     None,
                 )
                 ref = references.get(name or "", {})
-                if not isinstance(ref, dict) or ref.get("revision") != json.loads(
-                    MAP_PATH.read_text()
-                )["pins"].get(name):
+                if not isinstance(ref, dict) or ref.get("revision") != mapping[
+                    "pins"
+                ].get(name):
                     observed.setdefault(row_id, set()).add("NO_PIN_ORACLE")
                     continue
             else:
@@ -246,7 +250,7 @@ def main(argv=None):
     structural = structural_gaps(args.root)
     links = link_gaps(args.root)
     reports = [json.loads(path.read_bytes()) for path in args.case_report]
-    cases = coverage_gaps(reports, args.revision)
+    cases = coverage_gaps(reports, args.revision, args.root)
     report = {
         "schema_version": 1,
         "source": source,
