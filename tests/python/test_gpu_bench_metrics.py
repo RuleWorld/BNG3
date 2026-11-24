@@ -79,3 +79,27 @@ def test_source_identity_records_revision_cleanliness_and_binary_hash(tmp_path):
     source.write_text("modified", encoding="utf-8")
     dirty = source_identity(str(tmp_path), SimpleNamespace(__file__=str(binary)))
     assert dirty["source_dirty"] is True
+
+
+def test_resource_fallback_when_posix_resource_is_unavailable(monkeypatch):
+    import importlib
+    import gpu.arms as arms_mod
+    import gpu.measure as measure_mod
+
+    monkeypatch.setattr(measure_mod, "resource", None)
+    assert measure_mod._rusage_children() == (0.0, 0.0)
+    self_u, self_s = measure_mod._rusage_self()
+    assert self_u >= 0.0 and self_s == 0.0
+    assert arms_mod._self_cpu() >= 0.0
+    assert measure_mod._process_peak_rss_bytes() >= 0
+
+    # Verify importing both modules succeeds even when `resource` is absent.
+    monkeypatch.setitem(sys.modules, "resource", None)
+    reloaded_measure = importlib.reload(measure_mod)
+    reloaded_arms = importlib.reload(arms_mod)
+    assert reloaded_measure.resource is None
+    assert reloaded_arms._self_cpu() >= 0.0
+
+    monkeypatch.undo()
+    importlib.reload(measure_mod)
+    importlib.reload(arms_mod)

@@ -40,13 +40,17 @@ import hashlib
 import json
 import math
 import os
-import resource
 import statistics
 import subprocess
 import sys
 import time
 from dataclasses import dataclass, field
 from typing import Any, Callable, Sequence
+
+try:
+    import resource
+except ImportError:
+    resource = None  # Windows lacks POSIX resource; use process_time/Win32 fallbacks.
 
 
 @dataclass
@@ -71,11 +75,15 @@ class TimingSample:
 
 def _rusage_children() -> tuple[float, float]:
     """(user, system) CPU seconds consumed by all reaped children so far."""
+    if resource is None:
+        return 0.0, 0.0
     ru = resource.getrusage(resource.RUSAGE_CHILDREN)
     return ru.ru_utime, ru.ru_stime
 
 
 def _rusage_self() -> tuple[float, float]:
+    if resource is None:
+        return time.process_time(), 0.0
     ru = resource.getrusage(resource.RUSAGE_SELF)
     return ru.ru_utime, ru.ru_stime
 
@@ -644,9 +652,38 @@ def load_average() -> tuple[float, float, float]:
 
 def _process_peak_rss_bytes() -> int:
     """Return this process's lifetime peak resident set size in bytes."""
-    peak = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
-    # macOS reports bytes; Linux and the other supported Unix variants report KiB.
-    return peak if sys.platform == "darwin" else peak * 1024
+    if resource is not None:
+        peak = int(resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
+        # macOS reports bytes; Linux and the other supported Unix variants report KiB.
+        return peak if sys.platform == "darwin" else peak * 1024
+    if sys.platform == "win32":
+        import ctypes
+        from ctypes import wintypes
+
+        class _ProcessMemoryCounters(ctypes.Structure):
+            _fields_ = [
+                ("cb", wintypes.DWORD),
+                ("PageFaultCount", wintypes.DWORD),
+                ("PeakWorkingSetSize", ctypes.c_size_t),
+                ("WorkingSetSize", ctypes.c_size_t),
+                ("QuotaPeakPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaPeakNonPagedPoolUsage", ctypes.c_size_t),
+                ("QuotaNonPagedPoolUsage", ctypes.c_size_t),
+                ("PagefileUsage", ctypes.c_size_t),
+                ("PeakPagefileUsage", ctypes.c_size_t),
+            ]
+
+        counters = _ProcessMemoryCounters()
+        counters.cb = ctypes.sizeof(counters)
+        kernel32 = ctypes.windll.kernel32
+        if kernel32.K32GetProcessMemoryInfo(
+            kernel32.GetCurrentProcess(),
+            ctypes.byref(counters),
+            counters.cb,
+        ):
+            return int(counters.PeakWorkingSetSize)
+    return 0
 
 
 def host_facts() -> dict[str, Any]:

@@ -25,13 +25,12 @@ no arm caches, reorders or memoises work the other does not.
 
 from __future__ import annotations
 
-import resource
 import time
 from dataclasses import dataclass, field
 from typing import Any
 
 from . import device as device_mod
-from .measure import TimingSample
+from .measure import TimingSample, _rusage_self
 from .precision import PrecisionClaim, describe_dtype
 
 _NATIVE_METRIC_KEYS = (
@@ -56,8 +55,8 @@ def _native_metrics(result: dict[str, Any]) -> dict[str, Any]:
 
 def _self_cpu() -> float:
     """CPU seconds this process has consumed (user + system)."""
-    ru = resource.getrusage(resource.RUSAGE_SELF)
-    return ru.ru_utime + ru.ru_stime
+    user_s, sys_s = _rusage_self()
+    return user_s + sys_s
 
 
 @dataclass
