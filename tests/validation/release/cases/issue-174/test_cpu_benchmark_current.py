@@ -25,6 +25,8 @@ import sys
 import time
 from pathlib import Path
 
+import pytest
+
 import bionetgen._bionetgen_cpp as cpp
 from bionetgen.model import BioNetGenModel
 
@@ -73,11 +75,24 @@ def _identity():
         timeout=10,
     ).stdout.strip()
     ext = Path(cpp.__file__).resolve()
-    # Fail closed if the extension under test is not the one built from this
-    # checkout; timing a different tree would be a misleading measurement.
-    assert str(ext).startswith(
-        str(ROOT.resolve())
-    ), f"extension under test {ext} is outside checkout {ROOT}"
+    # Fail closed if the extension under test is not the one produced for this
+    # revision; timing a different tree would be a misleading measurement.
+    # In `installed` package mode this job runs with --noconftest, so the
+    # distribution location must be checked here rather than by the shared
+    # conftest guard. Source mode still requires the extension in this checkout.
+    if os.environ.get("BNG3_PYTHON_TEST_MODE") == "installed":
+        import importlib.metadata
+
+        package = Path(
+            importlib.metadata.distribution("bionetgen").locate_file("bionetgen")
+        ).resolve()
+        assert (
+            ext.parent == package
+        ), f"installed extension under test {ext} is outside distribution {package}"
+    else:
+        assert str(ext).startswith(
+            str(ROOT.resolve())
+        ), f"extension under test {ext} is outside checkout {ROOT}"
     digest = hashlib.sha256(ext.read_bytes()).hexdigest() if ext.is_file() else ""
     baseline = json.loads(BASELINE.read_text())
     return {
@@ -248,3 +263,37 @@ def test_current_cpu_benchmark_record(tmp_path):
         path = Path(dest)
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n")
+
+
+def _fake_distribution(package_dir: Path):
+    from types import SimpleNamespace
+
+    return SimpleNamespace(locate_file=lambda _name: package_dir)
+
+
+def test_identity_accepts_extension_from_installed_distribution(tmp_path, monkeypatch):
+    """Installed-package mode identifies the extension by its distribution."""
+    import importlib.metadata
+
+    package = tmp_path / "site-packages" / "bionetgen"
+    package.mkdir(parents=True)
+    extension = package / "_bionetgen_cpp.so"
+    extension.write_bytes(b"identity-probe")
+    monkeypatch.setattr(cpp, "__file__", str(extension))
+    monkeypatch.setenv("BNG3_PYTHON_TEST_MODE", "installed")
+    monkeypatch.setattr(
+        importlib.metadata, "distribution", lambda _name: _fake_distribution(package)
+    )
+    identity = _identity()
+    assert identity["extension"] == str(extension)
+    assert identity["extension_sha256"]
+
+
+def test_identity_rejects_foreign_extension_in_source_mode(tmp_path, monkeypatch):
+    """Source mode must still reject an extension outside this checkout."""
+    extension = tmp_path / "_bionetgen_cpp.so"
+    extension.write_bytes(b"foreign")
+    monkeypatch.setattr(cpp, "__file__", str(extension))
+    monkeypatch.setenv("BNG3_PYTHON_TEST_MODE", "source")
+    with pytest.raises(AssertionError, match="outside checkout"):
+        _identity()

@@ -9378,7 +9378,9 @@ def generate_bngl(
                         symbols = {
                             node.id
                             for node in ast.walk(
-                                ast.parse(law, mode="eval") if law.strip() else ast.parse("0", mode="eval")
+                                ast.parse(law, mode="eval")
+                                if law.strip()
+                                else ast.parse("0", mode="eval")
                             )
                             if isinstance(node, ast.Name)
                         }
@@ -12152,6 +12154,7 @@ def generate_bngl(
             )
             if lowered_static_events is not None:
                 event_translation_events = lowered_static_events
+
         def _fixed_target_value(variable: str) -> Optional[float]:
             """Value of a target that cannot change except by an event."""
             standardized = standardize_name(variable)
@@ -12632,7 +12635,9 @@ def generate_bngl(
                 0,
                 tuple(scheduled_result.scheduled_times) if scheduled_result else (),
             )
-        elif native_dae_runtime and any(rule.type == "algebraic" for rule in model.rules):
+        elif native_dae_runtime and any(
+            rule.type == "algebraic" for rule in model.rules
+        ):
             event_result = EventTranslationResult(
                 None,
                 0,
@@ -12668,9 +12673,7 @@ def generate_bngl(
                 # their execution instants coincide. When every event can be
                 # executed by the native runtime instead, use that single
                 # mechanism: its priorities then order every execution point.
-                all_native = lower_native_events(
-                    native_event_candidates, event_context
-                )
+                all_native = lower_native_events(native_event_candidates, event_context)
                 if all_native.block:
                     native_event_block = all_native.block
                     native_event_refusal = None
