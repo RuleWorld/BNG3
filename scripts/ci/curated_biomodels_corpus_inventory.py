@@ -441,6 +441,7 @@ SOURCE_SEMANTIC_CONSTRUCTS: tuple[str, ...] = ("source:undefined-observable",)
 CORPUS_CONSTRUCTS: tuple[tuple[str, str], ...] = (
     ("not an sbml biomodels artifact", "format:not-an-sbml-artifact"),
     ("contains no usable sbml", "format:no-usable-sbml"),
+    ("contains no sbml xml document", "format:no-usable-sbml"),
     ("not libsbml-valid", "source:libsbml-invalid"),
     (
         "could not integrate the written sbml",
