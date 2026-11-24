@@ -294,14 +294,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-inventory.",
-                "No revision-locked consuming receipt producer is declared for required live check release-inventory."
-              ]
+              "selector": "tests/validation/release/cases/issue-137/issue137_checks.py inventory",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#issue-137-inventory",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -330,14 +327,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-inventory-links.",
-                "No revision-locked consuming receipt producer is declared for required live check release-inventory-links."
-              ]
+              "selector": "tests/validation/release/cases/issue-137/issue137_checks.py inventory",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#issue-137-inventory",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -366,14 +360,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "No executable leaf selector is collected for required live check release-capability-coverage-137.",
-                "No revision-locked consuming receipt producer is declared for required live check release-capability-coverage-137."
-              ]
+              "selector": "tests/validation/release/cases/issue-137/issue137_checks.py inventory",
+              "selector_status": "COLLECTED",
+              "receipt_producer": ".github/workflows/parity.yml#issue-137-inventory",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
