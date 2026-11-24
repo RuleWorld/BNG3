@@ -263,7 +263,9 @@ def classify_numerical_limit(
     """
     identity = f"issue-162/{MODEL_ID}"
     for mode_name, record in (("flat", flat_record), ("atomized", atomized_record)):
-        _require(record is not None, f"{identity}/{mode_name}", "pinned case is missing")
+        _require(
+            record is not None, f"{identity}/{mode_name}", "pinned case is missing"
+        )
         _require(
             record.get("id") == MODEL_ID,
             f"{identity}/{mode_name}",
@@ -315,9 +317,7 @@ def classify_numerical_limit(
     # (observable, error, scale/difference and CRN) must still be byte-equal.
     without_mode = {
         mode_name: {
-            section: {
-                key: value for key, value in block.items() if key != "mode"
-            }
+            section: {key: value for key, value in block.items() if key != "mode"}
             for section, block in mode_evidence.items()
         }
         for mode_name, mode_evidence in evidence.items()
@@ -379,9 +379,15 @@ def classify_platform_sensitive_limit(
     identity = f"issue-162/{PLATFORM_MODEL_ID}"
     if flat_record is None or atomized_record is None:
         return None
-    if flat_record.get("id") != PLATFORM_MODEL_ID or atomized_record.get("id") != PLATFORM_MODEL_ID:
+    if (
+        flat_record.get("id") != PLATFORM_MODEL_ID
+        or atomized_record.get("id") != PLATFORM_MODEL_ID
+    ):
         raise ValueError(f"{identity}: disposition target identity mismatch")
-    if flat_record.get("status") != "failed" or atomized_record.get("status") != "failed":
+    if (
+        flat_record.get("status") != "failed"
+        or atomized_record.get("status") != "failed"
+    ):
         raise ValueError(f"{identity}: both modes are not failed")
     evidence = {}
     for mode_name, record in (("flat", flat_record), ("atomized", atomized_record)):
@@ -427,7 +433,9 @@ def classify_platform_sensitive_limit(
         evidence[mode_name] = {
             "network": mode.get("generated_network"),
             "retry_count": len(retries),
-            "failed_stages": [stage.get("name") for stage in stages if stage.get("status") == "failed"],
+            "failed_stages": [
+                stage.get("name") for stage in stages if stage.get("status") == "failed"
+            ],
         }
     return {
         "id": PLATFORM_ID,
@@ -614,7 +622,9 @@ def refusal_class(
     matches = [name for name, ids in PINNED_REFUSAL_IDS.items() if model_id in ids]
     if not matches:
         return None
-    _require(len(matches) == 1, identity, "refusal model ID is pinned to multiple classes")
+    _require(
+        len(matches) == 1, identity, "refusal model ID is pinned to multiple classes"
+    )
     cause = matches[0]
     reason = str(record.get("unsupported_reason") or "")
     _require(bool(reason), identity, "refusal has no harness-generated reason")
@@ -647,9 +657,7 @@ def refusal_class(
     return cause
 
 
-def _refusal_row(
-    mode_name: str, record: dict[str, Any], cause: str
-) -> dict[str, Any]:
+def _refusal_row(mode_name: str, record: dict[str, Any], cause: str) -> dict[str, Any]:
     return {
         "id": f"refusal:{cause}:issue-162/{mode_name}/{record['id']}",
         "status": REFUSAL_STATUS,
@@ -770,7 +778,9 @@ def build_disposition_receipt(
                     f"{mode_name}: report by_cause {cause} count {actual} != {expected}"
                 )
     if problems:
-        raise ValueError("BioModels disposition agreement failed: " + "; ".join(problems))
+        raise ValueError(
+            "BioModels disposition agreement failed: " + "; ".join(problems)
+        )
 
     # Aggregate rows are explicit non-passes, mirroring the #159 disposition
     # style and carrying matched counts from the real reports.

@@ -250,10 +250,7 @@ def test_receipt_consumes_the_two_source_comparisons(tmp_path, fault):
                 "records": [
                     record,
                     _pinned_943(mode),
-                    *[
-                        {**row, "modes": [{"mode": mode}]}
-                        for row in refusals
-                    ],
+                    *[{**row, "modes": [{"mode": mode}]} for row in refusals],
                 ],
                 "summary": {"timeout_records": 0},
                 "unsupported_summary": {"by_cause": by_cause},
