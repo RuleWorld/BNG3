@@ -11,7 +11,7 @@ namespace bng::io {
  * LatexWriter - Export model to a standalone compilable LaTeX document
  *
  * Generates a .tex file containing:
- * - Document preamble with amsmath, booktabs, mhchem packages
+ * - Document preamble with amsmath, amssymb, booktabs, mhchem packages
  * - Parameters table
  * - Species table with initial concentrations
  * - Reactions in equation environments with rate laws
