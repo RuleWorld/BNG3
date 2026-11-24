@@ -66,6 +66,7 @@ std::string LatexWriter::write(const ast::Model& model, const engine::GeneratedN
     // === Document preamble ===
     out << "\\documentclass[11pt]{article}\n";
     out << "\\usepackage{amsmath}\n";
+    out << "\\usepackage{amssymb}\n";
     out << "\\usepackage{booktabs}\n";
     out << "\\usepackage{longtable}\n";
     out << "\\usepackage[version=4]{mhchem}\n";
