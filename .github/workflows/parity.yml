@@ -29,6 +29,9 @@ env:
   CTEST_OUTPUT_ON_FAILURE: 1
   BNG3_CI_STRICT_ORACLES: "1"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # BNGSIM adapter links a shared library built from the locked oracle; make
+  # it discoverable to the installed native extension in every job.
+  LD_LIBRARY_PATH: ${{ runner.temp }}/oracle-bngsim/build
 
 jobs:
   oracle-lock:
