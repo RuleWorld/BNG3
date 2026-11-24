@@ -200,7 +200,12 @@ def test_initial_assignment_can_depend_on_an_assignment_rule_parameter():
 
 
 def test_generate_bngl_maps_parameter_initial_assignment_to_function():
-    """An initial assignment supersedes a parameter literal in BNGL output."""
+    """An initial assignment supersedes a parameter literal in BNGL output.
+
+    In a parameter-only, delay-free model with no rule or event controller,
+    `_freeze_initial_only_parameters` freezes the evaluated `t=0` value in
+    `begin parameters` (`flux 5`) so initial assignments stay fixed for `t > 0`.
+    """
 
     from bionetgen.atomizer.modern import (
         build_species_composition_table,
@@ -221,7 +226,7 @@ def test_generate_bngl_maps_parameter_initial_assignment_to_function():
     )
 
     assert "  flux 1" not in bngl
-    assert "  flux() = 2 + 3" in bngl
+    assert "  flux 5" in bngl
 
 
 def test_write_functions_inlines_constant_calls_into_dynamic_bodies():
