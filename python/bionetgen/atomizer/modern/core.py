@@ -2209,13 +2209,32 @@ def _written_molecule_name(name: str) -> str:
 
 
 def disambiguate_colliding_species(
-    sct: SpeciesCompositionTable, model: SBMLModel
+    sct: SpeciesCompositionTable, model: SBMLModel, atomize: bool = False
 ) -> int:
     if model.multi_executable:
         # SBML Multi deliberately permits several fully-defined species and a
         # pattern species to share one speciesType.  Their identity is carried
         # by the Multi feature/binding semantics, not by synthetic BNGL state.
         return 0
+    count = 0
+    if atomize:
+        # An SBML species is an independent state variable.  A rule pattern
+        # inferred for one species must never match a different source species
+        # as a substructure: that would generate reactions and species the
+        # source does not declare.  Give each atomized multi-molecule species
+        # an exact identity marker so its rule pattern matches only itself;
+        # single-molecule patterns are already exact source species.
+        for species_id, entry in sct.entries.items():
+            if len(entry.structure.molecules) < 2:
+                continue
+            first = entry.structure.molecules[0]
+            if any(component.name == "__sp" for component in first.components):
+                continue
+            state = standardize_name(species_id)
+            discriminator = Component("__sp", states=[state])
+            discriminator.set_active_state(state)
+            first.add_component(discriminator)
+            count += 1
     groups: Dict[Tuple[str, str], List[str]] = OrderedDict()
     for species_id, entry in sct.entries.items():
         if not entry.structure.molecules:
@@ -2233,16 +2252,16 @@ def disambiguate_colliding_species(
         )
         compartment = model.species.get(species_id, SBMLSpecies(species_id)).compartment
         groups.setdefault((compartment, pattern), []).append(species_id)
-    count = 0
     for species_ids in groups.values():
         if len(set(species_ids)) < 2:
             continue
         for species_id in species_ids:
             entry = sct.entries[species_id]
-            discriminator = Component("__sp", states=[standardize_name(species_id)])
-            discriminator.set_active_state(standardize_name(species_id))
             molecule = entry.structure.molecules[0]
-            molecule.add_component(discriminator)
+            if not any(component.name == "__sp" for component in molecule.components):
+                discriminator = Component("__sp", states=[standardize_name(species_id)])
+                discriminator.set_active_state(standardize_name(species_id))
+                molecule.add_component(discriminator)
             # BNGL declares molecule types by name, so a component alone is
             # not enough: two species whose names normalize to the same BNGL
             # molecule (e.g. "C" -> M_C and "M_C" -> M_C) still need distinct

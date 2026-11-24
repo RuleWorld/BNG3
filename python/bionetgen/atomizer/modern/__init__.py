@@ -464,7 +464,9 @@ class Atomizer:
                     "naming_conventions", self.options.get("naming_patterns")
                 ),
             )
-            disambiguated = disambiguate_colliding_species(self.sct, self.model)
+            disambiguated = disambiguate_colliding_species(
+                self.sct, self.model, atomize=bool(self.options.get("atomize", False))
+            )
             if disambiguated > 0:
                 logger.info(
                     "ATM008",
