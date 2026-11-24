@@ -1602,6 +1602,65 @@ def _delay_is_rewritable(model: SBMLModel, species_id: str) -> bool:
     return found
 
 
+def _event_stoichiometry_transfer(
+    model: SBMLModel,
+    held_id: str,
+    state_id: str,
+    stoich_id: str,
+    volume: float,
+) -> bool:
+    """Re-express event writes to the held fast species as pool-state writes.
+
+    When an event changes the fast reaction's stoichiometry and simultaneously
+    adds some of the species the reduction holds at zero, that amount joins
+    the non-held species scaled by the new stoichiometry. The pool's state is
+    the non-held species, so the event is rewritten to add the source amount
+    divided by the new stoichiometry to that state. Returns False unless every
+    event that writes the held species also writes a constant stoichiometry.
+    """
+    changed = False
+    for event in model.events:
+        variables = [
+            standardize_name(str(getattr(assignment, "variable", "") or ""))
+            for assignment in event.assignments
+        ]
+        if standardize_name(held_id) not in variables:
+            continue
+        held_values = [
+            str(getattr(assignment, "math", "") or "")
+            for assignment in event.assignments
+            if standardize_name(str(getattr(assignment, "variable", "") or ""))
+            == standardize_name(held_id)
+        ]
+        stoich_values = [
+            str(getattr(assignment, "math", "") or "")
+            for assignment in event.assignments
+            if standardize_name(str(getattr(assignment, "variable", "") or ""))
+            == standardize_name(stoich_id)
+        ]
+        if len(held_values) != 1 or len(stoich_values) != 1:
+            return False
+        added = _fast_number(held_values[0])
+        new_stoich = _fast_number(stoich_values[0])
+        if added is None or new_stoich is None or new_stoich <= 0:
+            return False
+        increment = added / (new_stoich * volume)
+        replaced = False
+        for assignment in event.assignments:
+            if (
+                not replaced
+                and standardize_name(str(getattr(assignment, "variable", "") or ""))
+                == standardize_name(held_id)
+            ):
+                assignment.variable = state_id
+                assignment.math = (
+                    f"(({state_id}) + {format_number(increment)})"
+                )
+                replaced = True
+        changed = True
+    return changed
+
+
 def _rewrite_fast_reduction_delays(
     model: SBMLModel,
     original_amounts: Mapping[str, float],
@@ -1739,11 +1798,6 @@ def _reduce_with_pool(
             )
         if not (species.initial_amount_set or species.initial_concentration_set):
             return refuse(f'species "{species.id}" has no initial value')
-        if standardize_name(species.id) in controlled:
-            return refuse(
-                f'species "{species.id}" is reassigned by a rule, an initial '
-                "assignment, or an event"
-            )
         if standardize_name(species.id) in delayed and not _delay_is_rewritable(
             model, species.id
         ):
@@ -1861,6 +1915,30 @@ def _reduce_with_pool(
         )
     if isinstance(plan, str):
         return refuse(plan)
+    varying_reference = (
+        reactant if reactant.variable_stoichiometry else
+        product if product.variable_stoichiometry else None
+    )
+    stoich_id = str(getattr(varying_reference, "id", "") or "") if varying_reference else ""
+    held_id, state_id = {
+        "forward": (reactant_id, product_id),
+        "backward": (product_id, reactant_id),
+    }.get(plan.kind, (None, None))
+    transfer_stoichiometry = False
+    for species in (reactant_species, product_species):
+        if standardize_name(species.id) not in controlled:
+            continue
+        if (
+            held_id
+            and stoich_id
+            and standardize_name(species.id) == standardize_name(held_id)
+        ):
+            transfer_stoichiometry = True
+            continue
+        return refuse(
+            f'species "{species.id}" is reassigned by a rule, an initial '
+            "assignment, or an event"
+        )
     varying = any(term.factors for term in active)
     if stoichiometry_ids and varying:
         return refuse(
@@ -2010,6 +2088,13 @@ def _reduce_with_pool(
         {reactant_id: initial_r, product_id: initial_p},
         volume,
     )
+    if transfer_stoichiometry and not _event_stoichiometry_transfer(
+        model, held_id, state_id, stoich_id, volume
+    ):
+        return refuse(
+            "an event changes the stoichiometry and the held species without "
+            "a constant amount it can transfer to the pool state"
+        )
     # The slow reactions keep reading the two species, but the reduction's
     # rules own their values, so they become modifiers.
     for other in model.reactions.values():
