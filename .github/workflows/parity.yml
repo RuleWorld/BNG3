@@ -1202,7 +1202,15 @@ jobs:
             -B "$RUNNER_TEMP/oracle-bngsim/build" \
             -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ env.CMAKE_BUILD_TYPE }} \
-            -DBNGSIM_BUILD_PYTHON=OFF
+            -DBNGSIM_BUILD_PYTHON=OFF \
+            -DBNGSIM_BUILD_NFSIM=OFF
+          # The pinned BNGSIM oracle's vendored NFsim shared library has a
+          # glibc teardown fault: its static std::queue destructor double-frees
+          # at interpreter exit (gdb backtrace in hosted run 45359245523).
+          # BNG3's BNGSIM adapter uses only the finite ODE/SSA routes; this
+          # vendored NFsim component is unused. Excluding it keeps the pinned
+          # source and ODE/SSA semantics while avoiding the abort that skipped
+          # receipt generation and the NFnext test-contract build.
           cmake --build "$RUNNER_TEMP/oracle-bngsim/build" --target bngsim --parallel 2
           BNGSIM_LIBRARY_PATH=$(find "$RUNNER_TEMP/oracle-bngsim/build" -maxdepth 1 -name 'libbngsim.so*' | head -1)
           test -f "$BNGSIM_LIBRARY_PATH"
