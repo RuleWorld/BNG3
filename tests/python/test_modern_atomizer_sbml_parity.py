@@ -3795,7 +3795,10 @@ def test_simultaneous_rateof_delay_and_priority_use_exponential_history():
 
     assert result.success, result.error
     assert "Events NOT simulated" not in result.bngl
-    assert "t_end=>4.5209205572" in result.bngl
+    # Strict `time > 4.5` schedules at `4.5 + max(1e-9, 4.5 * 1e-9)` plus the
+    # trigger-time delay `rateOf(p1) = 0.0209205572`, while trigger-time
+    # assignment values are still evaluated exactly at `t = 4.5`.
+    assert "t_end=>4.5209205617" in result.bngl
     high_priority = result.bngl.index('setParameter("p2", "5.0209205572")')
     low_priority = result.bngl.index('setParameter("p2", "2.0209205572")')
     assert high_priority < low_priority
