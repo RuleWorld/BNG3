@@ -72,11 +72,31 @@ def test_metal_performance_carries_cost_and_correctness_evidence():
     assert report["network_free"]["metal"]["total_events"] > 0
 
 
+def _receipt_path(entry: dict) -> Path:
+    path = Path(entry.get("display_path", entry["path"]))
+    if not path.is_absolute():
+        path = ROOT / path
+    assert path.is_file(), path
+    assert hashlib.sha256(path.read_bytes()).hexdigest() == entry["sha256"]
+    return path
+
+
+def _parity_receipt(report: dict) -> dict:
+    override = os.environ.get("BNG3_ISSUE474_PARITY")
+    if override:
+        return json.loads(Path(override).read_text(encoding="utf-8"))
+    metal_receipts = _rows(report)["release-metal-device"]["receipts"]
+    assert metal_receipts, "release-metal-device report is missing its parity receipt"
+    return json.loads(_receipt_path(metal_receipts[0]).read_text(encoding="utf-8"))
+
+
 def test_public_simulate_ssa_route_is_attributed_and_qualified():
     report = _report()
+    assert "toy-jim-public-route" in report["metal"]["finite_models"]
+    parity = _parity_receipt(report)
     rows = [
         row
-        for row in report["gpu"]["models"]
+        for row in parity["gpu"]["models"]
         if row.get("model") == "toy-jim-public-route"
     ]
     assert len(rows) == 1
@@ -144,11 +164,7 @@ def test_workload_receipt_keeps_extended_scope_when_supplied():
 def test_receipt_digests_match_the_files(tmp_path):
     report = _report()
     for entry in report["receipts"]:
-        path = Path(entry.get("display_path", entry["path"]))
-        if not path.is_absolute():
-            path = ROOT / path
-        assert path.is_file(), path
-        assert hashlib.sha256(path.read_bytes()).hexdigest() == entry["sha256"]
+        _receipt_path(entry)
 
 
 def _recorder_module():
