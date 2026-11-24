@@ -1148,9 +1148,6 @@ jobs:
     timeout-minutes: 180
     env:
       BNG3_PYTHON_TEST_MODE: installed
-      # BNGSIM adapter links a shared library built from the locked oracle;
-      # runner context is only available at job scope.
-      LD_LIBRARY_PATH: ${{ runner.temp }}/oracle-bngsim/build
     steps:
       - uses: actions/checkout@v4
         with:
@@ -1207,6 +1204,7 @@ jobs:
           BNGSIM_LIBRARY_PATH=$(find "$RUNNER_TEMP/oracle-bngsim/build" -maxdepth 1 -name 'libbngsim.so*' | head -1)
           test -f "$BNGSIM_LIBRARY_PATH"
           echo "BNGSIM_LIBRARY_PATH=$BNGSIM_LIBRARY_PATH" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/oracle-bngsim/build" >> "$GITHUB_ENV"
 
       - name: Install BNG3 Python API as a regular package
         run: |
