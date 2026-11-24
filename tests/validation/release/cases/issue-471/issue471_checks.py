@@ -209,23 +209,31 @@ def _oracle_receipt_errors(
     # The owned comparator compares bytes read from the bounded artifact root;
     # the receipt's comparison/result fields are intentionally ignored.
     comparator_id = receipt.get("comparator", "release-oracle-byte-equality-v1")
-    if comparator_id not in SUPPORTED_COMPARATORS:
-        errors.append(f"{row_id}: unsupported owned comparator {comparator_id!r}")
-        return errors, None
-    if comparator_id == "release-oracle-net-canonical-v1":
-        matched, diff_detail = _compare_net_bytes(oracle_bytes, consumer_bytes)
-    else:
-        matched, diff_detail = consumer_bytes == oracle_bytes, ""
-    comparator = {
-        "id": comparator_id,
+    common = {
         "implementation_sha256": hashlib.sha256(
             Path(__file__).read_bytes()
         ).hexdigest(),
         "producer_sha256": producer_digest,
         "oracle_sha256": oracle_digest,
         "consumer_sha256": consumer_digest,
-        "consumer_equals_oracle": matched,
     }
+    if comparator_id == "release-oracle-byte-equality-v1":
+        diff_detail = ""
+        comparator = {
+            "id": "release-oracle-byte-equality-v1",
+            **common,
+            "consumer_equals_oracle": consumer_bytes == oracle_bytes,
+        }
+    elif comparator_id == "release-oracle-net-canonical-v1":
+        matched, diff_detail = _compare_net_bytes(oracle_bytes, consumer_bytes)
+        comparator = {
+            "id": "release-oracle-net-canonical-v1",
+            **common,
+            "consumer_equals_oracle": matched,
+        }
+    else:
+        errors.append(f"{row_id}: unsupported owned comparator {comparator_id!r}")
+        return errors, None
     if not comparator["consumer_equals_oracle"]:
         suffix = f" ({diff_detail})" if diff_detail else ""
         errors.append(
