@@ -50,7 +50,8 @@ def test_results_require_every_case_and_a_partial_replay(tmp_path):
 
 
 @pytest.mark.parametrize(
-    "mutation", ["missing-case", "stale-report", "no-reuse", "conflict"]
+    "mutation",
+    ["missing-case", "stale-report", "no-reuse", "conflict", "unqualified-pass"],
 )
 def test_results_reject_incomplete_or_unverifiable_evidence(mutation):
     selection = json.loads(
@@ -73,6 +74,8 @@ def test_results_reject_incomplete_or_unverifiable_evidence(mutation):
         revision = "f" * 40
     elif mutation == "no-reuse":
         receipt["phases"]["resume"]["actions"] = {"michment": "executed"}
+    elif mutation == "unqualified-pass":
+        results[0]["supported_execution"] = False
     else:
         results.append(dict(results[0], status="FAIL"))
     report = {"source": {"revision": REVISION, "dirty": False}, "results": results}

@@ -161,6 +161,8 @@ jobs:
 
   issue-181-corpus:
     name: Issue 181 capability-driven corpus tiers
+    needs: [bng2-parity]
+    if: always()
     runs-on: ubuntu-22.04
     timeout-minutes: 20
     steps:
@@ -181,6 +183,16 @@ jobs:
       - name: Validate the frozen corpus manifest
         run: python scripts/validate_corpus_manifest.py
 
+      - name: Produce an interrupted-run shard resume receipt
+        run: python scripts/ci/replay_corpus_shard_resume.py --evidence-dir "$RUNNER_TEMP/replay"
+
+      - name: Download exact-revision conformance results
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: bng3-conformance-${{ github.event_name }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/conformance-input
+
       - name: Record exact-revision corpus acceptance
         id: corpus
         continue-on-error: true
@@ -188,8 +200,14 @@ jobs:
           BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           mkdir -p "$RUNNER_TEMP/issue181-corpus"
+          case_args=()
+          if [[ -s "$RUNNER_TEMP/conformance-input/report.json" ]]; then
+            case_args=(--case-report "$RUNNER_TEMP/conformance-input/report.json")
+          fi
           python tests/validation/release/cases/issue-181/corpus_release_checks.py \
             --root . --revision "$BNG3_SOURCE_REVISION" \
+            --replay-receipt "$RUNNER_TEMP/replay/replay.json" \
+            "${case_args[@]}" \
             --report "$RUNNER_TEMP/issue181-corpus/report.json"
 
       - name: Retain corpus acceptance record
@@ -197,7 +215,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: issue181-corpus-${{ github.event.pull_request.head.sha || github.sha }}
-          path: ${{ runner.temp }}/issue181-corpus/report.json
+          path: |
+            ${{ runner.temp }}/issue181-corpus/report.json
+            ${{ runner.temp }}/replay/replay.json
           if-no-files-found: error
           retention-days: 30
 

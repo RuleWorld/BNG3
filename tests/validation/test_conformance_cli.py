@@ -333,3 +333,61 @@ def test_named_pytest_failure_retains_summary_and_does_not_create_duplicate_task
     assert failure["status"] == "FAIL"
     assert "expected rate 0.5" in failure["failure_summary"]
     assert process["aggregate"] is True
+
+
+def test_corpus_case_result_preserves_failures_and_allows_no_observables():
+    from tests.validation import conformance, reporting
+
+    expected = [
+        "blbr:parse",
+        "blbr:simulation-bngl:cdat",
+        "blbr:simulation-bngl:gdat",
+    ]
+    passed_rows = [
+        {"id": "blbr:parse", "status": "PASS", "aggregate": False},
+        {"id": "blbr:simulation-bngl:cdat", "status": "PASS", "aggregate": False},
+        {
+            "id": "blbr:simulation-bngl:gdat",
+            "status": "NOT_TESTED",
+            "applicability": "no-observables",
+            "aggregate": False,
+        },
+    ]
+    ok = conformance._corpus_case_result("blbr", passed_rows, expected)
+    assert ok["id"] == "corpus-case[blbr]"
+    assert ok["status"] == "PASS"
+    assert ok["supported_execution"] is True
+    assert ok["aggregate"] is False
+
+    untested = conformance._corpus_case_result(
+        "AN",
+        [
+            {"id": "AN:parse", "status": "PASS", "aggregate": False},
+            {
+                "id": "AN:network",
+                "status": "NOT_TESTED",
+                "applicability": "not-applicable",
+                "aggregate": True,
+            },
+        ],
+        ["AN:parse"],
+    )
+    assert untested["status"] == "NOT_TESTED"
+    assert untested["supported_execution"] is False
+    assert reporting.gate_failures([untested]) == []
+
+    failed = conformance._corpus_case_result(
+        "blbr",
+        [
+            {"id": "blbr:parse", "status": "PASS", "aggregate": False},
+            {"id": "blbr:simulation-bngl:cdat", "status": "FAIL", "aggregate": False},
+            {"id": "blbr:simulation-bngl:gdat", "status": "PASS", "aggregate": False},
+        ],
+        expected,
+    )
+    assert failed["status"] == "FAIL"
+    assert failed["supported_execution"] is False
+
+    missing = conformance._corpus_case_result("blbr", passed_rows[:1], expected)
+    assert missing["status"] == "HARNESS_ERROR"
+    assert missing["supported_execution"] is False
