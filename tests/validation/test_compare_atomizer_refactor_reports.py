@@ -150,3 +150,26 @@ def test_unstable_failure_count_is_reported(tmp_path):
     result = comparator.compare(before_ssts, after_ssts, before_bm, after_bm, AFTER)
     assert result["record_comparison"]["all_match"] is False
     assert "biomodels:case/00001" in result["record_comparison"]["stale"]
+
+
+def test_timeout_involving_difference_is_not_a_blocking_change(tmp_path):
+    """A load-sensitive timeout is not a verdict and must not fail a match."""
+    specs = {
+        "before_bm": {"case/00001": "timeout", "case/00002": "passed"},
+        "after_bm": {"case/00001": "failed", "case/00002": "passed"},
+    }
+    before_ssts, after_ssts, before_bm, after_bm = _reports(tmp_path, **specs)
+    result = comparator.compare(before_ssts, after_ssts, before_bm, after_bm, AFTER)
+    assert result["record_comparison"]["all_match"] is True
+    assert "biomodels:case/00001" in result["record_comparison"]["timeout_difference"]
+
+
+def test_real_verdict_change_still_blocks(tmp_path):
+    specs = {
+        "before_bm": {"case/00001": "passed", "case/00002": "passed"},
+        "after_bm": {"case/00001": "failed", "case/00002": "passed"},
+    }
+    before_ssts, after_ssts, before_bm, after_bm = _reports(tmp_path, **specs)
+    result = comparator.compare(before_ssts, after_ssts, before_bm, after_bm, AFTER)
+    assert result["record_comparison"]["all_match"] is False
+    assert "biomodels:case/00001" in result["record_comparison"]["status_changed"]
