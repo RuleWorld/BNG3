@@ -9235,7 +9235,7 @@
             }
           ],
           "test_references": [
-            "tests/validation/test_bngir_adversarial_native.py (compartment and bonded-complex controls)"
+            "tests/validation/test_bngir_adversarial_native.py"
           ],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
@@ -9433,7 +9433,7 @@
             }
           ],
           "test_references": [
-            "tests/validation/eq_catalogue.py (per-row EQ-* outcomes with named oracles)"
+            "tests/validation/eq_catalogue.py"
           ],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
@@ -9465,7 +9465,7 @@
             }
           ],
           "test_references": [
-            "tests/validation/eq_catalogue.py (per-row oracle identities)"
+            "tests/validation/eq_catalogue.py"
           ],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
@@ -16434,7 +16434,7 @@
             }
           ],
           "test_references": [
-            "tests/validation/pybionetgen_row_map.py (per-row pinned-oracle surface comparison)"
+            "tests/validation/pybionetgen_row_map.py"
           ],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
@@ -16467,7 +16467,7 @@
             }
           ],
           "test_references": [
-            "tests/validation/release/cases/issue-171/test_python_install_matrix.py (wheel and sdist fresh-environment matrix)"
+            "tests/validation/release/cases/issue-171/test_python_install_matrix.py"
           ],
           "completion_condition": "Exact-revision result satisfies the live acceptance check with its required selector and consuming receipt.",
           "decisions": [],
