@@ -49,3 +49,26 @@ def test_event_stoichiometry_change_transfers_the_added_amount_to_the_pool_state
         for warning in atomizer.model.import_warnings
         if warning.get("severity") in {"dropped", "approximated"}
     ]
+
+
+ZERO_SWITCH_FIXTURE = Path(__file__).parent / "fixtures" / "sbml_00988.xml"
+
+
+def test_zero_interval_fast_coefficient_lowers_exactly():
+    atomizer = Atomizer({"quietMode": True, "logLevel": "INFO", "t_end": 2})
+    result = atomizer.atomize(ZERO_SWITCH_FIXTURE.read_text(encoding="utf-8"))
+    assert result.success, result.error
+    bngl = result.bngl
+    # The fast reaction is removed; A is a rate-rule state whose production is
+    # gated by the coefficient, B keeps the conserved pool, and the event that
+    # turns the coefficient on also transfers A to the pool.
+    assert "__rate_rule__A()" in bngl
+    assert "setParameter(\"k2\", \"1\")" in bngl
+    assert 'setConcentration("@comp:M_A()", "0")' in bngl
+    assert "setParameter(\"k2\", \"0\")" in bngl
+    assert "remain untranslated" not in bngl
+    assert not [
+        warning
+        for warning in atomizer.model.import_warnings
+        if warning.get("severity") in {"dropped", "approximated"}
+    ]
