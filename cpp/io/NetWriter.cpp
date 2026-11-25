@@ -1363,7 +1363,7 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
         const auto& sourceRateExprObj = rule.getRates()[0];
         const auto rateExprObj =
             ast::partialEvaluate(sourceRateExprObj, model.getFunctions());
-        const std::string rateExpr = rateExprObj.toString();
+        const std::string rateExpr = rateExprObj.toBnglString();
         const bool sourceRateIsModelFunction =
             (sourceRateExprObj.kind() == ast::ExpressionKind::Function ||
              sourceRateExprObj.kind() == ast::ExpressionKind::ObservableRef) &&
@@ -1692,7 +1692,7 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                     }
 
                     // Build expression with observable values substituted
-                    std::string funcBody = funcExpr.toString();
+                    std::string funcBody = funcExpr.toBnglString();
                     if (!localSuffix.empty()) {
                         // Parse observable counts from the |local: suffix
                         // Format: "obsName1=count1;obsName2=count2;..."
@@ -1772,7 +1772,7 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                 if (derived.find(reverseRuleName) == derived.end()) {
                     const auto reverseRateExprObj = ast::partialEvaluate(
                         rule.getRates()[1], model.getFunctions());
-                    const std::string reverseRateExpr = reverseRateExprObj.toString();
+                    const std::string reverseRateExpr = reverseRateExprObj.toBnglString();
                     const ast::Function* reverseMatchedFunc = nullptr;
                     for (const auto& func : model.getFunctions()) {
                         if (reverseRateExpr.find(func.getName()) != std::string::npos) {
@@ -1838,7 +1838,7 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                                 }
                             }
 
-                            std::string funcBody = revFuncExpr.toString();
+                            std::string funcBody = revFuncExpr.toBnglString();
                             if (!localSuffix.empty()) {
                                 std::istringstream ss(localSuffix);
                                 std::string token;
@@ -1923,7 +1923,7 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                 std::string localParamName = "__R" + std::to_string(ruleIndex) + "_local1";
                 std::string funcBody;
                 if (matchedFunc != nullptr) {
-                    funcBody = matchedFunc->getExpression().toString();
+                    funcBody = matchedFunc->getExpression().toBnglString();
                     const auto& fArgs = matchedFunc->getArgs();
                     for (const auto& obs : model.getObservables()) {
                         for (const auto& farg : fArgs) {
@@ -1950,7 +1950,7 @@ std::unordered_map<std::string, DerivedRateInfo> NetWriter::buildDerivedRatePara
                 if (rule.isBidirectional() && rule.getRates().size() > 1) {
                     const auto reverseRateExprObj = ast::partialEvaluate(
                         rule.getRates()[1], model.getFunctions());
-                    const std::string reverseRateExpr = reverseRateExprObj.toString();
+                    const std::string reverseRateExpr = reverseRateExprObj.toBnglString();
                     bool reverseIsModelFunction = false;
                     if (reverseRateExprObj.kind() == ast::ExpressionKind::Function ||
                         reverseRateExprObj.kind() == ast::ExpressionKind::ObservableRef) {
@@ -2518,7 +2518,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                 out << args[i];
             }
             out << ") " << ast::partialEvaluate(
-                func.getExpression(), model.getFunctions()).toString() << '\n';
+                func.getExpression(), model.getFunctions()).toBnglString() << '\n';
         }
         // Write derived rate law functions
         for (const auto& rule : model.getReactionRules()) {
@@ -2537,7 +2537,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                           });
                 for (const auto &[rxnIdx, functionPair] : localFunctions) {
                     out << "    " << functionIndex++ << " " << functionPair.first
-                        << "() " << functionPair.second.toString() << '\n';
+                        << "() " << functionPair.second.toBnglString() << '\n';
                 }
             }
             const auto reverseFound = derivedRateParams.find("_reverse__" + rule.getRuleName());
@@ -2556,7 +2556,7 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
                           });
                 for (const auto &[rxnIdx, functionPair] : localFunctions) {
                     out << "    " << functionIndex++ << " " << functionPair.first
-                        << "() " << functionPair.second.toString() << '\n';
+                        << "() " << functionPair.second.toBnglString() << '\n';
                 }
             }
         }

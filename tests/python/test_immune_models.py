@@ -350,6 +350,43 @@ def test_the_hill_rate_law_round_trips_through_the_generated_network(tmp_path):
         assert token in line, f"{token!r} missing from emitted rate law: {line!r}"
 
 
+def test_exhaustion_switch_net_reload_reproduces_ode_trajectory(tmp_path):
+    """Reloading exhaustion_switch.net via readFile preserves Hill(1,THETA,n,Stimulus())."""
+    work = run_model("exhaustion_switch", tmp_path)
+    expected = gdat(work / "exhaustion_switch__ode.gdat")
+    net = (work / "exhaustion_switch.net").read_text()
+    assert "Hill(" in net.split("begin functions")[1].split("end functions")[0]
+
+    ctx = work / "context.bngl"
+    src_text = (MODELS / "exhaustion_switch.bngl").read_text(encoding="utf-8")
+    params_block = src_text.split("begin parameters")[1].split("end parameters")[0]
+    ctx.write_text(
+        f"begin model\nbegin parameters\n{params_block}\nend parameters\nend model\n",
+        encoding="utf-8",
+    )
+    reload_bngl = work / "reload.bngl"
+    reload_bngl.write_text(
+        'readFile({file=>"context.bngl"})\n'
+        'readFile({file=>"exhaustion_switch.net"})\n'
+        'simulate_ode({prefix=>"reloaded",netfile=>"exhaustion_switch.net",'
+        "t_start=>0,t_end=>8,n_steps=>160,atol=>1e-10,rtol=>1e-10})\n",
+        encoding="utf-8",
+    )
+    bng_cpp = _bng_cpp()
+    assert bng_cpp is not None
+    subprocess.run(
+        [bng_cpp, str(reload_bngl)], cwd=work, check=True, capture_output=True
+    )
+    reloaded = gdat(work / "reloaded.gdat")
+    assert len(reloaded) == len(expected)
+    max_err = max(
+        abs(reloaded[i][col] - expected[i][col])
+        for i in range(len(expected))
+        for col in range(len(expected[i]))
+    )
+    assert max_err < 1e-10, f"reloaded .net diverged by {max_err:.3e}"
+
+
 # ---------------------------------------------------------------------------
 # 4. Reversible antigen binding: conservation at EVERY sampled step.
 # ---------------------------------------------------------------------------

@@ -616,6 +616,7 @@ struct LegacyNfParamOptions {
     std::optional<int> traversalLimit;
     std::optional<unsigned long> seed;
     std::optional<double> equilibration;
+    std::optional<std::string> rnfFile;
 };
 
 std::vector<std::string> tokenizeLegacyNfParams(const std::string& raw) {
@@ -755,6 +756,8 @@ LegacyNfParamOptions parseLegacyNfParams(const std::string& raw, ast::Model& mod
                     "NFsim param flag '-eq' requires a finite non-negative value");
             }
             options.equilibration = parsed;
+        } else if (flag == "-rnf" || flag == "--rnf") {
+            options.rnfFile = readValue(flag);
         } else {
             throw std::runtime_error(
                 "NFsim param flag '" + token +
@@ -762,6 +765,63 @@ LegacyNfParamOptions parseLegacyNfParams(const std::string& raw, ast::Model& mod
         }
     }
     return options;
+}
+
+std::filesystem::path resolveRnfPath(const std::string& rawPath,
+                                     const std::filesystem::path& sourcePath) {
+    const std::filesystem::path candidate(rawPath);
+    if (candidate.is_absolute() || std::filesystem::exists(candidate)) {
+        return candidate;
+    }
+    const auto besideSource = sourcePath.parent_path() / candidate;
+    if (std::filesystem::exists(besideSource)) {
+        return besideSource;
+    }
+    return candidate;
+}
+
+LegacyNfParamOptions mergeRnfHeaderParams(
+    const LegacyNfParamOptions& explicitOpts,
+    const std::map<std::string, std::string>& rnfArgMap,
+    ast::Model& model) {
+    std::string headerRaw;
+    for (const auto& [key, val] : rnfArgMap) {
+        if (key == "rnf" || key == "xml" || key == "o") continue;
+        if (!headerRaw.empty()) headerRaw.push_back(' ');
+        headerRaw += "-" + key;
+        if (!val.empty()) {
+            headerRaw += " \"" + val + "\"";
+        }
+    }
+    if (headerRaw.empty()) return explicitOpts;
+    LegacyNfParamOptions merged = parseLegacyNfParams(headerRaw, model);
+    merged.verbose = merged.verbose || explicitOpts.verbose;
+    merged.complex = merged.complex || explicitOpts.complex;
+    merged.explicitlyStrictMolecularity =
+        merged.explicitlyStrictMolecularity || explicitOpts.explicitlyStrictMolecularity;
+    merged.disableMolecularity =
+        merged.disableMolecularity || explicitOpts.disableMolecularity;
+    merged.noComplexScopedLocalFunctions =
+        merged.noComplexScopedLocalFunctions || explicitOpts.noComplexScopedLocalFunctions;
+    merged.noOnTheFlyObservables =
+        merged.noOnTheFlyObservables || explicitOpts.noOnTheFlyObservables;
+    merged.binaryOutput = merged.binaryOutput || explicitOpts.binaryOutput;
+    merged.printFunctions = merged.printFunctions || explicitOpts.printFunctions;
+    merged.connectivity = merged.connectivity || explicitOpts.connectivity;
+    if (explicitOpts.globalMoleculeLimit.has_value()) {
+        merged.globalMoleculeLimit = explicitOpts.globalMoleculeLimit;
+    }
+    if (explicitOpts.traversalLimit.has_value()) {
+        merged.traversalLimit = explicitOpts.traversalLimit;
+    }
+    if (explicitOpts.seed.has_value()) {
+        merged.seed = explicitOpts.seed;
+    }
+    if (explicitOpts.equilibration.has_value()) {
+        merged.equilibration = explicitOpts.equilibration;
+    }
+    merged.rnfFile = explicitOpts.rnfFile;
+    return merged;
 }
 
 std::vector<double> parseScalarList(const std::string& text,
@@ -2732,7 +2792,23 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 "NFsim action does not support 'nfsim_exec' yet");
         }
         const auto legacyParamText = stripQuotes(trim(readArgument(action, "param", "")));
-        const auto legacyParam = parseLegacyNfParams(legacyParamText, model);
+        auto legacyParam = parseLegacyNfParams(legacyParamText, model);
+        std::map<std::string, std::string> rnfArgMap;
+        std::vector<std::string> rnfCommands;
+        const bool hasRnf = legacyParam.rnfFile.has_value();
+        if (hasRnf) {
+            if (resuming) {
+                throw std::runtime_error(
+                    "NFsim -rnf cannot be combined with hybrid continuation");
+            }
+            const auto rnfPath = resolveRnfPath(*legacyParam.rnfFile, sourcePath);
+            rnfArgMap["rnf"] = rnfPath.string();
+            if (!NFinput::readRNFfile(rnfArgMap, rnfCommands, /*verbose=*/false)) {
+                throw std::runtime_error(
+                    "Failed to read NFsim RNF script: " + rnfPath.string());
+            }
+            legacyParam = mergeRnfHeaderParams(legacyParam, rnfArgMap, model);
+        }
 
         // Parse simulation parameters using the same defaults as the
         // standalone simulate_nf action.
@@ -2980,7 +3056,13 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         if (equilibration > 0.0) {
             nfSystem->equilibrate(equilibration);
         }
-        if (sampleTimes.empty()) {
+        if (hasRnf) {
+            if (!sampleTimes.empty()) {
+                throw std::runtime_error(
+                    "NFsim -rnf cannot be combined with sample_times");
+            }
+            NFinput::runRNFcommands(nfSystem.get(), rnfArgMap, rnfCommands, nfVerbose);
+        } else if (sampleTimes.empty()) {
             nfSystem->sim(endTime - startTime, std::stol(nSteps), nfVerbose);
         } else {
             for (const double sampleTime : sampleTimes) {
