@@ -9,6 +9,7 @@ import math
 import re
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 from pathlib import Path
 from pathlib import PurePosixPath
 from typing import Any
@@ -22,6 +23,8 @@ SUPPORTED_COMPARATORS = (
     "release-oracle-gdat-numeric-v1",
     "release-oracle-numeric-json-v1",
     "release-oracle-crn-bng2-v1",
+    "release-oracle-bngl-hybrid-v1",
+    "release-oracle-bngl-xml-v1",
 )
 
 
@@ -269,6 +272,323 @@ def _compare_crn_bng2_bytes(
     return True, ""
 
 
+def _split_top_level_patterns(text: str) -> list[str]:
+    """Split space- or comma-separated BNGL observable patterns cleanly."""
+    tokens: list[str] = []
+    cur: list[str] = []
+    depth = 0
+    for ch in text:
+        if ch in "({[":
+            depth += 1
+        elif ch in ")}]" and depth > 0:
+            depth -= 1
+        if depth == 0 and (ch.isspace() or ch == ","):
+            if cur:
+                tokens.append("".join(cur))
+                cur = []
+        else:
+            cur.append(ch)
+    if cur:
+        tokens.append("".join(cur))
+    return sorted(tokens)
+
+
+def _float_or_expr(raw: str) -> float | str:
+    cleaned = re.sub(r"\s+", "", raw)
+    try:
+        val = float(cleaned)
+    except ValueError:
+        return cleaned
+    if not math.isfinite(val):
+        raise ValueError(f"non-finite scalar value: {raw!r}")
+    return val
+
+
+def _scalar_matches(ref: float | str, sub: float | str) -> bool:
+    if isinstance(ref, float) and isinstance(sub, float):
+        return math.isclose(ref, sub, rel_tol=1e-12, abs_tol=1e-15)
+    return ref == sub
+
+
+def _parse_hybrid_bngl(payload: bytes) -> dict[str, Any]:
+    text = payload.decode("utf-8")
+    sections: dict[str, list[str]] = {}
+    actions: list[str] = []
+    in_model = False
+    saw_end_model = False
+    current_section: str | None = None
+    for raw_line in text.splitlines():
+        line = re.sub(r"#.*$", "", raw_line).strip()
+        if not line:
+            continue
+        low = line.lower()
+        if low == "begin model":
+            in_model = True
+            continue
+        if low == "end model":
+            in_model = False
+            saw_end_model = True
+            current_section = None
+            continue
+        if not in_model:
+            if saw_end_model:
+                actions.append(re.sub(r"\s+", "", line))
+            continue
+        if low.startswith("begin "):
+            sec = low[len("begin ") :].strip()
+            sec = "species" if sec == "seed species" else sec
+            current_section = sec
+            sections.setdefault(sec, [])
+            continue
+        if low.startswith("end "):
+            current_section = None
+            continue
+        if current_section is not None:
+            sections[current_section].append(" ".join(line.split()))
+    if not saw_end_model:
+        raise ValueError("hybrid BNGL missing end model block")
+    params = []
+    for item in sections.get("parameters", []):
+        parts = item.split(None, 1)
+        if len(parts) != 2:
+            raise ValueError(f"invalid parameter line: {item!r}")
+        params.append((parts[0], _float_or_expr(parts[1])))
+    mol_types = sorted(
+        " ".join(
+            [re.sub(r"^([A-Za-z_]\w*)\(\)$", r"\1", item.split()[0]), *item.split()[1:]]
+        )
+        for item in sections.get("molecule types", [])
+    )
+    species = []
+    for item in sections.get("species", []):
+        parts = item.rsplit(None, 1)
+        if len(parts) != 2:
+            raise ValueError(f"invalid seed species line: {item!r}")
+        species.append((re.sub(r"\s+", "", parts[0]), _float_or_expr(parts[1])))
+    species.sort(key=lambda pair: pair[0])
+    observables = []
+    for item in sections.get("observables", []):
+        parts = item.split(None, 2)
+        if len(parts) != 3:
+            raise ValueError(f"invalid observable line: {item!r}")
+        observables.append((parts[0], parts[1], _split_top_level_patterns(parts[2])))
+    observables.sort(key=lambda row: (row[0], row[1]))
+    rules = []
+    for item in sections.get("reaction rules", []):
+        label = ""
+        body = item
+        if ":" in item and item.index(":") < min(
+            (item.find(op) for op in ("<->", "->") if op in item),
+            default=len(item),
+        ):
+            label, body = item.split(":", 1)
+            label = label.strip()
+            body = body.strip()
+        op = "<->" if "<->" in body else "->" if "->" in body else ""
+        if not op:
+            raise ValueError(f"invalid reaction rule line: {item!r}")
+        lhs, rhs_and_rate = body.split(op, 1)
+        tokens = rhs_and_rate.strip().rsplit(None, 1)
+        if len(tokens) != 2:
+            raise ValueError(f"missing rate in reaction rule: {item!r}")
+        rhs, rate = tokens
+        rules.append(
+            (
+                label,
+                re.sub(r"\s+", "", lhs),
+                op,
+                re.sub(r"\s+", "", rhs),
+                _float_or_expr(rate),
+            )
+        )
+    return {
+        "parameters": sorted(params, key=lambda row: row[0]),
+        "molecule_types": mol_types,
+        "species": species,
+        "observables": observables,
+        "reaction_rules": rules,
+        "actions": actions,
+    }
+
+
+def _compare_hybrid_bngl_bytes(
+    oracle_bytes: bytes, consumer_bytes: bytes
+) -> tuple[bool, str]:
+    try:
+        ref = _parse_hybrid_bngl(oracle_bytes)
+        sub = _parse_hybrid_bngl(consumer_bytes)
+    except (UnicodeDecodeError, ValueError) as exc:
+        return False, f"hybrid BNGL parse failed: {exc}"
+    for key in (
+        "parameters",
+        "molecule_types",
+        "species",
+        "observables",
+        "reaction_rules",
+        "actions",
+    ):
+        if not ref[key] or not sub[key]:
+            return False, f"hybrid BNGL missing required {key}"
+    for key in ("molecule_types", "observables", "actions"):
+        if ref[key] != sub[key]:
+            return False, f"hybrid BNGL {key} mismatch: {sub[key]!r} != {ref[key]!r}"
+    for key in ("parameters", "species"):
+        if len(ref[key]) != len(sub[key]):
+            return False, f"hybrid BNGL {key} count mismatch"
+        for (ref_k, ref_v), (sub_k, sub_v) in zip(ref[key], sub[key]):
+            if ref_k != sub_k or not _scalar_matches(ref_v, sub_v):
+                return (
+                    False,
+                    f"hybrid BNGL {key} mismatch for {ref_k!r}: {sub_v!r} != {ref_v!r}",
+                )
+    if len(ref["reaction_rules"]) != len(sub["reaction_rules"]):
+        return False, "hybrid BNGL reaction_rules count mismatch"
+    for ref_r, sub_r in zip(ref["reaction_rules"], sub["reaction_rules"]):
+        if ref_r[:4] != sub_r[:4] or not _scalar_matches(ref_r[4], sub_r[4]):
+            return False, f"hybrid BNGL reaction rule mismatch: {sub_r!r} != {ref_r!r}"
+    return True, ""
+
+
+def _parse_bngl_xml(payload: bytes) -> dict[str, Any]:
+    root = ET.fromstring(payload.decode("utf-8"))
+    if root.tag not in ("sbml", "{http://www.sbml.org/sbml/level3}sbml"):
+        raise ValueError(f"unexpected BNG XML root tag: {root.tag!r}")
+    for el in root.iter():
+        if "}" in el.tag:
+            el.tag = el.tag.split("}", 1)[1]
+    model = root.find("model")
+    if model is None:
+        raise ValueError("missing <model> element")
+    params = sorted(
+        (
+            el.attrib.get("id", ""),
+            el.attrib.get("type", ""),
+            _float_or_expr(el.attrib.get("value", "")),
+        )
+        for el in model.findall("./ListOfParameters/Parameter")
+    )
+    mol_types = sorted(
+        (
+            el.attrib.get("id", ""),
+            el.attrib.get("population", "0"),
+            tuple(
+                (
+                    comp.attrib.get("id", ""),
+                    tuple(
+                        st.attrib.get("id", "")
+                        for st in comp.findall("./ListOfAllowedStates/AllowedState")
+                    ),
+                )
+                for comp in el.findall("./ListOfComponentTypes/ComponentType")
+            ),
+        )
+        for el in model.findall("./ListOfMoleculeTypes/MoleculeType")
+    )
+    species = sorted(
+        (
+            re.sub(r"\s+", "", el.attrib.get("name", "")),
+            _float_or_expr(el.attrib.get("concentration", "")),
+            tuple(
+                m.attrib.get("name", "")
+                for m in el.findall("./ListOfMolecules/Molecule")
+            ),
+        )
+        for el in model.findall("./ListOfSpecies/Species")
+    )
+    observables = sorted(
+        (
+            el.attrib.get("name", ""),
+            el.attrib.get("type", ""),
+            sorted(
+                tuple(
+                    m.attrib.get("name", "")
+                    for m in pat.findall("./ListOfMolecules/Molecule")
+                )
+                for pat in el.findall("./ListOfPatterns/Pattern")
+            ),
+        )
+        for el in model.findall("./ListOfObservables/Observable")
+    )
+    rules = []
+    for rr in model.findall("./ListOfReactionRules/ReactionRule"):
+        rate_el = rr.find("RateLaw")
+        rate_consts = tuple(
+            (rc.attrib.get("value", ""), rc.attrib.get("type", ""))
+            for rc in (
+                rate_el.findall("./ListOfRateConstants/RateConstant")
+                if rate_el is not None
+                else []
+            )
+        )
+        ops = tuple(
+            (op.tag, op.attrib.get("DeleteMolecules", ""))
+            for op in rr.findall("./ListOfOperations/*")
+        )
+        rules.append(
+            (
+                rr.attrib.get("name", ""),
+                tuple(
+                    tuple(
+                        m.attrib.get("name", "")
+                        for m in rp.findall("./ListOfMolecules/Molecule")
+                    )
+                    for rp in rr.findall("./ListOfReactantPatterns/ReactantPattern")
+                ),
+                tuple(
+                    tuple(
+                        m.attrib.get("name", "")
+                        for m in pp.findall("./ListOfMolecules/Molecule")
+                    )
+                    for pp in rr.findall("./ListOfProductPatterns/ProductPattern")
+                ),
+                rate_el.attrib.get("type", "") if rate_el is not None else "",
+                rate_el.attrib.get("totalrate", "0") if rate_el is not None else "",
+                rate_consts,
+                ops,
+            )
+        )
+    return {
+        "parameters": params,
+        "molecule_types": mol_types,
+        "species": species,
+        "observables": observables,
+        "reaction_rules": rules,
+    }
+
+
+def _compare_bngl_xml_bytes(
+    oracle_bytes: bytes, consumer_bytes: bytes
+) -> tuple[bool, str]:
+    try:
+        ref = _parse_bngl_xml(oracle_bytes)
+        sub = _parse_bngl_xml(consumer_bytes)
+    except (UnicodeDecodeError, ET.ParseError, ValueError) as exc:
+        return False, f"BNG XML parse failed: {exc}"
+    for key in (
+        "parameters",
+        "molecule_types",
+        "species",
+        "observables",
+        "reaction_rules",
+    ):
+        if not ref[key] or not sub[key]:
+            return False, f"BNG XML missing required {key}"
+    if len(ref["parameters"]) != len(sub["parameters"]):
+        return False, "BNG XML parameters count mismatch"
+    for (rk, rt, rv), (sk, st, sv) in zip(ref["parameters"], sub["parameters"]):
+        if rk != sk or rt != st or not _scalar_matches(rv, sv):
+            return False, f"BNG XML parameter mismatch for {rk!r}: {sv!r} != {rv!r}"
+    if len(ref["species"]) != len(sub["species"]):
+        return False, "BNG XML species count mismatch"
+    for (rn, rc, rm), (sn, sc, sm) in zip(ref["species"], sub["species"]):
+        if rn != sn or rm != sm or not _scalar_matches(rc, sc):
+            return False, f"BNG XML species mismatch for {rn!r}"
+    for key in ("molecule_types", "observables", "reaction_rules"):
+        if ref[key] != sub[key]:
+            return False, f"BNG XML {key} mismatch: {sub[key]!r} != {ref[key]!r}"
+    return True, ""
+
+
 def _oracle_receipt_errors(
     row: dict[str, Any],
     receipt: dict[str, Any],
@@ -440,6 +760,20 @@ def _oracle_receipt_errors(
         matched, diff_detail = _compare_crn_bng2_bytes(oracle_bytes, consumer_bytes)
         comparator = {
             "id": "release-oracle-crn-bng2-v1",
+            **common,
+            "consumer_equals_oracle": matched,
+        }
+    elif comparator_id == "release-oracle-bngl-hybrid-v1":
+        matched, diff_detail = _compare_hybrid_bngl_bytes(oracle_bytes, consumer_bytes)
+        comparator = {
+            "id": "release-oracle-bngl-hybrid-v1",
+            **common,
+            "consumer_equals_oracle": matched,
+        }
+    elif comparator_id == "release-oracle-bngl-xml-v1":
+        matched, diff_detail = _compare_bngl_xml_bytes(oracle_bytes, consumer_bytes)
+        comparator = {
+            "id": "release-oracle-bngl-xml-v1",
             **common,
             "consumer_equals_oracle": matched,
         }

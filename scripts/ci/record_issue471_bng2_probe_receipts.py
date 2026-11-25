@@ -7,6 +7,7 @@ consumer):
 - 24 builtin.* expression functions (.gdat numeric trajectory parity)
 - 14 operator.* expression operators (13 .gdat numeric + 1 .net canonical parity)
 - 2 additional bngl.* rows (indexed-declarations, null-reactants-and-products)
+- 7 action.generate_hybrid_model* rows (hybrid BNGL and BNG XML parity)
 """
 
 from __future__ import annotations
@@ -23,9 +24,12 @@ from typing import Any
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
-if str(ROOT) not in sys.path:
-    sys.path.insert(0, str(ROOT))
+CASE_DIR = ROOT / "tests/validation/release/cases/issue-471"
+for entry in (str(ROOT), str(CASE_DIR)):
+    if entry not in sys.path:
+        sys.path.insert(0, entry)
 
+import issue471_checks as checks  # noqa: E402
 from scripts.ci.record_issue471_bng2_receipts import (  # noqa: E402
     _build_platform,
     _git_dirty,
@@ -191,6 +195,85 @@ _STATIC_PROBES: tuple[ProbeSpec, ...] = (
     ),
 )
 
+
+def _hybrid_bngl(action_line: str) -> str:
+    return (
+        "begin model\n"
+        "begin parameters\n"
+        "  k 0.5\n"
+        "  k_pop 100\n"
+        "end parameters\n"
+        "begin molecule types\n"
+        "  A()\n"
+        "  B()\n"
+        "end molecule types\n"
+        "begin seed species\n"
+        "  A() 10\n"
+        "end seed species\n"
+        "begin observables\n"
+        "  Molecules A_obs A()\n"
+        "  Molecules B_obs B()\n"
+        "end observables\n"
+        "begin reaction rules\n"
+        "  R1: A() -> B() k\n"
+        "end reaction rules\n"
+        "begin population maps\n"
+        "  A() -> A_pop() k_pop\n"
+        "end population maps\n"
+        "end model\n"
+        f"{action_line}\n"
+    )
+
+
+_HYBRID_PROBES: tuple[ProbeSpec, ...] = (
+    ProbeSpec(
+        row_id="action.generate_hybrid_model",
+        comparator="release-oracle-bngl-hybrid-v1",
+        output_file="probe_hpp.bngl",
+        bngl_text=_hybrid_bngl("generate_hybrid_model({overwrite=>1})"),
+    ),
+    ProbeSpec(
+        row_id="action.generate_hybrid_model.actions",
+        comparator="release-oracle-bngl-xml-v1",
+        output_file="probe_hpp.xml",
+        bngl_text=_hybrid_bngl(
+            'generate_hybrid_model({overwrite=>1,execute=>1,actions=>["writeXML()"]})'
+        ),
+    ),
+    ProbeSpec(
+        row_id="action.generate_hybrid_model.execute",
+        comparator="release-oracle-bngl-xml-v1",
+        output_file="probe_hpp.xml",
+        bngl_text=_hybrid_bngl(
+            'generate_hybrid_model({overwrite=>1,execute=>1,actions=>["writeXML()"]})'
+        ),
+    ),
+    ProbeSpec(
+        row_id="action.generate_hybrid_model.overwrite",
+        comparator="release-oracle-bngl-hybrid-v1",
+        output_file="probe_hpp.bngl",
+        bngl_text=_hybrid_bngl("generate_hybrid_model({overwrite=>1})"),
+    ),
+    ProbeSpec(
+        row_id="action.generate_hybrid_model.prefix",
+        comparator="release-oracle-bngl-hybrid-v1",
+        output_file="cust_hpp.bngl",
+        bngl_text=_hybrid_bngl('generate_hybrid_model({overwrite=>1,prefix=>"cust"})'),
+    ),
+    ProbeSpec(
+        row_id="action.generate_hybrid_model.suffix",
+        comparator="release-oracle-bngl-hybrid-v1",
+        output_file="probe_hyb.bngl",
+        bngl_text=_hybrid_bngl('generate_hybrid_model({overwrite=>1,suffix=>"hyb"})'),
+    ),
+    ProbeSpec(
+        row_id="action.generate_hybrid_model.verbose",
+        comparator="release-oracle-bngl-hybrid-v1",
+        output_file="probe_hpp.bngl",
+        bngl_text=_hybrid_bngl("generate_hybrid_model({overwrite=>1,verbose=>1})"),
+    ),
+)
+
 PROBE_SPECS: dict[str, ProbeSpec] = {
     **{
         row_id: ProbeSpec(
@@ -202,6 +285,7 @@ PROBE_SPECS: dict[str, ProbeSpec] = {
         for row_id, expr in _ODE_EXPRESSIONS
     },
     **{spec.row_id: spec for spec in _STATIC_PROBES},
+    **{spec.row_id: spec for spec in _HYBRID_PROBES},
 }
 
 
@@ -230,7 +314,66 @@ def _verify_pair(comparator: str, oracle_path: Path, consumer_path: Path) -> Non
         ):
             raise ValueError(f".gdat numeric mismatch for {oracle_path.name}")
         return
+    if comparator == "release-oracle-bngl-hybrid-v1":
+        matched, detail = checks._compare_hybrid_bngl_bytes(
+            oracle_path.read_bytes(), consumer_path.read_bytes()
+        )
+        if not matched:
+            raise ValueError(f"hybrid BNGL parity failed: {detail}")
+        return
+    if comparator == "release-oracle-bngl-xml-v1":
+        matched, detail = checks._compare_bngl_xml_bytes(
+            oracle_path.read_bytes(), consumer_path.read_bytes()
+        )
+        if not matched:
+            raise ValueError(f"BNG XML parity failed: {detail}")
+        return
     raise ValueError(f"unsupported probe comparator: {comparator}")
+
+
+def _verify_hybrid_option_behavior(
+    row_id: str,
+    ref_dir: Path,
+    sub_dir: Path,
+    ref_proc: subprocess.CompletedProcess[str],
+    sub_proc: subprocess.CompletedProcess[str],
+    bng2_pl: Path,
+    bng2_env: dict[str, str],
+    bng_cpp: Path,
+) -> None:
+    if row_id == "action.generate_hybrid_model":
+        if (ref_dir / "probe_hpp.xml").exists() or (sub_dir / "probe_hpp.xml").exists():
+            raise ValueError(f"{row_id}: execute=>0 unexpectedly created probe_hpp.xml")
+    elif row_id == "action.generate_hybrid_model.verbose":
+        for label, proc in (("oracle", ref_proc), ("consumer", sub_proc)):
+            combined = proc.stdout + "\n" + proc.stderr
+            if "verbose => 1" not in combined:
+                raise ValueError(
+                    f"{row_id}: {label} omitted verbose => 1 diagnostic output"
+                )
+    elif row_id == "action.generate_hybrid_model.overwrite":
+        no_ow_bngl = _hybrid_bngl("generate_hybrid_model({overwrite=>0})")
+        sentinel = "# existing hybrid model\n"
+        for label, cmd, cwd, env in (
+            ("oracle", ["perl", str(bng2_pl)], ref_dir / "no_ow", bng2_env),
+            ("consumer", [str(bng_cpp)], sub_dir / "no_ow", None),
+        ):
+            cwd.mkdir(parents=True, exist_ok=True)
+            (cwd / "probe.bngl").write_text(no_ow_bngl, encoding="utf-8")
+            target = cwd / "probe_hpp.bngl"
+            target.write_text(sentinel, encoding="utf-8")
+            proc = subprocess.run(
+                [*cmd, str(cwd / "probe.bngl")],
+                cwd=cwd,
+                env=env,
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            if proc.returncode == 0 or target.read_text(encoding="utf-8") != sentinel:
+                raise ValueError(
+                    f"{row_id}: {label} failed to refuse overwrite=>0 on existing output"
+                )
 
 
 def build_bng2_probe_receipts(
@@ -298,6 +441,11 @@ def build_bng2_probe_receipts(
             sub_bngl = sub_dir / "probe.bngl"
             ref_bngl.write_bytes(inp_bytes)
             sub_bngl.write_bytes(inp_bytes)
+            if row_id == "action.generate_hybrid_model.overwrite":
+                for target_dir in (ref_dir, sub_dir):
+                    (target_dir / spec.output_file).write_text(
+                        "# stale pre-existing target\n", encoding="utf-8"
+                    )
 
             ref_cmd = ["perl", str(bng2_pl), str(ref_bngl)]
             sub_cmd = [str(bng_cpp), str(sub_bngl)]
@@ -331,6 +479,16 @@ def build_bng2_probe_receipts(
                     f"{row_id}: missing output {spec.output_file} (oracle={ref_out.is_file()}, consumer={sub_out.is_file()})"
                 )
             _verify_pair(spec.comparator, ref_out, sub_out)
+            _verify_hybrid_option_behavior(
+                row_id,
+                ref_dir,
+                sub_dir,
+                ref_proc,
+                sub_proc,
+                bng2_pl,
+                bng2_env,
+                bng_cpp,
+            )
 
             ref_bytes = ref_out.read_bytes()
             sub_bytes = sub_out.read_bytes()
