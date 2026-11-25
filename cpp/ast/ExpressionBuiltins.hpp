@@ -61,7 +61,9 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
+#include <limits>
 #include <string>
 #include <string_view>
 
@@ -197,6 +199,66 @@ inline std::string rejectionHint(std::string_view name) {
         return "table functions are lowered separately via the TFUN adapter";
     }
     return {};
+}
+
+/// Evaluate Kummer's confluent hypergeometric ratio M(a+1, b+1, z) / M(a, b, z)
+/// using Gauss's continued fraction and modified Lentz's method (matching
+/// BNG2 Expression.pm::Mratio / Network3 Util::Mratio).
+inline double evaluateMratio(double a, double b, double z) {
+    if (!std::isfinite(a) || !std::isfinite(b) || !std::isfinite(z)) {
+        return std::numeric_limits<double>::quiet_NaN();
+    }
+    constexpr double kEps = 1e-16;
+    constexpr double kTiny = 1e-32;
+    constexpr int kMaxIterations = 1000000;
+
+    double fSave = kTiny;
+    double cSave = fSave;
+    double dSave = 0.0;
+    double err = 1.0 + kEps;
+    double f = fSave;
+    int iOdd = 0;
+    int iEven = 0;
+
+    for (int j = 1; err > kEps && j <= kMaxIterations; ++j) {
+        double p = 1.0;
+        if (j > 1) {
+            const double den = (b + static_cast<double>(j - 2)) *
+                               (b + static_cast<double>(j - 1));
+            if (den == 0.0) {
+                return std::numeric_limits<double>::quiet_NaN();
+            }
+            double num = 0.0;
+            if ((j % 2) != 0) {
+                ++iOdd;
+                num = z * (a + static_cast<double>(iOdd));
+            } else {
+                ++iEven;
+                num = z * (a - (b + static_cast<double>(iEven - 1)));
+            }
+            p = num / den;
+        }
+
+        constexpr double q = 1.0;
+        double d = q + p * dSave;
+        if (std::abs(d) < kTiny) d = kTiny;
+        double c = q + p / cSave;
+        if (std::abs(c) < kTiny) c = kTiny;
+        d = 1.0 / d;
+
+        const double delta = c * d;
+        f = delta * fSave;
+        if (!std::isfinite(f)) {
+            return std::numeric_limits<double>::quiet_NaN();
+        }
+        err = std::abs(delta - 1.0);
+
+        fSave = f;
+        cSave = c;
+        dSave = d;
+    }
+
+    return f;
 }
 
 } // namespace bng::ast::builtins

@@ -562,3 +562,72 @@ TEST_CASE("Builtin table: the two engines agree", "[builtins]") {
     CHECK(acceptsArgumentCount("sqrt", 1));
     CHECK_FALSE(acceptsArgumentCount("sqrt", 2));
 }
+
+TEST_CASE("mratio evaluates Gauss continued fraction accurately for large negative arguments",
+          "[Expression][mratio]") {
+    const auto evaluate = [](const std::string& source) {
+        return bng::parser::parseExpression(source).evaluate(noResolver);
+    };
+
+    // Large negative parameters from the canonical BNG2 dimer equilibrium model
+    // (a = -1000, b = 9001, z = -10000); series expansion overflows to NaN.
+    const double u1 = (-1.0 / 9001.0) * evaluate("mratio(-1000, 9001, -10000)");
+    const double u2 = (-1.0 / 9002.0) * evaluate("mratio(-999, 9002, -10000)");
+    const double cMean = 1000.0 * (1.0 + 10000.0 * u1);
+    const double cSdev = std::sqrt(
+        (-1000.0) * (-999.0) * 1.0e8 * u2 * u1 -
+        (-1000.0) * (-10000.0) * u1 * (1.0 + (-1000.0) * (-10000.0) * u1));
+
+    CHECK(std::isfinite(u1));
+    CHECK(std::isfinite(u2));
+    CHECK_THAT(cMean, WithinRel(487.5199603907, 1e-10));
+    CHECK_THAT(cMean + 2.0 * cSdev, WithinRel(518.7261409425, 1e-10));
+    CHECK_THAT(cMean - 2.0 * cSdev, WithinRel(456.3137798390, 1e-10));
+
+    // Boundary cases: z = 0 and a = b both give M(a+1, b+1, z) / M(a, b, z) == 1.
+    CHECK_THAT(evaluate("mratio(2.5, 4.0, 0.0)"), WithinRel(1.0, 1e-12));
+    CHECK_THAT(evaluate("mratio(3.0, 3.0, -5.0)"), WithinRel(1.0, 1e-12));
+    CHECK(std::isnan(evaluate("mratio(1.0, 0.0, 1.0)")));
+}
+
+TEST_CASE("Builtin _pi() and _e() zero-arg calls parse and evaluate identically to constants",
+          "[Expression][builtins]") {
+    const auto evaluate = [](const std::string& source) {
+        return bng::parser::parseExpression(source).evaluate(noResolver);
+    };
+
+    CHECK_THAT(evaluate("_pi()"), WithinRel(std::acos(-1.0), 1e-14));
+    CHECK_THAT(evaluate("_e()"), WithinRel(std::exp(1.0), 1e-14));
+    CHECK_THAT(evaluate("_pi"), WithinRel(std::acos(-1.0), 1e-14));
+    CHECK_THAT(evaluate("_e"), WithinRel(std::exp(1.0), 1e-14));
+    CHECK_THROWS(evaluate("_pi(1)"));
+    CHECK_THROWS(evaluate("_e(1)"));
+
+    auto model = bng::parser::parseModel(R"BNG(
+begin model
+begin parameters
+  p1 _pi()
+  p2 _e()
+end parameters
+begin molecule types
+  A()
+end molecule types
+begin seed species
+  A() 1
+end seed species
+begin observables
+  Molecules Atot A()
+end observables
+begin functions
+  f1() = _pi() + _e()
+end functions
+begin reaction rules
+  0 -> A() _pi() + _e()
+end reaction rules
+end model
+)BNG");
+    REQUIRE(model != nullptr);
+    model->getParameters().evaluateAll();
+    CHECK_THAT(model->getParameters().evaluate("p1"), WithinRel(std::acos(-1.0), 1e-14));
+    CHECK_THAT(model->getParameters().evaluate("p2"), WithinRel(std::exp(1.0), 1e-14));
+}
