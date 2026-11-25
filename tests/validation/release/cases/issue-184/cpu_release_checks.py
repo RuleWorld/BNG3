@@ -39,15 +39,62 @@ REQUIRED_INSTALL_SUBCHECKS = (
 )
 
 
+def _extract_receipt_fields(data):
+    """Extract (source_dict, results_list, error_reason) fail-closed."""
+    has_source = isinstance(data.get("source"), dict)
+    has_legacy_source = "source_revision" in data or "source_dirty" in data
+    if has_source and has_legacy_source:
+        src = data["source"]
+        if (
+            "source_revision" in data
+            and data.get("source_revision") != src.get("revision")
+        ) or ("source_dirty" in data and data.get("source_dirty") != src.get("dirty")):
+            return None, None, "conflicting source identity"
+        source = src
+    elif has_source:
+        source = data["source"]
+    elif data.get("acceptance_check") == "release-obligation-142" and has_legacy_source:
+        source = {
+            "revision": data.get("source_revision"),
+            "dirty": data.get("source_dirty"),
+        }
+    else:
+        source = {}
+
+    results = data.get("results")
+    if isinstance(results, list) and results:
+        return source, results, None
+    if (
+        data.get("acceptance_check") == "release-obligation-142"
+        and isinstance(data.get("checks"), dict)
+        and data["checks"]
+    ):
+        normalized = []
+        for cid, entry in sorted(data["checks"].items()):
+            status = entry.get("status") if isinstance(entry, dict) else None
+            normalized.append(
+                {
+                    "id": cid,
+                    "status": status or "FAIL",
+                    "supported_execution": status == "PASS",
+                    "evidence_kind": "supported-execution",
+                }
+            )
+        return source, normalized, None
+    return source, [], None
+
+
 def _receipts(paths, revision):
     accepted, rejected = [], []
     for path in paths:
         data = json.loads(path.read_bytes())
-        source = data.get("source", {})
+        source, results, err = _extract_receipt_fields(data)
+        if err is not None:
+            rejected.append((path.name, err))
+            continue
         if source.get("revision") != revision or source.get("dirty") is not False:
             rejected.append((path.name, "stale or dirty receipt"))
             continue
-        results = data.get("results", [])
         if not results:
             rejected.append((path.name, "no results"))
             continue

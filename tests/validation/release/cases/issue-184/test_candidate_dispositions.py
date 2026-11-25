@@ -482,3 +482,47 @@ def test_upgrade_probe_wheel_vs_sdist() -> None:
     assert not inst_mod.evaluate_upgrade_probe(
         "sdist", _probe("a" * 64), _probe("b" * 64, compat_len=0)
     )[0]
+
+
+def test_discover_scientific_receipts_prefers_combined_issue137(tmp_path: Path) -> None:
+    from scripts.ci import collect_issue184_hosted_evidence as collector
+
+    rel = tmp_path / "release-records"
+    standalone = rel / f"issue137-inventory-{'1' * 40}" / "report.json"
+    combined = rel / "issue137-inventory-combined" / "report.json"
+    standalone.parent.mkdir(parents=True)
+    combined.parent.mkdir(parents=True)
+    standalone.write_text('{"results": []}\n', encoding="utf-8")
+    combined.write_text('{"results": []}\n', encoding="utf-8")
+    sbml = tmp_path / "sbml"
+    sbml.mkdir()
+
+    resolved = collector._resolve_issue137_receipt(
+        ROOT, "1" * 40, rel, tmp_path / "out"
+    )
+    assert resolved == combined
+    discovered = collector._discover_scientific_receipts(
+        rel, [], sbml, issue137_combined_receipt=resolved
+    )
+    assert combined.resolve() in discovered
+    assert standalone.resolve() not in discovered
+
+
+def test_resolve_issue137_falls_back_when_no_case_reports(tmp_path: Path) -> None:
+    from scripts.ci import collect_issue184_hosted_evidence as collector
+
+    rel = tmp_path / "release-records"
+    standalone = rel / f"issue137-inventory-{'1' * 40}" / "report.json"
+    standalone.parent.mkdir(parents=True)
+    standalone.write_text('{"results": []}\n', encoding="utf-8")
+    sbml = tmp_path / "sbml"
+    sbml.mkdir()
+
+    resolved = collector._resolve_issue137_receipt(
+        ROOT, "1" * 40, rel, tmp_path / "out"
+    )
+    assert resolved is None
+    discovered = collector._discover_scientific_receipts(
+        rel, [], sbml, issue137_combined_receipt=resolved
+    )
+    assert standalone.resolve() in discovered
