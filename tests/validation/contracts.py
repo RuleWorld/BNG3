@@ -271,6 +271,11 @@ def _trajectory(path):
 
 def species_columns(columns, network):
     """Map serialized cdat columns to generated-network indices unambiguously."""
+    buckets = {}
+    for index, graph in network.species_by_index.items():
+        buckets.setdefault(compare._species_prefilter_key(graph, (), False), []).append(
+            index
+        )
     found = {}
     for name in columns[1:]:
         match = re.fullmatch(r"(?:S|s)?(\d+)", name)
@@ -279,8 +284,10 @@ def species_columns(columns, network):
             if match
             else [
                 i
-                for i, graph in network.species_by_index.items()
-                if compare.species_isomorphic(graph, name)
+                for i in buckets.get(
+                    compare._species_prefilter_key(name, (), False), ()
+                )
+                if compare.species_isomorphic(network.species_by_index[i], name)
             ]
         )
         if len(candidates) != 1 or candidates[0] in found:

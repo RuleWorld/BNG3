@@ -126,7 +126,14 @@ def load(directory: Path, identity: dict) -> tuple[list[dict] | None, str]:
         return None, "invalid"
     prefix = identity["case_id"] + ":"
     for row in rows:
-        if not isinstance(row, dict) or row.get("status") not in _TERMINAL:
+        is_no_observables = (
+            isinstance(row, dict)
+            and row.get("status") == "NOT_TESTED"
+            and row.get("applicability") == "no-observables"
+        )
+        if not isinstance(row, dict) or (
+            row.get("status") not in _TERMINAL and not is_no_observables
+        ):
             return None, "invalid"
         if not str(row.get("id", "")).startswith(prefix):
             return None, "invalid"

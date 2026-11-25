@@ -631,6 +631,30 @@ def _corpus_case_result(
             evidence_kind="observed-failure",
             **common,
         )
+    invalid = [row for row in case_rows if row.get("status") == "INVALID_INPUT"]
+    if invalid:
+        return _result(
+            f"corpus-case[{name}]",
+            "corpus-case",
+            "INVALID_INPUT",
+            invalid[0].get("detail") or f"{len(invalid)} invalid source stage(s)",
+            supported_execution=False,
+            evidence_kind="invalid-input",
+            blocked_by=[row["id"] for row in invalid if row.get("id")],
+            **common,
+        )
+    unsupported = [row for row in case_rows if row.get("status") == "UNSUPPORTED"]
+    if unsupported:
+        return _result(
+            f"corpus-case[{name}]",
+            "corpus-case",
+            "UNSUPPORTED",
+            unsupported[0].get("detail") or f"{len(unsupported)} unsupported stage(s)",
+            supported_execution=False,
+            evidence_kind="unsupported-construct",
+            blocked_by=[row["id"] for row in unsupported if row.get("id")],
+            **common,
+        )
     unexecuted = [
         row
         for row in case_rows
@@ -659,6 +683,9 @@ def _corpus_case_result(
     )
 
 
+_DEFAULT_MODEL = _model
+
+
 def _resume_case(
     name: str,
     source: Path,
@@ -675,6 +702,12 @@ def _resume_case(
     """Execute one corpus case or reuse its identity-matched artifact."""
 
     def run_case():
+        if _model is _DEFAULT_MODEL:
+            from . import corpus_routes
+
+            return corpus_routes.run_case(
+                name, source, args, directory, references, env, _model
+            )
         model_rows = _model(
             name, source, args, directory, references.get("bionetgen"), env
         )
@@ -1049,31 +1082,41 @@ def main(argv=None):
                 "package_mode": args.package_mode,
             }
             try:
+                from . import corpus_routes
+
                 for name, source in _models(args, selection):
                     print("Checking model:", name, flush=True)
-                    case_expected = [name + ":parse"] + [
-                        name + ":network:" + check
-                        for check in (
-                            "artifact-validity",
-                            "species-count",
-                            "species-identity",
-                            "initial-amounts",
-                            "reaction-count",
-                            "reaction-stoichiometry",
-                            "reaction-multiplicity",
-                            "reaction-rates",
-                            "observable-names",
-                            "observable-weights",
-                        )
-                    ]
-                    if args.simulate:
-                        case_expected += [
-                            name + ":simulation-" + route + ":" + kind
-                            for route in (
-                                ["bngl", "net-reload"] if args.net_reload else ["bngl"]
+                    routed_expected = corpus_routes.expected_contract_ids(
+                        name, simulate=args.simulate, net_reload=args.net_reload
+                    )
+                    if routed_expected is not None:
+                        case_expected = routed_expected
+                    else:
+                        case_expected = [name + ":parse"] + [
+                            name + ":network:" + check
+                            for check in (
+                                "artifact-validity",
+                                "species-count",
+                                "species-identity",
+                                "initial-amounts",
+                                "reaction-count",
+                                "reaction-stoichiometry",
+                                "reaction-multiplicity",
+                                "reaction-rates",
+                                "observable-names",
+                                "observable-weights",
                             )
-                            for kind in ("cdat", "gdat")
                         ]
+                        if args.simulate:
+                            case_expected += [
+                                name + ":simulation-" + route + ":" + kind
+                                for route in (
+                                    ["bngl", "net-reload"]
+                                    if args.net_reload
+                                    else ["bngl"]
+                                )
+                                for kind in ("cdat", "gdat")
+                            ]
                     expected_contract_ids += case_expected
 
                     case_rows, action = _resume_case(
