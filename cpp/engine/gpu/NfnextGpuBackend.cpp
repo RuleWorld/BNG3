@@ -194,7 +194,7 @@ detail::NfnextUnaryStatePlan compileUnaryStatePlan(
         if (count > maxParticles - plan.initialStates.size())
             refuse("initial population exceeds the unary single-site state-change particle budget");
         if (count > maxExactFloatCount - plan.initialStates.size())
-            refuse("initial population exceeds exact Metal single-precision observable counts");
+            refuse("initial population exceeds exact GPU single-precision observable counts");
         plan.initialStates.insert(plan.initialStates.end(), count,
                                   static_cast<std::int32_t>(state));
     }
@@ -256,7 +256,7 @@ NfnextGpuResult simulateNfnextGpu(const bng::compile::CompiledModel& source,
             refuse("sample_times must be finite, nonnegative, and strictly increasing");
         const float deviceTime = static_cast<float>(time);
         if (!std::isfinite(deviceTime) || static_cast<double>(deviceTime) != time)
-            refuse("sample_times must be exactly representable as finite Metal single precision");
+            refuse("sample_times must be exactly representable as finite GPU single precision");
         previous = time;
     }
     if (request.batchSize == 0 || request.batchSize > std::numeric_limits<std::uint32_t>::max())
@@ -271,21 +271,50 @@ NfnextGpuResult simulateNfnextGpu(const bng::compile::CompiledModel& source,
         checkedProduct(request.batchSize, request.sampleTimes.size()),
         plan.observableNames.size());
     if (expectedValues > std::numeric_limits<std::uint32_t>::max())
-        refuse("batch output element count exceeds Metal kernel indexing capacity");
-    if (request.backend != "metal") {
-        if (request.backend == "cuda")
-            refuse("network-free CUDA execution is not implemented");
-        refuse("backend must explicitly select the implemented 'metal' route");
+        refuse("batch output element count exceeds GPU kernel indexing capacity");
+    if (request.backend != "metal" && request.backend != "cuda") {
+        refuse("backend must explicitly select 'metal' or 'cuda'");
     }
 
+    const GpuBackendKind targetKind =
+        request.backend == "cuda" ? GpuBackendKind::Cuda : GpuBackendKind::Metal;
     const auto inventory = gpuBackendInventory();
-    const auto metal = std::find_if(inventory.begin(), inventory.end(), [](const auto& item) {
-        return item.kind == GpuBackendKind::Metal;
+    const auto backend = std::find_if(inventory.begin(), inventory.end(), [targetKind](const auto& item) {
+        return item.kind == targetKind;
     });
-    if (metal == inventory.end() || !metal->compiled)
+    if (request.backend == "cuda") {
+        if (backend == inventory.end() || !backend->compiled)
+            refuse("CUDA backend is not compiled into this build");
+        if (!backend->available)
+            refuse("CUDA backend has no usable device: " + backend->detail);
+#ifdef BNG3_HAS_CUDA
+        const auto output = detail::simulateNfnextUnaryStateCuda(plan, request);
+        NfnextGpuResult result;
+        result.sampleTimes = request.sampleTimes;
+        result.observableNames = plan.observableNames;
+        result.observables = output.observables;
+        result.eventCounts = output.eventCounts;
+        result.batchSize = request.batchSize;
+        result.backend = "cuda";
+        result.device = output.device;
+        result.wallTimeMs = output.wallTimeMs;
+        result.dispatchWaitTimeMs = output.dispatchWaitTimeMs;
+        result.setupTimeMs = output.setupTimeMs;
+        result.deviceMemoryBytes = output.deviceMemoryBytes;
+        if (result.observables.size() != expectedValues ||
+            result.eventCounts.size() != request.batchSize) {
+            refuse("CUDA kernel returned output with an invalid batch shape");
+        }
+        return result;
+#else
+        refuse("CUDA backend is not compiled into this build");
+#endif
+    }
+
+    if (backend == inventory.end() || !backend->compiled)
         refuse("Metal backend is not compiled into this build");
-    if (!metal->available)
-        refuse("Metal backend has no usable device: " + metal->detail);
+    if (!backend->available)
+        refuse("Metal backend has no usable device: " + backend->detail);
 
 #ifdef BNG3_HAS_METAL
     const auto output = detail::simulateNfnextUnaryStateMetal(plan, request);

@@ -236,6 +236,7 @@ if(NOT BNG3_ENABLE_CUDA STREQUAL "OFF")
         set_target_properties(bng_engine PROPERTIES CUDA_ARCHITECTURES
             "${CMAKE_CUDA_ARCHITECTURES}")
         list(APPEND BNG3_GPU_BACKEND_SOURCES engine/gpu/CudaSsaBackend.cu)
+        list(APPEND BNG3_GPU_BACKEND_SOURCES engine/gpu/NfnextCudaBackend.cu)
         list(APPEND BNG3_GPU_BACKEND_NAMES "cuda")
         list(APPEND BNG3_GPU_BACKEND_DEFINES BNG3_HAS_CUDA=1)
     elseif(NOT BNG3_ENABLE_CUDA STREQUAL "AUTO")
