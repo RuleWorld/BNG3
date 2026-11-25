@@ -195,11 +195,6 @@ REFUSALS = (
     ),
     ("compartment", COMPARTMENT_MODEL, "compartments are outside"),
     ("delayed_rule", DELAYED_MODEL, "delayed rules are outside"),
-    (
-        "cuda_backend",
-        TWO_STATE_MODEL.format(particles=10),
-        "network-free CUDA execution is not implemented",
-    ),
 )
 
 
@@ -211,14 +206,25 @@ def _sha256(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _metal_device() -> dict:
-    metal = next(
-        (row for row in gpu_backend_capabilities() if row["name"] == "metal"),
+def _device(backend: str = "metal") -> dict:
+    selected = next(
+        (row for row in gpu_backend_capabilities() if row["name"] == backend),
         None,
     )
-    if not metal or not metal["compiled"] or not metal["available"]:
-        raise RuntimeError("physical Metal device unavailable")
-    return metal
+    if not selected or not selected["compiled"] or not selected["available"]:
+        raise RuntimeError(f"physical {backend} device unavailable")
+    return selected
+
+
+def _host_compiler() -> str:
+    for cmd in (["clang", "--version"], ["g++", "--version"], ["nvcc", "--version"]):
+        try:
+            out = subprocess.check_output(cmd, text=True).splitlines()
+            if out:
+                return out[0]
+        except OSError:
+            continue
+    return platform.python_compiler()
 
 
 def _analytic_fractions(spec: dict) -> np.ndarray:
@@ -233,7 +239,7 @@ def _analytic_fractions(spec: dict) -> np.ndarray:
     return np.column_stack([1.0 - p, p])
 
 
-def _check_workload(spec: dict) -> dict:
+def _check_workload(spec: dict, backend: str = "metal") -> dict:
     fractions = _analytic_fractions(spec)
     names = list(spec["observables"])
     from statistics import NormalDist
@@ -244,10 +250,10 @@ def _check_workload(spec: dict) -> dict:
         list(spec["times"]),
         seed=spec["seed"],
         batch_size=spec["batch_size"],
-        backend="metal",
+        backend=backend,
     )
-    if raw.backend != "metal" or raw.engine != "nfnext-gpu" or not raw.device:
-        raise RuntimeError("result is not attributable to the Metal NFnext kernel")
+    if raw.backend != backend or raw.engine != "nfnext-gpu" or not raw.device:
+        raise RuntimeError(f"result is not attributable to the {backend} NFnext kernel")
     if list(raw.observable_names) != names:
         raise RuntimeError(f"unexpected observables: {raw.observable_names}")
     counts = {name: np.asarray(raw.observables[name], dtype=float) for name in names}
@@ -337,7 +343,7 @@ def _check_workload(spec: dict) -> dict:
             list(spec["times"]),
             seed=spec["seed"],
             batch_size=spec["batch_size"],
-            backend="metal",
+            backend=backend,
         )
         for name in names:
             np.testing.assert_array_equal(
@@ -349,21 +355,44 @@ def _check_workload(spec: dict) -> dict:
     return result
 
 
-def verify(revision: str) -> dict:
-    device = _metal_device()
-    workloads = [_check_workload(spec) for spec in WORKLOADS]
+def verify(revision: str, backend: str = "metal") -> dict:
+    if backend not in {"metal", "cuda"}:
+        raise ValueError(f"unsupported GPU backend: {backend}")
+    device = _device(backend)
+    workloads = [_check_workload(spec, backend=backend) for spec in WORKLOADS]
     refusals = []
     for name, source, expected in REFUSALS:
         model = BioNetGenModel(cpp.parse_string(source))
-        selected = "cuda" if name == "cuda_backend" else "metal"
         try:
-            model.simulate_nfnext_gpu([0.0, 1.0], batch_size=16, backend=selected)
+            model.simulate_nfnext_gpu([0.0, 1.0], batch_size=16, backend=backend)
         except RuntimeError as exc:
             if expected not in str(exc):
                 raise RuntimeError(f"{name} refused with an unexpected reason: {exc}")
             refusals.append({"class": name, "status": "REFUSED", "reason": str(exc)})
         else:
             raise RuntimeError(f"{name} was incorrectly admitted to the GPU route")
+
+    other_name = "cuda" if backend == "metal" else "metal"
+    other = next(
+        (row for row in gpu_backend_capabilities() if row["name"] == other_name),
+        None,
+    )
+    if other and (not other["compiled"] or not other["available"]):
+        model = BioNetGenModel(cpp.parse_string(TWO_STATE_MODEL.format(particles=10)))
+        try:
+            model.simulate_nfnext_gpu([0.0, 1.0], batch_size=16, backend=other_name)
+        except RuntimeError as exc:
+            refusals.append(
+                {
+                    "class": f"{other_name}_backend",
+                    "status": "REFUSED",
+                    "reason": str(exc),
+                }
+            )
+        else:
+            raise RuntimeError(
+                f"{other_name}_backend fell back instead of refusing when unavailable"
+            )
 
     native = Path(cpp.__file__).resolve()
     source_revision = _git("rev-parse", "HEAD")
@@ -377,7 +406,7 @@ def verify(revision: str) -> dict:
         "check": "release-nf-gpu-workloads",
         "status": "PASS",
         "scope": (
-            "bounded unary single-site state-change Metal route: two-state CTMC, "
+            f"bounded unary single-site state-change {backend} route: two-state CTMC, "
             "three-state chain and bounded particle-heavy ensemble; unsupported "
             "workload classes are explicitly refused"
         ),
@@ -386,27 +415,31 @@ def verify(revision: str) -> dict:
             "dirty": False,
             "native_module": str(native),
             "native_sha256": _sha256(native),
-            "recorder": str(Path(__file__).relative_to(ROOT)),
+            "recorder": str(Path(__file__).resolve().relative_to(ROOT)),
         },
         "host": {
             "platform": platform.platform(),
             "python": platform.python_version(),
-            "compiler": subprocess.check_output(
-                ["clang", "--version"], text=True
-            ).splitlines()[0],
+            "compiler": _host_compiler(),
         },
         "device": {
             "name": device["detail"],
-            "backend": "metal",
+            "backend": backend,
             "compiled": device["compiled"],
             "available": device["available"],
         },
         "budget": BUDGET,
         "workloads": workloads,
         "refusals": refusals,
-        "cuda": {
-            "status": "UNSUPPORTED",
-            "detail": "network-free CUDA execution is not implemented",
+        other_name: {
+            "status": (
+                "NOT_TESTED_IN_THIS_RECEIPT"
+                if (other and other["compiled"])
+                else "NOT_RUN_HERE"
+            ),
+            "compiled": bool(other and other["compiled"]),
+            "available": bool(other and other["available"]),
+            "detail": other["detail"] if other else "unknown",
         },
         "full_corpus_claimed": False,
     }
@@ -415,13 +448,14 @@ def verify(revision: str) -> dict:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--revision", required=True)
+    parser.add_argument("--backend", choices=("metal", "cuda"), default="metal")
     parser.add_argument("--json", required=True, type=Path)
     args = parser.parse_args()
-    receipt = verify(args.revision)
+    receipt = verify(args.revision, backend=args.backend)
     args.json.parent.mkdir(parents=True, exist_ok=True)
     args.json.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
     print(
-        f"NFnext Metal workloads: {len(receipt['workloads'])} classes, "
+        f"NFnext {args.backend} workloads: {len(receipt['workloads'])} classes, "
         f"{len(receipt['refusals'])} explicit refusals, "
         f"{sum(row['total_events'] for row in receipt['workloads'])} events"
     )

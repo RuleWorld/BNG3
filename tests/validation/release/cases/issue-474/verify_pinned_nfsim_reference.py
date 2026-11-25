@@ -15,10 +15,10 @@ import hashlib
 import importlib.util
 import json
 import math
-import shutil
 import statistics
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[5]
@@ -58,7 +58,11 @@ def _parse_gdat(path: Path) -> list[list[float]]:
     return rows
 
 
-def verify(nfsim: Path, source: Path, runs: int, seed0: int) -> dict:
+def verify(
+    nfsim: Path, source: Path, runs: int, seed0: int, backend: str = "metal"
+) -> dict:
+    if backend not in {"metal", "cuda"}:
+        raise ValueError(f"unsupported GPU backend: {backend}")
     lock = _lock()
     pinned_revision = lock["sources"]["nfsim"]["revision"]
     pinned_digest = lock["oracles"]["nfsim"]["artifact_digest"].split(":", 1)[1]
@@ -75,62 +79,54 @@ def verify(nfsim: Path, source: Path, runs: int, seed0: int) -> dict:
     from bionetgen import gpu_backend_capabilities
     from bionetgen.model import BioNetGenModel, _cpp as cpp
 
-    metal = next(
-        (row for row in gpu_backend_capabilities() if row["name"] == "metal"), None
+    selected = next(
+        (row for row in gpu_backend_capabilities() if row["name"] == backend), None
     )
-    if metal is None or not metal["compiled"] or not metal["available"]:
-        raise RuntimeError("physical Metal device unavailable")
+    if selected is None or not selected["compiled"] or not selected["available"]:
+        raise RuntimeError(f"physical {backend} device unavailable")
 
-    work = Path(
-        subprocess.check_output(
-            [
-                "mktemp",
-                "-d",
-                "/private/var/folders/cl/rt1592vn0sq5jw5vv4shrs4m0000gn/T/opencode/bng3-nfsim-474.XXXXXX",
-            ],
-            text=True,
-        ).strip()
-    )
-    model = BioNetGenModel(cpp.parse_string(test.MODEL))
-    xml = work / "unary.xml"
-    model.write_xml(str(xml))
-
-    times_text = ",".join(str(value) for value in test.TIMES)
     samples: dict[float, list[float]] = {t: [] for t in test.TIMES}
-    for offset in range(runs):
-        out = work / f"run{offset}.gdat"
-        proc = subprocess.run(
-            [
-                str(nfsim),
-                "-xml",
-                str(xml),
-                "-sim",
-                str(test.TIMES[-1]),
-                "-oTimes",
-                times_text,
-                "-seed",
-                str(seed0 + offset),
-                "-o",
-                str(out),
-            ],
-            capture_output=True,
-            text=True,
-        )
-        if proc.returncode != 0:
-            raise RuntimeError(f"pinned NFsim failed: {proc.stderr[:500]}")
-        rows = _parse_gdat(out)
-        if len(rows) != len(test.TIMES):
-            raise RuntimeError("pinned NFsim output grid mismatch")
-        for row, time in zip(rows, test.TIMES):
-            if abs(row[0] - time) > 1e-9:
-                raise RuntimeError("pinned NFsim output time mismatch")
-            samples[time].append(row[2])  # observable P
+    with tempfile.TemporaryDirectory(prefix="bng3-nfsim-474-") as tmp_dir:
+        work = Path(tmp_dir)
+        model = BioNetGenModel(cpp.parse_string(test.MODEL))
+        xml = work / "unary.xml"
+        model.write_xml(str(xml))
+
+        times_text = ",".join(str(value) for value in test.TIMES)
+        for offset in range(runs):
+            out = work / f"run{offset}.gdat"
+            proc = subprocess.run(
+                [
+                    str(nfsim),
+                    "-xml",
+                    str(xml),
+                    "-sim",
+                    str(test.TIMES[-1]),
+                    "-oTimes",
+                    times_text,
+                    "-seed",
+                    str(seed0 + offset),
+                    "-o",
+                    str(out),
+                ],
+                capture_output=True,
+                text=True,
+            )
+            if proc.returncode != 0:
+                raise RuntimeError(f"pinned NFsim failed: {proc.stderr[:500]}")
+            rows = _parse_gdat(out)
+            if len(rows) != len(test.TIMES):
+                raise RuntimeError("pinned NFsim output grid mismatch")
+            for row, time in zip(rows, test.TIMES):
+                if abs(row[0] - time) > 1e-9:
+                    raise RuntimeError("pinned NFsim output time mismatch")
+                samples[time].append(row[2])  # observable P
 
     gpu = model.simulate_nfnext_gpu(
         list(test.TIMES),
         seed=test.SEED,
         batch_size=test.BATCH_SIZE,
-        backend="metal",
+        backend=backend,
     )
     import numpy as np
 
@@ -162,8 +158,8 @@ def verify(nfsim: Path, source: Path, runs: int, seed0: int) -> dict:
                 "native_variance": native_var,
                 "native_mean_z": native_z,
                 "native_variance_ratio": native_var / expected_variance,
-                "metal_mean": device_mean,
-                "metal_native_mean_z": cross_z,
+                f"{backend}_mean": device_mean,
+                f"{backend}_native_mean_z": cross_z,
                 "pass": (
                     abs(native_z) <= z_threshold
                     and 0.8 <= native_var / expected_variance <= 1.2
@@ -172,7 +168,9 @@ def verify(nfsim: Path, source: Path, runs: int, seed0: int) -> dict:
             }
         )
     if not all(row["pass"] for row in checks):
-        raise RuntimeError("pinned native NFsim / Metal distributional check failed")
+        raise RuntimeError(
+            f"pinned native NFsim / {backend} distributional check failed"
+        )
 
     native = np.asarray([samples[t] for t in test.TIMES[1:]], dtype=float)
     wrong_mean = test.PARTICLES * (1.0 - math.exp(-test.KF * test.TIMES[-1]))
@@ -183,8 +181,6 @@ def verify(nfsim: Path, source: Path, runs: int, seed0: int) -> dict:
     wrong_law_rejected = abs(float(native[:, -1].mean()) - wrong_mean) > 10.0 * right_se
     if not wrong_law_rejected:
         raise RuntimeError("wrong-law negative control did not reject")
-
-    shutil.rmtree(work)
 
     return {
         "schema_version": 1,
@@ -201,15 +197,15 @@ def verify(nfsim: Path, source: Path, runs: int, seed0: int) -> dict:
             ).strip(),
         },
         "device": {
-            "backend": "metal",
-            "name": metal["detail"],
+            "backend": backend,
+            "name": selected["detail"],
             "reported_device": gpu.device,
         },
         "budget": {
             "native_runs": runs,
             "native_first_seed": seed0,
-            "metal_batch_size": test.BATCH_SIZE,
-            "metal_seed": test.SEED,
+            f"{backend}_batch_size": test.BATCH_SIZE,
+            f"{backend}_seed": test.SEED,
             "alpha": alpha,
             "bonferroni_z_threshold": z_threshold,
         },
@@ -217,8 +213,8 @@ def verify(nfsim: Path, source: Path, runs: int, seed0: int) -> dict:
         "checks": checks,
         "wrong_law_rejected": wrong_law_rejected,
         "scope": (
-            "bounded one-type one-site static unary state-change route only; "
-            "not the full network-free corpus and not CUDA"
+            f"bounded one-type one-site static unary state-change route on {backend} only; "
+            "not the full network-free corpus"
         ),
     }
 
@@ -227,17 +223,20 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--nfsim", required=True, type=Path)
     parser.add_argument("--nfsim-source", required=True, type=Path)
+    parser.add_argument("--backend", choices=("metal", "cuda"), default="metal")
     parser.add_argument("--runs", type=int, default=256)
     parser.add_argument("--seed0", type=int, default=1000)
     parser.add_argument("--json", required=True, type=Path)
     args = parser.parse_args()
-    receipt = verify(args.nfsim, args.nfsim_source, args.runs, args.seed0)
+    receipt = verify(
+        args.nfsim, args.nfsim_source, args.runs, args.seed0, backend=args.backend
+    )
     args.json.parent.mkdir(parents=True, exist_ok=True)
     args.json.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
     print(
         f"Pinned NFsim reference PASS: {args.runs} runs at "
         f"{receipt['source']['nfsim_revision'][:10]}, "
-        f"{len(receipt['checks'])} analytic times compared to Metal"
+        f"{len(receipt['checks'])} analytic times compared to {args.backend}"
     )
     return 0
 
