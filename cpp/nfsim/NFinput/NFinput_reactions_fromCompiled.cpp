@@ -1346,6 +1346,17 @@ bool functionProductOperands(const CompiledModel& model,
            localRateOperand(model, direction, expression.arguments[1], second);
 }
 
+bool rejectIncompatibleTotalRate(const CompiledRule& rule,
+                                 const char* rateDescription,
+                                 std::string& diagnostic,
+                                 bool& semanticRejection) {
+    if (!hasModifier(rule, ModifierKind::TotalRate)) return false;
+    diagnostic = std::string("TotalRate keyword is not compatible with ") +
+                 rateDescription + " for ReactionRule " + rule.name() + ".";
+    semanticRejection = true;
+    return true;
+}
+
 bool addCompiledArrheniusDirection(const CompiledModel& model,
                                    const CompiledRule& rule,
                                    const CompiledRuleDirection& direction,
@@ -1353,9 +1364,13 @@ bool addCompiledArrheniusDirection(const CompiledModel& model,
                                    bool blockSameComplexBinding,
                                    bool verbose,
                                    int& suggestedTraversalLimit,
-                                   std::string& diagnostic) {
+                                   std::string& diagnostic,
+                                   bool& semanticRejection) {
     if (!direction.rateLaw.has_value() ||
         direction.rateLaw->kind != bng::compile::RateLawKind::ArrheniusEnergy) {
+        return false;
+    }
+    if (rejectIncompatibleTotalRate(rule, "Arrhenius type RateLaw", diagnostic, semanticRejection)) {
         return false;
     }
     if (!direction.filters.empty()) {
@@ -1589,15 +1604,17 @@ NFcore::ReactionClass* makeReactionForRate(
     NFcore::System& system,
     const std::filesystem::path& sourcePath,
     std::size_t ordinal,
-    std::string& diagnostic) {
+    std::string& diagnostic,
+    bool& semanticRejection) {
     if (!direction.rateLaw.has_value()) { diagnostic = "reaction has no rate law"; return nullptr; }
     const auto& rate = *direction.rateLaw;
     const auto& expression = rate.resolvedExpression();
     using RateKind = bng::compile::RateLawKind;
 
     if ((rate.kind == RateKind::MichaelisMenten || rate.kind == RateKind::Saturation ||
-         rate.kind == RateKind::Hill) && hasModifier(rule, ModifierKind::TotalRate)) {
-        diagnostic = "built-in saturating rates do not support TotalRate in NFsim";
+         rate.kind == RateKind::Hill) &&
+        rejectIncompatibleTotalRate(rule, "built-in saturating rates", diagnostic,
+                                    semanticRejection)) {
         return nullptr;
     }
 
@@ -1647,6 +1664,9 @@ NFcore::ReactionClass* makeReactionForRate(
 
     LocalRateOperand productFirst, productSecond;
     if (functionProductOperands(model, direction, expression, productFirst, productSecond)) {
+        if (rejectIncompatibleTotalRate(rule, "local functions", diagnostic, semanticRejection)) {
+            return nullptr;
+        }
         if (productFirst.scope->patternIndex == productSecond.scope->patternIndex) {
             diagnostic = "FunctionProduct requires two different scoped reactants";
             return nullptr;
@@ -1673,6 +1693,9 @@ NFcore::ReactionClass* makeReactionForRate(
 
     LocalRateOperand localOperand;
     if (localRateOperand(model, direction, expression, localOperand)) {
+        if (rejectIncompatibleTotalRate(rule, "local functions", diagnostic, semanticRejection)) {
+            return nullptr;
+        }
         auto* composite = system.getCompositeFunctionByName(localOperand.function->name);
         if (composite == nullptr) {
             diagnostic = "local-function rate refers to an unregistered compiled function";
@@ -1694,6 +1717,9 @@ NFcore::ReactionClass* makeReactionForRate(
     ScopedCompositeRate scopedRate;
     if (prepareScopedCompositeRate(model, direction, expression, system,
                                    scopedRate, diagnostic)) {
+        if (rejectIncompatibleTotalRate(rule, "local functions", diagnostic, semanticRejection)) {
+            return nullptr;
+        }
         for (const auto& operand : scopedRate.localOperands) {
             if (!addLocalRateReference(operand, roots, templates,
                                        *transformations, diagnostic))
@@ -1778,6 +1804,9 @@ NFcore::ReactionClass* makeReactionForRate(
         if (dynamicLocalArguments.empty()) {
             return new NFcore::FunctionalRxnClass(
                 reactionName, dynamicComposite, transformations, &system);
+        }
+        if (rejectIncompatibleTotalRate(rule, "local functions", diagnostic, semanticRejection)) {
+            return nullptr;
         }
         auto* reaction = new NFcore::DORRxnClass(
             reactionName, 1.0, "", transformations, dynamicComposite,
@@ -1892,7 +1921,8 @@ SymmetricCompiledExpansionResult addSymmetricCompiledDirection(
     int& suggestedTraversalLimit,
     const std::filesystem::path& sourcePath,
     std::size_t rateOrdinal,
-    std::string& diagnostic) {
+    std::string& diagnostic,
+    bool& semanticRejection) {
     if (direction.reactantPatterns.empty() || direction.productPatterns.empty() ||
         !direction.rateLaw.has_value() || !direction.filters.empty() ||
         !hasOnlySymmetricPermutationModifiers(rule)) {
@@ -2076,7 +2106,7 @@ SymmetricCompiledExpansionResult addSymmetricCompiledDirection(
             std::to_string(reactionOrdinal + 1);
         auto* reaction = makeReactionForRate(
             model, rule, direction, reactionName, transformations, roots, templates,
-            system, sourcePath, rateOrdinal, diagnostic);
+            system, sourcePath, rateOrdinal, diagnostic, semanticRejection);
         if (reaction == nullptr) {
             delete transformations;
             return false;
@@ -2115,7 +2145,8 @@ bool lowerDirection(const CompiledModel& model,
                     int& suggestedTraversalLimit,
                     const std::filesystem::path& sourcePath,
                     std::size_t ordinal,
-                    std::string& diagnostic) {
+                    std::string& diagnostic,
+                    bool& semanticRejection) {
     if (!direction.transformationsComplete) {
         diagnostic = "compiled transformation program is incomplete";
         return false;
@@ -2146,7 +2177,7 @@ bool lowerDirection(const CompiledModel& model,
 
     const auto symmetric = addSymmetricCompiledDirection(
         model, rule, direction, reverse, system, blockSameComplexBinding, verbose,
-        suggestedTraversalLimit, sourcePath, ordinal, diagnostic);
+        suggestedTraversalLimit, sourcePath, ordinal, diagnostic, semanticRejection);
     if (symmetric == SymmetricCompiledExpansionResult::Added) return true;
     if (symmetric == SymmetricCompiledExpansionResult::Error) return false;
 
@@ -2380,7 +2411,7 @@ bool lowerDirection(const CompiledModel& model,
 
     auto* reaction = makeReactionForRate(model, rule, direction,
         reverse ? rule.name() + "_reverse" : rule.name(), transformations, roots, templates,
-        system, sourcePath, ordinal, diagnostic);
+        system, sourcePath, ordinal, diagnostic, semanticRejection);
     if (reaction == nullptr) { delete transformations; return false; }
     reaction->setTotalRateFlag(hasModifier(rule, ModifierKind::TotalRate));
     if (hasModifier(rule, ModifierKind::MatchOnce))
@@ -2638,11 +2669,15 @@ bool addReactionRulesFromCompiled(const CompiledModel& model,
     for (std::size_t index = 0; index < model.rules().size(); ++index) {
         const auto& rule = model.rules()[index];
         std::string diagnostic;
+        bool semanticRejection = false;
         if (rule.forward().rateLaw.has_value() &&
             rule.forward().rateLaw->kind == bng::compile::RateLawKind::ArrheniusEnergy) {
             if (!addCompiledArrheniusDirection(
                     model, rule, rule.forward(), *system, blockSameComplexBinding,
-                    verbose, suggestedTraversalLimit, diagnostic)) {
+                    verbose, suggestedTraversalLimit, diagnostic, semanticRejection)) {
+                if (semanticRejection && unsupportedReason != nullptr) {
+                    *unsupportedReason = diagnostic;
+                }
                 std::cerr << "[nfsim/compiled] reaction '" << rule.name()
                           << "' requires compatibility lowering: " << diagnostic << "\n";
                 return false;
@@ -2652,7 +2687,10 @@ bool addReactionRulesFromCompiled(const CompiledModel& model,
         if (!lowerDirection(model, rule, rule.forward(), false, *system,
                             blockSameComplexBinding, verbose,
                             suggestedTraversalLimit, sourcePath,
-                            index * 2, diagnostic)) {
+                            index * 2, diagnostic, semanticRejection)) {
+            if (semanticRejection && unsupportedReason != nullptr) {
+                *unsupportedReason = diagnostic;
+            }
             std::cerr << "[nfsim/compiled] reaction '" << rule.name()
                       << "' requires compatibility lowering: " << diagnostic << "\n";
             return false;
@@ -2661,7 +2699,10 @@ bool addReactionRulesFromCompiled(const CompiledModel& model,
             !lowerDirection(model, rule, *rule.reverse(), true, *system,
                             blockSameComplexBinding, verbose,
                             suggestedTraversalLimit, sourcePath,
-                            index * 2 + 1, diagnostic)) {
+                            index * 2 + 1, diagnostic, semanticRejection)) {
+            if (semanticRejection && unsupportedReason != nullptr) {
+                *unsupportedReason = diagnostic;
+            }
             std::cerr << "[nfsim/compiled] reverse reaction '" << rule.name()
                       << "' requires compatibility lowering: " << diagnostic << "\n";
             return false;

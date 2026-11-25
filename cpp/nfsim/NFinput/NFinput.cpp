@@ -3691,6 +3691,14 @@ static bool initReactionRulesBody(
 
 					if(verbose) cout<<"\t\t\tRate Law for Reaction is: "<<rateLawType<<endl;
 
+					if (totalRateFlag && (rateLawType == "Arrhenius" || rateLawType == "MM")) {
+						cerr << "Error!! TotalRate keyword is not compatible with "
+						     << rateLawType << " type RateLaw for ReactionRule "
+						     << rxnName << "." << endl;
+						delete ts;
+						return false;
+					}
+
 					if(rateLawType=="Arrhenius")
 					{
 						/* Signed reservoir work from driven_by(). Absent means
@@ -4001,6 +4009,12 @@ static bool initReactionRulesBody(
 								r=new FunctionalRxnClass(rxnName,cf,ts,s);
 							}
 						} else {
+							if (totalRateFlag) {
+								cerr << "Error!! TotalRate keyword is not compatible with local functions for ReactionRule "
+								     << rxnName << "." << endl;
+								delete ts;
+								return false;
+							}
 
 							string functionName = pRateLaw->Attribute("name");
 							CompositeFunction *composite = s->getCompositeFunctionByName(functionName);
@@ -4089,6 +4103,12 @@ static bool initReactionRulesBody(
 						}
 					}
 					else if(rateLawType=="FunctionProduct") {
+						if (totalRateFlag) {
+							cerr << "Error!! TotalRate keyword is not compatible with local functions for ReactionRule "
+							     << rxnName << "." << endl;
+							delete ts;
+							return false;
+						}
 
 						//make sure the function1 has a name
 						if(!pRateLaw->Attribute("name1")) {
