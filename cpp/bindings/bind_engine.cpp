@@ -976,8 +976,10 @@ void bind_engine(py::module_& m) {
             std::vector<std::string> routes;
             if (status.compiled) routes.emplace_back("finite_batch_ssa");
             if (status.compiled &&
-                (status.kind == GpuBackendKind::Metal || status.kind == GpuBackendKind::Cuda))
+                (status.kind == GpuBackendKind::Metal || status.kind == GpuBackendKind::Cuda)) {
                 routes.emplace_back("nfnext_unary_state_change");
+                routes.emplace_back("nfnext_graph_corpus");
+            }
             entry["implemented_routes"] = py::cast(routes);
             out.append(entry);
         }

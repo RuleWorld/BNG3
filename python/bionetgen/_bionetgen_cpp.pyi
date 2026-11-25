@@ -578,8 +578,9 @@ def simulate_nfnext_gpu(
     backend: str = "metal",
     max_events: int = 1000000,
     max_particles: int = 1000000,
+    mode: str = "unary",
 ) -> Dict[str, object]:
-    """Run the bounded NFnext unary state-change family on an explicit GPU."""
+    """Run an explicit network-free GPU batch (unary or graph mode)."""
     ...
 
 def gpu_backends() -> List[Dict[str, object]]:

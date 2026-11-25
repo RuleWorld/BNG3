@@ -1,4 +1,5 @@
 #include "engine/gpu/NfnextUnaryStateKernel.hpp"
+#include "engine/gpu/NfnextGraphKernel.hpp"
 
 #include <cuda_runtime.h>
 
@@ -408,6 +409,920 @@ NfnextDeviceOutput simulateNfnextUnaryStateCuda(
         sizeof(params) + offsetBytes + destBytes + rateBytes + initBytes + obsStateBytes +
         timeBytes + stateBytes + outputBytes + eventBytes + flagBytes + nextTimeBytes +
         nextDestBytes + 2 * rngBytes;
+    output.wallTimeMs =
+        std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - wallStart)
+            .count();
+    return output;
+}
+
+namespace {
+
+struct GraphSimParams {
+    std::uint32_t numTypes;
+    std::uint32_t maxSites;
+    std::uint32_t totalCapacity;
+    std::uint32_t totalMatchListSlots;
+    std::uint32_t numMatchLists;
+    std::uint32_t numRules;
+    std::uint32_t numObservables;
+    std::uint32_t numOutputs;
+    std::uint32_t batchSize;
+    std::uint32_t maxEvents;
+    std::uint64_t baseSeed;
+};
+static_assert(sizeof(GraphSimParams) == 48, "GraphSimParams ABI mismatch");
+
+__device__ __forceinline__ std::uint32_t nextBounded(Pcg32& rng, std::uint32_t bound) {
+    if (bound <= 1u) return 0u;
+    return rng.nextU32() % bound;
+}
+
+__device__ bool nodeMatchesConstraintsCuda(
+    std::uint32_t pBase,
+    std::uint32_t maxSites,
+    std::int32_t mol,
+    std::uint32_t cOff,
+    std::uint32_t cCnt,
+    const GpuSiteConstraint* __restrict__ constraints,
+    const std::int32_t* __restrict__ siteState,
+    const std::int32_t* __restrict__ siteBondMol)
+{
+    const std::uint32_t sBase = (pBase + static_cast<std::uint32_t>(mol)) * maxSites;
+    for (std::uint32_t i = 0; i < cCnt; ++i) {
+        const GpuSiteConstraint c = constraints[cOff + i];
+        const std::uint32_t idx = sBase + static_cast<std::uint32_t>(c.site);
+        if (c.kind == 0u) {
+            if (siteState[idx] != c.state) return false;
+        } else if (c.kind == 1u) {
+            if (siteBondMol[idx] >= 0) return false;
+        } else if (c.kind == 2u) {
+            if (siteBondMol[idx] < 0) return false;
+        }
+    }
+    return true;
+}
+
+__device__ bool particleMatchesListCuda(
+    std::uint32_t pBase,
+    std::uint32_t maxSites,
+    std::int32_t mol,
+    GpuMatchListDef ml,
+    const GpuSiteConstraint* __restrict__ constraints,
+    const std::int8_t* __restrict__ alive,
+    const std::int32_t* __restrict__ molType,
+    const std::int32_t* __restrict__ siteState,
+    const std::int32_t* __restrict__ siteBondMol,
+    const std::int32_t* __restrict__ siteBondSite)
+{
+    if (alive[pBase + static_cast<std::uint32_t>(mol)] == 0) return false;
+    if (molType[pBase + static_cast<std::uint32_t>(mol)] != ml.anchorType) return false;
+    if (!nodeMatchesConstraintsCuda(pBase, maxSites, mol,
+                                    ml.node0ConstraintOffset, ml.node0ConstraintCount,
+                                    constraints, siteState, siteBondMol)) {
+        return false;
+    }
+    if (ml.partnerType < 0) return true;
+    const std::uint32_t sIdx = (pBase + static_cast<std::uint32_t>(mol)) * maxSites +
+                               static_cast<std::uint32_t>(ml.bondSite0);
+    const std::int32_t partner = siteBondMol[sIdx];
+    if (partner < 0 || partner == mol) return false;
+    if (siteBondSite[sIdx] != static_cast<std::int32_t>(ml.bondSite1)) return false;
+    if (alive[pBase + static_cast<std::uint32_t>(partner)] == 0) return false;
+    if (molType[pBase + static_cast<std::uint32_t>(partner)] != ml.partnerType) return false;
+    return nodeMatchesConstraintsCuda(pBase, maxSites, partner,
+                                      ml.node1ConstraintOffset, ml.node1ConstraintCount,
+                                      constraints, siteState, siteBondMol);
+}
+
+__device__ void updateMatchListForMolCuda(
+    std::uint32_t traj,
+    GraphSimParams params,
+    std::uint32_t mlIdx,
+    std::int32_t mol,
+    bool shouldContain,
+    const std::uint32_t* __restrict__ typeOffsets,
+    const GpuMatchListDef* __restrict__ matchLists,
+    std::int32_t* __restrict__ mlItems,
+    std::int32_t* __restrict__ mlPos,
+    std::uint32_t* __restrict__ mlCounts)
+{
+    const GpuMatchListDef ml = matchLists[mlIdx];
+    const std::uint32_t localIdx =
+        static_cast<std::uint32_t>(mol) - typeOffsets[static_cast<std::uint32_t>(ml.anchorType)];
+    const std::uint32_t mlBase = traj * params.totalMatchListSlots + ml.listOffset;
+    const std::uint32_t cntIdx = traj * params.numMatchLists + mlIdx;
+    const std::int32_t pos = mlPos[mlBase + localIdx];
+    if (shouldContain) {
+        if (pos < 0) {
+            const std::uint32_t n = mlCounts[cntIdx];
+            mlItems[mlBase + n] = mol;
+            mlPos[mlBase + localIdx] = static_cast<std::int32_t>(n);
+            mlCounts[cntIdx] = n + 1u;
+        }
+    } else {
+        if (pos >= 0) {
+            const std::uint32_t lastIdx = mlCounts[cntIdx] - 1u;
+            const std::int32_t lastMol = mlItems[mlBase + lastIdx];
+            mlItems[mlBase + static_cast<std::uint32_t>(pos)] = lastMol;
+            const std::uint32_t lastLocal =
+                static_cast<std::uint32_t>(lastMol) -
+                typeOffsets[static_cast<std::uint32_t>(ml.anchorType)];
+            mlPos[mlBase + lastLocal] = pos;
+            mlPos[mlBase + localIdx] = -1;
+            mlCounts[cntIdx] = lastIdx;
+        }
+    }
+}
+
+__device__ void refreshMoleculeCuda(
+    std::uint32_t traj,
+    std::uint32_t pBase,
+    std::int32_t mol,
+    std::int32_t slotType,
+    GraphSimParams params,
+    const std::uint32_t* __restrict__ typeOffsets,
+    const GpuSiteConstraint* __restrict__ constraints,
+    const GpuMatchListDef* __restrict__ matchLists,
+    const std::int8_t* __restrict__ alive,
+    const std::int32_t* __restrict__ molType,
+    const std::int32_t* __restrict__ siteState,
+    const std::int32_t* __restrict__ siteBondMol,
+    const std::int32_t* __restrict__ siteBondSite,
+    std::int32_t* __restrict__ mlItems,
+    std::int32_t* __restrict__ mlPos,
+    std::uint32_t* __restrict__ mlCounts)
+{
+    for (std::uint32_t mlIdx = 0; mlIdx < params.numMatchLists; ++mlIdx) {
+        const GpuMatchListDef ml = matchLists[mlIdx];
+        if (ml.anchorType != slotType) continue;
+        const bool ok = particleMatchesListCuda(
+            pBase, params.maxSites, mol, ml, constraints,
+            alive, molType, siteState, siteBondMol, siteBondSite);
+        updateMatchListForMolCuda(
+            traj, params, mlIdx, mol, ok, typeOffsets, matchLists,
+            mlItems, mlPos, mlCounts);
+    }
+}
+
+__device__ std::int32_t findSlotTypeCuda(
+    std::int32_t mol,
+    std::uint32_t numTypes,
+    const std::uint32_t* __restrict__ typeOffsets,
+    const std::uint32_t* __restrict__ typeCaps)
+{
+    const std::uint32_t m = static_cast<std::uint32_t>(mol);
+    for (std::uint32_t t = 0; t < numTypes; ++t) {
+        if (m >= typeOffsets[t] && m < typeOffsets[t] + typeCaps[t]) {
+            return static_cast<std::int32_t>(t);
+        }
+    }
+    return -1;
+}
+
+__device__ bool matchObsTermFromRootCuda(
+    std::uint32_t pBase,
+    std::uint32_t maxSites,
+    std::int32_t rootMol,
+    GpuObsTermDef term,
+    const GpuObsPatternNode* __restrict__ obsNodes,
+    const GpuObsPatternBond* __restrict__ obsBonds,
+    const GpuSiteConstraint* __restrict__ constraints,
+    const std::uint32_t* __restrict__ typeSiteCounts,
+    const std::int8_t* __restrict__ alive,
+    const std::int32_t* __restrict__ molType,
+    const std::int32_t* __restrict__ siteState,
+    const std::int32_t* __restrict__ siteBondMol,
+    const std::int32_t* __restrict__ siteBondSite,
+    bool requireWholeComplex)
+{
+    const GpuObsPatternNode n0 = obsNodes[term.nodeOffset];
+    if (alive[pBase + static_cast<std::uint32_t>(rootMol)] == 0) return false;
+    if (molType[pBase + static_cast<std::uint32_t>(rootMol)] != n0.molType) return false;
+    if (!nodeMatchesConstraintsCuda(pBase, maxSites, rootMol,
+                                    n0.constraintOffset, n0.constraintCount,
+                                    constraints, siteState, siteBondMol)) {
+        return false;
+    }
+    std::int32_t assigned[4] = {-1, -1, -1, -1};
+    assigned[0] = rootMol;
+
+    for (std::uint32_t pass = 0; pass < term.nodeCount; ++pass) {
+        bool progressed = false;
+        for (std::uint32_t bi = 0; bi < term.bondCount; ++bi) {
+            const GpuObsPatternBond b = obsBonds[term.bondOffset + bi];
+            const std::int32_t a = assigned[b.firstNode];
+            const std::int32_t c = assigned[b.secondNode];
+            if (a >= 0 && c < 0) {
+                const std::uint32_t idx =
+                    (pBase + static_cast<std::uint32_t>(a)) * maxSites +
+                    static_cast<std::uint32_t>(b.firstSite);
+                const std::int32_t partner = siteBondMol[idx];
+                if (partner < 0 || siteBondSite[idx] != static_cast<std::int32_t>(b.secondSite)) {
+                    return false;
+                }
+                assigned[b.secondNode] = partner;
+                progressed = true;
+            } else if (c >= 0 && a < 0) {
+                const std::uint32_t idx =
+                    (pBase + static_cast<std::uint32_t>(c)) * maxSites +
+                    static_cast<std::uint32_t>(b.secondSite);
+                const std::int32_t partner = siteBondMol[idx];
+                if (partner < 0 || siteBondSite[idx] != static_cast<std::int32_t>(b.firstSite)) {
+                    return false;
+                }
+                assigned[b.firstNode] = partner;
+                progressed = true;
+            }
+        }
+        if (!progressed) break;
+    }
+
+    for (std::uint32_t ni = 0; ni < term.nodeCount; ++ni) {
+        const std::int32_t m = assigned[ni];
+        if (m < 0 || alive[pBase + static_cast<std::uint32_t>(m)] == 0) return false;
+        for (std::uint32_t nj = 0; nj < ni; ++nj) {
+            if (assigned[nj] == m) return false;
+        }
+        const GpuObsPatternNode nd = obsNodes[term.nodeOffset + ni];
+        if (molType[pBase + static_cast<std::uint32_t>(m)] != nd.molType) return false;
+        if (!nodeMatchesConstraintsCuda(pBase, maxSites, m,
+                                        nd.constraintOffset, nd.constraintCount,
+                                        constraints, siteState, siteBondMol)) {
+            return false;
+        }
+    }
+    for (std::uint32_t bi = 0; bi < term.bondCount; ++bi) {
+        const GpuObsPatternBond b = obsBonds[term.bondOffset + bi];
+        const std::int32_t a = assigned[b.firstNode];
+        const std::int32_t c = assigned[b.secondNode];
+        const std::uint32_t idx =
+            (pBase + static_cast<std::uint32_t>(a)) * maxSites +
+            static_cast<std::uint32_t>(b.firstSite);
+        if (siteBondMol[idx] != c || siteBondSite[idx] != static_cast<std::int32_t>(b.secondSite)) {
+            return false;
+        }
+    }
+    if (requireWholeComplex) {
+        for (std::uint32_t ni = 1; ni < term.nodeCount; ++ni) {
+            if (obsNodes[term.nodeOffset + ni].molType == n0.molType &&
+                assigned[ni] < rootMol) {
+                return false;
+            }
+        }
+        for (std::uint32_t ni = 0; ni < term.nodeCount; ++ni) {
+            const std::int32_t m = assigned[ni];
+            const std::uint32_t sc =
+                typeSiteCounts[static_cast<std::uint32_t>(molType[pBase + static_cast<std::uint32_t>(m)])];
+            for (std::uint32_t s = 0; s < sc; ++s) {
+                const std::int32_t p =
+                    siteBondMol[(pBase + static_cast<std::uint32_t>(m)) * maxSites + s];
+                if (p < 0) continue;
+                bool inSet = false;
+                for (std::uint32_t nj = 0; nj < term.nodeCount; ++nj) {
+                    if (assigned[nj] == p) { inSet = true; break; }
+                }
+                if (!inSet) return false;
+            }
+        }
+    }
+    return true;
+}
+
+__device__ float evalObservableCuda(
+    std::uint32_t pBase,
+    std::uint32_t obsIdx,
+    GraphSimParams params,
+    const std::uint32_t* __restrict__ typeOffsets,
+    const std::uint32_t* __restrict__ typeCaps,
+    const std::uint32_t* __restrict__ typeSiteCounts,
+    const GpuSiteConstraint* __restrict__ constraints,
+    const GpuObsPatternNode* __restrict__ obsNodes,
+    const GpuObsPatternBond* __restrict__ obsBonds,
+    const GpuObsTermDef* __restrict__ obsTerms,
+    const GpuObsDef* __restrict__ observables,
+    const std::int8_t* __restrict__ alive,
+    const std::int32_t* __restrict__ molType,
+    const std::int32_t* __restrict__ siteState,
+    const std::int32_t* __restrict__ siteBondMol,
+    const std::int32_t* __restrict__ siteBondSite)
+{
+    const GpuObsDef obs = observables[obsIdx];
+    std::uint32_t total = 0u;
+    if (obs.isSpecies == 0u) {
+        for (std::uint32_t ti = 0; ti < obs.termCount; ++ti) {
+            const GpuObsTermDef term = obsTerms[obs.termOffset + ti];
+            const std::uint32_t t0 = static_cast<std::uint32_t>(obsNodes[term.nodeOffset].molType);
+            const std::uint32_t start = typeOffsets[t0];
+            const std::uint32_t end = start + typeCaps[t0];
+            std::uint32_t matches = 0u;
+            for (std::uint32_t m = start; m < end; ++m) {
+                if (matchObsTermFromRootCuda(
+                        pBase, params.maxSites, static_cast<std::int32_t>(m), term,
+                        obsNodes, obsBonds, constraints, typeSiteCounts,
+                        alive, molType, siteState, siteBondMol, siteBondSite, false)) {
+                    ++matches;
+                }
+            }
+            total += matches * term.weight;
+        }
+    } else if (obs.termCount > 0u) {
+        const std::uint32_t t0 =
+            static_cast<std::uint32_t>(obsNodes[obsTerms[obs.termOffset].nodeOffset].molType);
+        const std::uint32_t start = typeOffsets[t0];
+        const std::uint32_t end = start + typeCaps[t0];
+        for (std::uint32_t m = start; m < end; ++m) {
+            if (alive[pBase + m] == 0) continue;
+            bool matchedAny = false;
+            for (std::uint32_t ti = 0; ti < obs.termCount; ++ti) {
+                if (matchObsTermFromRootCuda(
+                        pBase, params.maxSites, static_cast<std::int32_t>(m),
+                        obsTerms[obs.termOffset + ti],
+                        obsNodes, obsBonds, constraints, typeSiteCounts,
+                        alive, molType, siteState, siteBondMol, siteBondSite, true)) {
+                    matchedAny = true;
+                    break;
+                }
+            }
+            if (matchedAny) ++total;
+        }
+    }
+    return static_cast<float>(total);
+}
+
+__device__ float evalVmCuda(
+    std::uint32_t vmOffset,
+    std::uint32_t vmLen,
+    const GpuVmInstr* __restrict__ vmCode,
+    const float* obsValues,
+    bool& ok)
+{
+    float stack[32];
+    std::uint32_t top = 0u;
+    std::uint32_t pc = 0u;
+    while (pc < vmLen) {
+        const GpuVmInstr ins = vmCode[vmOffset + pc++];
+        const std::uint8_t op = ins.op;
+        if (op == 0u) {
+            stack[top++] = ins.value;
+        } else if (op == 1u) {
+            stack[top++] = obsValues[ins.index];
+        } else if (op == 2u) {
+            float b = stack[--top]; stack[top - 1u] += b;
+        } else if (op == 3u) {
+            float b = stack[--top]; stack[top - 1u] -= b;
+        } else if (op == 4u) {
+            float b = stack[--top]; stack[top - 1u] *= b;
+        } else if (op == 5u) {
+            float b = stack[--top];
+            if (b == 0.0f) { ok = false; return 0.0f; }
+            stack[top - 1u] /= b;
+        } else if (op == 6u) {
+            float b = stack[--top]; stack[top - 1u] = powf(stack[top - 1u], b);
+        } else if (op == 7u) {
+            stack[top - 1u] = -stack[top - 1u];
+        } else if (op == 8u) {
+            stack[top - 1u] = expf(stack[top - 1u]);
+        } else if (op == 9u) {
+            stack[top - 1u] = logf(stack[top - 1u]);
+        } else if (op == 10u) {
+            stack[top - 1u] = sqrtf(stack[top - 1u]);
+        } else if (op == 11u) {
+            stack[top - 1u] = sinf(stack[top - 1u]);
+        } else if (op == 12u) {
+            stack[top - 1u] = cosf(stack[top - 1u]);
+        } else if (op == 13u) {
+            stack[top - 1u] = tanf(stack[top - 1u]);
+        } else if (op == 14u) {
+            stack[top - 1u] = fabsf(stack[top - 1u]);
+        } else if (op == 15u) {
+            float b = stack[--top]; stack[top - 1u] = fminf(stack[top - 1u], b);
+        } else if (op == 16u) {
+            float b = stack[--top]; stack[top - 1u] = fmaxf(stack[top - 1u], b);
+        } else if (op == 17u) {
+            float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] < b) ? 1.0f : 0.0f;
+        } else if (op == 18u) {
+            float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] <= b) ? 1.0f : 0.0f;
+        } else if (op == 19u) {
+            float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] > b) ? 1.0f : 0.0f;
+        } else if (op == 20u) {
+            float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] >= b) ? 1.0f : 0.0f;
+        } else if (op == 21u) {
+            float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] == b) ? 1.0f : 0.0f;
+        } else if (op == 22u) {
+            float b = stack[--top]; stack[top - 1u] = (stack[top - 1u] != b) ? 1.0f : 0.0f;
+        } else if (op == 23u) {
+            if (stack[--top] == 0.0f) pc = ins.index;
+        } else if (op == 24u) {
+            pc = ins.index;
+        }
+    }
+    if (top != 1u || !isfinite(stack[0]) || stack[0] < 0.0f) {
+        ok = false;
+        return 0.0f;
+    }
+    return stack[0];
+}
+
+__device__ void addTouchedCuda(std::int32_t* touched, std::uint32_t& touchedCount, std::int32_t mol) {
+    if (mol < 0) return;
+    for (std::uint32_t i = 0; i < touchedCount; ++i) {
+        if (touched[i] == mol) return;
+    }
+    if (touchedCount < 32u) touched[touchedCount++] = mol;
+}
+
+__global__ void nfnextGraphBatchKernel(
+    GraphSimParams params,
+    const std::uint32_t* __restrict__ typeOffsets,
+    const std::uint32_t* __restrict__ typeCaps,
+    const std::uint32_t* __restrict__ typeSiteCounts,
+    const std::int8_t* __restrict__ initAlive,
+    const std::int32_t* __restrict__ initMolType,
+    const std::int32_t* __restrict__ initSiteState,
+    const std::int32_t* __restrict__ initSiteBondMol,
+    const std::int32_t* __restrict__ initSiteBondSite,
+    const GpuSiteConstraint* __restrict__ constraints,
+    const GpuMatchListDef* __restrict__ matchLists,
+    const GpuRuleAction* __restrict__ actions,
+    const GpuGraphRule* __restrict__ rules,
+    const GpuVmInstr* __restrict__ vmCode,
+    const GpuObsPatternNode* __restrict__ obsNodes,
+    const GpuObsPatternBond* __restrict__ obsBonds,
+    const GpuObsTermDef* __restrict__ obsTerms,
+    const GpuObsDef* __restrict__ observables,
+    const float* __restrict__ sampleTimes,
+    std::int8_t* __restrict__ alive,
+    std::int32_t* __restrict__ molType,
+    std::int32_t* __restrict__ siteState,
+    std::int32_t* __restrict__ siteBondMol,
+    std::int32_t* __restrict__ siteBondSite,
+    std::int32_t* __restrict__ mlItems,
+    std::int32_t* __restrict__ mlPos,
+    std::uint32_t* __restrict__ mlCounts,
+    float* __restrict__ outputs,
+    unsigned long long* __restrict__ eventCounts,
+    std::uint32_t* __restrict__ errorFlags)
+{
+    const std::uint32_t trajectory = blockIdx.x * blockDim.x + threadIdx.x;
+    if (trajectory >= params.batchSize) return;
+
+    const std::uint32_t pBase = trajectory * params.totalCapacity;
+    const std::uint32_t sBase = pBase * params.maxSites;
+    for (std::uint32_t m = 0; m < params.totalCapacity; ++m) {
+        alive[pBase + m] = initAlive[m];
+        molType[pBase + m] = initMolType[m];
+        for (std::uint32_t s = 0; s < params.maxSites; ++s) {
+            const std::uint32_t idx = m * params.maxSites + s;
+            siteState[sBase + idx] = initSiteState[idx];
+            siteBondMol[sBase + idx] = initSiteBondMol[idx];
+            siteBondSite[sBase + idx] = initSiteBondSite[idx];
+        }
+    }
+    const std::uint32_t mlBaseAll = trajectory * params.totalMatchListSlots;
+    for (std::uint32_t i = 0; i < params.totalMatchListSlots; ++i) {
+        mlPos[mlBaseAll + i] = -1;
+    }
+    for (std::uint32_t mlIdx = 0; mlIdx < params.numMatchLists; ++mlIdx) {
+        mlCounts[trajectory * params.numMatchLists + mlIdx] = 0u;
+    }
+    for (std::uint32_t m = 0; m < params.totalCapacity; ++m) {
+        if (alive[pBase + m] == 0) continue;
+        refreshMoleculeCuda(trajectory, pBase, static_cast<std::int32_t>(m), molType[pBase + m],
+                            params, typeOffsets, constraints, matchLists, alive, molType,
+                            siteState, siteBondMol, siteBondSite, mlItems, mlPos, mlCounts);
+    }
+
+    Pcg32 rng;
+    const unsigned long long key = params.baseSeed + static_cast<unsigned long long>(trajectory) * 2ULL;
+    rng.init(splitmix64(key), splitmix64(key + 1ULL));
+
+    bool hasDynamicRules = false;
+    for (std::uint32_t r = 0; r < params.numRules; ++r) {
+        if (rules[r].isDynamicRate != 0u) { hasDynamicRules = true; break; }
+    }
+
+    float ruleProps[256];
+    float obsValues[32];
+    unsigned long long events = 0ULL;
+    float time = 0.0f;
+
+    for (std::uint32_t outIdx = 0; outIdx < params.numOutputs; ++outIdx) {
+        const float targetTime = sampleTimes[outIdx];
+        for (;;) {
+            if (hasDynamicRules) {
+                for (std::uint32_t oi = 0; oi < params.numObservables && oi < 32u; ++oi) {
+                    obsValues[oi] = evalObservableCuda(
+                        pBase, oi, params, typeOffsets, typeCaps, typeSiteCounts,
+                        constraints, obsNodes, obsBonds, obsTerms, observables,
+                        alive, molType, siteState, siteBondMol, siteBondSite);
+                }
+            }
+            float total = 0.0f;
+            for (std::uint32_t r = 0; r < params.numRules; ++r) {
+                const GpuGraphRule rule = rules[r];
+                float rate = rule.rate;
+                if (rule.isDynamicRate != 0u) {
+                    bool ok = true;
+                    rate = evalVmCuda(rule.vmOffset, rule.vmLen, vmCode, obsValues, ok);
+                    if (!ok) {
+                        errorFlags[trajectory] = 3u;
+                        eventCounts[trajectory] = events;
+                        return;
+                    }
+                }
+                const std::uint32_t c0 = mlCounts[trajectory * params.numMatchLists + rule.matchList0];
+                float countF = 0.0f;
+                if (rule.isTwoComponent == 0u) {
+                    countF = static_cast<float>(c0);
+                } else if (rule.isInterchangeable != 0u) {
+                    countF = (c0 > 1u) ? (0.5f * static_cast<float>(c0) * static_cast<float>(c0 - 1u)) : 0.0f;
+                } else {
+                    const std::uint32_t c1 = mlCounts[trajectory * params.numMatchLists + rule.matchList1];
+                    countF = static_cast<float>(c0) * static_cast<float>(c1);
+                }
+                const float prop = rate * countF;
+                ruleProps[r] = prop;
+                total += prop;
+            }
+            if (!(total > 0.0f)) {
+                time = targetTime;
+                break;
+            }
+            const float u1 = rng.nextFloat01();
+            const float dt = -logf(u1) / total;
+            if (time + dt > targetTime) {
+                time = targetTime;
+                break;
+            }
+            time += dt;
+            if (events >= static_cast<unsigned long long>(params.maxEvents)) {
+                errorFlags[trajectory] = 1u;
+                eventCounts[trajectory] = events;
+                return;
+            }
+
+            const float pick = rng.nextFloat01() * total;
+            float cum = 0.0f;
+            std::uint32_t selectedRule = params.numRules - 1u;
+            for (std::uint32_t r = 0; r < params.numRules; ++r) {
+                cum += ruleProps[r];
+                if (cum >= pick) { selectedRule = r; break; }
+            }
+            const GpuGraphRule rule = rules[selectedRule];
+            const GpuMatchListDef ml0 = matchLists[rule.matchList0];
+            const std::uint32_t c0 = mlCounts[trajectory * params.numMatchLists + rule.matchList0];
+            if (c0 == 0u) continue;
+            const std::int32_t m0 = mlItems[mlBaseAll + ml0.listOffset + nextBounded(rng, c0)];
+
+            std::int32_t nodes[4] = {-1, -1, -1, -1};
+            nodes[0] = m0;
+            if (rule.isTwoComponent != 0u) {
+                const GpuMatchListDef ml1 = matchLists[rule.matchList1];
+                const std::uint32_t c1 = mlCounts[trajectory * params.numMatchLists + rule.matchList1];
+                if (c1 == 0u) continue;
+                std::int32_t m1 = mlItems[mlBaseAll + ml1.listOffset + nextBounded(rng, c1)];
+                if (m1 == m0) {
+                    if (rule.isInterchangeable != 0u && c1 > 1u) {
+                        const std::uint32_t idx0 = static_cast<std::uint32_t>(
+                            mlPos[mlBaseAll + ml0.listOffset +
+                                  (static_cast<std::uint32_t>(m0) -
+                                   typeOffsets[static_cast<std::uint32_t>(ml0.anchorType)])]);
+                        std::uint32_t idx1 = nextBounded(rng, c1 - 1u);
+                        if (idx1 >= idx0) ++idx1;
+                        m1 = mlItems[mlBaseAll + ml1.listOffset + idx1];
+                    } else {
+                        continue;
+                    }
+                }
+                nodes[1] = m1;
+            } else if (ml0.partnerType >= 0) {
+                nodes[1] = siteBondMol[(pBase + static_cast<std::uint32_t>(m0)) * params.maxSites +
+                                       static_cast<std::uint32_t>(ml0.bondSite0)];
+            }
+
+            std::int32_t touched[32];
+            std::uint32_t touchedCount = 0u;
+            for (std::uint32_t ni = 0; ni < 2u; ++ni) {
+                if (nodes[ni] < 0) continue;
+                addTouchedCuda(touched, touchedCount, nodes[ni]);
+                const std::uint32_t sc =
+                    typeSiteCounts[static_cast<std::uint32_t>(molType[pBase + static_cast<std::uint32_t>(nodes[ni])])];
+                for (std::uint32_t s = 0; s < sc; ++s) {
+                    addTouchedCuda(
+                        touched, touchedCount,
+                        siteBondMol[(pBase + static_cast<std::uint32_t>(nodes[ni])) * params.maxSites + s]);
+                }
+            }
+
+            for (std::uint32_t ai = 0; ai < rule.actionCount; ++ai) {
+                const GpuRuleAction act = actions[rule.actionOffset + ai];
+                if (act.kind == 3u) {
+                    const std::uint32_t t = static_cast<std::uint32_t>(act.value);
+                    const std::uint32_t start = typeOffsets[t];
+                    const std::uint32_t end = start + typeCaps[t];
+                    std::int32_t slot = -1;
+                    for (std::uint32_t cand = start; cand < end; ++cand) {
+                        if (alive[pBase + cand] == 0) { slot = static_cast<std::int32_t>(cand); break; }
+                    }
+                    if (slot < 0) {
+                        errorFlags[trajectory] = 2u;
+                        eventCounts[trajectory] = events;
+                        return;
+                    }
+                    alive[pBase + static_cast<std::uint32_t>(slot)] = 1;
+                    molType[pBase + static_cast<std::uint32_t>(slot)] = static_cast<std::int32_t>(t);
+                    for (std::uint32_t s = 0; s < params.maxSites; ++s) {
+                        const std::uint32_t sIdx = (pBase + static_cast<std::uint32_t>(slot)) * params.maxSites + s;
+                        siteState[sIdx] = 0;
+                        siteBondMol[sIdx] = -1;
+                        siteBondSite[sIdx] = -1;
+                    }
+                    nodes[act.targetNode] = slot;
+                    addTouchedCuda(touched, touchedCount, slot);
+                }
+            }
+            for (std::uint32_t ai = 0; ai < rule.actionCount; ++ai) {
+                const GpuRuleAction act = actions[rule.actionOffset + ai];
+                if (act.kind == 0u) {
+                    const std::int32_t m = nodes[act.targetNode];
+                    siteState[(pBase + static_cast<std::uint32_t>(m)) * params.maxSites +
+                              static_cast<std::uint32_t>(act.site)] = act.value;
+                } else if (act.kind == 1u) {
+                    const std::int32_t mA = nodes[act.targetNode];
+                    const std::int32_t mB = nodes[act.partnerNode];
+                    const std::uint32_t iA = (pBase + static_cast<std::uint32_t>(mA)) * params.maxSites +
+                                             static_cast<std::uint32_t>(act.site);
+                    const std::uint32_t iB = (pBase + static_cast<std::uint32_t>(mB)) * params.maxSites +
+                                             static_cast<std::uint32_t>(act.partnerSite);
+                    siteBondMol[iA] = mB;
+                    siteBondSite[iA] = static_cast<std::int32_t>(act.partnerSite);
+                    siteBondMol[iB] = mA;
+                    siteBondSite[iB] = static_cast<std::int32_t>(act.site);
+                } else if (act.kind == 2u) {
+                    const std::int32_t mA = nodes[act.targetNode];
+                    const std::int32_t mB = nodes[act.partnerNode];
+                    const std::uint32_t iA = (pBase + static_cast<std::uint32_t>(mA)) * params.maxSites +
+                                             static_cast<std::uint32_t>(act.site);
+                    const std::uint32_t iB = (pBase + static_cast<std::uint32_t>(mB)) * params.maxSites +
+                                             static_cast<std::uint32_t>(act.partnerSite);
+                    siteBondMol[iA] = -1;
+                    siteBondSite[iA] = -1;
+                    siteBondMol[iB] = -1;
+                    siteBondSite[iB] = -1;
+                } else if (act.kind == 4u) {
+                    const std::int32_t m = nodes[act.targetNode];
+                    const std::uint32_t sc =
+                        typeSiteCounts[static_cast<std::uint32_t>(molType[pBase + static_cast<std::uint32_t>(m)])];
+                    for (std::uint32_t s = 0; s < sc; ++s) {
+                        const std::uint32_t iM = (pBase + static_cast<std::uint32_t>(m)) * params.maxSites + s;
+                        const std::int32_t p = siteBondMol[iM];
+                        const std::int32_t ps = siteBondSite[iM];
+                        if (p >= 0 && ps >= 0) {
+                            const std::uint32_t iP =
+                                (pBase + static_cast<std::uint32_t>(p)) * params.maxSites +
+                                static_cast<std::uint32_t>(ps);
+                            siteBondMol[iP] = -1;
+                            siteBondSite[iP] = -1;
+                            addTouchedCuda(touched, touchedCount, p);
+                        }
+                        siteBondMol[iM] = -1;
+                        siteBondSite[iM] = -1;
+                    }
+                    alive[pBase + static_cast<std::uint32_t>(m)] = 0;
+                } else if (act.kind == 5u) {
+                    std::int32_t dq[32];
+                    std::uint32_t dqh = 0u, dqt = 0u;
+                    const std::int32_t root = nodes[act.targetNode];
+                    if (root >= 0 && alive[pBase + static_cast<std::uint32_t>(root)] != 0) {
+                        dq[dqt++] = root;
+                        alive[pBase + static_cast<std::uint32_t>(root)] = 0;
+                        addTouchedCuda(touched, touchedCount, root);
+                        while (dqh < dqt) {
+                            const std::int32_t cur = dq[dqh++];
+                            const std::uint32_t sc = typeSiteCounts[static_cast<std::uint32_t>(
+                                molType[pBase + static_cast<std::uint32_t>(cur)])];
+                            for (std::uint32_t s = 0; s < sc; ++s) {
+                                const std::uint32_t iM =
+                                    (pBase + static_cast<std::uint32_t>(cur)) * params.maxSites + s;
+                                const std::int32_t p = siteBondMol[iM];
+                                const std::int32_t ps = siteBondSite[iM];
+                                siteBondMol[iM] = -1;
+                                siteBondSite[iM] = -1;
+                                if (p >= 0 && ps >= 0) {
+                                    const std::uint32_t iP =
+                                        (pBase + static_cast<std::uint32_t>(p)) * params.maxSites +
+                                        static_cast<std::uint32_t>(ps);
+                                    siteBondMol[iP] = -1;
+                                    siteBondSite[iP] = -1;
+                                    if (alive[pBase + static_cast<std::uint32_t>(p)] != 0) {
+                                        if (dqt >= 32u) {
+                                            errorFlags[trajectory] = 4u;
+                                            eventCounts[trajectory] = events;
+                                            return;
+                                        }
+                                        alive[pBase + static_cast<std::uint32_t>(p)] = 0;
+                                        dq[dqt++] = p;
+                                        addTouchedCuda(touched, touchedCount, p);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            for (std::uint32_t ti = 0; ti < touchedCount; ++ti) {
+                const std::int32_t m = touched[ti];
+                const std::int32_t st = findSlotTypeCuda(m, params.numTypes, typeOffsets, typeCaps);
+                if (st >= 0) {
+                    refreshMoleculeCuda(trajectory, pBase, m, st, params, typeOffsets,
+                                        constraints, matchLists, alive, molType, siteState,
+                                        siteBondMol, siteBondSite, mlItems, mlPos, mlCounts);
+                }
+            }
+            ++events;
+        }
+
+        for (std::uint32_t oi = 0; oi < params.numObservables; ++oi) {
+            const float val = evalObservableCuda(
+                pBase, oi, params, typeOffsets, typeCaps, typeSiteCounts,
+                constraints, obsNodes, obsBonds, obsTerms, observables,
+                alive, molType, siteState, siteBondMol, siteBondSite);
+            const std::size_t outFlat =
+                (static_cast<std::size_t>(trajectory) * params.numOutputs + outIdx) *
+                    params.numObservables +
+                oi;
+            outputs[outFlat] = val;
+        }
+    }
+    eventCounts[trajectory] = events;
+}
+
+} // namespace
+
+NfnextDeviceOutput simulateNfnextGraphCuda(
+    const NfnextGraphPlan& plan, const NfnextGpuRequest& request) {
+    const auto wallStart = std::chrono::steady_clock::now();
+    int deviceId = 0;
+    checkCuda(cudaGetDevice(&deviceId), "cudaGetDevice failed");
+    cudaDeviceProp props{};
+    checkCuda(cudaGetDeviceProperties(&props, deviceId), "cudaGetDeviceProperties failed");
+
+    const auto batchSize = static_cast<std::uint32_t>(request.batchSize);
+    const std::size_t totalParticleSlots = checkedBytes(request.batchSize, plan.totalCapacity);
+    const std::size_t totalSiteSlots = checkedBytes(totalParticleSlots, plan.maxSites);
+    const std::size_t totalMlSlots = checkedBytes(request.batchSize, plan.totalMatchListSlots);
+    const std::size_t totalMlCounts = checkedBytes(request.batchSize, plan.matchLists.size());
+    const std::size_t outputValues = checkedBytes(
+        checkedBytes(request.batchSize, request.sampleTimes.size()),
+        plan.observables.size());
+
+    std::vector<float> sampleTimes;
+    sampleTimes.reserve(request.sampleTimes.size());
+    for (const double t : request.sampleTimes) sampleTimes.push_back(static_cast<float>(t));
+
+    GraphSimParams params{};
+    params.numTypes = plan.numTypes;
+    params.maxSites = plan.maxSites;
+    params.totalCapacity = plan.totalCapacity;
+    params.totalMatchListSlots = plan.totalMatchListSlots;
+    params.numMatchLists = static_cast<std::uint32_t>(plan.matchLists.size());
+    params.numRules = static_cast<std::uint32_t>(plan.rules.size());
+    params.numObservables = static_cast<std::uint32_t>(plan.observables.size());
+    params.numOutputs = static_cast<std::uint32_t>(request.sampleTimes.size());
+    params.batchSize = batchSize;
+    params.maxEvents = static_cast<std::uint32_t>(request.maxEvents);
+    params.baseSeed = request.seed;
+
+    const std::size_t typeOffBytes = checkedBytes(plan.typeOffsets.size(), sizeof(std::uint32_t));
+    const std::size_t typeCapBytes = checkedBytes(plan.typeCapacities.size(), sizeof(std::uint32_t));
+    const std::size_t typeSiteBytes = checkedBytes(plan.typeSiteCounts.size(), sizeof(std::uint32_t));
+    const std::size_t initAliveBytes = checkedBytes(plan.initAlive.size(), sizeof(std::int8_t));
+    const std::size_t initTypeBytes = checkedBytes(plan.initMolType.size(), sizeof(std::int32_t));
+    const std::size_t initSiteBytes = checkedBytes(plan.initSiteState.size(), sizeof(std::int32_t));
+    const std::size_t cBytes = checkedBytes(plan.constraints.size(), sizeof(GpuSiteConstraint));
+    const std::size_t mlDefBytes = checkedBytes(plan.matchLists.size(), sizeof(GpuMatchListDef));
+    const std::size_t actBytes = checkedBytes(plan.actions.size(), sizeof(GpuRuleAction));
+    const std::size_t ruleBytes = checkedBytes(plan.rules.size(), sizeof(GpuGraphRule));
+    const std::size_t vmBytes = checkedBytes(plan.vmCode.size(), sizeof(GpuVmInstr));
+    const std::size_t oNodeBytes = checkedBytes(plan.obsNodes.size(), sizeof(GpuObsPatternNode));
+    const std::size_t oBondBytes = checkedBytes(plan.obsBonds.size(), sizeof(GpuObsPatternBond));
+    const std::size_t oTermBytes = checkedBytes(plan.obsTerms.size(), sizeof(GpuObsTermDef));
+    const std::size_t oDefBytes = checkedBytes(plan.observables.size(), sizeof(GpuObsDef));
+    const std::size_t timeBytes = checkedBytes(sampleTimes.size(), sizeof(float));
+    const std::size_t aliveBytes = checkedBytes(totalParticleSlots, sizeof(std::int8_t));
+    const std::size_t molTypeBytes = checkedBytes(totalParticleSlots, sizeof(std::int32_t));
+    const std::size_t siteArrBytes = checkedBytes(totalSiteSlots, sizeof(std::int32_t));
+    const std::size_t mlSlotBytes = checkedBytes(totalMlSlots, sizeof(std::int32_t));
+    const std::size_t mlCntBytes = checkedBytes(totalMlCounts, sizeof(std::uint32_t));
+    const std::size_t outputBytes = checkedBytes(outputValues, sizeof(float));
+    const std::size_t eventBytes = checkedBytes(request.batchSize, sizeof(unsigned long long));
+    const std::size_t flagBytes = checkedBytes(request.batchSize, sizeof(std::uint32_t));
+
+    DeviceBuffer dTypeOff, dTypeCap, dTypeSite, dInitAlive, dInitType, dInitState, dInitBondMol,
+        dInitBondSite, dConstraints, dMatchLists, dActions, dRules, dVmCode, dObsNodes, dObsBonds,
+        dObsTerms, dObsDefs, dSampleTimes, dAlive, dMolType, dSiteState, dSiteBondMol,
+        dSiteBondSite, dMlItems, dMlPos, dMlCounts, dOutputs, dEvents, dFlags;
+
+    dTypeOff.allocateAndUpload(plan.typeOffsets.data(), typeOffBytes);
+    dTypeCap.allocateAndUpload(plan.typeCapacities.data(), typeCapBytes);
+    dTypeSite.allocateAndUpload(plan.typeSiteCounts.data(), typeSiteBytes);
+    dInitAlive.allocateAndUpload(plan.initAlive.data(), initAliveBytes);
+    dInitType.allocateAndUpload(plan.initMolType.data(), initTypeBytes);
+    dInitState.allocateAndUpload(plan.initSiteState.data(), initSiteBytes);
+    dInitBondMol.allocateAndUpload(plan.initSiteBondMol.data(), initSiteBytes);
+    dInitBondSite.allocateAndUpload(plan.initSiteBondSite.data(), initSiteBytes);
+    dConstraints.allocateAndUpload(plan.constraints.data(), cBytes);
+    dMatchLists.allocateAndUpload(plan.matchLists.data(), mlDefBytes);
+    dActions.allocateAndUpload(plan.actions.data(), actBytes);
+    dRules.allocateAndUpload(plan.rules.data(), ruleBytes);
+    dVmCode.allocateAndUpload(plan.vmCode.data(), vmBytes);
+    dObsNodes.allocateAndUpload(plan.obsNodes.data(), oNodeBytes);
+    dObsBonds.allocateAndUpload(plan.obsBonds.data(), oBondBytes);
+    dObsTerms.allocateAndUpload(plan.obsTerms.data(), oTermBytes);
+    dObsDefs.allocateAndUpload(plan.observables.data(), oDefBytes);
+    dSampleTimes.allocateAndUpload(sampleTimes.data(), timeBytes);
+    dAlive.allocate(aliveBytes);
+    dMolType.allocate(molTypeBytes);
+    dSiteState.allocate(siteArrBytes);
+    dSiteBondMol.allocate(siteArrBytes);
+    dSiteBondSite.allocate(siteArrBytes);
+    dMlItems.allocate(mlSlotBytes);
+    dMlPos.allocate(mlSlotBytes);
+    dMlCounts.allocate(mlCntBytes);
+    dOutputs.allocate(outputBytes);
+    dEvents.allocate(eventBytes);
+    dFlags.allocateZeroed(flagBytes);
+
+    CudaEventGuard stopEvent;
+    const auto setupEnd = std::chrono::steady_clock::now();
+
+    const auto dispatchStart = std::chrono::steady_clock::now();
+    const unsigned int blockSize = 64u;
+    const unsigned int gridSize = (batchSize + blockSize - 1u) / blockSize;
+    nfnextGraphBatchKernel<<<gridSize, blockSize>>>(
+        params,
+        dTypeOff.as<std::uint32_t>(),
+        dTypeCap.as<std::uint32_t>(),
+        dTypeSite.as<std::uint32_t>(),
+        dInitAlive.as<std::int8_t>(),
+        dInitType.as<std::int32_t>(),
+        dInitState.as<std::int32_t>(),
+        dInitBondMol.as<std::int32_t>(),
+        dInitBondSite.as<std::int32_t>(),
+        dConstraints.as<GpuSiteConstraint>(),
+        dMatchLists.as<GpuMatchListDef>(),
+        dActions.as<GpuRuleAction>(),
+        dRules.as<GpuGraphRule>(),
+        dVmCode.as<GpuVmInstr>(),
+        dObsNodes.as<GpuObsPatternNode>(),
+        dObsBonds.as<GpuObsPatternBond>(),
+        dObsTerms.as<GpuObsTermDef>(),
+        dObsDefs.as<GpuObsDef>(),
+        dSampleTimes.as<float>(),
+        dAlive.as<std::int8_t>(),
+        dMolType.as<std::int32_t>(),
+        dSiteState.as<std::int32_t>(),
+        dSiteBondMol.as<std::int32_t>(),
+        dSiteBondSite.as<std::int32_t>(),
+        dMlItems.as<std::int32_t>(),
+        dMlPos.as<std::int32_t>(),
+        dMlCounts.as<std::uint32_t>(),
+        dOutputs.as<float>(),
+        dEvents.as<unsigned long long>(),
+        dFlags.as<std::uint32_t>());
+    checkCuda(cudaGetLastError(), "graph kernel launch failed");
+    checkCuda(cudaEventRecord(stopEvent.event), "cudaEventRecord failed");
+    checkCuda(cudaEventSynchronize(stopEvent.event), "graph kernel synchronization failed");
+    const auto dispatchEnd = std::chrono::steady_clock::now();
+
+    std::vector<std::uint32_t> flags(request.batchSize, 0u);
+    dFlags.download(flags.data(), flagBytes);
+    for (std::size_t t = 0; t < request.batchSize; ++t) {
+        if (flags[t] == 1u)
+            throw std::runtime_error("NFnext CUDA graph backend: max_events exceeded in trajectory " + std::to_string(t));
+        if (flags[t] == 2u)
+            throw std::runtime_error("NFnext CUDA graph backend: particle capacity exceeded in trajectory " + std::to_string(t));
+        if (flags[t] == 3u)
+            throw std::runtime_error("NFnext CUDA graph backend: invalid dynamic rate in trajectory " + std::to_string(t));
+    }
+
+    NfnextDeviceOutput output;
+    output.device = props.name;
+    output.observables.resize(outputValues);
+    dOutputs.download(output.observables.data(), outputBytes);
+    output.eventCounts.resize(request.batchSize);
+    dEvents.download(output.eventCounts.data(), eventBytes);
+    output.dispatchWaitTimeMs =
+        std::chrono::duration<double, std::milli>(dispatchEnd - dispatchStart).count();
+    output.setupTimeMs =
+        std::chrono::duration<double, std::milli>(setupEnd - wallStart).count();
+    output.deviceMemoryBytes =
+        sizeof(params) + typeOffBytes + typeCapBytes + typeSiteBytes + initAliveBytes +
+        initTypeBytes + 3 * initSiteBytes + cBytes + mlDefBytes + actBytes + ruleBytes +
+        vmBytes + oNodeBytes + oBondBytes + oTermBytes + oDefBytes + timeBytes +
+        aliveBytes + molTypeBytes + 3 * siteArrBytes + 2 * mlSlotBytes + mlCntBytes +
+        outputBytes + eventBytes + flagBytes;
     output.wallTimeMs =
         std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - wallStart)
             .count();

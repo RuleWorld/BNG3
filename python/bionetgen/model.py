@@ -1083,6 +1083,7 @@ class BioNetGenModel:
         backend: str = "metal",
         max_events: int = 1_000_000,
         max_particles: int = 1_000_000,
+        mode: str = "unary",
     ) -> GpuBatchSimResult:
         """Run an explicit network-free GPU batch from this model.
 
@@ -1135,6 +1136,7 @@ class BioNetGenModel:
             backend=backend,
             max_events=max_events,
             max_particles=max_particles,
+            mode=mode,
         )
         return GpuBatchSimResult(raw)
 

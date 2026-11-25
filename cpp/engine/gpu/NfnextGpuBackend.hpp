@@ -16,6 +16,7 @@ struct NfnextGpuRequest {
     std::uint64_t maxEvents{1'000'000};
     std::size_t maxParticles{1'000'000};
     std::string backend{"metal"};
+    std::string mode{"unary"};
 };
 
 struct NfnextGpuResult {
