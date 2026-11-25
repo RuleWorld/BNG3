@@ -18,6 +18,7 @@ REPO_ROOT = Path(__file__).resolve().parents[5]
 SUPPORTED_COMPARATORS = (
     "release-oracle-byte-equality-v1",
     "release-oracle-net-canonical-v1",
+    "release-oracle-gdat-numeric-v1",
 )
 
 
@@ -79,6 +80,49 @@ def _compare_net_bytes(oracle_bytes: bytes, consumer_bytes: bytes) -> tuple[bool
         return False, "could not parse .net output"
     diff = compare.compare_net(ref, sub)
     return diff.ok, ("" if diff.ok else diff.summary())
+
+
+def _compare_gdat_bytes(
+    oracle_bytes: bytes,
+    consumer_bytes: bytes,
+    *,
+    rtol: float = 1e-6,
+    atol: float = 1e-10,
+) -> tuple[bool, str]:
+    """Compare raw pinned-oracle and consumer .gdat tables numerically."""
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    import numpy as np
+    from tests.validation import compare
+
+    try:
+        oracle_text = oracle_bytes.decode("utf-8")
+        consumer_text = consumer_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        return False, f"invalid UTF-8 in .gdat output: {exc}"
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        oracle_path = tmp / "oracle.gdat"
+        consumer_path = tmp / "consumer.gdat"
+        oracle_path.write_text(oracle_text, encoding="utf-8")
+        consumer_path.write_text(consumer_text, encoding="utf-8")
+        ref_vals, ref_cols = compare.parse_gdat(oracle_path)
+        sub_vals, sub_cols = compare.parse_gdat(consumer_path)
+    if ref_vals is None or sub_vals is None or ref_cols is None or sub_cols is None:
+        return False, "could not parse .gdat output"
+    if ref_cols != sub_cols:
+        return False, f"column mismatch: oracle={ref_cols} consumer={sub_cols}"
+    if ref_vals.shape != sub_vals.shape or ref_vals.shape[0] == 0:
+        return (
+            False,
+            f"shape mismatch: oracle={ref_vals.shape} consumer={sub_vals.shape}",
+        )
+    if not (np.isfinite(ref_vals).all() and np.isfinite(sub_vals).all()):
+        return False, "non-finite values in .gdat trajectory"
+    if not np.allclose(ref_vals, sub_vals, rtol=rtol, atol=atol, equal_nan=False):
+        max_abs = float(np.max(np.abs(ref_vals - sub_vals)))
+        return False, f"numeric trajectory mismatch (max_abs={max_abs:.3e})"
+    return True, ""
 
 
 def _oracle_receipt_errors(
@@ -228,6 +272,13 @@ def _oracle_receipt_errors(
         matched, diff_detail = _compare_net_bytes(oracle_bytes, consumer_bytes)
         comparator = {
             "id": "release-oracle-net-canonical-v1",
+            **common,
+            "consumer_equals_oracle": matched,
+        }
+    elif comparator_id == "release-oracle-gdat-numeric-v1":
+        matched, diff_detail = _compare_gdat_bytes(oracle_bytes, consumer_bytes)
+        comparator = {
+            "id": "release-oracle-gdat-numeric-v1",
             **common,
             "consumer_equals_oracle": matched,
         }

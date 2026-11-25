@@ -58,6 +58,8 @@ ROW_MODELS: dict[str, str] = {
     "bngl.molecule-deletion": "Motivating_example_cBNGL",
     "bngl.functions": "localfunc",
     "bngl.molecule-and-pattern-labels": "localfunc",
+    "bngl.ele": "egfr_net",
+    "bngl.matchonce": "localfunc",
 }
 
 

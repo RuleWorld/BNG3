@@ -738,3 +738,22 @@ def test_issue471_cli_net_comparator_runs_without_pythonpath(tmp_path):
         check=False,
     )
     assert probe.returncode == 0, probe.stderr
+
+
+@pytest.mark.parametrize(
+    ("oracle_text", "consumer_text", "expect_ok"),
+    [
+        ("# time A_obs\n0 1.0\n1 2.0\n", "# time A_obs\n0 1.0\n1 2.000000001\n", True),
+        ("# time A_obs\n0 1.0\n1 2.0\n", "# time A_obs\n0 1.0\n1 2.5\n", False),
+        ("# time A_obs\n0 1.0\n1 2.0\n", "# time B_obs\n0 1.0\n1 2.0\n", False),
+        ("# time A_obs\n0 1.0\n1 2.0\n", "# time A_obs\n0 1.0\n", False),
+        ("# time A_obs\n0 1.0\n1 nan\n", "# time A_obs\n0 1.0\n1 nan\n", False),
+    ],
+)
+def test_gdat_numeric_comparator_positive_and_negative_controls(
+    oracle_text: str, consumer_text: str, expect_ok: bool
+):
+    ok, detail = checks._compare_gdat_bytes(
+        oracle_text.encode("utf-8"), consumer_text.encode("utf-8")
+    )
+    assert ok is expect_ok, detail

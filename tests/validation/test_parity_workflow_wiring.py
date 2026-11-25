@@ -998,3 +998,14 @@ def test_reconciliation_pins_deltas_and_acceptance_are_consumed_in_parity_queue(
     assert "reconciliation-history.json" in run
     assert "reconciliation-acceptance.json" in run
     assert '"${reconciliation_args[@]}"' in run
+
+
+def test_issue471_bng2_probe_receipts_are_wired_in_bng2_parity():
+    workflow = _parse_workflow()
+    step = next(
+        item
+        for item in workflow["jobs"]["bng2-parity"]["steps"]
+        if item.get("name")
+        == "Record exact-revision Issue 471 BNG2 oracle consumer receipts"
+    )
+    assert "scripts/ci/record_issue471_bng2_probe_receipts.py" in step["run"]
