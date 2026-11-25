@@ -149,6 +149,22 @@ namespace NFcore
 			*/
 			bool addSurvivorOfDeletedMolecule(TemplateMolecule *survivor, int cluster, int productPattern);
 
+			/*!
+				Places the molecule matched by t, a molecule of a reactant pattern, in
+				product pattern productPattern, for a rule with several product
+				patterns.  checkMolecularity() then requires molecules placed in
+				different product patterns to end up in different complexes ("+"),
+				and molecules placed in one product pattern to end up in one
+				complex (".").  group numbers the part of the product pattern that
+				the rule's own bonds hold together, through molecules it creates
+				too: molecules placed with one group need no test between them.
+				The loader places one molecule for each part that the bonds hold
+				together without a created molecule, since the others stay bonded
+				to it.  t must be a molecule the rule already maps: a mapping added
+				for placement would change how the rule counts its matches.
+			*/
+			bool addProductPlacement(TemplateMolecule *t, int productPattern, int group);
+
 
 			/*!
 				Adds a delete rule to the given TemplateMolecule.
@@ -368,6 +384,13 @@ namespace NFcore
 			 * appended, because EMPTY also represents a binding partner. */
 			bool isPureContextReactant(unsigned int reactantIndex) const;
 
+			/*!
+				True if the rule deletes reactant `reactantIndex` as a whole species:
+				a Delete with no DeleteMolecules keyword, which removes every
+				molecule connected to the match.
+			*/
+			bool deletesWholeSpecies(unsigned int reactantIndex) const;
+
 			// To get the connected reactions for each transformation
 			bool checkConnection(ReactionClass * rxn);
 
@@ -411,6 +434,17 @@ namespace NFcore
 				would still be connected, or two it writes "." between would not be.
 			*/
 			bool deletedBondsMatchProducts(MappingSet ** mappingSets);
+
+			/*!
+				The product-side test for a rule whose molecules are placed in its
+				product patterns (addProductPlacement()), on the graph a firing leaves:
+				excludedBonds gone, addedBonds in place.  One walk covers all the
+				placed molecules in one connected piece, so k placed molecules take at
+				most k - 1 walks.
+			*/
+			bool placedMoleculesMatchProducts(MappingSet ** mappingSets,
+				const std::vector< std::pair<Molecule *, int> > &excludedBonds,
+				const std::vector< std::pair<Molecule *, Molecule *> > &addedBonds);
 
 			/*!	Remembers if the finalize function has been called	*/
 			bool finalized;
@@ -490,6 +524,21 @@ namespace NFcore
 				int productPattern;
 			};
 			std::vector< DeletedMoleculeLink > deletedMoleculeLinks;
+
+			/*! A molecule placed in a product pattern; see addProductPlacement(). */
+			struct ProductPlacement {
+				unsigned int reactantIndex;   // which reactant the molecule is in
+				unsigned int mappingIndex;    // the mapping that finds it
+				int productPattern;
+				int group;
+			};
+			std::vector< ProductPlacement > productPlacements;
+
+			/*! Kept between calls of placedMoleculesMatchProducts(), so that it
+			    allocates nothing once they have grown. */
+			std::vector< Molecule * > placedMolecules;
+			std::vector< int > placedWalk;
+			std::vector< Molecule * > walkVisited;
 
 			/*! are we using the new general method for symmetry handling	*/
 			bool   useSymmetryFactor;

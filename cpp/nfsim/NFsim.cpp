@@ -235,8 +235,33 @@ namespace NFcore { void memprofReport(); }
 #include <limits>
 #include <cctype>
 #include <sstream>
+#include <random>
 
 using namespace std;
+
+// Every random draw in a simulation comes from the System's own generator, so
+// the seed fixes the whole trajectory. Without -seed, pick one from
+// std::random_device so that unseeded runs differ, and print it so the run can
+// be repeated (issue #124). The seed stays in [1, 2^31 - 1] so that -seed reads
+// it back unchanged.
+static int chooseSeed(map<string,string> &argMap)
+{
+	int seed;
+	if(argMap.find("seed")!=argMap.end()) {
+		seed = abs(NFinput::parseAsInt(argMap,"seed",0));
+	} else {
+		unsigned long r;
+		try {
+			std::random_device rd;
+			r = rd();
+		} catch (...) {
+			r = (unsigned long) time(NULL);
+		}
+		seed = (int) (r % 2147483647UL) + 1;
+	}
+	cout<<"Seeding random number generator with: "<<seed<<endl;
+	return seed;
+}
 
 
 //! Outputs an Ascii NFsim logo.
@@ -278,7 +303,7 @@ int main(int argc, char *argv[])
 	// turned off for the general release code.
 	//if (!schedulerInterpreter(&argc, &argv)) return 0;
 
-	string versionNumber = "1.14.3";
+	string versionNumber = "2.0.1";
 	cout<<"starting NFsim v"+versionNumber+"..."<<endl<<endl;
 	clock_t start,finish;
 	double time;
@@ -296,10 +321,10 @@ int main(int argc, char *argv[])
 		if(argMap.find("v")!=argMap.end()) {
 			verbose = true;
 		}
+		// NFutil's process-wide generator is used only by the built-in tests;
+		// simulations draw from the System's generator (see chooseSeed).
 		if(argMap.find("seed")!= argMap.end()) {
-			int seed = abs(NFinput::parseAsInt(argMap,"seed",0));
-			NFutil::SEED_RANDOM(seed);
-			cout<<"Seeding random number generator with: "<<seed<<endl;
+			NFutil::SEED_RANDOM(abs(NFinput::parseAsInt(argMap,"seed",0)));
 		}
 
 
@@ -335,21 +360,19 @@ int main(int argc, char *argv[])
 		//  Main entry point for a basic XML file...
 		else if (argMap.find("xml")!=argMap.end())
 		{
+			// RuleMonkey mode (-rm, -rulemonkey) gives wrong results and can crash
+			// (issue #116), so this release refuses it before loading the model.
+			// The implementation stays in the reaction classes for a later fix.
+			if (argMap.find("rulemonkey")!=argMap.end() || argMap.find("rm")!=argMap.end()) {
+				cerr<<"Error: RuleMonkey mode (-rm, -rulemonkey) is disabled in NFsim v"<<versionNumber<<"."<<endl;
+				cerr<<"  It gives wrong results and can crash; see"<<endl;
+				cerr<<"  https://github.com/RuleWorld/nfsim/issues/116"<<endl;
+				cerr<<"  Run without -rm to use the standard simulator."<<endl;
+				return 1;
+			}
 			System *s = initSystemFromFlags(argMap, verbose);
 			if(s!=NULL) {
-				if (argMap.find("rulemonkey")!=argMap.end() || argMap.find("rm")!=argMap.end()) {
-					if(verbose) cout<<"\tRuleMonkey simulation mode (-rulemonkey) flag detected."<<endl<<endl;
-					for (auto* rxn : s->getAllReactions()) {
-							if (dynamic_cast<NFcore::FunctionalRxnClass*>(rxn) != NULL
-								|| dynamic_cast<NFcore::MMRxnClass*>(rxn) != NULL) {
-								if (verbose) {
-									cout<<"\tSkipping RuleMonkey for functional/MM reaction: "<<rxn->getName()<<endl;
-								}
-								continue;
-							}
-						rxn->setUseRuleMonkey(true);
-					}
-				}
+				s->seedRNG(static_cast<unsigned long>(chooseSeed(argMap)));
 				try {
 					runFromArgs(s,argMap,verbose);
 				} catch (const std::exception &error) {
@@ -512,6 +535,7 @@ bool runRNFscript(map<string,string> argMap, bool verbose)
 	//Step 2: using the argMap, set up the system
 	System *s=initSystemFromFlags(argMap,verbose);
 	if(s!=0) {
+		s->seedRNG(static_cast<unsigned long>(chooseSeed(argMap)));
 		s->prepareForSimulation();
 		//Step 3: provided the system is set up correctly, run the RNF script
 		bool output = NFinput::runRNFcommands(s,argMap,commands,verbose);
@@ -599,14 +623,6 @@ System *initSystemFromFlags(map<string,string> argMap, bool verbose)
 
 			if(s!=NULL)
 			{
-				// System owns the RNG used by reaction selection and timing.  Keep
-				// the command-line seed aligned with that per-instance generator;
-				// seeding NFutil's legacy global RNG alone is insufficient.
-				if (argMap.find("seed") != argMap.end()) {
-					int seed = abs(NFinput::parseAsInt(argMap, "seed", 0));
-					s->seedRNG(static_cast<unsigned long>(seed));
-				}
-
 				if(verbose) {cout<<endl;}
 
 				//If requested, be sure to output the values of global functions
@@ -1076,7 +1092,9 @@ void printHelp(const string& version)
 	cout<<""<<endl;
 	cout<<"  -seed             used to specify the seed for the random number generator."<<endl;
 	cout<<"                    This allows you to run the same simulation and get the"<<endl;
-	cout<<"                    exact same results perhaps to compare performance"<<endl;
+	cout<<"                    exact same results perhaps to compare performance."<<endl;
+	cout<<"                    Without -seed, NFsim picks a seed and prints it, so any"<<endl;
+	cout<<"                    run can be repeated."<<endl;
 	cout<<""<<endl;
 	cout<<" -connect           infer network connectivity before starting simulation. (default: no)."<<endl;
     cout<<" 		           Does not require any modification to BioNetGen or PySB."<<endl;

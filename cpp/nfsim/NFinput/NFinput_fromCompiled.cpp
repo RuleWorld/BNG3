@@ -103,13 +103,21 @@ bool seedCount(const bng::compile::CompiledSeed& seed,
     const auto amount = found == overrides.end()
                             ? seed.evaluatedAmount
                             : std::optional<double>(found->second);
-    if (!amount.has_value() || !std::isfinite(*amount) || *amount < 0.0 ||
-        *amount > static_cast<double>(std::numeric_limits<int>::max()) ||
-        std::floor(*amount) != *amount) {
-        diagnostic = "seed amount must resolve to a nonnegative integer";
+    if (!amount.has_value() || !std::isfinite(*amount) || *amount < 0.0) {
+        diagnostic = "seed amount must resolve to a nonnegative number";
         return false;
     }
-    count = static_cast<int>(*amount);
+    const double rounded = std::floor(*amount + 0.5);
+    if (rounded > static_cast<double>(std::numeric_limits<int>::max())) {
+        diagnostic = "seed amount exceeds NFsim's integer range";
+        return false;
+    }
+    if (rounded != *amount) {
+        std::cerr << "Warning: the amount of species " << seed.sourcePattern
+                  << " (" << *amount << ") is not a whole number; rounded to "
+                  << static_cast<int>(rounded) << ".\n";
+    }
+    count = static_cast<int>(rounded);
     return true;
 }
 

@@ -598,8 +598,7 @@ int DORRxnClass::getCorrectedReactantCount(unsigned int reactantIndex) const
 				: reactantTree->size();
 	}
 
-	if ((matchOncePerReactant[reactantIndex] ||
-			contextCountsPerComplex[reactantIndex]) &&
+	if (contextCountsPerComplex[reactantIndex] &&
 			!isPopulationType[reactantIndex]) {
 		return countDistinctComplexes(reactantLists[reactantIndex]);
 	}
@@ -2290,8 +2289,7 @@ int DOR2RxnClass::getCorrectedReactantCount(unsigned int reactantIndex) const
 				? countDistinctComplexes(reactantTree2) : reactantTree2->size();
 	}
 
-	if ((matchOncePerReactant[reactantIndex] ||
-			contextCountsPerComplex[reactantIndex]) &&
+	if (contextCountsPerComplex[reactantIndex] &&
 			!isPopulationType[reactantIndex]) {
 		return countDistinctComplexes(reactantLists[reactantIndex]);
 	}

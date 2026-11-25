@@ -104,6 +104,8 @@ DirectSelector::DirectSelector(vector <ReactionClass *> &rxns, System *sys) :
 	ReactionSelector(sys)
 {
 	this->Atot = 0;
+	this->peakAtot = 0;
+	this->updatesSinceSum = 0;
 	this->n_reactions = rxns.size();
 	this->reactionIndexMode = -1;
 	this->reactionClassList = new ReactionClass *[n_reactions];
@@ -202,6 +204,8 @@ DirectSelector::DirectSelector(vector <ReactionClass *> &rxns, System *sys) :
 	sparseSelectionTrackingActive = sparseSelectionSafe && !lazySparseSelectionSafe;
 	if (getenv("NFSIM_SELECTOR_SPARSE_EAGER") != 0 && sparseSelectionSafe)
 		sparseSelectionTrackingActive = true;
+	peakAtot = Atot;
+	updatesSinceSum = 0;
 }
 
 
@@ -299,6 +303,7 @@ void DirectSelector::applyCompactPoolGroupSize(
 		return;
 	double delta = static_cast<double>(newPoolSize - group.poolSize);
 	Atot += group.totalCoefficient * delta;
+	++updatesSinceSum;
 	for (std::size_t block = 0; block < group.blockCoefficients.size(); ++block)
 		selectionBlockPropensities[block] +=
 				group.blockCoefficients[block] * delta;
@@ -370,6 +375,46 @@ double DirectSelector::refactorPropensities()
 			activeReactionBits[static_cast<std::size_t>(r) >> 6] |=
 					(std::uint64_t(1) << (r & 63));
 	}
+	peakAtot = Atot;
+	updatesSinceSum = 0;
+	return Atot;
+}
+
+
+/* Sum Atot and the block sums afresh from the propensities the selector
+ * already holds, the same values getNextReactionClass() scans.  Unlike
+ * refactorPropensities(), this does not ask any reaction to recompute. */
+double DirectSelector::resumAtotFromCache()
+{
+	Atot = 0;
+	std::fill(selectionBlockPropensities.begin(),
+			selectionBlockPropensities.end(), 0.0);
+	for (int r = 0; r < n_reactions; r++) {
+		double propensity = sparseSelectionTrackingActive
+				? getSelectionPropensity(static_cast<std::size_t>(r))
+				: reactionClassList[r]->get_a();
+		Atot += propensity;
+		selectionBlockPropensities[static_cast<std::size_t>(r) /
+				selectionBlockSize] += propensity;
+	}
+	peakAtot = Atot;
+	updatesSinceSum = 0;
+	return Atot;
+}
+
+
+/* Atot is a running sum, Atot - oldA + newA, and each update rounds.  Re-sum
+ * afresh from cached propensities periodically or after a sharp fall so
+ * accumulated rounding error cannot leave Atot nonzero when every reaction has
+ * zero propensity or drift far from the true sum (issues #123, #130). */
+double DirectSelector::getCheckedAtot()
+{
+	static const unsigned int resumInterval = 4096;
+	static const double fallFraction = 1.0 / 1024.0;
+	if (Atot > peakAtot) peakAtot = Atot;
+	if (updatesSinceSum >= resumInterval ||
+			Atot < peakAtot * fallFraction || Atot < 0)
+		resumAtotFromCache();
 	return Atot;
 }
 
@@ -411,6 +456,7 @@ double DirectSelector::update(ReactionClass *r,double oldA, double newA)
 			double newCoefficient = r->getCompactPartnerPoolCoefficient();
 			Atot -= oldEffective;
 			Atot += newA;
+			++updatesSinceSum;
 			std::size_t block = reactionIndex / selectionBlockSize;
 			selectionBlockPropensities[block] -= oldEffective;
 			selectionBlockPropensities[block] += newA;
@@ -429,6 +475,7 @@ double DirectSelector::update(ReactionClass *r,double oldA, double newA)
 	}
 	Atot-=oldA;
 	Atot+=newA;
+	++updatesSinceSum;
 	if (reaction >= 0 && reaction < n_reactions) {
 		std::size_t block = static_cast<std::size_t>(reaction) /
 				selectionBlockSize;
@@ -546,6 +593,13 @@ double DirectSelector::updateCompactPartnerPoolBatch(
 
 double DirectSelector::getNextReactionClass(ReactionClass *&rc)
 {
+	/* Nothing can fire from a total that is not above zero.  random(0)
+	 * returns 0, which would pick the first reaction whatever its propensity,
+	 * or recurse without end through refactorPropensities() below. */
+	if (!(Atot > 0)) {
+		rc = 0;
+		return 0;
+	}
 	double randNum = sys_->getRNG().random(Atot);
 
 	double a_sum=0, last_a_sum=0;

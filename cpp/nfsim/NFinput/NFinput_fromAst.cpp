@@ -2405,12 +2405,21 @@ bool parseSeedAmount(const bng::ast::SeedSpecies& seed,
                 return iter->second;
             },
             0.0);
-        if (!std::isfinite(amount) || amount < 0.0 ||
-            amount > static_cast<double>(std::numeric_limits<int>::max())) {
+        if (!std::isfinite(amount) || amount < 0.0) {
             diagnostic = "seed amount is outside NFsim's nonnegative integer range";
             return false;
         }
-        count = static_cast<int>(amount);
+        const double rounded = std::floor(amount + 0.5);
+        if (rounded > static_cast<double>(std::numeric_limits<int>::max())) {
+            diagnostic = "seed amount is outside NFsim's nonnegative integer range";
+            return false;
+        }
+        if (rounded != amount) {
+            std::cerr << "Warning: the amount of species " << seed.getPattern()
+                      << " (" << amount << ") is not a whole number; rounded to "
+                      << static_cast<int>(rounded) << ".\n";
+        }
+        count = static_cast<int>(rounded);
         return true;
     } catch (const std::exception& error) {
         diagnostic = error.what();
@@ -4611,15 +4620,25 @@ bool addSpeciesFromAstWithOverrides(
         }
         if (overrideIt != seedAmountOverrides.end()) {
             const double amount = overrideIt->second;
-            if (!std::isfinite(amount) || amount < 0.0 ||
-                amount > static_cast<double>(std::numeric_limits<int>::max()) ||
-                std::floor(amount) != amount) {
+            if (!std::isfinite(amount) || amount < 0.0) {
                 std::cerr << "[nfsim/ast] cannot map seed species '"
                           << seed.getPattern()
-                          << "': action concentration must be a nonnegative integer\n";
+                          << "': action concentration must be a nonnegative number\n";
                 return false;
             }
-            count = static_cast<int>(amount);
+            const double rounded = std::floor(amount + 0.5);
+            if (rounded > static_cast<double>(std::numeric_limits<int>::max())) {
+                std::cerr << "[nfsim/ast] cannot map seed species '"
+                          << seed.getPattern()
+                          << "': action concentration exceeds NFsim's integer range\n";
+                return false;
+            }
+            if (rounded != amount) {
+                std::cerr << "Warning: the amount of species " << seed.getPattern()
+                          << " (" << amount << ") is not a whole number; rounded to "
+                          << static_cast<int>(rounded) << ".\n";
+            }
+            count = static_cast<int>(rounded);
         } else if (!parseSeedAmount(seed, parameters, count, diagnostic)) {
             std::cerr << "[nfsim/ast] cannot map seed species '" << seed.getPattern()
                       << "': " << diagnostic << "\n";

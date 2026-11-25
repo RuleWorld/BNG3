@@ -42,6 +42,7 @@ namespace NFcore
 			virtual void notifyRateFactorChange(Molecule * m, int reactantIndex, int rxnListIndex);
 			virtual int getReactantCount(unsigned int reactantIndex) const;
 			virtual int getCorrectedReactantCount(unsigned int reactantIndex) const;
+			virtual ReactantContainer *getReactantContainer(unsigned int r) const { return reactantLists[r]; }
 
 			virtual void printFullDetails() const;
 
@@ -113,6 +114,10 @@ namespace NFcore
 				virtual double exactRuleMonkey_a();
 				virtual void pickRuleMonkeyMappingSets(double randNumber) const { BasicRxnClass::pickRuleMonkeyMappingSets(randNumber); }
 			virtual void printDetails() const;
+
+			// The substrate count enters the law through sFree, so a substrate
+			// counted once per match cannot be thinned to once per complex.
+			virtual bool canThinToOncePerComplex() const { return false; }
 
 		protected:
 			double Km;
@@ -213,6 +218,10 @@ namespace NFcore
 			virtual void notifyRateFactorChange(Molecule * m, int reactantIndex, int rxnListIndex);
 			virtual int getReactantCount(unsigned int reactantIndex) const;
 			virtual int getCorrectedReactantCount(unsigned int reactantIndex) const;
+			virtual ReactantContainer *getReactantContainer(unsigned int r) const {
+				return r == (unsigned)DORreactantIndex
+					? static_cast<ReactantContainer *>(reactantTree)
+					: static_cast<ReactantContainer *>(reactantLists[r]); }
 
 			virtual void printDetails() const;
 			virtual void printFullDetails() const {};
@@ -428,6 +437,10 @@ namespace NFcore
 			virtual void notifyRateFactorChange(Molecule * m, int reactantIndex, int rxnListIndex);
 			virtual int getReactantCount(unsigned int reactantIndex) const;
 			virtual int getCorrectedReactantCount(unsigned int reactantIndex) const;
+			virtual ReactantContainer *getReactantContainer(unsigned int r) const {
+				if (r == (unsigned)DORreactantIndex1) return reactantTree1;
+				if (r == (unsigned)DORreactantIndex2) return reactantTree2;
+				return reactantLists[r]; }
 
 			virtual void printDetails() const;
 			virtual void printFullDetails() const {};

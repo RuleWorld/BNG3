@@ -244,6 +244,78 @@ void FuncFactory::test()
 	}
 	}
 
+	// Tests 8 to 10 hold for either parser: muParser, the default, and ExprTk
+	// (-DNFSIM_USE_EXPRTK=ON) must give the same answers.
+	{
+	//Test 8: rint rounds a half up, floor(x + 0.5), as muParser and BioNetGen do
+	cout<<" 8) test rint() rounds a half up: ";
+	const char *expressions[] = {"rint(-2.5)", "rint(-1.5)", "rint(-0.5)", "rint(0.5)", "rint(2.5)"};
+	const double expected[] = {-2, -1, 0, 1, 3};
+	for(int i=0; i<5; i++) {
+		vector <string> variableNames;
+		vector <double *> variablePtrs;
+		mu::Parser *p = FuncFactory::create(expressions[i],variableNames,variablePtrs);
+		double value = FuncFactory::Eval(p);
+		delete p;
+		if(value != expected[i]) {
+			cout<<"fail! "<<expressions[i]<<" = "<<value<<"  but should be: "<<expected[i]<<endl;
+			exit(1);
+		}
+	}
+	cout<<"pass."<<endl;
+	}
+
+	{
+	//Test 9: a literal is read as the double nearest it, as strtod (and the
+	//compiler, for the literals below) reads it
+	cout<<" 9) test numeric literals are read as strtod reads them: ";
+	const char *expressions[] = {"7.77e-05", "0.49999999999999997", "8.2e-02", "2.638e-03",
+		"7.6e-07", "5.363e+11", "0.44982514983446460", "0.45723577511449437", "6.23286e-20",
+		"2^0.49999999999999997", "-7.77e-05*2"};
+	const double expected[] = {7.77e-05, 0.49999999999999997, 8.2e-02, 2.638e-03,
+		7.6e-07, 5.363e+11, 0.44982514983446460, 0.45723577511449437, 6.23286e-20,
+		pow(2.0, 0.49999999999999997), -7.77e-05*2};
+	for(int i=0; i<11; i++) {
+		vector <string> variableNames;
+		vector <double *> variablePtrs;
+		mu::Parser *p = FuncFactory::create(expressions[i],variableNames,variablePtrs);
+		double value = FuncFactory::Eval(p);
+		delete p;
+		if(value != expected[i]) {
+			cout.precision(17);
+			cout<<"fail! "<<expressions[i]<<" was read as "<<value<<"  but should be: "<<expected[i]<<endl;
+			exit(1);
+		}
+	}
+	cout<<"pass."<<endl;
+	}
+
+	{
+	//Test 10: expressions both parsers refuse.
+	cout<<" 10) test expressions muParser refuses are refused: ";
+	const char *expressions[] = {"3*exp(0)(2)", "3*rint(1.2) (2)", "3*abs(-1) if(1,5,6)",
+		"3*exp(0);2", "2 0.45723577511449437", "3*exp(0));(2", "1)(2"};
+	for(int i=0; i<7; i++) {
+		vector <string> variableNames;
+		vector <double *> variablePtrs;
+		bool threw = false;
+		double value = 0;
+		mu::Parser *p = NULL;
+		try {
+			p = FuncFactory::create(expressions[i],variableNames,variablePtrs);
+			value = FuncFactory::Eval(p);
+		} catch(const std::runtime_error& e) {
+			threw = true;
+		}
+		delete p;
+		if(!threw) {
+			cout<<"fail! "<<expressions[i]<<" was not refused; it gave "<<value<<endl;
+			exit(1);
+		}
+	}
+	cout<<"pass."<<endl;
+	}
+
 	//Thats all the test I can think of!
 	cout<<endl<<"Testing complete."<<endl;
 }

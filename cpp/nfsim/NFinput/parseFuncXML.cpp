@@ -194,6 +194,7 @@ bool createCompositeFunction(string name,
 	for(unsigned int rn=0; rn<refNames.size(); rn++) {
 		if(refTypes.at(rn)=="Function") {
 			functionsCalled.push_back(refNames.at(rn));
+			s->addFunctionReference(name, refNames.at(rn));
 		}
 	}
 
@@ -863,6 +864,9 @@ bool NFinput::initFunctions(
 						if (cf) cf->setCounterFromTime(system);
 						if (lf) lf->setCounterFromTime(system);
 						system->setHasTimeDependentFunctions(true);
+						// Its breakpoints are where a rate law that reads it changes (#142).
+						const vector<double> &tfunXs = gf ? gf->getTfunXs() : (cf ? cf->getTfunXs() : lf->getTfunXs());
+						system->addTimeTable(funcName, tfunXs, method == "linear");
 					} else if (ctrType == "Parameter") {
 						if (gf) gf->setCounterFromParameter(system, ctrName);
 						if (cf) cf->setCounterFromParameter(system, ctrName);
@@ -902,6 +906,9 @@ bool NFinput::initFunctions(
 
 		//Getting here means we read everything we could successfully
 		return true;
+	} catch (const std::exception &e) {
+		cerr<<"Error reading the functions: "<<e.what()<<endl;
+		return false;
 	} catch (...) {
 		//Uh oh! we got some unknown exception thrown, so we must abort!
 		cerr<<"I caught some unknown error when I was trying to parse out a function.\n";

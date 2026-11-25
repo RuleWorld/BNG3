@@ -210,6 +210,8 @@ namespace NFcore {
 			void setCounterFromParameter(System *s, string paramName);
 			void addSystemPointer(System *s);
 			string getCtrType() const { return ctrType; }
+			// The table's counter values, which are its breakpoints.
+			const vector<double> &getTfunXs() const { return data.at(0); }
 			string getCtrName() const { return ctrName; }
 			string getCounterParamName() const { return counterParamName; }
 			string getInterpolationMethod() const { return interpolationMethod; }
@@ -353,6 +355,8 @@ namespace NFcore {
 			void refreshObservableCounter();
 			void addSystemPointer(System *s);
 			string getCtrType() const { return ctrType; }
+			// The table's counter values, which are its breakpoints.
+			const vector<double> &getTfunXs() const { return data.at(0); }
 			string getCtrName() const { return ctrName; }
 			string getCounterParamName() const { return counterParamName; }
 			string getInterpolationMethod() const { return interpolationMethod; }
@@ -486,6 +490,8 @@ namespace NFcore {
 
 				int getNumOfArgs() const;
 				string getArgName(int aIndex) const;
+				/* The highest N of the reactant_N() counts the function reads, or 0. */
+				int getNumOfReactantCounts() const { return n_reactantCounts; }
 				int getNumOfFunctions() const { return static_cast<int>(n_allFuncs); }
 				string getFunctionName(int index) const { return allFuncNames[index]; }
 				int getNumOfParams() const { return static_cast<int>(n_params); }
@@ -509,6 +515,8 @@ namespace NFcore {
 			void setCounterFromParameter(System *s, string paramName);
 			void addSystemPointer(System *s);
 			string getCtrType() const { return ctrType; }
+			// The table's counter values, which are its breakpoints.
+			const vector<double> &getTfunXs() const { return data.at(0); }
 			string getCtrName() const { return ctrName; }
 			string getCounterParamName() const { return counterParamName; }
 			string getInterpolationMethod() const { return interpolationMethod; }
