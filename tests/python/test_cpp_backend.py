@@ -1136,6 +1136,74 @@ end model
         with pytest.raises(ValueError, match="R1.*negative propensity"):
             model.simulate(method="nfcore", t_end=0.0, n_steps=1, seed=1)
 
+    def test_simulate_nf_rejects_totalrate_with_local_functions(
+        self, tmp_path, monkeypatch
+    ):
+        """NFcore must fail closed on local-function TotalRate rules (including XML fallback)."""
+        bngl = tmp_path / "localfunc_totalrate.bngl"
+        bngl.write_text(
+            """
+begin model
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A(s~0~1,b)
+    B(a)
+end molecule types
+begin seed species
+    A(s~0,b!1).B(a!1) 5
+end seed species
+begin observables
+    Molecules As A(s~0)
+end observables
+begin functions
+    localRate(x) = k*As(x)
+end functions
+begin reaction rules
+    R1: %x::A(s~0,b!1).B(a!1) -> %x::A(s~1,b!1).B(a!1) localRate(x) TotalRate
+end reaction rules
+end model
+""",
+            encoding="utf-8",
+        )
+
+        monkeypatch.setenv("BNG_NFSIM_ALLOW_XML_FALLBACK", "1")
+        model = bionetgen.load(str(bngl))
+        with pytest.raises(RuntimeError, match="TotalRate.*local functions"):
+            model.simulate(method="nfcore", t_end=1.0, n_steps=1, seed=1)
+
+        global_bngl = tmp_path / "globalfunc_totalrate.bngl"
+        global_bngl.write_text(
+            """
+begin model
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A(s~0~1)
+end molecule types
+begin seed species
+    A(s~0) 5
+end seed species
+begin observables
+    Molecules As A(s~0)
+end observables
+begin functions
+    globalRate() = k*As
+end functions
+begin reaction rules
+    R1: A(s~0) -> A(s~1) globalRate() TotalRate
+end reaction rules
+end model
+""",
+            encoding="utf-8",
+        )
+        res = bionetgen.load(str(global_bngl)).simulate(
+            method="nfcore", t_end=1.0, n_steps=2, seed=1
+        )
+        assert res.time[-1] == pytest.approx(1.0)
+
     def test_nf_simulation_honors_absolute_start_time(self, tmp_path):
         # Source-derived from NFsim test/Issue78/issue78.bngl and afad408:
         # absolute start time must affect both the output axis and a generic

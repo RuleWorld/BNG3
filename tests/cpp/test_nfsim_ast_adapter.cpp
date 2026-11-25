@@ -8411,3 +8411,185 @@ end reaction rules
     CHECK(mm->get_a() != Catch::Approx(mmBefore));
     delete system;
 }
+
+TEST_CASE("NFsim rejects incompatible TotalRate rate laws on direct and XML paths",
+          "[issue-91][TotalRate]") {
+    const std::vector<std::pair<std::string, std::string>> directCases{
+        {
+            "local-function",
+            R"BNG(
+begin parameters
+    k 1.0
+end parameters
+begin molecule types
+    A(s~0~1,b)
+    B(a)
+end molecule types
+begin seed species
+    A(s~0,b!1).B(a!1) 5
+end seed species
+begin observables
+    Molecules As A(s~0)
+end observables
+begin functions
+    localRate(x) = k*As(x)
+end functions
+begin reaction rules
+    R1: %x::A(s~0,b!1).B(a!1) -> %x::A(s~1,b!1).B(a!1) localRate(x) TotalRate
+end reaction rules
+)BNG",
+        },
+        {
+            "scoped-local-arithmetic",
+            R"BNG(
+begin parameters
+    k 2.0
+end parameters
+begin molecule types
+    A(s~0~1,b)
+    B(a)
+end molecule types
+begin seed species
+    A(s~0,b!1).B(a!1) 5
+end seed species
+begin observables
+    Molecules As A(s~0)
+end observables
+begin functions
+    localRate(x) = As(x)
+end functions
+begin reaction rules
+    R1: %x::A(s~0,b!1).B(a!1) -> %x::A(s~1,b!1).B(a!1) k*localRate(x) TotalRate
+end reaction rules
+)BNG",
+        },
+        {
+            "function-product",
+            R"BNG(
+begin molecule types
+    A(s~0~1,b)
+    B(t~0~1,a)
+end molecule types
+begin seed species
+    A(s~0,b) 4
+    B(t~0,a) 4
+end seed species
+begin observables
+    Molecules As A(s~0)
+    Molecules Bt B(t~0)
+end observables
+begin functions
+    fA(x) = As(x)
+    fB(y) = Bt(y)
+end functions
+begin reaction rules
+    R1: %x::A(b) + %y::B(a) -> %x::A(b!1).%y::B(a!1) fA(x)*fB(y) TotalRate
+end reaction rules
+)BNG",
+        },
+        {
+            "mm",
+            R"BNG(
+begin parameters
+    kcat 1.0
+    Km 2.0
+end parameters
+begin molecule types
+    S()
+    E()
+    P()
+end molecule types
+begin seed species
+    S() 10
+    E() 5
+end seed species
+begin reaction rules
+    R1: S() + E() -> P() + E() MM(kcat,Km) TotalRate
+end reaction rules
+)BNG",
+        },
+        {
+            "sat",
+            R"BNG(
+begin parameters
+    kcat 1.0
+    Km 2.0
+end parameters
+begin molecule types
+    S()
+    E()
+    P()
+end molecule types
+begin seed species
+    S() 10
+    E() 5
+end seed species
+begin reaction rules
+    R1: S() + E() -> P() + E() Sat(kcat,Km) TotalRate
+end reaction rules
+)BNG",
+        },
+        {
+            "hill",
+            R"BNG(
+begin parameters
+    vmax 1.0
+    Kh 2.0
+    n 2.0
+end parameters
+begin molecule types
+    S()
+    P()
+end molecule types
+begin seed species
+    S() 10
+end seed species
+begin reaction rules
+    R1: S() -> P() Hill(vmax,Kh,n) TotalRate
+end reaction rules
+)BNG",
+        },
+        {
+            "arrhenius",
+            R"BNG(
+begin parameters
+    phi 0.5
+    Ea 1.0
+end parameters
+begin molecule types
+    A(s~u~p)
+end molecule types
+begin energy patterns
+    A(s~p) 1.0
+end energy patterns
+begin seed species
+    A(s~u) 5
+end seed species
+begin reaction rules
+    R1: A(s~u) -> A(s~p) Arrhenius(phi,Ea) TotalRate
+end reaction rules
+)BNG",
+        },
+    };
+
+    for (const auto& [label, bngl] : directCases) {
+        CAPTURE(label);
+        auto model = bng::parser::parseModel(bngl);
+        REQUIRE(model != nullptr);
+        int suggestedTraversalLimit = 0;
+        std::string unavailableReason;
+        bool semanticsUnsupported = false;
+        auto* direct = NFinput::buildSystemFromAst(
+            *model, true, -1, false, suggestedTraversalLimit, {},
+            &unavailableReason, &semanticsUnsupported);
+        CHECK(direct == nullptr);
+        CHECK(semanticsUnsupported);
+        CHECK(unavailableReason.find("TotalRate") != std::string::npos);
+        delete direct;
+
+        auto* viaXml = NFinput::initializeFromModel(
+            model.get(), true, -1, false, suggestedTraversalLimit, true);
+        CHECK(viaXml == nullptr);
+        delete viaXml;
+    }
+}
