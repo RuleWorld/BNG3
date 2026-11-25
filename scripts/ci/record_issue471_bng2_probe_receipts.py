@@ -4,8 +4,8 @@
 Covers verified implemented matrix rows with self-contained BNGL inputs run
 directly through pinned BNG2.pl (external oracle) and bng_cpp (downstream
 consumer):
-- 24 builtin.* expression functions (.gdat numeric trajectory parity)
-- 14 operator.* expression operators (13 .gdat numeric + 1 .net canonical parity)
+- 27 builtin.* expression functions (.gdat numeric trajectory parity)
+- 17 operator.* expression operators (13 .gdat numeric, 1 .net canonical, 3 BNG XML scalar parity)
 - 2 additional bngl.* rows (indexed-declarations, null-reactants-and-products)
 - 7 action.generate_hybrid_model* rows (hybrid BNGL and BNG XML parity)
 """
@@ -124,6 +124,9 @@ _ODE_EXPRESSIONS: tuple[tuple[str, str], ...] = (
     ("builtin.max", "max(2.0, A_obs)"),
     ("builtin.sum", "sum(1.0, 2.0, 3.0)"),
     ("builtin.avg", "avg(1.0, 2.0, 6.0)"),
+    ("builtin.mratio", "mratio(-1000.0, 9001.0, -10000.0) + mratio(2.0, 5.0, 1.5)"),
+    ("builtin._pi", "_pi()"),
+    ("builtin._e", "_e()"),
     ("operator.352", "1.0 + 2.0"),
     ("operator.353", "5.0 - 2.0"),
     ("operator.354", "2.0 * 3.0"),

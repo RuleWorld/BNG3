@@ -1015,6 +1015,9 @@ def test_issue471_bng2_probe_receipts_are_wired_in_bng2_parity():
     nfsim_steps = {
         item.get("name"): item for item in workflow["jobs"]["nfsim-parity"]["steps"]
     }
+    net3_step = nfsim_steps["Build locked BNG2 Network3 oracle"]
+    assert "make -C" in net3_step["run"]
+    assert "oracle-bionetgen/bng2/bin/run_network" in net3_step["run"]
     bngsim_step = nfsim_steps[
         "Record exact-revision Issue 471 BNGsim oracle consumer receipt"
     ]

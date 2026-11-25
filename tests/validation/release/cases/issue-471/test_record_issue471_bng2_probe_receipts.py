@@ -113,10 +113,10 @@ if 'generate_network(' in txt:
     return exe
 
 
-def test_all_50_probe_rows_exist_and_are_implemented_in_matrix():
+def test_all_53_probe_rows_exist_and_are_implemented_in_matrix():
     matrix = json.loads((ROOT / "provenance/capability-matrix.yml").read_text())
     by_id = {row["id"]: row for row in matrix["rows"]}
-    assert len(probes.PROBE_SPECS) == 50
+    assert len(probes.PROBE_SPECS) == 53
     for row_id in probes.PROBE_SPECS:
         assert row_id in by_id
         assert by_id[row_id]["status"] == "implemented"
@@ -143,6 +143,9 @@ def test_probe_receipts_round_trip_and_reject_corrupted_consumer_and_wrong_pin(
     artifacts = tmp_path / "artifacts"
     selected = [
         "builtin.exp",
+        "builtin.mratio",
+        "builtin._pi",
+        "builtin._e",
         "operator.357",
         "operator.364",
         "operator.367",
