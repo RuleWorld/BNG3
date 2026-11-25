@@ -9,8 +9,8 @@
     {
       "source_revision": "afad408606ee3e8f579ff50269d266bc66dae0b2",
       "capability": "Repair NFsim absolute-start-time, time-function, observable propensity refresh, and unsupported-rate/flag regressions",
-      "classification": "pending-port",
-      "bng3_reference": "cpp/nfsim/; tests/python/test_cpp_backend.py",
+      "classification": "incorporated-equivalently",
+      "bng3_reference": "cpp/nfsim/NFinput/NFinput.cpp; cpp/nfsim/NFinput/NFinput_reactions_fromCompiled.cpp; cpp/actions/ActionDispatch.cpp; tests/python/test_cpp_backend.py",
       "tests": [
         "tests/python/test_cpp_backend.py::TestSimulation::test_nf_simulation_honors_absolute_start_time",
         "tests/python/test_cpp_backend.py::TestSimulation::test_simulate_nf_rejects_unsupported_continue",
@@ -22,7 +22,7 @@
         "tests/validation/test_nfsim_totalrate_local_function_parity.py::test_totalrate_local_function_source_rejects_product_executes"
       ],
       "reviewer": "Codex technical reconciliation; maintainer review pending",
-      "rationale": "The start-time and time() tests cover NFsim Issue78 (action.simulate_nf.t_start, action.simulate_nf.sample_times, nfsim.energy-and-time-functions). The focused Issue86 test compares post-event Species-observable propensity refresh with an analytic endpoint law (nfsim.observables). Issue51 is a separate product difference: the pinned NFsim CLI applies the distinct-complex binding policy for either -cb or -bscb, while the BNG3 compiled action route distinguishes the options (action.simulate_nf.complex, nf.option.cb, nf.option.bscb). For Issue91, the MM probe agrees: both pinned NFsim and the BNG3 direct route reject TotalRate with an MM rate law. The scoped-local-function case is mapped only to test_nfsim_totalrate_local_function_parity.py, which reduces the pinned test/testSuite/t3.xml (Issue91 local functions) fixture to a self-contained counterexample and runs the native CLI and the public bionetgen.load(...).simulate(method='nf') route at the accepted 9b00d42f pin with seed 1. At that pin the native oracle rejects with 'TotalRate keyword is not compatible with local functions' and emits no trajectory, while BNG3 executes through the direct construction path: the check records semantic_result=FAIL and this remains a pending product difference, not incorporated behavior. Arrhenius, Sat and local function products still need independent checks (bngl.totalrate)."
+      "rationale": "The start-time and time() tests cover NFsim Issue78 (action.simulate_nf.t_start, action.simulate_nf.sample_times, nfsim.energy-and-time-functions). The focused Issue86 test compares post-event Species-observable propensity refresh with an analytic endpoint law (nfsim.observables). For Issue51, test_record_complex_flag_reconciliation establishes parity with pinned NFsim across default, -cb, -bscb, and -no-bscb while test_cpp_backend.py covers explicit control rejection and strict-molecularity defaults (action.simulate_nf.complex, nf.option.cb, nf.option.bscb). For Issue91, cpp/nfsim/NFinput/NFinput.cpp and NFinput_reactions_fromCompiled.cpp (#1028) reject TotalRate with local functions, built-in saturating rates (MM/Sat), and Arrhenius rates on both compiled/direct and XML paths, verified by test_record_totalrate_reconciliation ([mm] and [local-function], semantic_result=PASS) and test_totalrate_local_function_source_rejects_product_executes (semantic_result=PASS, classification=agreement), alongside C++/Python unit coverage in tests/cpp/test_nfsim_ast_adapter.cpp and test_simulate_nf_rejects_totalrate_with_local_functions."
     },
     {
       "source_revision": "74e78d75b35fc7249ceabca497e39d3d81389d66",
