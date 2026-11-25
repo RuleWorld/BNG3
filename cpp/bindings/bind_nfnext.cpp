@@ -92,7 +92,8 @@ void bind_nfnext(py::module_& m) {
                                     std::size_t batch_size,
                                     const std::string& backend,
                                     std::uint64_t max_events,
-                                    std::size_t max_particles) -> py::dict {
+                                    std::size_t max_particles,
+                                    const std::string& mode) -> py::dict {
         bng::compile::CompiledModel compiled(model);
         bng::engine::NfnextGpuRequest request;
         request.sampleTimes = sample_times;
@@ -101,6 +102,7 @@ void bind_nfnext(py::module_& m) {
         request.backend = backend;
         request.maxEvents = max_events;
         request.maxParticles = max_particles;
+        request.mode = mode;
 
         bng::engine::NfnextGpuResult result;
         {
@@ -151,5 +153,6 @@ void bind_nfnext(py::module_& m) {
     py::arg("backend") = "metal",
     py::arg("max_events") = 1000000,
     py::arg("max_particles") = 1000000,
-    "Run the bounded NFnext unary state-change family on an explicit GPU.");
+    py::arg("mode") = "unary",
+    "Run NFnext simulation on an explicit GPU ('unary' or 'graph' mode).");
 }
