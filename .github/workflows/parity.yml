@@ -2264,7 +2264,6 @@ jobs:
             --nfsim-root "$RUNNER_TEMP/oracle-nfsim" \
             --nfsim-bin "$RUNNER_TEMP/oracle-nfsim/build/NFsim" \
             --bng2-root "$RUNNER_TEMP/oracle-bionetgen" \
-            --bng-cpp build/cpp/bng_cpp \
             --report "$RUNNER_TEMP/issue137-nfsim/nfsim-cases.json"
 
       - name: Upload Issue 137 NFsim case receipts

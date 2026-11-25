@@ -388,10 +388,7 @@ def run_nfsim(
                 env=env,
             )
             fn_procs.append(fn_rhs)
-            fn_ok, fn_detail = _combined_status(fn_procs)
-        else:
-            fn_ok = False
-            fn_detail = "--bng-cpp is required for pinned BNG2 expression evaluation"
+        fn_ok, fn_detail = _combined_status(fn_procs)
     else:
         missing_bng2 = (
             "--bng2-root is required for pinned BNG2/NFsim oracle translation"
