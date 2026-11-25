@@ -258,3 +258,82 @@ def test_hybrid_bngl_and_xml_comparators_enforce_semantic_parity():
         is False
     )
     assert checks._compare_bngl_xml_bytes(ref_xml, b"<not-valid-xml")[0] is False
+
+
+def test_bngsim_receipt_loads_pure_model_without_actions(tmp_path: Path, monkeypatch):
+    repo, rev, _, bng2_root, _ = base_fixture._setup_fixture(tmp_path)
+    bngsim_root = tmp_path / "oracle-bngsim"
+    bngsim_rev = base_fixture._init_repo(bngsim_root, {"README.md": "bngsim"})
+    lock_path = repo / "provenance/upstreams.lock.yml"
+    lock_data = json.loads(lock_path.read_text(encoding="utf-8"))
+    lock_data["sources"]["bngsim"] = {"revision": bngsim_rev, "status": "accepted"}
+    lock_path.write_text(json.dumps(lock_data, indent=2) + "\n", encoding="utf-8")
+    script = bng2_root / "bng2/BNG2.pl"
+    script.write_text(
+        """#!/usr/bin/env perl
+use strict;
+use warnings;
+my ($outdir, $file);
+for (my $i = 0; $i < @ARGV; $i++) {
+    if ($ARGV[$i] eq '--outdir') { $outdir = $ARGV[++$i]; }
+    else { $file = $ARGV[$i]; }
+}
+open(my $in, '<', $file) or die $!;
+local $/; my $txt = <$in>; close($in);
+die "missing simulate action" unless $txt =~ /simulate\\(/;
+open(my $out, '>', "$outdir/bngsim_ode.gdat") or die $!;
+print $out "# time Aobs Bobs\\n0 100 0\\n2 60 40\\n";
+close($out);
+exit 0;
+""",
+        encoding="utf-8",
+    )
+    base_fixture._git(bng2_root, "add", "bng2/BNG2.pl")
+    base_fixture._git(bng2_root, "commit", "-qm", "mock bng2 gdat")
+    lock_data["sources"]["bionetgen"]["revision"] = base_fixture._git(
+        bng2_root, "rev-parse", "HEAD"
+    )
+    lock_path.write_text(json.dumps(lock_data, indent=2) + "\n", encoding="utf-8")
+    base_fixture._git(repo, "add", "provenance/upstreams.lock.yml")
+    base_fixture._git(repo, "commit", "-qm", "pin mock oracles")
+    rev = base_fixture._git(repo, "rev-parse", "HEAD")
+
+    class _FakeResult:
+        time = [0.0, 2.0]
+        observables = {"Aobs": [100.0, 60.0], "Bobs": [0.0, 40.0]}
+
+    class _FakeModel:
+        def simulate(self, **kwargs):
+            assert kwargs["method"] == "ode"
+            assert kwargs["backend"] == "bngsim"
+            return _FakeResult()
+
+    loaded_texts: list[str] = []
+
+    class _FakeBionetgen:
+        @staticmethod
+        def load(path: Path):
+            txt = Path(path).read_text(encoding="utf-8")
+            loaded_texts.append(txt)
+            if "simulate(" in txt or "generate_network(" in txt:
+                raise RuntimeError("BNGsim adapter rejected model action")
+            return _FakeModel()
+
+    monkeypatch.setitem(sys.modules, "bionetgen", _FakeBionetgen)
+    receipts = tmp_path / "receipts"
+    artifacts = tmp_path / "artifacts"
+    summary = bngsim_rec.build_bngsim_receipt(
+        root=repo,
+        revision=rev,
+        bng2_root=bng2_root,
+        bngsim_root=bngsim_root,
+        receipts_dir=receipts,
+        artifacts_dir=artifacts,
+    )
+    assert summary["emitted_rows"] == ["backend.bngsim"]
+    assert len(loaded_texts) == 1
+    assert "simulate(" not in loaded_texts[0]
+    assert "generate_network(" not in loaded_texts[0]
+    report = checks.oracle_independence_report(repo, receipts, rev, artifacts)
+    assert report["grounded_execution_rows"] == 1
+    assert report["owned_comparisons"][0]["consumer_equals_oracle"] is True

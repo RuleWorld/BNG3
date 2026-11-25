@@ -44,7 +44,9 @@ begin reaction rules
     A() -> B() k
 end reaction rules
 end model
-generate_network({overwrite=>1})
+"""
+
+_ORACLE_ACTIONS = """generate_network({overwrite=>1})
 simulate({method=>"ode",t_end=>2.0,n_steps=>8})
 """
 
@@ -112,10 +114,12 @@ def build_bngsim_receipt(
         model_path.write_bytes(inp_bytes)
         oracle_dir = work / "bng2"
         oracle_dir.mkdir()
+        oracle_model_path = oracle_dir / "bngsim_ode.bngl"
+        oracle_model_path.write_text(_MODEL + _ORACLE_ACTIONS, encoding="utf-8")
         env = dict(os.environ, BNGPATH=str(bng2_pl.parent))
         proc = subprocess.run(
-            ["perl", str(bng2_pl), "--outdir", str(oracle_dir), str(model_path)],
-            cwd=work,
+            ["perl", str(bng2_pl), "--outdir", str(oracle_dir), str(oracle_model_path)],
+            cwd=oracle_dir,
             env=env,
             capture_output=True,
             text=True,
