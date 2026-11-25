@@ -194,7 +194,7 @@ def test_single_row_and_generalized_bng2_receipts_ground_end_to_end(tmp_path: Pa
     assert report_single["owned_comparisons"][0]["capability_id"] == "bngl.model-blocks"
     assert report_single["owned_comparisons"][0]["consumer_equals_oracle"] is True
 
-    # 3. Generalized sibling set (all 33 mapped implemented bngl.* rows): grounds 33/997
+    # 3. Generalized sibling set (all 35 mapped implemented bngl.* rows): grounds 35/997
     all_receipts = tmp_path / "all-receipts"
     all_artifacts = tmp_path / "all-artifacts"
     summary_all = recorder.build_bng2_receipts(
@@ -205,12 +205,12 @@ def test_single_row_and_generalized_bng2_receipts_ground_end_to_end(tmp_path: Pa
         receipts_dir=all_receipts,
         artifacts_dir=all_artifacts,
     )
-    assert len(summary_all["emitted_rows"]) == 33
+    assert len(summary_all["emitted_rows"]) == 35
     report_all = checks.oracle_independence_report(
         repo, all_receipts, rev, all_artifacts
     )
-    assert report_all["grounded_execution_rows"] == 33
-    assert report_all["result"] == "fail"  # other 964 rows remain ungrounded
+    assert report_all["grounded_execution_rows"] == 35
+    assert report_all["result"] == "fail"  # other 962 rows remain ungrounded
 
 
 @pytest.mark.parametrize(

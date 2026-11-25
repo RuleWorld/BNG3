@@ -1055,3 +1055,34 @@ def test_reconciliation_pins_deltas_and_acceptance_are_consumed_in_parity_queue(
     assert "reconciliation-history.json" in run
     assert "reconciliation-acceptance.json" in run
     assert '"${reconciliation_args[@]}"' in run
+
+
+def test_issue471_bng2_probe_receipts_are_wired_in_bng2_parity():
+    workflow = _parse_workflow()
+    step = next(
+        item
+        for item in workflow["jobs"]["bng2-parity"]["steps"]
+        if item.get("name")
+        == "Record exact-revision Issue 471 BNG2 oracle consumer receipts"
+    )
+    assert "scripts/ci/record_issue471_bng2_probe_receipts.py" in step["run"]
+    assert "scripts/ci/record_issue471_analytic_receipts.py" in step["run"]
+    assert "scripts/ci/record_issue471_crn_receipt.py" in step["run"]
+
+    nfsim_steps = {
+        item.get("name"): item for item in workflow["jobs"]["nfsim-parity"]["steps"]
+    }
+    net3_step = nfsim_steps["Build locked BNG2 Network3 oracle"]
+    assert "make -C" in net3_step["run"]
+    assert "oracle-bionetgen/bng2/bin/run_network" in net3_step["run"]
+    bngsim_step = nfsim_steps[
+        "Record exact-revision Issue 471 BNGsim oracle consumer receipt"
+    ]
+    assert "scripts/ci/record_issue471_bngsim_receipt.py" in bngsim_step["run"]
+    integrated = next(
+        item
+        for item in workflow["jobs"]["integrated-semantic-validation"]["steps"]
+        if item.get("name")
+        == "Build exact-revision issue and provenance evidence queue"
+    )
+    assert "issue471-*-receipts-*" in integrated["run"]
