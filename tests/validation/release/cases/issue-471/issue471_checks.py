@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import math
 import re
 import sys
 import tempfile
@@ -19,6 +20,8 @@ SUPPORTED_COMPARATORS = (
     "release-oracle-byte-equality-v1",
     "release-oracle-net-canonical-v1",
     "release-oracle-gdat-numeric-v1",
+    "release-oracle-numeric-json-v1",
+    "release-oracle-crn-bng2-v1",
 )
 
 
@@ -125,6 +128,147 @@ def _compare_gdat_bytes(
     return True, ""
 
 
+def _compare_numeric_json_bytes(
+    oracle_bytes: bytes,
+    consumer_bytes: bytes,
+    *,
+    rtol: float = 1e-9,
+    atol: float = 1e-12,
+) -> tuple[bool, str]:
+    """Compare flat numeric JSON dictionaries within strict tolerance."""
+    try:
+        oracle_data = json.loads(oracle_bytes.decode("utf-8"))
+        consumer_data = json.loads(consumer_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return False, f"invalid numeric JSON output: {exc}"
+    if (
+        not isinstance(oracle_data, dict)
+        or not isinstance(consumer_data, dict)
+        or not oracle_data
+    ):
+        return False, "numeric JSON payload must be a non-empty object"
+    if set(oracle_data) != set(consumer_data):
+        return (
+            False,
+            f"numeric JSON key mismatch: oracle={sorted(oracle_data)} consumer={sorted(consumer_data)}",
+        )
+    for key in sorted(oracle_data):
+        ref_val = oracle_data[key]
+        sub_val = consumer_data[key]
+        if (
+            isinstance(ref_val, bool)
+            or isinstance(sub_val, bool)
+            or not isinstance(ref_val, (int, float))
+            or not isinstance(sub_val, (int, float))
+        ):
+            return False, f"non-numeric value for key {key!r}"
+        ref_f = float(ref_val)
+        sub_f = float(sub_val)
+        if not (math.isfinite(ref_f) and math.isfinite(sub_f)):
+            return False, f"non-finite value for key {key!r}"
+        if not math.isclose(ref_f, sub_f, rel_tol=rtol, abs_tol=atol):
+            return (
+                False,
+                f"numeric mismatch at {key!r}: oracle={ref_f!r} consumer={sub_f!r}",
+            )
+    return True, ""
+
+
+def _parse_bng2_net_crn(
+    net_text: str,
+) -> tuple[list[str], list[dict[str, Any]]]:
+    section = None
+    species: list[str] = []
+    reactions: list[dict[str, Any]] = []
+    for line in net_text.splitlines():
+        stripped = line.strip()
+        if stripped.startswith("begin "):
+            section = stripped.removeprefix("begin ")
+            continue
+        if stripped.startswith("end "):
+            section = None
+            continue
+        if section == "species" and stripped and not stripped.startswith("#"):
+            species.append(stripped.split()[1])
+        elif section == "reactions" and stripped and not stripped.startswith("#"):
+            body, _, comment = stripped.partition("#")
+            fields = body.split()
+            if len(fields) < 4:
+                raise ValueError(f"unexpected BNG2 .net reaction row: {line!r}")
+            reactants = (
+                ()
+                if fields[1] == "0"
+                else tuple(int(value) - 1 for value in fields[1].split(","))
+            )
+            products = (
+                ()
+                if fields[2] == "0"
+                else tuple(int(value) - 1 for value in fields[2].split(","))
+            )
+            reactions.append(
+                {
+                    "reactants": reactants,
+                    "products": products,
+                    "rate": fields[3],
+                    "rule": comment.strip(),
+                }
+            )
+    return species, reactions
+
+
+def _compare_crn_bng2_bytes(
+    oracle_bytes: bytes, consumer_bytes: bytes
+) -> tuple[bool, str]:
+    """Compare BNG2 .net CRN structure against model.to_crn() JSON."""
+    try:
+        bng2_species, bng2_reactions = _parse_bng2_net_crn(oracle_bytes.decode("utf-8"))
+        crn = json.loads(consumer_bytes.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
+        return False, f"invalid CRN/NET payload: {exc}"
+    if not isinstance(crn, dict):
+        return False, "consumer CRN payload must be an object"
+    crn_species = [item.get("name") for item in crn.get("species", [])]
+    if not bng2_species or crn_species != bng2_species:
+        return False, f"CRN species mismatch: bng2={bng2_species} crn={crn_species}"
+    bng2_complexes: list[tuple[int, ...]] = []
+    for reaction in bng2_reactions:
+        for side in (reaction["reactants"], reaction["products"]):
+            if side not in bng2_complexes:
+                bng2_complexes.append(side)
+    crn_complexes = [
+        tuple(item.get("species", [])) for item in crn.get("complexes", [])
+    ]
+    if crn_complexes != bng2_complexes:
+        return False, "CRN complexes mismatch"
+    bng2_matrix = [[0] * len(bng2_reactions) for _ in bng2_species]
+    for col, reaction in enumerate(bng2_reactions):
+        for sp in reaction["reactants"]:
+            bng2_matrix[sp][col] -= 1
+        for sp in reaction["products"]:
+            bng2_matrix[sp][col] += 1
+    if crn.get("stoichiometric_matrix") != bng2_matrix:
+        return False, "CRN stoichiometric matrix mismatch"
+    crn_reactions = crn.get("reactions", [])
+    if len(crn_reactions) != len(bng2_reactions):
+        return False, "CRN reaction count mismatch"
+    for sub_rxn, ref_rxn in zip(crn_reactions, bng2_reactions):
+        if (
+            tuple(sub_rxn.get("reactants", ())) != ref_rxn["reactants"]
+            or tuple(sub_rxn.get("products", ())) != ref_rxn["products"]
+        ):
+            return False, "CRN reaction topology mismatch"
+        rate_law = sub_rxn.get("rate_law", {})
+        if rate_law.get("rule_name") != ref_rxn["rule"]:
+            return False, "CRN reaction rule label mismatch"
+        sub_rate = re.sub(r"\s+", "", str(rate_law.get("expression", ""))).replace(
+            "()", ""
+        )
+        ref_rate = re.sub(r"\s+", "", ref_rxn["rate"])
+        if sub_rate != ref_rate:
+            return False, f"CRN rate mismatch: {sub_rate!r} != {ref_rate!r}"
+    return True, ""
+
+
 def _oracle_receipt_errors(
     row: dict[str, Any],
     receipt: dict[str, Any],
@@ -188,7 +332,10 @@ def _oracle_receipt_errors(
         for term in ("bng3-generated", "sut-generated", "self-oracle")
     ):
         errors.append(f"{row_id}: expected answer is identified as SUT-generated")
-    errors.extend(_locked_oracle_errors(root, row, oracle))
+    if origin == "analytic-derivation":
+        errors.extend(_analytic_oracle_errors(root, row, oracle))
+    else:
+        errors.extend(_locked_oracle_errors(root, row, oracle))
 
     producer = receipt.get("producer")
     consumer = receipt.get("consumer")
@@ -282,6 +429,20 @@ def _oracle_receipt_errors(
             **common,
             "consumer_equals_oracle": matched,
         }
+    elif comparator_id == "release-oracle-numeric-json-v1":
+        matched, diff_detail = _compare_numeric_json_bytes(oracle_bytes, consumer_bytes)
+        comparator = {
+            "id": "release-oracle-numeric-json-v1",
+            **common,
+            "consumer_equals_oracle": matched,
+        }
+    elif comparator_id == "release-oracle-crn-bng2-v1":
+        matched, diff_detail = _compare_crn_bng2_bytes(oracle_bytes, consumer_bytes)
+        comparator = {
+            "id": "release-oracle-crn-bng2-v1",
+            **common,
+            "consumer_equals_oracle": matched,
+        }
     else:
         errors.append(f"{row_id}: unsupported owned comparator {comparator_id!r}")
         return errors, None
@@ -291,6 +452,39 @@ def _oracle_receipt_errors(
             f"{row_id}: owned byte comparator found consumer output differs from oracle{suffix}"
         )
     return errors, comparator
+
+
+def _analytic_oracle_errors(
+    root: Path, row: dict[str, Any], oracle: dict[str, Any]
+) -> list[str]:
+    row_id = row.get("id", "<missing-id>")
+    declaration = str(row.get("oracle", "")).casefold()
+    oracle_name = str(oracle.get("name", "")).casefold()
+    analytic_terms = ("analytic", "hand-derived")
+    if not any(term in declaration for term in analytic_terms) or not any(
+        term in oracle_name for term in analytic_terms
+    ):
+        return [
+            f"{row_id}: analytic receipt does not match an analytic matrix declaration"
+        ]
+    law = oracle.get("law")
+    if not isinstance(law, str) or not law.strip():
+        return [f"{row_id}: analytic oracle law description is missing"]
+    if not _sha256(oracle.get("executable_sha256")):
+        return [f"{row_id}: analytic oracle script SHA-256 is invalid"]
+    spec_path = oracle.get("spec_path")
+    spec_bytes, path_error = _artifact_bytes(root, spec_path)
+    if path_error or spec_bytes is None:
+        return [f"{row_id}: analytic specification path invalid: {path_error}"]
+    spec_digest = hashlib.sha256(spec_bytes).hexdigest()
+    if (
+        oracle.get("spec_sha256") != spec_digest
+        or oracle.get("revision") != spec_digest
+    ):
+        return [
+            f"{row_id}: analytic oracle revision/digest does not match specification bytes"
+        ]
+    return []
 
 
 def _locked_oracle_errors(
