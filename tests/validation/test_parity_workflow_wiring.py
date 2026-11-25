@@ -962,3 +962,39 @@ def test_bngsim_adapter_oracle_excludes_broken_vendored_nfsim_teardown():
     )
     assert "-DBNGSIM_BUILD_PYTHON=OFF" in step["run"]
     assert "-DBNGSIM_BUILD_NFSIM=OFF" in step["run"]
+
+
+def test_reconciliation_pins_deltas_and_acceptance_are_consumed_in_parity_queue():
+    workflow = _parse_workflow()
+    integrated = workflow["jobs"]["integrated-semantic-validation"]
+    assert "upstream-reconciliation-history" in integrated["needs"]
+    steps = integrated["steps"]
+    downloads = {
+        step.get("name"): step
+        for step in steps
+        if step.get("uses", "").startswith("actions/download-artifact@")
+    }
+    assert (
+        downloads["Download upstream reconciliation pins and behavior reports"]["with"][
+            "name"
+        ]
+        == "upstream-reconciliation-history"
+    )
+    assert (
+        downloads["Download reconciliation behavior and JUnit artifacts"]["with"][
+            "pattern"
+        ]
+        == "reconciliation-*"
+    )
+    queue = next(
+        step
+        for step in steps
+        if step.get("name")
+        == "Build exact-revision issue and provenance evidence queue"
+    )
+    run = queue["run"]
+    assert "scripts/ci/record_reconciliation_deltas.py" in run
+    assert "scripts/ci/record_reconciliation_release.py" in run
+    assert "reconciliation-history.json" in run
+    assert "reconciliation-acceptance.json" in run
+    assert '"${reconciliation_args[@]}"' in run

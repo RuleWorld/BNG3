@@ -683,6 +683,10 @@ jobs:
             tests/validation/test_reconciliation_bng2.py \
             --bng-cpp build/cpp/bng_cpp -q -o junit_family=xunit1 \
             --junitxml="$RUNNER_TEMP/reconciliation-bng2.xml"
+          .venv/bin/python -m pytest -c tests/validation/pytest.ini \
+            tests/validation/test_tfun_rate_law.py \
+            --bng-cpp build/cpp/bng_cpp -q -o junit_family=xunit1 \
+            --junitxml="$RUNNER_TEMP/reconciliation-tfun.xml"
 
       - name: Retain reconciliation BNG2 evidence
         if: always()
@@ -690,6 +694,13 @@ jobs:
         with:
           name: reconciliation-bng2
           path: ${{ runner.temp }}/reconciliation-bng2.xml
+
+      - name: Retain reconciliation BNG2 TFUN evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reconciliation-bng2-tfun
+          path: ${{ runner.temp }}/reconciliation-tfun.xml
 
       - name: Compare graph-aware networks against BNG2
         shell: bash
@@ -881,6 +892,7 @@ jobs:
     needs:
       - oracle-lock
       - release-obligation-142
+      - upstream-reconciliation-history
       - bng2-parity
       - nfsim-parity
       - pybionetgen-compat
@@ -1253,6 +1265,22 @@ jobs:
           pattern: eq-catalogue-*
           path: ${{ runner.temp }}/release-records
 
+      - name: Download upstream reconciliation pins and behavior reports
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: upstream-reconciliation-history
+          path: ${{ runner.temp }}/reconciliation-pins
+
+      - name: Download reconciliation behavior and JUnit artifacts
+        if: always()
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: reconciliation-*
+          path: ${{ runner.temp }}/reconciliation-artifacts
+
       - name: Build exact-revision issue and provenance evidence queue
         if: always()
         run: |
@@ -1383,6 +1411,41 @@ jobs:
               fi
             fi
           fi
+          reconciliation_args=()
+          if [[ -s "$RUNNER_TEMP/reconciliation-pins/reconciliation-history.json" ]]; then
+            reconciliation_args+=(--report "$RUNNER_TEMP/reconciliation-pins/reconciliation-history.json")
+            junit_args=()
+            while IFS= read -r -d '' junit_path; do
+              junit_args+=(--junit "$junit_path")
+            done < <(find "$RUNNER_TEMP/reconciliation-artifacts" -type f -name '*.xml' -print0 2>/dev/null)
+            if (( ${#junit_args[@]} > 0 )); then
+              python scripts/ci/record_reconciliation_deltas.py \
+                --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
+                --pin-report "$RUNNER_TEMP/reconciliation-pins/reconciliation-history.json" \
+                "${junit_args[@]}" \
+                --output "$RUNNER_TEMP/reconciliation-deltas.json" || true
+            fi
+            recon_behavior_args=()
+            if [[ -s "$RUNNER_TEMP/reconciliation-deltas.json" ]]; then
+              recon_behavior_args+=(--behavior-report "$RUNNER_TEMP/reconciliation-deltas.json")
+            fi
+            while IFS= read -r -d '' beh_path; do
+              recon_behavior_args+=(--behavior-report "$beh_path")
+            done < <(find "$RUNNER_TEMP/reconciliation-artifacts" -type f -name '*reconciliation-nfsim-options*.json' -print0 2>/dev/null)
+            for case_json in "${case_report_args[@]}"; do
+              if [[ "$case_json" != "--case-report" && -s "$case_json" ]]; then
+                recon_behavior_args+=(--behavior-report "$case_json")
+              fi
+            done
+            python scripts/ci/record_reconciliation_release.py \
+              --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
+              --pin-report "$RUNNER_TEMP/reconciliation-pins/reconciliation-history.json" \
+              "${recon_behavior_args[@]}" \
+              --output "$RUNNER_TEMP/reconciliation-acceptance.json" || true
+            if [[ -s "$RUNNER_TEMP/reconciliation-acceptance.json" ]]; then
+              reconciliation_args+=(--report "$RUNNER_TEMP/reconciliation-acceptance.json")
+            fi
+          fi
           for record in \
             "$RUNNER_TEMP"/release-records/issue137-inventory-*/report.json \
             "$RUNNER_TEMP"/release-records/issue181-corpus-*/report.json \
@@ -1418,6 +1481,7 @@ jobs:
             "${issue147_args[@]}" \
             "${issue148_args[@]}" \
             "${issue149_args[@]}" \
+            "${reconciliation_args[@]}" \
             "${release_report_args[@]}" \
             --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
             --output-dir "$RUNNER_TEMP/bng3-issue-queue" "${head_args[@]}"
@@ -1433,6 +1497,8 @@ jobs:
             ${{ runner.temp }}/bng3-issues.json
             ${{ runner.temp }}/bng3-bngir-roundtrip-release/
             ${{ runner.temp }}/bng3-issue-155-release/
+            ${{ runner.temp }}/reconciliation-deltas.json
+            ${{ runner.temp }}/reconciliation-acceptance.json
           if-no-files-found: warn
           retention-days: 30
 
@@ -1609,7 +1675,9 @@ jobs:
           NFSIM_SYNC_ORACLE: ${{ runner.temp }}/oracle-nfsim
           NFSIM_SYNC_CANDIDATE_BIN: ${{ github.workspace }}/build/cpp
         run: |
-          python -m pytest --noconftest -q tests/validation/nfsim_upstream_sync.py
+          python -m pytest --noconftest -q tests/validation/nfsim_upstream_sync.py \
+            -o junit_family=xunit1 \
+            --junitxml="$RUNNER_TEMP/reconciliation-nfsim-sync.xml"
 
       - name: Report installed BNG3 package and native identities
         run: |
@@ -1807,7 +1875,8 @@ jobs:
           NFSIM_BIN="$RUNNER_TEMP/oracle-nfsim/build/NFsim" \
             pytest -c tests/validation/pytest.ini \
               tests/validation/test_parity_nfsim_seed.py \
-              -q
+              -q -o junit_family=xunit1 \
+              --junitxml="$RUNNER_TEMP/reconciliation-nfsim-seed.xml"
 
       - name: Verify species-observable propensity refresh
         run: |
@@ -2139,7 +2208,52 @@ jobs:
             bng3_nfnext_population_hybrid_contract \
             bng3_nfnext_rng_replay_contract \
             bng3_nfnext_future_contract \
+            test_node_operator \
+            test_batch_runner \
+            test_nfsim_ast_adapter \
+            test_nfcore2_native_reader \
+            bng_cpp \
             --parallel 2
+
+      - name: Execute #180 reconciliation CTest and Python delta checks
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir build --output-on-failure \
+            --output-junit "$RUNNER_TEMP/reconciliation-ctest.xml" \
+            -R "^(bng_cpp_action_errors|PatternGraph canonicalization defines the empty graph|bng_cpp parallel mode (isolates model outputs|propagates child failures)|NFsim AST adapter maps bare molecule stoichiometric observables|NFsim XML preserves parameter-backed compartment sizes on update|NFsim preserves issue 109 created molecule compartment inheritance|native-port::direct NFsim refreshes a local rate when its global observable changes)$"
+          python -m pytest --noconftest -q \
+            tests/validation/test_reconciliation_evidence.py::test_packaging_is_a_default_installed_requirement \
+            tests/python/test_legacy_console_streams.py \
+            tests/python/test_legacy_cvode_export.py \
+            tests/python/test_legacy_function_cycles.py \
+            tests/python/test_legacy_network_graph_labels.py \
+            tests/python/test_legacy_pattern_xml.py \
+            tests/python/test_legacy_symmetry_factor.py \
+            -o junit_family=xunit1 \
+            --junitxml="$RUNNER_TEMP/reconciliation-python-deltas.xml"
+          python -m pytest -q \
+            tests/python/test_cpp_backend.py::TestSimulation::test_nf_local_rate_refreshes_after_global_observable_changes \
+            tests/python/test_cpp_backend.py::TestSimulation::test_nf_simulation_honors_absolute_start_time \
+            tests/python/test_cpp_backend.py::TestSimulation::test_simulate_nf_defaults_to_strict_molecularity_with_explicit_opt_out \
+            tests/python/test_cpp_backend.py::TestSimulation::test_simulate_nf_rejects_unhandled_controls \
+            tests/python/test_cpp_backend.py::TestSimulation::test_simulate_nf_rejects_unsupported_continue \
+            -o junit_family=xunit1 \
+            --junitxml="$RUNNER_TEMP/reconciliation-cpp-backend-deltas.xml"
+
+      - name: Retain #180 reconciliation delta JUnit evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reconciliation-nfsim-deltas-${{ github.event.pull_request.head.sha || github.sha }}
+          path: |
+            ${{ runner.temp }}/reconciliation-nfsim-sync.xml
+            ${{ runner.temp }}/reconciliation-nfsim-seed.xml
+            ${{ runner.temp }}/reconciliation-ctest.xml
+            ${{ runner.temp }}/reconciliation-python-deltas.xml
+            ${{ runner.temp }}/reconciliation-cpp-backend-deltas.xml
+          if-no-files-found: warn
 
       - name: Run Issue 147 NFnext lowering release suite
         shell: bash
