@@ -558,7 +558,7 @@ detail::NfnextGraphPlan compileGraphPlan(
         }
     }
 
-    // Verify local-function scope exactness: if any rule direction defines localScopes
+    // Verify local-scope exactness: if any rule direction defines localScopes
     // (%x::A()), global observable evaluation equals complex-scoped local evaluation
     // iff every molecule type used in a localScope can have at most 1 live instance.
     std::set<std::uint32_t> localScopedTypes;
@@ -576,13 +576,13 @@ detail::NfnextGraphPlan compileGraphPlan(
                                     .moleculeTypeId->value()));
                         } else {
                             refuse(
-                                "unresolved local-function scope is outside GPU graph kernel slice");
+                                "unresolved local scope is outside GPU graph kernel slice");
                         }
                     } else {
                         for (const auto& mol : pat.molecules()) {
                             if (!mol.moleculeTypeId) {
                                 refuse(
-                                    "unresolved local-function scope is outside GPU graph kernel slice");
+                                    "unresolved local scope is outside GPU graph kernel slice");
                             }
                             localScopedTypes.insert(
                                 static_cast<std::uint32_t>(mol.moleculeTypeId->value()));
@@ -596,7 +596,7 @@ detail::NfnextGraphPlan compileGraphPlan(
     }
     for (const auto scopedType : localScopedTypes) {
         if (initialTypeCounts.at(scopedType) > 1 || createdTypes.count(scopedType) != 0) {
-            refuse("multi-copy local-function scoping is outside GPU graph kernel slice");
+            refuse("multi-copy local scoping is outside GPU graph kernel slice");
         }
     }
 

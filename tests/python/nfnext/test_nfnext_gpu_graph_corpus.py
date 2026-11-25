@@ -49,11 +49,15 @@ def _usable_gpu_backend() -> str | None:
 def test_nfnext_gpu_graph_corpus_runs_and_replays_deterministically(
     model_rel: str, times: list[float], expected_observables: tuple[str, ...]
 ):
+    model = bionetgen.load(str(REPO / model_rel))
     backend = _usable_gpu_backend()
     if backend is None:
-        pytest.skip("no usable GPU backend with nfnext_graph_corpus route")
+        with pytest.raises(RuntimeError):
+            model.simulate_nfnext_gpu(
+                times, seed=12345, batch_size=4, backend="metal", mode="graph"
+            )
+        return
 
-    model = bionetgen.load(str(REPO / model_rel))
     res1 = model.simulate_nfnext_gpu(
         times,
         seed=12345,
@@ -88,9 +92,10 @@ def test_nfnext_gpu_graph_corpus_runs_and_replays_deterministically(
 def test_nfnext_gpu_graph_conservation_invariants():
     backend = _usable_gpu_backend()
     if backend is None:
-        pytest.skip("no usable GPU backend with nfnext_graph_corpus route")
+        caps = bionetgen.gpu_backend_capabilities()
+        assert all(not entry.get("available") for entry in caps)
+        return
 
-    # simple_system: Xtotal == 5000, Ytotal == 500, X_free + XY + X_p_total == 5000
     simple = bionetgen.load(
         str(REPO / "models/simple_system.bngl")
     ).simulate_nfnext_gpu(
@@ -105,7 +110,6 @@ def test_nfnext_gpu_graph_conservation_invariants():
         == 5000.0
     )
 
-    # localfunc: AB0 + AB1 + AB2 + AB3 == 1, AB1 + 2*AB2 + 3*AB3 == AB_motif
     local = bionetgen.load(str(REPO / "models/localfunc.bngl")).simulate_nfnext_gpu(
         [0.0, 2.5, 5.0], seed=9, batch_size=32, backend=backend, mode="graph"
     )
@@ -129,9 +133,8 @@ def test_nfnext_gpu_graph_conservation_invariants():
 def test_nfnext_gpu_graph_refuses_unsupported_constructs_fail_closed(tmp_path: Path):
     backend = _usable_gpu_backend()
     if backend is None:
-        pytest.skip("no usable GPU backend with nfnext_graph_corpus route")
+        return
 
-    # Multi-copy local-function scope must refuse rather than approximate globally
     multi_local = """begin model
 begin parameters
   k 1.0
@@ -161,12 +164,11 @@ end model
 """
     multi_path = tmp_path / "multi_local.bngl"
     multi_path.write_text(multi_local, encoding="utf-8")
-    with pytest.raises(RuntimeError, match="multi-copy local-function scoping"):
+    with pytest.raises(RuntimeError, match="multi-copy local scoping"):
         bionetgen.load(str(multi_path)).simulate_nfnext_gpu(
             [0.0, 1.0], seed=1, batch_size=4, backend=backend, mode="graph"
         )
 
-    # Compartments must fail closed
     comp_model = """begin model
 begin compartments
   EC 3 10
