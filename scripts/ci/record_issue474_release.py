@@ -46,6 +46,12 @@ BUILD_IDENTITY_FIELDS = (
     "configure_options",
     "native_binary_sha256",
 )
+CUDA_BUILD_IDENTITY_FIELDS = (
+    "device",
+    "os",
+    "compiler",
+    "native_binary_sha256",
+)
 
 
 def _require(condition: bool, message: str) -> None:
@@ -90,30 +96,33 @@ def _row(check: str, status: str, detail: str, receipts: list[Path]) -> dict:
     }
 
 
-def _validate_parity(path: Path, revision: str, device: str, sha: str) -> dict:
+def _validate_parity(
+    path: Path, revision: str, device: str, sha: str, *, backend: str = "metal"
+) -> dict:
+    label = "Metal" if backend == "metal" else "CUDA"
     data = _read(path)
     _require(data.get("source_revision") == revision, "parity receipt: stale revision")
     _require(data.get("source_dirty") is False, "parity receipt: dirty checkout")
     _require(data.get("native_sha256") == sha, "parity receipt: native binary mismatch")
     gpu = data.get("gpu") or {}
     _require(gpu.get("status") == "PASS", "parity gate did not pass")
-    _require(gpu.get("backend") == "metal", "parity receipt is not a Metal run")
+    _require(gpu.get("backend") == backend, f"parity receipt is not a {label} run")
     inventory = next(
-        (row for row in gpu.get("inventory", []) if row.get("name") == "metal"), None
+        (row for row in gpu.get("inventory", []) if row.get("name") == backend), None
     )
     _require(
         bool(inventory and inventory.get("compiled") and inventory.get("available")),
-        "parity receipt does not show a usable compiled Metal device",
+        f"parity receipt does not show a usable compiled {label} device",
     )
     _require(inventory.get("detail") == device, "parity device identity mismatch")
     models = gpu.get("models") or []
     _require(len(models) >= 5, "parity receipt is missing required models")
     _require(
         all(
-            row.get("status") == "PASS" and row.get("backend") == "metal"
+            row.get("status") == "PASS" and row.get("backend") == backend
             for row in models
         ),
-        "parity receipt has a non-Metal or non-passing model",
+        f"parity receipt has a non-{label} or non-passing model",
     )
     _require(
         any(row.get("model") == "gpu_immigration_death" for row in models),
@@ -122,15 +131,22 @@ def _validate_parity(path: Path, revision: str, device: str, sha: str) -> dict:
     return data
 
 
-def _validate_nfnext(path: Path, revision: str, sha: str) -> dict:
+def _validate_nfnext(
+    path: Path, revision: str, sha: str, *, backend: str = "metal"
+) -> dict:
+    label = "Metal" if backend == "metal" else "CUDA"
     data = _read(path)
-    _validate_source(data.get("source") or {}, revision, "NFnext device receipt")
+    _validate_source(
+        data.get("source") or {}, revision, f"NFnext {label} device receipt"
+    )
     _require(
         (data.get("source") or {}).get("native_sha256") == sha,
-        "NFnext device receipt: native binary mismatch",
+        f"NFnext {label} device receipt: native binary mismatch",
     )
-    _require(data.get("status") == "PASS", "NFnext device receipt did not pass")
-    _require(data.get("backend") == "metal", "NFnext receipt is not a Metal run")
+    _require(
+        data.get("status") == "PASS", f"NFnext {label} device receipt did not pass"
+    )
+    _require(data.get("backend") == backend, f"NFnext receipt is not a {label} run")
     _require(data.get("conserved") is True, "NFnext receipt lost conservation")
     _require(
         all(row.get("pass") for row in data.get("checks", [])),
@@ -140,21 +156,25 @@ def _validate_nfnext(path: Path, revision: str, sha: str) -> dict:
     return data
 
 
-def _validate_performance(path: Path, revision: str, sha: str) -> dict:
+def _validate_performance(
+    path: Path, revision: str, sha: str, *, backend: str = "metal"
+) -> dict:
+    label = "Metal" if backend == "metal" else "CUDA"
     data = _read(path)
     _validate_source(
-        data.get("source_identity") or {}, revision, "Metal performance receipt"
+        data.get("source_identity") or {}, revision, f"{label} performance receipt"
     )
     identity = data["source_identity"]
     _require(
         identity.get("native_binary_sha256") == sha,
-        "Metal performance receipt: native binary mismatch",
+        f"{label} performance receipt: native binary mismatch",
     )
     equivalence = data.get("equivalence") or {}
     _require(
-        equivalence.get("passed") is True, "Metal performance equivalence did not pass"
+        equivalence.get("passed") is True,
+        f"{label} performance equivalence did not pass",
     )
-    _require(data.get("device_assertions"), "no Metal device assertion recorded")
+    _require(data.get("device_assertions"), f"no {label} device assertion recorded")
     _require("memory_accounting" in data, "no memory accounting recorded")
     verdicts = (data.get("measurement") or {}).get("verdicts") or {}
     _require(
@@ -172,10 +192,10 @@ def _validate_performance(path: Path, revision: str, sha: str) -> dict:
             "sim_time_ms",
             "events_per_sec_sim",
         ):
-            _require(field in metrics, f"Metal performance receipt missing {field}")
+            _require(field in metrics, f"{label} performance receipt missing {field}")
         _require(
-            (row.get("b") or {}).get("label") == "gpu:metal",
-            "performance round is not attributed to Metal",
+            (row.get("b") or {}).get("label") == f"gpu:{backend}",
+            f"performance round is not attributed to {label}",
         )
     return data
 
@@ -227,29 +247,52 @@ def record(args: argparse.Namespace) -> dict:
         _require(field in build, f"build identity missing {field}")
     sha = build["native_binary_sha256"]
     device = build["device"]
-    native = ROOT / "build/cpp/_bionetgen_cpp.cpython-314-darwin.so"
-    if native.is_file():
-        _require(
-            _sha256(native) == sha, "built extension does not match build identity"
-        )
+    if platform.system().lower() == "darwin":
+        native_candidates = sorted((ROOT / "build/cpp").glob("_bionetgen_cpp*.so"))
+        if len(native_candidates) == 1:
+            _require(
+                _sha256(native_candidates[0]) == sha,
+                "built extension does not match build identity",
+            )
 
-    parity = _validate_parity(args.parity, revision, device, sha)
+    parity = _validate_parity(args.parity, revision, device, sha, backend="metal")
     # The finite Metal lane can be recorded on an exact-main checkout that has
     # no network-free device receipt; in that case the unqualified nf-gpu row
     # says so explicitly instead of borrowing the finite result.
-    nfnext = _validate_nfnext(args.nfnext, revision, sha) if args.nfnext else None
-    _validate_performance(args.performance, revision, sha)
+    nfnext = (
+        _validate_nfnext(args.nfnext, revision, sha, backend="metal")
+        if args.nfnext
+        else None
+    )
+    _validate_performance(args.performance, revision, sha, backend="metal")
     crossover = _validate_crossover(args.crossover, revision, sha)
-    cuda = _read(args.cuda_probe)
-    _require(cuda.get("schema_version") == 1, "invalid CUDA availability probe")
+
+    cuda_receipt_args = (
+        args.cuda_build_identity,
+        args.cuda_parity,
+        args.cuda_performance,
+        args.cuda_crossover,
+    )
+    has_any_cuda_receipt = any(cuda_receipt_args)
+    has_all_cuda_receipts = all(cuda_receipt_args)
+    if has_any_cuda_receipt and not has_all_cuda_receipts:
+        raise ValueError(
+            "supply --cuda-build-identity, --cuda-parity, --cuda-performance, and "
+            "six --cuda-crossover receipts together when recording CUDA execution"
+        )
+
+    cuda = _read(args.cuda_probe) if args.cuda_probe else None
+    if cuda is not None:
+        _require(cuda.get("schema_version") == 1, "invalid CUDA availability probe")
 
     receipts = [
         args.parity,
         args.performance,
         args.build_identity,
-        args.cuda_probe,
         *args.crossover,
     ]
+    if args.cuda_probe:
+        receipts.append(args.cuda_probe)
     if args.nfnext:
         receipts.append(args.nfnext)
     workloads = None
@@ -264,7 +307,9 @@ def record(args: argparse.Namespace) -> dict:
             "workload receipt must not claim the full network-free corpus",
         )
         _require(
-            workloads["cuda"]["status"] == "UNSUPPORTED", "workload receipt claims CUDA"
+            workloads["cuda"]["status"]
+            in {"UNSUPPORTED", "NOT_RUN_HERE", "NOT_TESTED_IN_THIS_RECEIPT"},
+            "workload receipt claims CUDA",
         )
         _require(
             len(workloads.get("workloads", [])) >= 3,
@@ -291,18 +336,134 @@ def record(args: argparse.Namespace) -> dict:
         pinned = _read(args.pinned_nfsim)
         _require(pinned.get("status") == "PASS", "pinned NFsim reference did not pass")
         _require(
-            pinned["device"].get("reported_device")
+            nfnext is not None
+            and pinned["device"].get("reported_device")
             == nfnext["device"].get("reported_device"),
-            "pinned NFsim reference used a different device",
+            "pinned NFsim reference requires matching Metal NFnext device receipt",
         )
         receipts.append(args.pinned_nfsim)
 
-    cuda_blocked = cuda["verdict"]["status"] == "BLOCKED"
-    cuda_detail = cuda["verdict"]["detail"]
-    if not cuda_blocked:
-        raise ValueError(
-            "CUDA resources are available; supply real CUDA device receipts before recording #474"
+    cuda_section: dict | None = None
+    cuda_nfnext = None
+    cuda_device_name = ""
+    cuda_crossover: list[dict] = []
+    if has_all_cuda_receipts:
+        cuda_build = _read(args.cuda_build_identity)
+        for field in CUDA_BUILD_IDENTITY_FIELDS:
+            _require(field in cuda_build, f"CUDA build identity missing {field}")
+        cuda_sha = cuda_build["native_binary_sha256"]
+        cuda_device_name = cuda_build["device"]
+        cuda_parity = _validate_parity(
+            args.cuda_parity, revision, cuda_device_name, cuda_sha, backend="cuda"
         )
+        _validate_performance(args.cuda_performance, revision, cuda_sha, backend="cuda")
+        cuda_crossover = _validate_crossover(args.cuda_crossover, revision, cuda_sha)
+        receipts.extend(
+            [
+                args.cuda_build_identity,
+                args.cuda_parity,
+                args.cuda_performance,
+                *args.cuda_crossover,
+            ]
+        )
+        if args.cuda_nfnext:
+            cuda_nfnext = _validate_nfnext(
+                args.cuda_nfnext, revision, cuda_sha, backend="cuda"
+            )
+            receipts.append(args.cuda_nfnext)
+        cuda_section = {
+            "device": cuda_device_name,
+            "finite_models": [row["model"] for row in cuda_parity["gpu"]["models"]],
+            "crossover": cuda_crossover,
+            "native_sha256": cuda_sha,
+        }
+        if cuda is None:
+            cuda = {
+                "schema_version": 1,
+                "verdict": {
+                    "status": "RECORDED",
+                    "detail": f"Real NVIDIA CUDA receipts verified on {cuda_device_name}.",
+                },
+            }
+        cuda_row_device = _row(
+            "release-cuda-device",
+            "PASS",
+            f"CUDA finite batch SSA executed on {cuda_device_name} with analytic, "
+            "conservation, reproducibility and distributional checks.",
+            [args.cuda_parity, args.cuda_build_identity],
+        )
+        cuda_row_perf = _row(
+            "release-cuda-performance",
+            "PASS",
+            f"Paired CPU/CUDA measurements on {cuda_device_name} with A/A null, "
+            "statistical equivalence, transfer costs, memory, startup and crossover ladder.",
+            [args.cuda_performance, *args.cuda_crossover],
+        )
+    else:
+        _require(
+            cuda is not None, "--cuda-probe is required when CUDA receipts are omitted"
+        )
+        cuda_blocked = cuda["verdict"]["status"] == "BLOCKED"
+        cuda_detail = cuda["verdict"]["detail"]
+        if not cuda_blocked:
+            raise ValueError(
+                "CUDA resources are available; supply real CUDA device receipts before recording #474"
+            )
+        cuda_row_device = _row(
+            "release-cuda-device",
+            "NOT_TESTED",
+            "No CUDA device execution: " + cuda_detail,
+            [args.cuda_probe],
+        )
+        cuda_row_perf = _row(
+            "release-cuda-performance",
+            "NOT_TESTED",
+            "No CUDA device measurement: " + cuda_detail,
+            [args.cuda_probe],
+        )
+
+    nf_gpu_receipts = [
+        row
+        for row in (
+            args.nfnext,
+            args.nfnext_workloads,
+            args.pinned_nfsim,
+            args.cuda_nfnext,
+        )
+        if row
+    ]
+    if nfnext or cuda_nfnext:
+        backends_tested = " and ".join(
+            name
+            for name, present in (("Metal", nfnext), ("CUDA", cuda_nfnext))
+            if present
+        )
+        nf_detail = (
+            f"Bounded {backends_tested} unary-state route passes analytic"
+            + (" and pinned native NFsim" if pinned else "")
+            + (" across extended bounded workload classes" if workloads else "")
+            + " checks, but the full network-free GPU corpus is not qualified"
+            + (" and CUDA reporting is not included." if not cuda_nfnext else ".")
+        )
+    else:
+        nf_detail = (
+            "No network-free device receipt was consumed on this exact revision; "
+            "finite GPU evidence cannot qualify this row."
+        )
+
+    if has_all_cuda_receipts:
+        coverage_detail = (
+            "backend.gpu is not fully covered: finite batch SSA passed on Metal and CUDA "
+            "and bounded unary NFnext passed, but the full network-free GPU corpus "
+            "(multi-type/bond/function kernels) remains unimplemented."
+        )
+        coverage_receipts = [args.parity, args.cuda_parity]
+    else:
+        coverage_detail = (
+            "backend.gpu is not fully covered: Metal executions recorded, CUDA device "
+            "execution externally blocked and full network-free corpus unimplemented."
+        )
+        coverage_receipts = [args.cuda_probe]
 
     results = [
         _row(
@@ -319,43 +480,14 @@ def record(args: argparse.Namespace) -> dict:
             "transfer costs, memory, startup and crossover ladder.",
             [args.performance, *args.crossover],
         ),
-        _row(
-            "release-cuda-device",
-            "NOT_TESTED",
-            "No CUDA device execution: " + cuda_detail,
-            [args.cuda_probe],
-        ),
-        _row(
-            "release-cuda-performance",
-            "NOT_TESTED",
-            "No CUDA device measurement: " + cuda_detail,
-            [args.cuda_probe],
-        ),
-        _row(
-            "release-nf-gpu",
-            "NOT_TESTED",
-            (
-                "Bounded Metal unary-state route passes analytic"
-                + (" and pinned native NFsim" if pinned else "")
-                + (" across extended bounded workload classes" if workloads else "")
-                + " checks, but the full network-free GPU corpus and CUDA reporting are not qualified."
-                if nfnext
-                else "No network-free device receipt was consumed on this exact revision; finite Metal evidence cannot qualify this row."
-            ),
-            (
-                [
-                    row
-                    for row in (args.nfnext, args.nfnext_workloads, args.pinned_nfsim)
-                    if row
-                ]
-            ),
-        ),
+        cuda_row_device,
+        cuda_row_perf,
+        _row("release-nf-gpu", "NOT_TESTED", nf_detail, nf_gpu_receipts),
         _row(
             "release-capability-coverage-474",
             "NOT_TESTED",
-            "backend.gpu is not fully covered: Metal executions recorded, CUDA device "
-            "execution externally blocked and network-free CUDA unimplemented.",
-            [args.cuda_probe],
+            coverage_detail,
+            coverage_receipts,
         ),
     ]
 
@@ -386,11 +518,21 @@ def record(args: argparse.Namespace) -> dict:
             ),
             "pinned_nfsim": pinned,
             "bounded_workloads": workloads,
-            "cuda": "UNSUPPORTED: network-free CUDA execution is not implemented",
+            "cuda": (
+                {
+                    "device": cuda_nfnext["device"]["reported_device"],
+                    "total_events": cuda_nfnext["total_events"],
+                    "analytic_times": [row["time"] for row in cuda_nfnext["checks"]],
+                }
+                if cuda_nfnext
+                else "NOT_RECORDED: bounded CUDA NFnext receipt not supplied"
+            ),
         },
         "cuda": cuda,
         "receipts": [{"path": str(path), "sha256": _sha256(path)} for path in receipts],
     }
+    if cuda_section is not None:
+        report["cuda_device"] = cuda_section
     if args.display_base:
         base = Path(args.display_base)
 
@@ -416,8 +558,13 @@ def main() -> int:
     parser.add_argument("--performance", required=True, type=Path)
     parser.add_argument("--crossover", required=True, type=Path, action="append")
     parser.add_argument("--pinned-nfsim", type=Path)
-    parser.add_argument("--cuda-probe", required=True, type=Path)
+    parser.add_argument("--cuda-probe", type=Path)
     parser.add_argument("--build-identity", required=True, type=Path)
+    parser.add_argument("--cuda-build-identity", type=Path)
+    parser.add_argument("--cuda-parity", type=Path)
+    parser.add_argument("--cuda-performance", type=Path)
+    parser.add_argument("--cuda-crossover", type=Path, action="append")
+    parser.add_argument("--cuda-nfnext", type=Path)
     parser.add_argument("--json", required=True, type=Path)
     parser.add_argument(
         "--display-base",

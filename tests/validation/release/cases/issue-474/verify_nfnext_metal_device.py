@@ -49,31 +49,52 @@ def _load_test_module():
     return module
 
 
-def verify(revision: str) -> dict:
+def _host_compiler() -> str:
+    for cmd in (["clang", "--version"], ["g++", "--version"], ["nvcc", "--version"]):
+        try:
+            out = subprocess.check_output(cmd, text=True).splitlines()
+            if out:
+                return out[0]
+        except OSError:
+            continue
+    return platform.python_compiler()
+
+
+def verify(revision: str, backend: str = "metal") -> dict:
+    if backend not in {"metal", "cuda"}:
+        raise ValueError(f"unsupported GPU backend: {backend}")
     test = _load_test_module()
 
     # The retained test itself asserts the analytic law, conservation, replay
     # and refusal boundaries.  Running it first prevents a receipt from being
     # emitted for a kernel that merely returned arrays of the right shape.
-    test.test_unary_state_change_metal_batch_matches_exact_ctmc_and_replays()
+    if hasattr(test, "_assert_unary_state_change_backend"):
+        test._assert_unary_state_change_backend(backend)
+    elif backend == "metal":
+        test.test_unary_state_change_metal_batch_matches_exact_ctmc_and_replays()
+    else:
+        raise RuntimeError(f"physical {backend} device test unavailable")
 
     from bionetgen import gpu_backend_capabilities
     from bionetgen.model import BioNetGenModel, _cpp as cpp
 
     capabilities = gpu_backend_capabilities()
-    metal = next((row for row in capabilities if row["name"] == "metal"), None)
-    if metal is None or not metal["compiled"] or not metal["available"]:
-        raise RuntimeError("physical Metal device unavailable")
+    selected = next((row for row in capabilities if row["name"] == backend), None)
+    if selected is None or not selected["compiled"] or not selected["available"]:
+        raise RuntimeError(f"physical {backend} device unavailable")
+
+    other_name = "cuda" if backend == "metal" else "metal"
+    other = next((row for row in capabilities if row["name"] == other_name), None)
 
     model = BioNetGenModel(cpp.parse_string(test.MODEL))
     result = model.simulate_nfnext_gpu(
         list(test.TIMES),
         seed=test.SEED,
         batch_size=test.BATCH_SIZE,
-        backend="metal",
+        backend=backend,
     )
-    if result.backend != "metal" or result.engine != "nfnext-gpu" or not result.device:
-        raise RuntimeError("result is not attributable to the Metal NFnext kernel")
+    if result.backend != backend or result.engine != "nfnext-gpu" or not result.device:
+        raise RuntimeError(f"result is not attributable to the {backend} NFnext kernel")
 
     import numpy as np
 
@@ -117,11 +138,18 @@ def verify(revision: str) -> dict:
     if dirty:
         raise ValueError("NFnext device receipt requires a clean checkout")
 
+    other_status = {
+        "status": "AVAILABLE" if (other and other["available"]) else "NOT_RUN_HERE",
+        "compiled": bool(other and other["compiled"]),
+        "available": bool(other and other["available"]),
+        "detail": other["detail"] if other else "unknown",
+    }
+
     return {
         "schema_version": 1,
         "check": "release-nf-gpu",
         "status": "PASS",
-        "backend": "metal",
+        "backend": backend,
         "scope": "bounded one-type one-site static unary state-change route",
         "source": {
             "revision": source_revision,
@@ -134,14 +162,12 @@ def verify(revision: str) -> dict:
         "host": {
             "platform": platform.platform(),
             "python": platform.python_version(),
-            "compiler": subprocess.check_output(
-                ["clang", "--version"], text=True
-            ).splitlines()[0],
+            "compiler": _host_compiler(),
         },
         "device": {
-            "name": metal["detail"],
-            "compiled": metal["compiled"],
-            "available": metal["available"],
+            "name": selected["detail"],
+            "compiled": selected["compiled"],
+            "available": selected["available"],
             "reported_device": result.device,
             "engine": result.engine,
         },
@@ -161,23 +187,21 @@ def verify(revision: str) -> dict:
             "wall_time_ms": result.wall_time_ms,
             "dispatch_wait_time_ms": result.dispatch_wait_time_ms,
         },
-        "cuda": {
-            "status": "UNSUPPORTED",
-            "detail": "network-free CUDA execution is not implemented",
-        },
+        other_name: other_status,
     }
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--revision", required=True)
+    parser.add_argument("--backend", choices=("metal", "cuda"), default="metal")
     parser.add_argument("--json", required=True, type=Path)
     args = parser.parse_args()
-    receipt = verify(args.revision)
+    receipt = verify(args.revision, backend=args.backend)
     args.json.parent.mkdir(parents=True, exist_ok=True)
     args.json.write_text(json.dumps(receipt, indent=2) + "\n", encoding="utf-8")
     print(
-        f"NFnext Metal device receipt: {receipt['device']['reported_device']}, "
+        f"NFnext {args.backend} device receipt: {receipt['device']['reported_device']}, "
         f"{len(receipt['checks'])} analytic times, "
         f"{receipt['total_events']} events"
     )

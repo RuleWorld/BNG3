@@ -86,27 +86,33 @@ def _metal_available():
     )
 
 
+def _cuda_available():
+    return any(
+        backend["name"] == "cuda" and backend["compiled"] and backend["available"]
+        for backend in gpu_backend_capabilities()
+    )
+
+
 def test_gpu_backend_report_distinguishes_compilation_from_device_availability():
     backends = gpu_backend_capabilities()
     assert {backend["name"] for backend in backends} == {"cuda", "metal"}
     for backend in backends:
         assert not backend["available"] or backend["compiled"]
         if "nfnext_unary_state_change" in backend["implemented_routes"]:
-            assert backend["name"] == "metal"
+            assert backend["name"] in {"metal", "cuda"}
             assert backend["compiled"]
 
 
-@pytest.mark.skipif(not _metal_available(), reason="physical Metal device unavailable")
-def test_unary_state_change_metal_batch_matches_exact_ctmc_and_replays():
+def _assert_unary_state_change_backend(backend_name: str):
     model = BioNetGenModel(cpp.parse_string(MODEL))
     result = model.simulate_nfnext_gpu(
         list(TIMES),
         seed=SEED,
         batch_size=BATCH_SIZE,
-        backend="metal",
+        backend=backend_name,
     )
 
-    assert result.backend == "metal"
+    assert result.backend == backend_name
     assert result.device
     assert result.engine == "nfnext-gpu"
     assert result.wall_time_ms >= result.dispatch_wait_time_ms > 0.0
@@ -148,19 +154,19 @@ def test_unary_state_change_metal_batch_matches_exact_ctmc_and_replays():
         list(TIMES),
         seed=SEED,
         batch_size=BATCH_SIZE,
-        backend="metal",
+        backend=backend_name,
     )
     interleaved = model.simulate_nfnext_gpu(
         list(TIMES),
         seed=SEED + 1,
         batch_size=64,
-        backend="metal",
+        backend=backend_name,
     )
     prefix = model.simulate_nfnext_gpu(
         list(TIMES),
         seed=SEED,
         batch_size=64,
-        backend="metal",
+        backend=backend_name,
     )
     for observable in ("U", "P"):
         assert np.array_equal(
@@ -173,6 +179,17 @@ def test_unary_state_change_metal_batch_matches_exact_ctmc_and_replays():
         )
     assert np.array_equal(result.event_counts, replay.event_counts)
     assert not np.array_equal(result.event_counts[:64], interleaved.event_counts)
+
+
+@pytest.mark.skipif(not _metal_available(), reason="physical Metal device unavailable")
+def test_unary_state_change_metal_batch_matches_exact_ctmc_and_replays():
+    _assert_unary_state_change_backend("metal")
+
+
+def test_unary_state_change_cuda_batch_matches_exact_ctmc_and_replays():
+    if not _cuda_available():
+        return
+    _assert_unary_state_change_backend("cuda")
 
 
 def test_nfnext_gpu_refuses_bond_form_before_backend_selection():
@@ -199,7 +216,7 @@ def test_nfnext_gpu_refuses_observable_counts_outside_float_exact_range():
     model_source = MODEL.replace("  A(x~u) 100", "  A(x~u) 16777217")
     model = BioNetGenModel(cpp.parse_string(model_source))
     with pytest.raises(
-        RuntimeError, match="exact Metal single-precision observable counts"
+        RuntimeError, match="exact (?:Metal|GPU) single-precision observable counts"
     ):
         model.simulate_nfnext_gpu(
             [0.0, 1.0],
@@ -213,7 +230,7 @@ def test_nfnext_gpu_refuses_output_index_overflow_before_device_selection():
     model_source = MODEL.replace("  A(x~u) 100", "  A(x~u) 0")
     model = BioNetGenModel(cpp.parse_string(model_source))
     with pytest.raises(
-        RuntimeError, match="output element count exceeds Metal kernel indexing"
+        RuntimeError, match="output element count exceeds (?:Metal|GPU) kernel indexing"
     ):
         model.simulate_nfnext_gpu(
             [0.0, 1.0],
@@ -225,8 +242,23 @@ def test_nfnext_gpu_refuses_output_index_overflow_before_device_selection():
 
 def test_nfnext_gpu_cuda_selection_refuses_without_cpu_or_metal_fallback():
     model = BioNetGenModel(cpp.parse_string(MODEL))
+    if _cuda_available():
+        with pytest.raises(
+            RuntimeError, match="backend must explicitly select 'metal' or 'cuda'"
+        ):
+            model.simulate_nfnext_gpu(
+                list(TIMES),
+                batch_size=16,
+                backend="unsupported",
+            )
+        return
     with pytest.raises(
-        RuntimeError, match="network-free CUDA execution is not implemented"
+        RuntimeError,
+        match=(
+            "network-free CUDA execution is not implemented|"
+            "CUDA backend is not compiled into this build|"
+            "CUDA backend has no usable device"
+        ),
     ):
         model.simulate_nfnext_gpu(
             list(TIMES),

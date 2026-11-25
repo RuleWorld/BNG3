@@ -48,6 +48,26 @@ def test_workload_class_runs_with_analytic_law(spec):
     assert result["pathwise_claim"] is False
 
 
+def test_cuda_workload_class_runs_when_available():
+    cuda_available = any(
+        row["name"] == "cuda" and row["compiled"] and row["available"]
+        for row in __import__("bionetgen").gpu_backend_capabilities()
+    )
+    if not cuda_available:
+        return
+    for spec in _verifier().WORKLOADS:
+        result = _verifier()._check_workload(spec, backend="cuda")
+        assert result["device"]
+        assert result["checks"] and all(row["pass"] for row in result["checks"])
+        assert result["conserved"] is True
+        assert result["total_events"] > 0
+        assert result["timings_ms"]["setup"] >= 0.0
+        assert result["timings_ms"]["dispatch_wait"] > 0.0
+        assert result["device_memory_bytes"] > 0
+        assert result["events_per_sec_dispatch"] > 0.0
+        assert result["pathwise_claim"] is False
+
+
 def test_unsupported_classes_are_refused_not_approximated():
     from bionetgen.model import BioNetGenModel, _cpp as cpp
 
@@ -66,8 +86,14 @@ def test_receipt_keeps_bounded_scope_and_digests():
 
     receipt = json.loads(Path(path).read_text(encoding="utf-8"))
     assert receipt["status"] == "PASS"
-    assert receipt["device"]["backend"] == "metal"
-    assert receipt["cuda"]["status"] == "UNSUPPORTED"
+    backend = receipt["device"]["backend"]
+    assert backend in {"metal", "cuda"}
+    other = "cuda" if backend == "metal" else "metal"
+    assert receipt[other]["status"] in {
+        "UNSUPPORTED",
+        "NOT_RUN_HERE",
+        "NOT_TESTED_IN_THIS_RECEIPT",
+    }
     assert receipt["full_corpus_claimed"] is False
     assert {row["class"] for row in receipt["workloads"]} == {
         spec["class"] for spec in _verifier().WORKLOADS
