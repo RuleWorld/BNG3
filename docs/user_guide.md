@@ -100,8 +100,8 @@ Network-based methods (`ode`, `ssa`, `pla`, `psa`) automatically generate the ne
 
 Run batched direct SSA ensembles through `model.simulate(method="ssa", batch_size=..., batch_gpu_backend=...)` or `model.simulate_batch_ssa(...)`, and inspect compiled/available routes via `bionetgen.gpu_backend_capabilities()`, `bionetgen.gpu_backends()`, and `bionetgen.default_gpu_backend()`.
 
-- **Metal (Apple Silicon)**: finite-network batch SSA is qualified on Apple Metal hardware; `model.simulate_nfnext_gpu(...)` covers only the bounded unary single-site state-change route on Metal (not the full network-free corpus).
-- **CUDA (NVIDIA)**: compile-only CI verifies `CudaSsaBackend.cu` compilation and device-less CPU fallback, while real-device CUDA execution and network-free CUDA remain unqualified/externally blocked without NVIDIA hardware.
+- **Metal (Apple Silicon)** and **CUDA (NVIDIA)**: both backends implement finite-network batch SSA (`simulate_batch_ssa` / `simulate(method="ssa", batch_size=...)`) and network-free GPU SSA (`model.simulate_nfnext_gpu(..., mode="unary" | "graph", backend=...)`), reported via `bionetgen.gpu_backend_capabilities()` (`finite_batch_ssa`, `nfnext_unary_state_change`, `nfnext_graph_corpus`).
+- **Network-free GPU boundaries (fail-closed)**: `mode="unary"` (default) covers single-site state-change models; `mode="graph"` covers general graph SSA with binding/unbinding, molecule creation/destruction, complex deletion, dynamic rate functions, and `Molecules`/`Species` observables across `TIER_NF`. Unsupported constructs (compartments, events, delays, energy patterns, population maps, rule filters, unbonded `SameComplex` constraints, multi-copy local scoping, or an unavailable/uncompiled device) raise an explicit refusal rather than approximating or silently falling back. Metal and CUDA require separate real-device qualification receipts (`scripts/ci/record_issue474_release.py`).
 
 ### Seeds and reproducibility
 
