@@ -17,7 +17,7 @@ struct NfnextUnaryStatePlan {
     std::vector<std::string> observableNames;
 };
 
-struct NfnextMetalOutput {
+struct NfnextDeviceOutput {
     std::string device;
     std::vector<float> observables;
     std::vector<std::uint64_t> eventCounts;
@@ -29,7 +29,12 @@ struct NfnextMetalOutput {
     std::size_t deviceMemoryBytes{0};
 };
 
-NfnextMetalOutput simulateNfnextUnaryStateMetal(
+using NfnextMetalOutput = NfnextDeviceOutput;
+
+NfnextDeviceOutput simulateNfnextUnaryStateMetal(
+    const NfnextUnaryStatePlan& plan, const NfnextGpuRequest& request);
+
+NfnextDeviceOutput simulateNfnextUnaryStateCuda(
     const NfnextUnaryStatePlan& plan, const NfnextGpuRequest& request);
 
 } // namespace bng::engine::detail
