@@ -1008,6 +1008,7 @@ def oracle_independence_report(
         row_errors, comparator = _oracle_receipt_errors(
             row, receipt, revision, artifact_root, root
         )
+        receipt_valid = not row_errors
         if status != "implemented":
             row_errors.append(
                 f"{row_id}: matrix status is {status}; implementation is not qualified"
@@ -1016,6 +1017,7 @@ def oracle_independence_report(
             comparisons.append(
                 {
                     "capability_id": row_id,
+                    "receipt_valid": receipt_valid,
                     "check_result": "pass" if not row_errors else "fail",
                     **comparator,
                 }
