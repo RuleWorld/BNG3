@@ -52,6 +52,87 @@ CUDA_BUILD_IDENTITY_FIELDS = (
     "compiler",
     "native_binary_sha256",
 )
+REQUIRED_TIER_NF_MODELS = ("motor", "simple_system", "localfunc", "tlbr")
+
+
+def _is_hex_sha256(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(ch in "0123456789abcdef" for ch in value.lower())
+    )
+
+
+def _validate_nf_corpus(path: Path, revision: str, *, backend: str) -> dict:
+    label = "Metal" if backend == "metal" else "CUDA"
+    data = _read(path)
+    _require(
+        data.get("kind") == "issue474-nfnext-gpu-corpus-receipt",
+        f"NF-GPU {label} corpus receipt: unexpected kind",
+    )
+    _require(
+        data.get("source_revision") == revision,
+        f"NF-GPU {label} corpus receipt: stale source revision",
+    )
+    _require(
+        data.get("source_dirty") is False,
+        f"NF-GPU {label} corpus receipt: receipt from a dirty checkout",
+    )
+    _require(
+        data.get("backend") == backend,
+        f"NF-GPU {label} corpus receipt: backend mismatch ({data.get('backend')!r})",
+    )
+    _require(
+        bool(data.get("device")),
+        f"NF-GPU {label} corpus receipt: missing device identity",
+    )
+    _require(
+        data.get("tier") == "TIER_NF",
+        f"NF-GPU {label} corpus receipt: expected TIER_NF",
+    )
+    _require(
+        _is_hex_sha256(data.get("oracle_nfsim_sha256")),
+        f"NF-GPU {label} corpus receipt: invalid pinned NFsim oracle digest",
+    )
+    _require(
+        _is_hex_sha256(data.get("oracle_bng2_sha256")),
+        f"NF-GPU {label} corpus receipt: invalid pinned BNG2 oracle digest",
+    )
+    _require(
+        data.get("result") == "pass",
+        f"NF-GPU {label} corpus receipt: overall result is not pass",
+    )
+    cases = data.get("cases") or []
+    by_model = {str(row.get("model")): row for row in cases if isinstance(row, dict)}
+    missing = [name for name in REQUIRED_TIER_NF_MODELS if name not in by_model]
+    _require(
+        not missing,
+        f"NF-GPU {label} corpus receipt: missing required TIER_NF model(s): {missing}",
+    )
+    for name in REQUIRED_TIER_NF_MODELS:
+        row = by_model[name]
+        _require(
+            row.get("backend") == backend,
+            f"NF-GPU {label} corpus receipt ({name}): backend mismatch",
+        )
+        _require(
+            row.get("passed") is True,
+            f"NF-GPU {label} corpus receipt ({name}): case did not pass",
+        )
+        _require(
+            row.get("deterministic_replay") is True,
+            f"NF-GPU {label} corpus receipt ({name}): deterministic replay did not pass",
+        )
+        dist = row.get("distribution") or {}
+        _require(
+            dist.get("passed") is True and not dist.get("failures"),
+            f"NF-GPU {label} corpus receipt ({name}): distributional comparison failed",
+        )
+        _require(
+            int(row.get("gpu_total_events", 0)) > 0,
+            f"NF-GPU {label} corpus receipt ({name}): zero GPU events executed",
+        )
+    return data
 
 
 def _require(condition: bool, message: str) -> None:
@@ -422,6 +503,21 @@ def record(args: argparse.Namespace) -> dict:
             [args.cuda_probe],
         )
 
+    metal_nf_corpus_path = getattr(args, "metal_nf_corpus", None)
+    cuda_nf_corpus_path = getattr(args, "cuda_nf_corpus", None)
+    metal_nf_corpus = None
+    if metal_nf_corpus_path:
+        metal_nf_corpus = _validate_nf_corpus(
+            metal_nf_corpus_path, revision, backend="metal"
+        )
+        receipts.append(metal_nf_corpus_path)
+    cuda_nf_corpus = None
+    if cuda_nf_corpus_path:
+        cuda_nf_corpus = _validate_nf_corpus(
+            cuda_nf_corpus_path, revision, backend="cuda"
+        )
+        receipts.append(cuda_nf_corpus_path)
+
     nf_gpu_receipts = [
         row
         for row in (
@@ -429,10 +525,30 @@ def record(args: argparse.Namespace) -> dict:
             args.nfnext_workloads,
             args.pinned_nfsim,
             args.cuda_nfnext,
+            metal_nf_corpus_path,
+            cuda_nf_corpus_path,
         )
         if row
     ]
-    if nfnext or cuda_nfnext:
+    full_nf_gpu_passed = metal_nf_corpus is not None and cuda_nf_corpus is not None
+    if full_nf_gpu_passed:
+        nf_gpu_status = "PASS"
+        nf_detail = (
+            f"Full TIER_NF network-free GPU corpus ({', '.join(REQUIRED_TIER_NF_MODELS)}) "
+            f"passed on both Metal ({metal_nf_corpus['device']}) and CUDA "
+            f"({cuda_nf_corpus['device']}) against pinned native NFsim with 4-sigma "
+            "Welch mean, two-sample KS/DKW, and deterministic same-device replay."
+        )
+    elif metal_nf_corpus or cuda_nf_corpus:
+        nf_gpu_status = "NOT_TESTED"
+        present = "Metal" if metal_nf_corpus else "CUDA"
+        missing_be = "CUDA" if metal_nf_corpus else "Metal"
+        nf_detail = (
+            f"Full TIER_NF network-free GPU corpus passed on {present}, "
+            f"but {missing_be} full network-free GPU corpus receipt is missing."
+        )
+    elif nfnext or cuda_nfnext:
+        nf_gpu_status = "NOT_TESTED"
         backends_tested = " and ".join(
             name
             for name, present in (("Metal", nfnext), ("CUDA", cuda_nfnext))
@@ -446,12 +562,27 @@ def record(args: argparse.Namespace) -> dict:
             + (" and CUDA reporting is not included." if not cuda_nfnext else ".")
         )
     else:
+        nf_gpu_status = "NOT_TESTED"
         nf_detail = (
             "No network-free device receipt was consumed on this exact revision; "
             "finite GPU evidence cannot qualify this row."
         )
 
-    if has_all_cuda_receipts:
+    if has_all_cuda_receipts and full_nf_gpu_passed:
+        coverage_status = "PASS"
+        coverage_detail = (
+            "backend.gpu is fully covered on both Metal and CUDA: finite batch SSA "
+            "device/performance parity and full TIER_NF network-free GPU graph SSA "
+            "passed against independent references on this exact revision."
+        )
+        coverage_receipts = [
+            args.parity,
+            args.cuda_parity,
+            metal_nf_corpus_path,
+            cuda_nf_corpus_path,
+        ]
+    elif has_all_cuda_receipts:
+        coverage_status = "NOT_TESTED"
         coverage_detail = (
             "backend.gpu is not fully covered: finite batch SSA passed on Metal and CUDA "
             "and bounded unary NFnext passed, but the full network-free GPU corpus "
@@ -459,6 +590,7 @@ def record(args: argparse.Namespace) -> dict:
         )
         coverage_receipts = [args.parity, args.cuda_parity]
     else:
+        coverage_status = "NOT_TESTED"
         coverage_detail = (
             "backend.gpu is not fully covered: Metal executions recorded, CUDA device "
             "execution externally blocked and full network-free corpus unimplemented."
@@ -482,10 +614,10 @@ def record(args: argparse.Namespace) -> dict:
         ),
         cuda_row_device,
         cuda_row_perf,
-        _row("release-nf-gpu", "NOT_TESTED", nf_detail, nf_gpu_receipts),
+        _row("release-nf-gpu", nf_gpu_status, nf_detail, nf_gpu_receipts),
         _row(
             "release-capability-coverage-474",
-            "NOT_TESTED",
+            coverage_status,
             coverage_detail,
             coverage_receipts,
         ),
@@ -527,6 +659,26 @@ def record(args: argparse.Namespace) -> dict:
                 if cuda_nfnext
                 else "NOT_RECORDED: bounded CUDA NFnext receipt not supplied"
             ),
+            "metal_corpus": (
+                {
+                    "device": metal_nf_corpus["device"],
+                    "models": [c["model"] for c in metal_nf_corpus["cases"]],
+                    "passed_count": metal_nf_corpus["passed_count"],
+                    "case_count": metal_nf_corpus["case_count"],
+                }
+                if metal_nf_corpus
+                else None
+            ),
+            "cuda_corpus": (
+                {
+                    "device": cuda_nf_corpus["device"],
+                    "models": [c["model"] for c in cuda_nf_corpus["cases"]],
+                    "passed_count": cuda_nf_corpus["passed_count"],
+                    "case_count": cuda_nf_corpus["case_count"],
+                }
+                if cuda_nf_corpus
+                else None
+            ),
         },
         "cuda": cuda,
         "receipts": [{"path": str(path), "sha256": _sha256(path)} for path in receipts],
@@ -565,6 +717,8 @@ def main() -> int:
     parser.add_argument("--cuda-performance", type=Path)
     parser.add_argument("--cuda-crossover", type=Path, action="append")
     parser.add_argument("--cuda-nfnext", type=Path)
+    parser.add_argument("--metal-nf-corpus", type=Path)
+    parser.add_argument("--cuda-nf-corpus", type=Path)
     parser.add_argument("--json", required=True, type=Path)
     parser.add_argument(
         "--display-base",

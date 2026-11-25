@@ -446,3 +446,157 @@ def test_record_promotes_cuda_rows_when_real_cuda_receipts_supplied(
     assert rows["release-nf-gpu"]["status"] == "NOT_TESTED"
     assert rows["release-capability-coverage-474"]["status"] == "NOT_TESTED"
     assert report["cuda_device"]["device"] == "NVIDIA GeForce RTX 2080 Ti"
+
+
+def _sample_nf_corpus(backend: str, device: str, rev: str) -> dict:
+    return {
+        "schema_version": 1,
+        "kind": "issue474-nfnext-gpu-corpus-receipt",
+        "backend": backend,
+        "device": device,
+        "source_revision": rev,
+        "source_dirty": False,
+        "oracle_nfsim_sha256": "c" * 64,
+        "oracle_bng2_sha256": "d" * 64,
+        "tier": "TIER_NF",
+        "case_count": 4,
+        "passed_count": 4,
+        "result": "pass",
+        "cases": [
+            {
+                "model": name,
+                "backend": backend,
+                "device": device,
+                "passed": True,
+                "deterministic_replay": True,
+                "gpu_total_events": 1000,
+                "distribution": {
+                    "passed": True,
+                    "max_z": 1.2,
+                    "max_ks": 0.08,
+                    "failures": [],
+                },
+            }
+            for name in ("motor", "simple_system", "localfunc", "tlbr")
+        ],
+    }
+
+
+def test_recorder_promotes_nf_gpu_and_coverage_only_when_both_metal_and_cuda_corpus_pass(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+):
+    import argparse
+
+    recorder = _recorder_module()
+    rev = "2" * 40
+    metal_sha = "a" * 64
+    cuda_sha = "b" * 64
+    monkeypatch.setattr(
+        recorder,
+        "_git",
+        lambda *args: rev if args[:2] == ("rev-parse", "HEAD") else "",
+    )
+    monkeypatch.setattr(recorder.platform, "system", lambda: "Linux")
+
+    metal_build = _write_receipt(
+        tmp_path,
+        "build-metal.json",
+        {
+            **{k: "x" for k in recorder.BUILD_IDENTITY_FIELDS},
+            "device": "Apple M5 Pro",
+            "native_binary_sha256": metal_sha,
+        },
+    )
+    metal_parity = _write_receipt(
+        tmp_path,
+        "metal-parity.json",
+        _sample_parity("metal", "Apple M5 Pro", metal_sha, rev),
+    )
+    metal_perf = _write_receipt(
+        tmp_path, "metal-perf.json", _sample_perf("metal", metal_sha, rev)
+    )
+    metal_cross = [
+        _write_receipt(
+            tmp_path, f"m_cross_{b}.json", _sample_perf("metal", metal_sha, rev, b)
+        )
+        for b in (1, 10, 100, 300, 500, 1000)
+    ]
+    cuda_build = _write_receipt(
+        tmp_path,
+        "build-cuda.json",
+        {
+            "device": "NVIDIA GeForce RTX 2080 Ti",
+            "os": "Linux",
+            "compiler": "g++ / nvcc 12.4",
+            "native_binary_sha256": cuda_sha,
+        },
+    )
+    cuda_parity = _write_receipt(
+        tmp_path,
+        "cuda-parity.json",
+        _sample_parity("cuda", "NVIDIA GeForce RTX 2080 Ti", cuda_sha, rev),
+    )
+    cuda_perf = _write_receipt(
+        tmp_path, "cuda-perf.json", _sample_perf("cuda", cuda_sha, rev)
+    )
+    cuda_cross = [
+        _write_receipt(
+            tmp_path, f"c_cross_{b}.json", _sample_perf("cuda", cuda_sha, rev, b)
+        )
+        for b in (1, 10, 100, 300, 500, 1000)
+    ]
+    metal_nf = _write_receipt(
+        tmp_path,
+        "metal-nf.json",
+        _sample_nf_corpus("metal", "Apple M5 Pro", rev),
+    )
+    cuda_nf = _write_receipt(
+        tmp_path,
+        "cuda-nf.json",
+        _sample_nf_corpus("cuda", "NVIDIA GeForce RTX 2080 Ti", rev),
+    )
+
+    base = dict(
+        revision=rev,
+        parity=metal_parity,
+        nfnext=None,
+        nfnext_workloads=None,
+        performance=metal_perf,
+        crossover=metal_cross,
+        pinned_nfsim=None,
+        cuda_probe=None,
+        build_identity=metal_build,
+        cuda_build_identity=cuda_build,
+        cuda_parity=cuda_parity,
+        cuda_performance=cuda_perf,
+        cuda_crossover=cuda_cross,
+        cuda_nfnext=None,
+        metal_nf_corpus=metal_nf,
+        cuda_nf_corpus=None,
+        display_base=None,
+    )
+    # Single-backend NF corpus must stay NOT_TESTED
+    metal_only = recorder.record(argparse.Namespace(**base))
+    m_rows = {row["id"]: row for row in metal_only["results"]}
+    assert m_rows["release-nf-gpu"]["status"] == "NOT_TESTED"
+    assert m_rows["release-capability-coverage-474"]["status"] == "NOT_TESTED"
+
+    # Both Metal and CUDA full TIER_NF receipts promote all 6 rows to PASS
+    both = recorder.record(argparse.Namespace(**{**base, "cuda_nf_corpus": cuda_nf}))
+    b_rows = {row["id"]: row for row in both["results"]}
+    for check_id in recorder.ALL_CHECKS:
+        assert b_rows[check_id]["status"] == "PASS", check_id
+        assert b_rows[check_id]["supported_execution"] is True
+
+    # Negative control: missing a required TIER_NF model fails closed
+    bad_nf = _sample_nf_corpus("cuda", "NVIDIA GeForce RTX 2080 Ti", rev)
+    bad_nf["cases"] = [c for c in bad_nf["cases"] if c["model"] != "tlbr"]
+    bad_path = _write_receipt(tmp_path, "cuda-nf-missing.json", bad_nf)
+    with pytest.raises(ValueError, match="missing required TIER_NF model"):
+        recorder.record(argparse.Namespace(**{**base, "cuda_nf_corpus": bad_path}))
+
+    # Negative control: stale revision fails closed
+    stale_nf = _sample_nf_corpus("cuda", "NVIDIA GeForce RTX 2080 Ti", "3" * 40)
+    stale_path = _write_receipt(tmp_path, "cuda-nf-stale.json", stale_nf)
+    with pytest.raises(ValueError, match="stale source revision"):
+        recorder.record(argparse.Namespace(**{**base, "cuda_nf_corpus": stale_path}))
