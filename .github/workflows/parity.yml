@@ -778,6 +778,24 @@ jobs:
             --receipts-dir "$RUNNER_TEMP/issue471-bng2/receipts" \
             --artifacts-dir "$RUNNER_TEMP/issue471-bng2/artifacts" \
             --summary-out "$RUNNER_TEMP/issue471-bng2/action-summary.json"
+          .venv/bin/python scripts/ci/record_issue471_bngl_feature_receipts.py \
+            --root . \
+            --revision "$BNG3_SOURCE_REVISION" \
+            --bng2-root "$RUNNER_TEMP/oracle-bionetgen" \
+            --bng-cpp build/cpp/bng_cpp \
+            --receipts-dir "$RUNNER_TEMP/issue471-bng2/receipts" \
+            --artifacts-dir "$RUNNER_TEMP/issue471-bng2/artifacts" \
+            --summary-out "$RUNNER_TEMP/issue471-bng2/bngl-feature-summary.json"
+          .venv/bin/python scripts/ci/record_issue471_bng2_simnf_receipts.py \
+            --root . \
+            --revision "$BNG3_SOURCE_REVISION" \
+            --bng2-root "$RUNNER_TEMP/oracle-bionetgen" \
+            --nfsim-source "$RUNNER_TEMP/oracle-nfsim" \
+            --nfsim-oracle "$RUNNER_TEMP/oracle-nfsim/build/NFsim" \
+            --bng-cpp build/cpp/bng_cpp \
+            --receipts-dir "$RUNNER_TEMP/issue471-bng2/receipts" \
+            --artifacts-dir "$RUNNER_TEMP/issue471-bng2/artifacts" \
+            --summary-out "$RUNNER_TEMP/issue471-bng2/simnf-summary.json"
           .venv/bin/python scripts/ci/record_issue471_analytic_receipts.py \
             --root . \
             --revision "$BNG3_SOURCE_REVISION" \
