@@ -207,12 +207,20 @@ approximated, and a device that is unavailable remains an explicit refusal.
 The public-route check is part of `tests/test_batch_ssa_statistical_parity.py`
 (`--mode gpu --require-device`); no equal-seed pathwise CPU/GPU claim is made.
 
-**Network-free boundary:** `simulate_nfnext_gpu` executes the bounded unary
-single-site state-change route on Metal only. Extended device evidence covers
-a two-state CTMC, a three-state chain and a bounded particle-heavy ensemble
-with analytic laws, conservation, fixed seeds and distributional thresholds;
-binding/topology, compartments, delays and CUDA are explicit refusals. This is
-not the full network-free GPU corpus and is not CUDA evidence.
+**Network-free boundary:** `simulate_nfnext_gpu` exposes two explicit modes on
+both Metal and CUDA (reported by `bionetgen.gpu_backend_capabilities()`):
+`mode="unary"` (the default bounded unary single-site state-change route) and
+`mode="graph"` (type-partitioned graph SSA supporting binding/unbinding,
+creation/destruction, complex deletion, canonical multivalent site-permutation
+expansion, 25-opcode dynamic function evaluation, and `Molecules`/`Species`
+observables across the required `TIER_NF` corpus). Constructs outside that
+subset (compartments, events, delays, energy patterns, population maps, rule
+filters, unbonded `SameComplex` constraints, multi-copy local scoping, and
+missing/uncompiled devices) remain explicit fail-closed refusals rather than
+approximations or silent CPU fallbacks. Metal and CUDA are qualified separately
+from backend-specific real-device receipts via
+`scripts/ci/record_issue474_release.py`; compile-only CI and one backend never
+substitute for the other.
 
 Backends are compiled in at configure time: Metal on Apple platforms, CUDA when
 `-DBNG3_ENABLE_CUDA=ON` is given or a CUDA compiler is found (`BNG3_ENABLE_CUDA=AUTO`,

@@ -19994,13 +19994,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
-              ]
+              "selector": "python tests/test_batch_ssa_statistical_parity.py --mode gpu --backend cuda --require-device",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue474_release.py#release-cuda-device",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -20042,13 +20040,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
-              ]
+              "selector": "python scripts/bench_batch_ssa_gpu.py --backend cuda --require-device",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue474_release.py#release-cuda-performance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -20090,13 +20086,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
-              ]
+              "selector": "python tests/test_batch_ssa_statistical_parity.py --mode gpu --backend metal --require-device",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue474_release.py#release-metal-device",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -20134,13 +20128,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
-              ]
+              "selector": "python scripts/bench_batch_ssa_gpu.py --backend metal --require-device",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue474_release.py#release-metal-performance",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -20178,13 +20170,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
-              ]
+              "selector": "python tests/validation/release/cases/issue-474/verify_nfnext_gpu_corpus.py --backend metal && python tests/validation/release/cases/issue-474/verify_nfnext_gpu_corpus.py --backend cuda",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue474_release.py#release-nf-gpu",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
@@ -20222,13 +20212,11 @@
               "identity_requirements": [
                 "source.revision"
               ],
-              "selector": null,
-              "selector_status": "MISSING_SELECTOR",
-              "receipt_producer": null,
-              "receipt_producer_status": "MISSING_PRODUCER",
-              "missing_evidence": [
-                "Scope was revised by the maintainer GPU split; current scoped selector and consuming receipt must be qualified independently."
-              ]
+              "selector": "python scripts/ci/record_issue474_release.py#release-capability-coverage-474",
+              "selector_status": "COLLECTED",
+              "receipt_producer": "scripts/ci/record_issue474_release.py#release-capability-coverage-474",
+              "receipt_producer_status": "CONSUMER_READY",
+              "missing_evidence": []
             }
           ],
           "test_references": [],
