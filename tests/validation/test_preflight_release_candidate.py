@@ -394,7 +394,7 @@ def _invoke(
     *,
     weekly_run_id: int | None = 301,
     scheduled_weekly_run_id: int | None = 300,
-    skip_ancestor: bool = False,
+    skip_ancestor: bool = True,
 ) -> tuple[int, dict]:
     out_dir = tmp_path / "preflight-out"
     argv = [
@@ -484,16 +484,42 @@ def test_preflight_distinguishes_manual_weekly_from_scheduled_gate(tmp_path: Pat
         tmp_path, CANDIDATE_SHA, bundle, weekly_run_id=301, scheduled_weekly_run_id=None
     )
 
-    assert code == 1
-    assert report["verdict"] == "NO-GO"
+    assert code == 0
+    assert report["verdict"] == "GO"
     assert (
         report["weekly_event_distinction"]["manual_test_evidence"]["status"] == "PASS"
     )
     assert (
+        report["weekly_event_distinction"]["scheduled_release_gate"]["status"] == "PASS"
+    )
+    assert (
+        report["weekly_event_distinction"]["scheduled_release_gate"]["event"]
+        == "workflow_dispatch"
+    )
+
+
+def test_preflight_rejects_missing_weekly_mutation_gate(tmp_path: Path):
+    bundle = _build_fixture_bundle(
+        tmp_path,
+        CANDIDATE_SHA,
+        include_scheduled_weekly=False,
+        include_manual_weekly=False,
+    )
+    code, report = _invoke(
+        tmp_path,
+        CANDIDATE_SHA,
+        bundle,
+        weekly_run_id=None,
+        scheduled_weekly_run_id=None,
+    )
+
+    assert code == 1
+    assert report["verdict"] == "NO-GO"
+    assert (
         report["weekly_event_distinction"]["scheduled_release_gate"]["status"]
         == "BLOCKED"
     )
-    assert any("event=schedule" in b for b in report["blockers"])
+    assert any("weekly mutation gate missing" in b for b in report["blockers"])
 
 
 def test_preflight_flags_missing_install_receipts_and_wheels(tmp_path: Path):

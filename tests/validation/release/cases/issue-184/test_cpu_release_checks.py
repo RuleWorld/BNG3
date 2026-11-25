@@ -76,3 +76,158 @@ def test_gpu_extra_declaration_is_rejected(tmp_path):
     with (root / "pyproject.toml").open("a") as stream:
         stream.write('\ngpu = ["torch"]\n')
     assert checks.metadata_gaps(root)
+
+
+def _structured_install(
+    tmp_path: Path,
+    name: str,
+    *,
+    plat: str,
+    kind: str,
+    rev: str = REVISION,
+    missing_sub: str | None = None,
+    gpu_claimed: bool = False,
+) -> Path:
+    path = tmp_path / f"{name}.json"
+    results = [
+        {
+            "id": sub,
+            "status": "PASS",
+            "supported_execution": True,
+            "evidence_kind": "supported-execution",
+        }
+        for sub in checks.REQUIRED_INSTALL_SUBCHECKS
+        if sub != missing_sub
+    ]
+    path.write_text(
+        json.dumps(
+            {
+                "check_id": "issue184-install-receipt",
+                "source": {"revision": rev, "dirty": False},
+                "references": {
+                    "platform": plat,
+                    "artifact_kind": kind,
+                    "artifact_sha256": "a" * 64,
+                    "gpu_scope_deferred_to": "#474",
+                    "gpu_qualified_by_this_receipt": gpu_claimed,
+                },
+                "results": results,
+            }
+        )
+    )
+    return path
+
+
+def _candidate_report(
+    tmp_path: Path,
+    *,
+    rev: str = REVISION,
+    missing_check: str | None = None,
+    diagnostic_only: bool = False,
+) -> Path:
+    path = tmp_path / "candidate.json"
+    rows = [
+        {
+            "id": cid,
+            "status": "PASS",
+            "supported_execution": not diagnostic_only,
+            "evidence_kind": "supported-execution",
+        }
+        for cid in checks.REQUIRED_CANDIDATE_CHECKS
+        if cid != missing_check
+    ]
+    path.write_text(
+        json.dumps(
+            {
+                "check_id": "issue184-candidate-evidence",
+                "source": {"revision": rev, "dirty": False},
+                "references": {},
+                "results": rows,
+            }
+        )
+    )
+    return path
+
+
+def test_strict_release_consumer_passes_with_full_evidence(tmp_path):
+    sci = [_receipt(tmp_path, "parity"), _receipt(tmp_path, "sbml")]
+    cand = [_candidate_report(tmp_path)]
+    inst = [
+        _structured_install(tmp_path, f"wheel-{p}", plat=p, kind="wheel")
+        for p in checks.PLATFORMS
+    ] + [_structured_install(tmp_path, "sdist-linux", plat="linux", kind="sdist")]
+
+    s, srej = checks._receipts(sci, REVISION)
+    c, crej = checks._receipts(cand, REVISION)
+    i, irej = checks._receipts(inst, REVISION)
+    assert (
+        checks.candidate_gaps(
+            s,
+            srej,
+            candidate_reports=c,
+            candidate_rejected=crej,
+            require_candidate_checks=True,
+        )
+        == []
+    )
+    assert checks.installed_gaps(i, irej, require_structured_install=True) == []
+
+
+@pytest.mark.parametrize(
+    "case",
+    [
+        "missing-sdist",
+        "missing-upgrade-subcheck",
+        "dishonest-gpu-claim",
+        "missing-sanitizer-candidate-check",
+        "diagnostic-only-candidate-check",
+    ],
+)
+def test_strict_release_consumer_fails_closed(tmp_path, case):
+    sci = [_receipt(tmp_path, "parity")]
+    cand = [
+        _candidate_report(
+            tmp_path,
+            missing_check=(
+                "release-candidate:sanitizer-configuration"
+                if case == "missing-sanitizer-candidate-check"
+                else None
+            ),
+            diagnostic_only=(case == "diagnostic-only-candidate-check"),
+        )
+    ]
+    inst = [
+        _structured_install(
+            tmp_path,
+            f"wheel-{p}",
+            plat=p,
+            kind="wheel",
+            missing_sub=(
+                "upgrade_path"
+                if case == "missing-upgrade-subcheck" and p == "linux"
+                else None
+            ),
+            gpu_claimed=(case == "dishonest-gpu-claim" and p == "macos"),
+        )
+        for p in checks.PLATFORMS
+    ]
+    if case != "missing-sdist":
+        inst.append(
+            _structured_install(tmp_path, "sdist-linux", plat="linux", kind="sdist")
+        )
+
+    s, srej = checks._receipts(sci, REVISION)
+    c, crej = checks._receipts(cand, REVISION)
+    i, irej = checks._receipts(inst, REVISION)
+    c_gaps = checks.candidate_gaps(
+        s,
+        srej,
+        candidate_reports=c,
+        candidate_rejected=crej,
+        require_candidate_checks=True,
+    )
+    i_gaps = checks.installed_gaps(i, irej, require_structured_install=True)
+    if case in {"missing-sanitizer-candidate-check", "diagnostic-only-candidate-check"}:
+        assert c_gaps
+    else:
+        assert i_gaps

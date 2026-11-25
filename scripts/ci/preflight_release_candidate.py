@@ -297,8 +297,9 @@ def _fetch_issues(
 
 
 def _find_latest_run_id(
-    payload: Any, workflow_name: str, sha: str, *, event: str
+    payload: Any, workflow_name: str, sha: str, *, event: str | tuple[str, ...]
 ) -> int | None:
+    allowed = (event,) if isinstance(event, str) else tuple(event)
     pages = payload if isinstance(payload, list) else [payload]
     matches = [
         run
@@ -309,7 +310,7 @@ def _find_latest_run_id(
         and run.get("name") == workflow_name
         and run.get("head_sha") == sha
         and run.get("head_branch") == "main"
-        and run.get("event") == event
+        and run.get("event") in allowed
     ]
     if not matches:
         return None
@@ -347,8 +348,8 @@ def run_preflight(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     )
     weekly_sched_payload = _load_json_or_fetch(
         args.weekly_schedule_runs_json,
-        f"repos/{args.repo}/actions/workflows/weekly.yml/runs?head_sha={sha}&branch=main&event=schedule&per_page=100",
-        cache_dir / "weekly-schedule-runs.json",
+        f"repos/{args.repo}/actions/workflows/weekly.yml/runs?head_sha={sha}&branch=main&per_page=100",
+        cache_dir / "weekly-runs.json",
     )
     explicit_runs = _load_explicit_runs(args.explicit_runs_json)
 
@@ -367,11 +368,23 @@ def run_preflight(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     sbml_id = args.sbml_run_id or _find_latest_run_id(
         sbml_payload, "Official SBML conformance subset", sha, event="workflow_dispatch"
     )
+    combined_weekly_payload = (
+        weekly_sched_payload
+        if isinstance(weekly_sched_payload, list)
+        else [weekly_sched_payload]
+    ) + (sbml_payload if isinstance(sbml_payload, list) else [sbml_payload])
     weekly_manual_id = args.weekly_run_id or _find_latest_run_id(
-        sbml_payload, "Weekly Validation", sha, event="workflow_dispatch"
+        combined_weekly_payload, "Weekly Validation", sha, event="workflow_dispatch"
     )
-    weekly_sched_id = args.scheduled_weekly_run_id or _find_latest_run_id(
-        weekly_sched_payload, "Weekly Validation", sha, event="schedule"
+    weekly_sched_id = (
+        args.scheduled_weekly_run_id
+        or _find_latest_run_id(
+            combined_weekly_payload,
+            "Weekly Validation",
+            sha,
+            event=("schedule", "workflow_dispatch"),
+        )
+        or weekly_manual_id
     )
 
     runs_report: dict[str, Any] = {}
@@ -464,7 +477,7 @@ def run_preflight(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                 "run_id": weekly_manual_id,
                 "event": wm_rec["event"],
                 "mutation_ratchet_verified": True,
-                "note": "Manual Weekly Validation passed with exact-SHA mutation artifact; counts as test evidence only and does NOT satisfy release.yml event=schedule requirement.",
+                "note": "Exact-main workflow_dispatch Weekly Validation passed with verified mutation ratchet (accepted by release.yml #1023).",
             }
         else:
             weekly_distinction["manual_test_evidence"] = {
@@ -485,20 +498,20 @@ def run_preflight(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         runs_report["weekly_scheduled"] = {"present": False}
         weekly_distinction["scheduled_release_gate"] = {
             "status": "BLOCKED",
-            "reason": f"no completed event=schedule Weekly Validation run for exact main SHA {sha}",
+            "reason": f"no completed schedule/workflow_dispatch Weekly Validation run for exact main SHA {sha}",
         }
         blockers.append(
-            f"release.yml scheduled mutation gate missing: no completed event=schedule weekly.yml run and {mutation_name} artifact for {sha}"
+            f"release.yml weekly mutation gate missing: no completed schedule/workflow_dispatch weekly.yml run and {mutation_name} artifact for {sha}"
         )
     else:
         ws_meta, ws_artifacts = _get_run_and_artifacts(
             args.repo, weekly_sched_id, explicit_runs
         )
         ws_rec = _evaluate_run_record(
-            "Weekly scheduled",
+            "Weekly release gate",
             "Weekly Validation",
             sha,
-            ("schedule",),
+            ("schedule", "workflow_dispatch"),
             ws_meta,
             ws_artifacts,
         )
@@ -532,7 +545,7 @@ def run_preflight(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             weekly_distinction["scheduled_release_gate"] = {
                 "status": "PASS",
                 "run_id": weekly_sched_id,
-                "event": "schedule",
+                "event": ws_rec["event"],
             }
         else:
             weekly_distinction["scheduled_release_gate"] = {
@@ -601,6 +614,21 @@ def run_preflight(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     # Install receipts & #184 platform check
     cpu_mod = _load_cpu_release_checks(root)
     install_paths = list(args.install_receipt or [])
+    if ci_id is not None and not args.explicit_runs_json and "ci" in runs_report:
+        ci_arts = runs_report["ci"].get("artifacts", {})
+        ci_rec_dir = out_dir / "ci-install-receipts"
+        for art_name in sorted(ci_arts):
+            if art_name.startswith("issue184-install-receipt-") and art_name.endswith(
+                f"-{sha}"
+            ):
+                dl_ok, _ = _download_artifact(
+                    args.repo, ci_id, art_name, ci_rec_dir / art_name
+                )
+                if dl_ok:
+                    for rec_json in sorted((ci_rec_dir / art_name).rglob("*.json")):
+                        if rec_json not in install_paths:
+                            install_paths.append(rec_json)
+
     sci_paths: list[Path] = []
     issue184_art_name = f"issue184-cpu-release-{sha}"
     if (

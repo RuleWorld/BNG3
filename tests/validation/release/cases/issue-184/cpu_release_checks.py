@@ -17,6 +17,26 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[5]
 PLATFORMS = ("linux", "macos", "windows")
 CPU_EXTRAS = ("legacy", "plotting", "jax", "notebook", "full")
+REQUIRED_CANDIDATE_CHECKS = (
+    "release-candidate:license-inventory",
+    "release-candidate:notice-inventory",
+    "release-candidate:memory-contract",
+    "release-candidate:sanitizer-configuration",
+    "release-candidate:platform-matrix-shape",
+    "release-candidate:hosted-evidence",
+    "release-candidate:reproducible-build-digests",
+)
+REQUIRED_INSTALL_SUBCHECKS = (
+    "clean_install",
+    "upgrade_path",
+    "cli_execution",
+    "compat_api_execution",
+    "public_examples",
+    "representative_cpu_workloads",
+    "cpu_extras",
+    "truthful_gpu_metadata",
+    "archive_inventory",
+)
 
 
 def _receipts(paths, revision):
@@ -37,10 +57,17 @@ def _receipts(paths, revision):
             if row.get("status") not in {"PASS", "SKIPPED", "NOT_TESTED"}
             or (row.get("status") == "PASS" and row.get("supported_execution") is False)
         ]
+        passed_ids = {
+            row.get("id")
+            for row in results
+            if row.get("status") == "PASS" and row.get("supported_execution") is True
+        }
         accepted.append(
             {
                 "name": path.name,
+                "check_id": data.get("check_id", ""),
                 "results": len(results),
+                "passed_ids": sorted(i for i in passed_ids if i),
                 "failed": failed,
                 "reference": data.get("references", {}),
             }
@@ -65,27 +92,95 @@ def metadata_gaps(root=ROOT):
     return gaps
 
 
-def candidate_gaps(receipts, rejected, root=ROOT):
-    gaps = [f"receipt {name}: {reason}" for name, reason in rejected]
-    failed = [f"{r['name']}:{c}" for r in receipts for c in r["failed"]]
+def candidate_gaps(
+    receipts,
+    rejected,
+    root=ROOT,
+    *,
+    candidate_reports=(),
+    candidate_rejected=(),
+    require_candidate_checks=False,
+):
+    gaps = [
+        f"receipt {name}: {reason}" for name, reason in [*rejected, *candidate_rejected]
+    ]
+    failed = [
+        f"{r['name']}:{c}" for r in [*receipts, *candidate_reports] for c in r["failed"]
+    ]
     gaps.extend(failed)
     if not receipts:
         gaps.append("no exact-revision hosted parity or SBML receipt was consumed")
+    if require_candidate_checks or candidate_reports:
+        passed_candidate_ids = {
+            cid
+            for r in [*receipts, *candidate_reports]
+            for cid in r.get("passed_ids", ())
+        }
+        for req_id in REQUIRED_CANDIDATE_CHECKS:
+            if req_id not in passed_candidate_ids:
+                gaps.append(f"missing or unverified candidate evidence: {req_id}")
     return sorted(set(gaps))
 
 
-def installed_gaps(install_receipts, rejected, root=ROOT):
+def _structured_install_gaps(receipt):
+    gaps = []
+    name = receipt["name"]
+    if receipt["failed"]:
+        gaps.extend(f"{name}:{cid}" for cid in receipt["failed"])
+    passed = set(receipt.get("passed_ids", ()))
+    for sub in REQUIRED_INSTALL_SUBCHECKS:
+        if sub not in passed:
+            gaps.append(f"install receipt {name} missing subcheck: {sub}")
+    ref = receipt.get("reference", {})
+    if ref.get("gpu_scope_deferred_to") != "#474":
+        gaps.append(f"install receipt {name} missing explicit GPU deferral to #474")
+    if ref.get("gpu_qualified_by_this_receipt") is not False:
+        gaps.append(f"install receipt {name} must not claim GPU qualification")
+    if not ref.get("artifact_sha256"):
+        gaps.append(f"install receipt {name} missing artifact_sha256")
+    return gaps
+
+
+def installed_gaps(
+    install_receipts,
+    rejected,
+    root=ROOT,
+    *,
+    require_structured_install=False,
+):
     gaps = [f"receipt {name}: {reason}" for name, reason in rejected]
     gaps.extend(metadata_gaps(root))
-    observed = set()
+    observed_wheels = set()
+    observed_platforms = set()
+    has_sdist = False
     for receipt in install_receipts:
         reference = receipt.get("reference", {})
+        is_structured = (
+            receipt.get("check_id") == "issue184-install-receipt"
+            or require_structured_install
+        )
+        if is_structured:
+            gaps.extend(_structured_install_gaps(receipt))
+        plat_value = str(reference.get("platform", "")).lower()
+        kind = str(reference.get("artifact_kind", "")).lower()
         for platform in PLATFORMS:
-            if platform in receipt["name"].lower() or platform in str(reference):
-                observed.add(platform)
+            if (
+                platform in receipt["name"].lower()
+                or platform == plat_value
+                or platform in str(reference).lower()
+            ):
+                observed_platforms.add(platform)
+                if kind == "wheel" or not kind:
+                    observed_wheels.add(platform)
+        if kind == "sdist" or "sdist" in receipt["name"].lower():
+            has_sdist = True
     for platform in PLATFORMS:
-        if platform not in observed:
+        if platform not in observed_platforms or (
+            require_structured_install and platform not in observed_wheels
+        ):
             gaps.append(f"no exact-revision wheel/sdist install receipt for {platform}")
+    if require_structured_install and not has_sdist:
+        gaps.append("no exact-revision sdist install receipt consumed")
     return sorted(set(gaps))
 
 
@@ -110,6 +205,7 @@ def main(argv=None):
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument("--revision", required=True)
     parser.add_argument("--scientific-receipt", type=Path, action="append", default=[])
+    parser.add_argument("--candidate-report", type=Path, action="append", default=[])
     parser.add_argument("--install-receipt", type=Path, action="append", default=[])
     parser.add_argument("--report", type=Path, required=True)
     args = parser.parse_args(argv)
@@ -122,15 +218,28 @@ def main(argv=None):
     if head != args.revision or dirty:
         parser.error("CPU release evidence requires the requested clean revision")
     scientific, sci_rejected = _receipts(args.scientific_receipt, args.revision)
+    cand_parsed, cand_rejected = _receipts(args.candidate_report, args.revision)
     installed, inst_rejected = _receipts(args.install_receipt, args.revision)
-    candidate = candidate_gaps(scientific, sci_rejected, args.root)
-    artifacts = installed_gaps(installed, inst_rejected, args.root)
+    candidate = candidate_gaps(
+        scientific,
+        sci_rejected,
+        args.root,
+        candidate_reports=cand_parsed,
+        candidate_rejected=cand_rejected,
+        require_candidate_checks=True,
+    )
+    artifacts = installed_gaps(
+        installed,
+        inst_rejected,
+        args.root,
+        require_structured_install=True,
+    )
     report = {
         "schema_version": 1,
         "source": {"revision": args.revision, "dirty": False},
         "check_id": "issue-184-cpu-release",
         "scope": "CPU milestone; GPU scope is deferred to #474 and is not reported as passed",
-        "receipts": scientific + installed,
+        "receipts": scientific + cand_parsed + installed,
         "results": [
             _result("release-candidate", candidate),
             _result("release-installed-artifacts", artifacts),
