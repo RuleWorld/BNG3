@@ -481,10 +481,17 @@ for extra in requested_extras:
         __import__(mod)
     imported_extras[extra] = list(mods)
 
+bionetgen_dists = [
+    f"{d.metadata.get('Name')}=={d.version}"
+    for d in importlib.metadata.distributions()
+    if (d.metadata.get("Name") or "").lower() == "bionetgen"
+]
+
 out_file.write_text(
     json.dumps(
         {
             "version": bionetgen.__version__,
+            "bionetgen_distributions": bionetgen_dists,
             "package_file": str(Path(bionetgen.__file__).resolve()),
             "model_param_count": len(list(m.parameters)),
             "guide_scan_endpoints": endpoints,
@@ -540,6 +547,63 @@ def _result_row(check_id: str, ok: bool, detail: str) -> dict[str, Any]:
         "related_issues": [184],
         "detail": detail,
     }
+
+
+def evaluate_upgrade_probe(
+    artifact_kind: str,
+    probe_before: dict[str, Any],
+    probe_after: dict[str, Any],
+) -> tuple[bool, str]:
+    """Verify post-upgrade identity/execution with byte equality for wheels and recompile allowance for sdist."""
+    id_before = probe_before.get("identity") or {}
+    id_after = probe_after.get("identity") or {}
+    before_ver = probe_before.get("version") or id_before.get("distribution_version")
+    after_ver = probe_after.get("version") or id_after.get("distribution_version")
+    if not after_ver or before_ver != after_ver:
+        return False, f"version mismatch on upgrade: {before_ver!r} != {after_ver!r}"
+    if id_after.get("distribution_version") != after_ver:
+        return (
+            False,
+            f"post-upgrade distribution_version mismatch: {id_after.get('distribution_version')!r} != {after_ver!r}",
+        )
+    dists = probe_after.get("bionetgen_distributions")
+    if dists is not None and len(dists) != 1:
+        return False, f"expected 1 installed bionetgen distribution, found {dists}"
+    before_ext = str(id_before.get("native_extension", ""))
+    after_ext = str(id_after.get("native_extension", ""))
+    if not before_ext or not after_ext or Path(before_ext).name != Path(after_ext).name:
+        return (
+            False,
+            f"native extension filename mismatch on upgrade: {before_ext!r} vs {after_ext!r}",
+        )
+    before_sha = str(id_before.get("native_extension_sha256", ""))
+    after_sha = str(id_after.get("native_extension_sha256", ""))
+    if not before_sha or not after_sha:
+        return False, "missing native extension sha256 on upgrade"
+    if (
+        not probe_after.get("cli_version")
+        or probe_after.get("compat_gdat_len", 0) != 11
+    ):
+        return False, "post-upgrade CLI or compat execution probe failed"
+    if len(probe_after.get("guide_scan_endpoints", [])) != 2:
+        return False, "post-upgrade public example probe failed"
+    if artifact_kind == "wheel":
+        if before_sha != after_sha:
+            return (
+                False,
+                f"native extension hash changed on wheel upgrade: {before_sha} != {after_sha}",
+            )
+        return (
+            True,
+            f"wheel --upgrade --force-reinstall preserved native_sha256={after_sha[:12]}",
+        )
+    if artifact_kind == "sdist":
+        return (
+            True,
+            f"sdist --upgrade --force-reinstall recompiled {Path(after_ext).name} "
+            f"(pre={before_sha[:12]}, post={after_sha[:12]}, version={after_ver})",
+        )
+    return False, f"unsupported artifact_kind for upgrade: {artifact_kind!r}"
 
 
 def _declared_cpu_extras_ok(root: Path) -> tuple[bool, list[str]]:
@@ -608,11 +672,11 @@ def _build_receipt(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
     upgrade_ok = False
     clean_ok = False
     clean_err = ""
-    upgrade_err = ""
+    upgrade_detail = ""
 
     if args.skip_install_probe:
         clean_err = "skipped install probe (--skip-install-probe)"
-        upgrade_err = clean_err
+        upgrade_detail = clean_err
     else:
         with tempfile.TemporaryDirectory(prefix="bng3-184-venv-") as tmp_venv:
             venv_dir = Path(tmp_venv) / "venv"
@@ -661,27 +725,22 @@ def _build_receipt(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
                     upg_cmd, cwd=venv_dir.parent, extra_env=extra_build_env
                 )
                 if upg.returncode != 0:
-                    upgrade_err = f"pip upgrade failed: {upg.stderr or upg.stdout}"
+                    upgrade_detail = f"pip upgrade failed: {upg.stderr or upg.stdout}"
                 else:
                     try:
                         probe_after = _execute_installed_probe(
                             venv_py, venv_cli, root, args.revision, extras
                         )
-                        before_ext = probe_before["identity"]["native_extension_sha256"]
-                        after_ext = probe_after["identity"]["native_extension_sha256"]
-                        upgrade_ok = bool(before_ext and before_ext == after_ext)
-                        if not upgrade_ok:
-                            upgrade_err = (
-                                f"native extension hash changed on upgrade: "
-                                f"{before_ext} != {after_ext}"
-                            )
+                        upgrade_ok, upgrade_detail = evaluate_upgrade_probe(
+                            target_info["kind"], probe_before, probe_after
+                        )
                     except (
                         RuntimeError,
                         AssertionError,
                         json.JSONDecodeError,
                         OSError,
                     ) as exc:
-                        upgrade_err = str(exc)
+                        upgrade_detail = str(exc)
 
     all_inspected = list(inv["wheels"]) + ([inv["sdist"]] if inv["sdist"] else [])
     archive_ok = (
@@ -721,14 +780,7 @@ def _build_receipt(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
         _result_row(
             "upgrade_path",
             upgrade_ok,
-            (
-                (
-                    f"--upgrade --force-reinstall preserved native_sha256="
-                    f"{probe_after.get('identity', {}).get('native_extension_sha256', '')[:12]}"
-                )
-                if upgrade_ok
-                else upgrade_err
-            ),
+            upgrade_detail,
         ),
         _result_row(
             "cli_execution",
@@ -782,6 +834,9 @@ def _build_receipt(args: argparse.Namespace) -> tuple[dict[str, Any], int]:
             "native_extension_sha256": probe_before.get("identity", {}).get(
                 "native_extension_sha256"
             ),
+            "native_extension_sha256_after_upgrade": probe_after.get(
+                "identity", {}
+            ).get("native_extension_sha256"),
             "extras_verified": extras,
             "gpu_scope_deferred_to": "#474",
             "gpu_qualified_by_this_receipt": False,

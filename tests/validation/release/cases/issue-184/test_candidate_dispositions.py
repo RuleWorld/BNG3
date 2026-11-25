@@ -430,3 +430,55 @@ def test_truthful_gpu_metadata_validation() -> None:
         }
     )
     assert not bad_claim
+
+
+def test_upgrade_probe_wheel_vs_sdist() -> None:
+    def _probe(
+        sha: str,
+        *,
+        version: str = "3.0.0a1",
+        ext: str = "_bionetgen_cpp.cpython-312-x86_64-linux-gnu.so",
+        dists: list[str] | None = None,
+        compat_len: int = 11,
+    ) -> dict[str, object]:
+        return {
+            "version": version,
+            "bionetgen_distributions": (
+                dists if dists is not None else [f"bionetgen=={version}"]
+            ),
+            "cli_version": f"bionetgen, version {version}",
+            "compat_gdat_len": compat_len,
+            "guide_scan_endpoints": [81.87, 13.53],
+            "identity": {
+                "distribution_version": version,
+                "native_extension": f"/venv/site-packages/bionetgen/{ext}",
+                "native_extension_sha256": sha,
+            },
+        }
+
+    # Wheel requires strict byte-identical native extension SHA-256
+    assert inst_mod.evaluate_upgrade_probe("wheel", _probe("a" * 64), _probe("a" * 64))[
+        0
+    ]
+    assert not inst_mod.evaluate_upgrade_probe(
+        "wheel", _probe("a" * 64), _probe("b" * 64)
+    )[0]
+
+    # Sdist recompiles cleanly into a new temp dir, so hash may differ while identity/exec match
+    ok_sdist, detail = inst_mod.evaluate_upgrade_probe(
+        "sdist", _probe("a" * 64), _probe("b" * 64)
+    )
+    assert ok_sdist and "pre=aaaaaaaaaaaa" in detail and "post=bbbbbbbbbbbb" in detail
+
+    # Sdist still fails closed on version mismatch, duplicate dists, or broken execution
+    assert not inst_mod.evaluate_upgrade_probe(
+        "sdist", _probe("a" * 64), _probe("b" * 64, version="0.0.0")
+    )[0]
+    assert not inst_mod.evaluate_upgrade_probe(
+        "sdist",
+        _probe("a" * 64),
+        _probe("b" * 64, dists=["bionetgen==3.0.0a1", "bionetgen==2.0"]),
+    )[0]
+    assert not inst_mod.evaluate_upgrade_probe(
+        "sdist", _probe("a" * 64), _probe("b" * 64, compat_len=0)
+    )[0]

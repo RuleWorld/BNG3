@@ -1046,6 +1046,7 @@ jobs:
     env:
       BNG3_PYTHON_TEST_MODE: installed
     permissions:
+      actions: read
       contents: read
       issues: read
     steps:
@@ -1591,6 +1592,15 @@ jobs:
               reconciliation_args+=(--report "$RUNNER_TEMP/reconciliation-acceptance.json")
             fi
           fi
+          GH_TOKEN="${{ github.token }}" PYTHONPATH=. python scripts/ci/collect_issue184_hosted_evidence.py \
+            --root . \
+            --repo "$GITHUB_REPOSITORY" \
+            --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
+            --release-records "$RUNNER_TEMP/release-records" \
+            --extra-scientific-receipt "$RUNNER_TEMP/issue138-release-record.json" \
+            --extra-scientific-receipt "$RUNNER_TEMP/bng3-jax-release/report.json" \
+            --extra-scientific-receipt "$RUNNER_TEMP/issue142/queue/release-obligation-142.json" \
+            --output-dir "$RUNNER_TEMP/issue184-combined" || true
           for record in \
             "$RUNNER_TEMP"/release-records/issue137-inventory-*/report.json \
             "$RUNNER_TEMP"/release-records/issue181-corpus-*/report.json \
