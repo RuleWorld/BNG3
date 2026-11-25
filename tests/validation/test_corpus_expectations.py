@@ -49,6 +49,7 @@ def _mode_for(stages: dict[str, str]) -> dict[str, Any]:
     if stages["roundtrip_structure"] != "not_tested":
         mode["written_xml"] = {"passed": True}
         mode["generated_network"] = {"species": 2, "reactions": 3}
+        mode["reimport_parser"] = {"species": 2, "reactions": 3}
         mode["native_reader"] = {
             "success": True,
             "species_count": 2,
@@ -718,3 +719,75 @@ def test_synthetic_report_preserves_failed_roundtrip_structure():
     }
     observed = inventory.corpus_expectation_cases(_report_from_cases(cases))
     assert observed == cases
+
+
+def test_roundtrip_status_accepts_rate_rule_lowering_with_fewer_written_reactions():
+    """Rate-rule lowering emits fewer written reactions than generated reactions."""
+
+    mode = {
+        "written_xml": {"passed": True},
+        "generated_network": {"species": 3, "reactions": 2},
+        "reimport_parser": {"species": 3, "reactions": 1},
+        "reimport_network": {"species": 3, "reactions": 2},
+        "native_reader": {
+            "success": True,
+            "species_count": 3,
+            "reaction_count": 1,
+            "absolute_flux_reaction_count": 1,
+        },
+    }
+    assert inventory._roundtrip_status(mode) == "passed"
+
+
+def test_roundtrip_status_rejects_damaged_written_export_negative_controls():
+    """Damaged written SBML, native readback, or species counts fail roundtrip_structure."""
+
+    base = {
+        "written_xml": {"passed": True},
+        "generated_network": {"species": 3, "reactions": 2},
+        "reimport_parser": {"species": 3, "reactions": 1},
+        "native_reader": {
+            "success": True,
+            "species_count": 3,
+            "reaction_count": 1,
+        },
+    }
+    # Native reader disagrees with the written SBML document (even if it happens
+    # to match the un-lowered generated network reaction count).
+    damaged_native_rxn = json.loads(json.dumps(base))
+    damaged_native_rxn["native_reader"]["reaction_count"] = 2
+    assert inventory._roundtrip_status(damaged_native_rxn) == "failed"
+
+    damaged_xml = json.loads(json.dumps(base))
+    damaged_xml["written_xml"]["passed"] = False
+    assert inventory._roundtrip_status(damaged_xml) == "failed"
+
+    damaged_species = json.loads(json.dumps(base))
+    damaged_species["native_reader"]["species_count"] = 2
+    assert inventory._roundtrip_status(damaged_species) == "failed"
+
+    damaged_reader = json.loads(json.dumps(base))
+    damaged_reader["native_reader"]["success"] = False
+    assert inventory._roundtrip_status(damaged_reader) == "failed"
+
+
+def test_roundtrip_status_fails_when_a_roundtrip_stage_failed():
+    """A failed round-trip stage fails even if native matches written SBML counts."""
+
+    # Mirrors a non-rate-rule model where export dropped a reaction (3 -> 2):
+    # written and native reaction counts both equal 2, so the harness fails the
+    # native-sbml-readback stage against generated_network.reactions == 3.
+    mode = {
+        "written_xml": {"passed": True},
+        "generated_network": {"species": 2, "reactions": 3},
+        "reimport_parser": {"species": 2, "reactions": 2},
+        "native_reader": {
+            "success": True,
+            "species_count": 2,
+            "reaction_count": 2,
+        },
+        "stage_results": [
+            {"name": "native-sbml-readback", "status": "failed"},
+        ],
+    }
+    assert inventory._roundtrip_status(mode) == "failed"
