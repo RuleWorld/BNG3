@@ -342,7 +342,9 @@ jobs:
       - name: Run tests under ASan
         env:
           ASAN_OPTIONS: detect_leaks=0
-        run: ctest --test-dir build --output-on-failure --stop-on-failure --no-tests=error --output-junit asan-ctest-results.xml
+        run: |
+          mkdir -p "$RUNNER_TEMP/asan-results"
+          ctest --test-dir build --output-on-failure --stop-on-failure --no-tests=error --output-junit "$RUNNER_TEMP/asan-results/asan-ctest-results.xml"
 
       - name: Qualify issue 141 late CVODE exception cleanup
         env:
@@ -350,14 +352,12 @@ jobs:
         run: >-
           ctest --test-dir build --output-on-failure --stop-on-failure --no-tests=error
           -R '^OdeIntegrator recovers after late stop condition failure$'
-          --output-junit asan-late-stop-results.xml
+          --output-junit "$RUNNER_TEMP/asan-results/asan-late-stop-results.xml"
 
       - name: Record ASan sanitizer receipt
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/asan-results"
-          cp asan-ctest-results.xml asan-late-stop-results.xml "$RUNNER_TEMP/asan-results/"
           python - <<'PY'
           import hashlib, json, os
           from pathlib import Path
