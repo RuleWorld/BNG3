@@ -631,3 +631,48 @@ end model
     CHECK_THAT(model->getParameters().evaluate("p1"), WithinRel(std::acos(-1.0), 1e-14));
     CHECK_THAT(model->getParameters().evaluate("p2"), WithinRel(std::exp(1.0), 1e-14));
 }
+
+TEST_CASE("Negative power operands are parenthesized when serialized") {
+    const auto negNumPow = bng::parser::parseExpression("-2^k");
+    const auto parenNegPow = bng::parser::parseExpression("(-2)^k");
+    const auto negVarPow = bng::parser::parseExpression("-k^2");
+    const auto subPow = bng::parser::parseExpression("0-2^k");
+
+    CHECK(negNumPow.toString() == "((-2) ^ k)");
+    CHECK(parenNegPow.toString() == "((-2) ^ k)");
+    CHECK(negVarPow.toString() == "((-k) ^ 2)");
+    CHECK(subPow.toString() == "(0 - (2 ^ k))");
+
+    const auto resolve = [](const std::string& name) -> double {
+        if (name == "k") return 2.0;
+        throw std::runtime_error("unexpected " + name);
+    };
+    using Catch::Matchers::WithinAbs;
+    CHECK_THAT(negNumPow.evaluate(resolve), WithinAbs(4.0, 1e-12));
+    CHECK_THAT(parenNegPow.evaluate(resolve), WithinAbs(4.0, 1e-12));
+    CHECK_THAT(negVarPow.evaluate(resolve), WithinAbs(4.0, 1e-12));
+    CHECK_THAT(subPow.evaluate(resolve), WithinAbs(-4.0, 1e-12));
+
+    // Round-tripping the serialized form preserves the same value.
+    CHECK_THAT(bng::parser::parseExpression(negNumPow.toString()).evaluate(resolve), WithinAbs(4.0, 1e-12));
+    CHECK_THAT(bng::parser::parseExpression(subPow.toString()).evaluate(resolve), WithinAbs(-4.0, 1e-12));
+
+    // Folded negative number as power base is also parenthesized.
+    const auto folded = Expression::binary("^", Expression::number(-2.0), Expression::identifier("k"));
+    CHECK(folded.toString() == "((-2) ^ k)");
+}
+
+TEST_CASE("if() treats any nonzero numeric condition as true") {
+    using Catch::Matchers::WithinAbs;
+    const auto resolve = [](const std::string& name) -> double {
+        if (name == "kD") return 0.7;
+        if (name == "kA") return 2.0;
+        if (name == "kB") return 3.0;
+        throw std::runtime_error("unexpected " + name);
+    };
+    CHECK_THAT(bng::parser::parseExpression("if(kD-0.5, kA, kB)").evaluate(resolve), WithinAbs(2.0, 1e-12));
+    CHECK_THAT(bng::parser::parseExpression("if(0.5-kD-0.8, kA, kB)").evaluate(resolve), WithinAbs(2.0, 1e-12));
+    CHECK_THAT(bng::parser::parseExpression("if(kD-0.2, kA, kB)").evaluate(resolve), WithinAbs(2.0, 1e-12));
+    CHECK_THAT(bng::parser::parseExpression("if(kD-0.7, kA, kB)").evaluate(resolve), WithinAbs(3.0, 1e-12));
+    CHECK_THAT(bng::parser::parseExpression("if(kD-0.5 > 0, kA, kB)").evaluate(resolve), WithinAbs(2.0, 1e-12));
+}

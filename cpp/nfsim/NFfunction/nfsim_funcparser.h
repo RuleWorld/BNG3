@@ -86,6 +86,7 @@
 #include "ast/Expression.hpp"
 #include "ast/ExpressionEval.hpp"
 
+#include <cctype>
 #include <functional>
 #include <optional>
 #include <stdexcept>
@@ -145,11 +146,49 @@ public:
         constants_[name] = value;
     }
 
+    /// Normalize NFsim XML muParser word-form logical operators (` and `, ` or `)
+    /// to BNGL symbolic operators (` && `, ` || `) before invoking the shared parser.
+    static std::string normalizeXmlLogicalKeywords(const std::string& expr) {
+        auto isIdentChar = [](char c) {
+            const auto u = static_cast<unsigned char>(c);
+            return std::isalnum(u) != 0 || c == '_';
+        };
+        auto isSpaceChar = [](char c) {
+            return std::isspace(static_cast<unsigned char>(c)) != 0;
+        };
+        std::string out;
+        out.reserve(expr.size());
+        std::size_t i = 0;
+        while (i < expr.size()) {
+            const bool prevSpace = (i > 0 && isSpaceChar(expr[i - 1]));
+            if (prevSpace && i + 3 < expr.size() && expr.compare(i, 3, "and") == 0 &&
+                isSpaceChar(expr[i + 3])) {
+                out += "&&";
+                i += 3;
+                continue;
+            }
+            if (prevSpace && i + 2 < expr.size() && expr.compare(i, 2, "or") == 0 &&
+                isSpaceChar(expr[i + 2])) {
+                out += "||";
+                i += 2;
+                continue;
+            }
+            if (isIdentChar(expr[i])) {
+                const std::size_t start = i;
+                while (i < expr.size() && isIdentChar(expr[i])) ++i;
+                out.append(expr, start, i - start);
+                continue;
+            }
+            out.push_back(expr[i++]);
+        }
+        return out;
+    }
+
     /// Parse the expression with the shared BNGL expression parser.
     void SetExpr(const std::string& expr) {
         originalExpr_ = expr;
         try {
-            expression_ = bng::parser::parseExpression(expr);
+            expression_ = bng::parser::parseExpression(normalizeXmlLogicalKeywords(expr));
         } catch (const std::exception& error) {
             expression_.reset();
             throw exception_type("failed to parse expression '" + expr + "': " +

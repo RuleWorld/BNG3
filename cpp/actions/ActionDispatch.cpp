@@ -2155,14 +2155,17 @@ void runSimulation(
     if (compiledOptions != nullptr && compiledOptions->checkProductScaleDiagnostic.has_value()) {
         throw std::runtime_error(compiledOptions->checkProductScaleDiagnostic->message);
     }
+    bool checkProductScaleSpecified = false;
     const auto checkProdScaleText = readArgument(action, "check_product_scale", "");
     if (!checkProdScaleText.empty()) {
+        checkProductScaleSpecified = true;
         opts.checkProductScale = parseScalarValue(checkProdScaleText, model);
         if (!std::isfinite(opts.checkProductScale) || opts.checkProductScale < 0.0) {
             throw std::runtime_error(
                 "check_product_scale must be finite and non-negative");
         }
     } else if (compiledOptions != nullptr && compiledOptions->checkProductScale.has_value()) {
+        checkProductScaleSpecified = true;
         opts.checkProductScale = *compiledOptions->checkProductScale;
     }
 
@@ -2278,7 +2281,8 @@ void runSimulation(
             throw std::runtime_error(*decision);
         }
         engine::PsaSimulator simulator(model, network);
-        result = simulator.simulate(opts, poplevel);
+        const bool pScaleChecker = checkProductScaleSpecified ? (opts.checkProductScale != 0.0) : true;
+        result = simulator.simulate(opts, poplevel, pScaleChecker);
     } else {
         // ODE/SSA integration
         engine::OdeIntegrator integrator(model, network);

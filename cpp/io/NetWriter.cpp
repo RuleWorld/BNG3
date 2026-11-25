@@ -2737,7 +2737,16 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             }
             out << derivedFound->second.paramName;
             writeDelayMetadata();
-            out << " #" << (reaction.getOriginRuleName().rfind("_", 0) == 0 ? reaction.getOriginRuleName() : "_" + reaction.getOriginRuleName());
+            out << " #";
+            const auto& originNames = reaction.getOriginRuleNames();
+            if (!originNames.empty()) {
+                for (std::size_t i = 0; i < originNames.size(); ++i) {
+                    if (i != 0) out << ",";
+                    out << (originNames[i].rfind("_", 0) == 0 ? originNames[i] : "_" + originNames[i]);
+                }
+            } else {
+                out << (reaction.getOriginRuleName().rfind("_", 0) == 0 ? reaction.getOriginRuleName() : "_" + reaction.getOriginRuleName());
+            }
             if (!totalRate && unitExpr.has_value()) {
                 out << " unit_conversion=" << *unitExpr;
             }
@@ -2820,8 +2829,8 @@ void NetWriter::write(const std::filesystem::path& outputPath, ast::Model& model
             }
             writeDelayMetadata();
             // Append rule name comment for non-derived reactions
-            if (!reaction.getOriginRuleName().empty()) {
-                out << " #" << reaction.getOriginRuleName();
+            if (const auto comment = reaction.getOriginRuleComment(); !comment.empty()) {
+                out << " #" << comment;
             }
         }
         out << '\n';

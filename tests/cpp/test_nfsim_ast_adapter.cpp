@@ -4485,7 +4485,8 @@ end reaction rules
     CHECK(xml.find("if(") != std::string::npos);
     CHECK(xml.find("Ton") != std::string::npos);
     CHECK(xml.find("5000") != std::string::npos);
-    CHECK(xml.find("&amp;&amp;") != std::string::npos);
+    CHECK(xml.find("!=0) and (") != std::string::npos);
+    CHECK(xml.find("&amp;&amp;") == std::string::npos);
     CHECK(xml.find("&&") == std::string::npos);
     CHECK(xml.find("<Reference name=\"Ton\" type=\"Observable\"/>") !=
           std::string::npos);

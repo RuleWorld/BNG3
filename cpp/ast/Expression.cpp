@@ -957,10 +957,17 @@ std::string Expression::renderExpression(bool canonicalFunctionNames) const {
         return text_;
     case ExpressionKind::Unary:
         return text_ + children_.front().renderExpression(canonicalFunctionNames);
-    case ExpressionKind::Binary:
-        return "(" + children_[0].renderExpression(canonicalFunctionNames) + " " +
-               text_ + " " +
+    case ExpressionKind::Binary: {
+        std::string lhs = children_[0].renderExpression(canonicalFunctionNames);
+        if ((text_ == "^" || text_ == "**") &&
+            (children_[0].kind() == ExpressionKind::Unary ||
+             (children_[0].kind() == ExpressionKind::Number &&
+              children_[0].numberValue() < 0.0))) {
+            lhs = "(" + lhs + ")";
+        }
+        return "(" + lhs + " " + text_ + " " +
                children_[1].renderExpression(canonicalFunctionNames) + ")";
+    }
     case ExpressionKind::Function: {
         const char* canonical =
             canonicalFunctionNames ? canonicalBnglFunctionName(text_) : nullptr;
