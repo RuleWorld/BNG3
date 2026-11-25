@@ -486,7 +486,11 @@ def _parse_bngl_xml(payload: bytes) -> dict[str, Any]:
     )
     species = sorted(
         (
-            re.sub(r"\s+", "", el.attrib.get("name", "")),
+            re.sub(
+                r"^([A-Za-z_]\w*)\(\)$",
+                r"\1",
+                re.sub(r"\s+", "", el.attrib.get("name", "")),
+            ),
             _float_or_expr(el.attrib.get("concentration", "")),
             tuple(
                 m.attrib.get("name", "")

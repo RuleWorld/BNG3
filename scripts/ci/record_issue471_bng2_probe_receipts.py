@@ -139,12 +139,61 @@ _ODE_EXPRESSIONS: tuple[tuple[str, str], ...] = (
     ("operator.366", "if((1.0 == 2.0) || (2.0 > 1.0), 2.0, 0.5)"),
 )
 
+
+def _param_xml_bngl(params_block: str) -> str:
+    return (
+        "begin model\n"
+        "begin parameters\n"
+        "  k 0.5\n"
+        f"{params_block}\n"
+        "end parameters\n"
+        "begin molecule types\n"
+        "  A()\n"
+        "end molecule types\n"
+        "begin seed species\n"
+        "  A() 10\n"
+        "end seed species\n"
+        "begin observables\n"
+        "  Molecules A_obs A()\n"
+        "end observables\n"
+        "begin reaction rules\n"
+        "  R1: A() -> 0 k\n"
+        "end reaction rules\n"
+        "end model\n"
+        "writeXML({overwrite=>1})\n"
+    )
+
+
 _STATIC_PROBES: tuple[ProbeSpec, ...] = (
     ProbeSpec(
         row_id="operator.357",
         comparator="release-oracle-net-canonical-v1",
         output_file="probe.net",
         bngl_text=_param_net_bngl("2.0 ** 3.0"),
+    ),
+    ProbeSpec(
+        row_id="operator.364",
+        comparator="release-oracle-bngl-xml-v1",
+        output_file="probe.xml",
+        bngl_text=_param_xml_bngl(
+            "  z0 0\n  z2 2\n  p_ne 1~=2\n  p_eq 2~=2\n  p_var z0~=z2"
+        ),
+    ),
+    ProbeSpec(
+        row_id="operator.367",
+        comparator="release-oracle-bngl-xml-v1",
+        output_file="probe.xml",
+        bngl_text=_param_xml_bngl(
+            "  z0 0\n  z2 2\n  p_not0 !z0\n  p_not2 !z2\n  p_expr !(0)"
+        ),
+    ),
+    ProbeSpec(
+        row_id="operator.368",
+        comparator="release-oracle-bngl-xml-v1",
+        output_file="probe.xml",
+        bngl_text=_param_xml_bngl(
+            "  z0 0\n  z2 2\n  p_tilde0 ~z0\n  p_tilde2 ~z2\n  p_expr ~(0)"
+        ),
     ),
     ProbeSpec(
         row_id="bngl.indexed-declarations",

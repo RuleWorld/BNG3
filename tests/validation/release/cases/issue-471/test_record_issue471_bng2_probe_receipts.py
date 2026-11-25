@@ -49,6 +49,11 @@ if ($txt =~ /generate_hybrid_model\\(/) {
         close($xout);
     }
 }
+if ($txt =~ /writeXML\\(/ && $txt !~ /generate_hybrid_model\\(/) {
+    open(my $xout, '>', 'probe.xml') or die $!;
+    print $xout $hybrid_xml;
+    close($xout);
+}
 if ($txt =~ /generate_network\\(/) {
     open(my $out, '>', 'probe.net') or die $!;
     print $out "# Created by BioNetGen 2.9.3\\nbegin species\\n  1 A() 1\\nend species\\nbegin reactions\\n  1 1 0 1\\nend reactions\\n";
@@ -94,6 +99,11 @@ if 'generate_hybrid_model(' in txt:
             '<?xml version="1.0" encoding="UTF-8"?>\\n<sbml xmlns="http://www.sbml.org/sbml/level3" level="3" version="1"><model id=""><ListOfParameters><Parameter id="k" type="Constant" value="{rate_val}"/><Parameter id="k_pop" type="Constant" value="100"/></ListOfParameters><ListOfMoleculeTypes><MoleculeType id="A"/><MoleculeType id="A_pop" population="1"/><MoleculeType id="B"/></ListOfMoleculeTypes><ListOfSpecies><Species id="S1" concentration="10" name="A_pop()"><ListOfMolecules><Molecule id="S1_M1" name="A_pop"/></ListOfMolecules></Species></ListOfSpecies><ListOfReactionRules><ReactionRule id="RR1" name="R1_v1"><ListOfReactantPatterns><ReactantPattern id="RR1_RP1"><ListOfMolecules><Molecule id="RR1_RP1_M1" name="A_pop"/></ListOfMolecules></ReactantPattern></ListOfReactantPatterns><ListOfProductPatterns><ProductPattern id="RR1_PP1"><ListOfMolecules><Molecule id="RR1_PP1_M1" name="B"/></ListOfMolecules></ProductPattern></ListOfProductPatterns><RateLaw id="RR1_RateLaw" type="Ele" totalrate="0"><ListOfRateConstants><RateConstant value="k"/></ListOfRateConstants></RateLaw><ListOfOperations><Add id="RR1_PP1_M1"/><Delete id="RR1_RP1" DeleteMolecules="0"/></ListOfOperations></ReactionRule></ListOfReactionRules><ListOfObservables><Observable id="O1" name="A_obs" type="Molecules"><ListOfPatterns><Pattern id="O1_P1"><ListOfMolecules><Molecule id="O1_P1_M1" name="A"/></ListOfMolecules></Pattern></ListOfPatterns></Observable></ListOfObservables></model></sbml>\\n',
             encoding='utf-8',
         )
+if 'writeXML(' in txt and 'generate_hybrid_model(' not in txt:
+    Path('probe.xml').write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\\n<sbml xmlns="http://www.sbml.org/sbml/level3" level="3" version="1"><model id=""><ListOfParameters><Parameter id="k" type="Constant" value="{rate_val}"/><Parameter id="k_pop" type="Constant" value="100"/></ListOfParameters><ListOfMoleculeTypes><MoleculeType id="A"/><MoleculeType id="A_pop" population="1"/><MoleculeType id="B"/></ListOfMoleculeTypes><ListOfSpecies><Species id="S1" concentration="10" name="A_pop()"><ListOfMolecules><Molecule id="S1_M1" name="A_pop"/></ListOfMolecules></Species></ListOfSpecies><ListOfReactionRules><ReactionRule id="RR1" name="R1_v1"><ListOfReactantPatterns><ReactantPattern id="RR1_RP1"><ListOfMolecules><Molecule id="RR1_RP1_M1" name="A_pop"/></ListOfMolecules></ReactantPattern></ListOfReactantPatterns><ListOfProductPatterns><ProductPattern id="RR1_PP1"><ListOfMolecules><Molecule id="RR1_PP1_M1" name="B"/></ListOfMolecules></ProductPattern></ListOfProductPatterns><RateLaw id="RR1_RateLaw" type="Ele" totalrate="0"><ListOfRateConstants><RateConstant value="k"/></ListOfRateConstants></RateLaw><ListOfOperations><Add id="RR1_PP1_M1"/><Delete id="RR1_RP1" DeleteMolecules="0"/></ListOfOperations></ReactionRule></ListOfReactionRules><ListOfObservables><Observable id="O1" name="A_obs" type="Molecules"><ListOfPatterns><Pattern id="O1_P1"><ListOfMolecules><Molecule id="O1_P1_M1" name="A"/></ListOfMolecules></Pattern></ListOfPatterns></Observable></ListOfObservables></model></sbml>\\n',
+        encoding='utf-8',
+    )
 if 'generate_network(' in txt:
     Path('probe.net').write_text('# Created by bng_cpp\\nbegin species\\n  1 A() 1\\nend species\\nbegin reactions\\n  1 1 0 1\\nend reactions\\n', encoding='utf-8')
 """,
@@ -103,10 +113,10 @@ if 'generate_network(' in txt:
     return exe
 
 
-def test_all_47_probe_rows_exist_and_are_implemented_in_matrix():
+def test_all_50_probe_rows_exist_and_are_implemented_in_matrix():
     matrix = json.loads((ROOT / "provenance/capability-matrix.yml").read_text())
     by_id = {row["id"]: row for row in matrix["rows"]}
-    assert len(probes.PROBE_SPECS) == 47
+    assert len(probes.PROBE_SPECS) == 50
     for row_id in probes.PROBE_SPECS:
         assert row_id in by_id
         assert by_id[row_id]["status"] == "implemented"
@@ -134,6 +144,9 @@ def test_probe_receipts_round_trip_and_reject_corrupted_consumer_and_wrong_pin(
     selected = [
         "builtin.exp",
         "operator.357",
+        "operator.364",
+        "operator.367",
+        "operator.368",
         "bngl.null-reactants-and-products",
         "action.generate_hybrid_model",
         "action.generate_hybrid_model.actions",
