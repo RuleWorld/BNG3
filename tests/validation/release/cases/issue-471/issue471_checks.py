@@ -6,11 +6,19 @@ import argparse
 import hashlib
 import json
 import re
+import sys
+import tempfile
 from pathlib import Path
 from pathlib import PurePosixPath
 from typing import Any
 
 import yaml
+
+REPO_ROOT = Path(__file__).resolve().parents[5]
+SUPPORTED_COMPARATORS = (
+    "release-oracle-byte-equality-v1",
+    "release-oracle-net-canonical-v1",
+)
 
 
 def _sha256(value: Any) -> bool:
@@ -46,6 +54,31 @@ def _artifact_bytes(
         return resolved.read_bytes(), None
     except OSError as exc:
         return None, f"artifact cannot be read: {exc}"
+
+
+def _compare_net_bytes(oracle_bytes: bytes, consumer_bytes: bytes) -> tuple[bool, str]:
+    """Compare raw pinned-oracle and consumer .net files via canonical structure."""
+    if str(REPO_ROOT) not in sys.path:
+        sys.path.insert(0, str(REPO_ROOT))
+    from tests.validation import compare
+
+    try:
+        oracle_text = oracle_bytes.decode("utf-8")
+        consumer_text = consumer_bytes.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        return False, f"invalid UTF-8 in .net output: {exc}"
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        oracle_path = tmp / "oracle.net"
+        consumer_path = tmp / "consumer.net"
+        oracle_path.write_text(oracle_text, encoding="utf-8")
+        consumer_path.write_text(consumer_text, encoding="utf-8")
+        ref = compare.parse_net(oracle_path)
+        sub = compare.parse_net(consumer_path)
+    if ref is None or sub is None:
+        return False, "could not parse .net output"
+    diff = compare.compare_net(ref, sub)
+    return diff.ok, ("" if diff.ok else diff.summary())
 
 
 def _oracle_receipt_errors(
@@ -175,19 +208,36 @@ def _oracle_receipt_errors(
         )
     # The owned comparator compares bytes read from the bounded artifact root;
     # the receipt's comparison/result fields are intentionally ignored.
-    comparator = {
-        "id": "release-oracle-byte-equality-v1",
+    comparator_id = receipt.get("comparator", "release-oracle-byte-equality-v1")
+    common = {
         "implementation_sha256": hashlib.sha256(
             Path(__file__).read_bytes()
         ).hexdigest(),
         "producer_sha256": producer_digest,
         "oracle_sha256": oracle_digest,
         "consumer_sha256": consumer_digest,
-        "consumer_equals_oracle": consumer_bytes == oracle_bytes,
     }
+    if comparator_id == "release-oracle-byte-equality-v1":
+        diff_detail = ""
+        comparator = {
+            "id": "release-oracle-byte-equality-v1",
+            **common,
+            "consumer_equals_oracle": consumer_bytes == oracle_bytes,
+        }
+    elif comparator_id == "release-oracle-net-canonical-v1":
+        matched, diff_detail = _compare_net_bytes(oracle_bytes, consumer_bytes)
+        comparator = {
+            "id": "release-oracle-net-canonical-v1",
+            **common,
+            "consumer_equals_oracle": matched,
+        }
+    else:
+        errors.append(f"{row_id}: unsupported owned comparator {comparator_id!r}")
+        return errors, None
     if not comparator["consumer_equals_oracle"]:
+        suffix = f" ({diff_detail})" if diff_detail else ""
         errors.append(
-            f"{row_id}: owned byte comparator found consumer output differs from oracle"
+            f"{row_id}: owned byte comparator found consumer output differs from oracle{suffix}"
         )
     return errors, comparator
 
@@ -246,7 +296,26 @@ def _locked_oracle_errors(
             return [f"{row_id}: oracle {source_id} is not locked"]
         artifact_digest = str(oracle_lock.get("artifact_digest", ""))
         expected_executable = artifact_digest.removeprefix("sha256:")
-        if (
+        build_platform = oracle.get("build_platform")
+        recipe = str(oracle_lock.get("build_recipe", "")).casefold()
+        cross_platform = (
+            isinstance(build_platform, str)
+            and bool(build_platform.strip())
+            and build_platform != "macos-arm64"
+            and "macos arm64" in recipe
+        )
+        if cross_platform:
+            if not _sha256(oracle.get("executable_sha256")):
+                return [
+                    f"{row_id}: oracle executable digest does not match the pinned lock"
+                ]
+            if oracle.get("source_clean") is not True:
+                return [
+                    f"{row_id}: cross-platform oracle source checkout is not verified clean"
+                ]
+            if "script_sha256" in oracle and not _sha256(oracle.get("script_sha256")):
+                return [f"{row_id}: oracle script SHA-256 is invalid"]
+        elif (
             not _sha256(expected_executable)
             or oracle.get("executable_sha256") != expected_executable
         ):

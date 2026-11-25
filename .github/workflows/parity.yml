@@ -628,6 +628,32 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+      - name: Record exact-revision Issue 471 BNG2 oracle consumer receipts
+        if: always() && steps.bng3_identity.outcome == 'success'
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/issue471-bng2"
+          .venv/bin/python scripts/ci/record_issue471_bng2_receipts.py \
+            --root . \
+            --revision "$BNG3_SOURCE_REVISION" \
+            --conformance-dir "$RUNNER_TEMP/bng3-conformance" \
+            --bng2-root "$RUNNER_TEMP/oracle-bionetgen" \
+            --bng-cpp build/cpp/bng_cpp \
+            --receipts-dir "$RUNNER_TEMP/issue471-bng2/receipts" \
+            --artifacts-dir "$RUNNER_TEMP/issue471-bng2/artifacts" \
+            --summary-out "$RUNNER_TEMP/issue471-bng2/summary.json"
+
+      - name: Upload Issue 471 BNG2 oracle consumer receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue471-bng2-receipts-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/issue471-bng2/
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Check constant and dynamic assignment-rate contracts
         run: |
           set -euo pipefail
@@ -1322,6 +1348,41 @@ jobs:
                 "$RUNNER_TEMP/release-records/issue137-inventory-combined/report.json"
             fi
           fi
+          receipt_dirs=("$RUNNER_TEMP"/release-records/issue471-bng2-receipts-*/receipts)
+          artifact_dirs=("$RUNNER_TEMP"/release-records/issue471-bng2-receipts-*/artifacts)
+          tamper_reports=(
+            "$RUNNER_TEMP"/release-records/issue471-acceptance-*/tamper.json
+            "$RUNNER_TEMP"/release-records/issue471-acceptance-*/issue471-acceptance/tamper.json
+          )
+          topology_reports=(
+            "$RUNNER_TEMP"/release-records/issue471-acceptance-*/topology.json
+            "$RUNNER_TEMP"/release-records/issue471-acceptance-*/issue471-acceptance/topology.json
+          )
+          if (( ${#receipt_dirs[@]} > 0 && ${#artifact_dirs[@]} > 0 && ${#tamper_reports[@]} > 0 && ${#topology_reports[@]} > 0 )); then
+            mkdir -p "$RUNNER_TEMP/issue471-combined"
+            PYTHONPATH=. python tests/validation/release/cases/issue-471/issue471_checks.py oracle \
+              --root . \
+              --receipts "${receipt_dirs[0]}" \
+              --artifacts "${artifact_dirs[0]}" \
+              --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
+              --report "$RUNNER_TEMP/issue471-combined/oracle.json" || true
+            if [[ -s "$RUNNER_TEMP/issue471-combined/oracle.json" ]]; then
+              PYTHONPATH=. python scripts/ci/record_issue471_release.py \
+                --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
+                --oracle-report "$RUNNER_TEMP/issue471-combined/oracle.json" \
+                --topology-report "${topology_reports[0]}" \
+                --tamper-report "${tamper_reports[0]}" \
+                --report "$RUNNER_TEMP/issue471-combined/report.json" || true
+              if [[ -s "$RUNNER_TEMP/issue471-combined/report.json" ]]; then
+                rm -f \
+                  "$RUNNER_TEMP"/release-records/issue471-acceptance-*/report.json \
+                  "$RUNNER_TEMP"/release-records/issue471-acceptance-*/issue471-acceptance/report.json
+                mkdir -p "$RUNNER_TEMP/release-records/issue471-acceptance-combined"
+                cp "$RUNNER_TEMP/issue471-combined/report.json" \
+                  "$RUNNER_TEMP/release-records/issue471-acceptance-combined/report.json"
+              fi
+            fi
+          fi
           for record in \
             "$RUNNER_TEMP"/release-records/issue137-inventory-*/report.json \
             "$RUNNER_TEMP"/release-records/issue181-corpus-*/report.json \
@@ -1372,6 +1433,15 @@ jobs:
             ${{ runner.temp }}/bng3-issues.json
             ${{ runner.temp }}/bng3-bngir-roundtrip-release/
             ${{ runner.temp }}/bng3-issue-155-release/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Upload combined Issue 471 oracle acceptance evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue471-acceptance-combined-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/issue471-combined/
           if-no-files-found: warn
           retention-days: 30
 
