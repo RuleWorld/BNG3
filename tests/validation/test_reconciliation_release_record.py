@@ -115,3 +115,76 @@ def test_complete_inventory_with_a_semantic_failure_blocks_release():
     coverage = coverage_report(ROWS, LOCK, reports, REVISION)
     assert coverage["missing_rows"] == []
     assert canonical_gaps(coverage) == ["Canonical behavior failed: action.visualize."]
+
+
+def test_issue471_bridge_consumes_valid_receipts_and_fails_closed(tmp_path):
+    import json
+    from scripts.ci.record_reconciliation_release import issue471_behavior_reports
+
+    receipts_dir = tmp_path / "receipts"
+    receipts_dir.mkdir()
+    valid_receipt = {
+        "schema_version": 2,
+        "kind": "release-oracle-consumer-receipt",
+        "capability_id": "action.simulate",
+        "check_id": "release-capability[action.simulate]",
+        "source_revision": REVISION,
+        "product_revision": REVISION,
+        "oracle": {
+            "source_id": "bng2",
+            "revision": UPSTREAM,
+            "expected_origin": "external-source",
+        },
+    }
+    (receipts_dir / "action.simulate.json").write_text(
+        json.dumps(valid_receipt), encoding="utf-8"
+    )
+    stale_receipt = {**valid_receipt, "capability_id": "action.visualize"}
+    stale_receipt["check_id"] = "release-capability[action.visualize]"
+    stale_receipt["source_revision"] = "c" * 40
+    (receipts_dir / "action.visualize.json").write_text(
+        json.dumps(stale_receipt), encoding="utf-8"
+    )
+
+    oracle_report = {
+        "check_id": "release-oracle-independence",
+        "revision": REVISION,
+        "evidence_scope": "ARTIFACT_CHECKS_ENABLED",
+        "owned_comparisons": [
+            {
+                "capability_id": "action.simulate",
+                "id": "release-oracle-net-canonical-v1",
+                "receipt_valid": True,
+                "consumer_equals_oracle": True,
+            },
+            {
+                "capability_id": "action.visualize",
+                "id": "release-oracle-net-canonical-v1",
+                "receipt_valid": True,
+                "consumer_equals_oracle": True,
+            },
+        ],
+    }
+    bridged = issue471_behavior_reports(oracle_report, receipts_dir, REVISION, LOCK)
+    cov = coverage_report(ROWS, LOCK, bridged, REVISION)
+    assert cov["observed_rows"] == {"action.simulate": "PASS"}
+    assert cov["missing_rows"] == ["action.visualize"]
+
+    # Negative controls: declaration-only scope, receipt_valid=False, wrong oracle revision.
+    decl_only = {**oracle_report, "evidence_scope": "DECLARATION_ONLY"}
+    assert issue471_behavior_reports(decl_only, receipts_dir, REVISION, LOCK) == []
+
+    invalid_comp = {
+        **oracle_report,
+        "owned_comparisons": [
+            {**oracle_report["owned_comparisons"][0], "receipt_valid": False}
+        ],
+    }
+    assert issue471_behavior_reports(invalid_comp, receipts_dir, REVISION, LOCK) == []
+
+    wrong_oracle = json.loads(json.dumps(valid_receipt))
+    wrong_oracle["oracle"]["revision"] = "d" * 40
+    (receipts_dir / "action.simulate.json").write_text(
+        json.dumps(wrong_oracle), encoding="utf-8"
+    )
+    assert issue471_behavior_reports(oracle_report, receipts_dir, REVISION, LOCK) == []

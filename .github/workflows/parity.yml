@@ -1583,10 +1583,18 @@ jobs:
                 recon_behavior_args+=(--behavior-report "$case_json")
               fi
             done
+            issue471_recon_args=()
+            if [[ -s "$RUNNER_TEMP/issue471-combined/oracle.json" && -d "$RUNNER_TEMP/issue471-all/receipts" ]]; then
+              issue471_recon_args+=(
+                --issue471-oracle-report "$RUNNER_TEMP/issue471-combined/oracle.json"
+                --issue471-receipts-dir "$RUNNER_TEMP/issue471-all/receipts"
+              )
+            fi
             python scripts/ci/record_reconciliation_release.py \
               --revision "${{ github.event.pull_request.head.sha || github.sha }}" \
               --pin-report "$RUNNER_TEMP/reconciliation-pins/reconciliation-history.json" \
               "${recon_behavior_args[@]}" \
+              ${issue471_recon_args[@]+"${issue471_recon_args[@]}"} \
               --output "$RUNNER_TEMP/reconciliation-acceptance.json" || true
             if [[ -s "$RUNNER_TEMP/reconciliation-acceptance.json" ]]; then
               reconciliation_args+=(--report "$RUNNER_TEMP/reconciliation-acceptance.json")
@@ -2297,6 +2305,31 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
+      - name: Record exact-revision Issue 471 NFsim option receipts
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/issue471-nfsim"
+          python scripts/ci/record_issue471_nfsim_receipts.py \
+            --root . \
+            --revision "$BNG3_SOURCE_REVISION" \
+            --nfsim-source "$RUNNER_TEMP/oracle-nfsim" \
+            --nfsim-oracle "$RUNNER_TEMP/oracle-nfsim/build/NFsim" \
+            --nfsim-candidate "$GITHUB_WORKSPACE/build/cpp/NFsim" \
+            --receipts-dir "$RUNNER_TEMP/issue471-nfsim/receipts" \
+            --artifacts-dir "$RUNNER_TEMP/issue471-nfsim/artifacts" \
+            --summary-out "$RUNNER_TEMP/issue471-nfsim/summary.json"
+
+      - name: Upload Issue 471 NFsim option receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue471-nfsim-receipts-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/issue471-nfsim/
+          if-no-files-found: warn
+          retention-days: 30
+
       - name: Restore standard native extension after route evidence
         if: always()
         shell: bash
@@ -2756,6 +2789,29 @@ jobs:
           python -m pytest -q \
             tests/validation/release/cases/issue-171/test_python_install_matrix.py \
             --junitxml="$RUNNER_TEMP/issue-171-artifacts/install-matrix.xml"
+
+      - name: Record exact-revision Issue 471 PyBioNetGen differential receipts
+        env:
+          BNG3_SOURCE_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/issue471-pybionetgen"
+          python scripts/ci/record_issue471_pybionetgen_receipts.py \
+            --root . \
+            --revision "$BNG3_SOURCE_REVISION" \
+            --pybionetgen-root "$RUNNER_TEMP/oracle-pybionetgen" \
+            --receipts-dir "$RUNNER_TEMP/issue471-pybionetgen/receipts" \
+            --artifacts-dir "$RUNNER_TEMP/issue471-pybionetgen/artifacts" \
+            --summary-out "$RUNNER_TEMP/issue471-pybionetgen/summary.json"
+
+      - name: Upload Issue 471 PyBioNetGen differential receipts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue471-pybionetgen-receipts-${{ github.event.pull_request.head.sha || github.sha }}
+          path: ${{ runner.temp }}/issue471-pybionetgen/
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Validate independent issue-171 PyBioNetGen API release acceptance
         run: |

@@ -12,6 +12,110 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 UPSTREAMS = {"bionetgen", "nfsim", "pybionetgen"}
+ORACLE_SOURCE_TO_UPSTREAM = {
+    "bng2": "bionetgen",
+    "bionetgen": "bionetgen",
+    "nfsim": "nfsim",
+    "pybionetgen": "pybionetgen",
+}
+
+
+def issue471_behavior_reports(
+    oracle_report: dict,
+    receipts_dir: Path,
+    revision: str,
+    lock: dict,
+) -> list[dict]:
+    """Convert byte-verified #471 consumer receipts into #180 behavior reports.
+
+    Fail-closed: only rows whose owned byte comparator passed with a valid
+    exact-revision receipt and matching pinned upstream revision are emitted.
+    """
+    if (
+        oracle_report.get("check_id") != "release-oracle-independence"
+        or oracle_report.get("revision") != revision
+        or oracle_report.get("evidence_scope") != "ARTIFACT_CHECKS_ENABLED"
+    ):
+        return []
+    reports: list[dict] = []
+    for comp in oracle_report.get("owned_comparisons", []):
+        if not isinstance(comp, dict):
+            continue
+        if comp.get("receipt_valid") is not True or (
+            comp.get("consumer_equals_oracle") is not True
+        ):
+            continue
+        row_id = comp.get("capability_id")
+        if not isinstance(row_id, str) or not row_id:
+            continue
+        receipt_path = receipts_dir / f"{row_id}.json"
+        if not receipt_path.is_file():
+            continue
+        try:
+            receipt = json.loads(receipt_path.read_bytes())
+        except (OSError, json.JSONDecodeError):
+            continue
+        if (
+            receipt.get("schema_version") != 2
+            or receipt.get("kind") != "release-oracle-consumer-receipt"
+            or receipt.get("capability_id") != row_id
+            or receipt.get("check_id") != f"release-capability[{row_id}]"
+            or receipt.get("source_revision") != revision
+            or receipt.get("product_revision") != revision
+        ):
+            continue
+        oracle = receipt.get("oracle")
+        if not isinstance(oracle, dict):
+            continue
+        origin = oracle.get("expected_origin")
+        if origin == "analytic-derivation":
+            law = oracle.get("law")
+            spec_sha = oracle.get("spec_sha256")
+            if not isinstance(law, str) or not law.strip():
+                continue
+            if not re.fullmatch(r"[0-9a-f]{64}", str(spec_sha)):
+                continue
+            reports.append(
+                {
+                    "schema_version": 1,
+                    "source": {"revision": revision, "dirty": False},
+                    "references": {"analytic": {"law": law, "source_sha256": spec_sha}},
+                    "results": [
+                        {
+                            "id": f"release-capability[{row_id}]",
+                            "status": "PASS",
+                            "oracle_kind": "analytic",
+                            "evidence_kind": "supported-execution",
+                            "supported_execution": True,
+                            "comparator": comp.get("id"),
+                        }
+                    ],
+                }
+            )
+            continue
+        upstream = ORACLE_SOURCE_TO_UPSTREAM.get(str(oracle.get("source_id", "")))
+        if upstream is None:
+            continue
+        expected_rev = lock.get("sources", {}).get(upstream, {}).get("revision")
+        if not expected_rev or oracle.get("revision") != expected_rev:
+            continue
+        reports.append(
+            {
+                "schema_version": 1,
+                "source": {"revision": revision, "dirty": False},
+                "references": {upstream: {"revision": expected_rev}},
+                "results": [
+                    {
+                        "id": f"release-capability[{row_id}]",
+                        "status": "PASS",
+                        "evidence_kind": "supported-execution",
+                        "supported_execution": True,
+                        "comparator": comp.get("id"),
+                    }
+                ],
+            }
+        )
+    return reports
 
 
 def coverage_report(rows, lock, reports, revision):
@@ -110,6 +214,8 @@ def main() -> int:
     parser.add_argument("--revision", required=True)
     parser.add_argument("--pin-report", type=Path, required=True)
     parser.add_argument("--behavior-report", type=Path, action="append", default=[])
+    parser.add_argument("--issue471-oracle-report", type=Path)
+    parser.add_argument("--issue471-receipts-dir", type=Path)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     head = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True)
@@ -122,6 +228,18 @@ def main() -> int:
     lock = json.loads((ROOT / "provenance/upstreams.lock.yml").read_bytes())
     matrix = json.loads((ROOT / "provenance/capability-matrix.yml").read_bytes())
     behavior_reports = [json.loads(path.read_bytes()) for path in args.behavior_report]
+    input_paths = [args.pin_report, *args.behavior_report]
+    if args.issue471_oracle_report and args.issue471_receipts_dir:
+        oracle_report = json.loads(args.issue471_oracle_report.read_bytes())
+        behavior_reports.extend(
+            issue471_behavior_reports(
+                oracle_report,
+                args.issue471_receipts_dir,
+                args.revision,
+                lock,
+            )
+        )
+        input_paths.append(args.issue471_oracle_report)
     coverage = coverage_report(matrix["rows"], lock, behavior_reports, args.revision)
     issues = []
     pins = pin_report.get("sources", {})
@@ -182,7 +300,7 @@ def main() -> int:
         "references": pin_report.get("references", {}),
         "inputs": [
             {"file": path.name, "sha256": hashlib.sha256(path.read_bytes()).hexdigest()}
-            for path in [args.pin_report, *args.behavior_report]
+            for path in input_paths
         ],
         "coverage": coverage,
         "unverified_deltas": semantic_deltas_without_case,
