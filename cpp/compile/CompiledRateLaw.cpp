@@ -1,5 +1,6 @@
 #include "CompiledRateLaw.hpp"
 #include "ast/Expression.hpp"
+#include "ast/ExpressionBuiltins.hpp"
 #include "ast/Function.hpp"
 
 #include <algorithm>
@@ -53,7 +54,7 @@ BuiltinFunction builtinFunction(const std::string& rawName) {
     if (name == "ceil") return BuiltinFunction::Ceil;
     if (name == "cos") return BuiltinFunction::Cos;
     if (name == "cosh") return BuiltinFunction::Cosh;
-    if (name == "e") return BuiltinFunction::E;
+    if (name == "e" || name == "_e") return BuiltinFunction::E;
     if (name == "exp") return BuiltinFunction::Exp;
     if (name == "factorial") return BuiltinFunction::Factorial;
     if (name == "floor") return BuiltinFunction::Floor;
@@ -64,7 +65,7 @@ BuiltinFunction builtinFunction(const std::string& rawName) {
     if (name == "max") return BuiltinFunction::Max;
     if (name == "min") return BuiltinFunction::Min;
     if (name == "mratio") return BuiltinFunction::MRatio;
-    if (name == "pi") return BuiltinFunction::Pi;
+    if (name == "pi" || name == "_pi") return BuiltinFunction::Pi;
     if (name == "rint") return BuiltinFunction::Rint;
     if (name == "sign") return BuiltinFunction::Sign;
     if (name == "sin") return BuiltinFunction::Sin;
@@ -610,23 +611,9 @@ double ResolvedExpression::evaluate(const RateEvaluationContext& context) const 
             for (std::size_t i = 1; i < arguments.size(); ++i) m = std::min(m, evalArg(i));
             return m;
         }
-        case BuiltinFunction::MRatio: {
-            const double a = evalArg(0);
-            const double b = evalArg(1);
-            const double z = evalArg(2);
-            auto hypergeom1F1 = [](double aa, double bb, double zz) -> double {
-                double sum = 1.0, term = 1.0;
-                for (int k = 1; k <= 1000; ++k) {
-                    term *= (aa + k - 1) * zz / ((bb + k - 1) * k);
-                    sum += term;
-                    if (std::abs(term) < 1e-15 * std::abs(sum)) break;
-                }
-                return sum;
-            };
-            const double M_ab = hypergeom1F1(a, b, z);
-            const double M_a1b1 = hypergeom1F1(a + 1, b + 1, z);
-            return (std::abs(M_ab) < 1e-300) ? 0.0 : M_a1b1 / M_ab;
-        }
+        case BuiltinFunction::MRatio:
+            return bng::ast::builtins::evaluateMratio(
+                evalArg(0), evalArg(1), evalArg(2));
         case BuiltinFunction::Pi:
             return 3.141592653589793238462643383279502884;
         case BuiltinFunction::Rint:

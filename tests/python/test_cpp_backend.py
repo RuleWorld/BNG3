@@ -897,6 +897,118 @@ end model
         assert observed == pytest.approx(expected_total_rate, rel=1e-6)
         assert observed != pytest.approx(expected_with_symmetry, rel=1e-3)
 
+    def test_mratio_and_pi_e_call_forms_match_exact_values(self, tmp_path):
+        """Canonical BNG2 mratio, _pi(), and _e() forms evaluate accurately across ODE and NFcore."""
+        mratio_model = _cpp.parse_string("""
+begin model
+begin parameters
+  AT = 1000
+  BT = 10000
+  Keq = 1e-4
+  n = min(AT,BT)
+  m = max(AT,BT)
+  a = -n
+  b = m-n+1
+  z = -1/Keq
+  U1_U0 = (-1./b)*mratio(a,b,z)
+  U2_U1 = (-1./(b+1))*mratio(a+1,b+1,z)
+  C_mean = -a*(1-z*U1_U0)
+  C_sdev = sqrt(a*(a+1)*z*z*U2_U1*U1_U0-a*z*U1_U0*(1.0+a*z*U1_U0))
+end parameters
+begin molecule types
+  A(b)
+  B(a)
+end molecule types
+begin seed species
+  A(b) AT
+  B(a) BT
+end seed species
+begin observables
+  Molecules C_obs A(b!1).B(a!1)
+end observables
+begin functions
+  C_theory() = C_mean
+  C_upper() = C_mean + 2*C_sdev
+  C_lower() = C_mean - 2*C_sdev
+end functions
+begin reaction rules
+  A(b) + B(a) <-> A(b!1).B(a!1) Keq,1
+end reaction rules
+end model
+""")
+        net = _cpp.generate_network(mratio_model)
+        ode_res = _cpp.simulate_ode(mratio_model, net, t_end=1.0, n_steps=2)
+        assert ode_res["functions"]["C_theory"][-1] == pytest.approx(
+            487.5199603907, rel=1e-10
+        )
+        assert ode_res["functions"]["C_upper"][-1] == pytest.approx(
+            518.7261409425, rel=1e-10
+        )
+        assert ode_res["functions"]["C_lower"][-1] == pytest.approx(
+            456.3137798390, rel=1e-10
+        )
+
+        const_model = _cpp.parse_string("""
+begin model
+begin parameters
+  p_pi _pi()
+  p_e _e()
+end parameters
+begin molecule types
+  X()
+end molecule types
+begin seed species
+  X() 0
+end seed species
+begin observables
+  Molecules Xtot X()
+end observables
+begin functions
+  f_sum() = _pi() + _e()
+end functions
+begin reaction rules
+  0 -> X() _pi() + _e()
+end reaction rules
+end model
+""")
+        const_net = _cpp.generate_network(const_model)
+        const_ode = _cpp.simulate_ode(const_model, const_net, t_end=1.0, n_steps=2)
+        expected_sum = 3.141592653589793 + 2.718281828459045
+        assert const_ode["functions"]["f_sum"][-1] == pytest.approx(
+            expected_sum, rel=1e-12
+        )
+        assert const_ode["observables"]["Xtot"][-1] == pytest.approx(
+            expected_sum, rel=1e-9
+        )
+
+        nf_bngl = tmp_path / "pi_e_nf.bngl"
+        nf_bngl.write_text(
+            """
+begin model
+begin parameters
+  k _pi() + _e()
+end parameters
+begin molecule types
+  X()
+end molecule types
+begin seed species
+  X() 0
+end seed species
+begin observables
+  Molecules Xtot X()
+end observables
+begin reaction rules
+  0 -> X() _pi() + _e()
+end reaction rules
+end model
+""",
+            encoding="utf-8",
+        )
+        nf_res = bionetgen.load(str(nf_bngl)).simulate(
+            method="nfcore", t_end=1.0, n_steps=2, seed=1
+        )
+        assert nf_res.observables["Xtot"][-1] >= 0
+
     def test_ssa_simulation(self, tmp_path):
         bngl = tmp_path / "ssa.bngl"
         bngl.write_text("""

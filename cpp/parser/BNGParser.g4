@@ -680,7 +680,7 @@ function_call
     : (EXP | LN | LOG10 | LOG2 | SQRT | ABS | SIN | COS | TAN | ASIN | ACOS | ATAN 
        | SINH | COSH | TANH | ASINH | ACOSH | ATANH | RINT | MIN | MAX | SUM | AVG
        | IF | SAT | MM | HILL | ARRHENIUS | TIME | T_START | T_END
-       | MRATIO | TFUN | FUNCTIONPRODUCT | DELAY)  // BNG2 parity: mratio, TFUN, FunctionProduct
+       | MRATIO | TFUN | FUNCTIONPRODUCT | DELAY | PI | EULERIAN)  // BNG2 parity: mratio, TFUN, FunctionProduct, _pi(), _e()
       LPAREN expression_list? RPAREN
     ;
 

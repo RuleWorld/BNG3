@@ -2681,6 +2681,8 @@ public:
     antlr4::tree::TerminalNode *TFUN();
     antlr4::tree::TerminalNode *FUNCTIONPRODUCT();
     antlr4::tree::TerminalNode *DELAY();
+    antlr4::tree::TerminalNode *PI();
+    antlr4::tree::TerminalNode *EULERIAN();
     Expression_listContext *expression_list();
 
     virtual void enterRule(antlr4::tree::ParseTreeListener *listener) override;

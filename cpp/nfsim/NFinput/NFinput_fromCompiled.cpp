@@ -251,6 +251,14 @@ std::string expressionText(const bng::compile::CompiledModel& model,
             *expression.builtin == bng::compile::BuiltinFunction::TableFunction) {
             ok = false; return {};
         }
+        if (*expression.builtin == bng::compile::BuiltinFunction::E &&
+            expression.arguments.empty()) {
+            return "_e";
+        }
+        if (*expression.builtin == bng::compile::BuiltinFunction::Pi &&
+            expression.arguments.empty()) {
+            return "_pi";
+        }
         return renderArgs(expression.arguments, builtinText(*expression.builtin));
     case Kind::TableFunction:
         return "__TFUN_VAL__";
