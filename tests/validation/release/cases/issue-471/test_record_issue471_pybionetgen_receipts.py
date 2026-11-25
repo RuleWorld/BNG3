@@ -27,6 +27,6 @@ def test_pybionetgen_matrix_cli_patterns_cover_all_py_cli_rows():
             or upstream == mod.CLI_OPTION_UPSTREAM
             or upstream == mod.ATOMIZER_OPTION_UPSTREAM
         )
-        assert matched, (
-            f"unrecognized py.cli upstream format: {row['id']} -> {upstream}"
-        )
+        assert (
+            matched
+        ), f"unrecognized py.cli upstream format: {row['id']} -> {upstream}"
