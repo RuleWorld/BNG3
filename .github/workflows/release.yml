@@ -45,16 +45,19 @@ jobs:
         run: |
           set -euo pipefail
           gh api --paginate --slurp \
-            "repos/${GITHUB_REPOSITORY}/actions/workflows/weekly.yml/runs?head_sha=${GITHUB_SHA}&branch=main&event=schedule&per_page=100" \
+            "repos/${GITHUB_REPOSITORY}/actions/workflows/weekly.yml/runs?head_sha=${GITHUB_SHA}&branch=main&per_page=100" \
             > "$RUNNER_TEMP/weekly-runs.json"
           run_id=$(python - "$RUNNER_TEMP/weekly-runs.json" "$GITHUB_SHA" <<'PY'
           import json, sys
           pages = json.load(open(sys.argv[1]))
           runs = [r for page in pages for r in page.get("workflow_runs", [])
-                  if r.get("head_sha") == sys.argv[2] and r.get("event") == "schedule"
-                  and r.get("status") == "completed"]
+                  if r.get("head_sha") == sys.argv[2]
+                  and r.get("head_branch") == "main"
+                  and r.get("event") in {"schedule", "workflow_dispatch"}
+                  and r.get("status") == "completed"
+                  and r.get("conclusion") == "success"]
           if not runs:
-              raise SystemExit("no completed exact-main scheduled mutation campaign")
+              raise SystemExit("no completed exact-main weekly mutation campaign (schedule or workflow_dispatch)")
           print(max(runs, key=lambda r: r.get("run_number", 0))["id"])
           PY
           )
