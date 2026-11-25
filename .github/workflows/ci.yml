@@ -342,7 +342,7 @@ jobs:
       - name: Run tests under ASan
         env:
           ASAN_OPTIONS: detect_leaks=0
-        run: ctest --test-dir build --output-on-failure --stop-on-failure --no-tests=error
+        run: ctest --test-dir build --output-on-failure --stop-on-failure --no-tests=error --output-junit asan-ctest-results.xml
 
       - name: Qualify issue 141 late CVODE exception cleanup
         env:
@@ -350,6 +350,41 @@ jobs:
         run: >-
           ctest --test-dir build --output-on-failure --stop-on-failure --no-tests=error
           -R '^OdeIntegrator recovers after late stop condition failure$'
+          --output-junit asan-late-stop-results.xml
+
+      - name: Record ASan sanitizer receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/asan-results"
+          cp asan-ctest-results.xml asan-late-stop-results.xml "$RUNNER_TEMP/asan-results/"
+          python - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          out = Path(os.environ["RUNNER_TEMP"]) / "asan-results"
+          ctest_xml = out / "asan-ctest-results.xml"
+          late_xml = out / "asan-late-stop-results.xml"
+          payload = {
+              "schema_version": 1,
+              "source": {"revision": "${{ github.sha }}", "dirty": False},
+              "sanitize_address": True,
+              "detect_leaks_1_late_stop_passed": True,
+              "junit_sha256": {
+                  "ctest": hashlib.sha256(ctest_xml.read_bytes()).hexdigest(),
+                  "late_stop": hashlib.sha256(late_xml.read_bytes()).hexdigest(),
+              },
+          }
+          (out / "asan-receipt.json").write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+          PY
+
+      - name: Upload ASan JUnit and receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: asan-results-${{ github.sha }}
+          path: ${{ runner.temp }}/asan-results/
+          if-no-files-found: error
+          retention-days: 30
 
   python-native-lifecycle:
     needs: [lint, harness]
@@ -1124,6 +1159,27 @@ jobs:
           "$RUNNER_TEMP/bng3-package-smoke/bin/bionetgen" --version
           "$RUNNER_TEMP/bng3-package-smoke/bin/bionetgen" --help
 
+      - name: Record sdist install receipt
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdist_files=(dist/*.tar.gz)
+          python scripts/ci/record_issue184_install_receipt.py \
+            --root . \
+            --revision "${{ github.sha }}" \
+            --artifact "${sdist_files[0]}" \
+            --extras legacy,plotting \
+            --report "$RUNNER_TEMP/issue184-install-sdist/report.json"
+
+      - name: Upload sdist install receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue184-install-receipt-sdist-${{ github.sha }}
+          path: ${{ runner.temp }}/issue184-install-sdist/report.json
+          if-no-files-found: error
+          retention-days: 30
+
   # ═══════════════════════════════════════════════════════════════════════════
   # Wheel Building (binary distribution)
   # ═══════════════════════════════════════════════════════════════════════════
@@ -1199,6 +1255,29 @@ jobs:
           # NumPy 2.5+ wheels require a newer compiler/glibc baseline than
           # manylinux2014; manylinux_2_28 provides a binary wheel target.
           CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28
+
+      - name: Record wheel install receipt
+        if: success()
+        shell: bash
+        env:
+          MACOSX_DEPLOYMENT_TARGET: ${{ matrix.macos_deployment_target }}
+        run: |
+          set -euo pipefail
+          python scripts/ci/record_issue184_install_receipt.py \
+            --root . \
+            --revision "${{ github.sha }}" \
+            --wheel-dir ./wheelhouse \
+            --extras legacy,plotting \
+            --report "$RUNNER_TEMP/issue184-install-wheel/report.json"
+
+      - name: Upload wheel install receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: issue184-install-receipt-${{ matrix.os }}-${{ github.sha }}
+          path: ${{ runner.temp }}/issue184-install-wheel/report.json
+          if-no-files-found: warn
+          retention-days: 30
 
       - name: Upload wheels
         if: always()
