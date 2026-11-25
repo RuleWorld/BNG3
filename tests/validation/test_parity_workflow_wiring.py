@@ -523,6 +523,63 @@ def test_issue160_diagnostic_controls_run_without_claiming_release_acceptance():
     )
 
 
+def test_corpus_tier_p_shards_and_issue181_consumer_are_wired():
+    workflow = _parse_workflow()
+    shards = workflow["jobs"]["corpus-tier-p"]
+    assert shards["needs"] == "oracle-lock"
+    assert shards["strategy"]["fail-fast"] is False
+    assert shards["strategy"]["matrix"]["shard"] == [0, 1, 2, 3]
+
+    commands = "\n".join(step.get("run", "") for step in shards["steps"])
+    for token in (
+        "libroadrunner",
+        "scipy",
+        "run_network",
+        "NFsim",
+        "tests.validation.conformance",
+        "--corpus-tier p",
+        "--shard-index",
+        "--shard-count 4",
+        "--simulate",
+        "--net-reload",
+        "--case-timeout 180",
+        "--bng2-network-sha256",
+        "--nfsim-root",
+        "--nfsim-binary",
+        "--nfsim-sha256",
+    ):
+        assert token in commands
+
+    upload = next(
+        step
+        for step in shards["steps"]
+        if step.get("uses", "").startswith("actions/upload-artifact@")
+    )
+    assert upload["if"] == "always()"
+    assert upload["with"]["name"].endswith("-shard-${{ matrix.shard }}")
+
+    consumer = workflow["jobs"]["issue-181-corpus"]
+    assert consumer["needs"] == ["corpus-tier-p"]
+    assert consumer["if"] == "always()"
+    download = next(
+        step
+        for step in consumer["steps"]
+        if step.get("uses", "").startswith("actions/download-artifact@")
+    )
+    assert download["if"] == "always()"
+    assert "bng3-corpus-tier-p-" in download["with"]["pattern"]
+    record = next(
+        step
+        for step in consumer["steps"]
+        if step.get("name") == "Record exact-revision corpus acceptance"
+    )
+    assert "--case-report" in record["run"]
+    assert "corpus_release_checks.py" in record["run"]
+
+    integrated = workflow["jobs"]["integrated-semantic-validation"]
+    assert "issue-181-corpus" in integrated["needs"]
+
+
 def test_s6_receipts_are_consumed_from_the_producer_run_and_contract_tested():
     workflow = _parse_workflow()
     integrated = workflow["jobs"]["integrated-semantic-validation"]
