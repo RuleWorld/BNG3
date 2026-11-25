@@ -81,15 +81,69 @@ def _latest_run(
     return max(matches, key=lambda r: (r.get("run_number", 0), r.get("id", 0)))
 
 
+def _resolve_issue137_receipt(
+    root: Path,
+    sha: str,
+    release_records_dir: Path | None,
+    out_dir: Path,
+) -> Path | None:
+    """Prefer the combined #137 inventory report over partial standalone receipts."""
+    if not release_records_dir or not release_records_dir.is_dir():
+        return None
+    combined = release_records_dir / "issue137-inventory-combined" / "report.json"
+    if combined.is_file():
+        return combined
+    case_reports: list[Path] = []
+    for pattern in (
+        "issue137-*/structural-cases.json",
+        "issue137-*/bng2-cases.json",
+        "issue137-*/nfsim-cases.json",
+        "issue137-*/pybionetgen-cases.json",
+    ):
+        case_reports.extend(sorted(release_records_dir.glob(pattern)))
+    if not case_reports:
+        return None
+    check_script = (
+        root
+        / "tests"
+        / "validation"
+        / "release"
+        / "cases"
+        / "issue-137"
+        / "issue137_checks.py"
+    )
+    if not check_script.is_file():
+        return None
+    synthesized = out_dir / "issue137-combined-report.json"
+    cmd = [
+        sys.executable,
+        str(check_script),
+        "inventory",
+        "--root",
+        str(root),
+        "--revision",
+        sha,
+        "--report",
+        str(synthesized),
+    ]
+    for case_report in case_reports:
+        cmd.extend(["--case-report", str(case_report)])
+    subprocess.run(cmd, check=False)
+    return synthesized if synthesized.is_file() else None
+
+
 def _discover_scientific_receipts(
     release_records_dir: Path | None,
     extra_receipts: list[Path],
     sbml_dir: Path,
+    *,
+    issue137_combined_receipt: Path | None = None,
 ) -> list[Path]:
     found: list[Path] = []
+    if issue137_combined_receipt is not None and issue137_combined_receipt.is_file():
+        found.append(issue137_combined_receipt)
     if release_records_dir and release_records_dir.is_dir():
-        for pattern in (
-            "issue137-inventory-*/report.json",
+        patterns = [
             "issue171-release-record-*/issue-171.json",
             "issue172-release-record-*/issue-172.json",
             "issue174-cpu-benchmark-*/issue174-benchmark-record.json",
@@ -103,7 +157,10 @@ def _discover_scientific_receipts(
             "issue142-release-obligation-142-*/release-obligation-142.json",
             "issue152-energy-protocol-release-*/issue-152-release-report.json",
             "eq-catalogue-*/report.json",
-        ):
+        ]
+        if issue137_combined_receipt is None:
+            patterns.insert(0, "issue137-inventory-*/report.json")
+        for pattern in patterns:
             found.extend(sorted(release_records_dir.glob(pattern)))
     for p in extra_receipts:
         if p.is_file():
@@ -254,8 +311,14 @@ def main(argv: list[str] | None = None) -> int:
             if cand_mut.is_file():
                 mutation_report = cand_mut
 
+    issue137_combined = _resolve_issue137_receipt(
+        root, sha, args.release_records, out_dir
+    )
     sci_receipts = _discover_scientific_receipts(
-        args.release_records, args.extra_scientific_receipt, sbml_dir
+        args.release_records,
+        args.extra_scientific_receipt,
+        sbml_dir,
+        issue137_combined_receipt=issue137_combined,
     )
     bench_report = next(
         (p for p in sci_receipts if p.name == "issue174-benchmark-record.json"), None

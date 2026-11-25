@@ -231,3 +231,70 @@ def test_strict_release_consumer_fails_closed(tmp_path, case):
         assert c_gaps
     else:
         assert i_gaps
+
+
+def _issue142_receipt(
+    tmp_path: Path,
+    name: str,
+    *,
+    rev: str = REVISION,
+    dirty: bool = False,
+    include_source_dict: bool = False,
+    source_dict_rev: str | None = None,
+    failed_check: bool = False,
+) -> Path:
+    checks_map = {
+        "release-graph-identity": {"status": "PASS"},
+        "release-graph-observables": {"status": "FAIL" if failed_check else "PASS"},
+        "release-obligation-142": {"status": "PASS"},
+    }
+    payload: dict = {
+        "schema_version": 1,
+        "acceptance_check": "release-obligation-142",
+        "source_revision": rev,
+        "source_dirty": dirty,
+        "checks": checks_map,
+    }
+    if include_source_dict:
+        payload["source"] = {"revision": source_dict_rev or rev, "dirty": dirty}
+        payload["results"] = [
+            {
+                "id": cid,
+                "status": entry["status"],
+                "supported_execution": entry["status"] == "PASS",
+                "evidence_kind": "supported-execution",
+            }
+            for cid, entry in checks_map.items()
+        ]
+    path = tmp_path / f"{name}.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def test_consumer_accepts_issue142_receipt_legacy_and_canonical_shapes(tmp_path):
+    legacy = _issue142_receipt(tmp_path, "legacy-142", include_source_dict=False)
+    canonical = _issue142_receipt(tmp_path, "canonical-142", include_source_dict=True)
+    accepted, rejected = checks._receipts([legacy, canonical], REVISION)
+    assert rejected == []
+    assert len(accepted) == 2
+    assert all(not r["failed"] for r in accepted)
+    assert "release-obligation-142" in accepted[0]["passed_ids"]
+    assert "release-obligation-142" in accepted[1]["passed_ids"]
+
+
+@pytest.mark.parametrize(
+    "case",
+    ["stale-rev", "dirty", "conflicting-source", "failed-subcheck"],
+)
+def test_consumer_rejects_invalid_issue142_receipts(tmp_path, case):
+    path = _issue142_receipt(
+        tmp_path,
+        f"bad-142-{case}",
+        rev=("2" * 40) if case == "stale-rev" else REVISION,
+        dirty=(case == "dirty"),
+        include_source_dict=(case == "conflicting-source"),
+        source_dict_rev=("3" * 40) if case == "conflicting-source" else None,
+        failed_check=(case == "failed-subcheck"),
+    )
+    accepted, rejected = checks._receipts([path], REVISION)
+    assert checks.candidate_gaps(accepted, rejected)
