@@ -135,3 +135,31 @@ def test_github_release_staging_rejects_missing_cli_archive(tmp_path):
     assert result.returncode != 0
     assert "missing release assets" in result.stderr
     assert list((tmp_path / "release-assets").iterdir()) == []
+
+
+def test_release_and_pypi_staging_preserve_linux_aarch64_assets(tmp_path):
+    cli_arm64 = "bionetgen-linux-aarch64.tar.gz"
+    wheel_x64 = "bionetgen-3.0.0a1-cp312-cp312-manylinux_2_28_x86_64.whl"
+    wheel_arm64 = "bionetgen-3.0.0a1-cp312-cp312-manylinux_2_28_aarch64.whl"
+
+    _write(tmp_path, f"artifacts/bionetgen-linux-x86_64/{CLI}", "linux-x64-cli")
+    _write(tmp_path, f"artifacts/bionetgen-linux-aarch64/{cli_arm64}", "linux-arm-cli")
+    _write(tmp_path, f"artifacts/wheels-ubuntu-22.04/{wheel_x64}", "linux-x64-wheel")
+    _write(
+        tmp_path, f"artifacts/wheels-ubuntu-24.04-arm/{wheel_arm64}", "linux-arm-wheel"
+    )
+    _write(tmp_path, f"artifacts/sdist/{SDIST}", "sdist-bytes")
+
+    release_result = _run_step(tmp_path, "Organize release assets")
+    assert release_result.returncode == 0, release_result.stderr
+    staged = sorted(p.name for p in (tmp_path / "release-assets").iterdir())
+    assert staged == sorted([CLI, cli_arm64, SDIST, wheel_x64, wheel_arm64])
+
+    _write(tmp_path, f"dist/wheels-ubuntu-22.04/{wheel_x64}", "linux-x64-wheel")
+    _write(tmp_path, f"dist/wheels-ubuntu-24.04-arm/{wheel_arm64}", "linux-arm-wheel")
+    _write(tmp_path, f"dist/sdist/{SDIST}", "sdist-bytes")
+
+    pypi_result = _run_step(tmp_path, "Flatten dist directory")
+    assert pypi_result.returncode == 0, pypi_result.stderr
+    flattened = sorted(p.name for p in (tmp_path / "flat-dist").iterdir())
+    assert flattened == sorted([SDIST, wheel_x64, wheel_arm64])

@@ -768,6 +768,8 @@ def test_wheel_workflows_use_supported_platform_targets_and_test_dependencies():
         job = _workflow_job_from(workflow_path, job_name)
         assert "pip install cibuildwheel==4.2.1" in job
         assert "CIBW_MANYLINUX_X86_64_IMAGE: manylinux_2_28" in job
+        assert "CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28" in job
+        assert "ubuntu-24.04-arm" in job_matrix_values(workflow_path, job_name, "os")
         assert "CIBW_ARCHS_MACOS: ${{ matrix.macos_arch }}" in job
         assert "MACOSX_DEPLOYMENT_TARGET=${{ matrix.macos_deployment_target }}" in job
         assert (
@@ -804,6 +806,32 @@ def test_wheel_tests_smoke_the_installed_console_script():
         assert "CIBW_TEST_COMMAND:" in job
         assert "bionetgen --version" in job
         assert "bionetgen --help" in job
+
+
+def test_linux_aarch64_coverage_is_wired_in_ci_and_release():
+    """CI and Release workflows must cover native Linux aarch64 builds and wheels."""
+
+    ci_doc = parse_workflow(CI_WORKFLOW)
+    cpp_entries = ci_doc["jobs"]["cpp-build"]["strategy"]["matrix"]["include"]
+    arm_cpp = [entry for entry in cpp_entries if entry.get("os") == "ubuntu-24.04-arm"]
+    assert len(arm_cpp) == 1
+    assert arm_cpp[0]["cc"] == "gcc"
+    assert arm_cpp[0]["cxx"] == "g++"
+
+    release_doc = parse_workflow(RELEASE_WORKFLOW)
+    bin_entries = release_doc["jobs"]["build-binaries"]["strategy"]["matrix"]["include"]
+    arm_bin = [entry for entry in bin_entries if entry.get("os") == "ubuntu-24.04-arm"]
+    assert len(arm_bin) == 1
+    assert arm_bin[0]["artifact_name"] == "bionetgen-linux-aarch64"
+    assert arm_bin[0]["binary_ext"] == ""
+
+    for workflow_path, job_name in (
+        (CI_WORKFLOW, "wheels"),
+        (RELEASE_WORKFLOW, "build-wheels"),
+    ):
+        assert "ubuntu-24.04-arm" in job_matrix_values(workflow_path, job_name, "os")
+        job = _workflow_job_from(workflow_path, job_name)
+        assert "CIBW_MANYLINUX_AARCH64_IMAGE: manylinux_2_28" in job
 
 
 def _workflow_job(name: str) -> str:
