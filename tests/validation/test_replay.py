@@ -145,3 +145,48 @@ def test_replay_selects_distinct_invocations_instead_of_duplicate_leaf_symptoms(
     }
     selected = replay.select_cases(document, max_cases=2)
     assert [r["id"] for r in selected] == ["a:one", "b:one"]
+
+
+def test_verify_identity_accepts_conformance_binary_sha256(tmp_path, monkeypatch):
+    import hashlib
+
+    subject_bin = tmp_path / "bng_cpp"
+    subject_bin.write_bytes(b"subject")
+    nfsim_bin = tmp_path / "NFsim"
+    nfsim_bin.write_bytes(b"nfsim-binary")
+    nfsim_sha = hashlib.sha256(nfsim_bin.read_bytes()).hexdigest()
+
+    monkeypatch.setattr(
+        replay.campaign,
+        "git",
+        lambda root, *args: "" if args == ("status", "--porcelain") else "a" * 40,
+    )
+    monkeypatch.setattr(replay.campaign, "verify_source", lambda path, ref: None)
+
+    report = {
+        "source": {"revision": "a" * 40, "dirty": False},
+        "input_changes_during_run": False,
+        "subject": {
+            "binary": str(subject_bin),
+            "sha256": hashlib.sha256(subject_bin.read_bytes()).hexdigest(),
+        },
+        "references": {
+            "nfsim": {
+                "path": str(tmp_path / "oracle-nfsim"),
+                "revision": "b" * 40,
+                "repository": "RuleWorld/nfsim",
+                "binary": str(nfsim_bin),
+                "binary_sha256": nfsim_sha,
+            }
+        },
+        "inputs": {},
+    }
+    replay.verify_identity(report)
+
+    report["references"]["nfsim"]["binary_sha256"] = "0" * 64
+    with pytest.raises(ValueError):
+        replay.verify_identity(report)
+
+    report["references"]["nfsim"].pop("binary_sha256")
+    with pytest.raises(ValueError, match="replay reference digest missing: nfsim"):
+        replay.verify_identity(report)
