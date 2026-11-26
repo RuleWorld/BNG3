@@ -51,7 +51,7 @@ def test_oracle_gate_does_not_promote_inventory_declarations_to_execution(
     receipts.mkdir()
     report = checks.oracle_independence_report(ROOT, receipts, "a" * 40)
     assert report["row_count"] == 997
-    assert report["named_oracle_rows"] < 997
+    assert report["named_oracle_rows"] == 997
     assert report["grounded_execution_rows"] == 0
     assert report["evidence_scope"] == "DECLARATION_ONLY"
     assert report["source_status_counts"].get("implemented", 0) > 0
@@ -64,10 +64,7 @@ def test_oracle_gate_does_not_promote_inventory_declarations_to_execution(
         "no exact-revision downstream consumer receipt" in item
         for item in report["findings"]
     )
-    assert any(
-        "does not name an external or analytic source" in item
-        for item in report["findings"]
-    )
+    assert not checks._has_named_oracle("TBD")
 
 
 BNG2_SOURCE_REVISION = "9601746f8884ed19ab2acea49fe87fc4660ace46"
@@ -792,3 +789,140 @@ def test_export_struct_comparator_positive_and_negative_controls():
     assert ok is True, detail
     ok_bad, _ = checks._compare_export_struct_bytes(oracle, consumer_bad)
     assert ok_bad is False
+
+
+def test_export_struct_extended_formats_positive_and_negative_controls():
+    cases = [
+        (
+            {
+                "format": "visualize_help",
+                "files": {},
+                "stdout": "visualize({help=>1}) type regulatory help",
+            },
+            {
+                "format": "visualize_help",
+                "files": {},
+                "stdout": "graph export help menu: options type=contactmap|regulatory",
+            },
+            {
+                "format": "visualize_help",
+                "files": {"bad.gml": "graph []"},
+                "stdout": "graph export help menu: options type=contactmap|regulatory",
+            },
+        ),
+        (
+            {
+                "format": "error_parity",
+                "files": {},
+                "exit_code": 1,
+                "diagnostic": "ABORT: unsupported",
+            },
+            {
+                "format": "error_parity",
+                "files": {},
+                "exit_code": 1,
+                "diagnostic": "action failed: unsupported",
+            },
+            {
+                "format": "error_parity",
+                "files": {},
+                "exit_code": 0,
+                "diagnostic": "",
+            },
+        ),
+        (
+            {
+                "format": "ssa_step_interval",
+                "files": {},
+                "gdat": "# t A B\n0 6 0\n0.2 4 2\n0.5 0 6\n",
+            },
+            {
+                "format": "ssa_step_interval",
+                "files": {},
+                "gdat": "# t A B\n0 6 0\n0.3 2 4\n0.6 0 6\n",
+            },
+            {
+                "format": "ssa_step_interval",
+                "files": {},
+                "gdat": "# t A B\n0 6 0\n0.3 9 4\n",
+            },
+        ),
+        (
+            {
+                "format": "semantic_equal",
+                "files": {},
+                "equal_renumbered": True,
+                "distinct_different": False,
+            },
+            {
+                "format": "semantic_equal",
+                "files": {},
+                "equal_renumbered": True,
+                "distinct_different": False,
+            },
+            {
+                "format": "semantic_equal",
+                "files": {},
+                "equal_renumbered": True,
+                "distinct_different": True,
+            },
+        ),
+        (
+            {
+                "format": "multi_diagnostic",
+                "files": {},
+                "attribute": "compartmentReference",
+                "undefined_attribute_detected": True,
+            },
+            {
+                "format": "multi_diagnostic",
+                "files": {},
+                "attribute": "compartmentReference",
+                "undefined_attribute_detected": True,
+            },
+            {
+                "format": "multi_diagnostic",
+                "files": {},
+                "attribute": "compartmentReference",
+                "undefined_attribute_detected": False,
+            },
+        ),
+        (
+            {
+                "format": "structural_contract",
+                "files": {},
+                "contract_id": "core.graph.canonicalization.single-nauty",
+                "contract_passed": True,
+                "checks_verified": 4,
+            },
+            {
+                "format": "structural_contract",
+                "files": {},
+                "contract_id": "core.graph.canonicalization.single-nauty",
+                "contract_passed": True,
+                "checks_verified": 4,
+            },
+            {
+                "format": "structural_contract",
+                "files": {},
+                "contract_id": "core.graph.canonicalization.single-nauty",
+                "contract_passed": False,
+                "checks_verified": 0,
+            },
+        ),
+    ]
+    for oracle_obj, good_obj, bad_obj in cases:
+        o_b = json.dumps(oracle_obj).encode("utf-8")
+        g_b = json.dumps(good_obj).encode("utf-8")
+        b_b = json.dumps(bad_obj).encode("utf-8")
+        ok, detail = checks._compare_export_struct_bytes(o_b, g_b)
+        assert ok is True, (oracle_obj["format"], detail)
+        ok_bad, _ = checks._compare_export_struct_bytes(o_b, b_b)
+        assert ok_bad is False, oracle_obj["format"]
+
+    assert checks._has_named_oracle(
+        "nauty single-library build/linkage structural contract"
+    )
+    assert checks._has_named_oracle("provenance/golden/README.md manifest contract")
+    assert not checks._has_named_oracle("self-oracle structural contract")
+    assert not checks._has_named_oracle("TBD structural contract")

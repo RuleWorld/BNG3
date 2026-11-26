@@ -852,6 +852,86 @@ def _extract_export_invariants(fmt: str, payload: dict[str, Any]) -> dict[str, A
             "has_graph": has_graph,
         }
 
+    if fmt == "visualize_help":
+        stdout_text = str(payload.get("stdout", "")).casefold()
+        has_help = (
+            "help" in stdout_text
+            and ("regulatory" in stdout_text or "contactmap" in stdout_text)
+            and "type" in stdout_text
+        )
+        return {
+            "kind": "visualize_help",
+            "no_files_written": not names,
+            "has_help": has_help,
+        }
+
+    if fmt == "error_parity":
+        rc = payload.get("exit_code")
+        diag = str(payload.get("diagnostic", "")).strip()
+        return {
+            "kind": "error_parity",
+            "exit_code_nonzero": isinstance(rc, int) and rc != 0,
+            "has_diagnostic": bool(diag),
+        }
+
+    if fmt == "ssa_step_interval":
+        gdat_text = str(payload.get("gdat", ""))
+        rows: list[list[float]] = []
+        for raw_line in gdat_text.splitlines():
+            stripped = raw_line.strip()
+            if not stripped or stripped.startswith("#"):
+                continue
+            vals = [float(tok) for tok in stripped.split()]
+            if len(vals) < 3:
+                raise ValueError(
+                    f"ssa_step_interval row has too few columns: {raw_line!r}"
+                )
+            rows.append(vals)
+        if len(rows) < 2:
+            raise ValueError(f"ssa_step_interval produced too few rows: {len(rows)}")
+        expected_total = rows[0][1] + rows[0][2]
+        conserved = all(
+            math.isclose(r[1] + r[2], expected_total, rel_tol=1e-9, abs_tol=1e-9)
+            for r in rows
+        )
+        monotone_time = all(rows[i][0] >= rows[i - 1][0] for i in range(1, len(rows)))
+        monotone_decay = all(
+            rows[i][1] <= rows[i - 1][1] + 1e-9 for i in range(1, len(rows))
+        )
+        return {
+            "kind": "ssa_step_interval",
+            "t0_zero": math.isclose(rows[0][0], 0.0, abs_tol=1e-12),
+            "conserved": conserved,
+            "monotone_time": monotone_time,
+            "monotone_decay": monotone_decay,
+            "has_multiple_rows": len(rows) >= 2,
+        }
+
+    if fmt == "semantic_equal":
+        return {
+            "kind": "semantic_equal",
+            "equal_renumbered": payload.get("equal_renumbered") is True,
+            "distinct_different": payload.get("distinct_different") is False,
+        }
+
+    if fmt == "multi_diagnostic":
+        return {
+            "kind": "multi_diagnostic",
+            "attribute": str(payload.get("attribute", "")),
+            "undefined_attribute_detected": payload.get("undefined_attribute_detected")
+            is True,
+        }
+
+    if fmt == "structural_contract":
+        checks_verified = payload.get("checks_verified")
+        return {
+            "kind": "structural_contract",
+            "contract_id": str(payload.get("contract_id", "")),
+            "contract_passed": payload.get("contract_passed") is True,
+            "has_verified_checks": isinstance(checks_verified, int)
+            and checks_verified >= 1,
+        }
+
     raise ValueError(f"unsupported export format {fmt!r}")
 
 
@@ -1158,7 +1238,13 @@ def _locked_oracle_errors(
         return [f"{row_id}: pinned upstream lock has no sources mapping"]
     source_id = oracle.get("source_id")
     aliases = {
-        "bng2": ("bng2",),
+        "bng2": (
+            "bng2",
+            "independently authored",
+            "independent exact network enumerator",
+            "provenance/golden/readme.md",
+            "structural contract",
+        ),
         "nfsim": ("nfsim",),
         "pybionetgen": ("pybionetgen",),
         "sbml-test-suite": ("ssts", "sbml test suite", "independent source simulation"),
@@ -1253,6 +1339,8 @@ def _has_named_oracle(value: Any) -> bool:
         "hand-derived",
         "independently authored",
         "independent exact network enumerator",
+        "provenance/golden/readme.md",
+        "structural contract",
     )
     return any(name in lowered for name in names)
 

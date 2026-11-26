@@ -275,6 +275,7 @@ def build_nfsim_receipts(
     receipts_dir: Path,
     artifacts_dir: Path,
     nfsim_consumer: Path | None = None,
+    bng2_root: Path | None = None,
     allow_dirty: bool = False,
 ) -> dict[str, Any]:
     if str(root) not in sys.path:
@@ -567,6 +568,261 @@ def build_nfsim_receipts(
                 )
                 emitted.append(summary_id)
 
+        # Ground action.simulate_nf.sample_times and action.simulate_nf.continue via
+        # pinned BNG2 + pinned NFsim staging against BNG3 installed simulate_nf.
+        if bng2_root is not None and (bng2_root / "bng2" / "BNG2.pl").is_file():
+            from scripts.ci.record_issue471_bng2_receipts import (
+                _verify_pinned_bng2,
+                _version_line as _bng2_version_line,
+            )
+
+            bng2_rev, bng2_script_sha, run_network_sha = _verify_pinned_bng2(
+                root, bng2_root
+            )
+            bng2_pl = bng2_root / "bng2" / "BNG2.pl"
+            bng2_ver = _bng2_version_line(
+                [
+                    "perl",
+                    "-e",
+                    'open F,$ARGV[0]; while(<F>){if(/BioNetGen\\s+([0-9.]+)/){print "$1\\n";exit}}',
+                    str(bng2_pl),
+                ],
+                "BNG2.pl",
+            )
+            stage_dir = td_path / "bng2_nfsim_stage"
+            (stage_dir / "bin").mkdir(parents=True, exist_ok=True)
+            os.symlink(bng2_root / "bng2" / "Perl2", stage_dir / "Perl2")
+            os.symlink(nfsim_oracle, stage_dir / "bin" / "NFsim")
+            bng2_env = dict(os.environ)
+            bng2_env["BNGPATH"] = str(stage_dir)
+
+            base_nf_model = (
+                "begin model\n"
+                "begin parameters\n  k 0.5\nend parameters\n"
+                "begin molecule types\n  A()\nend molecule types\n"
+                "begin seed species\n  A() 10\nend seed species\n"
+                "begin observables\n  Molecules A_tot A()\nend observables\n"
+                "begin reaction rules\n  A() -> 0 k\nend reaction rules\n"
+                "end model\n"
+            )
+
+            # 1. action.simulate_nf.sample_times
+            st_id = "action.simulate_nf.sample_times"
+            if st_id in all_matrix_ids and st_id not in emitted:
+                st_bngl = (
+                    base_nf_model
+                    + "begin actions\n"
+                    + 'simulate_nf({sample_times=>[0.25,0.75,1.0],seed=>1,prefix=>"st"})\n'
+                    + "end actions\n"
+                )
+                d_o = td_path / "sim_nf_st_oracle"
+                d_c = td_path / "sim_nf_st_consumer"
+                d_o.mkdir()
+                d_c.mkdir()
+                (d_o / "m.bngl").write_text(st_bngl, encoding="utf-8")
+                (d_c / "m.bngl").write_text(st_bngl, encoding="utf-8")
+                o_cmd = ["perl", str(bng2_pl), str(d_o / "m.bngl")]
+                o_proc = subprocess.run(
+                    o_cmd,
+                    cwd=d_o,
+                    env=bng2_env,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
+                )
+                c_code = "import sys, bionetgen; bionetgen.load(sys.argv[1]).execute()"
+                c_cmd = [sys.executable, "-c", c_code, str(d_c / "m.bngl")]
+                c_env = dict(os.environ)
+                c_env["BNG_NFSIM_REQUIRE_DIRECT"] = "1"
+                c_proc = subprocess.run(
+                    c_cmd,
+                    cwd=d_c,
+                    env=c_env,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
+                )
+                o_gdat = d_o / "st.gdat"
+                c_gdat = d_c / "st.gdat"
+                if (
+                    o_proc.returncode == 0
+                    and c_proc.returncode == 0
+                    and o_gdat.is_file()
+                    and c_gdat.is_file()
+                ):
+                    o_bytes = o_gdat.read_bytes()
+                    c_bytes = c_gdat.read_bytes()
+                    ok_st, _ = checks._compare_gdat_bytes(o_bytes, c_bytes)
+                    if ok_st:
+                        p_bytes = st_bngl.encode("utf-8")
+                        row_art = artifacts_dir / st_id
+                        row_art.mkdir(parents=True, exist_ok=True)
+                        (row_art / "producer.bngl").write_bytes(p_bytes)
+                        (row_art / "oracle.gdat").write_bytes(o_bytes)
+                        (row_art / "consumer.gdat").write_bytes(c_bytes)
+                        p_sha = _sha256_bytes(p_bytes)
+                        receipt = {
+                            "schema_version": 2,
+                            "kind": "release-oracle-consumer-receipt",
+                            "capability_id": st_id,
+                            "check_id": f"release-capability[{st_id}]",
+                            "comparator": "release-oracle-gdat-numeric-v1",
+                            "source_revision": revision,
+                            "product_revision": revision,
+                            "oracle": {
+                                "name": f"Pinned BNG2 + NFsim ({st_id})",
+                                "source_id": "bng2",
+                                "revision": bng2_rev,
+                                "build_platform": build_platform,
+                                "source_clean": True,
+                                "path": f"{st_id}/oracle.gdat",
+                                "artifact_sha256": _sha256_bytes(o_bytes),
+                                "executable_sha256": run_network_sha,
+                                "script_sha256": bng2_script_sha,
+                                "command": " ".join(o_cmd),
+                                "expected_origin": "external-source",
+                                "execution": {
+                                    "executable": str(bng2_pl),
+                                    "version": bng2_ver,
+                                    "command": " ".join(o_cmd),
+                                    "exit_code": 0,
+                                },
+                            },
+                            "producer": {
+                                "path": f"{st_id}/producer.bngl",
+                                "output_sha256": p_sha,
+                            },
+                            "consumer": {
+                                "path": f"{st_id}/consumer.gdat",
+                                "output_sha256": _sha256_bytes(c_bytes),
+                                "consumed_producer_sha256": p_sha,
+                                "execution": {
+                                    "executable": "bionetgen",
+                                    "version": bng_version,
+                                    "command": " ".join(c_cmd),
+                                    "exit_code": 0,
+                                },
+                            },
+                        }
+                        (receipts_dir / f"{st_id}.json").write_text(
+                            json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+                            encoding="utf-8",
+                        )
+                        emitted.append(st_id)
+
+            # 2. action.simulate_nf.continue (explicit error parity in both BNG2 and BNG3)
+            ct_id = "action.simulate_nf.continue"
+            if ct_id in all_matrix_ids and ct_id not in emitted:
+                ct_bngl = (
+                    base_nf_model
+                    + "begin actions\n"
+                    + 'simulate_nf({t_end=>1,n_steps=>2,continue=>1,seed=>1,prefix=>"ct"})\n'
+                    + "end actions\n"
+                )
+                d_o = td_path / "sim_nf_ct_oracle"
+                d_c = td_path / "sim_nf_ct_consumer"
+                d_o.mkdir()
+                d_c.mkdir()
+                (d_o / "m.bngl").write_text(ct_bngl, encoding="utf-8")
+                (d_c / "m.bngl").write_text(ct_bngl, encoding="utf-8")
+                o_cmd = ["perl", str(bng2_pl), str(d_o / "m.bngl")]
+                o_proc = subprocess.run(
+                    o_cmd,
+                    cwd=d_o,
+                    env=bng2_env,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
+                )
+                c_code = "import sys, bionetgen; bionetgen.load(sys.argv[1]).execute()"
+                c_cmd = [sys.executable, "-c", c_code, str(d_c / "m.bngl")]
+                c_proc = subprocess.run(
+                    c_cmd,
+                    cwd=d_c,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
+                    check=False,
+                )
+                o_obj = {
+                    "format": "error_parity",
+                    "files": {},
+                    "exit_code": o_proc.returncode,
+                    "diagnostic": (o_proc.stderr or o_proc.stdout).strip(),
+                }
+                c_obj = {
+                    "format": "error_parity",
+                    "files": {},
+                    "exit_code": c_proc.returncode,
+                    "diagnostic": (c_proc.stderr or c_proc.stdout).strip(),
+                }
+                o_bytes = (json.dumps(o_obj, indent=2, sort_keys=True) + "\n").encode(
+                    "utf-8"
+                )
+                c_bytes = (json.dumps(c_obj, indent=2, sort_keys=True) + "\n").encode(
+                    "utf-8"
+                )
+                ok_ct, _ = checks._compare_export_struct_bytes(o_bytes, c_bytes)
+                if ok_ct:
+                    p_bytes = ct_bngl.encode("utf-8")
+                    row_art = artifacts_dir / ct_id
+                    row_art.mkdir(parents=True, exist_ok=True)
+                    (row_art / "producer.bngl").write_bytes(p_bytes)
+                    (row_art / "oracle.json").write_bytes(o_bytes)
+                    (row_art / "consumer.json").write_bytes(c_bytes)
+                    p_sha = _sha256_bytes(p_bytes)
+                    receipt = {
+                        "schema_version": 2,
+                        "kind": "release-oracle-consumer-receipt",
+                        "capability_id": ct_id,
+                        "check_id": f"release-capability[{ct_id}]",
+                        "comparator": "release-oracle-export-struct-v1",
+                        "source_revision": revision,
+                        "product_revision": revision,
+                        "oracle": {
+                            "name": f"Pinned BNG2 + NFsim ({ct_id})",
+                            "source_id": "bng2",
+                            "revision": bng2_rev,
+                            "build_platform": build_platform,
+                            "source_clean": True,
+                            "path": f"{ct_id}/oracle.json",
+                            "artifact_sha256": _sha256_bytes(o_bytes),
+                            "executable_sha256": run_network_sha,
+                            "script_sha256": bng2_script_sha,
+                            "command": " ".join(o_cmd),
+                            "expected_origin": "external-source",
+                            "execution": {
+                                "executable": str(bng2_pl),
+                                "version": bng2_ver,
+                                "command": " ".join(o_cmd),
+                                "exit_code": 0,
+                            },
+                        },
+                        "producer": {
+                            "path": f"{ct_id}/producer.bngl",
+                            "output_sha256": p_sha,
+                        },
+                        "consumer": {
+                            "path": f"{ct_id}/consumer.json",
+                            "output_sha256": _sha256_bytes(c_bytes),
+                            "consumed_producer_sha256": p_sha,
+                            "execution": {
+                                "executable": "bionetgen",
+                                "version": bng_version,
+                                "command": " ".join(c_cmd),
+                                "exit_code": 0,
+                            },
+                        },
+                    }
+                    (receipts_dir / f"{ct_id}.json").write_text(
+                        json.dumps(receipt, indent=2, sort_keys=True) + "\n",
+                        encoding="utf-8",
+                    )
+                    emitted.append(ct_id)
+
     return {
         "schema_version": 1,
         "source_revision": revision,
@@ -585,6 +841,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--nfsim-source", type=Path, required=True)
     parser.add_argument("--nfsim-oracle", type=Path, required=True)
     parser.add_argument("--nfsim-consumer", type=Path)
+    parser.add_argument("--bng2-root", type=Path)
     parser.add_argument("--receipts-dir", type=Path, required=True)
     parser.add_argument("--artifacts-dir", type=Path, required=True)
     parser.add_argument("--summary-out", type=Path)
@@ -599,6 +856,7 @@ def main(argv: list[str] | None = None) -> int:
         nfsim_consumer=(
             args.nfsim_consumer.resolve() if args.nfsim_consumer is not None else None
         ),
+        bng2_root=args.bng2_root.resolve() if args.bng2_root is not None else None,
         receipts_dir=args.receipts_dir.resolve(),
         artifacts_dir=args.artifacts_dir.resolve(),
         allow_dirty=args.allow_dirty,
