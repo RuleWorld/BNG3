@@ -518,22 +518,36 @@ def _synthetic_function_heavy_sbml(
 
 
 def test_large_function_heavy_sbml_atomizes_fast_and_deterministically(tmp_path):
-    xml = _synthetic_function_heavy_sbml(
+    small_xml = _synthetic_function_heavy_sbml(
+        n_species=40, n_functions=40, n_reactions=60
+    )
+    large_xml = _synthetic_function_heavy_sbml(
         n_species=160, n_functions=160, n_reactions=240
     )
-    t0 = time.perf_counter()
-    result = _atomize(xml)
-    elapsed = time.perf_counter() - t0
+    t_small = time.perf_counter()
+    small_result = _atomize(small_xml)
+    small_elapsed = time.perf_counter() - t_small
+    assert small_result.success, small_result.error
+
+    t_large = time.perf_counter()
+    result = _atomize(large_xml)
+    elapsed = time.perf_counter() - t_large
     assert result.success, result.error
-    # Previously quadratic (>20 s for this size); must stay well under 5 s.
+    # A 4x scale-up would cost ~16x under quadratic inlining; linear inlining
+    # stays sub-quadratic and completes well under 25s even under pytest-cov
+    # tracing on slower Windows CI runners.
+    scaling_ratio = elapsed / max(small_elapsed, 0.05)
     assert (
-        elapsed < 5.0
+        scaling_ratio < 10.0
+    ), f"4x model scale-up took {scaling_ratio:.2f}x ({small_elapsed:.2f}s -> {elapsed:.2f}s)"
+    assert (
+        elapsed < 25.0
     ), f"Atomizer took {elapsed:.2f}s on 240-reaction nested-function model"
     assert "fn_0(" not in result.bngl and "fn_40(" not in result.bngl
 
     # Verify PYTHONHASHSEED-invariance across distinct hash seeds.
     xml_path = tmp_path / "large.xml"
-    xml_path.write_text(xml, encoding="utf-8")
+    xml_path.write_text(large_xml, encoding="utf-8")
     outputs = []
     for hash_seed in ("0", "1", "42"):
         env = os.environ.copy()
