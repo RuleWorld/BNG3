@@ -640,7 +640,7 @@ TEST_CASE("Negative power operands are parenthesized when serialized") {
 
     CHECK(negNumPow.toString() == "((-2) ^ k)");
     CHECK(parenNegPow.toString() == "((-2) ^ k)");
-    CHECK(negVarPow.toString() == "((-k) ^ 2)");
+    CHECK(negVarPow.toString() == "(-k ^ 2)");
     CHECK(subPow.toString() == "(0 - (2 ^ k))");
 
     const auto resolve = [](const std::string& name) -> double {
