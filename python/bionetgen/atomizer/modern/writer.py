@@ -144,7 +144,9 @@ def _declared_id_spans(
             matched.append((span, run))
             continue
         if by_standard is None:
-            by_standard = {standardize_name(str(name)): str(name) for name in declared}
+            by_standard = {
+                standardize_name(str(name)): str(name) for name in declared if str(name)
+            }
         source = by_standard.get(run)
         if source is not None:
             matched.append((span, source))
@@ -951,7 +953,63 @@ def _substitute_formal_arguments(
 
 
 _CALL_SITE_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*\(")
+_IDENT_WORD_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\b")
 _IDENT_NON_CALL_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\b(?!\s*\()")
+_IDENT_CALL_OPT_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\b(?:\s*\(\s*\)|(?!\s*\())")
+
+
+def _is_plain_ascii_ident(name: str) -> bool:
+    return bool(name) and name.isascii() and name.isidentifier()
+
+
+def _substitute_id_map(
+    expression: str,
+    mapping: Mapping[str, object],
+    *,
+    suffix_pattern: str = "",
+    value_fn=None,
+) -> str:
+    """Substitute identifier keys in ``expression`` in one linear pass.
+
+    Uses a precompiled word-identifier regex when every key is a plain ASCII
+    identifier, and falls back to a longest-first single-pass alternation
+    filtered to keys present in ``expression`` when any key contains non-word
+    characters (such as raw hyphenated SBML identifiers like ``A-B``).
+    """
+    if not mapping or not expression:
+        return expression
+    if all(_is_plain_ascii_ident(str(key)) for key in mapping):
+        if suffix_pattern == "":
+            pattern = _IDENT_WORD_RE
+        elif suffix_pattern == r"(?!\s*\()":
+            pattern = _IDENT_NON_CALL_RE
+        elif suffix_pattern == r"(?:\s*\(\s*\)|(?!\s*\())":
+            pattern = _IDENT_CALL_OPT_RE
+        else:
+            pattern = re.compile(rf"\b([A-Za-z_][A-Za-z0-9_]*)\b{suffix_pattern}")
+        if value_fn is None:
+            return pattern.sub(
+                lambda match: str(mapping.get(match.group(1), match.group(0))),
+                expression,
+            )
+        return pattern.sub(
+            lambda match: (
+                value_fn(mapping[match.group(1)])
+                if match.group(1) in mapping
+                else match.group(0)
+            ),
+            expression,
+        )
+    present_keys = [str(key) for key in mapping if str(key) and str(key) in expression]
+    if not present_keys:
+        return expression
+    ordered_keys = sorted(present_keys, key=len, reverse=True)
+    pattern = re.compile(
+        rf"\b({'|'.join(re.escape(key) for key in ordered_keys)})\b{suffix_pattern}"
+    )
+    if value_fn is None:
+        return pattern.sub(lambda match: str(mapping[match.group(1)]), expression)
+    return pattern.sub(lambda match: value_fn(mapping[match.group(1)]), expression)
 
 
 def _expand_calls_with_lookup(
@@ -972,6 +1030,11 @@ def _expand_calls_with_lookup(
     result = expression
     if not lookup or "(" not in result:
         return result
+    if all(_is_plain_ascii_ident(key) for key in lookup):
+        call_re = _CALL_SITE_RE
+    else:
+        ordered = sorted(lookup, key=len, reverse=True)
+        call_re = re.compile(rf"\b({'|'.join(re.escape(key) for key in ordered)})\s*\(")
     for _ in range(max_passes):
         pieces: List[str] = []
         cursor = 0
@@ -979,7 +1042,7 @@ def _expand_calls_with_lookup(
         search_pos = 0
         length = len(result)
         while search_pos < length:
-            match = _CALL_SITE_RE.search(result, search_pos)
+            match = call_re.search(result, search_pos)
             if match is None:
                 break
             call_name = match.group(1)
@@ -1090,13 +1153,11 @@ def extend_function(
         result = _expand_calls_with_lookup(result, lookup, strict_arity=True)
 
     if parameter_dict:
-        result = _IDENT_NON_CALL_RE.sub(
-            lambda match: (
-                _number(parameter_dict[match.group(1)])
-                if match.group(1) in parameter_dict
-                else match.group(0)
-            ),
+        result = _substitute_id_map(
             result,
+            parameter_dict,
+            suffix_pattern=r"(?!\s*\()",
+            value_fn=_number,
         )
     return result
 
@@ -1219,21 +1280,13 @@ def bngl_function(
             )
         }
         if comp_map:
-            result = re.sub(
-                r"\b([A-Za-z_][A-Za-z0-9_]*)\b",
-                lambda match: comp_map.get(match.group(1), match.group(0)),
-                result,
-            )
+            result = _substitute_id_map(result, comp_map)
     if reaction_dict:
         rxn_map = {
             str(reaction_id): f"netflux_{reaction_name}"
             for reaction_id, reaction_name in reaction_dict.items()
         }
-        result = re.sub(
-            r"\b([A-Za-z_][A-Za-z0-9_]*)\b",
-            lambda match: rxn_map.get(match.group(1), match.group(0)),
-            result,
-        )
+        result = _substitute_id_map(result, rxn_map)
     if assignment_rule_variables:
         rate_replace: Dict[str, str] = {}
         assign_replace: Dict[str, str] = {}
@@ -1255,15 +1308,16 @@ def bngl_function(
             else:
                 assign_replace[str(variable)] = replacement
         if rate_replace:
-            result = re.sub(
-                r"\b([A-Za-z_][A-Za-z0-9_]*)\b(?:\s*\(\s*\))?",
-                lambda match: rate_replace.get(match.group(1), match.group(0)),
+            result = _substitute_id_map(
                 result,
+                rate_replace,
+                suffix_pattern=r"(?:\s*\(\s*\)|(?!\s*\())",
             )
         if assign_replace:
-            result = _IDENT_NON_CALL_RE.sub(
-                lambda match: assign_replace.get(match.group(1), match.group(0)),
+            result = _substitute_id_map(
                 result,
+                assign_replace,
+                suffix_pattern=r"(?!\s*\()",
             )
 
     # Sat/MM/Hill are factor-style laws in BNGL.  The Playground writer adds
@@ -4931,7 +4985,9 @@ def _inline_reaction_fluxes(
         return expression
     # Fast path: build reaction-alias lookup once per model snapshot and exit
     # in O(|expression|) when the expression references no reaction ID at all.
-    initial_present = _id_runs(expression)
+    initial_present = _id_runs(expression) | set(
+        re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression)
+    )
     if not initial_present:
         return expression
     rxn_index_key = (id(model.reactions), len(model.reactions))
@@ -6111,9 +6167,12 @@ def _ordered_assignment_rules(rules: Sequence[object]) -> List[object]:
     cycle = False
 
     alias_to_var: Dict[str, str] = {}
+    non_plain_deps: List[str] = []
     for dependency in by_name:
         alias_to_var[dependency] = dependency
         alias_to_var[standardize_name(dependency)] = dependency
+        if not _is_plain_ascii_ident(dependency):
+            non_plain_deps.append(dependency)
 
     def visit(name: str) -> None:
         nonlocal cycle
@@ -6124,7 +6183,9 @@ def _ordered_assignment_rules(rules: Sequence[object]) -> List[object]:
             return
         visiting.add(name)
         expression = str(getattr(by_name[name], "math", "") or "")
-        tokens = set(re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression))
+        tokens = _id_runs(expression) | set(
+            re.findall(r"[A-Za-z_][A-Za-z0-9_]*", expression)
+        )
         seen_deps: Set[str] = set()
         for token in tokens:
             dependency = alias_to_var.get(token)
@@ -6132,6 +6193,14 @@ def _ordered_assignment_rules(rules: Sequence[object]) -> List[object]:
                 dependency is not None
                 and dependency != name
                 and dependency not in seen_deps
+            ):
+                seen_deps.add(dependency)
+        for dependency in non_plain_deps:
+            if (
+                dependency != name
+                and dependency not in seen_deps
+                and dependency in expression
+                and re.search(rf"\b{re.escape(dependency)}\b", expression)
             ):
                 seen_deps.add(dependency)
         for dependency in by_name:

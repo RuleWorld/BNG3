@@ -1370,15 +1370,30 @@ def _evaluate_static_arithmetic(
 
     result = str(expression or "").strip()
     if symbols:
-        result = re.sub(
-            r"\b([A-Za-z_][A-Za-z0-9_]*)\b(?!\s*\()",
-            lambda match: (
-                format_number(symbols[match.group(1)])
-                if match.group(1) in symbols
-                else match.group(0)
-            ),
-            result,
-        )
+        if all(
+            bool(str(key)) and str(key).isascii() and str(key).isidentifier()
+            for key in symbols
+        ):
+            result = re.sub(
+                r"\b([A-Za-z_][A-Za-z0-9_]*)\b(?!\s*\()",
+                lambda match: (
+                    format_number(symbols[match.group(1)])
+                    if match.group(1) in symbols
+                    else match.group(0)
+                ),
+                result,
+            )
+        else:
+            present = [key for key in symbols if key and key in result]
+            if present:
+                ordered = sorted(present, key=len, reverse=True)
+                pattern = re.compile(
+                    rf"\b({'|'.join(re.escape(key) for key in ordered)})\b(?!\s*\()"
+                )
+                result = pattern.sub(
+                    lambda match: format_number(symbols[match.group(1)]),
+                    result,
+                )
 
     def function_for(name: str) -> Optional[SBMLFunctionDefinition]:
         if functions is None:
