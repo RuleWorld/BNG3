@@ -518,28 +518,38 @@ def _synthetic_function_heavy_sbml(
 
 
 def test_large_function_heavy_sbml_atomizes_fast_and_deterministically(tmp_path):
+    # Hold species count fixed while scaling function definitions and reactions
+    # 4x so the ratio isolates function-inlining scaling (previously O(F*R) ~16x)
+    # rather than pairwise species naming heuristics.
     small_xml = _synthetic_function_heavy_sbml(
-        n_species=40, n_functions=40, n_reactions=60
+        n_species=30, n_functions=40, n_reactions=60
     )
-    large_xml = _synthetic_function_heavy_sbml(
-        n_species=160, n_functions=160, n_reactions=240
+    scaled_xml = _synthetic_function_heavy_sbml(
+        n_species=30, n_functions=160, n_reactions=240
     )
     t_small = time.perf_counter()
     small_result = _atomize(small_xml)
     small_elapsed = time.perf_counter() - t_small
     assert small_result.success, small_result.error
 
+    t_scaled = time.perf_counter()
+    scaled_result = _atomize(scaled_xml)
+    scaled_elapsed = time.perf_counter() - t_scaled
+    assert scaled_result.success, scaled_result.error
+    scaling_ratio = scaled_elapsed / max(small_elapsed, 0.05)
+    assert (
+        scaling_ratio < 10.0
+    ), f"4x function/reaction scale-up took {scaling_ratio:.2f}x ({small_elapsed:.2f}s -> {scaled_elapsed:.2f}s)"
+
+    large_xml = _synthetic_function_heavy_sbml(
+        n_species=160, n_functions=160, n_reactions=240
+    )
     t_large = time.perf_counter()
     result = _atomize(large_xml)
     elapsed = time.perf_counter() - t_large
     assert result.success, result.error
-    # A 4x scale-up would cost ~16x under quadratic inlining; linear inlining
-    # stays sub-quadratic and completes well under 25s even under pytest-cov
-    # tracing on slower Windows CI runners.
-    scaling_ratio = elapsed / max(small_elapsed, 0.05)
-    assert (
-        scaling_ratio < 10.0
-    ), f"4x model scale-up took {scaling_ratio:.2f}x ({small_elapsed:.2f}s -> {elapsed:.2f}s)"
+    # Previously >20s uninstrumented (>200s under pytest-cov); stay well under 25s
+    # even with coverage bytecode tracing on slower Windows CI runners.
     assert (
         elapsed < 25.0
     ), f"Atomizer took {elapsed:.2f}s on 240-reaction nested-function model"

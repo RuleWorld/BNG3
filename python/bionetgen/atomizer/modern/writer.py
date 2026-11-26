@@ -1103,9 +1103,12 @@ def _expand_calls_with_lookup(
 
 
 _LAST_EXTEND_LOOKUP: Tuple[
-    Optional[Tuple[int, int]], Dict[str, Tuple[List[str], str]]
+    Optional[Mapping[str, object]],
+    Tuple[Tuple[str, object, str, Tuple[str, ...], str], ...],
+    Dict[str, Tuple[List[str], str]],
 ] = (
     None,
+    (),
     {},
 )
 
@@ -1114,12 +1117,22 @@ def _function_definition_lookup(
     function_definitions: Mapping[str, object], *, include_names: bool
 ) -> Dict[str, Tuple[List[str], str]]:
     global _LAST_EXTEND_LOOKUP
-    cache_key = (id(function_definitions), len(function_definitions))
-    if include_names and _LAST_EXTEND_LOOKUP[0] == cache_key:
-        cached = _LAST_EXTEND_LOOKUP[1]
-        if len(cached) >= len(function_definitions):
-            return cached
+    if include_names:
+        cached_mapping, cached_snapshot, cached_lookup = _LAST_EXTEND_LOOKUP
+        if (
+            cached_mapping is function_definitions
+            and len(function_definitions) == len(cached_snapshot)
+            and all(
+                function_definitions.get(key) is definition
+                and (getattr(definition, "name", "") or key) == name
+                and tuple(getattr(definition, "arguments", []) or ()) == args
+                and str(getattr(definition, "math", "") or "") == body
+                for key, definition, name, args, body in cached_snapshot
+            )
+        ):
+            return cached_lookup
     lookup: Dict[str, Tuple[List[str], str]] = {}
+    snapshot: List[Tuple[str, object, str, Tuple[str, ...], str]] = []
     for function_id, definition in function_definitions.items():
         if include_names:
             name = getattr(definition, "name", "") or function_id
@@ -1129,6 +1142,7 @@ def _function_definition_lookup(
             lookup.setdefault(str(name), entry)
             if str(function_id) != str(name):
                 lookup.setdefault(str(function_id), entry)
+            snapshot.append((function_id, definition, name, tuple(arguments), body))
         else:
             body = str(_definition_field(definition, "math", "") or "")
             formal_arguments = list(
@@ -1136,7 +1150,7 @@ def _function_definition_lookup(
             )
             lookup[str(function_id)] = (formal_arguments, body)
     if include_names:
-        _LAST_EXTEND_LOOKUP = (cache_key, lookup)
+        _LAST_EXTEND_LOOKUP = (function_definitions, tuple(snapshot), lookup)
     return lookup
 
 
@@ -2792,24 +2806,24 @@ def _rate_for_reaction(
         not references_species_in_classification(species_id)
         for species_id in set(reactants)
     )
-    sp_index_key = (id(model.species), len(model.species))
+    sp_keys = tuple(model.species.keys())
     sp_index = getattr(model, "_cached_species_ref_index", None)
-    if sp_index is None or sp_index[0] != sp_index_key:
+    if sp_index is None or sp_index[0] is not model.species or sp_index[1] != sp_keys:
         std_to_std: Dict[str, str] = {}
         amt_to_std: Dict[str, str] = {}
         conc_to_std: Dict[str, str] = {}
-        for species_id in model.species:
+        for species_id in sp_keys:
             std = standardize_name(species_id)
             low = std.lower()
             std_to_std[std] = std
             amt_to_std[f"{low}_amt"] = std
             conc_to_std[f"_c_{low}"] = std
-        sp_index = (sp_index_key, std_to_std, amt_to_std, conc_to_std)
+        sp_index = (model.species, sp_keys, std_to_std, amt_to_std, conc_to_std)
         try:
             setattr(model, "_cached_species_ref_index", sp_index)
         except Exception:
             pass
-    std_to_std, amt_to_std, conc_to_std = sp_index[1], sp_index[2], sp_index[3]
+    std_to_std, amt_to_std, conc_to_std = sp_index[2], sp_index[3], sp_index[4]
     has_nonreactant_species = (
         any(
             token in std_to_std and std_to_std[token] not in reactant_names
@@ -4990,24 +5004,28 @@ def _inline_reaction_fluxes(
     )
     if not initial_present:
         return expression
-    rxn_index_key = (id(model.reactions), len(model.reactions))
+    rxn_keys = tuple(model.reactions.keys())
     rxn_index = getattr(model, "_cached_reaction_alias_index", None)
-    if rxn_index is None or rxn_index[0] != rxn_index_key:
+    if (
+        rxn_index is None
+        or rxn_index[0] is not model.reactions
+        or rxn_index[1] != rxn_keys
+    ):
         alias_to_id: Dict[str, str] = {}
         aliases_map: Dict[str, tuple[str, ...]] = {}
-        for reaction_id in model.reactions:
+        for reaction_id in rxn_keys:
             raw_id = str(reaction_id)
             std_id = standardize_name(raw_id)
             aliases_map[raw_id] = (raw_id, std_id)
             alias_to_id.setdefault(raw_id, raw_id)
             alias_to_id.setdefault(std_id, raw_id)
-        rxn_index = (rxn_index_key, alias_to_id, aliases_map)
+        rxn_index = (model.reactions, rxn_keys, alias_to_id, aliases_map)
         try:
             setattr(model, "_cached_reaction_alias_index", rxn_index)
         except Exception:
             pass
-    alias_to_id = rxn_index[1]
-    reaction_aliases = rxn_index[2]
+    alias_to_id = rxn_index[2]
+    reaction_aliases = rxn_index[3]
     if not any(
         token in alias_to_id
         and not (exclude_reaction_id and alias_to_id[token] == str(exclude_reaction_id))
