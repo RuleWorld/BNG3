@@ -376,36 +376,54 @@ end model
 """)
 
     # Redundant collinear interior knot (1, 2) on segment (0, 0)-(2, 4).
-    assert semantic_equal(
-        tfun_model("TFUN([0, 1, 2], [0, 2, 4], time)"),
-        tfun_model("TFUN([0, 2], [0, 4], time)"),
-    ) is True
+    assert (
+        semantic_equal(
+            tfun_model("TFUN([0, 1, 2], [0, 2, 4], time)"),
+            tfun_model("TFUN([0, 2], [0, 4], time)"),
+        )
+        is True
+    )
 
     # Redundant flat leading/trailing clamped knots.
-    assert semantic_equal(
-        tfun_model("TFUN([0, 1, 2, 3], [2, 2, 4, 4], time)"),
-        tfun_model("TFUN([1, 2], [2, 4], time)"),
-    ) is True
+    assert (
+        semantic_equal(
+            tfun_model("TFUN([0, 1, 2, 3], [2, 2, 4, 4], time)"),
+            tfun_model("TFUN([1, 2], [2, 4], time)"),
+        )
+        is True
+    )
 
     # Step TFUN with redundant equal-height knot.
-    assert semantic_equal(
-        tfun_model('TFUN([0, 1, 2, 3], [1, 1, 5, 5], time, method=>"step")'),
-        tfun_model('TFUN([0, 2], [1, 5], time, method=>"step")'),
-    ) is True
+    assert (
+        semantic_equal(
+            tfun_model('TFUN([0, 1, 2, 3], [1, 1, 5, 5], time, method=>"step")'),
+            tfun_model('TFUN([0, 2], [1, 5], time, method=>"step")'),
+        )
+        is True
+    )
 
     # Negative controls: changed knot value, changed endpoint, linear vs step.
-    assert semantic_equal(
-        tfun_model("TFUN([0, 2], [0, 4], time)"),
-        tfun_model("TFUN([0, 2], [0, 5], time)"),
-    ) is False
-    assert semantic_equal(
-        tfun_model("TFUN([0, 2], [0, 4], time)"),
-        tfun_model("TFUN([0, 3], [0, 4], time)"),
-    ) is False
-    assert semantic_equal(
-        tfun_model('TFUN([0, 2], [0, 4], time, method=>"linear")'),
-        tfun_model('TFUN([0, 2], [0, 4], time, method=>"step")'),
-    ) is False
+    assert (
+        semantic_equal(
+            tfun_model("TFUN([0, 2], [0, 4], time)"),
+            tfun_model("TFUN([0, 2], [0, 5], time)"),
+        )
+        is False
+    )
+    assert (
+        semantic_equal(
+            tfun_model("TFUN([0, 2], [0, 4], time)"),
+            tfun_model("TFUN([0, 3], [0, 4], time)"),
+        )
+        is False
+    )
+    assert (
+        semantic_equal(
+            tfun_model('TFUN([0, 2], [0, 4], time, method=>"linear")'),
+            tfun_model('TFUN([0, 2], [0, 4], time, method=>"step")'),
+        )
+        is False
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1108,4 +1126,3 @@ end model
 """)
     with pytest.raises(EqualityUndecided):
         semantic_equal(with_units, without_units)
-
