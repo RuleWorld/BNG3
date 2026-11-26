@@ -432,4 +432,83 @@ std::vector<MatlabWriter::StoichEntry> MatlabWriter::computeStoichiometry(
     return result;
 }
 
+std::string MatlabWriter::writeInitSpecies(
+    const ast::Model& model,
+    const engine::GeneratedNetwork& network
+) {
+    engine::requireNoDelayedSemantics(model, network, "MATLAB export");
+    requireNoEnergySemantics(model, "MATLAB M-file");
+    compile::requireNoNativeEvents(model, "MATLAB export");
+    const std::size_t nSpecies = network.species.size();
+    std::ostringstream m;
+    m << "function [species_init] = initialize_species( params )\n\n";
+    m << "    species_init = zeros(1," << nSpecies << ");\n";
+    for (std::size_t i = 0; i < nSpecies; ++i) {
+        const auto& sp = network.species.get(i);
+        m << "    species_init(" << (i + 1) << ") = " << std::setprecision(15)
+          << sp.getAmount() << "; % " << sp.getSpeciesGraph().toString() << "\n";
+    }
+    m << "end\n";
+    return m.str();
+}
+
+std::string MatlabWriter::writeBngModel(
+    const ast::Model& model,
+    const engine::GeneratedNetwork& network,
+    const std::string& filebase
+) {
+    engine::requireNoDelayedSemantics(model, network, "MATLAB export");
+    requireNoEnergySemantics(model, "MATLAB M-file");
+    compile::requireNoNativeEvents(model, "MATLAB export");
+    const std::string safeBase = makeMatlabFunctionName(filebase);
+    const std::string className = "bngModel_" + safeBase;
+    std::ostringstream m;
+    m << "classdef " << className << " < bngModel\n\n";
+    m << "    properties\n";
+    m << "    end\n\n";
+    m << "    methods\n\n";
+    m << "    function obj = " << className << "\n";
+    m << "        obj = obj@bngModel;\n\n";
+
+    m << "        species_labels = { ";
+    for (std::size_t i = 0; i < network.species.size(); ++i) {
+        if (i > 0) m << ", ";
+        m << "'" << network.species.get(i).getSpeciesGraph().toString() << "'";
+    }
+    m << " };\n";
+
+    const auto& params = model.getParameters().all();
+    m << "        param_labels = { ";
+    for (std::size_t i = 0; i < params.size(); ++i) {
+        if (i > 0) m << ", ";
+        m << "'" << params[i].getName() << "'";
+    }
+    m << " };\n";
+
+    m << "        param_defaults = [ ";
+    for (std::size_t i = 0; i < params.size(); ++i) {
+        if (i > 0) m << ", ";
+        m << std::setprecision(15) << params[i].getValue();
+    }
+    m << " ];\n";
+
+    const auto& obs = model.getObservables();
+    m << "        obs_labels = { ";
+    for (std::size_t i = 0; i < obs.size(); ++i) {
+        if (i > 0) m << ", ";
+        m << "'" << obs[i].getName() << "'";
+    }
+    m << " };\n";
+
+    m << "        simulators = { '" << safeBase << "' };\n\n";
+    m << "        obj.Param = bngParam(param_labels,param_defaults);\n";
+    m << "        obj.Obs = bngObs(obs_labels);\n";
+    m << "        obj.Species = bngSpecies(species_labels,'initSpecies_" << safeBase << "');\n";
+    m << "        obj.simulators = simulators;\n";
+    m << "    end\n\n";
+    m << "    end\n\n";
+    m << "end\n";
+    return m.str();
+}
+
 } // namespace bng::io

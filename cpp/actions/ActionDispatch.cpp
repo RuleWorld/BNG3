@@ -4537,8 +4537,12 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         if (actionName == "writexml") {
             // Write XML without network (NFsim XML format doesn't require generated network)
+            auto outName = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+            if (outName.empty()) outName = sourcePath.stem().string();
+            const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
+            if (!suffix.empty()) outName += "_" + suffix;
             const auto xmlContent = io::XmlWriter::write(model, network.has_value() ? &(*network) : nullptr);
-            const auto outputPath = sourcePath.parent_path() / (sourcePath.stem().string() + ".xml");
+            const auto outputPath = sourcePath.parent_path() / (outName + ".xml");
             std::ofstream outFile(outputPath);
             if (!outFile) {
                 throw std::runtime_error("Failed to open " + outputPath.string() + " for writing");
@@ -4550,13 +4554,21 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             continue;
         }
 
-        if (actionName == "writebngl" || action.name == "writemodel") {
+        if (actionName == "writebngl" || actionName == "writemodel") {
             ensureNetwork();
             io::BnglWriter::Options opts;
             opts.includeComments = true;
             opts.includeActions = false;
             const auto bnglContent = io::BnglWriter::write(model, &(*network), opts);
-            const auto outputPath = sourcePath.parent_path() / (sourcePath.stem().string() + "_out.bngl");
+            const auto rawPrefix = stripQuotes(readArgument(action, "prefix", ""));
+            const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
+            std::string outName = rawPrefix.empty() ? sourcePath.stem().string() : rawPrefix;
+            if (!suffix.empty()) {
+                outName += "_" + suffix;
+            } else if (rawPrefix.empty()) {
+                outName += "_out";
+            }
+            const auto outputPath = sourcePath.parent_path() / (outName + ".bngl");
             std::ofstream outFile(outputPath);
             if (!outFile) {
                 throw std::runtime_error("Failed to open " + outputPath.string() + " for writing");
@@ -4617,7 +4629,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             continue;
         }
 
-        if (actionName == "writemfile") {
+        if (actionName == "writemfile" || actionName == "writemfile_all") {
             ensureNetwork();
             io::MatlabWriter::Options mOpts;
             // Parse action arguments for writeMfile options
@@ -4640,10 +4652,11 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             const auto maxStepText = readArgument(action, "max_step", "");
             if (!maxStepText.empty()) mOpts.maxStep = parseScalarValue(maxStepText, model);
 
+            auto outName = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+            if (outName.empty()) outName = sourcePath.stem().string();
             const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
-            const auto mContent = io::MatlabWriter::write(model, *network, mOpts);
-            std::string outName = sourcePath.stem().string();
             if (!suffix.empty()) outName += "_" + suffix;
+            const auto mContent = io::MatlabWriter::write(model, *network, mOpts);
             const auto outputPath = sourcePath.parent_path() / (outName + ".m");
             std::ofstream outFile(outputPath);
             if (!outFile) {
@@ -4652,6 +4665,30 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             outFile << mContent;
             if (verbose) {
                 std::cerr << "[bng_cpp] Wrote MATLAB to " << outputPath << "\n";
+            }
+            if (actionName == "writemfile_all") {
+                const auto basePath = std::filesystem::path(outName);
+                const auto baseDir = sourcePath.parent_path() / basePath.parent_path();
+                const auto filebase = basePath.filename().string();
+                const auto initPath = baseDir / ("initSpecies_" + filebase + ".m");
+                const auto modelPath = baseDir / ("bngModel_" + filebase + ".m");
+                {
+                    std::ofstream initOut(initPath);
+                    if (!initOut) {
+                        throw std::runtime_error("Failed to open " + initPath.string() + " for writing");
+                    }
+                    initOut << io::MatlabWriter::writeInitSpecies(model, *network);
+                }
+                {
+                    std::ofstream modelOut(modelPath);
+                    if (!modelOut) {
+                        throw std::runtime_error("Failed to open " + modelPath.string() + " for writing");
+                    }
+                    modelOut << io::MatlabWriter::writeBngModel(model, *network, filebase);
+                }
+                if (verbose) {
+                    std::cerr << "[bng_cpp] Wrote MATLAB toolbox files to " << initPath << " and " << modelPath << "\n";
+                }
             }
             continue;
         }
@@ -4682,9 +4719,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             const auto sparseText = lowercase(stripQuotes(readArgument(action, "sparse", "0")));
             cppOpts.sparse = (sparseText == "1" || sparseText == "on" || sparseText == "true");
 
+            auto outName = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+            if (outName.empty()) outName = sourcePath.stem().string();
             const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
             const auto cppContent = io::CppExportWriter::write(model, *network, cppOpts);
-            std::string outName = sourcePath.stem().string();
             if (!suffix.empty()) outName += "_" + suffix;
             outName += "_cvode";
             const auto outputPath = sourcePath.parent_path() / (outName + ".h");
@@ -4713,9 +4751,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             const auto rtolText4 = readArgument(action, "rtol", "");
             if (!rtolText4.empty()) pyOpts.rtol = parseScalarValue(rtolText4, model);
 
+            auto outName = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+            if (outName.empty()) outName = sourcePath.stem().string();
             const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
             const auto pyContent = io::PythonExportWriter::write(model, *network, pyOpts);
-            std::string outName = sourcePath.stem().string();
             if (!suffix.empty()) outName += "_" + suffix;
             outName += "_pyode";
             const auto outputPath = sourcePath.parent_path() / (outName + ".py");
@@ -4745,10 +4784,21 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             if (!rtolText5.empty()) mexOpts.rtol = parseScalarValue(rtolText5, model);
             const auto maxNumStepsText5 = readArgument(action, "max_num_steps", "");
             if (!maxNumStepsText5.empty()) mexOpts.maxNumSteps = static_cast<int>(parseScalarValue(maxNumStepsText5, model));
+            const auto maxErrText5 = readArgument(action, "max_err_test_fails", "");
+            if (!maxErrText5.empty()) mexOpts.maxErrTestFails = static_cast<int>(parseScalarValue(maxErrText5, model));
+            const auto maxConvText5 = readArgument(action, "max_conv_fails", "");
+            if (!maxConvText5.empty()) mexOpts.maxConvFails = static_cast<int>(parseScalarValue(maxConvText5, model));
+            const auto maxStepText5 = readArgument(action, "max_step", "");
+            if (!maxStepText5.empty()) mexOpts.maxStep = parseScalarValue(maxStepText5, model);
+            const auto stiffText5 = lowercase(stripQuotes(readArgument(action, "stiff", "1")));
+            mexOpts.stiff = (stiffText5 != "0" && stiffText5 != "false" && stiffText5 != "off");
+            const auto sparseText5 = lowercase(stripQuotes(readArgument(action, "sparse", "0")));
+            mexOpts.sparse = (sparseText5 == "1" || sparseText5 == "on" || sparseText5 == "true");
 
+            auto outName = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+            if (outName.empty()) outName = sourcePath.stem().string();
             const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
             const auto mexContent = io::MexWriter::write(model, *network, mexOpts);
-            std::string outName = sourcePath.stem().string();
             if (!suffix.empty()) outName += "_" + suffix;
             outName += "_mex";
             const auto outputPath = sourcePath.parent_path() / (outName + ".c");
@@ -4764,6 +4814,13 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "visualize") {
+            const auto helpText = lowercase(stripQuotes(readArgument(action, "help", "0")));
+            if (helpText == "1" || helpText == "true" || helpText == "on") {
+                if (verbose) {
+                    std::cerr << "[bng_cpp] graph export help: type=contactmap|regulatory|reaction_network|ruleviz_pattern|ruleviz_operation|process|rinf|opts, suffix, prefix, help\n";
+                }
+                continue;
+            }
             const auto vizType = lowercase(stripQuotes(readArgument(action, "type", "contactmap")));
             const auto outputFormat = lowercase(stripQuotes(
                 readArgument(action, "outType", readArgument(action, "format", "gml"))));
@@ -4881,7 +4938,9 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             if (!suffix.empty()) {
                 fileSuffix += "_" + suffix;
             }
-            const auto outputPath = sourcePath.parent_path() / (sourcePath.stem().string() + fileSuffix + extension);
+            auto vizPrefix = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+            if (vizPrefix.empty()) vizPrefix = sourcePath.stem().string();
+            const auto outputPath = sourcePath.parent_path() / (vizPrefix + fileSuffix + extension);
             std::ofstream outFile(outputPath);
             if (!outFile) {
                 throw std::runtime_error("Failed to open " + outputPath.string() + " for writing");
@@ -4894,11 +4953,12 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             continue;
         }
 
-        if (actionName == "writelatex") {
+        if (actionName == "writelatex" || actionName == "writelatexfile") {
             ensureNetwork();
+            auto outName = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+            if (outName.empty()) outName = sourcePath.stem().string();
             const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
             const auto latexContent = io::LatexWriter::write(model, *network);
-            std::string outName = sourcePath.stem().string();
             if (!suffix.empty()) outName += "_" + suffix;
             const auto outputPath = sourcePath.parent_path() / (outName + ".tex");
             std::ofstream outFile(outputPath);
@@ -4914,9 +4974,10 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         if (actionName == "writemdl") {
             ensureNetwork();
+            auto outName = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+            if (outName.empty()) outName = sourcePath.stem().string();
             const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
             const auto mdlContent = io::MdlWriter::write(model, *network);
-            std::string outName = sourcePath.stem().string();
             if (!suffix.empty()) outName += "_" + suffix;
             const auto outputPath = sourcePath.parent_path() / (outName + ".mdl");
             std::ofstream outFile(outputPath);
@@ -4932,6 +4993,8 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
         if (actionName == "writessc" || actionName == "writessccfg") {
             ensureNetwork();
+            auto outName = stripQuotes(readArgument(action, "prefix", sourcePath.stem().string()));
+            if (outName.empty()) outName = sourcePath.stem().string();
             const auto suffix = stripQuotes(readArgument(action, "suffix", ""));
             // BNG2 writes two different artifacts here: `writeSSC` emits a
             // complete .rxn program, while `writeSSCcfg` emits a .cfg holding
@@ -4942,7 +5005,6 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             const auto sscContent = configOnly
                 ? io::SscWriter::writeConfig(model)
                 : io::SscWriter::write(model, *network);
-            std::string outName = sourcePath.stem().string();
             if (!suffix.empty()) outName += "_" + suffix;
             const auto outputPath =
                 sourcePath.parent_path() / (outName + (configOnly ? ".cfg" : ".rxn"));
