@@ -4171,109 +4171,116 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             if (parameterName.empty()) {
                 throw std::runtime_error("bifurcate requires parameter argument");
             }
+            if (!model.getParameters().contains(parameterName)) {
+                throw std::runtime_error("bifurcate: unknown parameter: " + parameterName);
+            }
 
-            const auto minValue = parseScalarValue(readArgument(action, "par_min", ""), model);
-            const auto maxValue = parseScalarValue(readArgument(action, "par_max", ""), model);
-            const auto points = static_cast<std::size_t>(std::max(1.0, parseScalarValue(readArgument(action, "n_scan_pts", "1"), model)));
-            const auto logScale = lowercase(stripQuotes(readArgument(action, "log_scale", "0"))) == "1"
-                || lowercase(stripQuotes(readArgument(action, "log_scale", "0"))) == "true";
+            const auto minText = readArgument(action, "par_min", "");
+            const auto maxText = readArgument(action, "par_max", "");
+            const auto pointsText = readArgument(action, "n_scan_pts", "");
+            const bool hasMin = !trim(stripQuotes(minText)).empty();
+            const bool hasMax = !trim(stripQuotes(maxText)).empty();
+            const bool hasPoints = !trim(stripQuotes(pointsText)).empty();
+            const auto explicitValuesText = readArgument(
+                action, "par_scan_vals", readArgument(action, "values", ""));
+            const bool hasExplicitValues =
+                !trim(stripQuotes(explicitValuesText)).empty();
+
+            std::vector<double> scanValues;
+            if (hasMin && hasMax && hasPoints) {
+                const double minValue = parseScalarValue(minText, model);
+                const double maxValue = parseScalarValue(maxText, model);
+                const auto points = parseNonNegativeCount(pointsText, model, "n_scan_pts");
+                if (points < 1) {
+                    throw std::runtime_error("bifurcate requires n_scan_pts >= 1");
+                }
+                const bool logScale = parseBoolean(readArgument(action, "log_scale", "0"));
+                if (logScale && (minValue <= 0.0 || maxValue <= 0.0)) {
+                    throw std::runtime_error("bifurcate with log_scale requires positive par_min and par_max");
+                }
+                scanValues.reserve(points);
+                for (std::size_t i = 0; i < points; ++i) {
+                    const double alpha = points == 1
+                        ? 0.0
+                        : static_cast<double>(i) / static_cast<double>(points - 1);
+                    if (logScale) {
+                        scanValues.push_back(std::exp(
+                            std::log(minValue) + alpha * (std::log(maxValue) - std::log(minValue))));
+                    } else {
+                        scanValues.push_back(minValue + alpha * (maxValue - minValue));
+                    }
+                }
+            } else if (hasExplicitValues) {
+                scanValues = parseScalarList(explicitValuesText, model, "par_scan_vals");
+            } else {
+                throw std::runtime_error("bifurcate requires par_scan_vals or par_min, par_max, and n_scan_pts");
+            }
+            const std::size_t points = scanValues.size();
 
             // Build a simulate action from the bifurcate arguments
             ast::Action simulateAction = action;
             simulateAction.name = "simulate";
             simulateAction.arguments["method"] = readArgument(action, "method", "ode");
+            simulateAction.arguments.erase("suffix");
 
-            const auto baseSuffix = stripQuotes(readArgument(action, "suffix", ""));
             const auto prefix = simulationPrefix(action, sourcePath);
             const auto outputDir = sourcePath.parent_path();
 
-            // Helper: compute parameter value at scan point i
-            auto computeParamValue = [&](std::size_t i, double pMin, double pMax) -> double {
-                const double alpha = points == 1 ? 0.0 : static_cast<double>(i) / static_cast<double>(points - 1);
-                if (logScale) {
-                    if (pMin <= 0.0 || pMax <= 0.0) {
-                        throw std::runtime_error("bifurcate with log_scale requires positive par_min and par_max");
-                    }
-                    return std::exp(std::log(pMin) + alpha * (std::log(pMax) - std::log(pMin)));
-                }
-                return pMin + alpha * (pMax - pMin);
+            // Save original parameters and initial concentrations for post-scan restoration
+            const auto originalParameters = model.getParameters().all();
+            const auto initialConc = snapshotConcentrations(*network);
+            const auto originalLastState = lastSimulationState;
+            const double originalLastEndTime = lastSimulationEndTime;
+
+            // BNG2 bifurcate carries concentrations continuously across forward points,
+            // across the forward->backward transition, and across backward points (reset_conc=0).
+            auto runBifurcatePoint = [&](double value, const std::string& scanPrefix) {
+                const auto priorConc = snapshotConcentrations(*network);
+                replaceParameter(ast::Parameter(parameterName, ast::Expression::number(value)));
+                evaluateParametersAndRefresh();
+                network = generator.generate(sourcePath);
+                restoreConcentrations(*network, priorConc);
+                writeCurrentNetwork();
+                lastSimulationState.clear();
+                lastSimulationEndTime = 0.0;
+                simulateAction.arguments["prefix"] = scanPrefix;
+                runSimulation(model, simulateAction, sourcePath, *network, verbose, lastSimulationState, lastSimulationEndTime);
             };
 
-            // Save initial concentrations
-            const auto initialConc = snapshotConcentrations(*network);
-
-            // === Forward scan (min -> max) ===
+            // === Forward scan (ascending scanValues) ===
             if (verbose) {
                 std::cerr << "[bng_cpp] Bifurcate: forward scan (" << points << " points)\n";
             }
 
             std::vector<std::string> forwardGdatFiles;
             for (std::size_t i = 0; i < points; ++i) {
-                const double value = computeParamValue(i, minValue, maxValue);
-
-                replaceParameter(ast::Parameter(parameterName, ast::Expression::number(value)));
-                evaluateParametersAndRefresh();
-                network = generator.generate(sourcePath);
-                writeCurrentNetwork();
-
                 std::string scanPrefix = prefix + "_forward_scan" + std::to_string(i + 1);
-                simulateAction.arguments["prefix"] = scanPrefix;
-                runSimulation(model, simulateAction, sourcePath, *network, verbose, lastSimulationState, lastSimulationEndTime);
+                runBifurcatePoint(scanValues[i], scanPrefix);
                 forwardGdatFiles.push_back((outputDir / (scanPrefix + ".gdat")).string());
             }
 
-            // === Backward scan (max -> min) ===
-            // Restore initial concentrations before backward scan
-            restoreConcentrations(*network, initialConc);
-
+            // === Backward scan (descending scanValues, continuing from forward end state) ===
             if (verbose) {
                 std::cerr << "[bng_cpp] Bifurcate: backward scan (" << points << " points)\n";
             }
 
             std::vector<std::string> backwardGdatFiles;
             for (std::size_t i = 0; i < points; ++i) {
-                // Backward: scan from max to min
-                const double value = computeParamValue(i, maxValue, minValue);
-
-                replaceParameter(ast::Parameter(parameterName, ast::Expression::number(value)));
-                evaluateParametersAndRefresh();
-                network = generator.generate(sourcePath);
-                writeCurrentNetwork();
-
+                const double value = scanValues[points - 1 - i];
                 std::string scanPrefix = prefix + "_backward_scan" + std::to_string(i + 1);
-                simulateAction.arguments["prefix"] = scanPrefix;
-                runSimulation(model, simulateAction, sourcePath, *network, verbose, lastSimulationState, lastSimulationEndTime);
+                runBifurcatePoint(value, scanPrefix);
                 backwardGdatFiles.push_back((outputDir / (scanPrefix + ".gdat")).string());
             }
 
-            // === Merge forward and backward .gdat files into bifurcation diagram ===
-            // For each scan point, extract the final time point from the .gdat file
-            // and write them into a combined bifurcation .gdat file
-            const auto bifurcationPath = outputDir / (prefix + "_bifurcation.gdat");
-            std::ofstream bifOut(bifurcationPath);
-            if (!bifOut) {
-                throw std::runtime_error("Failed to open " + bifurcationPath.string() + " for writing");
+            // Restore original parameters and initial concentrations
+            for (const auto& parameter : originalParameters) {
+                replaceParameter(parameter);
             }
-
-            // Read header from first forward .gdat file (if available)
-            std::string headerLine;
-            if (!forwardGdatFiles.empty()) {
-                std::ifstream firstFile(forwardGdatFiles[0]);
-                if (firstFile && std::getline(firstFile, headerLine)) {
-                    // Replace "time" with parameter name in the header
-                    bifOut << "#" << std::setw(17) << parameterName;
-                    // Copy observable column headers from the original header
-                    std::istringstream hss(headerLine);
-                    std::string tok;
-                    bool first = true;
-                    while (hss >> tok) {
-                        if (first) { first = false; continue; }  // Skip "#time" or first token
-                        bifOut << " " << std::setw(18) << tok;
-                    }
-                    bifOut << " " << std::setw(18) << "direction";
-                    bifOut << "\n";
-                }
-            }
+            evaluateParametersAndRefresh();
+            network = generator.generate(sourcePath);
+            restoreConcentrations(*network, initialConc);
+            lastSimulationState = originalLastState;
+            lastSimulationEndTime = originalLastEndTime;
 
             // Helper: read the last data line from a .gdat file
             auto readLastLine = [](const std::string& path) -> std::string {
@@ -4287,40 +4294,95 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                 return lastLine;
             };
 
-            // Write forward scan final states
-            for (std::size_t i = 0; i < points; ++i) {
-                const double value = computeParamValue(i, minValue, maxValue);
-                const auto lastLine = readLastLine(forwardGdatFiles[i]);
-                if (!lastLine.empty()) {
-                    // Replace time column with parameter value, keep observable columns
-                    std::istringstream lss(lastLine);
-                    std::string timeTok;
-                    lss >> timeTok;  // Skip time value
-                    bifOut << std::setw(18) << std::setprecision(12) << std::scientific << value;
+            auto parseGdatRow = [](const std::string& line) -> std::vector<std::string> {
+                std::istringstream lss(line);
+                std::vector<std::string> cols;
+                std::string tok;
+                bool first = true;
+                while (lss >> tok) {
+                    if (first) { first = false; continue; } // skip time
+                    cols.push_back(tok);
+                }
+                return cols;
+            };
+
+            // Read observable headers from first forward .gdat file
+            std::vector<std::string> obsHeaders;
+            if (!forwardGdatFiles.empty()) {
+                std::ifstream firstFile(forwardGdatFiles[0]);
+                std::string headerLine;
+                if (firstFile && std::getline(firstFile, headerLine)) {
+                    std::istringstream hss(headerLine);
                     std::string tok;
-                    while (lss >> tok) {
-                        bifOut << " " << std::setw(18) << tok;
+                    bool skippedTime = false;
+                    while (hss >> tok) {
+                        if (tok == "#") continue;
+                        if (!skippedTime) {
+                            skippedTime = true;
+                            continue; // skip "#time" or "time"
+                        }
+                        obsHeaders.push_back(tok);
                     }
-                    bifOut << " " << std::setw(18) << 1;  // direction = 1 (forward)
-                    bifOut << "\n";
                 }
             }
 
-            // Write backward scan final states
+            std::vector<std::vector<std::string>> forwardRows(points);
+            std::vector<std::vector<std::string>> backwardRows(points);
             for (std::size_t i = 0; i < points; ++i) {
-                const double value = computeParamValue(i, maxValue, minValue);
-                const auto lastLine = readLastLine(backwardGdatFiles[i]);
-                if (!lastLine.empty()) {
-                    std::istringstream lss(lastLine);
-                    std::string timeTok;
-                    lss >> timeTok;  // Skip time value
-                    bifOut << std::setw(18) << std::setprecision(12) << std::scientific << value;
-                    std::string tok;
-                    while (lss >> tok) {
+                forwardRows[i] = parseGdatRow(readLastLine(forwardGdatFiles[i]));
+                backwardRows[i] = parseGdatRow(readLastLine(backwardGdatFiles[i]));
+            }
+
+            // === Write combined bifurcation .gdat file ===
+            const auto bifurcationPath = outputDir / (prefix + "_bifurcation.gdat");
+            std::ofstream bifOut(bifurcationPath);
+            if (!bifOut) {
+                throw std::runtime_error("Failed to open " + bifurcationPath.string() + " for writing");
+            }
+            if (!obsHeaders.empty()) {
+                bifOut << "#" << std::setw(17) << parameterName;
+                for (const auto& col : obsHeaders) {
+                    bifOut << " " << std::setw(18) << col;
+                }
+                bifOut << " " << std::setw(18) << "direction" << "\n";
+            }
+            for (std::size_t i = 0; i < points; ++i) {
+                if (!forwardRows[i].empty()) {
+                    bifOut << std::setw(18) << std::setprecision(12) << std::scientific << scanValues[i];
+                    for (const auto& tok : forwardRows[i]) {
                         bifOut << " " << std::setw(18) << tok;
                     }
-                    bifOut << " " << std::setw(18) << -1;  // direction = -1 (backward)
-                    bifOut << "\n";
+                    bifOut << " " << std::setw(18) << 1 << "\n";
+                }
+            }
+            for (std::size_t i = 0; i < points; ++i) {
+                if (!backwardRows[i].empty()) {
+                    bifOut << std::setw(18) << std::setprecision(12) << std::scientific << scanValues[points - 1 - i];
+                    for (const auto& tok : backwardRows[i]) {
+                        bifOut << " " << std::setw(18) << tok;
+                    }
+                    bifOut << " " << std::setw(18) << -1 << "\n";
+                }
+            }
+
+            // === Write BNG2-compatible per-observable <prefix>_bifurcation_<obs>.scan files ===
+            for (std::size_t colIdx = 0; colIdx < obsHeaders.size(); ++colIdx) {
+                const auto& obsName = obsHeaders[colIdx];
+                const auto scanPath = outputDir / (prefix + "_bifurcation_" + obsName + ".scan");
+                std::ofstream scanOut(scanPath);
+                if (!scanOut) {
+                    throw std::runtime_error("Failed to open " + scanPath.string() + " for writing");
+                }
+                scanOut << "#" << std::setw(15) << parameterName
+                        << " " << std::setw(16) << (obsName + "_fwd")
+                        << " " << std::setw(16) << (obsName + "_bwd") << "\n";
+                for (std::size_t i = 0; i < points; ++i) {
+                    const std::size_t bwdIdx = points - 1 - i;
+                    if (colIdx < forwardRows[i].size() && colIdx < backwardRows[bwdIdx].size()) {
+                        scanOut << "  " << std::setw(14) << std::setprecision(8) << std::scientific << scanValues[i]
+                                << "  " << std::setw(16) << forwardRows[i][colIdx]
+                                << "  " << std::setw(16) << backwardRows[bwdIdx][colIdx] << "\n";
+                    }
                 }
             }
 
