@@ -541,7 +541,7 @@ jobs:
             sudo apt-get install -y build-essential cmake ninja-build perl
           }
           python -m venv .venv
-          .venv/bin/python -m pip install scikit-build-core pybind11 pytest numpy scipy
+          .venv/bin/python -m pip install scikit-build-core pybind11 pytest numpy scipy libroadrunner
 
       - name: Checkout locked BioNetGen oracle
         run: |
@@ -692,6 +692,9 @@ jobs:
             --bng-cpp build/cpp/bng_cpp \
             --bng2-root "$RUNNER_TEMP/oracle-bionetgen" \
             --bng2-network-sha256 "$(sha256sum "$RUNNER_TEMP/oracle-bionetgen/bng2/bin/run_network" | cut -d ' ' -f 1)" \
+            --nfsim-root "$RUNNER_TEMP/oracle-nfsim" \
+            --nfsim-binary "$RUNNER_TEMP/oracle-nfsim/build/NFsim" \
+            --nfsim-sha256 "$(sha256sum "$RUNNER_TEMP/oracle-nfsim/build/NFsim" | cut -d ' ' -f 1)" \
             --report-dir "$RUNNER_TEMP/bng3-conformance"
 
       - name: Summarize named conformance failures and investigation packets

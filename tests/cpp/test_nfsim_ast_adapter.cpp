@@ -8593,3 +8593,101 @@ end reaction rules
         delete viaXml;
     }
 }
+
+TEST_CASE("NFsim direct adapter matches XML on time-table breakpoints") {
+    // Regression test for ruleworld/nfsim#142 in the direct compiled/AST
+    // adapters: when a time-indexed TFUN starts at zero propensity and jumps
+    // positive at a table breakpoint (directly as a named function, through a
+    // composite wrapper function, or inline in a rule rate),
+    // System::addTimeTable, System::addFunctionReference, and
+    // System::useTimeTablesReadBy must fire at the breakpoint so seeded direct
+    // trajectories match the XML path bit-for-bit.
+    auto model = bng::parser::parseModel(R"BNG(
+begin molecule types
+    A()
+    B()
+    C()
+end molecule types
+begin seed species
+    A() 0
+    B() 0
+    C() 0
+end seed species
+begin observables
+    Molecules Atot A()
+    Molecules Btot B()
+    Molecules Ctot C()
+end observables
+begin functions
+    pulse() = tfun([0, 0.05, 0.1], [0, 200, 200], time, method=>"step")
+    scaled_pulse() = 2 * pulse()
+end functions
+begin reaction rules
+    0 -> A() pulse()
+    0 -> B() scaled_pulse()
+    0 -> C() tfun([0, 0.05, 0.1], [0, 150, 150], time, method=>"step")
+end reaction rules
+)BNG");
+    REQUIRE(model != nullptr);
+
+    const auto token = std::chrono::steady_clock::now().time_since_epoch().count();
+    auto runSystem = [&](NFcore::System* system,
+                         int suggestedTraversalLimit,
+                         const std::filesystem::path& outputPath) -> std::string {
+        REQUIRE(system != nullptr);
+        system->setUniversalTraversalLimit(suggestedTraversalLimit);
+        system->registerOutputFileLocation(outputPath.string());
+        system->outputAllObservableNames();
+        system->prepareForSimulation();
+        system->seedRNG(7);
+        system->sim(0.1, 10, false);
+        delete system;
+
+        std::ifstream gdat(outputPath);
+        REQUIRE(gdat.good());
+        return std::string((std::istreambuf_iterator<char>(gdat)),
+                           std::istreambuf_iterator<char>());
+    };
+
+    const auto baseDir = std::filesystem::temp_directory_path();
+    const auto xmlOut = baseDir / ("bng3-tfun-xml-" + std::to_string(token) + ".gdat");
+    const auto directOut =
+        baseDir / ("bng3-tfun-direct-" + std::to_string(token) + ".gdat");
+
+    int xmlLimit = NFcore::ReactionClass::NO_LIMIT;
+    auto* xmlSystem = NFinput::initializeFromModel(
+        model.get(), false, 100000, false, xmlLimit, true);
+    const auto xmlData = runSystem(xmlSystem, xmlLimit, xmlOut);
+
+    int directLimit = NFcore::ReactionClass::NO_LIMIT;
+    auto* directSystem = NFinput::buildSystemFromAst(
+        *model, false, 100000, false, directLimit);
+    const auto directData = runSystem(directSystem, directLimit, directOut);
+
+    CHECK(directData == xmlData);
+
+    // Ensure the step breakpoint actually triggered all three reactions after
+    // t=0.05 rather than both paths trivially staying at zero.
+    std::istringstream rows(xmlData);
+    std::string line;
+    std::string lastLine;
+    while (std::getline(rows, line)) {
+        if (!line.empty() && line[0] != '#')
+            lastLine = line;
+    }
+    REQUIRE_FALSE(lastLine.empty());
+    std::istringstream lastRow(lastLine);
+    double tFinal = 0.0;
+    double aFinal = 0.0;
+    double bFinal = 0.0;
+    double cFinal = 0.0;
+    REQUIRE(static_cast<bool>(lastRow >> tFinal >> aFinal >> bFinal >> cFinal));
+    CHECK(tFinal == Catch::Approx(0.1));
+    CHECK(aFinal > 0.0);
+    CHECK(bFinal > 0.0);
+    CHECK(cFinal > 0.0);
+
+    std::error_code error;
+    std::filesystem::remove(xmlOut, error);
+    std::filesystem::remove(directOut, error);
+}
