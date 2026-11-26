@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <limits>
 #include <utility>
 #include <unordered_set>
 
@@ -128,7 +129,7 @@ std::optional<std::string> timeDependentParameterReference(
     return std::nullopt;
 }
 
-std::optional<std::string> nonsecondTimeBasisRejection(const CompiledModel& model) {
+std::optional<std::string> invalidTimeBasisRejection(const CompiledModel& model) {
     const auto declaredTime = model.metadata().unitDefaults.find("timeUnits");
     if (declaredTime == model.metadata().unitDefaults.end()) return std::nullopt;
     const auto resolved = model.metadata().resolvedUnitReferences.find(declaredTime->second);
@@ -138,9 +139,122 @@ std::optional<std::string> nonsecondTimeBasisRejection(const CompiledModel& mode
         return "the declared time basis cannot be resolved for NFsim's second clock";
     const auto conversion = units::conversionFactor(resolved->second.unit, *second.unit);
     if (!conversion || !conversion.factor.has_value() ||
-        !std::isfinite(*conversion.factor) || *conversion.factor != 1.0)
-        return "NFsim physical rates require a declared time basis equal to seconds";
+        !std::isfinite(*conversion.factor) || *conversion.factor <= 0.0)
+        return "the declared time basis cannot be converted to seconds";
     return std::nullopt;
+}
+
+std::optional<double> evaluateStaticRateExpression(
+    const CompiledModel& model,
+    const ResolvedExpression& expression) {
+    using Kind = ResolvedExpressionKind;
+    switch (expression.kind) {
+    case Kind::Number:
+        return std::isfinite(expression.numberValue)
+                   ? std::optional<double>(expression.numberValue)
+                   : std::nullopt;
+    case Kind::ParameterRef: {
+        if (!expression.symbol.has_value()) return std::nullopt;
+        const auto* parameter = model.parameter(
+            ParameterId::fromDenseIndex(expression.symbol->index));
+        if (parameter == nullptr || parameter->timeDependent ||
+            !parameter->constantValue.has_value() ||
+            !std::isfinite(*parameter->constantValue))
+            return std::nullopt;
+        return *parameter->constantValue;
+    }
+    case Kind::Unary: {
+        if (!expression.unaryOp.has_value() || expression.arguments.size() != 1)
+            return std::nullopt;
+        const auto value = evaluateStaticRateExpression(model, expression.arguments.front());
+        if (!value.has_value()) return std::nullopt;
+        switch (*expression.unaryOp) {
+        case UnaryOp::Plus: return *value;
+        case UnaryOp::Negate: return -*value;
+        case UnaryOp::LogicalNot: return *value == 0.0 ? 1.0 : 0.0;
+        case UnaryOp::Unknown: return std::nullopt;
+        }
+        return std::nullopt;
+    }
+    case Kind::Binary: {
+        if (!expression.binaryOp.has_value() || expression.arguments.size() != 2)
+            return std::nullopt;
+        const auto lhs = evaluateStaticRateExpression(model, expression.arguments[0]);
+        const auto rhs = evaluateStaticRateExpression(model, expression.arguments[1]);
+        if (!lhs.has_value() || !rhs.has_value()) return std::nullopt;
+        double out = 0.0;
+        switch (*expression.binaryOp) {
+        case BinaryOp::Add: out = *lhs + *rhs; break;
+        case BinaryOp::Subtract: out = *lhs - *rhs; break;
+        case BinaryOp::Multiply: out = *lhs * *rhs; break;
+        case BinaryOp::Divide:
+            if (*rhs == 0.0) return std::nullopt;
+            out = *lhs / *rhs;
+            break;
+        case BinaryOp::Power: out = std::pow(*lhs, *rhs); break;
+        case BinaryOp::Less: out = *lhs < *rhs ? 1.0 : 0.0; break;
+        case BinaryOp::LessEqual: out = *lhs <= *rhs ? 1.0 : 0.0; break;
+        case BinaryOp::Greater: out = *lhs > *rhs ? 1.0 : 0.0; break;
+        case BinaryOp::GreaterEqual: out = *lhs >= *rhs ? 1.0 : 0.0; break;
+        case BinaryOp::Equal: out = *lhs == *rhs ? 1.0 : 0.0; break;
+        case BinaryOp::NotEqual: out = *lhs != *rhs ? 1.0 : 0.0; break;
+        case BinaryOp::LogicalAnd: out = (*lhs != 0.0 && *rhs != 0.0) ? 1.0 : 0.0; break;
+        case BinaryOp::LogicalOr: out = (*lhs != 0.0 || *rhs != 0.0) ? 1.0 : 0.0; break;
+        case BinaryOp::Unknown: return std::nullopt;
+        }
+        return std::isfinite(out) ? std::optional<double>(out) : std::nullopt;
+    }
+    case Kind::BuiltinCall: {
+        if (!expression.builtin.has_value()) return std::nullopt;
+        std::vector<double> args;
+        args.reserve(expression.arguments.size());
+        for (const auto& argument : expression.arguments) {
+            const auto value = evaluateStaticRateExpression(model, argument);
+            if (!value.has_value()) return std::nullopt;
+            args.push_back(*value);
+        }
+        double out = 0.0;
+        if (*expression.builtin == BuiltinFunction::Pi && args.empty()) {
+            out = std::acos(-1.0);
+        } else if (*expression.builtin == BuiltinFunction::E && args.empty()) {
+            out = std::exp(1.0);
+        } else if (args.size() == 1) {
+            switch (*expression.builtin) {
+            case BuiltinFunction::Abs: out = std::fabs(args[0]); break;
+            case BuiltinFunction::Exp: out = std::exp(args[0]); break;
+            case BuiltinFunction::Ln: out = std::log(args[0]); break;
+            case BuiltinFunction::Log10: out = std::log10(args[0]); break;
+            case BuiltinFunction::Log2: out = std::log2(args[0]); break;
+            case BuiltinFunction::Sqrt: out = std::sqrt(args[0]); break;
+            case BuiltinFunction::Sin: out = std::sin(args[0]); break;
+            case BuiltinFunction::Cos: out = std::cos(args[0]); break;
+            case BuiltinFunction::Tan: out = std::tan(args[0]); break;
+            case BuiltinFunction::Floor: out = std::floor(args[0]); break;
+            case BuiltinFunction::Ceil: out = std::ceil(args[0]); break;
+            default: return std::nullopt;
+            }
+        } else if (*expression.builtin == BuiltinFunction::Min && !args.empty()) {
+            out = *std::min_element(args.begin(), args.end());
+        } else if (*expression.builtin == BuiltinFunction::Max && !args.empty()) {
+            out = *std::max_element(args.begin(), args.end());
+        } else if (*expression.builtin == BuiltinFunction::If && args.size() == 3) {
+            out = args[0] != 0.0 ? args[1] : args[2];
+        } else {
+            return std::nullopt;
+        }
+        return std::isfinite(out) ? std::optional<double>(out) : std::nullopt;
+    }
+    default:
+        return std::nullopt;
+    }
+}
+
+units::Unit capabilitiesItemUnit() {
+    units::Unit item;
+    item.name = "item";
+    item.dimension.substance = 1;
+    item.baseExponents[units::BaseUnit::Item] = 1;
+    return item;
 }
 
 } // namespace
@@ -160,12 +274,7 @@ std::optional<std::string> nfSimPhysicalUnitBridgeRejection(
     if (!model.valid())
         return "unit annotations do not form a valid typed model";
 
-    for (const auto& seed : model.seeds()) {
-        if (seed.declaredUnit.has_value())
-            return "unit-bearing seed species amounts are unsupported; seeds must be item counts";
-    }
-
-    if (const auto rejection = nonsecondTimeBasisRejection(model)) return rejection;
+    if (const auto rejection = invalidTimeBasisRejection(model)) return rejection;
 
     units::ConversionContext baseContext;
     if (const auto option = model.metadata().options.find("NumberPerQuantityUnit");
@@ -180,94 +289,89 @@ std::optional<std::string> nfSimPhysicalUnitBridgeRejection(
         }
     }
 
-    bool foundPhysicalRate = false;
-    for (const auto& rule : model.rules()) {
-        if (rule.isBidirectional() || rule.reverse().has_value())
-            return "bidirectional rules have multiple directions outside the supported subset";
-        const auto& direction = rule.forward();
-        const bool zeroOrder = direction.reactantPatterns.empty();
-        std::size_t molecularity = 0;
-        std::optional<CompartmentId> rateCompartmentId;
-        if (!zeroOrder) {
-            const auto compartmentId = [](const Pattern& pattern,
-                                          const PatternMoleculeDescriptor& molecule) {
-                return molecule.compartmentId.has_value()
-                           ? molecule.compartmentId : pattern.compartmentId();
-            };
-            const auto validStaticVolume = [&](CompartmentId id) {
-                const auto* compartment = model.compartment(id);
-                return compartment != nullptr && compartment->dimension == 3 &&
-                       !compartment->volumeTimeDependent &&
-                       std::isfinite(compartment->volume) && compartment->volume > 0.0 &&
-                       compartment->declaredUnit.has_value() &&
-                       compartment->declaredUnit->dimension.length == 3 &&
-                       compartment->declaredUnit->dimension.substance == 0 &&
-                       compartment->declaredUnit->dimension.time == 0;
-            };
+    const auto validStaticVolume = [&](CompartmentId id) {
+        const auto* compartment = model.compartment(id);
+        return compartment != nullptr && compartment->dimension == 3 &&
+               !compartment->volumeTimeDependent &&
+               std::isfinite(compartment->volume) && compartment->volume > 0.0 &&
+               compartment->declaredUnit.has_value() &&
+               compartment->declaredUnit->dimension.length == 3 &&
+               compartment->declaredUnit->dimension.substance == 0 &&
+               compartment->declaredUnit->dimension.time == 0;
+    };
 
-            if (direction.productPatterns.size() != 1 ||
-                direction.productPatterns.front().molecules().size() != 1)
-                return "physical reactant-bearing rates require one molecule product pattern";
-            const auto& product = direction.productPatterns.front();
-            const auto& productMolecule = product.molecules().front();
-            if (!productMolecule.moleculeTypeId.has_value())
-                return "physical rates require resolved molecule types";
-            const auto* productType = model.moleculeType(*productMolecule.moleculeTypeId);
-            if (productType == nullptr || productType->population)
-                return "physical rates require item-count molecule products";
-            const auto productCompartmentId = compartmentId(product, productMolecule);
+    const auto compartmentId = [](const Pattern& pattern,
+                                  const PatternMoleculeDescriptor& molecule) {
+        return molecule.compartmentId.has_value()
+                   ? molecule.compartmentId : pattern.compartmentId();
+    };
 
-            if (direction.reactantPatterns.size() == 1 &&
-                direction.reactantPatterns.front().molecules().size() == 1) {
-                molecularity = 1;
-                const auto& reactant = direction.reactantPatterns.front();
-                const auto& reactantMolecule = reactant.molecules().front();
-                if (!reactantMolecule.moleculeTypeId.has_value())
-                    return "unimolecular physical rates require resolved molecule types";
-                const auto* reactantType = model.moleculeType(*reactantMolecule.moleculeTypeId);
-                if (reactantType == nullptr || reactantType->population)
-                    return "unimolecular physical rates require item-count molecule reactants";
-                rateCompartmentId = compartmentId(reactant, reactantMolecule);
-                if (!model.compartments().empty() &&
-                    (!rateCompartmentId.has_value() || !productCompartmentId.has_value()))
-                    return "unimolecular physical rates require explicit compartments when compartments are declared";
-                if (rateCompartmentId.has_value() && !validStaticVolume(*rateCompartmentId))
-                    return "unimolecular physical rates require a positive static declared 3D compartment";
-                if (productCompartmentId.has_value() && !validStaticVolume(*productCompartmentId))
-                    return "unimolecular physical rates require a positive static declared 3D compartment for products";
-            } else if (direction.reactantPatterns.size() == 2 &&
-                       direction.reactantPatterns[0].molecules().size() == 1 &&
-                       direction.reactantPatterns[1].molecules().size() == 1) {
-                molecularity = 2;
-                const auto& firstPattern = direction.reactantPatterns[0];
-                const auto& secondPattern = direction.reactantPatterns[1];
-                const auto& firstMolecule = firstPattern.molecules().front();
-                const auto& secondMolecule = secondPattern.molecules().front();
-                if (!firstMolecule.moleculeTypeId.has_value() ||
-                    !secondMolecule.moleculeTypeId.has_value())
-                    return "bimolecular physical rates require resolved molecule types";
-                if (*firstMolecule.moleculeTypeId == *secondMolecule.moleculeTypeId)
-                    return "bimolecular physical rates do not yet support repeated reactant molecule types";
-                for (const auto* molecule : {&firstMolecule, &secondMolecule}) {
-                    const auto* type = model.moleculeType(*molecule->moleculeTypeId);
-                    if (type == nullptr || type->population)
-                        return "bimolecular physical rates require item-count molecule reactants";
+    bool foundUnitSeed = false;
+    for (const auto& seed : model.seeds()) {
+        if (!seed.declaredUnit.has_value()) continue;
+        if (!seed.evaluatedAmount.has_value() || !std::isfinite(*seed.evaluatedAmount) ||
+            *seed.evaluatedAmount < 0.0)
+            return "unit-bearing seed species amount must be a finite non-negative constant";
+        const auto& unit = *seed.declaredUnit;
+        units::ConversionResult converted;
+        if (unit.dimension.length == -3 && unit.dimension.time == 0) {
+            std::optional<CompartmentId> seedComp = seed.compartmentId;
+            if (!seedComp.has_value()) seedComp = seed.pattern.compartmentId();
+            if (!seedComp.has_value()) {
+                for (const auto& molecule : seed.pattern.molecules()) {
+                    if (!molecule.compartmentId.has_value()) continue;
+                    if (seedComp.has_value() && *seedComp != *molecule.compartmentId)
+                        return "concentration seed species spanning multiple compartments is ambiguous";
+                    seedComp = molecule.compartmentId;
                 }
-                rateCompartmentId = compartmentId(firstPattern, firstMolecule);
-                const auto secondCompartmentId = compartmentId(secondPattern, secondMolecule);
-                if (!rateCompartmentId.has_value() ||
-                    rateCompartmentId != secondCompartmentId ||
-                    rateCompartmentId != productCompartmentId)
-                    return "bimolecular physical rates require two reactants and one product in one explicit compartment";
-                if (!validStaticVolume(*rateCompartmentId))
-                    return "bimolecular physical rates require a positive static declared 3D compartment";
-            } else {
-                return "only elementary zero-order, unimolecular, or heterobimolecular physical rate directions are supported";
             }
-            if (model.metadata().unitDefaults.find("timeUnits") ==
-                model.metadata().unitDefaults.end())
-                return "reactant-bearing physical rates require an explicitly declared second time basis";
+            if (!seedComp.has_value() || !validStaticVolume(*seedComp))
+                return "concentration seed species requires a positive static declared 3D compartment";
+            const auto* comp = model.compartment(*seedComp);
+            converted = units::concentrationToItemAmount(
+                *seed.evaluatedAmount, unit, comp->volume, *comp->declaredUnit, baseContext);
+        } else if (unit.dimension.length == 0 && unit.dimension.time == 0 &&
+                   unit.dimension.substance == 1) {
+            converted = units::convertValue(
+                *seed.evaluatedAmount, unit, capabilitiesItemUnit(), baseContext);
+        } else {
+            return "unit-bearing seed species must have substance amount or concentration units";
         }
+        if (!converted || !converted.factor.has_value() ||
+            !std::isfinite(*converted.factor) || *converted.factor < 0.0 ||
+            std::floor(*converted.factor + 0.5) >
+                static_cast<double>(std::numeric_limits<int>::max())) {
+            return "unit-bearing seed species amount cannot be converted to an item count: " +
+                   converted.error;
+        }
+        foundUnitSeed = true;
+    }
+
+    bool foundPhysicalRate = false;
+    const auto checkDirection = [&](const CompiledRuleDirection& direction)
+        -> std::optional<std::string> {
+        const auto molecularity = direction.reactantPatterns.size();
+        const bool zeroOrder = molecularity == 0;
+
+        for (const auto& pattern : direction.reactantPatterns) {
+            for (const auto& molecule : pattern.molecules()) {
+                if (!molecule.moleculeTypeId.has_value())
+                    return "physical rates require resolved molecule types";
+                const auto* type = model.moleculeType(*molecule.moleculeTypeId);
+                if (type == nullptr || type->population)
+                    return "physical rates require item-count molecule reactants";
+            }
+        }
+        for (const auto& pattern : direction.productPatterns) {
+            for (const auto& molecule : pattern.molecules()) {
+                if (!molecule.moleculeTypeId.has_value())
+                    return "physical rates require resolved molecule types";
+                const auto* type = model.moleculeType(*molecule.moleculeTypeId);
+                if (type == nullptr || type->population)
+                    return "physical rates require item-count molecule products";
+            }
+        }
+
         if (!direction.transformationsComplete || !direction.rateLaw.has_value() ||
             direction.rateLaw->kind != RateLawKind::Expression)
             return "only complete elementary expression rate laws are supported";
@@ -275,26 +379,10 @@ std::optional<std::string> nfSimPhysicalUnitBridgeRejection(
         const auto& rate = *direction.rateLaw;
         if (!rate.unit.has_value())
             return "every rate in a unit-bearing NFsim model must have a typed physical unit";
-        if (molecularity == 2 &&
-            (rate.unit->dimension.substance != -1 ||
-             rate.unit->dimension.length != 3 ||
-             rate.unit->dimension.time != -1))
-            return "heterobimolecular physical rates require concentration^-1/time units";
         if (!rate.fullyResolved() || rate.dependencies().requiresRuntimeEvaluation())
             return "dynamic or unresolved elementary rate expressions are unsupported";
-        const auto& resolvedRate = rate.resolvedExpression();
-        if (resolvedRate.kind == ResolvedExpressionKind::ParameterRef) {
-            if (!resolvedRate.symbol.has_value())
-                return "physical rates require a direct numeric parameter or literal";
-            const auto* parameter = model.parameter(
-                ParameterId::fromDenseIndex(resolvedRate.symbol->index));
-            if (parameter == nullptr ||
-                parameter->expression.kind != ResolvedExpressionKind::Number)
-                return "physical rates cannot use compound parameter expressions or aliases";
-        } else if (resolvedRate.kind != ResolvedExpressionKind::Number) {
-            return "physical rates require a direct numeric parameter or literal";
-        }
 
+        const auto& resolvedRate = rate.resolvedExpression();
         std::unordered_set<std::size_t> activeParameters;
         std::unordered_set<std::size_t> activeFunctions;
         if (expressionDependsOnTime(model, resolvedRate, activeParameters,
@@ -306,10 +394,16 @@ std::optional<std::string> nfSimPhysicalUnitBridgeRejection(
                 return "physical rates may depend only on constant parameters";
             const auto* parameter = model.parameter(
                 ParameterId::fromDenseIndex(reference.index));
-            if (parameter == nullptr || !parameter->constantValue.has_value() ||
+            if (parameter == nullptr || parameter->timeDependent ||
+                !parameter->constantValue.has_value() ||
                 !std::isfinite(*parameter->constantValue))
                 return "physical rates may depend only on finite constant parameters";
         }
+
+        const auto authoredRate = evaluateStaticRateExpression(model, resolvedRate);
+        if (!authoredRate.has_value() || !std::isfinite(*authoredRate) ||
+            *authoredRate < 0.0)
+            return "physical rates require a finite non-negative constant expression";
 
         auto context = baseContext;
         if (zeroOrder) {
@@ -318,55 +412,91 @@ std::optional<std::string> nfSimPhysicalUnitBridgeRejection(
             for (const auto& pattern : direction.productPatterns) {
                 for (const auto& molecule : pattern.molecules()) {
                     ++productMoleculeCount;
-                    auto compartmentId = molecule.compartmentId;
-                    if (!compartmentId.has_value()) compartmentId = pattern.compartmentId();
-                    if (!compartmentId.has_value())
+                    auto compId = compartmentId(pattern, molecule);
+                    if (!compId.has_value())
                         return "zero-order products require one explicit declared 3D compartment";
                     if (productCompartmentId.has_value() &&
-                        *productCompartmentId != *compartmentId)
+                        *productCompartmentId != *compId)
                         return "zero-order products in multiple compartments are ambiguous";
-                    productCompartmentId = *compartmentId;
+                    productCompartmentId = *compId;
                 }
             }
             if (productMoleculeCount == 0 || !productCompartmentId.has_value())
                 return "zero-order physical rates require at least one product molecule";
-
-            const auto* compartment = model.compartment(*productCompartmentId);
-            if (compartment == nullptr || compartment->dimension != 3 ||
-                compartment->volumeTimeDependent ||
-                !std::isfinite(compartment->volume) || compartment->volume <= 0.0 ||
-                !compartment->declaredUnit.has_value() ||
-                compartment->declaredUnit->dimension.length != 3 ||
-                compartment->declaredUnit->dimension.substance != 0 ||
-                compartment->declaredUnit->dimension.time != 0)
+            if (!validStaticVolume(*productCompartmentId))
                 return "zero-order products require a positive static declared 3D volume with volume units";
 
+            const auto* compartment = model.compartment(*productCompartmentId);
             context.compartmentVolume = compartment->volume;
             context.volumeUnit = compartment->declaredUnit;
-        } else if (molecularity == 2) {
-            const auto* compartment = model.compartment(*rateCompartmentId);
+        } else if (molecularity == 1) {
+            for (const auto& pattern : direction.reactantPatterns) {
+                for (const auto& molecule : pattern.molecules()) {
+                    const auto compId = compartmentId(pattern, molecule);
+                    if (!model.compartments().empty() && !compId.has_value())
+                        return "unimolecular physical rates require explicit compartments when compartments are declared";
+                    if (compId.has_value() && !validStaticVolume(*compId))
+                        return "unimolecular physical rates require a positive static declared 3D compartment";
+                }
+            }
+            for (const auto& pattern : direction.productPatterns) {
+                for (const auto& molecule : pattern.molecules()) {
+                    const auto compId = compartmentId(pattern, molecule);
+                    if (!model.compartments().empty() && !compId.has_value())
+                        return "unimolecular physical rates require explicit compartments when compartments are declared";
+                    if (compId.has_value() && !validStaticVolume(*compId))
+                        return "unimolecular physical rates require a positive static declared 3D compartment for products";
+                }
+            }
+        } else {
+            std::optional<CompartmentId> sharedReactantCompartment;
+            for (const auto& pattern : direction.reactantPatterns) {
+                for (const auto& molecule : pattern.molecules()) {
+                    const auto compId = compartmentId(pattern, molecule);
+                    if (!compId.has_value())
+                        return "multi-reactant physical rates require reactants in one explicit declared 3D compartment";
+                    if (sharedReactantCompartment.has_value() &&
+                        *sharedReactantCompartment != *compId)
+                        return "multi-reactant physical rates spanning multiple compartments are ambiguous";
+                    sharedReactantCompartment = *compId;
+                }
+            }
+            if (!sharedReactantCompartment.has_value() ||
+                !validStaticVolume(*sharedReactantCompartment))
+                return "multi-reactant physical rates require a positive static declared 3D compartment";
+            for (const auto& pattern : direction.productPatterns) {
+                for (const auto& molecule : pattern.molecules()) {
+                    const auto compId = compartmentId(pattern, molecule);
+                    if (compId.has_value() && !validStaticVolume(*compId))
+                        return "multi-reactant physical rates require positive static declared 3D compartments";
+                }
+            }
+            const auto* compartment = model.compartment(*sharedReactantCompartment);
             context.compartmentVolume = compartment->volume;
             context.volumeUnit = compartment->declaredUnit;
         }
+
         const auto factor = units::stochasticRateFactor(
             *rate.unit, molecularity, context);
         if (!factor || !factor.factor.has_value() || !std::isfinite(*factor.factor))
             return "physical rate unit cannot be converted to a count rate: " + factor.error;
-        double authoredRate = resolvedRate.numberValue;
-        if (resolvedRate.kind == ResolvedExpressionKind::ParameterRef) {
-            const auto* parameter = model.parameter(
-                ParameterId::fromDenseIndex(resolvedRate.symbol->index));
-            if (parameter == nullptr || !parameter->constantValue.has_value())
-                return "physical rates require a finite direct parameter value";
-            authoredRate = *parameter->constantValue;
-        }
-        const double countRate = authoredRate * *factor.factor;
+        const double countRate = *authoredRate * *factor.factor;
         if (!std::isfinite(countRate) || countRate < 0.0)
             return "converted physical count rate must be finite and non-negative";
         foundPhysicalRate = true;
+        return std::nullopt;
+    };
+
+    for (const auto& rule : model.rules()) {
+        if (const auto rejection = checkDirection(rule.forward()))
+            return rejection;
+        if (rule.reverse().has_value()) {
+            if (const auto rejection = checkDirection(*rule.reverse()))
+                return rejection;
+        }
     }
 
-    if (!foundPhysicalRate)
+    if (!foundPhysicalRate && !foundUnitSeed)
         return "no supported static elementary physical rate is present";
     return std::nullopt;
 }

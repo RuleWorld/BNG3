@@ -2607,6 +2607,233 @@ end reaction rules
     assert(wsRule.actions[0].site == 1); // Divergence detected!
 }
 
+void executesEnergyModulatedArrheniusBindingAndDynamicFunctionEnergy() {
+    // 1. Bidirectional Arrhenius binding/unbinding with static bond energy G_bind = -1.0:
+    //    k_fwd = exp(-(Ea + phi * G_bind)) = exp(-(1 - 0.5)) = exp(-0.5)
+    //    k_rev = exp(-(Ea + (phi - 1) * G_bind)) = exp(-(1 + 0.5)) = exp(-1.5)
+    //    For 1 A and 1 B, two-state CTMC with detailed balance k_fwd/k_rev = exp(-G_bind) = exp(1).
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin parameters
+  phi 0.5
+  Ea 1.0
+  G_bind -1.0
+end parameters
+begin molecule types
+  A(b)
+  B(a)
+end molecule types
+begin seed species
+  A(b) 1
+  B(a) 1
+end seed species
+begin energy patterns
+  ep_bond: A(b!1).B(a!1) G_bind
+end energy patterns
+begin observables
+  Molecules FreeA A(b)
+  Molecules BoundAB A(b!1).B(a!1)
+end observables
+begin reaction rules
+  bind: A(b) + B(a) <-> A(b!1).B(a!1) Arrhenius(phi, Ea), Arrhenius(phi, Ea)
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(lowered.ok());
+    assert(lowered.model.expanded_rules.size() == 2);
+    const double kf = std::exp(-0.5);
+    const double kr = std::exp(-1.5);
+    assert(std::abs(lowered.model.expanded_rules[0].rate - kf) < 1e-12);
+    assert(std::abs(lowered.model.expanded_rules[1].rate - kr) < 1e-12);
+
+    const double T = 2.0;
+    const double expectedBound = kf / (kf + kr) * (1.0 - std::exp(-(kf + kr) * T));
+    constexpr std::size_t runCount = 256;
+    std::size_t boundCount = 0;
+    nfnext::BngExecutionRequest req;
+    req.sample_times = {0.0, T};
+    for (std::size_t run = 0; run < runCount; ++run) {
+        req.seed = 9001 + run;
+        const auto res = nfnext::executeFromBioNetGen(semantic, req);
+        assert(res.rows.back()[1] + res.rows.back()[2] == 1.0);
+        if (res.rows.back()[2] > 0.5) ++boundCount;
+    }
+    const double empirical = static_cast<double>(boundCount) / runCount;
+    const double se = std::sqrt(expectedBound * (1.0 - expectedBound) / runCount);
+    assert(std::abs(empirical - expectedBound) <= 4.5 * se);
+
+    // 2. Dynamic zero-argument user function inside an energy pattern expression
+    //    and allosteric state-conditioned energy pattern A(x~p, y~on) G_coop.
+    const auto allosteric = bng::parser::parseModel(R"BNGL(
+begin parameters
+  phi 0.5
+  Ea 1.0
+  G0 -0.2
+end parameters
+begin molecule types
+  A(x~u~p,y~off~on)
+  B()
+end molecule types
+begin seed species
+  A(x~u,y~on) 1
+  A(x~u,y~off) 1
+  B() 10
+end seed species
+begin observables
+  Molecules NB B()
+  Molecules P_on A(x~p,y~on)
+  Molecules P_off A(x~p,y~off)
+end observables
+begin functions
+  coop_energy() = G0 * NB()
+end functions
+begin energy patterns
+  ep_coop: A(x~p,y~on) coop_energy()
+end energy patterns
+begin reaction rules
+  phos: A(x~u) -> A(x~p) Arrhenius(phi, Ea)
+end reaction rules
+)BNGL");
+    assert(allosteric);
+    const bng::compile::CompiledModel semanticAllo(*allosteric);
+    assert(semanticAllo.valid());
+    const auto loweredAllo = nfnext::lowerFromBioNetGen(semanticAllo);
+    assert(loweredAllo.ok());
+    // Must expand into 2 state-conditioned variants (y~off and y~on):
+    //   y~off: deltaG = 0 -> rate = exp(-1.0)
+    //   y~on:  deltaG = -0.2*10 = -2.0 -> rate = exp(-(1.0 + 0.5*(-2.0))) = exp(0) = 1.0
+    assert(loweredAllo.model.expanded_rules.size() == 2);
+    bool sawStaticOff = false, sawDynamicOn = false;
+    for (const auto& er : loweredAllo.model.expanded_rules) {
+        if (er.rate_law.kind == nfnext::RateLawKind::Elementary &&
+            std::abs(er.rate - std::exp(-1.0)) < 1e-12) sawStaticOff = true;
+        if (er.rate_law.kind == nfnext::RateLawKind::Function &&
+            er.rate_law.expression.find("observable_") != std::string::npos) sawDynamicOn = true;
+    }
+    assert(sawStaticOff && sawDynamicOn);
+
+    // Execute ensemble and confirm y~on phosphorylates faster than y~off.
+    std::size_t onPhos = 0, offPhos = 0;
+    req.sample_times = {0.0, 1.0};
+    for (std::size_t run = 0; run < 200; ++run) {
+        req.seed = 12000 + run;
+        const auto res = nfnext::executeFromBioNetGen(semanticAllo, req);
+        if (res.rows.back()[2] > 0.5) ++onPhos;
+        if (res.rows.back()[3] > 0.5) ++offPhos;
+    }
+    const double pOnExpected = 1.0 - std::exp(-1.0);
+    const double pOffExpected = 1.0 - std::exp(-std::exp(-1.0));
+    assert(std::abs(static_cast<double>(onPhos) / 200.0 - pOnExpected) < 0.15);
+    assert(std::abs(static_cast<double>(offPhos) / 200.0 - pOffExpected) < 0.15);
+    assert(onPhos > offPhos);
+}
+
+void moleculeCompartmentPopulationMapAndTotalRate() {
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin compartments
+  cell 3 1
+end compartments
+begin molecule types
+  A(x)
+end molecule types
+begin population types
+  Pool()
+end population types
+begin seed species
+  A(x)@cell 5
+end seed species
+begin observables
+  Molecules CellPool @cell:Pool()
+  Molecules CellA A(x)@cell
+end observables
+begin population maps
+  cell_map: A(x)@cell -> Pool() 100
+end population maps
+begin reaction rules
+  decay_pop: @cell:Pool() -> 0 0.5 TotalRate
+end reaction rules
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    nfnext::BngExecutionRequest req;
+    req.sample_times = {0.0, 0.2, 5.0};
+    req.seed = 42;
+    const auto res = nfnext::executeFromBioNetGen(semantic, req);
+    // At t=0: CellPool=0, CellA=5; particles quickly map into @cell:Pool() and then decay.
+    assert(res.rows[0][1] == 0.0 && res.rows[0][2] == 5.0);
+    assert(res.rows[1][2] == 0.0);
+    assert(res.rows[1][1] >= 1.0);
+    assert(res.rows[2][1] < 5.0);
+}
+
+void executesPhysicalUnitsTimeBasisHigherOrderAndConcentrationSeeds() {
+    // Minute time basis + concentration seed + trimolecular (order 3) rate:
+    // V = 1 fL, N_A = 6.02214076e23 => N_A * V = 6.02214076e8 items/M.
+    // A, B, C seeded via concentration = 1/N_A/V = 1.660538863127e-9 M => 1 item each!
+    // k3 = 60 * (N_A * V)^2 [M^-2/minute] => k3_count = 1.0 [item^-2/second].
+    // With 1 A, 1 B, 1 C, first-event survival at t=1 s is exp(-1).
+    const auto ast = bng::parser::parseModel(R"BNGL(
+begin model
+  setOption("units", "strict")
+  setOption("NumberPerQuantityUnit", 6.02214076e23)
+  begin units
+    timeunits minute
+  end units
+  begin parameters
+    k3 = 2.175970761152e19 [M^-2/minute]
+    Vc = 1 [fL]
+  end parameters
+  begin compartments
+    cell 3 Vc [fL]
+  end compartments
+  begin molecule types
+    A()
+    B()
+    C()
+    D()
+  end molecule types
+  begin seed species
+    A()@cell 1.660538863127e-9 [M]
+    B()@cell 1.660538863127e-9 [M]
+    C()@cell 1 [molecule]
+    D()@cell 0
+  end seed species
+  begin observables
+    Molecules A_obs A()@cell
+    Molecules D_obs D()@cell
+  end observables
+  begin reaction rules
+    tri: A()@cell + B()@cell + C()@cell -> D()@cell k3
+  end reaction rules
+end model
+)BNGL");
+    assert(ast);
+    const bng::compile::CompiledModel semantic(*ast);
+    assert(semantic.valid());
+    const auto lowered = nfnext::lowerFromBioNetGen(semantic);
+    assert(lowered.ok());
+    assert(lowered.model.expanded_rules.size() == 1);
+    assert(std::abs(lowered.model.expanded_rules.front().rate - 1.0) < 1e-6);
+
+    constexpr std::size_t n = 256;
+    std::size_t survived = 0;
+    nfnext::BngExecutionRequest req;
+    req.sample_times = {0.0, 1.0};
+    for (std::size_t seed = 0; seed < n; ++seed) {
+        req.seed = 31415 + seed;
+        const auto res = nfnext::executeFromBioNetGen(semantic, req);
+        assert(res.rows[0][1] == 1.0 && res.rows[0][2] == 0.0);
+        assert(res.rows[1][1] + res.rows[1][2] == 1.0);
+        if (res.rows[1][1] > 0.5) ++survived;
+    }
+    const double p = std::exp(-1.0);
+    const double se = std::sqrt(p * (1.0 - p) / n);
+    assert(std::abs(static_cast<double>(survived) / n - p) <= 4.5 * se);
+}
+
 } // namespace
 
 int main() {
@@ -2745,6 +2972,9 @@ end reaction rules
     lowersFilterPatterns();
     cacheRoundTripsNewModelFields();
     lowersStateChangeWithContextualSiteAndObservable();
+    executesEnergyModulatedArrheniusBindingAndDynamicFunctionEnergy();
+    moleculeCompartmentPopulationMapAndTotalRate();
+    executesPhysicalUnitsTimeBasisHigherOrderAndConcentrationSeeds();
 
     std::cout << "BNG -> NFnext lowering bridge: PASS\n";
     return 0;

@@ -2,6 +2,7 @@
 
 #include "compile/CompiledModel.hpp"
 #include "compile/energy/DrivenEnergy.hpp"
+#include "units/Unit.hpp"
 #include "compartment_size_expression.hh"
 #include "NFcore/NFcore.hh"
 #include "NFcore/compartment.hh"
@@ -91,7 +92,8 @@ NFcore::Compartment* compiledCompartment(
     return name.empty() ? nullptr : system.getCompartment(name);
 }
 
-bool seedCount(const bng::compile::CompiledSeed& seed,
+bool seedCount(const bng::compile::CompiledModel& model,
+               const bng::compile::CompiledSeed& seed,
                const std::map<std::string, double>& overrides,
                int& count, std::string& diagnostic) {
     auto found = overrides.find(seed.sourcePattern);
@@ -100,19 +102,73 @@ bool seedCount(const bng::compile::CompiledSeed& seed,
         if (found == overrides.end())
             found = overrides.find("@" + seed.compartment + "::" + seed.sourcePattern);
     }
-    const auto amount = found == overrides.end()
-                            ? seed.evaluatedAmount
-                            : std::optional<double>(found->second);
+    std::optional<double> amount = found == overrides.end()
+                                       ? seed.evaluatedAmount
+                                       : std::optional<double>(found->second);
     if (!amount.has_value() || !std::isfinite(*amount) || *amount < 0.0) {
         diagnostic = "seed amount must resolve to a nonnegative number";
         return false;
+    }
+    if (found == overrides.end() && seed.declaredUnit.has_value()) {
+        bng::units::ConversionContext context;
+        if (const auto option = model.metadata().options.find("NumberPerQuantityUnit");
+            option != model.metadata().options.end()) {
+            try {
+                std::size_t consumed = 0;
+                const double value = std::stod(option->second, &consumed);
+                if (consumed == option->second.size() && std::isfinite(value) && value > 0.0)
+                    context.numberPerQuantityUnit = value;
+            } catch (...) {
+            }
+        }
+        const auto& unit = *seed.declaredUnit;
+        bng::units::ConversionResult converted;
+        if (unit.dimension.length == -3 && unit.dimension.time == 0) {
+            std::optional<bng::compile::CompartmentId> compId = seed.compartmentId;
+            if (!compId.has_value()) compId = seed.pattern.compartmentId();
+            if (!compId.has_value()) {
+                for (const auto& molecule : seed.pattern.molecules()) {
+                    if (!molecule.compartmentId.has_value()) continue;
+                    if (compId.has_value() && *compId != *molecule.compartmentId) {
+                        diagnostic = "concentration seed spans multiple compartments";
+                        return false;
+                    }
+                    compId = molecule.compartmentId;
+                }
+            }
+            const auto* comp = compId.has_value() ? model.compartment(*compId) : nullptr;
+            if (comp == nullptr || comp->dimension != 3 || comp->volumeTimeDependent ||
+                !std::isfinite(comp->volume) || comp->volume <= 0.0 ||
+                !comp->declaredUnit.has_value()) {
+                diagnostic = "concentration seed requires a positive static declared 3D compartment";
+                return false;
+            }
+            converted = bng::units::concentrationToItemAmount(
+                *amount, unit, comp->volume, *comp->declaredUnit, context);
+        } else if (unit.dimension.length == 0 && unit.dimension.time == 0 &&
+                   unit.dimension.substance == 1) {
+            bng::units::Unit item;
+            item.name = "item";
+            item.dimension.substance = 1;
+            item.baseExponents[bng::units::BaseUnit::Item] = 1;
+            converted = bng::units::convertValue(*amount, unit, item, context);
+        } else {
+            diagnostic = "unit-bearing seed species must have amount or concentration units";
+            return false;
+        }
+        if (!converted || !converted.factor.has_value() ||
+            !std::isfinite(*converted.factor) || *converted.factor < 0.0) {
+            diagnostic = "unit-bearing seed conversion failed: " + converted.error;
+            return false;
+        }
+        amount = *converted.factor;
     }
     const double rounded = std::floor(*amount + 0.5);
     if (rounded > static_cast<double>(std::numeric_limits<int>::max())) {
         diagnostic = "seed amount exceeds NFsim's integer range";
         return false;
     }
-    if (rounded != *amount) {
+    if (std::abs(rounded - *amount) > 1e-9) {
         std::cerr << "Warning: the amount of species " << seed.sourcePattern
                   << " (" << *amount << ") is not a whole number; rounded to "
                   << static_cast<int>(rounded) << ".\n";
@@ -867,7 +923,7 @@ bool addSpeciesFromCompiledWithOverrides(
 
         int count = 0;
         std::string diagnostic;
-        if (!seedCount(seed, seedAmountOverrides, count, diagnostic)) {
+        if (!seedCount(model, seed, seedAmountOverrides, count, diagnostic)) {
             std::cerr << "[nfsim/compiled] cannot materialize seed '"
                       << seed.sourcePattern << "': " << diagnostic << "\n";
             return false;

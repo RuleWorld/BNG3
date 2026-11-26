@@ -62,6 +62,7 @@
 #include "nfsim/NFinput/NFinput.hh"
 #include "nfsim/NFinput/NFinput_fromAst.hh"
 #include "nfsim/NFcore/NFcore.hh"
+#include "nfnext/from_bng.hpp"
 
 #if defined(_WIN32) || defined(__WIN32__) || defined(__CYGWIN__)
 #include <process.h>
@@ -135,7 +136,10 @@ bool isHybridNfsimAction(const std::string& requested) {
         if (!std::isspace(character))
             compact.push_back(static_cast<char>(std::tolower(character)));
     }
-    for (const std::string option : {"method=>nf", "method=>\"nf\"", "method=>'nf'"}) {
+    for (const std::string option : {
+             "method=>nf", "method=>\"nf\"", "method=>'nf'",
+             "method=>nfnext", "method=>\"nfnext\"", "method=>'nfnext'",
+             "method=>nfcore", "method=>\"nfcore\"", "method=>'nfcore'"}) {
         std::size_t position = compact.find(option);
         while (position != std::string::npos && position != 0 &&
                compact[position - 1] != '{' && compact[position - 1] != ',') {
@@ -1498,14 +1502,23 @@ std::string resolveSimulationMethod(const ast::Action& action) {
     if (method == "pla") {
         return "pla";
     }
-    if (method == "nf") {
-        return "nf";
+    if (method == "nf" || method == "nfnext" || method == "nfcore") {
+        return method;
+    }
+    if (method == "nfcore2") {
+        throw std::runtime_error(
+            "simulate: method='nfcore2' is an unpromoted prototype engine; "
+            "use method='nfcore' for NFcore or method='nf'/'nfnext' for NFnext");
     }
     if (method == "cvode" || method == "ssa" || method == "euler" ||
         method == "rk4" || method == "psa") {
         return method;
     }
     throw std::runtime_error("simulate: unsupported simulation method: " + method);
+}
+
+bool isNetworkFreeMethod(const std::string& method) {
+    return method == "nf" || method == "nfnext" || method == "nfcore";
 }
 
 std::optional<std::size_t> findSpeciesIndex(const engine::GeneratedNetwork& network, const std::string& target) {
@@ -2776,7 +2789,174 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
     };
 
     std::unique_ptr<NFcore::System> hybridStage;
-    const auto runNfSimulation = [&](const ast::Action& action) {
+    std::shared_ptr<nfnext::BngExecutionState> nfnextStage;
+    const auto resetNfStages = [&]() {
+        hybridStage.reset();
+        nfnextStage.reset();
+    };
+    const auto runNfnextSimulation = [&](const ast::Action& action) {
+        const auto printActiveText = lowercase(
+            stripQuotes(readArgument(action, "print_n_species_active", "0")));
+        if (printActiveText != "" && printActiveText != "0") {
+            throw std::runtime_error(
+                "print_n_species_active is currently supported only for ODE and single-trajectory SSA methods");
+        }
+        if (model.getEventFormatVersion().has_value()) {
+            throw std::runtime_error(ast::kUnsupportedEventExecutionMessage);
+        }
+        if (!stripQuotes(trim(readArgument(action, "nfsim_exec", ""))).empty()) {
+            throw std::runtime_error("NFnext action does not support 'nfsim_exec'");
+        }
+        for (const char* nfcoreOnlyOption :
+             {"param", "utl", "equil", "gml", "nocslf", "pcg", "notf",
+              "print_functions", "binary_output"}) {
+            const auto rawVal = stripQuotes(trim(readArgument(action, nfcoreOnlyOption, "")));
+            if (!rawVal.empty() && rawVal != "0" && lowercase(rawVal) != "false") {
+                throw std::runtime_error(
+                    std::string("NFnext action does not support NFcore-only option '") +
+                    nfcoreOnlyOption + "'; use method=>'nfcore' instead");
+            }
+        }
+        const auto prefix = simulationPrefix(action, sourcePath, std::nullopt, &model);
+        const auto continueText = readArgument(action, "continue", "");
+        const bool continueRequested = parseBoolean(continueText);
+        if (continueRequested && !nfnextStage) {
+            throw std::runtime_error("NFnext continuation requires a previous final state");
+        }
+        const bool resuming = continueRequested && nfnextStage != nullptr;
+        const auto tStartText = stripQuotes(readArgument(action, "t_start", ""));
+        const double startTime = tStartText.empty()
+            ? (resuming ? lastSimulationEndTime : 0.0)
+            : parseScalarValue(tStartText, model);
+        if (!std::isfinite(startTime) || startTime < 0.0) {
+            throw std::runtime_error("NFnext 't_start' must be finite and non-negative");
+        }
+        const auto tEndRaw = stripQuotes(readArgument(action, "t_end", ""));
+        const auto nStepsText = stripQuotes(readArgument(
+            action, "n_steps", readArgument(action, "n_output_steps", "20")));
+        const auto sampleTimesText = readArgument(action, "sample_times", "");
+        std::vector<double> sampleTimes;
+        if (!trim(stripQuotes(sampleTimesText)).empty()) {
+            sampleTimes = parseSampleTimes(sampleTimesText, model);
+        }
+        const double endTime = tEndRaw.empty()
+            ? (!sampleTimes.empty() ? sampleTimes.back() : 10.0)
+            : parseScalarValue(tEndRaw, model);
+        if (!std::isfinite(endTime) || endTime < startTime) {
+            throw std::runtime_error(
+                "NFnext 't_end' must be finite and greater than or equal to t_start");
+        }
+        if (!sampleTimes.empty()) {
+            if (sampleTimes.front() < startTime || sampleTimes.back() > endTime) {
+                throw std::runtime_error(
+                    "NFnext sample_times must lie between t_start and t_end");
+            }
+            if (sampleTimes.back() < endTime) {
+                sampleTimes.push_back(endTime);
+            }
+        } else {
+            const long nSteps = std::stol(nStepsText);
+            if (nSteps < 0 || (nSteps == 0 && endTime > startTime)) {
+                throw std::runtime_error("NFnext 'n_steps' must be positive");
+            }
+            sampleTimes.reserve(static_cast<std::size_t>(nSteps) + 1);
+            if (nSteps == 0) {
+                sampleTimes.push_back(startTime);
+            } else {
+                const double dt = (endTime - startTime) / static_cast<double>(nSteps);
+                for (long step = 0; step <= nSteps; ++step) {
+                    const double t = (step == nSteps)
+                        ? endTime
+                        : startTime + dt * static_cast<double>(step);
+                    sampleTimes.push_back(t);
+                }
+            }
+        }
+
+        const auto seedText = stripQuotes(readArgument(action, "seed", ""));
+        const auto verboseFlag = lowercase(stripQuotes(readArgument(action, "verbose", "0")));
+        const bool nfVerbose = verbose || verboseFlag == "1" || verboseFlag == "true";
+        const bool getFinalState = parseBoolean(
+            readArgument(action, "get_final_state", "1"), true);
+
+        nfnext::BngExecutionRequest req;
+        req.sample_times = sampleTimes;
+        req.start_time = startTime;
+        req.retain_state = true;
+        if (!seedText.empty()) {
+            req.seed = parseLegacyNfSeed(seedText);
+        }
+        if (resuming) {
+            req.continuation = nfnextStage;
+        } else {
+            nfnextStage.reset();
+        }
+        const auto maxEventsText = stripQuotes(readArgument(action, "max_events", ""));
+        if (!maxEventsText.empty()) {
+            const long long val = std::stoll(maxEventsText);
+            if (val <= 0) throw std::runtime_error("NFnext 'max_events' must be positive");
+            req.max_events = static_cast<std::uint64_t>(val);
+        }
+        const auto maxParticlesText = stripQuotes(readArgument(action, "max_particles", ""));
+        if (!maxParticlesText.empty()) {
+            const long long val = std::stoll(maxParticlesText);
+            if (val <= 0) throw std::runtime_error("NFnext 'max_particles' must be positive");
+            req.max_particles = static_cast<std::size_t>(val);
+        }
+
+        if (nfVerbose) {
+            std::cerr << "[bng_cpp] Running NFnext in-process from compiled model\n";
+        }
+        const bng::compile::CompiledModel compiled(model);
+        const auto result = nfnext::executeFromBioNetGen(compiled, req);
+
+        std::filesystem::path outputPrefix(prefix);
+        if (!outputPrefix.is_absolute()) {
+            outputPrefix = sourcePath.parent_path() / outputPrefix;
+        }
+        const auto gdatPath = outputPrefix.string() + ".gdat";
+        {
+            std::ofstream gdatOut(gdatPath);
+            if (!gdatOut) {
+                throw std::runtime_error("Failed to open NFnext gdat output: " + gdatPath);
+            }
+            gdatOut << "#";
+            for (const auto& col : result.columns) {
+                gdatOut << std::setw(20) << col;
+            }
+            gdatOut << '\n';
+            gdatOut << std::scientific << std::setprecision(12);
+            for (const auto& row : result.rows) {
+                for (std::size_t col = 0; col < row.size(); ++col) {
+                    if (col > 0) gdatOut << ' ';
+                    gdatOut << std::setw(20) << row[col];
+                }
+                gdatOut << '\n';
+            }
+            if (!gdatOut) {
+                throw std::runtime_error("Failed to write NFnext gdat output: " + gdatPath);
+            }
+        }
+        if (getFinalState && result.final_state) {
+            const auto speciesPath = outputPrefix.string() + ".species";
+            std::ofstream speciesOut(speciesPath);
+            if (!speciesOut) {
+                throw std::runtime_error("Failed to open NFnext species output: " + speciesPath);
+            }
+            speciesOut << nfnext::formatFinalSpecies(*result.final_state);
+            if (!speciesOut) {
+                throw std::runtime_error("Failed to write NFnext species output: " + speciesPath);
+            }
+        }
+        nfnextStage = result.final_state;
+        hybridStage.reset();
+        lastSimulationEndTime = sampleTimes.back();
+        if (nfVerbose) {
+            std::cerr << "[bng_cpp] NFnext completed. Output: " << gdatPath << "\n";
+        }
+    };
+
+    const auto runNfCoreSimulation = [&](const ast::Action& action) {
         const auto printActiveText = lowercase(
             stripQuotes(readArgument(action, "print_n_species_active", "0")));
         if (printActiveText != "" && printActiveText != "0") {
@@ -3107,6 +3287,130 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             std::cerr << "[bng_cpp] NFSim completed. Output: " << gdatPath << "\n";
         }
         if (modelUsesPopulationTypes && getFinalState) hybridStage = std::move(nfSystem);
+        nfnextStage.reset();
+    };
+
+    const auto runNfSimulation = [&](const ast::Action& action) {
+        const auto actionName = lowercase(action.name);
+        const auto methodArg = lowercase(stripQuotes(trim(readArgument(action, "method", ""))));
+        const auto engineArg = lowercase(stripQuotes(trim(readArgument(action, "engine", ""))));
+        const auto backendArg = lowercase(stripQuotes(trim(readArgument(action, "backend", ""))));
+
+        const auto normalizeNfEngine = [](const std::string& raw, const std::string& key) -> std::string {
+            if (raw.empty()) return {};
+            if (raw == "nfnext") return "nfnext";
+            if (raw == "nfcore" || raw == "nfsim") return "nfcore";
+            if (raw == "nfcore2") {
+                throw std::runtime_error(
+                    key + "='nfcore2' is an unpromoted prototype engine; "
+                    "use 'nfcore' for NFcore or 'nf'/'nfnext' for NFnext");
+            }
+            throw std::runtime_error(
+                "Unsupported network-free " + key + "='" + raw +
+                "'; expected 'nfnext' or 'nfcore'");
+        };
+
+        std::string explicitEngine;
+        if (methodArg == "nfnext" || methodArg == "nfcore" || methodArg == "nfcore2") {
+            explicitEngine = normalizeNfEngine(methodArg, "method");
+        }
+        if (!engineArg.empty()) {
+            const auto selected = normalizeNfEngine(engineArg, "engine");
+            if (!explicitEngine.empty() && explicitEngine != selected) {
+                throw std::runtime_error(
+                    "Conflicting network-free engine selections: method='" +
+                    methodArg + "' vs engine='" + engineArg + "'");
+            }
+            explicitEngine = selected;
+        }
+        if (!backendArg.empty()) {
+            const auto selected = normalizeNfEngine(backendArg, "backend");
+            if (!explicitEngine.empty() && explicitEngine != selected) {
+                throw std::runtime_error(
+                    "Conflicting network-free engine selections: '" +
+                    explicitEngine + "' vs backend='" + backendArg + "'");
+            }
+            explicitEngine = selected;
+        }
+
+        if (explicitEngine == "nfnext") {
+            runNfnextSimulation(action);
+            return;
+        }
+        if (explicitEngine == "nfcore") {
+            runNfCoreSimulation(action);
+            return;
+        }
+
+        // Legacy `simulate_nf` without an explicit engine/backend selector
+        // retains NFcore semantics so existing BNG2/NFsim action scripts,
+        // RNF scripts, traversal limits, and XML/direct env controls stay exact.
+        if (actionName == "simulate_nf") {
+            runNfCoreSimulation(action);
+            return;
+        }
+
+        // Unqualified `simulate({method=>"nf", ...})`: route to NFnext when
+        // no NFcore-only control, NFsim env override, hybrid stage, or network
+        // concentration override requires NFcore, and the compiled model lowers
+        // cleanly to NFnext. Otherwise route to NFcore.
+        const bool hasNfcoreOnlyControl = [&]() {
+            if (std::getenv("BNG_NFSIM_FORCE_XML") != nullptr ||
+                std::getenv("BNG_NFSIM_REQUIRE_DIRECT") != nullptr ||
+                std::getenv("BNG_NFSIM_ALLOW_XML_FALLBACK") != nullptr) {
+                return true;
+            }
+            if (hybridStage != nullptr || network.has_value()) return true;
+            const bool modelUsesPopulationTypes = std::any_of(
+                model.getMoleculeTypes().begin(), model.getMoleculeTypes().end(),
+                [](const ast::MoleculeType& type) { return type.isPopulation(); });
+            if (modelUsesPopulationTypes) return true;
+            for (const char* opt :
+                 {"param", "utl", "equil", "gml", "nocslf", "pcg", "notf",
+                  "print_functions", "binary_output", "complex", "nfsim_exec"}) {
+                const auto val = stripQuotes(trim(readArgument(action, opt, "")));
+                if (!val.empty()) return true;
+            }
+            return false;
+        }();
+
+        if (!hasNfcoreOnlyControl && !model.getEventFormatVersion().has_value()) {
+            const bng::compile::CompiledModel compiled(model);
+            if (compiled.valid()) {
+                const auto lowered = nfnext::lowerFromBioNetGen(compiled);
+                if (lowered.ok()) {
+                    // Check for un-lowered population maps or other lowering gaps
+                    // before dispatching; only fall back to NFcore when NFnext
+                    // declines model support, never on bad user options.
+                    bool hasUnsupportedPopulationMap = false;
+                    if (!compiled.populationMaps().empty()) {
+                        std::set<std::string> loweredMaps;
+                        for (const auto& r : lowered.model.expanded_rules) {
+                            const auto it = r.annotations.find("bng.population_map_index");
+                            if (it != r.annotations.end()) loweredMaps.insert(it->second);
+                        }
+                        for (const auto& pm : compiled.populationMaps()) {
+                            if (!loweredMaps.count(std::to_string(pm.index))) {
+                                hasUnsupportedPopulationMap = true;
+                                break;
+                            }
+                        }
+                    }
+                    bool hasDelay = false;
+                    for (const auto& r : compiled.rules()) {
+                        if (r.delayExpression() || r.resolvedDelayExpression()) {
+                            hasDelay = true;
+                            break;
+                        }
+                    }
+                    if (!hasUnsupportedPopulationMap && !hasDelay) {
+                        runNfnextSimulation(action);
+                        return;
+                    }
+                }
+            }
+        }
+        runNfCoreSimulation(action);
     };
 
     // Execute protocol actions through the same stateful dispatcher used by
@@ -3119,7 +3423,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             throw std::runtime_error("simulate_protocol requires a non-empty protocol block");
         }
 
-        hybridStage.reset();
+        resetNfStages();
         std::size_t compiledActionIndex = model.getActions().size();
         for (const auto& protoAction : protocol) {
             const auto actionIndex = compiledActionIndex++;
@@ -3128,7 +3432,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             const auto protoName = rawProtoName == "simulate_ps" ? std::string("simulate_pla") : rawProtoName;
             if (protoName == "simulate_nf" ||
                 (protoName == "simulate" &&
-                 resolveSimulationMethod(protoAction) == "nf")) {
+                 isNetworkFreeMethod(resolveSimulationMethod(protoAction)))) {
                 ast::Action actualAction = protoAction;
                 if (prefixOverride.has_value()) {
                     actualAction.arguments["prefix"] = prefixOverride->string();
@@ -3188,7 +3492,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             if (protoName == "setconcentration" || protoName == "addconcentration" ||
                 protoName == "add_concentration") {
-                hybridStage.reset();
+                resetNfStages();
                 ensureNetwork();
                 const auto* setOpt = setConcentrationOptionsAt(actionIndex);
                 const auto* addOpt = addConcentrationOptionsAt(actionIndex);
@@ -3276,7 +3580,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
             }
 
             if (protoName == "resetconcentrations" || protoName == "reset_concentrations") {
-                hybridStage.reset();
+                resetNfStages();
                 ensureNetwork();
                 network->resetSimulationSession();
                 lastSimulationState.clear();
@@ -3333,7 +3637,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "readfile") {
-            hybridStage.reset();
+            resetNfStages();
             auto filepath = stripQuotes(readArgument(action, "file", ""));
             if (filepath.empty()) {
                 filepath = stripQuotes(readArgument(action, "target",
@@ -3425,7 +3729,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "include_model") {
-            hybridStage.reset();
+            resetNfStages();
             const auto filepath = stripQuotes(readArgument(action, "file",
                 stripQuotes(readArgument(action, "value", ""))));
             if (filepath.empty()) {
@@ -3450,7 +3754,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "include_network") {
-            hybridStage.reset();
+            resetNfStages();
             const auto filepath = stripQuotes(readArgument(action, "file",
                 stripQuotes(readArgument(action, "value", ""))));
             if (filepath.empty()) {
@@ -3675,7 +3979,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "setconcentration") {
-            hybridStage.reset();
+            resetNfStages();
             ensureNetwork();
             const auto target = readArgument(action, "target", "");
             const auto valueText = readArgument(action, "value", "");
@@ -3698,7 +4002,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "resetconcentrations") {
-            hybridStage.reset();
+            resetNfStages();
             ensureNetwork();
             const auto label = stripQuotes(readArgument(action, "value", "default"));
             const auto found = savedConcentrations.find(label);
@@ -3724,7 +4028,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "addconcentration") {
-            hybridStage.reset();
+            resetNfStages();
             ensureNetwork();
             const auto target = readArgument(action, "target", "");
             const auto valueText = readArgument(action, "value", "");
@@ -3738,7 +4042,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "simulate_nf" ||
-            (actionName == "simulate" && resolveSimulationMethod(action) == "nf")) {
+            (actionName == "simulate" && isNetworkFreeMethod(resolveSimulationMethod(action)))) {
             runNfSimulation(action);
             continue;
         }
@@ -3834,7 +4138,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
 
             const auto method = lowercase(stripQuotes(
                 readArgument(action, "method", "ode")));
-            const bool nfScan = method == "nf";
+            const bool nfScan = isNetworkFreeMethod(method);
             const auto parallelText = readArgument(action, "parallel", "");
             std::size_t parallelWorkers = 0;
             if (!trim(stripQuotes(parallelText)).empty()) {
@@ -3931,7 +4235,12 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
                     runProtocol(localPrefix);
                 } else if (nfScan) {
                     ast::Action nfAction = action;
-                    nfAction.name = "simulate_nf";
+                    if (method == "nfnext" || method == "nfcore") {
+                        nfAction.name = "simulate";
+                        nfAction.arguments["method"] = method;
+                    } else {
+                        nfAction.name = "simulate_nf";
+                    }
                     nfAction.arguments["prefix"] = localPrefix.string();
                     nfAction.arguments.erase("suffix");
                     runNfSimulation(nfAction);
@@ -5204,7 +5513,7 @@ void ActionDispatch::execute(ast::Model& model, const std::filesystem::path& sou
         }
 
         if (actionName == "readnfspecies") {
-            hybridStage.reset();
+            resetNfStages();
             auto filepath = stripQuotes(readArgument(action, "file", ""));
             if (filepath.empty()) {
                 filepath = stripQuotes(readArgument(action, "target",

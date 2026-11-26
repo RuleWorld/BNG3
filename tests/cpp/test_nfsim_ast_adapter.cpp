@@ -3596,29 +3596,12 @@ TEST_CASE("NFsim physical bimolecular capability refuses unsupported contexts") 
         "    other 3 2 [fL]\n"
         "  end compartments\n";
     const std::vector<std::shared_ptr<bng::ast::Model>> unsupportedModels {
-        // Repeated reactant types need an independently qualified symmetry law.
-        modelFor(secondBasis, rateAndVolume, commonVolume,
-                 "A()@cell + A()@cell", "C()@cell"),
         // A concentration rate cannot infer a volume from unplaced patterns.
         modelFor(secondBasis, rateAndVolume, "",
                  "A() + B()", "C()"),
-        // Reactants and product must share one explicitly declared volume.
+        // Reactants must share one explicitly declared volume.
         modelFor(secondBasis, rateAndVolume, commonVolume,
                  "A()@cell + B()@other", "C()@cell"),
-        // The bridge accepts only a direct numeric parameter or literal.
-        modelFor(secondBasis,
-                 "    kbase = 3.01107038e8 [M^-1/second]\n"
-                 "    k = 2*kbase [M^-1/second]\n"
-                 "    Vc = 1 [fL]\n",
-                 commonVolume, "A()@cell + B()@cell", "C()@cell"),
-        // NFsim's bridge requires an explicitly declared second time basis.
-        modelFor("", rateAndVolume, commonVolume,
-                 "A()@cell + B()@cell", "C()@cell"),
-        // A non-second time basis is not silently treated as seconds.
-        modelFor("  begin units\n    timeunits minute\n  end units\n",
-                 "    k = 6.02214076e8 [M^-1/minute]\n"
-                 "    Vc = 1 [fL]\n",
-                 commonVolume, "A()@cell + B()@cell", "C()@cell"),
     };
 
     for (std::size_t index = 0; index < unsupportedModels.size(); ++index) {
@@ -3638,9 +3621,46 @@ TEST_CASE("NFsim physical bimolecular capability refuses unsupported contexts") 
         CHECK(unavailableReason.find("physical-unit") != std::string::npos);
         delete system;
     }
+
+    // Homobimolecular, compound-parameter, omitted-timeUnits, and non-second
+    // time-basis bimolecular rules are now lowered with exact second-basis count hazards.
+    const std::vector<std::pair<std::shared_ptr<bng::ast::Model>, double>> supportedModels {
+        // Homobimolecular A+A->C with k=6.02214076e8 [M^-1/s], V=1 fL -> k_count=1, sym=0.5
+        {modelFor(secondBasis, rateAndVolume, commonVolume,
+                  "A()@cell + A()@cell", "C()@cell"), 0.5},
+        // Compound parameter k=2*kbase -> k_count=1.0
+        {modelFor(secondBasis,
+                  "    kbase = 3.01107038e8 [M^-1/second]\n"
+                  "    k = 2*kbase [M^-1/second]\n"
+                  "    Vc = 1 [fL]\n",
+                  commonVolume, "A()@cell + B()@cell", "C()@cell"), 1.0},
+        // Omitted timeUnits with explicit [M^-1/second]
+        {modelFor("", rateAndVolume, commonVolume,
+                  "A()@cell + B()@cell", "C()@cell"), 1.0},
+        // Minute time basis converted to seconds: 6.02214076e8 [M^-1/minute] -> 1/60 [item^-1/s]
+        {modelFor("  begin units\n    timeunits minute\n  end units\n",
+                  "    k = 6.02214076e8 [M^-1/minute]\n"
+                  "    Vc = 1 [fL]\n",
+                  commonVolume, "A()@cell + B()@cell", "C()@cell"), 1.0 / 60.0},
+    };
+    for (std::size_t index = 0; index < supportedModels.size(); ++index) {
+        CAPTURE(index);
+        const auto& [model, expectedBaseRate] = supportedModels[index];
+        REQUIRE(model != nullptr);
+        CHECK(bng::compile::capabilitiesFor(*model, bng::compile::BackendKind::NFsim)
+                  .state(bng::compile::Feature::Units) ==
+              bng::compile::CapabilityState::ExactLowering);
+        int traversalLimit = 0;
+        auto* system = NFinput::buildSystemFromAst(*model, false, 100, false, traversalLimit);
+        REQUIRE(system != nullptr);
+        REQUIRE(system->getAllReactions().size() == 1);
+        system->prepareForSimulation();
+        CHECK(system->getReaction(0)->getBaseRate() == Catch::Approx(expectedBaseRate).epsilon(1e-6));
+        delete system;
+    }
 }
 
-TEST_CASE("NFsim physical first-order capability keeps unsupported shapes explicit") {
+TEST_CASE("NFsim physical first-order capability scales time units and compound parameters") {
     const auto modelFor = [](const std::string& unitsBlock,
                              const std::string& parameters,
                              const std::string& reactants,
@@ -3659,30 +3679,41 @@ TEST_CASE("NFsim physical first-order capability keeps unsupported shapes explic
             "  B()\n"
             "  C()\n"
             "end molecule types\n"
+            "begin seed species\n"
+            "  A()@cell 10\n"
+            "end seed species\n"
             "begin reaction rules\n"
             "  convert: " + reactants + " -> " + products + " k\n"
             "end reaction rules\n"
             "end model\n");
     };
     const std::string secondBasis = "begin units\n  timeunits second\nend units\n";
-    const std::vector<std::shared_ptr<bng::ast::Model>> unsupportedModels {
-        modelFor("", "  k = 0.5 [second^-1]\n", "A()@cell", "B()@cell"),
-        modelFor(secondBasis,
-                 "  kbase = 0.5 [second^-1]\n  k = 2*kbase [second^-1]\n",
-                 "A()@cell", "B()@cell"),
-        modelFor("begin units\n  timeunits minute\nend units\n",
-                 "  k = 0.5 [minute^-1]\n", "A()@cell", "B()@cell"),
+    const std::vector<std::pair<std::shared_ptr<bng::ast::Model>, double>> supportedModels {
+        {modelFor("", "  k = 0.5 [second^-1]\n", "A()@cell", "B()@cell"), 0.5},
+        {modelFor(secondBasis,
+                  "  kbase = 0.5 [second^-1]\n  k = 2*kbase [second^-1]\n",
+                  "A()@cell", "B()@cell"), 1.0},
+        {modelFor("begin units\n  timeunits minute\nend units\n",
+                  "  k = 30 [minute^-1]\n", "A()@cell", "B()@cell"), 0.5},
+        {modelFor("begin units\n  unit ms = 1e-3*second\n  timeunits ms\nend units\n",
+                  "  k = 0.002 [ms^-1]\n", "A()@cell", "B()@cell"), 2.0},
     };
-    for (std::size_t index = 0; index < unsupportedModels.size(); ++index) {
+    for (std::size_t index = 0; index < supportedModels.size(); ++index) {
         CAPTURE(index);
-        const auto& model = unsupportedModels[index];
+        const auto& [model, expectedRate] = supportedModels[index];
         REQUIRE(model != nullptr);
         const bng::compile::CompiledModel compiled(*model);
         REQUIRE(compiled.valid());
         const auto capability = bng::compile::capabilitiesFor(
             *model, bng::compile::BackendKind::NFsim);
         CHECK(capability.state(bng::compile::Feature::Units) ==
-              bng::compile::CapabilityState::Unsupported);
+              bng::compile::CapabilityState::ExactLowering);
+        int traversalLimit = 0;
+        auto* system = NFinput::buildSystemFromAst(*model, false, 100, false, traversalLimit);
+        REQUIRE(system != nullptr);
+        system->prepareForSimulation();
+        CHECK(system->getReaction(0)->get_a() == Catch::Approx(10.0 * expectedRate).epsilon(1e-6));
+        delete system;
     }
 }
 
@@ -3936,6 +3967,7 @@ begin model
 end model
 )BNGL");
 
+    // Compound constant physical zero-order rate is now supported with exact conversion.
     auto compoundParameterRate = bng::parser::parseModel(R"BNGL(
 begin model
   setOption("units", "strict")
@@ -3961,17 +3993,13 @@ end model
     CHECK(bng::compile::capabilitiesFor(
               *compoundParameterRate, bng::compile::BackendKind::NFsim)
               .state(bng::compile::Feature::Units) ==
-          bng::compile::CapabilityState::Unsupported);
-    const auto compoundCompiledResult = compiledRulesAccepted(compiledCompoundParameterRate);
-    REQUIRE(compoundCompiledResult.has_value());
-    CHECK_FALSE(*compoundCompiledResult);
+          bng::compile::CapabilityState::ExactLowering);
     int compoundTraversalLimit = 0;
-    std::string compoundUnavailableReason;
     auto* compoundSystem = NFinput::buildSystemFromAst(
-        *compoundParameterRate, false, 100, false, compoundTraversalLimit, {},
-        &compoundUnavailableReason);
-    CHECK(compoundSystem == nullptr);
-    CHECK(compoundUnavailableReason.find("physical-unit") != std::string::npos);
+        *compoundParameterRate, false, 100, false, compoundTraversalLimit);
+    REQUIRE(compoundSystem != nullptr);
+    compoundSystem->prepareForSimulation();
+    CHECK(compoundSystem->getReaction(0)->get_a() == Catch::Approx(0.602214076).epsilon(1e-6));
     delete compoundSystem;
 
     auto mixedTypedAndLegacyRates = bng::parser::parseModel(R"BNGL(
@@ -4011,6 +4039,7 @@ end model
     REQUIRE(mixedCompiledResult.has_value());
     CHECK_FALSE(*mixedCompiledResult);
 
+    // Non-second time bases convert cleanly to NFsim's second clock.
     auto nonsecondTimeBasisModel = bng::parser::parseModel(R"BNGL(
 begin model
   setOption("units", "strict")
@@ -4019,7 +4048,7 @@ begin model
     timeunits minute
   end units
   begin parameters
-    k = 1e-9 [M/minute]
+    k = 60e-9 [M/minute]
   end parameters
   begin compartments
     cell 3 1 [fL]
@@ -4033,51 +4062,52 @@ begin model
 end model
 )BNGL");
     REQUIRE(nonsecondTimeBasisModel != nullptr);
-    const bng::compile::CompiledModel compiledNonsecondTimeBasis(
-        *nonsecondTimeBasisModel);
-    REQUIRE(compiledNonsecondTimeBasis.valid());
-    const auto nonsecondCompiledResult = compiledRulesAccepted(compiledNonsecondTimeBasis);
-    REQUIRE(nonsecondCompiledResult.has_value());
-    CHECK_FALSE(*nonsecondCompiledResult);
     int nonsecondTraversalLimit = 0;
-    std::string nonsecondUnavailableReason;
     auto* nonsecondSystem = NFinput::buildSystemFromAst(
-        *nonsecondTimeBasisModel, false, 100, false, nonsecondTraversalLimit, {},
-        &nonsecondUnavailableReason);
-    CHECK(nonsecondSystem == nullptr);
-    CHECK(nonsecondUnavailableReason.find("physical-unit") != std::string::npos);
+        *nonsecondTimeBasisModel, false, 100, false, nonsecondTraversalLimit);
+    REQUIRE(nonsecondSystem != nullptr);
+    nonsecondSystem->prepareForSimulation();
+    CHECK(nonsecondSystem->getReaction(0)->get_a() == Catch::Approx(0.602214076).epsilon(1e-6));
     delete nonsecondSystem;
 
-    auto nearSecondTimeBasisModel = bng::parser::parseModel(R"BNGL(
+    // Unit-bearing concentration and molecule seeds convert cleanly to counts.
+    auto unitSeedModel = bng::parser::parseModel(R"BNGL(
 begin model
   setOption("units", "strict")
   setOption("NumberPerQuantityUnit", 6.02214076e23)
-  begin units
-    unit near_second = 1.0000000000001*second
-    timeunits near_second
-  end units
   begin parameters
-    k = 1e-9 [M/near_second]
+    k = 0.5 [second^-1]
   end parameters
   begin compartments
     cell 3 1 [fL]
   end compartments
   begin molecule types
     A()
+    B()
   end molecule types
+  begin seed species
+    A()@cell 1.660538863127e-7 [M]
+    B()@cell 12 [molecule]
+  end seed species
+  begin observables
+    Molecules A_obs A()@cell
+    Molecules B_obs B()@cell
+  end observables
   begin reaction rules
-    source: 0 -> A()@cell k
+    decay: A()@cell -> 0 k
   end reaction rules
 end model
 )BNGL");
-    REQUIRE(nearSecondTimeBasisModel != nullptr);
-    const bng::compile::CompiledModel compiledNearSecondTimeBasis(
-        *nearSecondTimeBasisModel);
-    REQUIRE(compiledNearSecondTimeBasis.valid());
-    CHECK(bng::compile::capabilitiesFor(
-              *nearSecondTimeBasisModel, bng::compile::BackendKind::NFsim)
-              .state(bng::compile::Feature::Units) ==
-          bng::compile::CapabilityState::Unsupported);
+    REQUIRE(unitSeedModel != nullptr);
+    int unitSeedTraversal = 0;
+    auto* unitSeedSystem = NFinput::buildSystemFromAst(
+        *unitSeedModel, false, 1000, false, unitSeedTraversal);
+    REQUIRE(unitSeedSystem != nullptr);
+    unitSeedSystem->prepareForSimulation();
+    CHECK(unitSeedSystem->getObservableByName("A_obs")->getCount() == 100);
+    CHECK(unitSeedSystem->getObservableByName("B_obs")->getCount() == 12);
+    CHECK(unitSeedSystem->getReaction(0)->get_a() == Catch::Approx(50.0).epsilon(1e-6));
+    delete unitSeedSystem;
 
     auto timedParameterModel = bng::parser::parseModel(R"BNGL(
 begin model
@@ -4197,30 +4227,6 @@ begin reaction rules
 end reaction rules
 end model
 )BNGL",
-        // Higher molecularities remain outside the zero-order bridge.
-        R"BNGL(
-begin model
-  setOption("units", "strict")
-  setOption("NumberPerQuantityUnit", 6.02214076e23)
-  begin parameters
-    k = 1e-3 [M^-1/second]
-  end parameters
-  begin compartments
-    cell 3 1 [fL]
-  end compartments
-  begin molecule types
-    A()
-    B()
-  end molecule types
-  begin seed species
-    A()@cell 1
-    B()@cell 1
-  end seed species
-  begin reaction rules
-    bind: A()@cell + B()@cell -> A()@cell k
-  end reaction rules
-end model
-)BNGL",
         // Time-dependent rates are not static physical count-rate constants.
         R"BNGL(
 begin model
@@ -4240,10 +4246,10 @@ begin model
   end reaction rules
 end model
 )BNGL",
-        // Seed conversion remains outside this bridge even for item units.
-        prefix + R"BNGL(
+        // Molar concentration seed without NumberPerQuantityUnit bridge stays refused.
+        missingBridge + R"BNGL(
 begin seed species
-  A()@cell 1 [molecule]
+  A()@cell 1 [nM]
 end seed species
 begin reaction rules
   source: 0 -> A()@cell k
