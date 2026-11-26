@@ -11416,7 +11416,7 @@
     {
       "id": "nfcore2.lowering-matching-transform",
       "sources": [
-        "legacy/nfcore2/*"
+        "cpp/nfsim/NFcore2/*"
       ],
       "tests": [
         "tests/cpp/test_nfcore2_parity.cpp",
