@@ -757,3 +757,38 @@ def test_gdat_numeric_comparator_positive_and_negative_controls(
         oracle_text.encode("utf-8"), consumer_text.encode("utf-8")
     )
     assert ok is expect_ok, detail
+
+
+def test_nfsim_cli_comparator_positive_and_negative_controls():
+    oracle = b"NFsim v1.12.1\ndone.  Total CPU time: 0.01s\n"
+    consumer_ok = b"NFsim v1.12.1\ndone.  Total CPU time: 0.42s\n"
+    consumer_bad = b"NFsim v1.13.0\ndone.  Total CPU time: 0.42s\n"
+    ok, detail = checks._compare_nfsim_cli_bytes(oracle, consumer_ok)
+    assert ok is True, detail
+    ok_bad, _ = checks._compare_nfsim_cli_bytes(oracle, consumer_bad)
+    assert ok_bad is False
+
+
+def test_export_struct_comparator_positive_and_negative_controls():
+    oracle = json.dumps(
+        {
+            "format": "ssccfg",
+            "files": {"ex_s1.cfg": "# cfg\n k = 0.5\n"},
+        }
+    ).encode("utf-8")
+    consumer_ok = json.dumps(
+        {
+            "format": "ssccfg",
+            "files": {"ex_s1.cfg": "# cfg\nconst k = 0.5;\n"},
+        }
+    ).encode("utf-8")
+    consumer_bad = json.dumps(
+        {
+            "format": "ssccfg",
+            "files": {"ex_s1.cfg": "# cfg\nconst k = 9.9;\n"},
+        }
+    ).encode("utf-8")
+    ok, detail = checks._compare_export_struct_bytes(oracle, consumer_ok)
+    assert ok is True, detail
+    ok_bad, _ = checks._compare_export_struct_bytes(oracle, consumer_bad)
+    assert ok_bad is False
